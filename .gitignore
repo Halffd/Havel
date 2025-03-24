@@ -12,3 +12,7 @@ file
 src/out
 log
 config
+
+# Precompiled headers
+*.gch
+*.pch

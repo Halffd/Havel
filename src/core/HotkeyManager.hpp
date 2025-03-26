@@ -28,6 +28,9 @@ public:
     void LoadHotkeyConfigurations();
     void ReloadConfigurations();
 
+    // Add public getter for brightnessManager
+    BrightnessManager& getBrightnessManager() { return brightnessManager; }
+
 private:
     IO& io;
     WindowManager& windowManager;

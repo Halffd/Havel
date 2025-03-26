@@ -251,32 +251,70 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightnes
     return true;
 }
 
+bool BrightnessManager::setStartupValues() {
+    settings.currentBrightness = STARTUP_BRIGHTNESS;
+    settings.currentGamma = STARTUP_GAMMA;
+    return setBrightnessAndTemperature(
+        std::to_string(STARTUP_BRIGHTNESS),
+        std::to_string(STARTUP_GAMMA)
+    );
+}
+
+bool BrightnessManager::setDefaultBrightness() {
+    settings.currentBrightness = DEFAULT_BRIGHTNESS;
+    settings.currentGamma = 6500; // Standard daylight temperature
+    return setBrightnessAndTemperature(
+        std::to_string(DEFAULT_BRIGHTNESS),
+        "6500"
+    );
+}
+
 bool BrightnessManager::increaseBrightness(double amount) {
     double newBrightness = std::min(1.0, settings.currentBrightness + amount);
-    std::string brightnessStr = std::to_string(newBrightness);
-    std::string gammaStr = std::to_string(settings.currentGamma);
-    return setBrightnessAndTemperature(brightnessStr, gammaStr);
+    if (newBrightness != settings.currentBrightness) {
+        settings.currentBrightness = newBrightness;
+        return setBrightnessAndTemperature(
+            std::to_string(settings.currentBrightness),
+            std::to_string(settings.currentGamma)
+        );
+    }
+    return false;
 }
 
 bool BrightnessManager::decreaseBrightness(double amount) {
     double newBrightness = std::max(0.0, settings.currentBrightness - amount);
-    std::string brightnessStr = std::to_string(newBrightness);
-    std::string gammaStr = std::to_string(settings.currentGamma);
-    return setBrightnessAndTemperature(brightnessStr, gammaStr);
+    if (newBrightness != settings.currentBrightness) {
+        settings.currentBrightness = newBrightness;
+        return setBrightnessAndTemperature(
+            std::to_string(settings.currentBrightness),
+            std::to_string(settings.currentGamma)
+        );
+    }
+    return false;
 }
 
 bool BrightnessManager::increaseGamma(int amount) {
     int newGamma = std::min(MAX_TEMPERATURE, settings.currentGamma + amount);
-    std::string brightnessStr = std::to_string(settings.currentBrightness);
-    std::string gammaStr = std::to_string(newGamma);
-    return setBrightnessAndTemperature(brightnessStr, gammaStr);
+    if (newGamma != settings.currentGamma) {
+        settings.currentGamma = newGamma;
+        return setBrightnessAndTemperature(
+            std::to_string(settings.currentBrightness),
+            std::to_string(settings.currentGamma)
+        );
+    }
+    return false;
 }
 
 bool BrightnessManager::decreaseGamma(int amount) {
     int newGamma = std::max(MIN_TEMPERATURE, settings.currentGamma - amount);
-    std::string brightnessStr = std::to_string(settings.currentBrightness);
-    std::string gammaStr = std::to_string(newGamma);
-    return setBrightnessAndTemperature(brightnessStr, gammaStr);
+    if (newGamma != settings.currentGamma) {
+        settings.currentGamma = newGamma;
+        return setBrightnessAndTemperature(
+            std::to_string(settings.currentBrightness),
+            std::to_string(settings.currentGamma)
+        );
+    }
+    return false;
 }
 
 } // namespace H 

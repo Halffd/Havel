@@ -23,12 +23,19 @@ public:
         int currentGamma;
     };
 
+    // Constants for default values
+    static constexpr double DEFAULT_BRIGHTNESS = 0.85;
+    static constexpr double STARTUP_BRIGHTNESS = 0.3;
+    static constexpr int STARTUP_GAMMA = 7500; // 75% of 10000K
+    
     BrightnessManager();
     ~BrightnessManager() = default;
 
     // Main functions
     bool setBrightnessAndTemperature(const std::string& brightness, const std::string& gamma);
     bool resetToDefaults();
+    bool setStartupValues();
+    bool setDefaultBrightness();
 
     // Incremental adjustments
     bool increaseBrightness(double amount = 0.1);

@@ -56,6 +56,15 @@ int main(int argc, char* argv[]) {
     try {
         lo.info("Starting HvC...");
         
+        // Check for startup argument
+        bool isStartup = false;
+        for (int i = 1; i < argc; i++) {
+            if (std::string(argv[i]) == "--startup") {
+                isStartup = true;
+                break;
+            }
+        }
+        
         // Load configuration
         auto& config = Configs::Get();
         config.Load("config.json");
@@ -74,6 +83,12 @@ int main(int argc, char* argv[]) {
         
         // Create hotkey manager
         auto hotkeyManager = std::make_shared<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
+        
+        // If starting up, set initial brightness and gamma
+        if (isStartup) {
+            lo.info("Setting startup brightness and gamma values");
+            hotkeyManager->getBrightnessManager().setStartupValues();
+        }
         
         // Register default hotkeys
         hotkeyManager->RegisterDefaultHotkeys();

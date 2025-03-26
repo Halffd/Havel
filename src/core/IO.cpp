@@ -137,6 +137,20 @@ void IO::InitKeyMap() {
     keyMap["left"] = XK_Left;
     keyMap["right"] = XK_Right;
     
+    // Function keys
+    keyMap["f1"] = XK_F1;
+    keyMap["f2"] = XK_F2;
+    keyMap["f3"] = XK_F3;
+    keyMap["f4"] = XK_F4;
+    keyMap["f5"] = XK_F5;
+    keyMap["f6"] = XK_F6;
+    keyMap["f7"] = XK_F7;
+    keyMap["f8"] = XK_F8;
+    keyMap["f9"] = XK_F9;
+    keyMap["f10"] = XK_F10;
+    keyMap["f11"] = XK_F11;
+    keyMap["f12"] = XK_F12;
+    
     // Media keys
     keyMap["volumeup"] = XF86XK_AudioRaiseVolume;
     keyMap["volumedown"] = XF86XK_AudioLowerVolume;
@@ -321,7 +335,13 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     std::string keyNameLower = keyName;
     std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
     
-    if (keyNameLower == "up") key = XK_Up;
+    // First check if the key exists in our keyMap
+    auto it = keyMap.find(keyNameLower);
+    if (it != keyMap.end()) {
+        key = it->second;
+    }
+    // If not in keyMap, try special keys
+    else if (keyNameLower == "up") key = XK_Up;
     else if (keyNameLower == "down") key = XK_Down;
     else if (keyNameLower == "left") key = XK_Left;
     else if (keyNameLower == "right") key = XK_Right;
@@ -376,16 +396,16 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
         // Ungrab first in case it's already grabbed
         XUngrabKey(display, keycode, modifiers, root);
         
-        // Grab the key
-        int result = XGrabKey(display, keycode, modifiers, root, False, 
+        // Try to grab the key with error handling
+        Status status = XGrabKey(display, keycode, modifiers, root, True, 
                              GrabModeAsync, GrabModeAsync);
         
-        if (result != Success) {
-            std::cerr << "Failed to grab key for hotkey: " << hotkeyStr << std::endl;
-            return false;
+        if (status != Success) {
+            std::cerr << "Failed to grab key for hotkey: " << hotkeyStr << " (status: " << status << ")" << std::endl;
+            // Don't return false here - we'll still register the hotkey even if we can't grab it
         }
         
-        // Also grab with numlock, capslock variations
+        // Also grab with numlock and capslock variations
         unsigned int numlockmask = 0;
         XModifierKeymap* modmap = XGetModifierMapping(display);
         if (modmap && modmap->max_keypermod > 0) {
@@ -403,15 +423,15 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
         
         // Add grabs for numlock and capslock combinations
         if (numlockmask) {
-            XGrabKey(display, keycode, modifiers | numlockmask, root, False, 
+            XGrabKey(display, keycode, modifiers | numlockmask, root, True, 
                     GrabModeAsync, GrabModeAsync);
-            XGrabKey(display, keycode, modifiers | LockMask, root, False, 
+            XGrabKey(display, keycode, modifiers | LockMask, root, True, 
                     GrabModeAsync, GrabModeAsync);
-            XGrabKey(display, keycode, modifiers | numlockmask | LockMask, root, False, 
+            XGrabKey(display, keycode, modifiers | numlockmask | LockMask, root, True, 
                     GrabModeAsync, GrabModeAsync);
         }
         
-        XFlush(display);
+        XSync(display, False);
         std::cout << "Successfully registered hotkey: " << hotkeyStr << std::endl;
     }
 #endif

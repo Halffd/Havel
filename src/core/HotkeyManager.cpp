@@ -24,24 +24,34 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Brightness and gamma control
-    io.Hotkey("F7", [this]() {
+    io.Hotkey("f3", [this]() {
+        // Set default brightness
+        lo.info("Setting default brightness");
+        brightnessManager.setDefaultBrightness();
+    });
+
+    io.Hotkey("f7", [this]() {
         // Decrease brightness
-        brightnessManager.decreaseBrightness();
+        lo.info("Decreasing brightness");
+        brightnessManager.decreaseBrightness(0.05); // Use smaller steps for finer control
     });
 
-    io.Hotkey("F8", [this]() {
+    io.Hotkey("f8", [this]() {
         // Increase brightness
-        brightnessManager.increaseBrightness();
+        lo.info("Increasing brightness");
+        brightnessManager.increaseBrightness(0.05); // Use smaller steps for finer control
     });
 
-    io.Hotkey("shift+F7", [this]() {
+    io.Hotkey("shift+f7", [this]() {
         // Decrease gamma
-        brightnessManager.decreaseGamma();
+        lo.info("Decreasing gamma");
+        brightnessManager.decreaseGamma(500);
     });
 
-    io.Hotkey("shift+F8", [this]() {
+    io.Hotkey("shift+f8", [this]() {
         // Increase gamma
-        brightnessManager.increaseGamma();
+        lo.info("Increasing gamma");
+        brightnessManager.increaseGamma(500);
     });
 }
 

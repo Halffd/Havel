@@ -1,4 +1,4 @@
-#include "logger.h"
+#include "utils/Logger.hpp"
 #include <iostream>
 #include <thread>
 #include <memory>
@@ -17,7 +17,6 @@
 #include "window/WindowRules.hpp"
 #include "core/MouseGesture.hpp"
 #include "core/MacroSystem.hpp"
-#include "utils/Logger.h"
 
 // Forward declare test_main
 int test_main(int argc, char* argv[]);
@@ -49,10 +48,8 @@ public:
     void AdjustVolume(int) { /* ... */ }
 };
 
+#ifndef RUN_TESTS
 int main(int argc, char* argv[]) {
-#ifdef RUN_TESTS
-    return test_main(argc, argv);
-#else
     std::signal(SIGINT, SignalHandler);
     std::signal(SIGTERM, SignalHandler);
     
@@ -133,5 +130,5 @@ int main(int argc, char* argv[]) {
         lo.fatal(std::string("Fatal error: ") + e.what());
         return 1;
     }
-#endif
 }
+#endif

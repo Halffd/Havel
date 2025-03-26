@@ -1,4 +1,4 @@
-#include "logger.h"
+#include "../utils/Logger.hpp"
 #include "x11_includes.h"
 #include "IO.hpp"
 #include "core/DisplayManager.hpp"
@@ -25,6 +25,20 @@ IO::IO()
         std::cerr << "Failed to get X11 display" << std::endl;
     }
     InitKeyMap();
+    
+    // Start hotkey monitoring thread for X11
+#ifdef __linux__
+    if (display) {
+        // Set up X11 error handler
+        XSetErrorHandler([](Display*, XErrorEvent*) -> int { return 0; });
+        
+        // Start hotkey monitoring in a separate thread
+        timerRunning = true;
+        timerThread = std::thread([this]() {
+            this->MonitorHotkeys();
+        });
+    }
+#endif
 }
 
 IO::~IO() {
@@ -34,14 +48,105 @@ IO::~IO() {
         timerThread.join();
     }
     
+    // Ungrab all hotkeys before closing
+#ifdef __linux__
+    if (display) {
+        Window root = DefaultRootWindow(display);
+        for (const auto& [id, hotkey] : hotkeys) {
+            if (hotkey.key != 0) {
+                KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+                if (keycode != 0) {
+                    XUngrabKey(display, keycode, hotkey.modifiers, root);
+                }
+            }
+        }
+    }
+#endif
+    
     // Don't close the display here, it's managed by DisplayManager
     display = nullptr;
+}
+
+// X11 hotkey monitoring thread
+void IO::MonitorHotkeys() {
+#ifdef __linux__
+    if (!display) return;
+    
+    std::cout << "Starting hotkey monitoring thread" << std::endl;
+    XEvent event;
+    Window root = DefaultRootWindow(display);
+    
+    // Select events on the root window
+    XSelectInput(display, root, KeyPressMask);
+    
+    while (timerRunning) {
+        // Check for pending events
+        if (XPending(display) > 0) {
+            XNextEvent(display, &event);
+            
+            if (event.type == KeyPress) {
+                XKeyEvent* keyEvent = &event.xkey;
+                KeySym keysym = XLookupKeysym(keyEvent, 0);
+                std::cout << "KeyPress event detected: " << keysym << " with state: " << keyEvent->state << std::endl;
+                
+                // Find and execute matching hotkeys
+                for (const auto& [id, hotkey] : hotkeys) {
+                    if (hotkey.enabled) {
+                        KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+                        
+                        if (keyEvent->keycode == keycode && 
+                            keyEvent->state == hotkey.modifiers) {
+                            std::cout << "Hotkey matched: " << hotkey.alias << std::endl;
+                            // Execute the callback in a separate thread to avoid blocking
+                            if (hotkey.callback) {
+                                std::thread([callback = hotkey.callback]() {
+                                    callback();
+                                }).detach();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Sleep to avoid high CPU usage
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    std::cout << "Hotkey monitoring thread stopped" << std::endl;
+#endif
 }
 
 void IO::InitKeyMap() {
     // Basic implementation of key map
     std::cout << "Initializing key map" << std::endl;
-    // Add key mappings here as needed
+    
+    // Initialize key mappings for common keys
+#ifdef __linux__
+    keyMap["esc"] = XK_Escape;
+    keyMap["enter"] = XK_Return;
+    keyMap["space"] = XK_space;
+    keyMap["tab"] = XK_Tab;
+    keyMap["backspace"] = XK_BackSpace;
+    keyMap["ctrl"] = XK_Control_L;
+    keyMap["alt"] = XK_Alt_L;
+    keyMap["shift"] = XK_Shift_L;
+    keyMap["win"] = XK_Super_L;
+    keyMap["up"] = XK_Up;
+    keyMap["down"] = XK_Down;
+    keyMap["left"] = XK_Left;
+    keyMap["right"] = XK_Right;
+    
+    // Media keys
+    keyMap["volumeup"] = XF86XK_AudioRaiseVolume;
+    keyMap["volumedown"] = XF86XK_AudioLowerVolume;
+    keyMap["mute"] = XF86XK_AudioMute;
+    keyMap["play"] = XF86XK_AudioPlay;
+    keyMap["pause"] = XF86XK_AudioPause;
+    keyMap["playpause"] = XF86XK_AudioPlay;
+    keyMap["stop"] = XF86XK_AudioStop;
+    keyMap["prev"] = XF86XK_AudioPrev;
+    keyMap["next"] = XF86XK_AudioNext;
+#endif
 }
 
 void IO::removeSpecialCharacters(str &keyName)
@@ -161,38 +266,71 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     int modifiers = 0;
     
     // Get key and modifiers from hotkey string
-    if (hotkeyStr.find("+") != std::string::npos) {
-        // Multiple keys with modifiers
-        modifiers = ParseModifiers(hotkeyStr);
-        size_t pos = hotkeyStr.find_last_of('+');
-        keyName = hotkeyStr.substr(pos+1);
-    } else if (hotkeyStr.find("^") == 0) {
-        // Control key
-        modifiers = ControlMask;
-        keyName = hotkeyStr.substr(1);
-    } else if (hotkeyStr.find("!") == 0) {
-        // Alt key
-        modifiers = Mod1Mask;
-        keyName = hotkeyStr.substr(1);
-    } else if (hotkeyStr.find("#") == 0) {
-        // Windows/Super key
-        modifiers = Mod4Mask;
-        keyName = hotkeyStr.substr(1);
-    } else if (hotkeyStr.find("+") == 0) {
-        // Shift key
-        modifiers = ShiftMask;
-        keyName = hotkeyStr.substr(1);
-    } else {
-        // Just a key, no modifiers
-        keyName = hotkeyStr;
+    std::string hotkeyStrCopy = hotkeyStr;
+    
+    // Handle combined modifiers
+    if (hotkeyStrCopy.find("^+") != std::string::npos) {
+        modifiers |= ControlMask | ShiftMask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("^+"), 2, "");
+    }
+    if (hotkeyStrCopy.find("^!") != std::string::npos) {
+        modifiers |= ControlMask | Mod1Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("^!"), 2, "");
+    }
+    if (hotkeyStrCopy.find("^#") != std::string::npos) {
+        modifiers |= ControlMask | Mod4Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("^#"), 2, "");
+    }
+    if (hotkeyStrCopy.find("+!") != std::string::npos) {
+        modifiers |= ShiftMask | Mod1Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("+!"), 2, "");
+    }
+    if (hotkeyStrCopy.find("+#") != std::string::npos) {
+        modifiers |= ShiftMask | Mod4Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("+#"), 2, "");
+    }
+    if (hotkeyStrCopy.find("!#") != std::string::npos) {
+        modifiers |= Mod1Mask | Mod4Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("!#"), 2, "");
     }
     
-    // Convert key name to virtual key code
-    Key key = StringToVirtualKey(keyName);
+    // Handle individual modifiers
+    if (hotkeyStrCopy.find("^") != std::string::npos) {
+        modifiers |= ControlMask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("^"), 1, "");
+    }
+    if (hotkeyStrCopy.find("+") != std::string::npos) {
+        modifiers |= ShiftMask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("+"), 1, "");
+    }
+    if (hotkeyStrCopy.find("!") != std::string::npos) {
+        modifiers |= Mod1Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("!"), 1, "");
+    }
+    if (hotkeyStrCopy.find("#") != std::string::npos) {
+        modifiers |= Mod4Mask;
+        hotkeyStrCopy.replace(hotkeyStrCopy.find("#"), 1, "");
+    }
+    
+    // The remaining string is the key name
+    keyName = hotkeyStrCopy;
+    std::cout << "  Parsed as key: '" << keyName << "' with modifiers: " << modifiers << std::endl;
+    
+    // Check if the key exists in our keyMap
+    Key key = 0;
+    if (keyMap.find(ToLower(keyName)) != keyMap.end()) {
+        key = keyMap[ToLower(keyName)];
+    } else {
+        // Try to convert directly
+        key = StringToVirtualKey(keyName);
+    }
+    
     if (key == 0) {
         std::cerr << "Invalid key name: " << keyName << std::endl;
         return false;
     }
+    
+    std::cout << "  Converted to keysym: " << key << std::endl;
     
     // Create hotkey structure
     HotKey hotkey;
@@ -204,6 +342,62 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     
     // Register the hotkey
     hotkeys[id] = hotkey;
+    
+    // Grab the key using X11
+#ifdef __linux__
+    if (display) {
+        Window root = DefaultRootWindow(display);
+        KeyCode keycode = XKeysymToKeycode(display, key);
+        
+        if (keycode == 0) {
+            std::cerr << "Invalid keycode for hotkey: " << hotkeyStr << std::endl;
+            return false;
+        }
+        
+        std::cout << "  Keycode: " << (int)keycode << std::endl;
+        
+        // Ungrab first in case it's already grabbed
+        XUngrabKey(display, keycode, modifiers, root);
+        
+        // Grab the key
+        int result = XGrabKey(display, keycode, modifiers, root, False, 
+                             GrabModeAsync, GrabModeAsync);
+        
+        if (result != Success) {
+            std::cerr << "Failed to grab key for hotkey: " << hotkeyStr << std::endl;
+            return false;
+        }
+        
+        // Also grab with numlock, capslock variations
+        unsigned int numlockmask = 0;
+        XModifierKeymap* modmap = XGetModifierMapping(display);
+        if (modmap && modmap->max_keypermod > 0) {
+            for (int i = 0; i < 8; i++) {
+                for (int j = 0; j < modmap->max_keypermod; j++) {
+                    KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
+                    if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
+                        numlockmask = (1 << i);
+                        break;
+                    }
+                }
+            }
+            XFreeModifiermap(modmap);
+        }
+        
+        // Add grabs for numlock and capslock combinations
+        if (numlockmask) {
+            XGrabKey(display, keycode, modifiers | numlockmask, root, False, 
+                    GrabModeAsync, GrabModeAsync);
+            XGrabKey(display, keycode, modifiers | LockMask, root, False, 
+                    GrabModeAsync, GrabModeAsync);
+            XGrabKey(display, keycode, modifiers | numlockmask | LockMask, root, False, 
+                    GrabModeAsync, GrabModeAsync);
+        }
+        
+        XFlush(display);
+        std::cout << "Successfully registered hotkey: " << hotkeyStr << std::endl;
+    }
+#endif
     
     return true;
 }
@@ -599,7 +793,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
     Display* display = DisplayManager::GetDisplay();
     if (!display) return;
     
-    Window root = DisplayManager::GetRootWindow();
+    Window root = DefaultRootWindow(display);
     
     KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
     if (keycode == 0) {
@@ -607,12 +801,16 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
         return;
     }
     
-    Bool owner_events = True;
+    // Ungrab first in case it's already grabbed
+    XUngrabKey(display, keycode, hotkey.modifiers, root);
     
-    if (XGrabKey(display, keycode, hotkey.modifiers, root, owner_events,
+    // Grab the key
+    if (XGrabKey(display, keycode, hotkey.modifiers, root, False,
                 GrabModeAsync, GrabModeAsync) != Success) {
         std::cerr << "Failed to grab key: " << hotkey.alias << std::endl;
     }
+    
+    XFlush(display);
 #endif
 }
 

@@ -1,101 +1,99 @@
-#include "Logger.h"
+#include "Logger.hpp"
 #include <iostream>
 #include <iomanip>
 #include <ctime>
 #include <filesystem>
+#include <chrono>
+#include <sstream>
 
-// Global logger instance
-H::Logger lo("hvc.log");
+// Define the global logger instance
+H::Logger& lo = H::Logger::getInstance();
 
-H::Logger::Logger(const std::string& filename) {
-    try {
-        // Create log directory if it doesn't exist
-        std::filesystem::create_directories("logs");
-        
-        // Open log file
-        logFile.open("logs/" + filename, std::ios::app);
-        if (!logFile.is_open()) {
-            std::cerr << "Failed to open log file: " << filename << std::endl;
-        }
-        
-        // Log startup message
-        log(INFO, "Logger initialized");
-    } catch (const std::exception& e) {
-        std::cerr << "Error initializing logger: " << e.what() << std::endl;
-    }
+namespace H {
+
+Logger::Logger() : currentLevel(Level::INFO), consoleOutput(true) {
 }
 
-H::Logger::~Logger() {
+Logger::~Logger() {
     if (logFile.is_open()) {
-        log(INFO, "Logger shutting down");
         logFile.close();
     }
 }
 
-void H::Logger::debug(const std::string& message) {
-    log(DEBUG, message);
-}
-
-void H::Logger::info(const std::string& message) {
-    log(INFO, message);
-}
-
-void H::Logger::warning(const std::string& message) {
-    log(WARNING, message);
-}
-
-void H::Logger::error(const std::string& message) {
-    log(ERROR, message);
-}
-
-void H::Logger::fatal(const std::string& message) {
-    log(FATAL, message);
-}
-
-void H::Logger::setLevel(Level level) {
-    std::lock_guard<std::mutex> lock(logMutex);
-    logLevel = level;
-}
-
-void H::Logger::log(Level level, const std::string& message) {
-    if (level < logLevel) return;
-    
-    std::lock_guard<std::mutex> lock(logMutex);
-    
-    // Get current time
-    auto now = std::time(nullptr);
-    auto tm = *std::localtime(&now);
-    
-    // Log level strings
-    const char* levelStrings[] = {
-        "DEBUG", "INFO", "WARNING", "ERROR", "FATAL"
-    };
-    
-    // Format: [2023-01-01 12:34:56] [INFO] Message
-    std::ostringstream logMessage;
-    logMessage << "[" << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << "] "
-               << "[" << levelStrings[level] << "] "
-               << message;
-    
-    // Write to console
-    std::cout << logMessage.str() << std::endl;
-    
-    // Write to file
+void Logger::setLogFile(const std::string& filename) {
+    std::lock_guard<std::mutex> lock(mutex);
     if (logFile.is_open()) {
-        logFile << logMessage.str() << std::endl;
+        logFile.close();
+    }
+    logFile.open(filename, std::ios::app);
+}
+
+void Logger::setLogLevel(Level level) {
+    std::lock_guard<std::mutex> lock(mutex);
+    currentLevel = level;
+}
+
+void Logger::debug(const std::string& message) {
+    log(Level::DEBUG, message);
+}
+
+void Logger::info(const std::string& message) {
+    log(Level::INFO, message);
+}
+
+void Logger::warning(const std::string& message) {
+    log(Level::WARNING, message);
+}
+
+void Logger::error(const std::string& message) {
+    log(Level::ERROR, message);
+}
+
+void Logger::fatal(const std::string& message) {
+    log(Level::FATAL, message);
+}
+
+void Logger::log(Level level, const std::string& message) {
+    if (level < currentLevel) {
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    std::string timestamp = getCurrentTimestamp();
+    std::string levelStr = getLevelString(level);
+    std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
+
+    if (logFile.is_open()) {
+        logFile << logMessage;
         logFile.flush();
     }
-    
-    // If it's an error or fatal, also write to stderr
-    if (level >= ERROR) {
-        std::cerr << logMessage.str() << std::endl;
+
+    if (consoleOutput) {
+        std::cout << logMessage;
     }
 }
 
-void LoggerPaths::EnsureLogDir() {
-    try {
-        std::filesystem::create_directories("logs");
-    } catch (const std::exception& e) {
-        std::cerr << "Failed to create log directory: " << e.what() << std::endl;
+std::string Logger::getLevelString(Level level) {
+    switch (level) {
+        case Level::DEBUG:   return "DEBUG";
+        case Level::INFO:    return "INFO";
+        case Level::WARNING: return "WARNING";
+        case Level::ERROR:   return "ERROR";
+        case Level::FATAL:   return "FATAL";
+        default:            return "UNKNOWN";
     }
 }
+
+std::string Logger::getCurrentTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now.time_since_epoch()) % 1000;
+
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S")
+       << '.' << std::setfill('0') << std::setw(3) << ms.count();
+    return ss.str();
+}
+
+} // namespace H

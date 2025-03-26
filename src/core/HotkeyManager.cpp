@@ -1,5 +1,5 @@
 #include "HotkeyManager.hpp"
-#include "logger.h"
+#include "utils/Logger.hpp"
 #include <iostream>
 
 namespace H {

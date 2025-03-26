@@ -44,7 +44,8 @@ WindowManager::WindowManager() {
 
 bool WindowManager::InitializeX11() {
 #ifdef __linux__
-    return DisplayManager::Initialize();
+    DisplayManager::Initialize();
+    return DisplayManager::GetDisplay() != nullptr;
 #else
     return false;
 #endif
@@ -971,64 +972,69 @@ void WindowManager::SnapWindowWithPadding(int position, int padding) {
 
 // Toggle always on top for the active window
 void WindowManager::ToggleAlwaysOnTop() {
+    // Get the active window
     wID activeWindow = GetActiveWindow();
     if (!activeWindow) {
-        std::cerr << "No active window found" << std::endl;
+        std::cerr << "No active window to toggle always-on-top state" << std::endl;
         return;
     }
     
-    #ifdef __linux__
-    // X11 implementation
+#ifdef __linux__
+    // Check if the window is already on top using X11
     Display* display = DisplayManager::GetDisplay();
-    if (!display) return;
+    if (!display) {
+        std::cerr << "X11 display not available" << std::endl;
+        return;
+    }
     
-    // Get current state
+    // Get the current state
     Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
     Atom wmStateAbove = XInternAtom(display, "_NET_WM_STATE_ABOVE", False);
     
     if (wmState == None || wmStateAbove == None) {
-        std::cerr << "X11 atoms not found" << std::endl;
+        std::cerr << "Required X11 atoms not available" << std::endl;
         return;
     }
     
-    // Check if the window is already on top
     Atom actualType;
     int actualFormat;
-    unsigned long numItems, bytesAfter;
-    unsigned char* data = nullptr;
+    unsigned long nitems, bytesAfter;
+    unsigned char* propData = NULL;
     bool isOnTop = false;
     
-    if (XGetWindowProperty(display, activeWindow, wmState, 0, 64, False, XA_ATOM, 
-                          &actualType, &actualFormat, &numItems, &bytesAfter, &data) == Success) {
-        if (data) {
-            Atom* atoms = reinterpret_cast<Atom*>(data);
-            for (unsigned long i = 0; i < numItems; i++) {
+    if (XGetWindowProperty(display, activeWindow, wmState, 0, 64, False, XA_ATOM,
+                          &actualType, &actualFormat, &nitems, &bytesAfter, &propData) == Success) {
+        if (propData) {
+            Atom* atoms = (Atom*)propData;
+            for (unsigned long i = 0; i < nitems; i++) {
                 if (atoms[i] == wmStateAbove) {
                     isOnTop = true;
                     break;
                 }
             }
-            XFree(data);
+            XFree(propData);
         }
     }
     
-    // Toggle state
-    XEvent event = {};
+    // Toggle the state
+    Window root = DefaultRootWindow(display);
+    XEvent event;
+    memset(&event, 0, sizeof(event));
+    
     event.type = ClientMessage;
     event.xclient.window = activeWindow;
     event.xclient.message_type = wmState;
     event.xclient.format = 32;
-    event.xclient.data.l[0] = isOnTop ? 0 : 1; // 0=remove, 1=add
+    event.xclient.data.l[0] = isOnTop ? 0 : 1; // 0 = remove, 1 = add
     event.xclient.data.l[1] = wmStateAbove;
     event.xclient.data.l[2] = 0;
-    event.xclient.data.l[3] = 1; // Source: application
+    event.xclient.data.l[3] = 1; // source is application
     
-    XSendEvent(display, DefaultRootWindow(display), False, 
-               SubstructureRedirectMask | SubstructureNotifyMask, &event);
+    XSendEvent(display, root, False, SubstructureNotifyMask | SubstructureRedirectMask, &event);
     XFlush(display);
     
-    std::cout << (isOnTop ? "Disabled" : "Enabled") << " always on top for window " << activeWindow << std::endl;
-    #endif
+    std::cout << "Toggled always-on-top state for window " << activeWindow << std::endl;
+#endif
 }
 
 } // namespace H

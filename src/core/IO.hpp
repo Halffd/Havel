@@ -77,6 +77,9 @@ public:
     static Key StringToVirtualKey(std::string keyName);
 
 private:
+    // X11 hotkey monitoring
+    void MonitorHotkeys();
+    
     // Platform specific implementations
     Display* display;
     std::map<std::string, Key> keyMap;

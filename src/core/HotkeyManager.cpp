@@ -58,36 +58,36 @@ void HotkeyManager::RegisterMediaHotkeys() {
 
 void HotkeyManager::RegisterWindowHotkeys() {
     // Window movement
-    io.Hotkey("alt+up", []() {
+    io.Hotkey("alt+Up", []() {
         WindowManager::MoveWindow(1);
     });
     
-    io.Hotkey("alt+down", []() {
+    io.Hotkey("alt+Down", []() {
         WindowManager::MoveWindow(2);
     });
     
-    io.Hotkey("alt+left", []() {
+    io.Hotkey("alt+Left", []() {
         WindowManager::MoveWindow(3);
     });
     
-    io.Hotkey("alt+right", []() {
+    io.Hotkey("alt+Right", []() {
         WindowManager::MoveWindow(4);
     });
     
     // Window resizing
-    io.Hotkey("shift+alt+up", []() {
+    io.Hotkey("shift+alt+Up", []() {
         WindowManager::ResizeWindow(1);
     });
     
-    io.Hotkey("shift+alt+down", []() {
+    io.Hotkey("shift+alt+Down", []() {
         WindowManager::ResizeWindow(2);
     });
     
-    io.Hotkey("shift+alt+left", []() {
+    io.Hotkey("shift+alt+Left", []() {
         WindowManager::ResizeWindow(3);
     });
     
-    io.Hotkey("shift+alt+right", []() {
+    io.Hotkey("shift+alt+Right", []() {
         WindowManager::ResizeWindow(4);
     });
     
@@ -104,7 +104,7 @@ void HotkeyManager::RegisterSystemHotkeys() {
         system("xdg-screensaver lock");
     });
     
-    io.Hotkey("ctrl+alt+delete", []() {
+    io.Hotkey("ctrl+alt+Delete", []() {
         // Show system monitor
         system("gnome-system-monitor &");
     });

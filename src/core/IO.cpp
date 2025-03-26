@@ -1,4 +1,5 @@
 #include "../utils/Logger.hpp"
+#include "../utils/Utils.hpp"
 #include "x11_includes.h"
 #include "IO.hpp"
 #include "core/DisplayManager.hpp"
@@ -264,65 +265,81 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     // Parse the hotkey string to get key and modifiers
     std::string keyName;
     int modifiers = 0;
-    
-    // Get key and modifiers from hotkey string
     std::string hotkeyStrCopy = hotkeyStr;
     
-    // Handle combined modifiers
-    if (hotkeyStrCopy.find("^+") != std::string::npos) {
-        modifiers |= ControlMask | ShiftMask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("^+"), 2, "");
-    }
-    if (hotkeyStrCopy.find("^!") != std::string::npos) {
-        modifiers |= ControlMask | Mod1Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("^!"), 2, "");
-    }
-    if (hotkeyStrCopy.find("^#") != std::string::npos) {
-        modifiers |= ControlMask | Mod4Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("^#"), 2, "");
-    }
-    if (hotkeyStrCopy.find("+!") != std::string::npos) {
-        modifiers |= ShiftMask | Mod1Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("+!"), 2, "");
-    }
-    if (hotkeyStrCopy.find("+#") != std::string::npos) {
-        modifiers |= ShiftMask | Mod4Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("+#"), 2, "");
-    }
-    if (hotkeyStrCopy.find("!#") != std::string::npos) {
-        modifiers |= Mod1Mask | Mod4Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("!#"), 2, "");
+    // Split by '+' to separate modifiers and key
+    std::vector<std::string> parts;
+    size_t pos = 0;
+    std::string delimiter = "+";
+    std::string str = hotkeyStrCopy;
+    
+    while ((pos = str.find(delimiter)) != std::string::npos) {
+        std::string part = str.substr(0, pos);
+        // Remove leading/trailing whitespace manually
+        part.erase(0, part.find_first_not_of(" \t\n\r\f\v"));
+        part.erase(part.find_last_not_of(" \t\n\r\f\v") + 1);
+        parts.push_back(part);
+        str.erase(0, pos + delimiter.length());
     }
     
-    // Handle individual modifiers
-    if (hotkeyStrCopy.find("^") != std::string::npos) {
-        modifiers |= ControlMask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("^"), 1, "");
-    }
-    if (hotkeyStrCopy.find("+") != std::string::npos) {
-        modifiers |= ShiftMask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("+"), 1, "");
-    }
-    if (hotkeyStrCopy.find("!") != std::string::npos) {
-        modifiers |= Mod1Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("!"), 1, "");
-    }
-    if (hotkeyStrCopy.find("#") != std::string::npos) {
-        modifiers |= Mod4Mask;
-        hotkeyStrCopy.replace(hotkeyStrCopy.find("#"), 1, "");
+    // Handle the last part
+    str.erase(0, str.find_first_not_of(" \t\n\r\f\v"));
+    str.erase(str.find_last_not_of(" \t\n\r\f\v") + 1);
+    if (!str.empty()) {
+        parts.push_back(str);
     }
     
-    // The remaining string is the key name
-    keyName = hotkeyStrCopy;
-    std::cout << "  Parsed as key: '" << keyName << "' with modifiers: " << modifiers << std::endl;
+    if (parts.empty()) {
+        std::cerr << "Invalid hotkey format: " << hotkeyStr << std::endl;
+        return false;
+    }
     
-    // Check if the key exists in our keyMap
+    // Last part is the key
+    keyName = parts.back();
+    parts.pop_back();
+    
+    // Process modifiers (convert to lowercase)
+    for (const auto& mod : parts) {
+        std::string modLower = mod;
+        std::transform(modLower.begin(), modLower.end(), modLower.begin(), ::tolower);
+        
+        if (modLower == "ctrl" || modLower == "control") {
+            modifiers |= ControlMask;
+        } else if (modLower == "shift") {
+            modifiers |= ShiftMask;
+        } else if (modLower == "alt") {
+            modifiers |= Mod1Mask;
+        } else if (modLower == "win" || modLower == "super") {
+            modifiers |= Mod4Mask;
+        }
+    }
+    
+    std::cout << "  Parsed modifiers: " << modifiers << ", key: '" << keyName << "'" << std::endl;
+    
+    // Handle special keys
     Key key = 0;
-    if (keyMap.find(ToLower(keyName)) != keyMap.end()) {
-        key = keyMap[ToLower(keyName)];
-    } else {
-        // Try to convert directly
-        key = StringToVirtualKey(keyName);
+    std::string keyNameLower = keyName;
+    std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
+    
+    if (keyNameLower == "up") key = XK_Up;
+    else if (keyNameLower == "down") key = XK_Down;
+    else if (keyNameLower == "left") key = XK_Left;
+    else if (keyNameLower == "right") key = XK_Right;
+    else if (keyNameLower == "space") key = XK_space;
+    else if (keyNameLower == "delete") key = XK_Delete;
+    else if (keyNameLower == "l") key = XK_l;
+    else if (keyNameLower == "r") key = XK_r;
+    else if (keyNameLower == "q") key = XK_q;
+    else if (keyNameLower == "xf86audioraisevolume") key = XF86XK_AudioRaiseVolume;
+    else if (keyNameLower == "xf86audiolowervolume") key = XF86XK_AudioLowerVolume;
+    else if (keyNameLower == "xf86audiomute") key = XF86XK_AudioMute;
+    else if (keyNameLower == "xf86audioplay") key = XF86XK_AudioPlay;
+    else if (keyNameLower == "xf86audiostop") key = XF86XK_AudioStop;
+    else if (keyNameLower == "xf86audionext") key = XF86XK_AudioNext;
+    else if (keyNameLower == "xf86audioprev") key = XF86XK_AudioPrev;
+    else if (keyName.length() == 1) {
+        // Try to convert single character keys
+        key = XStringToKeysym(keyName.c_str());
     }
     
     if (key == 0) {

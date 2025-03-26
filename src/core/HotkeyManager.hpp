@@ -3,6 +3,7 @@
 #include "../window/WindowManager.hpp"
 #include "MPVController.hpp"
 #include "ScriptEngine.hpp"
+#include "BrightnessManager.hpp"
 #include <functional>
 #include <filesystem>
 
@@ -32,5 +33,6 @@ private:
     WindowManager& windowManager;
     MPVController& mpv;
     ScriptEngine& scriptEngine;
+    BrightnessManager brightnessManager;
 };
 } 

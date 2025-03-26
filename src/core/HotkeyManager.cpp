@@ -5,7 +5,7 @@
 namespace H {
 
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
-    : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine) {
+    : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine), brightnessManager() {
     // Initialize
 }
 
@@ -21,6 +21,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         // Quit application
         std::cout << "Quitting application" << std::endl;
         exit(0);
+    });
+
+    // Brightness and gamma control
+    io.Hotkey("F7", [this]() {
+        // Decrease brightness
+        brightnessManager.decreaseBrightness();
+    });
+
+    io.Hotkey("F8", [this]() {
+        // Increase brightness
+        brightnessManager.increaseBrightness();
+    });
+
+    io.Hotkey("shift+F7", [this]() {
+        // Decrease gamma
+        brightnessManager.decreaseGamma();
+    });
+
+    io.Hotkey("shift+F8", [this]() {
+        // Increase gamma
+        brightnessManager.increaseGamma();
     });
 }
 

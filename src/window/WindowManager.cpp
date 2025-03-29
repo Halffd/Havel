@@ -1,6 +1,7 @@
 #include "WindowManager.hpp"
 #include "types.hpp"
 #include "core/DisplayManager.hpp"
+#include "utils/Logger.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -746,53 +747,50 @@ template int64_t WindowManager::Run<ProcessMethodType>(str, ProcessMethodType, s
 
 // Implementation of AHK-like features
 void WindowManager::MoveWindow(int direction, int distance) {
-    try {
-        if(distance < 1 || distance > 1000) {
-            throw std::range_error("Invalid move distance");
-        }
-
 #ifdef __linux__
-        Display* display = DisplayManager::GetDisplay();
-        if(!display) throw std::runtime_error("No X11 display");
-
-        Window win = GetActiveWindow();
-        if(win == 0) return;
-
-        XWindowAttributes attrs;
-        if(!XGetWindowAttributes(display, win, &attrs)) {
-            throw std::runtime_error("Failed to get window attributes");
-        }
-
-        int newX = attrs.x;
-        int newY = attrs.y;
-        
-        switch(direction) {
-            case 1: newY -= distance; break; // Up
-            case 2: newY += distance; break; // Down
-            case 3: newX -= distance; break; // Left
-            case 4: newX += distance; break; // Right
-        }
-        
-        XMoveWindow(display, win, newX, newY);
-        XFlush(display);
-#elif _WIN32
-        HWND hwnd = GetForegroundWindow();
-        RECT rect;
-        GetWindowRect(hwnd, &rect);
-        
-        switch(direction) {
-            case 1: rect.top -= distance; rect.bottom -= distance; break;
-            case 2: rect.top += distance; rect.bottom += distance; break;
-            case 3: rect.left -= distance; rect.right -= distance; break;
-            case 4: rect.left += distance; rect.right += distance; break;
-        }
-        
-        MoveWindow(hwnd, rect.left, rect.top, 
-                  rect.right - rect.left, rect.bottom - rect.top, TRUE);
-#endif
-    } catch(const std::exception& e) {
-        std::cerr << "Window move failed: " << e.what() << "\n";
+    Display* display = DisplayManager::GetDisplay();
+    if(!display) {
+        lo.error("No X11 display available");
+        return;
     }
+
+    ::Window win = GetActiveWindow();  // Use X11's Window type
+    if(win == 0) {
+        lo.error("No active window to move");
+        return;
+    }
+
+    std::string windowClass = GetActiveWindowClass();
+    lo.debug("Moving window of class '" + windowClass + "' in direction " + std::to_string(direction));
+
+    XWindowAttributes attrs;
+    if(!XGetWindowAttributes(display, win, &attrs)) {
+        lo.error("Failed to get window attributes");
+        return;
+    }
+
+    int newX = attrs.x;
+    int newY = attrs.y;
+
+    switch(direction) {
+        case 1: // Up
+            newY -= distance;
+            break;
+        case 2: // Down
+            newY += distance;
+            break;
+        case 3: // Left
+            newX -= distance;
+            break;
+        case 4: // Right
+            newX += distance;
+            break;
+    }
+
+    XMoveWindow(display, win, newX, newY);
+    XFlush(display);
+    lo.debug("Window moved to position: x=" + std::to_string(newX) + ", y=" + std::to_string(newY));
+#endif
 }
 
 void WindowManager::ResizeWindow(int direction, int distance) {
@@ -1035,6 +1033,40 @@ void WindowManager::ToggleAlwaysOnTop() {
     
     std::cout << "Toggled always-on-top state for window " << activeWindow << std::endl;
 #endif
+}
+
+std::string WindowManager::GetActiveWindowClass() {
+    Display* display = DisplayManager::GetDisplay();
+    if (!display) {
+        lo.error("Failed to get display in GetActiveWindowClass");
+        return "";
+    }
+
+    ::Window focusedWindow;  // Use X11's Window type
+    int revertTo;
+    if (XGetInputFocus(display, &focusedWindow, &revertTo) == 0) {
+        lo.error("Failed to get input focus");
+        return "";
+    }
+
+    if (focusedWindow == None) {
+        lo.debug("No window currently focused");
+        return "";
+    }
+
+    XClassHint classHint;
+    Status status = XGetClassHint(display, focusedWindow, &classHint);
+    if (status == 0) {
+        lo.debug("Failed to get class hint for window");
+        return "";
+    }
+
+    std::string className(classHint.res_class);
+    XFree(classHint.res_name);
+    XFree(classHint.res_class);
+    
+    lo.debug("Active window class: " + className);
+    return className;
 }
 
 } // namespace H

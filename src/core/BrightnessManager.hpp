@@ -48,7 +48,8 @@ public:
     void setLocation(const std::string& lat, const std::string& lon);
 
     // Getters
-    double getCurrentBrightness() const { return settings.currentBrightness; }
+    std::optional<double> getCurrentBrightness();
+    double getCurrentBrightnessValue() const { return settings.currentBrightness; }
     int getCurrentGamma() const { return settings.currentGamma; }
 
 private:
@@ -62,7 +63,6 @@ private:
     bool adjustBrightnessRandr(double& dayBrightness, double& nightBrightness);
     bool adjustBrightnessWayland(double& dayBrightness, double& nightBrightness);
     bool executeGammastep();
-    std::optional<double> getCurrentBrightness();
 
     Settings settings;
     const int MIN_TEMPERATURE = 1000;

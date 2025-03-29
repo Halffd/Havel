@@ -182,7 +182,8 @@ bool BrightnessManager::executeGammastep() {
     cmd << "gammastep -P -m " << displayMethod
         << " -l " << settings.latitude << ":" << settings.longitude
         << " -t " << settings.dayTemperature << ":" << settings.nightTemperature
-        << " -o -b " << settings.dayBrightness << ":" << settings.nightBrightness;
+        << " -b " << settings.dayBrightness << ":" << settings.nightBrightness
+        << " -O " << settings.currentGamma;
 
     if (settings.verbose) {
         lo.info("Executing command: " + cmd.str());
@@ -272,11 +273,12 @@ bool BrightnessManager::setDefaultBrightness() {
 bool BrightnessManager::increaseBrightness(double amount) {
     double newBrightness = std::min(1.0, settings.currentBrightness + amount);
     if (newBrightness != settings.currentBrightness) {
+        lo.info("Increasing brightness from " + std::to_string(settings.currentBrightness) + 
+                " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
-        return setBrightnessAndTemperature(
-            std::to_string(settings.currentBrightness),
-            std::to_string(settings.currentGamma)
-        );
+        settings.dayBrightness = newBrightness;
+        settings.nightBrightness = newBrightness;
+        return executeGammastep();
     }
     return false;
 }
@@ -284,11 +286,12 @@ bool BrightnessManager::increaseBrightness(double amount) {
 bool BrightnessManager::decreaseBrightness(double amount) {
     double newBrightness = std::max(0.0, settings.currentBrightness - amount);
     if (newBrightness != settings.currentBrightness) {
+        lo.info("Decreasing brightness from " + std::to_string(settings.currentBrightness) + 
+                " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
-        return setBrightnessAndTemperature(
-            std::to_string(settings.currentBrightness),
-            std::to_string(settings.currentGamma)
-        );
+        settings.dayBrightness = newBrightness;
+        settings.nightBrightness = newBrightness;
+        return executeGammastep();
     }
     return false;
 }

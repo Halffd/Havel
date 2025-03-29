@@ -12,6 +12,11 @@
 #include <X11/Xutil.h>
 #include <unistd.h>
 #include <sys/wait.h>
+
+// Use X11's Window type directly
+typedef ::Window XWindow;
+#else
+typedef unsigned long XWindow;
 #endif
 
 namespace H {
@@ -22,14 +27,14 @@ public:
     ~WindowManager() = default;
 
     // Static window methods
-    static wID GetActiveWindow();
-    static wID GetwIDByPID(pID pid);
-    static wID GetwIDByProcessName(cstr processName);
-    static wID FindByClass(cstr className); 
-    static wID FindByTitle(cstr title);
-    static wID Find(cstr identifier);
-    static wID FindWindowInGroup(cstr groupName);
-    static wID NewWindow(cstr name, std::vector<int>* dimensions = nullptr, bool hide = false);
+    static XWindow GetActiveWindow();
+    static XWindow GetwIDByPID(pID pid);
+    static XWindow GetwIDByProcessName(cstr processName);
+    static XWindow FindByClass(cstr className);
+    static XWindow FindByTitle(cstr title);
+    static XWindow Find(cstr identifier);
+    static XWindow FindWindowInGroup(cstr groupName);
+    static XWindow NewWindow(cstr name, std::vector<int>* dimensions = nullptr, bool hide = false);
 
     // Process management
     static ProcessMethodType toMethod(cstr method);
@@ -78,6 +83,9 @@ public:
     static void WinMoveResize();
     static void WinSetAlwaysOnTop(bool onTop);
     static void SnapWindowWithPadding(int position, int padding);
+
+    // New method
+    static std::string GetActiveWindowClass();
 
 private:
     static bool InitializeX11();

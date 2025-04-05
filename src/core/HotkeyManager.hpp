@@ -53,6 +53,9 @@ public:
     // MPV hotkey management
     void grabMPVHotkeys();
     void ungrabMPVHotkeys();
+    
+    // Black overlay functionality
+    void showBlackOverlay();
 
     // Contextual hotkey support
     bool AddContextualHotkey(const std::string& key, const std::string& condition,

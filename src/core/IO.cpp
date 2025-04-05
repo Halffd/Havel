@@ -206,7 +206,7 @@ void IO::HandleMouseEvent(XEvent& event) {
 Key IO::handleKeyString(const std::string& key) {
     lo.debug("Handling key string: " + key);
     
-    // Direct keycode handling (format: "kc123")
+    // Handle keycodes (kcXXX)
     if (key.size() > 2 && key.substr(0, 2) == "kc") {
         try {
             int keycode = std::stoi(key.substr(2));

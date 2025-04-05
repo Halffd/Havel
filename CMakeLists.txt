@@ -5,6 +5,13 @@ project(HvC)
 find_package(X11 REQUIRED)
 find_package(Lua REQUIRED)
 
+# Check for XRandR extension for multi-monitor support
+find_package(X11 COMPONENTS Xrandr)
+if(X11_Xrandr_FOUND)
+    add_compile_definitions(HAVE_XRANDR)
+    message(STATUS "XRandR found, enabling multi-monitor support")
+endif()
+
 # Add include directories
 include_directories(
     ${PROJECT_SOURCE_DIR}/src
@@ -64,6 +71,11 @@ target_link_libraries(hvc
     pthread
 )
 
+# Add XRandR library if found
+if(X11_Xrandr_FOUND)
+    target_link_libraries(hvc ${X11_Xrandr_LIB})
+endif()
+
 # Create test executable
 add_executable(hotkey_test src/tests/hotkey_test.cpp ${MAIN_SOURCES} ${HEADERS})
 
@@ -77,6 +89,11 @@ target_link_libraries(hotkey_test
     ${LUA_LIBRARIES}
     pthread
 )
+
+# Add XRandR library if found
+if(X11_Xrandr_FOUND)
+    target_link_libraries(hotkey_test ${X11_Xrandr_LIB})
+endif()
 
 # Install targets
 install(TARGETS hvc hotkey_test

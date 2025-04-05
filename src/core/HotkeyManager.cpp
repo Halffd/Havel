@@ -12,6 +12,14 @@
 #include <algorithm>
 #include <ctime>
 #include <regex>
+#include <thread>
+#include <chrono>
+#include "core/DisplayManager.hpp"
+
+// Include XRandR for multi-monitor support
+#ifdef __linux__
+#include <X11/extensions/Xrandr.h>
+#endif
 
 namespace H {
 
@@ -238,7 +246,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Context-sensitive hotkeys
-    AddContextualHotkey("kc97", "IsZooming",
+    AddContextualHotkey("kc0", "IsZooming",
         [this]() { // When zooming
             io.PressKey("ctrl", true);
             io.PressKey("/", true);
@@ -562,6 +570,36 @@ void HotkeyManager::RegisterSystemHotkeys() {
     io.Hotkey("ctrl+alt+Delete", []() {
         // Show system monitor
         system("gnome-system-monitor &");
+    });
+
+    // Volume control
+    AddHotkey("alt+ctrl+-", [this]() {
+        brightnessManager.decreaseBrightness();
+    });
+    
+    AddHotkey("alt+ctrl+=", [this]() {
+        brightnessManager.increaseBrightness();
+    });
+    
+    // Brightness control
+    AddHotkey("alt+shift+-", [this]() {
+        brightnessManager.decreaseGamma();
+    });
+    
+    AddHotkey("alt+shift+=", [this]() {
+        brightnessManager.increaseGamma();
+    });
+    
+    // Toggle zooming mode
+    AddHotkey("alt+shift+z", [this]() {
+        setZooming(!isZooming());
+        logWindowEvent("ZOOM_MODE", (isZooming() ? "Enabled" : "Disabled"));
+    });
+    
+    // Add new hotkey for full-screen black window
+    AddHotkey("alt+d", [this]() {
+        showBlackOverlay();
+        logWindowEvent("BLACK_OVERLAY", "Showing full-screen black overlay");
     });
 }
 
@@ -894,7 +932,7 @@ std::string HotkeyManager::convertKeyName(const std::string& keyName) {
     
     // Special case for NoSymbol
     if (keyName == "NoSymbol") {
-        result = "kc97"; // Using keycode 97 as requested
+        result = "kc0";
         logKeyConversion(keyName, result);
         return result;
     }
@@ -1152,6 +1190,137 @@ void HotkeyManager::ungrabMPVHotkeys() {
     }
     
     lo.info("Released all MPV hotkeys for normal mode");
+}
+
+void HotkeyManager::showBlackOverlay() {
+    // Log that we're showing the black overlay
+    lo.info("Showing black overlay window on all monitors");
+    
+    Display* display = DisplayManager::GetDisplay();
+    if (!display) {
+        lo.error("Failed to get display for black overlay");
+        return;
+    }
+    
+    // Get the root window - use X11's Window type here, not our Window class
+    ::Window rootWindow = DefaultRootWindow(display);
+    
+    // Get screen dimensions (this will get the primary monitor dimensions)
+    Screen* screen = DefaultScreenOfDisplay(display);
+    int screenWidth = WidthOfScreen(screen);
+    int screenHeight = HeightOfScreen(screen);
+    
+    // Check if we can get all monitor information
+    int numMonitors = 0;
+    bool multiMonitorSupport = false;
+    
+    #ifdef HAVE_XRANDR
+    // Use XRandR to get multi-monitor information
+    XRRScreenResources* resources = XRRGetScreenResources(display, rootWindow);
+    if (resources) {
+        numMonitors = resources->noutput;
+        multiMonitorSupport = true;
+        
+        // Get total dimensions encompassing all monitors
+        int minX = 0, minY = 0, maxX = 0, maxY = 0;
+        
+        for (int i = 0; i < resources->noutput; i++) {
+            XRROutputInfo* outputInfo = XRRGetOutputInfo(display, resources, resources->outputs[i]);
+            if (outputInfo && outputInfo->connection == RR_Connected) {
+                // Find the CRTC for this output
+                XRRCrtcInfo* crtcInfo = XRRGetCrtcInfo(display, resources, outputInfo->crtc);
+                if (crtcInfo) {
+                    // Update bounds
+                    minX = std::min(minX, crtcInfo->x);
+                    minY = std::min(minY, crtcInfo->y);
+                    maxX = std::max(maxX, crtcInfo->x + (int)crtcInfo->width);
+                    maxY = std::max(maxY, crtcInfo->y + (int)crtcInfo->height);
+                    
+                    XRRFreeCrtcInfo(crtcInfo);
+                }
+            }
+            if (outputInfo) {
+                XRRFreeOutputInfo(outputInfo);
+            }
+        }
+        
+        // If we got valid dimensions
+        if (maxX > minX && maxY > minY) {
+            screenWidth = maxX - minX;
+            screenHeight = maxY - minY;
+        }
+        
+        XRRFreeScreenResources(resources);
+    }
+    #endif
+    
+    // Create black window attributes
+    XSetWindowAttributes attrs;
+    attrs.override_redirect = True;  // Bypass window manager
+    attrs.background_pixel = BlackPixel(display, DefaultScreen(display));
+    attrs.border_pixel = BlackPixel(display, DefaultScreen(display));
+    attrs.event_mask = ButtonPressMask | KeyPressMask;  // Capture events to close it
+    
+    // Create the black window - save as X11's Window type, not our Window class
+    ::Window blackWindow = XCreateWindow(display, 
+                                      rootWindow,
+                                      0, 0,                            // x, y
+                                      screenWidth, screenHeight,       // width, height
+                                      0,                               // border width
+                                      CopyFromParent,                  // depth
+                                      InputOutput,                     // class
+                                      CopyFromParent,                  // visual
+                                      CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
+                                      &attrs);
+    
+    // Make it topmost
+    XSetTransientForHint(display, blackWindow, rootWindow);
+    
+    // Map the window
+    XMapRaised(display, blackWindow);
+    XFlush(display);
+    
+    // Create a thread to handle events (to close the window)
+    std::thread eventThread([display, blackWindow]() {
+        XEvent event;
+        bool running = true;
+        
+        // Set up timeout for auto-closing (5 minutes)
+        auto startTime = std::chrono::steady_clock::now();
+        const auto timeout = std::chrono::minutes(5);
+        
+        while (running) {
+            // Check for timeout
+            auto now = std::chrono::steady_clock::now();
+            if (now - startTime > timeout) {
+                lo.info("Black overlay auto-closed after timeout");
+                running = false;
+                break;
+            }
+            
+            // Check for events
+            while (XPending(display) > 0) {
+                XNextEvent(display, &event);
+                
+                // Close on any key press or mouse click
+                if (event.type == KeyPress || event.type == ButtonPress) {
+                    running = false;
+                    lo.info("Black overlay closed by user input");
+                    break;
+                }
+            }
+            
+            // Sleep to reduce CPU usage
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Destroy the window
+        XDestroyWindow(display, blackWindow);
+        XFlush(display);
+    });
+    
+    // Detach the thread to let it run independently
+    eventThread.detach();
 }
 
 } // namespace H 

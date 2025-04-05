@@ -68,6 +68,12 @@ public:
     int ParseModifiers(std::string str);
     void AssignHotkey(HotKey hotkey, int id);
     
+    // Add new methods for dynamic hotkey grabbing/ungrabbing
+    bool GrabHotkey(int hotkeyId);
+    bool UngrabHotkey(int hotkeyId);
+    bool GrabHotkeysByPrefix(const std::string& prefix);
+    bool UngrabHotkeysByPrefix(const std::string& prefix);
+    
     // Static methods
     static void removeSpecialCharacters(std::string &keyName);
     static void HandleKeyEvent(XEvent& event);

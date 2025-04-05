@@ -203,37 +203,55 @@ void IO::HandleMouseEvent(XEvent& event) {
 }
 
 // Static method to handle key strings
-Key IO::handleKeyString(const std::string& keystr) {
-    // Use DisplayManager to get the display
-    Display* display = DisplayManager::GetDisplay();
-    if (!display) {
-        std::cerr << "No display available for key handling" << std::endl;
-        return 0;
-    }
+Key IO::handleKeyString(const std::string& key) {
+    lo.debug("Handling key string: " + key);
     
-    KeySym keysym = 0;
-    
-    if (keystr.length() == 1) {
-        // Single character key
-        keysym = XStringToKeysym(keystr.c_str());
-    } else {
-        // Named key
-        keysym = XStringToKeysym(keystr.c_str());
-        if (keysym == NoSymbol) {
-            // Try with "XK_" prefix
-            std::string xkName = "XK_" + keystr;
-            keysym = XStringToKeysym(xkName.c_str());
+    // Direct keycode handling (format: "kc123")
+    if (key.size() > 2 && key.substr(0, 2) == "kc") {
+        try {
+            int keycode = std::stoi(key.substr(2));
+            lo.debug("Detected direct keycode: " + std::to_string(keycode));
+            return keycode;
+        } catch (const std::exception& e) {
+            lo.error("Failed to parse keycode from '" + key + "': " + e.what());
+            return -1;
         }
     }
     
-    if (keysym == NoSymbol) {
-        // Try as a scan code
-        int value = std::stoi(keystr);
-        KeyCode keycode = value;
-        keysym = XkbKeycodeToKeysym(display, keycode, 0, 0);
+    // Special handling for NoSymbol
+    if (key == "NoSymbol") {
+        lo.debug("Explicitly handling NoSymbol as keysym 0x0");
+        return 0x0; // Use keysym 0x0 for NoSymbol as requested
     }
     
-    return keysym;
+    // Handle the "Menu" key explicitly
+    if (key == "Menu") {
+        lo.debug("Explicitly handling Menu key as keycode 135");
+        return 135; // Direct keycode for Menu key on many keyboards
+    }
+    
+    // The rest of the implementation handles normal keys
+    KeySym keysym = XStringToKeysym(key.c_str());
+    if (keysym == NoSymbol) {
+        lo.warning("Key '" + key + "' could not be converted to KeySym (NoSymbol)");
+        return -1;
+    }
+    
+    Display* display = DisplayManager::GetDisplay();
+    if (!display) {
+        lo.error("No X display available for key conversion");
+        return -1;
+    }
+    
+    int keycode = XKeysymToKeycode(display, keysym);
+    lo.debug("Converted key '" + key + "' to keycode " + std::to_string(keycode) + " (keysym: " + std::to_string(keysym) + ")");
+    
+    if (keycode == 0) {
+        lo.warning("KeySym for '" + key + "' could not be converted to keycode");
+        return -1;
+    }
+    
+    return keycode;
 }
 
 // Method to send keys
@@ -281,50 +299,58 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     int modifiers = 0;
     std::string hotkeyStrCopy = hotkeyStr;
     
-    // Split by '+' to separate modifiers and key
-    std::vector<std::string> parts;
-    size_t pos = 0;
-    std::string delimiter = "+";
-    std::string str = hotkeyStrCopy;
-    
-    while ((pos = str.find(delimiter)) != std::string::npos) {
-        std::string part = str.substr(0, pos);
-        // Remove leading/trailing whitespace manually
-        part.erase(0, part.find_first_not_of(" \t\n\r\f\v"));
-        part.erase(part.find_last_not_of(" \t\n\r\f\v") + 1);
-        parts.push_back(part);
-        str.erase(0, pos + delimiter.length());
-    }
-    
-    // Handle the last part
-    str.erase(0, str.find_first_not_of(" \t\n\r\f\v"));
-    str.erase(str.find_last_not_of(" \t\n\r\f\v") + 1);
-    if (!str.empty()) {
-        parts.push_back(str);
-    }
-    
-    if (parts.empty()) {
-        std::cerr << "Invalid hotkey format: " << hotkeyStr << std::endl;
-        return false;
-    }
-    
-    // Last part is the key
-    keyName = parts.back();
-    parts.pop_back();
-    
-    // Process modifiers (convert to lowercase)
-    for (const auto& mod : parts) {
-        std::string modLower = mod;
-        std::transform(modLower.begin(), modLower.end(), modLower.begin(), ::tolower);
+    // Check if this is a direct keycode (format: "kcXXX")
+    bool isDirectKeycode = false;
+    if (hotkeyStrCopy.size() > 2 && hotkeyStrCopy.substr(0, 2) == "kc") {
+        isDirectKeycode = true;
+        keyName = hotkeyStrCopy;
+        std::cout << "Direct keycode hotkey detected: " << keyName << std::endl;
+    } else {
+        // Split by '+' to separate modifiers and key
+        std::vector<std::string> parts;
+        size_t pos = 0;
+        std::string delimiter = "+";
+        std::string str = hotkeyStrCopy;
         
-        if (modLower == "ctrl" || modLower == "control") {
-            modifiers |= ControlMask;
-        } else if (modLower == "shift") {
-            modifiers |= ShiftMask;
-        } else if (modLower == "alt") {
-            modifiers |= Mod1Mask;
-        } else if (modLower == "win" || modLower == "super") {
-            modifiers |= Mod4Mask;
+        while ((pos = str.find(delimiter)) != std::string::npos) {
+            std::string part = str.substr(0, pos);
+            // Remove leading/trailing whitespace manually
+            part.erase(0, part.find_first_not_of(" \t\n\r\f\v"));
+            part.erase(part.find_last_not_of(" \t\n\r\f\v") + 1);
+            parts.push_back(part);
+            str.erase(0, pos + delimiter.length());
+        }
+        
+        // Handle the last part
+        str.erase(0, str.find_first_not_of(" \t\n\r\f\v"));
+        str.erase(str.find_last_not_of(" \t\n\r\f\v") + 1);
+        if (!str.empty()) {
+            parts.push_back(str);
+        }
+        
+        if (parts.empty()) {
+            std::cerr << "Invalid hotkey format: " << hotkeyStr << std::endl;
+            return false;
+        }
+        
+        // Last part is the key
+        keyName = parts.back();
+        parts.pop_back();
+        
+        // Process modifiers (convert to lowercase)
+        for (const auto& mod : parts) {
+            std::string modLower = mod;
+            std::transform(modLower.begin(), modLower.end(), modLower.begin(), ::tolower);
+            
+            if (modLower == "ctrl" || modLower == "control") {
+                modifiers |= ControlMask;
+            } else if (modLower == "shift") {
+                modifiers |= ShiftMask;
+            } else if (modLower == "alt") {
+                modifiers |= Mod1Mask;
+            } else if (modLower == "win" || modLower == "super") {
+                modifiers |= Mod4Mask;
+            }
         }
     }
     
@@ -332,34 +358,44 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     
     // Handle special keys
     Key key = 0;
-    std::string keyNameLower = keyName;
-    std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
     
-    // First check if the key exists in our keyMap
-    auto it = keyMap.find(keyNameLower);
-    if (it != keyMap.end()) {
-        key = it->second;
-    }
-    // If not in keyMap, try special keys
-    else if (keyNameLower == "up") key = XK_Up;
-    else if (keyNameLower == "down") key = XK_Down;
-    else if (keyNameLower == "left") key = XK_Left;
-    else if (keyNameLower == "right") key = XK_Right;
-    else if (keyNameLower == "space") key = XK_space;
-    else if (keyNameLower == "delete") key = XK_Delete;
-    else if (keyNameLower == "l") key = XK_l;
-    else if (keyNameLower == "r") key = XK_r;
-    else if (keyNameLower == "q") key = XK_q;
-    else if (keyNameLower == "xf86audioraisevolume") key = XF86XK_AudioRaiseVolume;
-    else if (keyNameLower == "xf86audiolowervolume") key = XF86XK_AudioLowerVolume;
-    else if (keyNameLower == "xf86audiomute") key = XF86XK_AudioMute;
-    else if (keyNameLower == "xf86audioplay") key = XF86XK_AudioPlay;
-    else if (keyNameLower == "xf86audiostop") key = XF86XK_AudioStop;
-    else if (keyNameLower == "xf86audionext") key = XF86XK_AudioNext;
-    else if (keyNameLower == "xf86audioprev") key = XF86XK_AudioPrev;
-    else if (keyName.length() == 1) {
-        // Try to convert single character keys
-        key = XStringToKeysym(keyName.c_str());
+    if (isDirectKeycode) {
+        // For direct keycodes, use handleKeyString which now has better keycode handling
+        key = handleKeyString(keyName);
+        if (key == -1) {
+            std::cerr << "Failed to interpret direct keycode: " << keyName << std::endl;
+            return false;
+        }
+    } else {
+        std::string keyNameLower = keyName;
+        std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
+        
+        // First check if the key exists in our keyMap
+        auto it = keyMap.find(keyNameLower);
+        if (it != keyMap.end()) {
+            key = it->second;
+        }
+        // If not in keyMap, try special keys
+        else if (keyNameLower == "up") key = XK_Up;
+        else if (keyNameLower == "down") key = XK_Down;
+        else if (keyNameLower == "left") key = XK_Left;
+        else if (keyNameLower == "right") key = XK_Right;
+        else if (keyNameLower == "space") key = XK_space;
+        else if (keyNameLower == "delete") key = XK_Delete;
+        else if (keyNameLower == "l") key = XK_l;
+        else if (keyNameLower == "r") key = XK_r;
+        else if (keyNameLower == "q") key = XK_q;
+        else if (keyNameLower == "xf86audioraisevolume") key = XF86XK_AudioRaiseVolume;
+        else if (keyNameLower == "xf86audiolowervolume") key = XF86XK_AudioLowerVolume;
+        else if (keyNameLower == "xf86audiomute") key = XF86XK_AudioMute;
+        else if (keyNameLower == "xf86audioplay") key = XF86XK_AudioPlay;
+        else if (keyNameLower == "xf86audiostop") key = XF86XK_AudioStop;
+        else if (keyNameLower == "xf86audionext") key = XF86XK_AudioNext;
+        else if (keyNameLower == "xf86audioprev") key = XF86XK_AudioPrev;
+        else if (keyName.length() == 1) {
+            // Try to convert single character keys
+            key = XStringToKeysym(keyName.c_str());
+        }
     }
     
     if (key == 0) {
@@ -1001,6 +1037,157 @@ bool IO::AddHotkey(const std::string& alias, Key key, int modifiers, std::functi
     hotkeyCount++;
     hotkeys[hotkeyCount] = hotkey;
     return true;
+}
+
+// New methods for dynamic hotkey grabbing/ungrabbing
+bool IO::GrabHotkey(int hotkeyId) {
+#ifdef __linux__
+    if (!display) return false;
+    
+    auto it = hotkeys.find(hotkeyId);
+    if (it == hotkeys.end()) {
+        std::cerr << "Hotkey ID not found: " << hotkeyId << std::endl;
+        return false;
+    }
+    
+    const HotKey& hotkey = it->second;
+    Window root = DefaultRootWindow(display);
+    KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+    
+    if (keycode == 0) {
+        std::cerr << "Invalid keycode for hotkey: " << hotkey.alias << std::endl;
+        return false;
+    }
+    
+    // Try to grab the key with error handling
+    Status status = XGrabKey(display, keycode, hotkey.modifiers, root, True, 
+                         GrabModeAsync, GrabModeAsync);
+    
+    if (status != Success) {
+        std::cerr << "Failed to grab key for hotkey: " << hotkey.alias << " (status: " << status << ")" << std::endl;
+        return false;
+    }
+    
+    // Also grab with numlock and capslock variations
+    unsigned int numlockmask = 0;
+    XModifierKeymap* modmap = XGetModifierMapping(display);
+    if (modmap && modmap->max_keypermod > 0) {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < modmap->max_keypermod; j++) {
+                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
+                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
+                    numlockmask = (1 << i);
+                    break;
+                }
+            }
+        }
+        XFreeModifiermap(modmap);
+    }
+    
+    // Add grabs for numlock and capslock combinations
+    if (numlockmask) {
+        XGrabKey(display, keycode, hotkey.modifiers | numlockmask, root, True, 
+                GrabModeAsync, GrabModeAsync);
+        XGrabKey(display, keycode, hotkey.modifiers | LockMask, root, True, 
+                GrabModeAsync, GrabModeAsync);
+        XGrabKey(display, keycode, hotkey.modifiers | numlockmask | LockMask, root, True, 
+                GrabModeAsync, GrabModeAsync);
+    }
+    
+    XSync(display, False);
+    std::cout << "Successfully grabbed hotkey: " << hotkey.alias << std::endl;
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool IO::UngrabHotkey(int hotkeyId) {
+#ifdef __linux__
+    if (!display) return false;
+    
+    auto it = hotkeys.find(hotkeyId);
+    if (it == hotkeys.end()) {
+        std::cerr << "Hotkey ID not found: " << hotkeyId << std::endl;
+        return false;
+    }
+    
+    const HotKey& hotkey = it->second;
+    Window root = DefaultRootWindow(display);
+    KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+    
+    if (keycode == 0) {
+        std::cerr << "Invalid keycode for hotkey: " << hotkey.alias << std::endl;
+        return false;
+    }
+    
+    // Ungrab the key and its modifier combinations
+    XUngrabKey(display, keycode, hotkey.modifiers, root);
+    
+    // Also ungrab numlock and capslock variations
+    unsigned int numlockmask = 0;
+    XModifierKeymap* modmap = XGetModifierMapping(display);
+    if (modmap && modmap->max_keypermod > 0) {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < modmap->max_keypermod; j++) {
+                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
+                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
+                    numlockmask = (1 << i);
+                    break;
+                }
+            }
+        }
+        XFreeModifiermap(modmap);
+    }
+    
+    if (numlockmask) {
+        XUngrabKey(display, keycode, hotkey.modifiers | numlockmask, root);
+        XUngrabKey(display, keycode, hotkey.modifiers | LockMask, root);
+        XUngrabKey(display, keycode, hotkey.modifiers | numlockmask | LockMask, root);
+    }
+    
+    XSync(display, False);
+    std::cout << "Successfully ungrabbed hotkey: " << hotkey.alias << std::endl;
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool IO::GrabHotkeysByPrefix(const std::string& prefix) {
+#ifdef __linux__
+    if (!display) return false;
+    
+    bool success = true;
+    for (const auto& [id, hotkey] : hotkeys) {
+        if (hotkey.alias.find(prefix) == 0) {
+            if (!GrabHotkey(id)) {
+                success = false;
+            }
+        }
+    }
+    return success;
+#else
+    return false;
+#endif
+}
+
+bool IO::UngrabHotkeysByPrefix(const std::string& prefix) {
+#ifdef __linux__
+    if (!display) return false;
+    
+    bool success = true;
+    for (const auto& [id, hotkey] : hotkeys) {
+        if (hotkey.alias.find(prefix) == 0) {
+            if (!UngrabHotkey(id)) {
+                success = false;
+            }
+        }
+    }
+    return success;
+#else
+    return false;
+#endif
 }
 
 } // namespace H

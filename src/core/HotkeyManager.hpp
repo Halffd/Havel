@@ -45,15 +45,25 @@ public:
     BrightnessManager& getBrightnessManager() { return brightnessManager; }
 
     // Mode management
-    void setMode(const std::string& mode) { currentMode = mode; }
+    void setMode(const std::string& mode);
     std::string getMode() const { return currentMode; }
     bool isZooming() const { return zoomingMode; }
     void setZooming(bool zooming) { zoomingMode = zooming; }
+    
+    // MPV hotkey management
+    void grabMPVHotkeys();
+    void ungrabMPVHotkeys();
 
     // Contextual hotkey support
     bool AddContextualHotkey(const std::string& key, const std::string& condition,
                            std::function<void()> trueAction,
                            std::function<void()> falseAction = nullptr);
+    
+    // Overload that accepts an ID parameter
+    int AddContextualHotkey(const std::string& key, const std::string& condition,
+                          std::function<void()> trueAction,
+                          std::function<void()> falseAction = nullptr,
+                          int id = 0);
 
 private:
     IO& io;
@@ -180,5 +190,8 @@ private:
     void loadVideoSites();
     bool hasVideoTimedOut() const;
     void updateLastVideoCheck();
+
+    // Store IDs of MPV hotkeys for grab/ungrab
+    std::vector<int> mpvHotkeyIds;
 };
 } 

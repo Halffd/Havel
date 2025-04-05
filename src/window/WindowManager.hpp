@@ -56,6 +56,7 @@ public:
 
     // Window switching
     static void AltTab();
+    static void UpdatePreviousActiveWindow();
 
     // Helper methods
     static str GetIdentifierType(cstr identifier);
@@ -96,6 +97,9 @@ private:
     std::string wmName;
     bool wmSupported{false};
     WindowManagerDetector::WMType wmType{};  // Default initialization
+    
+    // Static member to track previous active window
+    static XWindow previousActiveWindow;
 };
 
 // Template definition

@@ -15,16 +15,15 @@
 #include <sstream>
 #include <set>
 #include <filesystem>
+#include <vector>
+#include <iostream>
 #include "../common/types.hpp"
 
-// Forward declarations
 namespace H {
-    class IO;
-    class WindowManager;
-    class Configs; // Forward declare Configs class
-}
 
-namespace H {
+// Forward declarations
+class IO;
+class WindowManager;
 
 // Path handling helper functions
 namespace ConfigPaths {
@@ -222,6 +221,21 @@ inline void Configs::Set<std::string>(const std::string& key, std::string value)
             watcher(oldValue, settings[key]);
         }
     }
+}
+
+template<>
+inline bool Configs::Convert<bool>(const std::string& val) {
+    return val == "true" || val == "1" || val == "yes";
+}
+
+template<>
+inline int Configs::Convert<int>(const std::string& val) {
+    return std::stoi(val);
+}
+
+template<>
+inline float Configs::Convert<float>(const std::string& val) {
+    return std::stof(val);
 }
 
 // Now Mappings class can properly reference Configs

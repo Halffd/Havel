@@ -22,6 +22,13 @@ using pID = unsigned long;
 // Define group type
 using group = std::map<std::string, std::vector<std::string>>;
 
+// Display server types
+enum class DisplayServer {
+    Unknown,
+    X11,
+    Wayland
+};
+
 // Process method enum
 enum class ProcessMethodType {
     WaitForTerminate,

@@ -1,9 +1,8 @@
 #pragma once
 
 #include <string>
-#include <fstream>
-#include <iostream>
 #include <mutex>
+#include <memory>
 
 namespace H {
 
@@ -41,7 +40,8 @@ private:
     std::string getLevelString(Level level);
     std::string getCurrentTimestamp();
 
-    std::ofstream logFile;
+    struct Impl;
+    std::unique_ptr<Impl> pImpl;
     Level currentLevel;
     std::mutex mutex;
     bool consoleOutput;

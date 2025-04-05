@@ -5,27 +5,31 @@
 #include <filesystem>
 #include <chrono>
 #include <sstream>
+#include <fstream>
 
 // Define the global logger instance
 H::Logger& lo = H::Logger::getInstance();
 
 namespace H {
 
-Logger::Logger() : currentLevel(Level::INFO), consoleOutput(true) {
+struct Logger::Impl {
+    std::ofstream logFile;
+};
+
+Logger::Logger() 
+    : pImpl(std::make_unique<Impl>())
+    , currentLevel(Level::INFO)
+    , consoleOutput(true) {
 }
 
-Logger::~Logger() {
-    if (logFile.is_open()) {
-        logFile.close();
-    }
-}
+Logger::~Logger() = default;
 
 void Logger::setLogFile(const std::string& filename) {
     std::lock_guard<std::mutex> lock(mutex);
-    if (logFile.is_open()) {
-        logFile.close();
+    if (pImpl->logFile.is_open()) {
+        pImpl->logFile.close();
     }
-    logFile.open(filename, std::ios::app);
+    pImpl->logFile.open(filename, std::ios::app);
 }
 
 void Logger::setLogLevel(Level level) {
@@ -63,9 +67,9 @@ void Logger::log(Level level, const std::string& message) {
     std::string levelStr = getLevelString(level);
     std::string logMessage = timestamp + " [" + levelStr + "] " + message + "\n";
 
-    if (logFile.is_open()) {
-        logFile << logMessage;
-        logFile.flush();
+    if (pImpl->logFile.is_open()) {
+        pImpl->logFile << logMessage;
+        pImpl->logFile.flush();
     }
 
     if (consoleOutput) {

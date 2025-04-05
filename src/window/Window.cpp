@@ -1,64 +1,51 @@
 #include "Window.hpp"
-#include "core/DisplayManager.hpp"
+#include "WindowManager.hpp"
 #include <iostream>
 #include <sstream>
+#include <memory>
+#include <X11/Xlib.h>
 
 #ifdef __linux__
-#include <X11/Xlib.h>
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
-// Define the display variable
-Display* display = nullptr;
-#endif
 
-// External X11 display variable from WindowManager.cpp
-#ifdef __linux__
-// extern Display* display; // Removing this since we define it above
+// Initialize static members
+std::shared_ptr<Display> H::Window::display;
+H::DisplayServer H::Window::displayServer = H::DisplayServer::X11;
+
+// Custom deleter for Display
+struct DisplayDeleter {
+    void operator()(Display* d) {
+        if (d) {
+            XCloseDisplay(d);
+        }
+    }
+};
 #endif
 
 namespace H {
-    #ifdef __linux__
-    DisplayServer Window::displayServer = DisplayServer::X11;
-    #endif
-}
-
-#ifdef __linux__
-H::DisplayServer H::Window::DetectDisplayServer() {
-    // Check if Wayland is active
-    if (getenv("WAYLAND_DISPLAY")) {
-        return DisplayServer::Wayland;
-    }
-    // Check if X11 is active
-    if (getenv("DISPLAY")) {
-        return DisplayServer::X11;
-    }
-    return DisplayServer::X11;
-    //return DisplayServer::Unknown;
-}
-#endif
 
 // Constructor
-H::Window::Window(cstr identifier, const int method) {
+Window::Window(cstr title, wID id) : m_title(title), m_id(id) {
     #ifdef __linux__
-    displayServer = DetectDisplayServer();
-    #endif
-
-    switch (method) {
-        case 0:
-            id = FindT(identifier);
-            break;
-        case 1:
-            id = Find(identifier);
-            break;
-        case 2:
-            id = Find2(identifier);
-            break;
+    if (!display) {
+        Display* rawDisplay = XOpenDisplay(nullptr);
+        if (!rawDisplay) {
+            std::cerr << "Failed to open X11 display" << std::endl;
+            return;
+        }
+        display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
     }
+    #endif
 }
 
 // Get the position of a window
-H::Rect H::Window::Pos(wID win) {
-    if (!win) win = id;
+Rect Window::Pos() const {
+    return Window::Pos(m_id);
+}
+
+Rect Window::Pos(wID win) {
+    if (!win) return {};
 
 #if defined(WINDOWS)
     return GetPositionWindows(win);
@@ -69,16 +56,16 @@ H::Rect H::Window::Pos(wID win) {
         case DisplayServer::Wayland:
             return GetPositionWayland(win);
         default:
-            return H::Rect(0, 0, 0, 0);
+            return {};
     }
 #else
-    return H::Rect(0, 0, 0, 0);
+    return {};
 #endif
 }
 
 #if defined(WINDOWS)
 // Windows implementation of GetPosition
-H::Rect H::Window::GetPositionWindows(wID win) {
+Rect Window::GetPositionWindows(wID win) {
     RECT rect;
     if (GetWindowRect(reinterpret_cast<HWND>(win), &rect)) {
         return H::Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
@@ -88,23 +75,24 @@ H::Rect H::Window::GetPositionWindows(wID win) {
 #endif
 
 // X11 implementation of GetPosition
-H::Rect H::Window::GetPositionX11(wID win) {
-    auto* display = H::DisplayManager::GetDisplay();
+Rect Window::GetPositionX11(wID win) {
+    if (!display) return {};
+    
     XWindowAttributes attrs;
-    if(XGetWindowAttributes(display, win, &attrs)) {
+    if(XGetWindowAttributes(display.get(), win, &attrs)) {
         return {attrs.x, attrs.y, attrs.width, attrs.height};
     }
     return {};
 }
 
 // Wayland implementation of GetPosition
-H::Rect H::Window::GetPositionWayland(wID /* win */) {
+Rect Window::GetPositionWayland(wID /* win */) {
     // Wayland implementation not yet available
     return {0, 0, 0, 0};
 }
 
 // Find window using method 2
-H::wID H::Window::Find2(cstr identifier, cstr type) {
+wID Window::Find2(cstr identifier, cstr type) {
     wID win = 0;
 
     if (type == "title") {
@@ -125,7 +113,7 @@ H::wID H::Window::Find2(cstr identifier, cstr type) {
 }
 
 // Find a window by its identifier string
-H::wID H::Window::Find(cstr identifier) {
+wID Window::Find(cstr identifier) {
     wID win = 0;
     
     // Check if it's a title
@@ -156,20 +144,20 @@ H::wID H::Window::Find(cstr identifier) {
 }
 
 // Find a window by its title
-H::wID H::Window::FindByTitle(cstr title) {
+wID Window::FindByTitle(cstr title) {
     #ifdef __linux__
-    // X11 implementation
-    ::Window rootWindow = DefaultRootWindow(display);
+    if (!display) return 0;
+    
+    ::Window rootWindow = DefaultRootWindow(display.get());
     ::Window parent;
     ::Window* children;
     unsigned int numChildren;
     
-    if (XQueryTree(display, rootWindow, &rootWindow, &parent, &children, &numChildren)) {
+    if (XQueryTree(display.get(), rootWindow, &rootWindow, &parent, &children, &numChildren)) {
         if (children) {
             for (unsigned int i = 0; i < numChildren; i++) {
-                // Get window name
                 XTextProperty windowName;
-                if (XGetWMName(display, children[i], &windowName) && windowName.value) {
+                if (XGetWMName(display.get(), children[i], &windowName) && windowName.value) {
                     std::string windowTitle = reinterpret_cast<char*>(windowName.value);
                     XFree(windowName.value);
                     
@@ -181,8 +169,8 @@ H::wID H::Window::FindByTitle(cstr title) {
                 }
                 
                 // Try NET_WM_NAME for modern window managers
-                Atom nameAtom = XInternAtom(display, "_NET_WM_NAME", False);
-                Atom utf8Atom = XInternAtom(display, "UTF8_STRING", False);
+                Atom nameAtom = XInternAtom(display.get(), "_NET_WM_NAME", False);
+                Atom utf8Atom = XInternAtom(display.get(), "UTF8_STRING", False);
                 
                 if (nameAtom != None && utf8Atom != None) {
                     Atom actualType;
@@ -190,7 +178,7 @@ H::wID H::Window::FindByTitle(cstr title) {
                     unsigned long nitems, bytesAfter;
                     unsigned char* prop = nullptr;
                     
-                    if (XGetWindowProperty(display, children[i], nameAtom, 0, 1024, False, utf8Atom,
+                    if (XGetWindowProperty(display.get(), children[i], nameAtom, 0, 1024, False, utf8Atom,
                                           &actualType, &actualFormat, &nitems, &bytesAfter, &prop) == Success) {
                         if (prop) {
                             std::string windowTitle(reinterpret_cast<char*>(prop));
@@ -209,7 +197,6 @@ H::wID H::Window::FindByTitle(cstr title) {
         }
     }
     #endif
-    
     return 0;
 }
 
@@ -217,8 +204,8 @@ H::wID H::Window::FindByTitle(cstr title) {
 // These are already defined in the header file, so we don't need to redefine them here
 
 // Title retrieval
-std::string H::Window::Title(wID win) {
-    if (!win) win = id;
+std::string Window::Title(wID win) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     char title[256];
@@ -226,14 +213,13 @@ std::string H::Window::Title(wID win) {
         return std::string(title);
     }
     return "";
-#elif defined(__linux__) && defined(__X11__)
-    Display* display = XOpenDisplay(nullptr);
+#elif defined(__linux__)
     if (!display) {
         std::cerr << "Failed to open X11 display." << std::endl;
         return "";
     }
 
-    Atom wmName = XInternAtom(display, "_NET_WM_NAME", True);
+    Atom wmName = XInternAtom(display.get(), "_NET_WM_NAME", True);
     if (wmName == None) {
         return "";
     }
@@ -243,12 +229,11 @@ std::string H::Window::Title(wID win) {
     unsigned long nitems, bytesAfter;
     unsigned char* prop = nullptr;
 
-    if (XGetWindowProperty(display, win, wmName, 0, (~0L), False, AnyPropertyType,
+    if (XGetWindowProperty(display.get(), win, wmName, 0, (~0L), False, AnyPropertyType,
                            &actualType, &actualFormat, &nitems, &bytesAfter, &prop) == Success) {
         if (prop) {
             std::string title(reinterpret_cast<char*>(prop));
             XFree(prop);
-            
             return title;
         }
     }
@@ -260,23 +245,22 @@ std::string H::Window::Title(wID win) {
 
     FILE* pipe = popen(command.str().c_str(), "r");
     if (!pipe) return "";
-
-    char buffer[256];
-    std::string output;
-    while (fgets(buffer, sizeof(buffer), pipe)) {
-        output += buffer;
+    
+    char buffer[128];
+    std::string result = "";
+    if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+        result = buffer;
     }
     pclose(pipe);
-
-    return output; // Parse the output as needed
+    return result;
 #else
     return "";
 #endif
 }
 
 // Check if a window is active
-bool H::Window::Active(wID win) {
-    if (!win) win = id;
+bool Window::Active(wID win) {
+    if (!win) win = m_id;
 
 #if defined(WINDOWS)
     return GetForegroundWindow() == reinterpret_cast<HWND>(win);
@@ -313,8 +297,8 @@ bool H::Window::Active(wID win) {
 }
 
 // Function to check if a window exists
-bool H::Window::Exists(wID win) {
-    if (!win) win = id;
+bool Window::Exists(wID win) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     return IsWindow(reinterpret_cast<HWND>(win)) != 0;
@@ -335,8 +319,8 @@ bool H::Window::Exists(wID win) {
 #endif
 }
 
-void H::Window::Activate(wID win) {
-    if (!win) win = id;
+void Window::Activate(wID win) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     // Windows implementation
@@ -385,8 +369,8 @@ void H::Window::Activate(wID win) {
 }
 
 // Close a window
-void H::Window::Close(wID win) {
-    if (!win) win = id;
+void Window::Close(wID win) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     if (win) {
@@ -415,8 +399,8 @@ void H::Window::Close(wID win) {
 #endif
 }
 
-void H::Window::Min(wID win) {
-    if (!win) win = id;
+void Window::Min(wID win) {
+    if (!win) win = m_id;
     if (!win) return; // Early return if no valid window ID
 
 #ifdef WINDOWS
@@ -440,8 +424,8 @@ void H::Window::Min(wID win) {
 }
 
 // Maximize a window
-void H::Window::Max(wID win) {
-    if (!win) win = id;
+void Window::Max(wID win) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     if (win) {
@@ -476,8 +460,8 @@ void H::Window::Max(wID win) {
 }
 
 // Set the transparency of a window
-void H::Window::Transparency(wID win, int alpha) {
-    if (!win) win = id;
+void Window::Transparency(wID win, int alpha) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     if (win && alpha >= 0 && alpha <= 255) {
@@ -502,8 +486,8 @@ void H::Window::Transparency(wID win, int alpha) {
 }
 
 // Set a window to always be on top
-void H::Window::AlwaysOnTop(wID win, bool top) {
-    if (!win) win = id;
+void Window::AlwaysOnTop(wID win, bool top) {
+    if (!win) win = m_id;
 
 #ifdef WINDOWS
     SetWindowPos(reinterpret_cast<HWND>(win), top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
@@ -532,12 +516,11 @@ void H::Window::AlwaysOnTop(wID win, bool top) {
 #endif
 }
 
-void H::Window::SetAlwaysOnTopX11(wID win, bool top) {
-    auto* display = DisplayManager::GetDisplay();
-    if(!display || win == 0) return;
+void Window::SetAlwaysOnTopX11(wID win, bool top) {
+    if (!display) return;
 
-    Atom wmState = XInternAtom(display, "_NET_WM_STATE", True);
-    Atom wmAbove = XInternAtom(display, "_NET_WM_STATE_ABOVE", True);
+    Atom wmState = XInternAtom(display.get(), "_NET_WM_STATE", True);
+    Atom wmAbove = XInternAtom(display.get(), "_NET_WM_STATE_ABOVE", True);
     
     if(wmState != None && wmAbove != None) {
         XEvent event = {};
@@ -548,23 +531,24 @@ void H::Window::SetAlwaysOnTopX11(wID win, bool top) {
         event.xclient.data.l[0] = top ? 1 : 0;
         event.xclient.data.l[1] = wmAbove;
         
-        XSendEvent(display, DefaultRootWindow(display), False,
+        XSendEvent(display.get(), DefaultRootWindow(display.get()), False,
                   SubstructureRedirectMask | SubstructureNotifyMask, &event);
-        XFlush(display);
+        XFlush(display.get());
     }
 }
 
 // Find a window by its process ID
-H::wID H::Window::GetwIDByPID(pID pid) {
-    #ifdef __linux__
-    ::Window rootWindow = DefaultRootWindow(display);
+wID Window::GetwIDByPID(pID pid) {
+    if (!display) return 0;
+    
+    ::Window rootWindow = DefaultRootWindow(display.get());
     ::Window parent;
     ::Window* children;
     unsigned int numChildren;
     
-    if (XQueryTree(display, rootWindow, &rootWindow, &parent, &children, &numChildren)) {
+    if (XQueryTree(display.get(), rootWindow, &rootWindow, &parent, &children, &numChildren)) {
         if (children) {
-            Atom pidAtom = XInternAtom(display, "_NET_WM_PID", False);
+            Atom pidAtom = XInternAtom(display.get(), "_NET_WM_PID", False);
             
             for (unsigned int i = 0; i < numChildren; i++) {
                 Atom actualType;
@@ -572,7 +556,7 @@ H::wID H::Window::GetwIDByPID(pID pid) {
                 unsigned long nitems, bytesAfter;
                 unsigned char* prop = nullptr;
                 
-                if (XGetWindowProperty(display, children[i], pidAtom, 0, 1, False, XA_CARDINAL,
+                if (XGetWindowProperty(display.get(), children[i], pidAtom, 0, 1, False, XA_CARDINAL,
                                       &actualType, &actualFormat, &nitems, &bytesAfter, &prop) == Success) {
                     if (prop && nitems == 1) {
                         pID windowPid = *reinterpret_cast<pID*>(prop);
@@ -593,7 +577,7 @@ H::wID H::Window::GetwIDByPID(pID pid) {
             XFree(children);
         }
     }
-    #endif
     
     return 0;
+}
 }

@@ -1,82 +1,90 @@
 #pragma once
 #include "types.hpp"
-#include "WindowManager.hpp"
 #include <string>
 #include <chrono>
 #include <memory>
 
-namespace H {
+#ifdef __linux__
+#include <X11/Xlib.h>
+struct _XDisplay;
+typedef struct _XDisplay Display;
+#endif
 
-enum class DisplayServer {
-    Unknown,
-    X11,
-    Wayland
-};
+namespace H {
 
 class Window {
 public:
-    explicit Window(cstr identifier = "", const int method = 0);
+    Window(cstr title, wID id = 0);
     ~Window() = default;
 
+    // Static display pointer
+    #ifdef __linux__
+    static std::shared_ptr<Display> display;
+    static DisplayServer displayServer;
+    #endif
+
     // Window properties
-    wID id{0};
+    wID ID() const { return m_id; }
+    std::string Title() const { return m_title; }
+    std::string Title(wID win);
     
-    // Static methods
-    static DisplayServer DetectDisplayServer();
+    // Position methods
+    Rect Pos() const;
+    static Rect Pos(wID win);
     
     // Window operations
     void Activate(wID win = 0);
     void Close(wID win = 0);
     void Min(wID win = 0);
     void Max(wID win = 0);
+    void Hide(wID win = 0);
+    void Show(wID win = 0);
+    void Minimize(wID win = 0);
     void Transparency(wID win = 0, int alpha = 255);
     void AlwaysOnTop(wID win = 0, bool top = true);
     
     // Window info
-    std::string Title(wID win = 0);
-    Rect Pos(wID win = 0);
     bool Active(wID win = 0);
     bool Exists(wID win = 0);
 
     // Window finding methods
-    wID Find(cstr identifier);
-    wID Find2(cstr identifier, cstr type = "title");
+    static wID Find(cstr identifier);
+    static wID Find2(cstr identifier, cstr type = "title");
     
     template<typename T>
-    wID FindT(T identifier) {
+    static wID FindT(T identifier) {
         if constexpr (std::is_same_v<T, std::string>) {
             return Find(identifier);
         } else if constexpr (std::is_same_v<T, const char*>) {
             return Find(std::string(identifier));
         } else if constexpr (std::is_same_v<T, wID>) {
             return identifier;
-        } else if constexpr (std::is_same_v<T, int>) {
-            return static_cast<wID>(identifier);
+        } else if constexpr (std::is_same_v<T, pID>) {
+            return GetwIDByPID(identifier);
+        } else {
+            return 0;
         }
-        return 0;
     }
 
 private:
     // Platform-specific implementations
-    Rect GetPositionX11(wID win);
-    Rect GetPositionWayland(wID win);
+    static Rect GetPositionX11(wID win);
+    static Rect GetPositionWayland(wID win);
     #ifdef _WIN32
-    Rect GetPositionWindows(wID win);
-    #endif
-
-    // Static members
-    #ifdef __linux__
-    static DisplayServer displayServer;
+    static Rect GetPositionWindows(wID win);
     #endif
 
     // Helper methods
-    wID FindByTitle(cstr title);
-    wID FindByClass(cstr className);
-    wID GetwIDByPID(pID pid);
-    wID GetwIDByProcessName(cstr processName);
+    static wID FindByTitle(cstr title);
+    static wID FindByClass(cstr className);
+    static wID GetwIDByPID(pID pid);
+    static wID GetwIDByProcessName(cstr processName);
     
     // X11 helper methods
-    void SetAlwaysOnTopX11(wID win, bool top);
+    static void SetAlwaysOnTopX11(wID win, bool top);
+
+    std::string m_title;
+    wID m_id;
 };
 
 } // namespace H

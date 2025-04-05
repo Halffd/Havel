@@ -28,6 +28,9 @@ static str defaultTerminal = "konsole"; //gnome-terminal
 static cstr globalShell = "fish";
 #endif
 
+// Initialize the static previousActiveWindow variable
+XWindow H::WindowManager::previousActiveWindow = None;
+
 WindowManager::WindowManager() {
 #ifdef _WIN32
     // Windows implementation
@@ -103,6 +106,11 @@ wID WindowManager::GetActiveWindow() {
         if (prop) {
             activeWindow = *reinterpret_cast<Window*>(prop);
             XFree(prop);
+            
+            // Update previous active window if this is a different window
+            if (activeWindow != 0 && activeWindow != previousActiveWindow) {
+                UpdatePreviousActiveWindow();
+            }
         }
     }
     
@@ -144,139 +152,175 @@ wID WindowManager::Find(cstr identifier) {
 void WindowManager::AltTab() {
 #ifdef __linux__
     Display* display = XOpenDisplay(nullptr);
-    if (!display) return;
+    if (!display) {
+        lo.error("Failed to open X display for Alt+Tab");
+        return;
+    }
     
     // Get the root window
     Window root = DefaultRootWindow(display);
     
-    // Get the list of windows
-    Atom clientListAtom = XInternAtom(display, "_NET_CLIENT_LIST_STACKING", False);
-    if (clientListAtom == None) {
-        XCloseDisplay(display);
-        return;
+    // Get the current active window
+    wID currentActiveWindow = GetActiveWindow();
+    lo.info("Alt+Tab: Current active window: " + std::to_string(currentActiveWindow) + 
+            ", Previous window: " + std::to_string(previousActiveWindow));
+    
+    // Check if we have a valid previous window to switch to
+    bool previousWindowValid = false;
+    if (previousActiveWindow != None && previousActiveWindow != currentActiveWindow) {
+        XWindowAttributes attrs;
+        if (XGetWindowAttributes(display, previousActiveWindow, &attrs) && 
+            attrs.map_state == IsViewable) {
+            
+            // Get window class for better logging
+            XClassHint classHint;
+            std::string windowClass = "unknown";
+            if (XGetClassHint(display, previousActiveWindow, &classHint)) {
+                windowClass = classHint.res_class;
+                XFree(classHint.res_name);
+                XFree(classHint.res_class);
+            }
+            
+            lo.info("Alt+Tab: Found valid previous window " + std::to_string(previousActiveWindow) + 
+                    " class: " + windowClass);
+            previousWindowValid = true;
+        } else {
+            lo.warning("Alt+Tab: Previous window " + std::to_string(previousActiveWindow) + 
+                       " is no longer valid or viewable");
+            previousActiveWindow = None; // Reset invalid window
+        }
     }
     
-    Atom actualType;
-    int actualFormat;
-    unsigned long numWindows, bytesAfter;
-    unsigned char* data = nullptr;
-    
-    Status status = XGetWindowProperty(display, root, clientListAtom,
-                                   0, ~0L, False, XA_WINDOW,
-                                   &actualType, &actualFormat,
-                                   &numWindows, &bytesAfter, &data);
-    
-    if (status != Success || numWindows < 2) {
-        if (data) XFree(data);
-        return;
-    }
-    
-    Window* windows = reinterpret_cast<Window*>(data);
-    
-    // Get the currently active window
-    Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
-    unsigned char* activeData = nullptr;
-    unsigned long activeItems;
-    
-    status = XGetWindowProperty(display, root, activeWindowAtom,
-                               0, 1, False, XA_WINDOW,
-                               &actualType, &actualFormat,
-                               &activeItems, &bytesAfter, &activeData);
-                               
-    Window activeWindow = None;
-    if (status == Success && activeItems > 0) {
-        activeWindow = *reinterpret_cast<Window*>(activeData);
-    }
-    if (activeData) XFree(activeData);
-    
-    // Find the next window to activate
+    // If we don't have a valid previous window, find another suitable window
     Window windowToActivate = None;
     
-    // Iterate through windows from top to bottom
-    for (int i = numWindows - 1; i >= 0; i--) {
-        Window currentWindow = windows[i];
+    if (!previousWindowValid) {
+        lo.info("Alt+Tab: Looking for an alternative window");
         
-        if (currentWindow == activeWindow) {
-            // Found the active window, get the next one
-            for (int j = i - 1; j >= 0; j--) {
-                // Check if the window is visible
+        // Get the list of windows
+        Atom clientListAtom = XInternAtom(display, "_NET_CLIENT_LIST_STACKING", False);
+        if (clientListAtom == None) {
+            clientListAtom = XInternAtom(display, "_NET_CLIENT_LIST", False);
+            if (clientListAtom == None) {
+                lo.error("Failed to get window list atom");
+                XCloseDisplay(display);
+                return;
+            }
+        }
+        
+        Atom actualType;
+        int actualFormat;
+        unsigned long numWindows, bytesAfter;
+        unsigned char* data = nullptr;
+        
+        if (XGetWindowProperty(display, root, clientListAtom,
+                              0, ~0L, False, XA_WINDOW,
+                              &actualType, &actualFormat,
+                              &numWindows, &bytesAfter, &data) != Success ||
+            numWindows < 1) {
+            if (data) XFree(data);
+            lo.error("Failed to get window list or empty list");
+            XCloseDisplay(display);
+            return;
+        }
+        
+        Window* windows = reinterpret_cast<Window*>(data);
+        
+        // Find a suitable window to switch to (not the current active window)
+        for (unsigned long i = numWindows; i > 0; i--) {  // Start from top of stack
+            unsigned long idx = i - 1;  // Convert to zero-based index
+            
+            if (windows[idx] != currentActiveWindow && windows[idx] != None) {
                 XWindowAttributes attrs;
-                if (XGetWindowAttributes(display, windows[j], &attrs) && 
+                if (XGetWindowAttributes(display, windows[idx], &attrs) && 
                     attrs.map_state == IsViewable) {
-                    // Check if the window has a title (skip desktop, panels, etc.)
-                    char* windowName = nullptr;
-                    if (XFetchName(display, windows[j], &windowName) && windowName) {
-                        XFree(windowName);
-                        windowToActivate = windows[j];
+                    
+                    // Check if this is a normal window (not a desktop, dock, etc.)
+                    Atom windowTypeAtom = XInternAtom(display, "_NET_WM_WINDOW_TYPE", False);
+                    Atom actualType;
+                    int actualFormat;
+                    unsigned long numItems, bytesAfter;
+                    unsigned char* typeData = nullptr;
+                    bool isNormalWindow = true;
+                    
+                    if (XGetWindowProperty(display, windows[idx], windowTypeAtom, 0, ~0L, 
+                                           False, AnyPropertyType, &actualType, &actualFormat,
+                                           &numItems, &bytesAfter, &typeData) == Success && typeData) {
+                        
+                        Atom* types = reinterpret_cast<Atom*>(typeData);
+                        Atom normalAtom = XInternAtom(display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+                        Atom dialogAtom = XInternAtom(display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+                        
+                        isNormalWindow = false;
+                        for (unsigned long j = 0; j < numItems; j++) {
+                            if (types[j] == normalAtom || types[j] == dialogAtom) {
+                                isNormalWindow = true;
+                                break;
+                            }
+                        }
+                        XFree(typeData);
+                    }
+                    
+                    // If it's a normal window, use it
+                    if (isNormalWindow) {
+                        windowToActivate = windows[idx];
+                        
+                        // Get window class for logging
+                        XClassHint classHint;
+                        std::string windowClass = "unknown";
+                        if (XGetClassHint(display, windowToActivate, &classHint)) {
+                            windowClass = classHint.res_class;
+                            XFree(classHint.res_name);
+                            XFree(classHint.res_class);
+                        }
+                        
+                        lo.info("Alt+Tab: Found alternative window " + std::to_string(windowToActivate) + 
+                                " class: " + windowClass);
                         break;
                     }
                 }
             }
-            
-            // If no suitable window found before the active one, wrap around
-            if (windowToActivate == None) {
-                for (int j = numWindows - 1; j > i; j--) {
-                    XWindowAttributes attrs;
-                    if (XGetWindowAttributes(display, windows[j], &attrs) && 
-                        attrs.map_state == IsViewable) {
-                        char* windowName = nullptr;
-                        if (XFetchName(display, windows[j], &windowName) && windowName) {
-                            XFree(windowName);
-                            windowToActivate = windows[j];
-                            break;
-                        }
-                    }
-                }
-            }
-            
-            break;
         }
+        
+        if (data) XFree(data);
+    } else {
+        windowToActivate = previousActiveWindow;
     }
     
-    // If no window to activate was found, use the top-most window
-    if (windowToActivate == None && numWindows > 0) {
-        for (int i = numWindows - 1; i >= 0; i--) {
-            XWindowAttributes attrs;
-            if (XGetWindowAttributes(display, windows[i], &attrs) && 
-                attrs.map_state == IsViewable && 
-                windows[i] != activeWindow) {
-                char* windowName = nullptr;
-                if (XFetchName(display, windows[i], &windowName) && windowName) {
-                    XFree(windowName);
-                    windowToActivate = windows[i];
-                    break;
-                }
-            }
-        }
+    // Store current window as previous before switching
+    if (currentActiveWindow != None) {
+        previousActiveWindow = currentActiveWindow;
+        lo.debug("Alt+Tab: Stored current window as previous: " + std::to_string(previousActiveWindow));
     }
     
     // Activate the selected window
     if (windowToActivate != None) {
-        // Create activation event
-        XEvent event = {};
-        event.type = ClientMessage;
-        event.xclient.type = ClientMessage;
-        event.xclient.window = windowToActivate;
-        event.xclient.message_type = activeWindowAtom;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = 2; // Source indication: pager
-        event.xclient.data.l[1] = CurrentTime;
-        event.xclient.data.l[2] = 0;
-        
-        // Send the event
-        XSendEvent(display, root, False,
-                   SubstructureRedirectMask | SubstructureNotifyMask,
-                   &event);
-                   
-        // Raise the window
-        XRaiseWindow(display, windowToActivate);
-        
-        // Focus the window
-        XSetInputFocus(display, windowToActivate, RevertToParent, CurrentTime);
+        Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+        if (activeWindowAtom != None) {
+            XEvent event = {};
+            event.type = ClientMessage;
+            event.xclient.window = windowToActivate;
+            event.xclient.message_type = activeWindowAtom;
+            event.xclient.format = 32;
+            event.xclient.data.l[0] = 2; // Source: pager
+            event.xclient.data.l[1] = CurrentTime;
+            
+            XSendEvent(display, root, False,
+                      SubstructureRedirectMask | SubstructureNotifyMask,
+                      &event);
+            
+            // Also try direct methods
+            XRaiseWindow(display, windowToActivate);
+            XSetInputFocus(display, windowToActivate, RevertToParent, CurrentTime);
+            
+            lo.info("Alt+Tab: Switched to window: " + std::to_string(windowToActivate));
+        }
+    } else {
+        lo.warning("Alt+Tab: Could not find a suitable window to switch to");
     }
     
-    if (data) XFree(data);
     XSync(display, False);
+    XCloseDisplay(display);
 #endif
 }
 
@@ -1067,6 +1111,37 @@ std::string WindowManager::GetActiveWindowClass() {
     
     lo.debug("Active window class: " + className);
     return className;
+}
+
+// Update previous active window
+void WindowManager::UpdatePreviousActiveWindow() {
+#ifdef __linux__
+    Display* display = DisplayManager::GetDisplay();
+    if (!display) return;
+    
+    Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", False);
+    if (activeWindowAtom == None) return;
+    
+    Atom actualType;
+    int actualFormat;
+    unsigned long nitems, bytesAfter;
+    unsigned char* prop = nullptr;
+    
+    if (XGetWindowProperty(display, DefaultRootWindow(display), activeWindowAtom, 0, 1, 
+                        False, XA_WINDOW, &actualType, &actualFormat, &nitems, &bytesAfter, 
+                        &prop) == Success) {
+        if (prop) {
+            Window currentActive = *reinterpret_cast<Window*>(prop);
+            XFree(prop);
+            
+            // Only update if both windows are valid and different
+            if (currentActive != None && previousActiveWindow != currentActive) {
+                previousActiveWindow = currentActive;
+                std::cout << "Updated previous active window to: " << previousActiveWindow << std::endl;
+            }
+        }
+    }
+#endif
 }
 
 } // namespace H

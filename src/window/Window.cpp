@@ -4,6 +4,15 @@
 #include <sstream>
 #include <memory>
 #include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#include <cstring>
+#include <X11/Xutil.h>
+#include <X11/extensions/XTest.h>
+#include <cstdio>
+#include <unistd.h>
+#include <sys/types.h>
+#include <cerrno>
+#include <cstring>
 
 #ifdef __linux__
 #include <X11/Xatom.h>
@@ -190,6 +199,55 @@ wID Window::FindByTitle(cstr title) {
                             }
                             XFree(prop);
                         }
+                    }
+                }
+            }
+            XFree(children);
+        }
+    }
+    #endif
+    return 0;
+}
+
+// Find a window by its class
+wID Window::FindByClass(cstr className) {
+    #ifdef __linux__
+    if (!display) return 0;
+    
+    ::Window rootWindow = DefaultRootWindow(display.get());
+    ::Window parent;
+    ::Window* children;
+    unsigned int numChildren;
+    
+    if (XQueryTree(display.get(), rootWindow, &rootWindow, &parent, &children, &numChildren)) {
+        if (children) {
+            for (unsigned int i = 0; i < numChildren; i++) {
+                XClassHint classHint;
+                if (XGetClassHint(display.get(), children[i], &classHint)) {
+                    bool match = false;
+                    
+                    if (classHint.res_name && strstr(classHint.res_name, className.c_str()) != nullptr) {
+                        match = true;
+                    }
+                    else if (classHint.res_class && strstr(classHint.res_class, className.c_str()) != nullptr) {
+                        match = true;
+                    }
+                    
+                    // Debug logging
+                    if (match) {
+                        std::cout << "Found window with class matching '" << className 
+                                  << "': res_name='" << (classHint.res_name ? classHint.res_name : "NULL") 
+                                  << "', res_class='" << (classHint.res_class ? classHint.res_class : "NULL") 
+                                  << "'" << std::endl;
+                    }
+                    
+                    if (classHint.res_name) XFree(classHint.res_name);
+                    if (classHint.res_class) XFree(classHint.res_class);
+                    
+                    if (match) {
+                        ::Window result = children[i];
+                        XFree(children);
+                        return static_cast<wID>(result);
                     }
                 }
             }

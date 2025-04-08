@@ -112,62 +112,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         showNotification("Mode Changed", "Active mode: " + currentMode);
     });
 
-    // MPV Controls - Gaming Mode Only
-    const std::map<std::string, std::vector<std::string>> mpvHotkeys = {
-        // Playback controls
-        {"z", {"cycle", "pause"}},
-        {"o", {"seek", "-3"}},
-        {"p", {"seek", "3"}},
-        
-        // Subtitle visibility
-        {"l", {"cycle", "sub-visibility"}},
-        {"semicolon", {"cycle", "secondary-sub-visibility"}},
-        
-        // Subtitle scale
-        {"7", {"add", "sub-scale", "-0.1"}},
-        {"8", {"add", "sub-scale", "0.1"}},
-        
-        // Subtitle delay
-        {"5", {"add", "sub-delay", "-0.1"}},
-        {"6", {"add", "sub-delay", "0.1"}},
-        
-        // Subtitle navigation
-        {"9", {"cycle", "sub"}},
-        {"0", {"sub-seek", "0"}},
-        {"minus", {"sub-seek", "-1"}},
-        {"equal", {"sub-seek", "1"}},
-        
-        // Special commands
-        {"m", {"script-binding", "copy_current_subtitle"}}
-    };
-
-    // Register all MPV hotkeys with gaming mode check - MODIFIED to use AddContextualHotkey
-    // This ensures these keys are ONLY active in gaming windows
-    for (const auto& [key, command] : mpvHotkeys) {
-        // Convert normal keys to contextual hotkeys that only work in gaming mode
-        AddContextualHotkey(key, "currentMode == 'gaming'",
-            [this, command]() {
-                handleMediaCommand(command);
-            },
-            nullptr, // falseAction parameter
-            0       // ID parameter
-        );
-    }
-
-    // Special keycode-based hotkey for gaming mode
-    io.Hotkey("kc94", [this]() {
-        logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
-        
-        if (isGamingWindow()) {
-            logHotkeyEvent("ACTION", COLOR_CYAN + "Gaming mode active" + COLOR_RESET + " - Sending pause to MPV");
-            mpv.SendCommand({"cycle", "pause"});
-        } else {
-            logHotkeyEvent("ACTION", COLOR_CYAN + "Normal mode" + COLOR_RESET + " - Remapping to backslash");
-            io.PressKey("backslash", true);
-            io.PressKey("backslash", false);
-        }
-    });
-
     // Basic application hotkeys
     io.Hotkey("ctrl+alt+r", [this]() {
         ReloadConfigurations();
@@ -389,6 +333,30 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("Shift_R", [this]() {
         startAutoclicker("Button2");
     });
+
+    // Add contextual hotkey for D key in Koikatu
+    AddContextualHotkey("d", "Window.Active('class:Koikatu')",
+        [this]() {
+            // Show black overlay when D is pressed in Koikatu
+            lo.info("Koikatu window detected - D key pressed - showing black overlay");
+            showBlackOverlay();
+            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (class match)");
+        },
+        nullptr, // No action when condition is false
+        0 // ID parameter
+    );
+    
+    // Also add a title-based hotkey for Koikatu window title (as a fallback)
+    AddContextualHotkey("d", "Window.Active('name:Koikatu')",
+        [this]() {
+            // Show black overlay when D is pressed in Koikatu window
+            lo.info("Koikatu window title detected - D key pressed - showing black overlay");
+            showBlackOverlay();
+            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
+        },
+        nullptr, // No action when condition is false
+        0 // ID parameter
+    );
 }
 
 void HotkeyManager::RegisterMediaHotkeys() {
@@ -470,47 +438,21 @@ void HotkeyManager::RegisterMediaHotkeys() {
     );
     mpvHotkeyIds.push_back(prevId);
     
-    // Register MPV game-specific hotkeys with IDs
-    const std::map<std::string, std::pair<int, std::vector<std::string>>> mpvSpecialHotkeys = {
-        // Playback controls
-        {"z", {mpvBaseId++, {"cycle", "pause"}}},
-        {"o", {mpvBaseId++, {"seek", "-3"}}},
-        {"p", {mpvBaseId++, {"seek", "3"}}},
-        
-        // Subtitle visibility
-        {"l", {mpvBaseId++, {"cycle", "sub-visibility"}}},
-        {"semicolon", {mpvBaseId++, {"cycle", "secondary-sub-visibility"}}},
-        
-        // Subtitle scale
-        {"7", {mpvBaseId++, {"add", "sub-scale", "-0.1"}}},
-        {"8", {mpvBaseId++, {"add", "sub-scale", "0.1"}}},
-        
-        // Subtitle delay
-        {"5", {mpvBaseId++, {"add", "sub-delay", "-0.1"}}},
-        {"6", {mpvBaseId++, {"add", "sub-delay", "0.1"}}},
-        
-        // Subtitle navigation
-        {"9", {mpvBaseId++, {"cycle", "sub"}}},
-        {"0", {mpvBaseId++, {"sub-seek", "0"}}},
-        {"minus", {mpvBaseId++, {"sub-seek", "-1"}}},
-        {"equal", {mpvBaseId++, {"sub-seek", "1"}}},
-        
-        // Special commands
-        {"m", {mpvBaseId++, {"script-binding", "copy_current_subtitle"}}}
-    };
-    
-    // Register all special MPV hotkeys with gaming mode check
-    for (const auto& [key, info] : mpvSpecialHotkeys) {
-        const auto& [id, command] = info;
-        AddContextualHotkey(key, "currentMode == 'gaming'",
-            [this, command]() {
-                handleMediaCommand(command);
-                logWindowEvent("MPV_HOTKEY", "Command: " + command[0] + " (Gaming Mode)");
-            },
-            nullptr, id
-        );
-        mpvHotkeyIds.push_back(id);
-    }
+    // Special keycode-based hotkey for gaming mode
+    int kc94Id = mpvBaseId++;
+    AddContextualHotkey("kc94", "currentMode == 'gaming'",
+        [this]() {
+            logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
+            mpv.SendCommand({"cycle", "pause"});
+        },
+        [this]() {
+            logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
+            io.PressKey("backslash", true);
+            io.PressKey("backslash", false);
+        },
+        kc94Id
+    );
+    mpvHotkeyIds.push_back(kc94Id);
     
     // If not in gaming mode, immediately ungrab all MPV hotkeys
     if (currentMode != "gaming") {
@@ -558,6 +500,31 @@ void HotkeyManager::RegisterWindowHotkeys() {
     io.Hotkey("ctrl+space", []() {
         WindowManager::ToggleAlwaysOnTop();
     });
+    
+    // Add contextual hotkey for D key in Koikatu using both class and title detection
+    // First check by window class
+    AddContextualHotkey("d", "Window.Active('class:Koikatu')",
+        [this]() {
+            // Show black overlay when D is pressed in Koikatu
+            lo.info("Koikatu window detected - D key pressed - showing black overlay");
+            showBlackOverlay();
+            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (class match)");
+        },
+        nullptr, // No action when condition is false
+        0 // ID parameter
+    );
+    
+    // Also add a title-based hotkey for Koikatu window title (as a fallback)
+    AddContextualHotkey("d", "Window.Active('name:Koikatu')",
+        [this]() {
+            // Show black overlay when D is pressed in Koikatu window
+            lo.info("Koikatu window title detected - D key pressed - showing black overlay");
+            showBlackOverlay();
+            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
+        },
+        nullptr, // No action when condition is false
+        0 // ID parameter
+    );
 }
 
 void HotkeyManager::RegisterSystemHotkeys() {
@@ -650,44 +617,198 @@ void HotkeyManager::ReloadConfigurations() {
     loadVideoSites();
 }
 
-bool HotkeyManager::AddContextualHotkey(const std::string& key, const std::string& condition,
-                                      std::function<void()> trueAction,
-                                      std::function<void()> falseAction) {
-    return io.Hotkey(key, [this, condition, trueAction, falseAction]() {
-        if (evaluateCondition(condition)) {
-            if (trueAction) trueAction();
-        } else {
-            if (falseAction) falseAction();
-        }
-    });
-}
-
-// New overload that accepts an ID parameter
 int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string& condition,
-                                     std::function<void()> trueAction,
-                                     std::function<void()> falseAction, 
-                                     int id) {
-    // If ID is provided, use it; otherwise use 0 to generate a new ID
-    io.Hotkey(key, [this, condition, trueAction, falseAction]() {
-        if (evaluateCondition(condition)) {
-            if (trueAction) trueAction();
-        } else {
-            if (falseAction) falseAction();
+                                std::function<void()> trueAction,
+                                std::function<void()> falseAction,
+                                int id) {
+    // If no ID provided, generate one
+    if (id == 0) {
+        static int nextId = 1000;
+        id = nextId++;
+    }
+    
+    // Convert special key names
+    std::string normalizedKey = parseHotkeyString(key);
+    
+    // Create an action that will evaluate the condition
+    auto action = [this, condition, trueAction, falseAction]() {
+        // Log the contextual hotkey being evaluated with the condition
+        if (verboseKeyLogging) {
+            std::string conditionLog = "Evaluating condition: " + condition;
+            lo.debug(conditionLog);
         }
-    }, id);
+        
+        // Evaluate the condition
+        // Examples of supported conditions:
+        // - "IsZooming" - Check if zooming mode is active
+        // - "currentMode == 'gaming'" - Check if in gaming mode
+        // - "Window.Active('Firefox')" - Check window title contains "Firefox"
+        // - "Window.Active('class:Firefox')" - Check window class contains "Firefox"
+        // - "Window.Active('name:Gmail')" - Explicitly check window title
+        // - "!Window.Active('class:Emacs')" - Negation: Check window class does NOT contain "Emacs"
+        bool conditionMet = evaluateCondition(condition);
+        
+        // Execute the appropriate action based on the condition result
+        if (conditionMet && trueAction) {
+            if (verboseKeyLogging) {
+                lo.debug("Condition met, executing true action");
+            }
+            trueAction();
+        } else if (!conditionMet && falseAction) {
+            if (verboseKeyLogging) {
+                lo.debug("Condition not met, executing false action");
+            }
+            falseAction();
+        }
+    };
+    
+    // Register the hotkey with the action
+    io.Hotkey(normalizedKey, action, id);
     
     return id;
 }
 
+bool HotkeyManager::checkWindowCondition(const std::string& condition) {
+    // This method checks if a specific window-related condition is met (like class or title)
+    // Return true if the condition is met, false otherwise
+    
+    if (condition.substr(0, 14) == "Window.Active(") {
+        std::string param;
+        if (condition.length() > 14) {
+            param = condition.substr(14, condition.length() - 16);
+        }
+        
+        bool negation = condition[0] == '!';
+        if (negation && param.length() > 0) {
+            param = param.substr(1);
+        }
+        
+        // Get active window information
+        wID activeWindow = WindowManager::GetActiveWindow();
+        bool result = false;
+        
+        if (activeWindow != 0) {
+            // If the parameter starts with "class:" it means we want to match by window class
+            if (param.substr(0, 6) == "class:") {
+                std::string matchValue = param.substr(6);
+                
+                // Get active window class directly and check for match
+                std::string activeWindowClass = WindowManager::GetActiveWindowClass();
+                
+                if (verboseWindowLogging) {
+                    logWindowEvent("WINDOW_CHECK", 
+                        "Active window class '" + activeWindowClass + "' checking for '" + matchValue + "'");
+                }
+                
+                // Check if class contains our match string
+                result = (activeWindowClass.find(matchValue) != std::string::npos);
+            } 
+            // If the parameter starts with "name:" it explicitly specifies title matching
+            else if (param.substr(0, 5) == "name:") {
+                std::string matchValue = param.substr(5);
+                
+                // Get active window title directly
+                try {
+                    Window window(std::to_string(activeWindow), activeWindow);
+                    std::string activeWindowTitle = window.Title();
+                    
+                    if (verboseWindowLogging) {
+                        logWindowEvent("WINDOW_CHECK", 
+                            "Active window title '" + activeWindowTitle + "' checking for '" + matchValue + "'");
+                    }
+                    
+                    // Check if title contains our match string
+                    result = (activeWindowTitle.find(matchValue) != std::string::npos);
+                } catch (...) {
+                    lo.error("Failed to get active window title");
+                    result = false;
+                }
+            }
+            // Legacy/default case: just match by title
+            else {
+                try {
+                    Window window(std::to_string(activeWindow), activeWindow);
+                    std::string activeWindowTitle = window.Title();
+                    
+                    if (verboseWindowLogging) {
+                        logWindowEvent("WINDOW_CHECK", 
+                            "Active window title (legacy) '" + activeWindowTitle + "' checking for '" + param + "'");
+                    }
+                    
+                    // Check if title contains our match string
+                    result = (activeWindowTitle.find(param) != std::string::npos);
+                } catch (...) {
+                    lo.error("Failed to get active window title");
+                    result = false;
+                }
+            }
+        }
+        
+        // Handle negation if present
+        if (negation) result = !result;
+        
+        return result;
+    }
+    
+    return false;
+}
+
+void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, bool conditionMet) {
+    // This handles grabbing or ungrabbing hotkeys based on condition state changes
+    // We only care about certain conditions like window class/title matches
+    
+    // First, check if we need to handle this condition
+    if (condition.find("currentMode == 'gaming'") != std::string::npos || 
+        condition.find("Window.Active('class:Koikatu')") != std::string::npos ||
+        condition.find("Window.Active('name:Koikatu')") != std::string::npos) {
+        
+        // Check if state has changed since last time
+        auto it = windowConditionStates.find(condition);
+        bool stateChanged = (it == windowConditionStates.end() || it->second != conditionMet);
+        
+        // Update the stored state
+        windowConditionStates[condition] = conditionMet;
+        
+        // Only take action if the state changed
+        if (stateChanged) {
+            if (conditionMet) {
+                // Condition is now met, grab the keys
+                if (!mpvHotkeysGrabbed && (condition.find("currentMode == 'gaming'") != std::string::npos)) {
+                    lo.info("Condition met: " + condition + " - Grabbing MPV hotkeys");
+                    grabMPVHotkeys();
+                }
+                
+                // Log the state change
+        if (verboseWindowLogging) {
+                    logWindowEvent("CONDITION_STATE", "Condition now TRUE: " + condition);
+                }
+            } else {
+                // Condition is now not met, ungrab the keys
+                if (mpvHotkeysGrabbed && (condition.find("currentMode == 'gaming'") != std::string::npos)) {
+                    lo.info("Condition no longer met: " + condition + " - Ungrabbing MPV hotkeys");
+                    ungrabMPVHotkeys();
+                }
+                
+                // Log the state change
+                if (verboseWindowLogging) {
+                    logWindowEvent("CONDITION_STATE", "Condition now FALSE: " + condition);
+                }
+            }
+        }
+    }
+}
+
 bool HotkeyManager::evaluateCondition(const std::string& condition) {
+    bool result = false;
+    
     if (condition == "IsZooming") {
-        return isZooming();
+        result = isZooming();
     }
     else if (condition == "currentMode == 'gaming'") {
         // Check if current mode is set to gaming
         if (currentMode == "gaming") {
             lo.debug("Evaluating condition: currentMode == 'gaming' is TRUE (already in gaming mode)");
-            return true;
+            result = true;
         }
         
         // Or check if the current window is a gaming window
@@ -698,62 +819,126 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
                 currentMode = "gaming";
                 logModeSwitch(oldMode, currentMode);
                 
-                // Grab hotkeys when switching to gaming mode
-                grabMPVHotkeys();
+                // Grab hotkeys when switching to gaming mode - this is now handled by updateHotkeyStateForCondition
                 
                 if (verboseWindowLogging) {
-                    logWindowEvent("AUTO_MODE_CHANGE", "Switched to gaming mode based on window class - MPV hotkeys grabbed");
+                    logWindowEvent("AUTO_MODE_CHANGE", "Switched to gaming mode based on window class");
                 }
                 
-                lo.info("Auto-switched to gaming mode - MPV hotkeys are now active");
+                lo.info("Auto-switched to gaming mode");
             }
-            return true;
+            result = true;
         }
         
         // Not in gaming mode and not a gaming window
         // If we were previously in gaming mode, switch back to default mode
-        if (currentMode == "gaming") {
+        if (!result && currentMode == "gaming") {
             std::string oldMode = currentMode;
             currentMode = "default";
             logModeSwitch(oldMode, currentMode);
             
-            // Ungrab hotkeys when switching out of gaming mode
-            ungrabMPVHotkeys();
+            // Ungrab hotkeys when switching out of gaming mode - this is now handled by updateHotkeyStateForCondition
             
             if (verboseWindowLogging) {
-                logWindowEvent("AUTO_MODE_CHANGE", "Switched to normal mode - MPV hotkeys released");
+                logWindowEvent("AUTO_MODE_CHANGE", "Switched to normal mode");
             }
             
-            lo.info("Auto-switched to normal mode - MPV hotkeys are now inactive");
+            lo.info("Auto-switched to normal mode");
         }
         
-        if (verboseWindowLogging && currentMode != "gaming") {
-            logWindowEvent("MODE_CHECK", "Not in gaming mode - MPV hotkeys inactive");
+        if (verboseWindowLogging && !result) {
+            logWindowEvent("MODE_CHECK", "Not in gaming mode");
         }
-        
-        return false;
     }
     else if (condition.find("Window.Active") == 0) {
-        // Extract window title from condition
-        std::string title = condition.substr(14, condition.length() - 16);
-        bool negation = condition[0] == '!';
-        if (negation) {
-            title = title.substr(1);
-        }
-        // Use WindowManager's static method to find window
-        wID windowId = WindowManager::FindByTitle(title.c_str());
+        // Use the new window condition check helper
+        result = checkWindowCondition(condition);
         
-        bool result = negation ? (windowId == 0) : (windowId != 0);
+        // Log the result
         if (verboseWindowLogging) {
             logWindowEvent("CONDITION_CHECK", 
-                "Window.Active(" + title + ") = " + (result ? "TRUE" : "FALSE"));
+                condition + " = " + (result ? "TRUE" : "FALSE"));
         }
-        return result;
     }
-    
+    else {
     // Log unrecognized conditions
     lo.warning("Unrecognized condition: " + condition);
-    return false;
+    }
+    
+    // Update hotkey states based on the condition result
+    updateHotkeyStateForCondition(condition, result);
+    
+    return result;
+}
+
+void HotkeyManager::grabMPVHotkeys() {
+    if (mpvHotkeysGrabbed) {
+        // Already grabbed, nothing to do
+        return;
+    }
+    
+    // Media keys that should only be grabbed in gaming mode
+    const std::vector<std::string> mpvKeys = {
+        "XF86AudioRaiseVolume",
+        "XF86AudioLowerVolume",
+        "XF86AudioMute",
+        "XF86AudioPlay",
+        "XF86AudioStop",
+        "XF86AudioNext",
+        "XF86AudioPrev",
+        // Also grab our special MPV hotkeys
+        "z", "o", "p", "l", "semicolon", "7", "8", "5", "6", "9", "0",
+        "minus", "equal", "m"
+    };
+    
+    for (const auto& key : mpvKeys) {
+        if (verboseKeyLogging) {
+            logKeyEvent(key, "GRAB", "Grabbing for gaming mode");
+        }
+    }
+    
+    // Grab all MPV hotkey IDs that we've stored
+    for (int id : mpvHotkeyIds) {
+        io.GrabHotkey(id);
+    }
+    
+    mpvHotkeysGrabbed = true;
+    lo.info("Grabbed all MPV hotkeys for gaming mode");
+}
+
+void HotkeyManager::ungrabMPVHotkeys() {
+    if (!mpvHotkeysGrabbed) {
+        // Already ungrabbed, nothing to do
+        return;
+    }
+    
+    // Media keys that should be ungrabbed when not in gaming mode
+    const std::vector<std::string> mpvKeys = {
+        "XF86AudioRaiseVolume",
+        "XF86AudioLowerVolume",
+        "XF86AudioMute",
+        "XF86AudioPlay",
+        "XF86AudioStop",
+        "XF86AudioNext",
+        "XF86AudioPrev",
+        // Also grab our special MPV hotkeys
+        "z", "o", "p", "l", "semicolon", "7", "8", "5", "6", "9", "0",
+        "minus", "equal", "m"
+    };
+    
+    for (const auto& key : mpvKeys) {
+        if (verboseKeyLogging) {
+            logKeyEvent(key, "UNGRAB", "Releasing for normal mode");
+        }
+    }
+    
+    // Ungrab all MPV hotkey IDs that we've stored
+    for (int id : mpvHotkeyIds) {
+        io.UngrabHotkey(id);
+    }
+    
+    mpvHotkeysGrabbed = false;
+    lo.info("Released all MPV hotkeys for normal mode");
 }
 
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
@@ -1112,84 +1297,24 @@ void HotkeyManager::handleMediaCommand(const std::vector<std::string>& mpvComman
 
 // Implement setMode to handle mode changes and key grabbing
 void HotkeyManager::setMode(const std::string& mode) {
+    // Don't do anything if the mode isn't changing
+    if (mode == currentMode) return;
+    
     std::string oldMode = currentMode;
     currentMode = mode;
     
     // Log the mode change
     logModeSwitch(oldMode, currentMode);
     
-    // Grab or ungrab MPV hotkeys based on new mode
-    if (currentMode == "gaming") {
-        grabMPVHotkeys();
-        lo.info("Entered gaming mode - MPV hotkeys are now active");
-        if (verboseWindowLogging) {
-            logWindowEvent("MODE_CHANGE", "Gaming mode activated - MPV keys grabbed");
-        }
-    } else {
-        ungrabMPVHotkeys();
-        lo.info("Exited gaming mode - MPV hotkeys are now inactive");
-        if (verboseWindowLogging) {
-            logWindowEvent("MODE_CHANGE", "Normal mode activated - MPV keys ungrabbed");
-        }
+    // Update window condition state for our gaming mode condition
+    // This will trigger the appropriate hotkey grab/ungrab
+    updateHotkeyStateForCondition("currentMode == 'gaming'", currentMode == "gaming");
+    
+    if (verboseWindowLogging) {
+        logWindowEvent("MODE_CHANGE", 
+            oldMode + " → " + currentMode + 
+            (currentMode == "gaming" ? " (MPV hotkeys active)" : " (MPV hotkeys inactive)"));
     }
-}
-
-void HotkeyManager::grabMPVHotkeys() {
-    // Media keys that should only be grabbed in gaming mode
-    const std::vector<std::string> mpvKeys = {
-        "XF86AudioRaiseVolume",
-        "XF86AudioLowerVolume",
-        "XF86AudioMute",
-        "XF86AudioPlay",
-        "XF86AudioStop",
-        "XF86AudioNext",
-        "XF86AudioPrev",
-        // Also grab our special MPV hotkeys
-        "z", "o", "p", "l", "semicolon", "7", "8", "5", "6", "9", "0",
-        "minus", "equal", "m"
-    };
-    
-    for (const auto& key : mpvKeys) {
-        if (verboseKeyLogging) {
-            logKeyEvent(key, "GRAB", "Grabbing for gaming mode");
-        }
-    }
-    
-    // Grab all MPV hotkey IDs that we've stored
-    for (int id : mpvHotkeyIds) {
-        io.GrabHotkey(id);
-    }
-    
-    lo.info("Grabbed all MPV hotkeys for gaming mode");
-}
-
-void HotkeyManager::ungrabMPVHotkeys() {
-    // Media keys that should be ungrabbed when not in gaming mode
-    const std::vector<std::string> mpvKeys = {
-        "XF86AudioRaiseVolume",
-        "XF86AudioLowerVolume",
-        "XF86AudioMute",
-        "XF86AudioPlay",
-        "XF86AudioStop",
-        "XF86AudioNext",
-        "XF86AudioPrev",
-        // Also grab our special MPV hotkeys
-        "z", "o", "p", "l", "semicolon", "7", "8", "5", "6", "9", "0",
-        "minus", "equal", "m"
-    };
-    
-    for (const auto& key : mpvKeys) {
-        if (verboseKeyLogging) {
-            logKeyEvent(key, "UNGRAB", "Releasing for normal mode");
-        }
-    }
-    
-    // Ungrab all MPV hotkey IDs that we've stored
-    for (int id : mpvHotkeyIds) {
-        io.UngrabHotkey(id);
-    }
-    
-    lo.info("Released all MPV hotkeys for normal mode");
 }
 
 void HotkeyManager::showBlackOverlay() {

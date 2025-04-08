@@ -139,6 +139,7 @@ int main(int argc, char* argv[]) {
         // Main loop
         bool running = true;
         auto lastCheck = std::chrono::steady_clock::now();
+        auto lastWindowCheck = std::chrono::steady_clock::now();
         
         while (running && !gShouldExit) {
             // Process events
@@ -153,8 +154,28 @@ int main(int argc, char* argv[]) {
                 gSignalStatus = 0;
             }
             
-            // Check for config changes periodically
+            // Check active window periodically to update hotkey states
             auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= 300) {
+                // Evaluate if the current window is a gaming window
+                bool isGamingWindow = hotkeyManager->evaluateCondition("currentMode == 'gaming'");
+                
+                if (isGamingWindow) {
+                    // Register hotkeys if a gaming window is found
+                    hotkeyManager->grabMPVHotkeys();
+                } else {
+                    // Unregister hotkeys if no gaming window is found
+                    hotkeyManager->ungrabMPVHotkeys();
+                }
+                
+                // Also check Koikatu condition for D key overlay
+                hotkeyManager->evaluateCondition("Window.Active('class:Koikatu')");
+                hotkeyManager->evaluateCondition("Window.Active('name:Koikatu')");
+                
+                lastWindowCheck = now;
+            }
+            
+            // Check for config changes periodically
             if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >= 5) {
                 // Check if config file was modified
                 // config.CheckModified()

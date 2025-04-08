@@ -67,6 +67,9 @@ public:
                           std::function<void()> trueAction,
                           std::function<void()> falseAction = nullptr,
                           int id = 0);
+                          
+    // Make this public so main.cpp can call it for window checks
+    bool evaluateCondition(const std::string& condition);
 
 private:
     IO& io;
@@ -81,6 +84,10 @@ private:
     bool videoPlaying{false};
     time_t lastVideoCheck{0};
     const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
+    
+    // Hotkey state management
+    bool mpvHotkeysGrabbed{false};
+    std::map<std::string, bool> windowConditionStates;  // Tracks if particular window conditions were met
 
     // Window groups
     std::vector<std::string> videoSites;  // Will be loaded from config
@@ -149,7 +156,6 @@ private:
     };
 
     // Helper functions
-    bool evaluateCondition(const std::string& condition);
     void showNotification(const std::string& title, const std::string& message);
     std::string convertKeyName(const std::string& keyName);
     std::string parseHotkeyString(const std::string& hotkeyStr);
@@ -196,5 +202,9 @@ private:
 
     // Store IDs of MPV hotkeys for grab/ungrab
     std::vector<int> mpvHotkeyIds;
+    
+    // Window condition helper methods
+    bool checkWindowCondition(const std::string& condition);
+    void updateHotkeyStateForCondition(const std::string& condition, bool conditionMet);
 };
 } 

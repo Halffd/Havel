@@ -800,11 +800,22 @@ void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, 
 
 bool HotkeyManager::evaluateCondition(const std::string& condition) {
     bool result = false;
-    
-    if (condition == "IsZooming") {
+    bool negation = false;
+    std::string actualCondition = condition;
+
+    // Check for negation at the beginning of the condition string
+    if (actualCondition.length() > 0 && actualCondition[0] == '!') {
+        negation = true;
+        actualCondition = actualCondition.substr(1);
+        if (verboseWindowLogging) {
+            logWindowEvent("CONDITION_CHECK", "Detected negation for condition: " + actualCondition);
+        }
+    }
+
+    if (actualCondition == "IsZooming") {
         result = isZooming();
     }
-    else if (condition == "currentMode == 'gaming'") {
+    else if (actualCondition == "currentMode == 'gaming'") {
         // Check if current mode is set to gaming
         if (currentMode == "gaming") {
             lo.debug("Evaluating condition: currentMode == 'gaming' is TRUE (already in gaming mode)");
@@ -850,24 +861,38 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
             logWindowEvent("MODE_CHECK", "Not in gaming mode");
         }
     }
-    else if (condition.find("Window.Active") == 0) {
-        // Use the new window condition check helper
-        result = checkWindowCondition(condition);
+    // Pass the potentially negated condition string to checkWindowCondition
+    else if (actualCondition.find("Window.Active") == 0) { 
+        // Let checkWindowCondition handle the "Window.Active(...)" part
+        // Note: checkWindowCondition already handles internal negation if specified like "!class:"
+        result = checkWindowCondition(actualCondition); 
         
-        // Log the result
+        // Log the result before applying top-level negation
         if (verboseWindowLogging) {
             logWindowEvent("CONDITION_CHECK", 
-                condition + " = " + (result ? "TRUE" : "FALSE"));
+                actualCondition + " = " + (result ? "TRUE" : "FALSE"));
         }
     }
     else {
-    // Log unrecognized conditions
-    lo.warning("Unrecognized condition: " + condition);
+        // Log unrecognized conditions (after removing potential '!')
+        lo.warning("Unrecognized condition: " + actualCondition);
     }
-    
-    // Update hotkey states based on the condition result
-    updateHotkeyStateForCondition(condition, result);
-    
+
+    // Apply the top-level negation if present
+    if (negation) {
+        result = !result;
+        if (verboseWindowLogging) {
+            logWindowEvent("CONDITION_RESULT", std::string("Final result after negation: ") + (result ? "TRUE" : "FALSE"));
+        }
+    } else {
+        if (verboseWindowLogging) {
+             logWindowEvent("CONDITION_RESULT", std::string("Final result: ") + (result ? "TRUE" : "FALSE"));
+        }
+    }
+
+    // Update hotkey states based on the final condition result
+    updateHotkeyStateForCondition(condition, result); // Pass original condition for state tracking
+
     return result;
 }
 

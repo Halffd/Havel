@@ -132,10 +132,53 @@ void IO::InitKeyMap() {
     keyMap["alt"] = XK_Alt_L;
     keyMap["shift"] = XK_Shift_L;
     keyMap["win"] = XK_Super_L;
+    keyMap["lwin"] = XK_Super_L; // Add alias for Left Win
+    keyMap["rwin"] = XK_Super_R; // Add Right Win
     keyMap["up"] = XK_Up;
     keyMap["down"] = XK_Down;
     keyMap["left"] = XK_Left;
     keyMap["right"] = XK_Right;
+    keyMap["delete"] = XK_Delete;
+    keyMap["insert"] = XK_Insert;
+    keyMap["home"] = XK_Home;
+    keyMap["end"] = XK_End;
+    keyMap["pageup"] = XK_Page_Up;
+    keyMap["pagedown"] = XK_Page_Down;
+    keyMap["printscreen"] = XK_Print;
+    keyMap["scrolllock"] = XK_Scroll_Lock;
+    keyMap["pause"] = XK_Pause;
+    keyMap["capslock"] = XK_Caps_Lock;
+    keyMap["numlock"] = XK_Num_Lock;
+    keyMap["menu"] = XK_Menu; // Add Menu key
+    
+    // Numpad keys
+    keyMap["kp_0"] = XK_KP_0;
+    keyMap["kp_1"] = XK_KP_1;
+    keyMap["kp_2"] = XK_KP_2;
+    keyMap["kp_3"] = XK_KP_3;
+    keyMap["kp_4"] = XK_KP_4;
+    keyMap["kp_5"] = XK_KP_5;
+    keyMap["kp_6"] = XK_KP_6;
+    keyMap["kp_7"] = XK_KP_7;
+    keyMap["kp_8"] = XK_KP_8;
+    keyMap["kp_9"] = XK_KP_9;
+    keyMap["kp_insert"] = XK_KP_Insert; // KP 0
+    keyMap["kp_end"] = XK_KP_End;       // KP 1
+    keyMap["kp_down"] = XK_KP_Down;     // KP 2
+    keyMap["kp_pagedown"] = XK_KP_Page_Down; // KP 3
+    keyMap["kp_left"] = XK_KP_Left;     // KP 4
+    keyMap["kp_begin"] = XK_KP_Begin;   // KP 5
+    keyMap["kp_right"] = XK_KP_Right;    // KP 6
+    keyMap["kp_home"] = XK_KP_Home;     // KP 7
+    keyMap["kp_up"] = XK_KP_Up;       // KP 8
+    keyMap["kp_pageup"] = XK_KP_Page_Up;   // KP 9
+    keyMap["kp_delete"] = XK_KP_Delete;   // KP Decimal
+    keyMap["kp_decimal"] = XK_KP_Decimal;
+    keyMap["kp_add"] = XK_KP_Add;
+    keyMap["kp_subtract"] = XK_KP_Subtract;
+    keyMap["kp_multiply"] = XK_KP_Multiply;
+    keyMap["kp_divide"] = XK_KP_Divide;
+    keyMap["kp_enter"] = XK_KP_Enter;
     
     // Function keys
     keyMap["f1"] = XK_F1;
@@ -151,16 +194,47 @@ void IO::InitKeyMap() {
     keyMap["f11"] = XK_F11;
     keyMap["f12"] = XK_F12;
     
-    // Media keys
+    // Media keys (using XF86keysym.h - ensure it's included)
     keyMap["volumeup"] = XF86XK_AudioRaiseVolume;
     keyMap["volumedown"] = XF86XK_AudioLowerVolume;
     keyMap["mute"] = XF86XK_AudioMute;
     keyMap["play"] = XF86XK_AudioPlay;
     keyMap["pause"] = XF86XK_AudioPause;
-    keyMap["playpause"] = XF86XK_AudioPlay;
+    keyMap["playpause"] = XF86XK_AudioPlay; // Often mapped to the same key
     keyMap["stop"] = XF86XK_AudioStop;
     keyMap["prev"] = XF86XK_AudioPrev;
     keyMap["next"] = XF86XK_AudioNext;
+
+    // Punctuation and symbols
+    keyMap["comma"] = XK_comma; // Add comma
+    keyMap["period"] = XK_period;
+    keyMap["semicolon"] = XK_semicolon;
+    keyMap["slash"] = XK_slash;
+    keyMap["backslash"] = XK_backslash;
+    keyMap["bracketleft"] = XK_bracketleft;
+    keyMap["bracketright"] = XK_bracketright;
+    keyMap["minus"] = XK_minus; // Add minus
+    keyMap["equal"] = XK_equal; // Add equal
+    keyMap["grave"] = XK_grave; // Tilde key (~)
+    keyMap["apostrophe"] = XK_apostrophe;
+    
+    // Letter keys (a-z)
+    for (char c = 'a'; c <= 'z'; ++c) {
+        keyMap[std::string(1, c)] = XStringToKeysym(std::string(1, c).c_str());
+    }
+    
+    // Number keys (0-9)
+    for (char c = '0'; c <= '9'; ++c) {
+        keyMap[std::string(1, c)] = XStringToKeysym(std::string(1, c).c_str());
+    }
+    
+    // Button names (for mouse events)
+    keyMap["button1"] = Button1;
+    keyMap["button2"] = Button2;
+    keyMap["button3"] = Button3;
+    keyMap["button4"] = Button4; // Wheel up
+    keyMap["button5"] = Button5; // Wheel down
+    
 #endif
 }
 
@@ -357,77 +431,74 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     std::cout << "  Parsed modifiers: " << modifiers << ", key: '" << keyName << "'" << std::endl;
     
     // Handle special keys
-    Key key = 0;
+    KeySym keysym = 0; // Use KeySym for X11 processing
+    KeyCode keycode = 0; // Use KeyCode for X11 registration
     
     if (isDirectKeycode) {
-        // For direct keycodes, use handleKeyString which now has better keycode handling
-        key = handleKeyString(keyName);
-        if (key == -1) {
+        // For direct keycodes, handleKeyString returns the keycode directly
+        keycode = handleKeyString(keyName);
+        if (keycode == -1) {
             std::cerr << "Failed to interpret direct keycode: " << keyName << std::endl;
             return false;
         }
+        // Try to get the corresponding keysym for internal storage/logging if needed
+        if (display) {
+            keysym = XkbKeycodeToKeysym(display, keycode, 0, 0);
+        }
+        std::cout << "  Direct keycode: " << (int)keycode << " (keysym: " << keysym << ")" << std::endl;
+
     } else {
+        // For named keys, find the keysym first
         std::string keyNameLower = keyName;
         std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
         
-        // First check if the key exists in our keyMap
         auto it = keyMap.find(keyNameLower);
         if (it != keyMap.end()) {
-            key = it->second;
+            keysym = it->second;
+        } else if (keyName.length() == 1) {
+             // Try converting single chars that might not be in the map
+            keysym = XStringToKeysym(keyName.c_str());
+        } 
+        // Add more specific fallbacks if needed, e.g.
+        // else if (keyNameLower == "specific_key") keysym = XK_SpecificKey;
+        
+        if (keysym == NoSymbol) {
+            std::cerr << "Invalid key name or not found in map: " << keyName << std::endl;
+            return false;
         }
-        // If not in keyMap, try special keys
-        else if (keyNameLower == "up") key = XK_Up;
-        else if (keyNameLower == "down") key = XK_Down;
-        else if (keyNameLower == "left") key = XK_Left;
-        else if (keyNameLower == "right") key = XK_Right;
-        else if (keyNameLower == "space") key = XK_space;
-        else if (keyNameLower == "delete") key = XK_Delete;
-        else if (keyNameLower == "l") key = XK_l;
-        else if (keyNameLower == "r") key = XK_r;
-        else if (keyNameLower == "q") key = XK_q;
-        else if (keyNameLower == "xf86audioraisevolume") key = XF86XK_AudioRaiseVolume;
-        else if (keyNameLower == "xf86audiolowervolume") key = XF86XK_AudioLowerVolume;
-        else if (keyNameLower == "xf86audiomute") key = XF86XK_AudioMute;
-        else if (keyNameLower == "xf86audioplay") key = XF86XK_AudioPlay;
-        else if (keyNameLower == "xf86audiostop") key = XF86XK_AudioStop;
-        else if (keyNameLower == "xf86audionext") key = XF86XK_AudioNext;
-        else if (keyNameLower == "xf86audioprev") key = XF86XK_AudioPrev;
-        else if (keyName.length() == 1) {
-            // Try to convert single character keys
-            key = XStringToKeysym(keyName.c_str());
+        std::cout << "  Converted name '" << keyName << "' to keysym: " << keysym << std::endl;
+        
+        // Get the keycode from the keysym
+        if (display) {
+            keycode = XKeysymToKeycode(display, keysym);
+            if (keycode == 0) {
+                 std::cerr << "Could not convert keysym " << keysym << " to keycode for key: " << keyName << std::endl;
+                // Optionally, treat as non-fatal if monitoring catches it
+                // return false; 
+            }
+            std::cout << "  Keysym " << keysym << " maps to keycode: " << (int)keycode << std::endl;
         }
     }
     
-    if (key == 0) {
-        std::cerr << "Invalid key name: " << keyName << std::endl;
-        return false;
-    }
-    
-    std::cout << "  Converted to keysym: " << key << std::endl;
-    
+    // If we couldn't get a valid keycode, we can't register the grab
+    // However, we might still store the hotkey if event monitoring can handle it by keysym
+    bool canGrab = (display && keycode != 0);
+
     // Create hotkey structure
     HotKey hotkey;
     hotkey.alias = hotkeyStr;
-    hotkey.key = key;
+    hotkey.key = keysym; // Store keysym for event monitoring
     hotkey.modifiers = modifiers;
     hotkey.callback = action;
     hotkey.enabled = true;
     
-    // Register the hotkey
+    // Register the hotkey internally regardless of grab success
     hotkeys[id] = hotkey;
     
-    // Grab the key using X11
+    // Grab the key using X11 if possible
 #ifdef __linux__
-    if (display) {
+    if (canGrab) {
         Window root = DefaultRootWindow(display);
-        KeyCode keycode = XKeysymToKeycode(display, key);
-        
-        if (keycode == 0) {
-            std::cerr << "Invalid keycode for hotkey: " << hotkeyStr << std::endl;
-            return false;
-        }
-        
-        std::cout << "  Keycode: " << (int)keycode << std::endl;
         
         // Ungrab first in case it's already grabbed
         XUngrabKey(display, keycode, modifiers, root);

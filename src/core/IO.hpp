@@ -21,6 +21,7 @@ struct HotKey {
     bool enabled = true;
     bool blockInput = false;
     bool suspend = false;
+    bool exclusive = false;
 };
 
 struct IoEvent {
@@ -103,6 +104,10 @@ private:
     void InitKeyMap();
     void SendKeyEvent(Key key, bool down);
     std::vector<IoEvent> ParseKeysString(const std::string& keys);
+    
+    // Helper methods for X11 key grabbing
+    void GrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root, bool exclusive);
+    void UngrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root);
 };
 
 } // namespace H

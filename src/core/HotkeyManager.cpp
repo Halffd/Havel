@@ -335,7 +335,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Add contextual hotkey for D key in Koikatu
-    AddContextualHotkey("d", "Window.Active('class:Koikatu')",
+    AddContextualHotkey("~d", "Window.Active('class:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu
             lo.info("Koikatu window detected - D key pressed - showing black overlay");
@@ -347,7 +347,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
     
     // Also add a title-based hotkey for Koikatu window title (as a fallback)
-    AddContextualHotkey("d", "Window.Active('name:Koikatu')",
+    AddContextualHotkey("~d", "Window.Active('name:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu window
             lo.info("Koikatu window title detected - D key pressed - showing black overlay");
@@ -627,8 +627,22 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         id = nextId++;
     }
     
-    // Convert special key names
-    std::string normalizedKey = parseHotkeyString(key);
+    // Convert special key names and preserve the ~ prefix if present
+    std::string normalizedKey;
+    bool nonExclusive = false;
+    
+    // Check if this is a non-exclusive hotkey (starts with ~)
+    if (key.length() > 0 && key[0] == '~') {
+        nonExclusive = true;
+        // Parse the key without the ~ prefix but then add it back for IO.Hotkey
+        normalizedKey = "~" + parseHotkeyString(key.substr(1));
+        
+        if (verboseKeyLogging) {
+            lo.debug("Setting up non-exclusive contextual hotkey: " + normalizedKey);
+        }
+    } else {
+        normalizedKey = parseHotkeyString(key);
+    }
     
     // Create an action that will evaluate the condition
     auto action = [this, condition, trueAction, falseAction]() {
@@ -639,13 +653,6 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         }
         
         // Evaluate the condition
-        // Examples of supported conditions:
-        // - "IsZooming" - Check if zooming mode is active
-        // - "currentMode == 'gaming'" - Check if in gaming mode
-        // - "Window.Active('Firefox')" - Check window title contains "Firefox"
-        // - "Window.Active('class:Firefox')" - Check window class contains "Firefox"
-        // - "Window.Active('name:Gmail')" - Explicitly check window title
-        // - "!Window.Active('class:Emacs')" - Negation: Check window class does NOT contain "Emacs"
         bool conditionMet = evaluateCondition(condition);
         
         // Execute the appropriate action based on the condition result
@@ -664,6 +671,9 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     
     // Register the hotkey with the action
     io.Hotkey(normalizedKey, action, id);
+    
+    // For certain conditions, update our tracking
+    updateHotkeyStateForCondition(condition, evaluateCondition(condition));
     
     return id;
 }

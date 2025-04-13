@@ -57,7 +57,7 @@ IO::~IO() {
             if (hotkey.key != 0) {
                 KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
                 if (keycode != 0) {
-                    XUngrabKey(display, keycode, hotkey.modifiers, root);
+                    UngrabKeyWithVariants(keycode, hotkey.modifiers, root);
                 }
             }
         }
@@ -66,6 +66,99 @@ IO::~IO() {
     
     // Don't close the display here, it's managed by DisplayManager
     display = nullptr;
+}
+
+// Helper method to grab a key with all modifier variants (NumLock, CapsLock)
+void IO::GrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root, bool exclusive) {
+    if (!display) return;
+    
+    // First, determine the mask for NumLock
+    unsigned int numlockmask = 0;
+    XModifierKeymap* modmap = XGetModifierMapping(display);
+    if (modmap && modmap->max_keypermod > 0) {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < modmap->max_keypermod; j++) {
+                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
+                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
+                    numlockmask = (1 << i);
+                    break;
+                }
+            }
+        }
+        XFreeModifiermap(modmap);
+    }
+    
+    // Define the modifier variants to handle
+    unsigned int modVariants[] = {
+        0,                      // Base modifiers
+        LockMask,               // CapsLock
+        numlockmask,            // NumLock
+        LockMask | numlockmask  // Both CapsLock and NumLock
+    };
+    
+    // Grab with all modifier variants
+    for (unsigned int variant : modVariants) {
+        // Skip if this specific variant isn't applicable
+        // (when numlockmask is 0 and variant involves numlockmask)
+        if ((variant & numlockmask) && numlockmask == 0)
+            continue;
+        
+        unsigned int finalMods = modifiers | variant;
+        
+        // Ungrab first in case it's already grabbed
+        XUngrabKey(display, keycode, finalMods, root);
+        
+        if (exclusive) {
+            // Exclusive grab - like AHK's normal behavior
+            Status status = XGrabKey(display, keycode, finalMods, root, True, 
+                                    GrabModeAsync, GrabModeAsync);
+            
+            if (status != Success) {
+                std::cerr << "Failed to grab key (code: " << (int)keycode 
+                        << ") with modifiers: " << finalMods << std::endl;
+            }
+        } else {
+            // Non-exclusive - like AHK's ~ prefix
+            // Just ensure we're listening for key events on the root window
+            XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
+        }
+    }
+    
+    // Ensure changes are flushed to the X server immediately
+    XSync(display, False);
+}
+
+// Helper method to ungrab a key with all modifier variants
+void IO::UngrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root) {
+    if (!display) return;
+    
+    // Determine the mask for NumLock
+    unsigned int numlockmask = 0;
+    XModifierKeymap* modmap = XGetModifierMapping(display);
+    if (modmap && modmap->max_keypermod > 0) {
+        for (int i = 0; i < 8; i++) {
+            for (int j = 0; j < modmap->max_keypermod; j++) {
+                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
+                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
+                    numlockmask = (1 << i);
+                    break;
+                }
+            }
+        }
+        XFreeModifiermap(modmap);
+    }
+    
+    // Ungrab with all modifier variants
+    XUngrabKey(display, keycode, modifiers, root);
+    XUngrabKey(display, keycode, modifiers | LockMask, root);
+    
+    if (numlockmask) {
+        XUngrabKey(display, keycode, modifiers | numlockmask, root);
+        XUngrabKey(display, keycode, modifiers | LockMask | numlockmask, root);
+    }
+    
+    // Ensure changes are flushed to the X server immediately
+    XSync(display, False);
 }
 
 // X11 hotkey monitoring thread
@@ -80,6 +173,18 @@ void IO::MonitorHotkeys() {
     // Select events on the root window
     XSelectInput(display, root, KeyPressMask);
     
+    // Helper function to check if a keysym is a modifier
+    auto IsModifierKey = [](KeySym ks) -> bool {
+        return ks == XK_Shift_L || ks == XK_Shift_R ||
+               ks == XK_Control_L || ks == XK_Control_R ||
+               ks == XK_Alt_L || ks == XK_Alt_R ||
+               ks == XK_Meta_L || ks == XK_Meta_R ||
+               ks == XK_Super_L || ks == XK_Super_R ||
+               ks == XK_Hyper_L || ks == XK_Hyper_R ||
+               ks == XK_Caps_Lock || ks == XK_Shift_Lock ||
+               ks == XK_Num_Lock || ks == XK_Scroll_Lock;
+    };
+
     while (timerRunning) {
         // Check for pending events
         if (XPending(display) > 0) {
@@ -88,22 +193,39 @@ void IO::MonitorHotkeys() {
             if (event.type == KeyPress) {
                 XKeyEvent* keyEvent = &event.xkey;
                 KeySym keysym = XLookupKeysym(keyEvent, 0);
-                std::cout << "KeyPress event detected: " << keysym << " with state: " << keyEvent->state << std::endl;
+
+                // --- FIX: Ignore events for modifier keys themselves ---
+                if (IsModifierKey(keysym)) {
+                    continue; 
+                }
+                // ------------------------------------------------------
+                
+                std::cout << "KeyPress event detected: " << XKeysymToString(keysym) 
+                          << " (keycode: " << keyEvent->keycode << ")"
+                          << " with state: " << keyEvent->state << std::endl;
+                
+                // --- FIX: Clean the modifier state mask --- 
+                // Include standard modifiers + LockMask (Caps Lock)
+                // Exclude Mod2Mask (NumLock) and Mod3Mask (ScrollLock) typically
+                unsigned int relevantModifiers = ShiftMask | LockMask | ControlMask | Mod1Mask | Mod4Mask | Mod5Mask;
+                unsigned int cleanedState = keyEvent->state & relevantModifiers;
+                // ------------------------------------------
                 
                 // Find and execute matching hotkeys
                 for (const auto& [id, hotkey] : hotkeys) {
                     if (hotkey.enabled) {
-                        KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
-                        
-                        if (keyEvent->keycode == keycode && 
-                            keyEvent->state == hotkey.modifiers) {
-                            std::cout << "Hotkey matched: " << hotkey.alias << std::endl;
+                        // KeySym was stored in hotkey.key during registration
+                        if (hotkey.key == keysym && 
+                            cleanedState == hotkey.modifiers) { // Compare base key AND cleaned modifier state
+                            std::cout << "Hotkey matched: " << hotkey.alias << " (state: " << cleanedState << " vs expected: " << hotkey.modifiers << ")" << std::endl;
                             // Execute the callback in a separate thread to avoid blocking
                             if (hotkey.callback) {
                                 std::thread([callback = hotkey.callback]() {
                                     callback();
                                 }).detach();
                             }
+                            // Consider breaking if only one hotkey should match per event
+                             break; 
                         }
                     }
                 }
@@ -372,6 +494,14 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     std::string keyName;
     int modifiers = 0;
     std::string hotkeyStrCopy = hotkeyStr;
+    bool exclusive = true; // Default to exclusive grab (block other apps)
+    
+    // Check if this is a non-blocking hotkey (starts with ~)
+    if (hotkeyStrCopy.length() > 0 && hotkeyStrCopy[0] == '~') {
+        exclusive = false;
+        hotkeyStrCopy = hotkeyStrCopy.substr(1);
+        std::cout << "  Non-exclusive hotkey detected: " << hotkeyStrCopy << std::endl;
+    }
     
     // Check if this is a direct keycode (format: "kcXXX")
     bool isDirectKeycode = false;
@@ -491,6 +621,7 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     hotkey.modifiers = modifiers;
     hotkey.callback = action;
     hotkey.enabled = true;
+    hotkey.exclusive = exclusive;
     
     // Register the hotkey internally regardless of grab success
     hotkeys[id] = hotkey;
@@ -500,46 +631,11 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
     if (canGrab) {
         Window root = DefaultRootWindow(display);
         
-        // Ungrab first in case it's already grabbed
-        XUngrabKey(display, keycode, modifiers, root);
+        // Use our improved method to handle modifier variants
+        GrabKeyWithVariants(keycode, modifiers, root, exclusive);
         
-        // Try to grab the key with error handling
-        Status status = XGrabKey(display, keycode, modifiers, root, True, 
-                             GrabModeAsync, GrabModeAsync);
-        
-        if (status != Success) {
-            std::cerr << "Failed to grab key for hotkey: " << hotkeyStr << " (status: " << status << ")" << std::endl;
-            // Don't return false here - we'll still register the hotkey even if we can't grab it
-        }
-        
-        // Also grab with numlock and capslock variations
-        unsigned int numlockmask = 0;
-        XModifierKeymap* modmap = XGetModifierMapping(display);
-        if (modmap && modmap->max_keypermod > 0) {
-            for (int i = 0; i < 8; i++) {
-                for (int j = 0; j < modmap->max_keypermod; j++) {
-                    KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
-                    if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
-                        numlockmask = (1 << i);
-                        break;
-                    }
-                }
-            }
-            XFreeModifiermap(modmap);
-        }
-        
-        // Add grabs for numlock and capslock combinations
-        if (numlockmask) {
-            XGrabKey(display, keycode, modifiers | numlockmask, root, True, 
-                    GrabModeAsync, GrabModeAsync);
-            XGrabKey(display, keycode, modifiers | LockMask, root, True, 
-                    GrabModeAsync, GrabModeAsync);
-            XGrabKey(display, keycode, modifiers | numlockmask | LockMask, root, True, 
-                    GrabModeAsync, GrabModeAsync);
-        }
-        
-        XSync(display, False);
-        std::cout << "Successfully registered hotkey: " << hotkeyStr << std::endl;
+        std::cout << "Successfully registered hotkey: " << hotkeyStr 
+                 << " (exclusive: " << (exclusive ? "yes" : "no") << ")" << std::endl;
     }
 #endif
     
@@ -1130,42 +1226,9 @@ bool IO::GrabHotkey(int hotkeyId) {
         return false;
     }
     
-    // Try to grab the key with error handling
-    Status status = XGrabKey(display, keycode, hotkey.modifiers, root, True, 
-                         GrabModeAsync, GrabModeAsync);
+    // Use our improved method to grab with all modifier variants
+    GrabKeyWithVariants(keycode, hotkey.modifiers, root, hotkey.exclusive);
     
-    if (status != Success) {
-        std::cerr << "Failed to grab key for hotkey: " << hotkey.alias << " (status: " << status << ")" << std::endl;
-        return false;
-    }
-    
-    // Also grab with numlock and capslock variations
-    unsigned int numlockmask = 0;
-    XModifierKeymap* modmap = XGetModifierMapping(display);
-    if (modmap && modmap->max_keypermod > 0) {
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < modmap->max_keypermod; j++) {
-                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
-                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
-                    numlockmask = (1 << i);
-                    break;
-                }
-            }
-        }
-        XFreeModifiermap(modmap);
-    }
-    
-    // Add grabs for numlock and capslock combinations
-    if (numlockmask) {
-        XGrabKey(display, keycode, hotkey.modifiers | numlockmask, root, True, 
-                GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, keycode, hotkey.modifiers | LockMask, root, True, 
-                GrabModeAsync, GrabModeAsync);
-        XGrabKey(display, keycode, hotkey.modifiers | numlockmask | LockMask, root, True, 
-                GrabModeAsync, GrabModeAsync);
-    }
-    
-    XSync(display, False);
     std::cout << "Successfully grabbed hotkey: " << hotkey.alias << std::endl;
     return true;
 #else
@@ -1192,32 +1255,9 @@ bool IO::UngrabHotkey(int hotkeyId) {
         return false;
     }
     
-    // Ungrab the key and its modifier combinations
-    XUngrabKey(display, keycode, hotkey.modifiers, root);
+    // Use our improved method to ungrab with all modifier variants
+    UngrabKeyWithVariants(keycode, hotkey.modifiers, root);
     
-    // Also ungrab numlock and capslock variations
-    unsigned int numlockmask = 0;
-    XModifierKeymap* modmap = XGetModifierMapping(display);
-    if (modmap && modmap->max_keypermod > 0) {
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < modmap->max_keypermod; j++) {
-                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
-                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
-                    numlockmask = (1 << i);
-                    break;
-                }
-            }
-        }
-        XFreeModifiermap(modmap);
-    }
-    
-    if (numlockmask) {
-        XUngrabKey(display, keycode, hotkey.modifiers | numlockmask, root);
-        XUngrabKey(display, keycode, hotkey.modifiers | LockMask, root);
-        XUngrabKey(display, keycode, hotkey.modifiers | numlockmask | LockMask, root);
-    }
-    
-    XSync(display, False);
     std::cout << "Successfully ungrabbed hotkey: " << hotkey.alias << std::endl;
     return true;
 #else

@@ -108,6 +108,11 @@ int main(int argc, char* argv[]) {
         // Create hotkey manager
         auto hotkeyManager = std::make_shared<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
         
+        // Initialize and load debug settings
+        hotkeyManager->initDebugSettings();
+        hotkeyManager->loadDebugSettings();
+        hotkeyManager->applyDebugSettings();
+        
         // If starting up, set initial brightness and gamma
         if (isStartup) {
             lo.info("Setting startup brightness and gamma values");

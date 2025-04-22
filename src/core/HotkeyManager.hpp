@@ -23,11 +23,22 @@ public:
     ~HotkeyManager() = default;
     
     // Debug flags
-    bool verboseKeyLogging{false};  // -v flag
-    bool verboseWindowLogging{false};  // -w flag
+    bool verboseKeyLogging = false;
+    bool verboseWindowLogging = false;
+    bool verboseConditionLogging = false;
     
-    void setVerboseKeyLogging(bool enabled) { verboseKeyLogging = enabled; }
-    void setVerboseWindowLogging(bool enabled) { verboseWindowLogging = enabled; }
+    void setVerboseKeyLogging(bool value) { verboseKeyLogging = value; }
+    void setVerboseWindowLogging(bool value) { verboseWindowLogging = value; }
+    void setVerboseConditionLogging(bool value) { verboseConditionLogging = value; }
+    
+    // Load debug settings from config
+    void loadDebugSettings();
+    
+    // Initialize debug settings
+    void initDebugSettings();
+    
+    // Apply current debug settings
+    void applyDebugSettings();
 
     void RegisterDefaultHotkeys();
     void RegisterMediaHotkeys();
@@ -47,8 +58,8 @@ public:
     // Mode management
     void setMode(const std::string& mode);
     std::string getMode() const { return currentMode; }
-    bool isZooming() const { return zoomingMode; }
-    void setZooming(bool zooming) { zoomingMode = zooming; }
+    bool isZooming() const { return m_isZooming; }
+    void setZooming(bool zooming) { m_isZooming = zooming; }
     
     // MPV hotkey management
     void grabMPVHotkeys();
@@ -71,6 +82,17 @@ public:
     // Make this public so main.cpp can call it for window checks
     bool evaluateCondition(const std::string& condition);
 
+    // Window management
+    void minimizeActiveWindow();
+    void maximizeActiveWindow();
+    void tileWindows();
+    void centerActiveWindow();
+    void restoreWindow();
+
+    // Active window info
+    void printActiveWindowInfo();
+    void toggleWindowFocusTracking();
+
 private:
     IO& io;
     WindowManager& windowManager;
@@ -80,7 +102,7 @@ private:
 
     // Mode management
     std::string currentMode{"default"};
-    bool zoomingMode{false};
+    bool m_isZooming{false};
     bool videoPlaying{false};
     time_t lastVideoCheck{0};
     const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
@@ -206,5 +228,9 @@ private:
     // Window condition helper methods
     bool checkWindowCondition(const std::string& condition);
     void updateHotkeyStateForCondition(const std::string& condition, bool conditionMet);
+
+    // Window focus tracking
+    bool trackWindowFocus;
+    wID lastActiveWindowId;
 };
 } 

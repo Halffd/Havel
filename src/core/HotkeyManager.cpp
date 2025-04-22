@@ -14,6 +14,7 @@
 #include <regex>
 #include <thread>
 #include <chrono>
+#include <atomic>
 #include "core/DisplayManager.hpp"
 
 // Include XRandR for multi-monitor support
@@ -24,7 +25,9 @@
 namespace H {
 
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
-    : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine), brightnessManager() {
+    : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine), 
+      brightnessManager(io), verboseKeyLogging(false), verboseWindowLogging(false), 
+      mpvHotkeysGrabbed(false), trackWindowFocus(false), lastActiveWindowId(0) {
     loadVideoSites();
 }
 
@@ -357,6 +360,135 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         nullptr, // No action when condition is false
         0 // ID parameter
     );
+
+    // '/' key to hold 'w' down in gaming mode
+    AddContextualHotkey("slash", "currentMode == 'gaming'",
+        [this]() {
+            lo.info("Gaming hotkey: Holding 'w' key down");
+            io.PressKey("w", true);
+            
+            // Register the same key to release when pressed again
+            static bool wKeyPressed = false;
+            wKeyPressed = !wKeyPressed;
+            
+            if (wKeyPressed) {
+                lo.info("W key pressed and held down");
+                showNotification("Gaming Mode", "W key pressed and held");
+            } else {
+                io.PressKey("w", false);
+                lo.info("W key released");
+                showNotification("Gaming Mode", "W key released");
+            }
+        },
+        nullptr, // No action when not in gaming mode
+        0 // ID parameter
+    );
+    
+    // "'" key to move mouse to coordinates and autoclick in gaming mode
+    AddContextualHotkey("apostrophe", "currentMode == 'gaming'",
+        [this]() {
+            lo.info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
+            // Move mouse to coordinates
+            std::string moveCmd = "xdotool mousemove 1600 700";
+            system(moveCmd.c_str());
+            
+            // Start autoclicking
+            startAutoclicker("Button1");
+        },
+        nullptr, // No action when not in gaming mode
+        0 // ID parameter
+    );
+    
+    // Enter key to autoclick in gaming mode
+    AddContextualHotkey("Return", "currentMode == 'gaming'",
+        [this]() {
+            lo.info("Gaming hotkey: Starting autoclicker with Enter key");
+            startAutoclicker("Button1");
+        },
+        nullptr, // No action when not in gaming mode
+        0 // ID parameter
+    );
+    
+    // Add a variable to track and allow stopping Genshin automation
+    static std::atomic<bool> genshinAutomationActive(false);
+
+    // Special hotkeys for Genshin Impact - Start automation
+    AddContextualHotkey("g", "Window.Active('name:Genshin') && currentMode == 'gaming'",
+        [this]() {
+            lo.info("Genshin Impact detected - Starting specialized auto actions");
+            
+            // Set the flag to active
+            genshinAutomationActive = true;
+            showNotification("Genshin Automation", "Starting automation sequence");
+            
+            // Start autoclicking
+            startAutoclicker("Button1");
+            
+            // Press E every 2 seconds
+            std::thread eKeyThread([this]() {
+                int counter = 0;
+                const int maxIterations = 300; // Stop after 10 minutes (300 * 2 seconds)
+                while (counter < maxIterations && currentMode == "gaming" && genshinAutomationActive) {
+                    // Check if Genshin is still the active window
+                    wID activeWindow = WindowManager::GetActiveWindow();
+                    bool isGenshinActive = false;
+                    
+                    if (activeWindow != 0) {
+                        try {
+                            Window window(std::to_string(activeWindow), activeWindow);
+                            std::string windowTitle = window.Title();
+                            isGenshinActive = (windowTitle.find("Genshin") != std::string::npos);
+                        } catch (...) {
+                            lo.error("Failed to get active window title in Genshin automation");
+                        }
+                    }
+                    
+                    // Only continue if Genshin is still active
+                    if (!isGenshinActive) {
+                        lo.info("Genshin automation: Window no longer active, stopping automation");
+                        genshinAutomationActive = false;
+                        break;
+                    }
+                    
+                    // Press E
+                    io.PressKey("e", true);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    io.PressKey("e", false);
+                    std::this_thread::sleep_for(std::chrono::seconds(2));
+                    
+                    // Every 5th iteration (10 seconds), press Q
+                    if (counter % 5 == 0) {
+                        io.PressKey("q", true);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                        io.PressKey("q", false);
+                        lo.info("Genshin automation: Pressed Q");
+                    }
+                    
+                    counter++;
+                    lo.info("Genshin automation: Pressed E (" + std::to_string(counter) + "/" + std::to_string(maxIterations) + ")");
+                }
+                
+                // If we exited the loop, make sure the automation is marked as stopped
+                genshinAutomationActive = false;
+                lo.info("Genshin automation: Stopping automation sequence");
+            });
+            eKeyThread.detach();
+        },
+        nullptr, // No action when not in gaming mode
+        0 // ID parameter
+    );
+
+    // Add hotkey to stop Genshin automation
+    AddHotkey("alt+g", [this]() {
+        if (genshinAutomationActive) {
+            genshinAutomationActive = false;
+            lo.info("Manually stopping Genshin automation");
+            showNotification("Genshin Automation", "Automation sequence stopped");
+        } else {
+            lo.info("Genshin automation is not active");
+            showNotification("Genshin Automation", "No active automation to stop");
+        }
+    });
 }
 
 void HotkeyManager::RegisterMediaHotkeys() {
@@ -567,6 +699,50 @@ void HotkeyManager::RegisterSystemHotkeys() {
     AddHotkey("alt+d", [this]() {
         showBlackOverlay();
         logWindowEvent("BLACK_OVERLAY", "Showing full-screen black overlay");
+    });
+    
+    // Add new hotkey to print active window info
+    AddHotkey("alt+i", [this]() {
+        printActiveWindowInfo();
+    });
+    
+    // Add new hotkey to toggle automatic window focus tracking
+    AddHotkey("alt+shift+i", [this]() {
+        toggleWindowFocusTracking();
+    });
+    
+    // Add debug logging toggle hotkeys
+    AddHotkey("alt+d+l", [this]() {
+        // Toggle verbose key logging
+        setVerboseKeyLogging(!verboseKeyLogging);
+        Configs::Get().Set<bool>("Debug.VerboseKeyLogging", verboseKeyLogging);
+        Configs::Get().Save();
+        
+        std::string status = verboseKeyLogging ? "enabled" : "disabled";
+        lo.info("Verbose key logging " + status);
+        showNotification("Debug Setting", "Key logging " + status);
+    });
+    
+    AddHotkey("alt+d+w", [this]() {
+        // Toggle verbose window logging
+        setVerboseWindowLogging(!verboseWindowLogging);
+        Configs::Get().Set<bool>("Debug.VerboseWindowLogging", verboseWindowLogging);
+        Configs::Get().Save();
+        
+        std::string status = verboseWindowLogging ? "enabled" : "disabled";
+        lo.info("Verbose window logging " + status);
+        showNotification("Debug Setting", "Window logging " + status);
+    });
+    
+    AddHotkey("alt+d+c", [this]() {
+        // Toggle verbose condition logging
+        setVerboseConditionLogging(!verboseConditionLogging);
+        Configs::Get().Set<bool>("Debug.VerboseConditionLogging", verboseConditionLogging);
+        Configs::Get().Save();
+        
+        std::string status = verboseConditionLogging ? "enabled" : "disabled";
+        lo.info("Verbose condition logging " + status);
+        showNotification("Debug Setting", "Condition logging " + status);
     });
 }
 
@@ -902,6 +1078,16 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
 
     // Update hotkey states based on the final condition result
     updateHotkeyStateForCondition(condition, result); // Pass original condition for state tracking
+
+    // If window focus tracking is enabled, check for window changes
+    if (trackWindowFocus) {
+        wID currentActiveWindow = WindowManager::GetActiveWindow();
+        if (currentActiveWindow != lastActiveWindowId && currentActiveWindow != 0) {
+            // Window focus has changed, log it
+            lastActiveWindowId = currentActiveWindow;
+            printActiveWindowInfo();
+        }
+    }
 
     return result;
 }
@@ -1481,6 +1667,166 @@ void HotkeyManager::showBlackOverlay() {
     
     // Detach the thread to let it run independently
     eventThread.detach();
+}
+
+void HotkeyManager::printActiveWindowInfo() {
+    wID activeWindow = WindowManager::GetActiveWindow();
+    if (activeWindow == 0) {
+        lo.info("╔══════════════════════════════════════╗");
+        lo.info("║      NO ACTIVE WINDOW DETECTED       ║");
+        lo.info("╚══════════════════════════════════════╝");
+        return;
+    }
+    
+    // Get window class
+    std::string windowClass = WindowManager::GetActiveWindowClass();
+    
+    // Get window title
+    std::string windowTitle = "Unknown";
+    try {
+        Window window(std::to_string(activeWindow), activeWindow);
+        windowTitle = window.Title();
+    } catch (...) {
+        lo.error("Failed to get active window title");
+    }
+    
+    // Check if it's a gaming window
+    bool isGaming = isGamingWindow();
+    
+    // Get window geometry
+    int x = 0, y = 0, width = 0, height = 0;
+    try {
+        Window window(std::to_string(activeWindow), activeWindow);
+        window.GetRect(x, y, width, height);
+    } catch (...) {
+        // Ignore geometry errors
+    }
+    
+    // Format the geometry string
+    std::string geometry = std::to_string(width) + "x" + std::to_string(height) + 
+                         " @ (" + std::to_string(x) + "," + std::to_string(y) + ")";
+    
+    // Print information to the log with fancy formatting
+    lo.info("╔══════════════════════════════════════════════════════════╗");
+    lo.info("║             ACTIVE WINDOW INFORMATION                    ║");
+    lo.info("╠══════════════════════════════════════════════════════════╣");
+    lo.info("║ Window ID: " + std::to_string(activeWindow) + std::string(45 - std::to_string(activeWindow).length(), ' ') + "║");
+    
+    // Print title (truncate if too long)
+    std::string titleDisplay = "Window Title: \"" + windowTitle + "\"";
+    if (titleDisplay.length() > 52) {
+        titleDisplay = titleDisplay.substr(0, 49) + "...\"";
+    }
+    lo.info("║ " + titleDisplay + std::string(52 - titleDisplay.length(), ' ') + "║");
+    
+    // Print class
+    std::string classDisplay = "Window Class: \"" + windowClass + "\"";
+    if (classDisplay.length() > 52) {
+        classDisplay = classDisplay.substr(0, 49) + "...\"";
+    }
+    lo.info("║ " + classDisplay + std::string(52 - classDisplay.length(), ' ') + "║");
+    
+    // Print geometry
+    lo.info("║ Window Geometry: " + geometry + std::string(52 - 17 - geometry.length(), ' ') + "║");
+    
+    // Print gaming status with visual indicator
+    std::string gamingStatus = "Is Gaming Window: " + std::string(isGaming ? "YES ✓" : "NO ✗");
+    std::string gamingStatusColor = isGaming ? COLOR_GREEN : COLOR_RED;
+    lo.info("║ " + gamingStatusColor + gamingStatus + COLOR_RESET + std::string(52 - gamingStatus.length(), ' ') + "║");
+    
+    // Print current mode
+    std::string modeDisplay = "Current Mode: " + currentMode;
+    lo.info("║ " + modeDisplay + std::string(52 - modeDisplay.length(), ' ') + "║");
+    
+    lo.info("╚══════════════════════════════════════════════════════════╝");
+    
+    // Also log to window events for history (plain format for easier parsing)
+    logWindowEvent("WINDOW_INFO", 
+        "Title: \"" + windowTitle + "\", Class: \"" + windowClass + "\", Gaming: " + 
+        (isGaming ? "YES" : "NO") + ", Geometry: " + geometry);
+}
+
+void HotkeyManager::toggleWindowFocusTracking() {
+    trackWindowFocus = !trackWindowFocus;
+    
+    if (trackWindowFocus) {
+        lo.info("Window focus tracking ENABLED - will log all window changes");
+        logWindowEvent("FOCUS_TRACKING", "Enabled");
+        
+        // Initialize with current window
+        lastActiveWindowId = WindowManager::GetActiveWindow();
+        if (lastActiveWindowId != 0) {
+            printActiveWindowInfo();
+        }
+    } else {
+        lo.info("Window focus tracking DISABLED");
+        logWindowEvent("FOCUS_TRACKING", "Disabled");
+    }
+}
+
+// Implement the debug settings methods
+void HotkeyManager::loadDebugSettings() {
+    lo.info("Loading debug settings from config");
+    
+    // Get settings from config file with default values if not present
+    bool keyLogging = Configs::Get().Get<bool>("Debug.VerboseKeyLogging", false);
+    bool windowLogging = Configs::Get().Get<bool>("Debug.VerboseWindowLogging", false);
+    bool conditionLogging = Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false);
+    
+    // Apply the settings
+    setVerboseKeyLogging(keyLogging);
+    setVerboseWindowLogging(windowLogging);
+    setVerboseConditionLogging(conditionLogging);
+    
+    // Log the current debug settings
+    lo.info("Debug settings: KeyLogging=" + std::to_string(verboseKeyLogging) + 
+            ", WindowLogging=" + std::to_string(verboseWindowLogging) + 
+            ", ConditionLogging=" + std::to_string(verboseConditionLogging));
+}
+
+void HotkeyManager::initDebugSettings() {
+    lo.info("Initializing debug settings in config file");
+    
+    // Set default values in config if they don't exist
+    Configs::Get().Set<bool>("Debug.VerboseKeyLogging", verboseKeyLogging);
+    Configs::Get().Set<bool>("Debug.VerboseWindowLogging", verboseWindowLogging);
+    Configs::Get().Set<bool>("Debug.VerboseConditionLogging", verboseConditionLogging);
+    
+    // Save the config to persist the settings
+    Configs::Get().Save();
+    
+    lo.info("Debug settings initialized and saved to config");
+}
+
+void HotkeyManager::applyDebugSettings() {
+    // Apply current debug settings
+    if (verboseKeyLogging) {
+        lo.info("Verbose key logging is enabled");
+    }
+    
+    if (verboseWindowLogging) {
+        lo.info("Verbose window logging is enabled");
+    }
+    
+    if (verboseConditionLogging) {
+        lo.info("Verbose condition logging is enabled");
+    }
+    
+    // Set up config watchers to react to changes in real-time
+    Configs::Get().Watch<bool>("Debug.VerboseKeyLogging", [this](bool oldValue, bool newValue) {
+        lo.info("Key logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        setVerboseKeyLogging(newValue);
+    });
+    
+    Configs::Get().Watch<bool>("Debug.VerboseWindowLogging", [this](bool oldValue, bool newValue) {
+        lo.info("Window logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        setVerboseWindowLogging(newValue);
+    });
+    
+    Configs::Get().Watch<bool>("Debug.VerboseConditionLogging", [this](bool oldValue, bool newValue) {
+        lo.info("Condition logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        setVerboseConditionLogging(newValue);
+    });
 }
 
 } // namespace H 

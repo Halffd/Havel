@@ -545,7 +545,8 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
         for (const auto& mod : parts) {
             std::string modLower = mod;
             std::transform(modLower.begin(), modLower.end(), modLower.begin(), ::tolower);
-            
+
+            // Handle base modifiers
             if (modLower == "ctrl" || modLower == "control") {
                 modifiers |= ControlMask;
             } else if (modLower == "shift") {
@@ -554,6 +555,28 @@ bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int 
                 modifiers |= Mod1Mask;
             } else if (modLower == "win" || modLower == "super") {
                 modifiers |= Mod4Mask;
+            }
+
+            // Handle left-side modifiers (L versions)
+            else if (modLower == "ctrl_l" || modLower == "control_l") {
+                modifiers |= ControlMask;  // Control on the left side is the same mask as generic Control
+            } else if (modLower == "shift_l") {
+                modifiers |= ShiftMask;  // Shift on the left side is the same mask as generic Shift
+            } else if (modLower == "alt_l") {
+                modifiers |= Mod1Mask;  // Alt_L uses the same mask as generic Alt
+            } else if (modLower == "win_l" || modLower == "super_l") {
+                modifiers |= Mod4Mask;  // Win_L uses the same mask as generic Win/Super
+            }
+
+            // Handle right-side modifiers (R versions)
+            else if (modLower == "ctrl_r" || modLower == "control_r") {
+                modifiers |= ControlMask;  // Control on the right side is the same mask as generic Control
+            } else if (modLower == "shift_r") {
+                modifiers |= ShiftMask;  // Shift on the right side is the same mask as generic Shift
+            } else if (modLower == "alt_r") {
+                modifiers |= Mod1Mask;  // Alt_R uses the same mask as generic Alt
+            } else if (modLower == "win_r" || modLower == "super_r") {
+                modifiers |= Mod4Mask;  // Win_R uses the same mask as generic Win/Super
             }
         }
     }

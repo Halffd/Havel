@@ -210,7 +210,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
 
     AddContextualHotkey("alt+x", "!Window.Active('Emacs')",
-        []() { system("kitty"); },
+        []() {
+            system("alacritty");
+        },
         nullptr, // falseAction parameter
         0       // ID parameter
     );
@@ -413,7 +415,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     static std::atomic<bool> genshinAutomationActive(false);
 
     // Special hotkeys for Genshin Impact - Start automation
-    AddContextualHotkey("g", "Window.Active('name:Genshin') && currentMode == 'gaming'",
+    AddContextualHotkey("enter", "Window.Active('name:Genshin') && currentMode == 'gaming'",
         [this]() {
             lo.info("Genshin Impact detected - Starting specialized auto actions");
             
@@ -845,7 +847,7 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         }
     };
     
-    // Register the hotkey with the action
+    // Register the hotkey with the action and ID
     io.Hotkey(normalizedKey, action, id);
     
     // For certain conditions, update our tracking

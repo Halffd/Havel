@@ -189,7 +189,16 @@ bool BrightnessManager::executeGammastep() {
         lo.info("Executing command: " + cmd.str());
     }
 
-    return system(cmd.str().c_str()) == 0;
+    if (system(nullptr)) {
+        int ret = system(cmd.str().c_str());
+        if (ret != 0) {
+            lo.error("Command failed with exit code: " + std::to_string(ret));
+        }
+        return ret == 0;
+    } else {
+        lo.error("System shell not available");
+        return false;
+    }
 }
 
 bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightness, const std::string& gamma) {

@@ -26,7 +26,7 @@ namespace H {
 
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
     : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine), 
-      brightnessManager(io), verboseKeyLogging(false), verboseWindowLogging(false), 
+      brightnessManager(), verboseKeyLogging(false), verboseWindowLogging(false),
       mpvHotkeysGrabbed(false), trackWindowFocus(false), lastActiveWindowId(0) {
     loadVideoSites();
 }
@@ -1677,73 +1677,68 @@ void HotkeyManager::printActiveWindowInfo() {
         lo.info("╚══════════════════════════════════════╝");
         return;
     }
-    
+
+    // Create window instance ONCE
+    H::Window window("ActiveWindow", activeWindow);
+
     // Get window class
     std::string windowClass = WindowManager::GetActiveWindowClass();
-    
+
     // Get window title
-    std::string windowTitle = "Unknown";
+    std::string windowTitle;
     try {
-        Window window(std::to_string(activeWindow), activeWindow);
         windowTitle = window.Title();
     } catch (...) {
+        windowTitle = "Unknown";
         lo.error("Failed to get active window title");
     }
-    
-    // Check if it's a gaming window
-    bool isGaming = isGamingWindow();
-    
+
     // Get window geometry
     int x = 0, y = 0, width = 0, height = 0;
     try {
-        Window window(std::to_string(activeWindow), activeWindow);
-        window.GetRect(x, y, width, height);
+        H::Rect rect = window.Pos();
+        x = rect.x;
+        y = rect.y;
+        width = rect.width;
+        height = rect.height;
     } catch (...) {
-        // Ignore geometry errors
+        lo.error("Failed to get window position");
     }
-    
+
+    // Check if it's a gaming window
+    bool isGaming = isGamingWindow();
+
     // Format the geometry string
-    std::string geometry = std::to_string(width) + "x" + std::to_string(height) + 
-                         " @ (" + std::to_string(x) + "," + std::to_string(y) + ")";
-    
-    // Print information to the log with fancy formatting
+    std::string geometry = std::to_string(width) + "x" + std::to_string(height) +
+                           " @ (" + std::to_string(x) + "," + std::to_string(y) + ")";
+
+    // -- Now print everything with correct padding and line limits --
+    auto formatLine = [](const std::string& label, const std::string& value) -> std::string {
+        std::string line = label + value;
+        if (line.length() > 52) {
+            line = line.substr(0, 49) + "...";
+        }
+        return "║ " + line + std::string(52 - line.length(), ' ') + "║";
+    };
+
     lo.info("╔══════════════════════════════════════════════════════════╗");
     lo.info("║             ACTIVE WINDOW INFORMATION                    ║");
     lo.info("╠══════════════════════════════════════════════════════════╣");
-    lo.info("║ Window ID: " + std::to_string(activeWindow) + std::string(45 - std::to_string(activeWindow).length(), ' ') + "║");
-    
-    // Print title (truncate if too long)
-    std::string titleDisplay = "Window Title: \"" + windowTitle + "\"";
-    if (titleDisplay.length() > 52) {
-        titleDisplay = titleDisplay.substr(0, 49) + "...\"";
-    }
-    lo.info("║ " + titleDisplay + std::string(52 - titleDisplay.length(), ' ') + "║");
-    
-    // Print class
-    std::string classDisplay = "Window Class: \"" + windowClass + "\"";
-    if (classDisplay.length() > 52) {
-        classDisplay = classDisplay.substr(0, 49) + "...\"";
-    }
-    lo.info("║ " + classDisplay + std::string(52 - classDisplay.length(), ' ') + "║");
-    
-    // Print geometry
-    lo.info("║ Window Geometry: " + geometry + std::string(52 - 17 - geometry.length(), ' ') + "║");
-    
-    // Print gaming status with visual indicator
-    std::string gamingStatus = "Is Gaming Window: " + std::string(isGaming ? "YES ✓" : "NO ✗");
-    std::string gamingStatusColor = isGaming ? COLOR_GREEN : COLOR_RED;
-    lo.info("║ " + gamingStatusColor + gamingStatus + COLOR_RESET + std::string(52 - gamingStatus.length(), ' ') + "║");
-    
-    // Print current mode
-    std::string modeDisplay = "Current Mode: " + currentMode;
-    lo.info("║ " + modeDisplay + std::string(52 - modeDisplay.length(), ' ') + "║");
-    
+    lo.info(formatLine("Window ID: ", std::to_string(activeWindow)));
+    lo.info(formatLine("Window Title: \"", windowTitle + "\""));
+    lo.info(formatLine("Window Class: \"", windowClass + "\""));
+    lo.info(formatLine("Window Geometry: ", geometry));
+
+    std::string gamingStatus = isGaming ? (COLOR_GREEN + std::string("YES ✓") + COLOR_RESET) : (COLOR_RED + std::string("NO ✗") + COLOR_RESET);
+    lo.info(formatLine("Is Gaming Window: ", gamingStatus));
+
+    lo.info(formatLine("Current Mode: ", currentMode));
     lo.info("╚══════════════════════════════════════════════════════════╝");
-    
-    // Also log to window events for history (plain format for easier parsing)
-    logWindowEvent("WINDOW_INFO", 
-        "Title: \"" + windowTitle + "\", Class: \"" + windowClass + "\", Gaming: " + 
-        (isGaming ? "YES" : "NO") + ", Geometry: " + geometry);
+
+    // Log to window event history
+    logWindowEvent("WINDOW_INFO",
+        "Title: \"" + windowTitle + "\", Class: \"" + windowClass +
+        "\", Gaming: " + (isGaming ? "YES" : "NO") + ", Geometry: " + geometry);
 }
 
 void HotkeyManager::toggleWindowFocusTracking() {

@@ -5,6 +5,7 @@
 #include <optional>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <cstdint>
 
 class CompizManager {
 public:

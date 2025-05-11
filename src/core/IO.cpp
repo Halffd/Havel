@@ -16,10 +16,23 @@ HHOOK IO::keyboardHook = NULL;
 std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
+int xerrorHandler(Display* display, XErrorEvent* error) {
+    char errorText[256];
+    XGetErrorText(display, error->error_code, errorText, sizeof(errorText));
 
+    std::cerr << "X Error: " << errorText << " (" << (int)error->error_code << ")" << std::endl;
+    std::cerr << "  Request code: " << (int)error->request_code << std::endl;
+    std::cerr << "  Minor code: " << (int)error->minor_code << std::endl;
+    std::cerr << "  Resource ID: " << error->resourceid << std::endl;
+
+    return 0;  // Must return a value
+}
 IO::IO()
 {
     std::cout << "IO constructor called" << std::endl;
+
+    // Set the error handler before making your XGrabKey call
+    XSetErrorHandler(xerrorHandler);
     DisplayManager::Initialize();
     display = DisplayManager::GetDisplay();
     if (!display) {
@@ -39,6 +52,7 @@ IO::IO()
             this->MonitorHotkeys();
         });
     }
+    StartEvdevHotkeyListener("/dev/input/event7"); // your keyboard device
 #endif
 }
 
@@ -57,7 +71,7 @@ IO::~IO() {
             if (hotkey.key != 0) {
                 KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
                 if (keycode != 0) {
-                    UngrabKeyWithVariants(keycode, hotkey.modifiers, root);
+                    Ungrab(keycode, hotkey.modifiers, root);
                 }
             }
         }
@@ -68,96 +82,64 @@ IO::~IO() {
     display = nullptr;
 }
 
-// Helper method to grab a key with all modifier variants (NumLock, CapsLock)
-void IO::GrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root, bool exclusive) {
+void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bool isMouse) {
     if (!display) return;
-    
-    // First, determine the mask for NumLock
-    unsigned int numlockmask = 0;
-    XModifierKeymap* modmap = XGetModifierMapping(display);
-    if (modmap && modmap->max_keypermod > 0) {
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < modmap->max_keypermod; j++) {
-                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
-                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
-                    numlockmask = (1 << i);
-                    break;
-                }
-            }
-        }
-        XFreeModifiermap(modmap);
-    }
-    
-    // Define the modifier variants to handle
-    unsigned int modVariants[] = {
-        0,                      // Base modifiers
-        LockMask,               // CapsLock
-        numlockmask,            // NumLock
-        LockMask | numlockmask  // Both CapsLock and NumLock
-    };
-    
-    // Grab with all modifier variants
+
+    bool isButton = isMouse ? isMouse : (input >= Button1 && input <= 7); // simple check
+
+    // Modifier variants (add NumLock/CapsLock later if needed)
+    unsigned int modVariants[] = { 0 /*, LockMask, numlockMask, etc. */ };
+
     for (unsigned int variant : modVariants) {
-        // Skip if this specific variant isn't applicable
-        // (when numlockmask is 0 and variant involves numlockmask)
-        if ((variant & numlockmask) && numlockmask == 0)
-            continue;
-        
         unsigned int finalMods = modifiers | variant;
-        
-        // Ungrab first in case it's already grabbed
-        XUngrabKey(display, keycode, finalMods, root);
-        
-        if (exclusive) {
-            // Exclusive grab - like AHK's normal behavior
-            Status status = XGrabKey(display, keycode, finalMods, root, True, 
-                                    GrabModeAsync, GrabModeAsync);
-            
-            if (status != Success) {
-                std::cerr << "Failed to grab key (code: " << (int)keycode 
-                        << ") with modifiers: " << finalMods << std::endl;
+
+        if (isButton) {
+            // Mouse button grab
+            XUngrabButton(display, input, finalMods, root);
+
+            if (exclusive) {
+                XGrabButton(display, input, finalMods, root, True,
+                            ButtonPressMask | ButtonReleaseMask,
+                            GrabModeAsync, GrabModeAsync, None, None);
+            } else {
+                XSelectInput(display, root, ButtonPressMask | ButtonReleaseMask);
             }
         } else {
-            // Non-exclusive - like AHK's ~ prefix
-            // Just ensure we're listening for key events on the root window
-            XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
-        }
-    }
-    
-    // Ensure changes are flushed to the X server immediately
-    XSync(display, False);
-}
+            // Keyboard key grab
+            XUngrabKey(display, input, finalMods, root);
 
-// Helper method to ungrab a key with all modifier variants
-void IO::UngrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root) {
-    if (!display) return;
-    
-    // Determine the mask for NumLock
-    unsigned int numlockmask = 0;
-    XModifierKeymap* modmap = XGetModifierMapping(display);
-    if (modmap && modmap->max_keypermod > 0) {
-        for (int i = 0; i < 8; i++) {
-            for (int j = 0; j < modmap->max_keypermod; j++) {
-                KeyCode kc = modmap->modifiermap[i * modmap->max_keypermod + j];
-                if (kc == XKeysymToKeycode(display, XK_Num_Lock)) {
-                    numlockmask = (1 << i);
-                    break;
+            if (exclusive) {
+                Status status = XGrabKey(display, input, finalMods, root, True,
+                                         GrabModeAsync, GrabModeAsync);
+                if (status != Success) {
+                    std::cerr << "Failed to grab key (code: " << (int)input
+                              << ") with modifiers: " << finalMods << std::endl;
                 }
+            } else {
+                XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
             }
         }
-        XFreeModifiermap(modmap);
     }
-    
-    // Ungrab with all modifier variants
-    XUngrabKey(display, keycode, modifiers, root);
-    XUngrabKey(display, keycode, modifiers | LockMask, root);
-    
-    if (numlockmask) {
-        XUngrabKey(display, keycode, modifiers | numlockmask, root);
-        XUngrabKey(display, keycode, modifiers | LockMask | numlockmask, root);
+
+    XSync(display, False);
+}
+void crash() {
+    int *ptr = nullptr;
+    *ptr = 0;
+}
+void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
+    if (!display) return;
+
+    bool isButton = (input >= Button1 && input <= 7);
+
+    XUngrabKey(display, input, modifiers, root);
+    XUngrabKey(display, input, modifiers | LockMask, root);
+
+    if (isButton) {
+        XUngrabButton(display, input, modifiers, root);
+        XUngrabButton(display, input, modifiers | LockMask, root);
     }
-    
-    // Ensure changes are flushed to the X server immediately
+
     XSync(display, False);
 }
 
@@ -215,7 +197,7 @@ void IO::MonitorHotkeys() {
                 for (const auto& [id, hotkey] : hotkeys) {
                     if (hotkey.enabled) {
                         // KeySym was stored in hotkey.key during registration
-                        if (hotkey.key == keysym && 
+                        if (hotkey.key == keyEvent->keycode &&
                             cleanedState == hotkey.modifiers) { // Compare base key AND cleaned modifier state
                             std::cout << "Hotkey matched: " << hotkey.alias << " (state: " << cleanedState << " vs expected: " << hotkey.modifiers << ")" << std::endl;
                             // Execute the callback in a separate thread to avoid blocking
@@ -401,7 +383,7 @@ void IO::HandleMouseEvent(XEvent& event) {
 // Static method to handle key strings
 Key IO::handleKeyString(const std::string& key) {
     lo.debug("Handling key string: " + key);
-    
+
     // Handle keycodes (kcXXX)
     if (key.size() > 2 && key.substr(0, 2) == "kc") {
         try {
@@ -421,11 +403,13 @@ Key IO::handleKeyString(const std::string& key) {
     }
     
     // Handle the "Menu" key explicitly
-    if (key == "Menu") {
-        lo.debug("Explicitly handling Menu key as keycode 135");
-        return 135; // Direct keycode for Menu key on many keyboards
-    }
-    
+    if (key == "Menu" || key == "menu") {
+    lo.debug("Explicitly handling Menu key via keysym");
+    KeySym keysym = XK_Menu;
+    int keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
+    return keycode > 0 ? keycode : -1;
+}
+
     // The rest of the implementation handles normal keys
     KeySym keysym = XStringToKeysym(key.c_str());
     if (keysym == NoSymbol) {
@@ -482,187 +466,68 @@ bool IO::Resume(int id) {
     }
     return false;
 }
+HotKey IO::AddHotkey(const std::string& rawInput, std::function<void()> action, int id) {
+    if (id == 0) id = ++hotkeyCount;
 
-// Add a hotkey with given key, modifiers, and callback function
-bool IO::Hotkey(const std::string& hotkeyStr, std::function<void()> action, int id) {
-    std::cout << "Setting up hotkey: " << hotkeyStr << std::endl;
-    if (id == 0) {
-        id = ++hotkeyCount;
-    }
-    
-    // Parse the hotkey string to get key and modifiers
-    std::string keyName;
+    std::string hotkeyStr = rawInput;
+    bool exclusive = true;
+    bool suspendKey = false;
     int modifiers = 0;
-    std::string hotkeyStrCopy = hotkeyStr;
-    bool exclusive = true; // Default to exclusive grab (block other apps)
-    
-    // Check if this is a non-blocking hotkey (starts with ~)
-    if (hotkeyStrCopy.length() > 0 && hotkeyStrCopy[0] == '~') {
-        exclusive = false;
-        hotkeyStrCopy = hotkeyStrCopy.substr(1);
-        std::cout << "  Non-exclusive hotkey detected: " << hotkeyStrCopy << std::endl;
+    std::string keyName;
+
+    size_t i = 0;
+    while (i < hotkeyStr.size()) {
+        char c = hotkeyStr[i];
+        if (c == '!') modifiers |= Mod1Mask;       // Alt
+        else if (c == '^') modifiers |= ControlMask; // Ctrl
+        else if (c == '+') modifiers |= ShiftMask;   // Shift
+        else if (c == '#') modifiers |= Mod4Mask;    // Win/Super
+        else if (c == '*' || c == '~') exclusive = false;        // Non-exclusive
+        else if (c == '$') suspendKey = true;        // Suspend hotkey
+        else break;
+        ++i;
     }
-    
-    // Check if this is a direct keycode (format: "kcXXX")
-    bool isDirectKeycode = false;
-    if (hotkeyStrCopy.size() > 2 && hotkeyStrCopy.substr(0, 2) == "kc") {
-        isDirectKeycode = true;
-        keyName = hotkeyStrCopy;
-        std::cout << "Direct keycode hotkey detected: " << keyName << std::endl;
+
+    hotkeyStr = hotkeyStr.substr(i); // Strip off modifiers
+
+    // Parse key
+    std::string keyLower = hotkeyStr;
+    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+    Key key = StringToVirtualKey(keyLower);
+    KeyCode keycode = key < 8 XKeysymToKeycode(display, key);
+    if (keycode <= 0) {
+        std::cerr << "Failed to convert keysym to keycode: " << keyLower << std::endl;
+        return HotKey();
+    }
+
+    // Register the hotkey
+    HotKey hk{
+        .alias = rawInput,
+        .key = static_cast<Key>(keycode),
+        .modifiers = modifiers,
+        .callback = std::move(action),
+        .suspend = suspendKey,
+        .exclusive = exclusive
+    };
+    if (display && keycode > 0)
+        hk.success = true;
+    hotkeys[id] = hk;
+
+    return hotkeys[id];
+}
+
+bool IO::Hotkey(const std::string& rawInput, std::function<void()> action, int id) {
+    HotKey result = AddHotkey(rawInput, action, id);
+    if (result.success) {
+        std::cout << "Grabbing hotkey: " << rawInput << std::endl;
+        Grab(result.key, result.modifiers, DefaultRootWindow(display), result.exclusive);
+        std::cout << "Registered hotkey: " << rawInput << (result.suspend ? " (suspend key)" : "") << "\n";
+        std::cout << "  Key: " << result.key << ", keycode: " << result.key << ", modifiers: " << result.modifiers << ", exclusive: " << result.exclusive << "\n";
+        return true;
     } else {
-        // Split by '+' to separate modifiers and key
-        std::vector<std::string> parts;
-        size_t pos = 0;
-        std::string delimiter = "+";
-        std::string str = hotkeyStrCopy;
-        
-        while ((pos = str.find(delimiter)) != std::string::npos) {
-            std::string part = str.substr(0, pos);
-            // Remove leading/trailing whitespace manually
-            part.erase(0, part.find_first_not_of(" \t\n\r\f\v"));
-            part.erase(part.find_last_not_of(" \t\n\r\f\v") + 1);
-            parts.push_back(part);
-            str.erase(0, pos + delimiter.length());
-        }
-        
-        // Handle the last part
-        str.erase(0, str.find_first_not_of(" \t\n\r\f\v"));
-        str.erase(str.find_last_not_of(" \t\n\r\f\v") + 1);
-        if (!str.empty()) {
-            parts.push_back(str);
-        }
-        
-        if (parts.empty()) {
-            std::cerr << "Invalid hotkey format: " << hotkeyStr << std::endl;
-            return false;
-        }
-        
-        // Last part is the key
-        keyName = parts.back();
-        parts.pop_back();
-        
-        // Process modifiers (convert to lowercase)
-        for (const auto& mod : parts) {
-            std::string modLower = mod;
-            std::transform(modLower.begin(), modLower.end(), modLower.begin(), ::tolower);
-
-            // Handle base modifiers
-            if (modLower == "ctrl" || modLower == "control") {
-                modifiers |= ControlMask;
-            } else if (modLower == "shift") {
-                modifiers |= ShiftMask;
-            } else if (modLower == "alt") {
-                modifiers |= Mod1Mask;
-            } else if (modLower == "win" || modLower == "super") {
-                modifiers |= Mod4Mask;
-            }
-
-            // Handle left-side modifiers (L versions)
-            else if (modLower == "ctrl_l" || modLower == "control_l") {
-                modifiers |= ControlMask;  // Control on the left side is the same mask as generic Control
-            } else if (modLower == "shift_l") {
-                modifiers |= ShiftMask;  // Shift on the left side is the same mask as generic Shift
-            } else if (modLower == "alt_l") {
-                modifiers |= Mod1Mask;  // Alt_L uses the same mask as generic Alt
-            } else if (modLower == "win_l" || modLower == "super_l") {
-                modifiers |= Mod4Mask;  // Win_L uses the same mask as generic Win/Super
-            }
-
-            // Handle right-side modifiers (R versions)
-            else if (modLower == "ctrl_r" || modLower == "control_r") {
-                modifiers |= ControlMask;  // Control on the right side is the same mask as generic Control
-            } else if (modLower == "shift_r") {
-                modifiers |= ShiftMask;  // Shift on the right side is the same mask as generic Shift
-            } else if (modLower == "alt_r") {
-                modifiers |= Mod1Mask;  // Alt_R uses the same mask as generic Alt
-            } else if (modLower == "win_r" || modLower == "super_r") {
-                modifiers |= Mod4Mask;  // Win_R uses the same mask as generic Win/Super
-            }
-        }
+        std::cout << "Failed to register hotkey: " << rawInput << std::endl;
+        return false;
     }
-    
-    std::cout << "  Parsed modifiers: " << modifiers << ", key: '" << keyName << "'" << std::endl;
-    
-    // Handle special keys
-    KeySym keysym = 0; // Use KeySym for X11 processing
-    KeyCode keycode = 0; // Use KeyCode for X11 registration
-    
-    if (isDirectKeycode) {
-        // For direct keycodes, handleKeyString returns the keycode directly
-        keycode = handleKeyString(keyName);
-        if (keycode == -1) {
-            std::cerr << "Failed to interpret direct keycode: " << keyName << std::endl;
-            return false;
-        }
-        // Try to get the corresponding keysym for internal storage/logging if needed
-        if (display) {
-            keysym = XkbKeycodeToKeysym(display, keycode, 0, 0);
-        }
-        std::cout << "  Direct keycode: " << (int)keycode << " (keysym: " << keysym << ")" << std::endl;
-
-    } else {
-        // For named keys, find the keysym first
-        std::string keyNameLower = keyName;
-        std::transform(keyNameLower.begin(), keyNameLower.end(), keyNameLower.begin(), ::tolower);
-        
-        auto it = keyMap.find(keyNameLower);
-        if (it != keyMap.end()) {
-            keysym = it->second;
-        } else if (keyName.length() == 1) {
-             // Try converting single chars that might not be in the map
-            keysym = XStringToKeysym(keyName.c_str());
-        } 
-        // Add more specific fallbacks if needed, e.g.
-        // else if (keyNameLower == "specific_key") keysym = XK_SpecificKey;
-        
-        if (keysym == NoSymbol) {
-            std::cerr << "Invalid key name or not found in map: " << keyName << std::endl;
-            return false;
-        }
-        std::cout << "  Converted name '" << keyName << "' to keysym: " << keysym << std::endl;
-        
-        // Get the keycode from the keysym
-        if (display) {
-            keycode = XKeysymToKeycode(display, keysym);
-            if (keycode == 0) {
-                 std::cerr << "Could not convert keysym " << keysym << " to keycode for key: " << keyName << std::endl;
-                // Optionally, treat as non-fatal if monitoring catches it
-                // return false; 
-            }
-            std::cout << "  Keysym " << keysym << " maps to keycode: " << (int)keycode << std::endl;
-        }
-    }
-    
-    // If we couldn't get a valid keycode, we can't register the grab
-    // However, we might still store the hotkey if event monitoring can handle it by keysym
-    bool canGrab = (display && keycode != 0);
-
-    // Create hotkey structure
-    HotKey hotkey;
-    hotkey.alias = hotkeyStr;
-    hotkey.key = keysym; // Store keysym for event monitoring
-    hotkey.modifiers = modifiers;
-    hotkey.callback = action;
-    hotkey.enabled = true;
-    hotkey.exclusive = exclusive;
-    
-    // Register the hotkey internally regardless of grab success
-    hotkeys[id] = hotkey;
-    
-    // Grab the key using X11 if possible
-#ifdef __linux__
-    if (canGrab) {
-        Window root = DefaultRootWindow(display);
-        
-        // Use our improved method to handle modifier variants
-        GrabKeyWithVariants(keycode, modifiers, root, exclusive);
-        
-        std::cout << "Successfully registered hotkey: " << hotkeyStr 
-                 << " (exclusive: " << (exclusive ? "yes" : "no") << ")" << std::endl;
-    }
-#endif
-    
-    return true;
 }
 
 // Method to control send
@@ -712,18 +577,34 @@ void IO::SendX11Key(const std::string &keyName, bool press)
     XFlush(display);
 #endif
 }
+Key IO::StringToButton(const std::string& buttonNameRaw) {
+        std::string buttonName = ToLower(buttonNameRaw);
 
-Key IO::StringToButton(str buttonName) {
-    buttonName = ToLower(buttonName);
-    
-    if (buttonName == "button1") return Button1;
-    if (buttonName == "button2") return Button2;
-    if (buttonName == "button3") return Button3;
-    if (buttonName == "wheelup" || buttonName == "scrollup") return Button4;
-    if (buttonName == "wheeldown" || buttonName == "scrolldown") return Button5;
-    return 0;
-}
+        static const std::unordered_map<std::string, Key> buttonMap = {
+            { "button1",  Button1 },
+            { "button2",  Button2 },
+            { "button3",  Button3 },
+            { "button4",  Button4 },
+            { "wheelup",  Button4 },
+            { "scrollup", Button4 },
+            { "button5",  Button5 },
+            { "wheeldown", Button5 },
+            { "scrolldown", Button5 }
+            // button6+ handled dynamically below
+        };
 
+        auto it = buttonMap.find(buttonName);
+        if (it != buttonMap.end()) return it->second;
+
+        // Check for "buttonN" where N >= 6
+        if (buttonName.rfind("button", 0) == 0) {
+            int btnNum = std::atoi(buttonName.c_str() + 6);
+            if (btnNum >= 6 && btnNum <= 32) // sane upper bound
+                return static_cast<Key>(btnNum);
+        }
+
+        return 0; // Invalid / unrecognized
+    }
 // Helper function to convert string to virtual key code
 Key IO::StringToVirtualKey(str keyName)
 {
@@ -769,6 +650,20 @@ Key IO::StringToVirtualKey(str keyName)
         return VK_NUMPAD8;
     if (keyName == "numpad9")
         return VK_NUMPAD9;
+    if (keyName == "numpadadd")
+        return VK_NUMPAD_ADD;
+    if (keyName == "aumpadsub")
+        return VK_NUMPAD_SUBTRACT;
+    if (keyName == "numpadmult")
+        return VK_NUMPAD_MULTIPLY;
+    if (keyName == "numpaddiv")
+        return VK_NUMPAD_DIVIDE;
+    if (keyName == "numpadenter")
+        return VK_NUMPAD_ENTER;
+    if (keyName == "numpaddecimal" || keyName == "numpaddot")
+        return VK_NUMPAD_DECIMAL;
+    if (keyName == "numlock")
+        return VK_NUMPAD_LOCK;
     if (keyName == "up")
         return VK_UP;
     if (keyName == "down")
@@ -971,6 +866,30 @@ Key IO::StringToVirtualKey(str keyName)
         return XK_F11;
     if (keyName == "f12")
         return XK_F12;
+    if (keyName == "f13")
+        return XK_F13;
+    if (keyName == "f14")
+        return XK_F14;
+    if (keyName == "f15")
+        return XK_F15;
+    if (keyName == "f16")
+        return XK_F16;
+    if (keyName == "f17")
+        return XK_F17;
+    if (keyName == "f18")
+        return XK_F18;
+    if (keyName == "f19")
+        return XK_F19;
+    if (keyName == "f20")
+        return XK_F20;
+    if (keyName == "f21")
+        return XK_F21;
+    if (keyName == "f22")
+        return XK_F22;
+    if (keyName == "f23")
+        return XK_F23;
+    if (keyName == "f24")
+        return XK_F24;
     if (keyName == "numpad0")
         return XK_KP_0;
     if (keyName == "numpad1")
@@ -1194,23 +1113,32 @@ int IO::ParseModifiers(str str)
 #endif
     return modifiers;
 }
-
 void IO::PressKey(const std::string& keyName, bool press) {
     std::cout << "Pressing key: " << keyName << " (press: " << press << ")" << std::endl;
+
 #ifdef __linux__
-    auto* display = H::DisplayManager::GetDisplay();
-    if(!display) {
+    Display* display = H::DisplayManager::GetDisplay();
+    if (!display) {
         std::cerr << "No X11 display available for key press\n";
         return;
     }
-    
-    KeyCode keycode = XKeysymToKeycode(display, StringToVirtualKey(keyName));
-    if(keycode == 0) {
-        std::cerr << "Invalid keycode for: " << keyName << "\n";
+
+    // Convert string to keysym
+    KeySym keysym = XStringToKeysym(keyName.c_str());
+    if (keysym == NoSymbol) {
+        std::cerr << "Unknown keysym for: " << keyName << "\n";
         return;
     }
-    
-    XTestFakeKeyEvent(display, keycode, press, CurrentTime);
+
+    // Convert keysym to keycode
+    KeyCode keycode = XKeysymToKeycode(display, keysym);
+    if (keycode == 0) {
+        std::cerr << "Invalid keycode for keysym: " << keyName << "\n";
+        return;
+    }
+
+    // Send fake key event
+    XTestFakeKeyEvent(display, keycode, press ? True : False, CurrentTime);
     XFlush(display);
 #endif
 }
@@ -1250,7 +1178,7 @@ bool IO::GrabHotkey(int hotkeyId) {
     }
     
     // Use our improved method to grab with all modifier variants
-    GrabKeyWithVariants(keycode, hotkey.modifiers, root, hotkey.exclusive);
+    Grab(keycode, hotkey.modifiers, root, hotkey.exclusive);
     
     std::cout << "Successfully grabbed hotkey: " << hotkey.alias << std::endl;
     return true;
@@ -1279,7 +1207,7 @@ bool IO::UngrabHotkey(int hotkeyId) {
     }
     
     // Use our improved method to ungrab with all modifier variants
-    UngrabKeyWithVariants(keycode, hotkey.modifiers, root);
+    Ungrab(keycode, hotkey.modifiers, root);
     
     std::cout << "Successfully ungrabbed hotkey: " << hotkey.alias << std::endl;
     return true;
@@ -1322,6 +1250,87 @@ bool IO::UngrabHotkeysByPrefix(const std::string& prefix) {
 #else
     return false;
 #endif
+}
+bool IO::StartEvdevHotkeyListener(const std::string& devicePath) {
+    if (evdevRunning) return false;  // already running
+    evdevDevicePath = devicePath;
+    evdevRunning = true;
+
+    evdevThread = std::thread([this]() {
+        int fd = open(evdevDevicePath.c_str(), O_RDONLY);
+        if (fd < 0) {
+            std::cerr << "evdev: cannot open " << evdevDevicePath
+                      << ": " << strerror(errno) << "\n";
+            evdevRunning = false;
+            return;
+        }
+
+        struct input_event ev;
+        // state of modifiers, updated on each press/release
+        std::map<int, bool> modState;
+
+        while (evdevRunning) {
+            ssize_t n = read(fd, &ev, sizeof(ev));
+            if (n != sizeof(ev)) continue;
+
+            if (ev.type == EV_KEY) {
+                bool down = (ev.value == 1 || ev.value == 2); // 1 = press, 2 = repeat
+                int code = ev.code;
+
+                // update modifier state
+                switch (code) {
+                    case KEY_LEFTCTRL:  modState[ControlMask] = down; break;
+                    case KEY_RIGHTCTRL: modState[ControlMask] = down; break;
+                    case KEY_LEFTSHIFT: modState[ShiftMask]   = down; break;
+                    case KEY_RIGHTSHIFT:modState[ShiftMask]   = down; break;
+                    case KEY_LEFTALT:   modState[Mod1Mask]    = down; break;
+                    case KEY_RIGHTALT:  modState[Mod1Mask]    = down; break;
+                    case KEY_LEFTMETA:  modState[Mod4Mask]    = down; break;
+                    case KEY_RIGHTMETA: modState[Mod4Mask]    = down; break;
+                }
+
+                // only trigger on key-down
+                if (!down) continue;
+
+                // for each registered hotkey
+                for (auto& [id, hotkey] : hotkeys) {
+                    if (!hotkey.enabled) continue;
+                    // compare scancode (ev.code) to your hotkey.key
+                    // if you stored key as KeySym, you'd need a reverse map
+                    // but here assume hotkey.key holds the raw ev.code:
+                    if (hotkey.alias.find('@') != std::string::npos && hotkey.key == code) {
+                        // check all required modifiers are down
+                        bool ok = true;
+                        for (auto m : { ControlMask, ShiftMask, Mod1Mask, Mod4Mask }) {
+                            if ((hotkey.modifiers & m) && !modState[m]) {
+                                ok = false;
+                                break;
+                            }
+                        }
+                        if (!ok) continue;
+
+                        // context check
+                      //if (!ContextActive(hotkey.contexts)) continue;
+
+                        // invoke
+                        hotkey.callback();
+                        // if exclusive, swallow the event (stop further processing)
+                        if (hotkey.exclusive) break;
+                    }
+                }
+            }
+        }
+        close(fd);
+    });
+
+    return true;
+}
+
+void IO::StopEvdevHotkeyListener() {
+    if (!evdevRunning) return;
+    evdevRunning = false;
+    if (evdevThread.joinable())
+        evdevThread.join();
 }
 
 } // namespace H

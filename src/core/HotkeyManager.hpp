@@ -16,12 +16,10 @@
 namespace H {
 
 class MPVController; // Forward declaration
-
 class HotkeyManager {
 public:
     HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine);
     ~HotkeyManager() = default;
-    
     // Debug flags
     bool verboseKeyLogging = false;
     bool verboseWindowLogging = false;
@@ -62,8 +60,8 @@ public:
     void setZooming(bool zooming) { m_isZooming = zooming; }
     
     // MPV hotkey management
-    void grabMPVHotkeys();
-    void ungrabMPVHotkeys();
+    void grabGamingHotkeys();
+    void ungrabGamingHotkeys();
     
     // Black overlay functionality
     void showBlackOverlay();

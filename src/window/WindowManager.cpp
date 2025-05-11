@@ -30,7 +30,7 @@ static cstr globalShell = "fish";
 
 // Initialize the static previousActiveWindow variable
 XWindow H::WindowManager::previousActiveWindow = None;
-
+WindowStats H::WindowManager::activeWindow = {};
 WindowManager::WindowManager() {
 #ifdef _WIN32
     // Windows implementation
@@ -1126,7 +1126,8 @@ void WindowManager::UpdatePreviousActiveWindow() {
     int actualFormat;
     unsigned long nitems, bytesAfter;
     unsigned char* prop = nullptr;
-    
+    activeWindow.className = GetActiveWindowClass();
+    std::cout << "Aactive window class: " << activeWindow.className << std::endl;
     if (XGetWindowProperty(display, DefaultRootWindow(display), activeWindowAtom, 0, 1, 
                         False, XA_WINDOW, &actualType, &actualFormat, &nitems, &bytesAfter, 
                         &prop) == Success) {

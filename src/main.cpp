@@ -70,7 +70,14 @@ public:
     void ToggleMute() { /* ... */ }
     void AdjustVolume(int) { /* ... */ }
 };
-
+void print_hotkeys() {
+    static int counter = 0;
+    counter++;
+    lo.info("Hotkeys " + std::to_string(counter));
+    for (const auto& [id, hotkey] : IO::hotkeys) {
+        lo.info("Hotkey ID: " + std::to_string(id) + ", alias: " + hotkey.alias + ", keycode: " + std::to_string(hotkey.key) + ", modifiers: " + std::to_string(hotkey.modifiers) + ", action: " + hotkey.action + ", enabled: " + std::to_string(hotkey.enabled) + ", blockInput: " + std::to_string(hotkey.blockInput) + ", exclusive: " + std::to_string(hotkey.exclusive) + ", success: " + std::to_string(hotkey.success) + ", suspend: " + std::to_string(hotkey.suspend));
+    }
+}
 #ifndef RUN_TESTS
 int main(int argc, char* argv[]) {
     // Set up signal handlers
@@ -121,13 +128,17 @@ int main(int argc, char* argv[]) {
         
         // Register default hotkeys
         hotkeyManager->RegisterDefaultHotkeys();
+        print_hotkeys();
         hotkeyManager->RegisterMediaHotkeys();
+        print_hotkeys();
         hotkeyManager->RegisterWindowHotkeys();
+        print_hotkeys();
         hotkeyManager->RegisterSystemHotkeys();
+        print_hotkeys();
         
         // Load user hotkey configurations
         hotkeyManager->LoadHotkeyConfigurations();
-        
+        print_hotkeys();
         // Initialize window manager
         int moveSpeed = config.Get<int>("Window.MoveSpeed", 10);
         // windowManager->SetMoveSpeed(moveSpeed);
@@ -145,7 +156,7 @@ int main(int argc, char* argv[]) {
         bool running = true;
         auto lastCheck = std::chrono::steady_clock::now();
         auto lastWindowCheck = std::chrono::steady_clock::now();
-        
+        print_hotkeys();
         while (running && !gShouldExit) {
             // Process events
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -167,15 +178,14 @@ int main(int argc, char* argv[]) {
                 
                 if (isGamingWindow) {
                     // Register hotkeys if a gaming window is found
-                    hotkeyManager->grabMPVHotkeys();
+                    hotkeyManager->grabGamingHotkeys();
                 } else {
                     // Unregister hotkeys if no gaming window is found
-                    hotkeyManager->ungrabMPVHotkeys();
+                    hotkeyManager->ungrabGamingHotkeys();
                 }
                 
                 // Also check Koikatu condition for D key overlay
                 hotkeyManager->evaluateCondition("Window.Active('class:Koikatu')");
-                hotkeyManager->evaluateCondition("Window.Active('name:Koikatu')");
                 
                 lastWindowCheck = now;
             }

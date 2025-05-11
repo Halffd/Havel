@@ -8,6 +8,12 @@
 #include <unordered_map>
 #include <thread>
 #include <iostream>
+#include <linux/input.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <atomic>
+#include <cstring>
+#include <sstream>
 
 namespace H {
 
@@ -22,6 +28,7 @@ struct HotKey {
     bool blockInput = false;
     bool suspend = false;
     bool exclusive = false;
+    bool success = false;
 };
 
 struct IoEvent {
@@ -31,7 +38,13 @@ struct IoEvent {
 };
 
 class IO {
+    std::thread evdevThread;
+    std::atomic<bool> evdevRunning{false};
+    std::string evdevDevicePath;
 public:
+    static std::unordered_map<int, HotKey> hotkeys;
+    bool suspendHotkeys = false;
+
     IO();
     ~IO();
 
@@ -42,25 +55,26 @@ public:
     void ControlSend(const std::string& control, const std::string& keys);
     void ProcessKeyCombination(const std::string& keys);
     void SendX11Key(const std::string &keyName, bool press);
-    
+
     // Hotkey methods
     bool ContextActive(std::vector<std::function<bool()>> contexts);
     bool AddHotkey(const std::string& alias, Key key, int modifiers, std::function<void()> callback);
+    HotKey AddHotkey(const std::string& rawInput, std::function<void()> action, int id);
     bool Hotkey(const std::string& hotkeyStr, std::function<void()> action, int id = 0);
     bool Suspend(int id);
     bool Resume(int id);
-    
+
     // Mouse methods
     void MouseMove(int x, int y);
     void MouseClick(int button);
     void MouseDown(int button);
     void MouseUp(int button);
     void MouseWheel(int amount);
-    
+
     // State methods
     int GetState(const std::string& keyName, const std::string& mode = "");
     void PressKey(const std::string& keyName, bool press);
-    
+
     // Utility methods
     void SetTimer(int milliseconds, const std::function<void()> &func);
     void MsgBox(const std::string& message);
@@ -68,25 +82,30 @@ public:
     int GetKeyboard();
     int ParseModifiers(std::string str);
     void AssignHotkey(HotKey hotkey, int id);
-    
+
     // Add new methods for dynamic hotkey grabbing/ungrabbing
     bool GrabHotkey(int hotkeyId);
     bool UngrabHotkey(int hotkeyId);
     bool GrabHotkeysByPrefix(const std::string& prefix);
     bool UngrabHotkeysByPrefix(const std::string& prefix);
-    
+
     // Static methods
     static void removeSpecialCharacters(std::string &keyName);
     static void HandleKeyEvent(XEvent& event);
     static void HandleMouseEvent(XEvent& event);
-    static Key StringToButton(std::string buttonName);
+    static Key StringToButton(const std::string& buttonNameRaw);
     static Key handleKeyString(const std::string& keystr);
     static Key StringToVirtualKey(std::string keyName);
 
+    // Call this to start listening on your keyboard device
+    bool StartEvdevHotkeyListener(const std::string& devicePath);
+
+    // Call this to stop the thread cleanly
+    void StopEvdevHotkeyListener();
 private:
     // X11 hotkey monitoring
     void MonitorHotkeys();
-    
+
     // Platform specific implementations
     Display* display;
     std::map<std::string, Key> keyMap;
@@ -94,20 +113,19 @@ private:
     std::map<std::string, bool> hotkeyStates;
     std::thread timerThread;
     bool timerRunning = false;
-    
+
     // Static members
-    static std::unordered_map<int, HotKey> hotkeys;
     static bool hotkeyEnabled;
     static int hotkeyCount;
-    
+
     // Key mapping and sending utilities
     void InitKeyMap();
     void SendKeyEvent(Key key, bool down);
     std::vector<IoEvent> ParseKeysString(const std::string& keys);
-    
+
     // Helper methods for X11 key grabbing
-    void GrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root, bool exclusive);
-    void UngrabKeyWithVariants(KeyCode keycode, unsigned int modifiers, Window root);
+    void Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bool isMouse = false);
+    void Ungrab(Key input, unsigned int modifiers, Window root);
 };
 
 } // namespace H

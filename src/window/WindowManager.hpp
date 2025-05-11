@@ -20,12 +20,20 @@ typedef unsigned long XWindow;
 #endif
 
 namespace H {
+    struct WindowStats {
+        wID id;
+        std::string className;
+        std::string title;
+        bool isFullscreen;
+        int x, y, width, height;
+    };
 
 class WindowManager {
 public:
     WindowManager();
     ~WindowManager() = default;
 
+    static WindowStats activeWindow;
     // Static window methods
     static XWindow GetActiveWindow();
     static XWindow GetwIDByPID(pID pid);
@@ -40,7 +48,7 @@ public:
     static ProcessMethodType toMethod(cstr method);
     static void SetPriority(int priority, pID procID = 0);
     static int64_t Terminal(cstr command, bool canPause, str windowState, bool continueExecution, cstr terminal = "");
-    
+
     template<typename T>
     static int64_t Run(str path, T method, str windowState, str command, int priority);
 
@@ -97,7 +105,7 @@ private:
     std::string wmName;
     bool wmSupported{false};
     WindowManagerDetector::WMType wmType{};  // Default initialization
-    
+
     // Static member to track previous active window
     static XWindow previousActiveWindow;
 };
@@ -136,7 +144,7 @@ int64_t WindowManager::Run(str path, T method, str windowState, str command, int
             }
             return -1;
         }
-        
+
         case ProcessMethodType::ForkProcess: {
             pid_t childPid = ::fork();
             if (childPid == 0) {
@@ -149,9 +157,9 @@ int64_t WindowManager::Run(str path, T method, str windowState, str command, int
             }
             return -1;
         }
-        
+
         // Add other cases as needed...
-        
+
         default:
             return -1;
     }

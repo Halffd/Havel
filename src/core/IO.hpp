@@ -29,6 +29,7 @@ struct HotKey {
     bool suspend = false;
     bool exclusive = false;
     bool success = false;
+    bool evdev = false;
 };
 
 struct IoEvent {
@@ -59,7 +60,7 @@ public:
     // Hotkey methods
     bool ContextActive(std::vector<std::function<bool()>> contexts);
     bool AddHotkey(const std::string& alias, Key key, int modifiers, std::function<void()> callback);
-    HotKey AddHotkey(const std::string& rawInput, std::function<void()> action, int id);
+    HotKey AddHotkey(const std::string& rawInput, std::function<void()> action, int id) const;
     bool Hotkey(const std::string& hotkeyStr, std::function<void()> action, int id = 0);
     bool Suspend(int id);
     bool Resume(int id);
@@ -73,7 +74,7 @@ public:
 
     // State methods
     int GetState(const std::string& keyName, const std::string& mode = "");
-    void PressKey(const std::string& keyName, bool press);
+    static void PressKey(const std::string& keyName, bool press);
 
     // Utility methods
     void SetTimer(int milliseconds, const std::function<void()> &func);
@@ -105,7 +106,7 @@ public:
 private:
     // X11 hotkey monitoring
     void MonitorHotkeys();
-
+    static Key EvdevNameToKeyCode(std::string keyName);
     // Platform specific implementations
     Display* display;
     std::map<std::string, Key> keyMap;

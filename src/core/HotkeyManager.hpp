@@ -76,7 +76,8 @@ public:
                           std::function<void()> trueAction,
                           std::function<void()> falseAction = nullptr,
                           int id = 0);
-                          
+
+    void checkHotkeyStates();
     // Make this public so main.cpp can call it for window checks
     bool evaluateCondition(const std::string& condition);
 
@@ -104,14 +105,15 @@ private:
     bool videoPlaying{false};
     time_t lastVideoCheck{0};
     const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
-    
+
     // Hotkey state management
     bool mpvHotkeysGrabbed{false};
     std::map<std::string, bool> windowConditionStates;  // Tracks if particular window conditions were met
 
     // Window groups
     std::vector<std::string> videoSites;  // Will be loaded from config
-
+    bool mouse1Pressed{false};
+    bool mouse2Pressed{false};
     // Key name conversion maps
     const std::map<std::string, std::string> keyNameAliases = {
         // Mouse buttons
@@ -124,7 +126,7 @@ private:
         {"mouse3", "Button3"},
         {"wheelup", "Button4"},
         {"wheeldown", "Button5"},
-        
+
         // Numpad keys
         {"numpad0", "KP_0"},
         {"numpad1", "KP_1"},
@@ -142,7 +144,7 @@ private:
         {"numpadminus", "KP_Subtract"},
         {"numpadmult", "KP_Multiply"},
         {"numpaddiv", "KP_Divide"},
-        
+
         // Special keys
         {"win", "Super_L"},
         {"rwin", "Super_R"},
@@ -162,7 +164,7 @@ private:
         {"pgup", "Page_Up"},
         {"pgdn", "Page_Down"},
         {"prtsc", "Print"},
-        
+
         // Modifier keys
         {"ctrl", "Control_L"},
         {"rctrl", "Control_R"},
@@ -179,7 +181,7 @@ private:
     void showNotification(const std::string& title, const std::string& message);
     std::string convertKeyName(const std::string& keyName);
     std::string parseHotkeyString(const std::string& hotkeyStr);
-    
+
     // Autoclicker helpers
     bool isGamingWindow();
     void startAutoclicker(const std::string& button);
@@ -221,8 +223,8 @@ private:
     void updateLastVideoCheck();
 
     // Store IDs of MPV hotkeys for grab/ungrab
-    std::vector<int> mpvHotkeyIds;
-    
+    std::vector<int> conditionalHotkeyIds;
+
     // Window condition helper methods
     bool checkWindowCondition(const std::string& condition);
     void updateHotkeyStateForCondition(const std::string& condition, bool conditionMet);

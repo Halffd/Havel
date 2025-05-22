@@ -466,7 +466,7 @@ bool IO::Resume(int id) {
     }
     return false;
 }
-HotKey IO::AddHotkey(const std::string& rawInput, std::function<void()> action, int id) {
+HotKey IO::AddHotkey(const std::string& rawInput, std::function<void()> action, int id) const {
     if (id == 0) id = ++hotkeyCount;
 
     std::string hotkeyStr = rawInput;
@@ -482,37 +482,54 @@ HotKey IO::AddHotkey(const std::string& rawInput, std::function<void()> action, 
         else if (c == '^') modifiers |= ControlMask; // Ctrl
         else if (c == '+') modifiers |= ShiftMask;   // Shift
         else if (c == '#') modifiers |= Mod4Mask;    // Win/Super
-        else if (c == '*' || c == '~') exclusive = false;        // Non-exclusive
-        else if (c == '$') suspendKey = true;        // Suspend hotkey
+        else if (c == '*' || c == '~') exclusive = false;
+        else if (c == '$') suspendKey = true;
         else break;
         ++i;
     }
 
-    hotkeyStr = hotkeyStr.substr(i); // Strip off modifiers
+    hotkeyStr = hotkeyStr.substr(i); // Strip modifiers
 
-    // Parse key
-    std::string keyLower = hotkeyStr;
-    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
-    Key key = StringToVirtualKey(keyLower);
-    KeyCode keycode = key < 8 XKeysymToKeycode(display, key);
-    if (keycode <= 0) {
-        std::cerr << "Failed to convert keysym to keycode: " << keyLower << std::endl;
-        return HotKey();
+    KeyCode keycode = 0;
+    bool isEvdev = false;
+
+    if (!hotkeyStr.empty() && hotkeyStr[0] == '@') {
+        // evdev mode: raw linux input event keycode (e.g. @KEY_F13)
+        std::string evdevKey = hotkeyStr.substr(1); // remove '@'
+
+        // You can use a lookup or hardcode a few common ones
+        keycode = EvdevNameToKeyCode(evdevKey);
+        if (keycode == 0) {
+            std::cerr << "Invalid evdev key name: " << evdevKey << "\n";
+            return {};
+        }
+        isEvdev = true;
+    } else {
+        // X11 keysym -> keycode
+        std::string keyLower = hotkeyStr;
+        std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+        Key keysym = StringToVirtualKey(keyLower);
+        keycode = keysym < 10 ? keysym : XKeysymToKeycode(display, keysym);
+        if (keycode <= 0) {
+            std::cerr << "Failed to convert keysym to keycode: " << keyLower << std::endl;
+            return HotKey();
+        }
     }
 
-    // Register the hotkey
     HotKey hk{
         .alias = rawInput,
         .key = static_cast<Key>(keycode),
         .modifiers = modifiers,
         .callback = std::move(action),
+        .enabled = true,
+        .blockInput = exclusive,
         .suspend = suspendKey,
-        .exclusive = exclusive
+        .exclusive = exclusive,
+        .success = (display && keycode > 0),
+        .evdev = isEvdev
     };
-    if (display && keycode > 0)
-        hk.success = true;
-    hotkeys[id] = hk;
 
+    hotkeys[id] = hk;
     return hotkeys[id];
 }
 
@@ -942,8 +959,59 @@ Key IO::StringToVirtualKey(str keyName)
     return IO::StringToButton(keyName); // Default for unsupported keys}
 #endif
 }
+Key IO::EvdevNameToKeyCode(std::string keyName)
+{
+    removeSpecialCharacters(keyName);
+    keyName = ToLower(keyName);
 
-// Set a timer for a specified function 
+    static const std::unordered_map<std::string, Key> keyMap = {
+        {"esc", KEY_ESC},
+        {"1", KEY_1}, {"2", KEY_2}, {"3", KEY_3}, {"4", KEY_4}, {"5", KEY_5},
+        {"6", KEY_6}, {"7", KEY_7}, {"8", KEY_8}, {"9", KEY_9}, {"0", KEY_0},
+        {"minus", KEY_MINUS}, {"equal", KEY_EQUAL}, {"backspace", KEY_BACKSPACE},
+        {"tab", KEY_TAB},
+        {"q", KEY_Q}, {"w", KEY_W}, {"e", KEY_E}, {"r", KEY_R}, {"t", KEY_T},
+        {"y", KEY_Y}, {"u", KEY_U}, {"i", KEY_I}, {"o", KEY_O}, {"p", KEY_P},
+        {"leftbrace", KEY_LEFTBRACE}, {"rightbrace", KEY_RIGHTBRACE}, {"enter", KEY_ENTER},
+        {"ctrl", KEY_LEFTCTRL}, {"lctrl", KEY_LEFTCTRL}, {"rctrl", KEY_RIGHTCTRL},
+        {"a", KEY_A}, {"s", KEY_S}, {"d", KEY_D}, {"f", KEY_F}, {"g", KEY_G},
+        {"h", KEY_H}, {"j", KEY_J}, {"k", KEY_K}, {"l", KEY_L},
+        {"semicolon", KEY_SEMICOLON}, {"apostrophe", KEY_APOSTROPHE},
+        {"grave", KEY_GRAVE},
+        {"shift", KEY_LEFTSHIFT}, {"lshift", KEY_LEFTSHIFT}, {"rshift", KEY_RIGHTSHIFT},
+        {"backslash", KEY_BACKSLASH},
+        {"z", KEY_Z}, {"x", KEY_X}, {"c", KEY_C}, {"v", KEY_V}, {"b", KEY_B},
+        {"n", KEY_N}, {"m", KEY_M}, {"comma", KEY_COMMA}, {"dot", KEY_DOT}, {"slash", KEY_SLASH},
+        {"alt", KEY_LEFTALT}, {"lalt", KEY_LEFTALT}, {"ralt", KEY_RIGHTALT},
+        {"space", KEY_SPACE}, {"capslock", KEY_CAPSLOCK},
+        {"f1", KEY_F1}, {"f2", KEY_F2}, {"f3", KEY_F3}, {"f4", KEY_F4}, {"f5", KEY_F5},
+        {"f6", KEY_F6}, {"f7", KEY_F7}, {"f8", KEY_F8}, {"f9", KEY_F9}, {"f10", KEY_F10},
+        {"f11", KEY_F11}, {"f12", KEY_F12},
+        {"insert", KEY_INSERT}, {"delete", KEY_DELETE}, {"home", KEY_HOME},
+        {"end", KEY_END}, {"pgup", KEY_PAGEUP}, {"pgdn", KEY_PAGEDOWN},
+        {"right", KEY_RIGHT}, {"left", KEY_LEFT}, {"down", KEY_DOWN}, {"up", KEY_UP},
+        {"numlock", KEY_NUMLOCK}, {"scrolllock", KEY_SCROLLLOCK},
+        {"pause", KEY_PAUSE}, {"printscreen", KEY_SYSRQ},
+        {"volumeup", KEY_VOLUMEUP}, {"volumedown", KEY_VOLUMEDOWN}, {"volumemute", KEY_MUTE},
+        {"mediaplay", KEY_PLAYPAUSE}, {"medianext", KEY_NEXTSONG}, {"mediaprev", KEY_PREVIOUSSONG},
+        {"numpad0", KEY_KP0}, {"numpad1", KEY_KP1}, {"numpad2", KEY_KP2},
+        {"numpad3", KEY_KP3}, {"numpad4", KEY_KP4}, {"numpad5", KEY_KP5},
+        {"numpad6", KEY_KP6}, {"numpad7", KEY_KP7}, {"numpad8", KEY_KP8},
+        {"numpad9", KEY_KP9},
+        {"numpadadd", KEY_KPPLUS}, {"numpadsub", KEY_KPMINUS},
+        {"numpadmul", KEY_KPASTERISK}, {"numpaddiv", KEY_KPSLASH},
+        {"numpaddec", KEY_KPDOT}, {"numpadenter", KEY_KPENTER},
+        {"menu", KEY_MENU}, {"win", KEY_LEFTMETA}, {"lwin", KEY_LEFTMETA}, {"rwin", KEY_RIGHTMETA},
+        {"nosymbol", KEY_RO}
+    };
+
+    auto it = keyMap.find(keyName);
+    if (it != keyMap.end())
+        return it->second;
+
+    return 0; // Default for unrecognized keys
+}
+// Set a timer for a specified function
 void IO::SetTimer(int milliseconds, const std::function<void()> &func)
 {
     std::cout << "Setting timer for " << milliseconds << " ms" << std::endl;
@@ -1196,8 +1264,8 @@ bool IO::UngrabHotkey(int hotkeyId) {
         std::cerr << "Hotkey ID not found: " << hotkeyId << std::endl;
         return false;
     }
-    
     const HotKey& hotkey = it->second;
+    lo.info("Ungrabbing hotkey: " + hotkey.alias);
     Window root = DefaultRootWindow(display);
     KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
     
@@ -1298,7 +1366,7 @@ bool IO::StartEvdevHotkeyListener(const std::string& devicePath) {
                     // compare scancode (ev.code) to your hotkey.key
                     // if you stored key as KeySym, you'd need a reverse map
                     // but here assume hotkey.key holds the raw ev.code:
-                    if (hotkey.alias.find('@') != std::string::npos && hotkey.key == code) {
+                    if (hotkey.evdev && hotkey.key == code) {
                         // check all required modifiers are down
                         bool ok = true;
                         for (auto m : { ControlMask, ShiftMask, Mod1Mask, Mod4Mask }) {

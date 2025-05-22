@@ -23,7 +23,28 @@
 #endif
 
 namespace H {
-
+void Zoom(int zoom, IO& io) {
+    if (zoom < 0) zoom = 0;
+    else if (zoom > 2) zoom = 2;
+    if (zoom == 1) {
+        io.PressKey("ctrl", true);
+        io.PressKey("up", true);
+        io.PressKey("up", false);
+        io.PressKey("ctrl", false);
+    } else if (zoom == 0) {
+        io.PressKey("ctrl", true);
+        io.PressKey("down", true);
+        io.PressKey("down", false);
+        io.PressKey("ctrl", false);
+    } else if (zoom == 2) {
+        io.PressKey("ctrl", true);
+        io.PressKey("shift", true);
+        io.PressKey("/", true);
+        io.PressKey("/", false);
+        io.PressKey("ctrl", false);
+        io.PressKey("shift", false);
+    }
+}
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
     : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine), 
       brightnessManager(), verboseKeyLogging(false), verboseWindowLogging(false),
@@ -152,7 +173,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Application Shortcuts
-    io.Hotkey("f24", [this]() {
+    io.Hotkey("@rwin", [this]() {
         std::cout << "rwin" << std::endl;
         io.PressKey("alt", true);
         io.PressKey("backspace", true);
@@ -160,9 +181,23 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         io.PressKey("alt", false);
     });
 
+    io.Hotkey("@ralt", [this]() {
+        std::cout << "ralt" << std::endl;
+        WindowManager::MoveWindowToNextMonitor();
+    });
+    io.Hotkey("~Button1", [this]() {
+        lo.info("Button1");
+        mouse1Pressed = true;
+    });
+    io.Hotkey("~Button2", [this]() {
+        lo.info("Button2");
+        mouse2Pressed = true;
+    });
+
     io.Hotkey("KP_7", [this]() {
         io.PressKey("ctrl", true);
         io.PressKey("up", true);
+        sleep(0.1);
         io.PressKey("up", false);
         io.PressKey("ctrl", false);
     });
@@ -170,6 +205,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("KP_1", [this]() {
         io.PressKey("ctrl", true);
         io.PressKey("down", true);
+        sleep(0.1);
         io.PressKey("down", false);
         io.PressKey("ctrl", false);
     });
@@ -199,7 +235,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Context-sensitive hotkeys
-    AddContextualHotkey("f23", "IsZooming",
+    AddContextualHotkey(" @nosymbol", "IsZooming",
         [this]() { // When zooming
             std::cout << "kc0 t" << std::endl;
             io.PressKey("ctrl", true);
@@ -476,83 +512,80 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 }
 
 void HotkeyManager::RegisterMediaHotkeys() {
-    // Clear any existing MPV hotkey IDs
-    mpvHotkeyIds.clear();
-    
     // Define MPV media hotkeys with unique IDs starting at 10000
     int mpvBaseId = 10000;
     
     // Volume control - Only active in gaming mode
     int volumeUpId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioRaiseVolume", "currentMode == 'gaming'", 
+    AddContextualHotkey("+0", "currentMode == 'gaming'",
         [this]() {
             mpv.VolumeUp();
             logWindowEvent("MPV_HOTKEY", "Volume Up (Gaming Mode)");
         },
         nullptr, volumeUpId
     );
-    mpvHotkeyIds.push_back(volumeUpId);
+    conditionalHotkeyIds.push_back(volumeUpId);
     
     int volumeDownId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioLowerVolume", "currentMode == 'gaming'", 
+    AddContextualHotkey("+9", "currentMode == 'gaming'",
         [this]() {
             mpv.VolumeDown();
             logWindowEvent("MPV_HOTKEY", "Volume Down (Gaming Mode)");
         },
         nullptr, volumeDownId
     );
-    mpvHotkeyIds.push_back(volumeDownId);
+    conditionalHotkeyIds.push_back(volumeDownId);
     
     int muteId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioMute", "currentMode == 'gaming'", 
+    AddContextualHotkey("+-", "currentMode == 'gaming'",
         [this]() {
             mpv.ToggleMute();
             logWindowEvent("MPV_HOTKEY", "Toggle Mute (Gaming Mode)");
         },
         nullptr, muteId
     );
-    mpvHotkeyIds.push_back(muteId);
+    conditionalHotkeyIds.push_back(muteId);
     
     // Media control - Only active in gaming mode
     int playId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioPlay", "currentMode == 'gaming'", 
+    AddContextualHotkey("RCtrl", "currentMode == 'gaming'",
         [this]() {
             mpv.PlayPause();
             logWindowEvent("MPV_HOTKEY", "Play/Pause (Gaming Mode)");
         },
         nullptr, playId
     );
-    mpvHotkeyIds.push_back(playId);
+    conditionalHotkeyIds.push_back(playId);
     
     int stopId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioStop", "currentMode == 'gaming'", 
+    AddContextualHotkey("+Esc", "currentMode == 'gaming'",
         [this]() {
             mpv.Stop();
             logWindowEvent("MPV_HOTKEY", "Stop (Gaming Mode)");
         },
         nullptr, stopId
     );
-    mpvHotkeyIds.push_back(stopId);
+    conditionalHotkeyIds.push_back(stopId);
     
     int nextId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioNext", "currentMode == 'gaming'", 
+    AddContextualHotkey("+PgUp", "currentMode == 'gaming'",
         [this]() {
             mpv.Next();
             logWindowEvent("MPV_HOTKEY", "Next (Gaming Mode)");
         },
         nullptr, nextId
     );
-    mpvHotkeyIds.push_back(nextId);
+    conditionalHotkeyIds.push_back(nextId);
     
     int prevId = mpvBaseId++;
-    AddContextualHotkey("XF86AudioPrev", "currentMode == 'gaming'", 
+    AddContextualHotkey("+PgDn", "currentMode == 'gaming'",
         [this]() {
             mpv.Previous();
             logWindowEvent("MPV_HOTKEY", "Previous (Gaming Mode)");
         },
         nullptr, prevId
     );
-    mpvHotkeyIds.push_back(prevId);
+    conditionalHotkeyIds.push_back(prevId);
     
     // Special keycode-based hotkey for gaming mode
     int kc94Id = mpvBaseId++;
@@ -568,7 +601,7 @@ void HotkeyManager::RegisterMediaHotkeys() {
         },
         kc94Id
     );
-    mpvHotkeyIds.push_back(kc94Id);
+    conditionalHotkeyIds.push_back(kc94Id);
     
     // If not in gaming mode, immediately ungrab all MPV hotkeys
     if (currentMode != "gaming") {
@@ -788,18 +821,18 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     };
 
     // Register hotkey
-    io.AddHotkey(normalizedKey, action, id);
+    HotKey hk = io.AddHotkey(normalizedKey, action, id);
 
     // Cache or react to initial state
     updateHotkeyStateForCondition(condition, evaluateCondition(condition));
 
+    conditionalHotkeyIds.push_back(id);
     return id;
 }
 
 bool HotkeyManager::checkWindowCondition(const std::string& condition) {
     // This method checks if a specific window-related condition is met (like class or title)
-    // Return true if the condition is met, false otherwise
-    std::cout << "Checking window condition: " << condition << std::endl;
+    // Return true if the condition is met, false otherwis
     if (condition.substr(0, 14) == "Window.Active(") {
         std::string param;
         if (condition.length() > 14) {
@@ -920,6 +953,19 @@ void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, 
         }
     }
 }
+void HotkeyManager::checkHotkeyStates() {
+    // Example: check if we’re in gaming mode
+    bool gamingModeActive = isGamingWindow();
+    updateHotkeyStateForCondition("currentMode == 'gaming'", gamingModeActive);
+
+    // Example: check if the active window matches some criteria
+    std::string activeWindowTitle = WindowManager::activeWindow.title;
+    std::string activeWindowClass = WindowManager::activeWindow.className;
+    for (auto const& [key, value] : windowConditionStates) {
+        bool conditionMet = evaluateCondition(key);
+        updateHotkeyStateForCondition(key, conditionMet);
+    }
+}
 
 bool HotkeyManager::evaluateCondition(const std::string& condition) {
     bool negated = !condition.empty() && condition[0] == '!';
@@ -1020,7 +1066,7 @@ void HotkeyManager::grabGamingHotkeys() {
     }
     
     // Grab all MPV hotkey IDs that we've stored
-    for (int id : mpvHotkeyIds) {
+    for (int id : conditionalHotkeyIds) {
         io.GrabHotkey(id);
     }
     
@@ -1034,28 +1080,8 @@ void HotkeyManager::ungrabGamingHotkeys() {
         return;
     }
     
-    // Media keys that should be ungrabbed when not in gaming mode
-    const std::vector<std::string> mpvKeys = {
-        "XF86AudioRaiseVolume",
-        "XF86AudioLowerVolume",
-        "XF86AudioMute",
-        "XF86AudioPlay",
-        "XF86AudioStop",
-        "XF86AudioNext",
-        "XF86AudioPrev",
-        // Also grab our special MPV hotkeys
-        "z", "o", "p", "l", "semicolon", "7", "8", "5", "6", "9", "0",
-        "minus", "equal", "m"
-    };
-    
-    for (const auto& key : mpvKeys) {
-        if (verboseKeyLogging) {
-            logKeyEvent(key, "UNGRAB", "Releasing for normal mode");
-        }
-    }
-    
     // Ungrab all MPV hotkey IDs that we've stored
-    for (int id : mpvHotkeyIds) {
+    for (int id : conditionalHotkeyIds) {
         io.UngrabHotkey(id);
     }
     
@@ -1070,14 +1096,13 @@ void HotkeyManager::showNotification(const std::string& title, const std::string
 
 bool HotkeyManager::isGamingWindow() {
     std::string windowClass = WindowManager::activeWindow.className;
-    std::cout << "Window class: " << windowClass << std::endl;
     if (verboseWindowLogging) {
-        logWindowEvent("CHECK_GAMING", "Checking if window class '" + windowClass + "' is a gaming application");
+        logWindowEvent("CHE CK_GAMING", "Checking if window class '" + windowClass + "' is a gaming application");
     }
     
     // List of window classes for gaming applications
     const std::vector<std::string> gamingApps = {
-        "steam_app_defaul",      // Steam games
+        "steam_app_default",      // Steam games
         "retroarch",      // RetroArch emulator
         "ryujinx",        // Nintendo Switch emulator
         "pcsx2",          // PlayStation 2 emulator
@@ -1102,6 +1127,7 @@ bool HotkeyManager::isGamingWindow() {
             if (verboseWindowLogging) {
                 logWindowEvent("GAMING_DETECTED", "Gaming application detected: '" + app + "' in '" + windowClass + "'");
             }
+            currentMode = "gaming";
             return true;
         }
     }
@@ -1124,6 +1150,7 @@ bool HotkeyManager::isGamingWindow() {
             if (verboseWindowLogging) {
                 logWindowEvent("GAMING_DETECTED", "Gaming application detected by exact match: '" + exactClass + "'");
             }
+            currentMode = "gaming";
             return true;
         }
     }
@@ -1131,6 +1158,7 @@ bool HotkeyManager::isGamingWindow() {
     if (verboseWindowLogging) {
         logWindowEvent("NOT_GAMING", "Window class '" + windowClass + "' is not a gaming application");
     }
+    currentMode = "default";
     return false;
 }
 

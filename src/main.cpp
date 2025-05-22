@@ -173,20 +173,18 @@ int main(int argc, char* argv[]) {
             // Check active window periodically to update hotkey states
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= 300) {
+                hotkeyManager->checkHotkeyStates();
                 // Evaluate if the current window is a gaming window
                 bool isGamingWindow = hotkeyManager->evaluateCondition("currentMode == 'gaming'");
-                
+
                 if (isGamingWindow) {
+                    lo.info("Gaming window detected");
                     // Register hotkeys if a gaming window is found
                     hotkeyManager->grabGamingHotkeys();
                 } else {
                     // Unregister hotkeys if no gaming window is found
                     hotkeyManager->ungrabGamingHotkeys();
                 }
-                
-                // Also check Koikatu condition for D key overlay
-                hotkeyManager->evaluateCondition("Window.Active('class:Koikatu')");
-                
                 lastWindowCheck = now;
             }
             

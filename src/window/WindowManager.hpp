@@ -95,6 +95,8 @@ public:
 
     // New method
     static std::string GetActiveWindowClass();
+    static void MoveWindowToNextMonitor();
+    static void ToggleFullscreen(Display* display, Window win, Atom stateAtom, Atom fsAtom, bool enable);
 
 private:
     static bool InitializeX11();

@@ -1,58 +1,63 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <functional>
+#include <chrono>
 
 namespace H {
 
-class MPVController {
-public:
-    MPVController();
-    ~MPVController();
-    
-    bool Initialize();
-    void Shutdown();
-    
-    // Basic controls
-    void Play();
-    void Pause();
-    void TogglePause();
-    void PlayPause();
-    void Stop();
-    void Next();
-    void Previous();
-    
-    // Volume control
-    void SetVolume(int volume);
-    int GetVolume() const;
-    void VolumeUp();
-    void VolumeDown();
-    void ToggleMute();
-    
-    // Playback control
-    void Seek(int seconds);
-    void SetPosition(double position);
-    double GetPosition() const;
-    double GetDuration() const;
-    
-    // File operations
-    bool LoadFile(const std::string& path);
-    std::string GetCurrentFile() const;
-    
-    void SendCommand(const std::vector<std::string>& cmd);
-    void ToggleSubtitleVisibility();
-    
-    bool EnsureInitialized();
-    
-private:
-    bool initialized = false;
-    int volume = 100;
-    bool muted = false;
-    double position = 0.0;
-    double duration = 0.0;
-    std::string currentFile;
-    
-    void SendRaw(const std::string& data);
-};
+    class MPVController {
+    public:
+        MPVController();
+        ~MPVController();
 
-} // namespace H 
+        bool Initialize();
+        void Shutdown();
+
+        void PlayPause();
+        void Stop();
+        void Next();
+        void Previous();
+        void VolumeUp();
+        void VolumeDown();
+        void ToggleMute();
+        void ToggleSubtitleVisibility();
+        void ToggleSecondarySubtitleVisibility();
+        void IncreaseSubtitleFontSize();
+        void DecreaseSubtitleFontSize();
+        void SubtitleDelayForward();
+        void SubtitleDelayBackward();
+        void SubtitleScaleUp();
+        void SubtitleScaleDown();
+        void SeekForward();
+        void SeekBackward();
+        void SeekForward2();
+        void SeekBackward2();
+        void SeekForward3();
+        void SeekBackward3();
+        void SpeedUp();
+        void SlowDown();
+        void SetLoop(bool enable);
+        void SendRaw(const std::string& data);
+
+        void SetSocketPath(const std::string& path);
+        bool Reconnect();
+        void SendCommand(const std::vector<std::string>& cmd);
+
+    private:
+        bool EnsureInitialized();
+        bool ConnectSocket();
+        bool IsSocketAlive();
+
+        bool initialized;
+        std::string socket_path;
+        int socket_fd;
+        int socket_timeout_sec;
+        int retry_delay_ms;
+        int max_retries;
+        int seek_s = 1;
+        int seek2_s = 5;
+        int seek3_s = 30;
+        std::chrono::steady_clock::time_point last_error_time;
+    };
+
+} // namespace H

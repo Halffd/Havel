@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
         
         // Create MPV controller
         auto mpv = std::make_shared<MPVController>();
-        
+        mpv->Initialize();
         // Create script engine
         auto scriptEngine = std::make_shared<ScriptEngine>(*io, *windowManager);
         

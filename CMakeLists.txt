@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(HvC)
+set(CMAKE_CXX_STANDARD 23)
 
 # Find required packages
 find_package(X11 REQUIRED)

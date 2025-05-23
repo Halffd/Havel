@@ -542,20 +542,20 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "p", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "3"}); }, []() { lo.info("Seeking forward"); }
     , mpvBaseId++ },
     // Subtitles
-    { "l", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
-    { ";", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "n", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "+n", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
     { "7", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-scale", "-0.1"}); }, nullptr, mpvBaseId++ },
     { "8", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-scale", "0.1"}); }, nullptr, mpvBaseId++ },
-    { "5", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "-0.1"}); }, nullptr, mpvBaseId++ },
-    { "6", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "0.1"}); }, nullptr, mpvBaseId++ },
+    { "+z", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "-0.1"}); }, nullptr, mpvBaseId++ },
+    { "+x", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "0.1"}); }, nullptr, mpvBaseId++ },
     { "9", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub"}); }, nullptr, mpvBaseId++ },
     { "0", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "0"}); }, nullptr, mpvBaseId++ },
     { "m", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
     { "minus", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "-1"}); }, nullptr, mpvBaseId++ },
-    { "equal", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
+    { "equals", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
 
     // Special Keycode (94)
-    { "~<", "currentMode == 'gaming'",
+    { "<", "currentMode == 'gaming'",
         [this]() {
             logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
             mpv.SendCommand({"cycle", "pause"});

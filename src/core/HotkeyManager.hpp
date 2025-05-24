@@ -17,8 +17,8 @@ namespace H {
     struct HotkeyDefinition {
         std::string key;
         std::string condition;
-        std::function<void()> onPress;
-        std::function<void()> onRelease; // Optional
+        std::function<void()> trueAction;
+        std::function<void()> falseAction; // Optional
         int id;
     };
 
@@ -126,7 +126,7 @@ namespace H {
         void toggleWindowFocusTracking();
 
     private:
-        void send_media_play_pause();
+        void PlayPause();
         bool netflix_detected = false;
         IO &io;
         WindowManager &windowManager;

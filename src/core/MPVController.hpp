@@ -42,11 +42,11 @@ namespace H {
         void SetSocketPath(const std::string& path);
         bool Reconnect();
         void SendCommand(const std::vector<std::string>& cmd);
+        bool IsSocketAlive();
 
     private:
         bool EnsureInitialized();
         bool ConnectSocket();
-        bool IsSocketAlive();
 
         bool initialized;
         std::string socket_path;

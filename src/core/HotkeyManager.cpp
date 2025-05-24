@@ -229,7 +229,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^!l", []() {
         system("livelink screen toggle 1");
     });
-
+    io.Hotkey("f10", [this]() {
+        system("~/scripts/str");
+    });
     io.Hotkey("^!k", []() {
         system("livelink screen toggle 2");
     });
@@ -307,7 +309,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                 lo.error("Failed to get executable path");
             }
         }}},
-        {"^!esc", {"Reload configuration", [this]() {
+        {"^#esc", {"Reload configuration", [this]() {
             lo.info("Reloading configuration");
             ReloadConfigurations();
             lo.debug("Configuration reload complete");
@@ -510,12 +512,12 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }
     });
 }
-void HotkeyManager::send_media_play_pause() {
-    if (netflix_detected) {
+void HotkeyManager::PlayPause() {
+    if (mpv.IsSocketAlive()) {
+        mpv.SendCommand({"cycle", "pause"});
+    } else {
         // Send playerctl
         system("playerctl play-pause");
-    } else {
-        mpv.SendCommand({"cycle", "pause"});
     }
 }
 void HotkeyManager::RegisterMediaHotkeys() {
@@ -527,15 +529,15 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+-", "currentMode == 'gaming'", [this]() { mpv.ToggleMute(); }, nullptr, mpvBaseId++ },
 
     // Playback
-    { "@RCtrl", "currentMode == 'gaming'", [this]() { mpv.PlayPause(); }, nullptr, mpvBaseId++ },
+    { "@RCtrl", "currentMode == 'gaming'", [this]() { PlayPause(); }, nullptr, mpvBaseId++ },
     { "+Esc", "currentMode == 'gaming'", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
     { "+PgUp", "currentMode == 'gaming'", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
     { "+PgDn", "currentMode == 'gaming'", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },
 
     // Netflix pause fallback — same key
-    { "z", "currentMode == 'gaming'", [this]() {
-        send_media_play_pause();
-    }, nullptr, mpvBaseId++ },
+    { "@LWin", "currentMode == 'gaming'", [this]() {
+        PlayPause();
+    }, []() { system("xfce4-popup-whiskermenu"); }, mpvBaseId++ },
 
     // Seek
     { "o", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "-3"}); }, nullptr, mpvBaseId++ },
@@ -558,12 +560,12 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "<", "currentMode == 'gaming'",
         [this]() {
             logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
-            mpv.SendCommand({"cycle", "pause"});
+            PlayPause();
         }, nullptr, mpvBaseId++
     }
 };
     for (const auto& hk : mpvHotkeys) {
-        AddContextualHotkey(hk.key, hk.condition, hk.onPress, hk.onRelease, hk.id);
+        AddContextualHotkey(hk.key, hk.condition, hk.trueAction, hk.falseAction, hk.id);
         conditionalHotkeyIds.push_back(hk.id);
     }
 
@@ -576,19 +578,19 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
 
 void HotkeyManager::RegisterWindowHotkeys() {
     // Window movement
-    io.Hotkey("!Up", []() {
+    io.Hotkey("^!Up", []() {
         WindowManager::MoveWindow(1);
     });
 
-    io.Hotkey("!Down", []() {
+    io.Hotkey("^!Down", []() {
         WindowManager::MoveWindow(2);
     });
 
-    io.Hotkey("!Left", []() {
+    io.Hotkey("^!Left", []() {
         WindowManager::MoveWindow(3);
     });
 
-    io.Hotkey("!Right", []() {
+    io.Hotkey("^!Right", []() {
         WindowManager::MoveWindow(4);
     });
 
@@ -647,7 +649,7 @@ void HotkeyManager::RegisterSystemHotkeys() {
         system("xdg-screensaver lock");
     });
 
-    io.Hotkey("^!Esc", []() {
+    io.Hotkey("+!Esc", []() {
         // Show system monitor
         system("gnome-system-monitor &");
     });

@@ -178,7 +178,7 @@ int main(int argc, char* argv[]) {
                 bool isGamingWindow = hotkeyManager->evaluateCondition("currentMode == 'gaming'");
 
                 if (isGamingWindow) {
-                    lo.info("Gaming window detected");
+                    //lo.info("Gaming window detected");
                     // Register hotkeys if a gaming window is found
                     hotkeyManager->grabGamingHotkeys();
                 } else {

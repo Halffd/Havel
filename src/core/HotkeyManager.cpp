@@ -16,33 +16,26 @@
 #include <chrono>
 #include <atomic>
 #include "core/DisplayManager.hpp"
-
+#include "media/AutoRunner.h"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
 #endif
-
 namespace H {
-void Zoom(int zoom, IO& io) {
+std::string HotkeyManager::currentMode = "default";
+void HotkeyManager::Zoom(int zoom, IO& io) {
     if (zoom < 0) zoom = 0;
     else if (zoom > 2) zoom = 2;
     if (zoom == 1) {
-        io.PressKey("ctrl", true);
-        io.PressKey("up", true);
-        io.PressKey("up", false);
-        io.PressKey("ctrl", false);
+        io.Send("^{up}");
     } else if (zoom == 0) {
-        io.PressKey("ctrl", true);
-        io.PressKey("down", true);
-        io.PressKey("down", false);
-        io.PressKey("ctrl", false);
+        io.Send("^{down}");
     } else if (zoom == 2) {
-        io.PressKey("ctrl", true);
-        io.PressKey("shift", true);
-        io.PressKey("/", true);
-        io.PressKey("/", false);
-        io.PressKey("ctrl", false);
-        io.PressKey("shift", false);
+        io.Send("^/");
+    } else if (zoom == 3) {
+        io.Send("^+/");
+    } else {
+        std::cout << "Invalid zoom level: " << zoom << std::endl;
     }
 }
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
@@ -130,9 +123,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::string oldMode = currentMode;
         currentMode = (currentMode == "gaming") ? "default" : "gaming";
         logModeSwitch(oldMode, currentMode);
-        if (verboseWindowLogging) {
-            logWindowEvent("MODE_CHANGE", "Mode switched to: " + currentMode);
-        }
         showNotification("Mode Changed", "Active mode: " + currentMode);
     });
 
@@ -175,10 +165,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Application Shortcuts
     io.Hotkey("@rwin", [this]() {
         std::cout << "rwin" << std::endl;
-        io.PressKey("alt", true);
-        io.PressKey("backspace", true);
-        io.PressKey("backspace", false);
-        io.PressKey("alt", false);
+        io.Send("@!{backspace}");
     });
 
     io.Hotkey("@ralt", [this]() {
@@ -195,27 +182,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     io.Hotkey("KP_7", [this]() {
-        io.PressKey("ctrl", true);
-        io.PressKey("up", true);
-        sleep(0.1);
-        io.PressKey("up", false);
-        io.PressKey("ctrl", false);
+        Zoom(1, io);
     });
 
     io.Hotkey("KP_1", [this]() {
-        io.PressKey("ctrl", true);
-        io.PressKey("down", true);
-        sleep(0.1);
-        io.PressKey("down", false);
-        io.PressKey("ctrl", false);
+        Zoom(0, io);
     });
 
     io.Hotkey("KP_5", [this]() {
-        //io.PressKey("ctrl", true);
-        //io.PressKey("/", true);
-        //io.PressKey("/", false);
-        //io.PressKey("ctrl", false);
-        io.PressKey("Button1", true);
+        Zoom(2, io);
     });
 
     io.Hotkey("!f1", []() {
@@ -240,17 +215,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey(" @nosymbol", "IsZooming",
         [this]() { // When zooming
             std::cout << "kc0 t" << std::endl;
-            io.PressKey("ctrl", true);
-            io.PressKey("/", true);
-            io.PressKey("/", false);
-            io.PressKey("ctrl", false);
+            Zoom(2, io);
         },
         [this]() { // When not zooming
-            std::cout << "kc0 f" << std::endl;
-            io.PressKey("ctrl", true);
-            io.PressKey("up", true);
-            io.PressKey("up", false);
-            io.PressKey("ctrl", false);
+            Zoom(3, io);
         },
         0  // ID parameter
     );
@@ -359,10 +327,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Mouse wheel + click combinations
     io.Hotkey("!Button5", [this]() {
         std::cout << "alt+Button5" << std::endl;
-        io.PressKey("ctrl", true);
-        io.PressKey("up", true);
-        io.PressKey("up", false);
-        io.PressKey("ctrl", false);
+        Zoom(1, io);
     });
     // Add contextual hotkey for D key in Koikatu
     AddHotkey("!d", [this]() {
@@ -384,10 +349,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
 
     // '/' key to hold 'w' down in gaming mode
-    AddContextualHotkey("/", "currentMode == 'gaming'",
+    AddContextualHotkey("@y", "currentMode == 'gaming'",
         [this]() {
             lo.info("Gaming hotkey: Holding 'w' key down");
-            io.PressKey("w", true);
+            io.Send("{w down}");
 
             // Register the same key to release when pressed again
             static bool wKeyPressed = false;
@@ -395,11 +360,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
             if (wKeyPressed) {
                 lo.info("W key pressed and held down");
-                showNotification("Gaming Mode", "W key pressed and held");
             } else {
-                io.PressKey("w", false);
+                io.Send("{w up}");
                 lo.info("W key released");
-                showNotification("Gaming Mode", "W key released");
             }
         },
         nullptr, // No action when not in gaming mode
@@ -433,6 +396,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // Add a variable to track and allow stopping Genshin automation
     static std::atomic<bool> genshinAutomationActive(false);
+    static AutoRunner genshinAutoRunner(io);
+    AddContextualHotkey("/", "currentMode == 'gaming'",
+        [this]() {
+            lo.info("Genshin Impact detected - Starting specialized auto actions");
+            genshinAutoRunner.toggle();
+        },
+        nullptr, // No action when not in gaming mode
+        0 // ID parameter
+    );
 
     // Special hotkeys for Genshin Impact - Start automation
     AddContextualHotkey("enter", "currentMode == 'gaming'",
@@ -445,7 +417,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
             // Start autoclicking
             startAutoclicker("Button1");
-
+            return;
             // Press E every 2 seconds
             std::thread eKeyThread([this]() {
                 int counter = 0;
@@ -473,16 +445,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                     }
 
                     // Press E
-                    io.PressKey("e", true);
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                    io.PressKey("e", false);
+                    io.Send("e");
                     std::this_thread::sleep_for(std::chrono::seconds(2));
 
                     // Every 5th iteration (10 seconds), press Q
                     if (counter % 5 == 0) {
-                        io.PressKey("q", true);
+                        io.Send("q");
                         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        io.PressKey("q", false);
                         lo.info("Genshin automation: Pressed Q");
                     }
 
@@ -541,8 +510,12 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
 
     // Seek
     { "o", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "-3"}); }, nullptr, mpvBaseId++ },
-    { "p", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "3"}); }, []() { lo.info("Seeking forward"); }
-    , mpvBaseId++ },
+    { "p", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "3"}); }, nullptr, mpvBaseId++ },
+
+    // Speed
+    { "+o", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "speed", "-0.1"}); }, nullptr, mpvBaseId++ },
+    { "+p", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "speed", "0.1"}); }, nullptr, mpvBaseId++ },
+
     // Subtitles
     { "n", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
     { "+n", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
@@ -615,10 +588,16 @@ void HotkeyManager::RegisterWindowHotkeys() {
     io.Hotkey("!a", []() {
         WindowManager::ToggleAlwaysOnTop();
     });
+    /*io.Hotkey("a", [this]() {
+        io.Send("w");
+    });
 
+    io.Hotkey("left", [this]() {
+        io.Send("a");
+    });*/
     // Add contextual hotkey for D key in Koikatu using both class and title detection
     // First check by window class
-    AddContextualHotkey("d", "Window.Active('class:Koikatu')",
+    /*AddContextualHotkey("d", "Window.Active('class:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu
             lo.info("Koikatu window detected - D key pressed - showing black overlay");
@@ -639,7 +618,7 @@ void HotkeyManager::RegisterWindowHotkeys() {
         },
         nullptr, // No action when condition is false
         0 // ID parameter
-    );
+    );*/
 }
 
 void HotkeyManager::RegisterSystemHotkeys() {
@@ -1035,9 +1014,6 @@ void HotkeyManager::showNotification(const std::string& title, const std::string
 
 bool HotkeyManager::isGamingWindow() {
     std::string windowClass = WindowManager::activeWindow.className;
-    if (verboseWindowLogging) {
-        logWindowEvent("CHE CK_GAMING", "Checking if window class '" + windowClass + "' is a gaming application");
-    }
 
     // List of window classes for gaming applications
     const std::vector<std::string> gamingApps = {
@@ -1064,9 +1040,6 @@ bool HotkeyManager::isGamingWindow() {
     // Check if window class contains any gaming app identifier
     for (const auto& app : gamingApps) {
         if (windowClass.find(app) != std::string::npos) {
-            if (verboseWindowLogging) {
-                logWindowEvent("GAMING_DETECTED", "Gaming application detected: '" + app + "' in '" + windowClass + "'");
-            }
             currentMode = "gaming";
             return true;
         }
@@ -1087,34 +1060,74 @@ bool HotkeyManager::isGamingWindow() {
 
     for (const auto& exactClass : exactGamingClasses) {
         if (windowClass == exactClass) {
-            if (verboseWindowLogging) {
-                logWindowEvent("GAMING_DETECTED", "Gaming application detected by exact match: '" + exactClass + "'");
-            }
             currentMode = "gaming";
             return true;
         }
-    }
-
-    if (verboseWindowLogging) {
-        logWindowEvent("NOT_GAMING", "Window class '" + windowClass + "' is not a gaming application");
     }
     currentMode = "default";
     return false;
 }
 
-void HotkeyManager::startAutoclicker(const std::string& button) {
+    void HotkeyManager::startAutoclicker(const std::string& button) {
+    wID currentWindow = WindowManager::GetActiveWindow();
+
+    // If already running, stop it (toggle behavior)
+    if (autoclickerActive) {
+        lo.info("Stopping autoclicker - toggled off");
+        autoclickerActive = false;
+        if (autoclickerThread.joinable()) {
+            autoclickerThread.join();
+        }
+        return;
+    }
+
+    // Not a gaming window? Abort!
     if (!isGamingWindow()) {
         lo.debug("Autoclicker not activated - not in gaming window");
         return;
     }
 
-    lo.info("Starting autoclicker (" + button + " button) in gaming window");
-    io.SetTimer(50, [this, button]() {
-        io.PressKey(button, true);
-        io.PressKey(button, false);
+    // Save the window we're starting in
+    autoclickerWindowID = currentWindow;
+    autoclickerActive = true;
+
+    lo.info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
+
+    // ONE thread that handles everything
+    autoclickerThread = std::thread([this, button]() {
+        while (autoclickerActive) {
+            // Check if window changed
+            wID activeWindow = WindowManager::GetActiveWindow();
+            if (activeWindow != autoclickerWindowID) {
+                lo.info("Stopping autoclicker - window changed");
+                autoclickerActive = false;
+                break;
+            }
+
+            // Click that mouse!
+            io.Click();
+
+            // Sleep between clicks (don't destroy the CPU)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        lo.info("Autoclicker thread terminated");
     });
+
+    // Detach so it runs independently
+    autoclickerThread.detach();
 }
 
+    // Call this when you need to force-stop (e.g., on app exit)
+    void HotkeyManager::stopAllAutoclickers() {
+    if (autoclickerActive) {
+        lo.info("Force stopping all autoclickers");
+        autoclickerActive = false;
+        if (autoclickerThread.joinable()) {
+            autoclickerThread.join();
+        }
+    }
+}
 std::string HotkeyManager::handleKeycode(const std::string& input) {
     // Extract the keycode number from format "kcXXX"
     std::string numStr = input.substr(2);

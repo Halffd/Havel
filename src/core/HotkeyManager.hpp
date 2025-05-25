@@ -29,6 +29,7 @@ namespace H {
                       ScriptEngine &scriptEngine);
 
         ~HotkeyManager() = default;
+        void Zoom(int zoom, IO& io);
 
         // Debug flags
         bool verboseKeyLogging = false;
@@ -124,7 +125,8 @@ namespace H {
         void printActiveWindowInfo();
 
         void toggleWindowFocusTracking();
-
+        static bool isGamingWindow();
+            static std::string currentMode;
     private:
         void PlayPause();
         bool netflix_detected = false;
@@ -135,7 +137,6 @@ namespace H {
         BrightnessManager brightnessManager;
 
         // Mode management
-        std::string currentMode{"default"};
         bool m_isZooming{false};
         bool videoPlaying{false};
         time_t lastVideoCheck{0};
@@ -150,6 +151,10 @@ namespace H {
         std::vector<std::string> videoSites; // Will be loaded from config
         bool mouse1Pressed{false};
         bool mouse2Pressed{false};
+
+        bool autoclickerActive = false;
+        wID autoclickerWindowID = 0;
+        std::thread autoclickerThread;
         // Key name conversion maps
         const std::map<std::string, std::string> keyNameAliases = {
             // Mouse buttons
@@ -222,7 +227,7 @@ namespace H {
         std::string parseHotkeyString(const std::string &hotkeyStr);
 
         // Autoclicker helpers
-        bool isGamingWindow();
+        void stopAllAutoclickers();
 
         void startAutoclicker(const std::string &button);
 

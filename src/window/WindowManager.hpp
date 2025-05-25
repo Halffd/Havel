@@ -6,17 +6,25 @@
 #include <functional>
 #include <type_traits>
 #include "WindowManagerDetector.hpp"
+#include "utils/Logger.hpp"
 
 #ifdef __linux__
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <unistd.h>
 #include <sys/wait.h>
-
 // Use X11's Window type directly
 typedef ::Window XWindow;
-#else
-typedef unsigned long XWindow;
+#endif
+#ifdef WINDOWS
+// Struct to hold the window handle and the target process name
+struct EnumWindowsData {
+    wID id;
+    std::string targetProcessName;
+
+    EnumWindowsData(const std::string& processName)
+        : id(NULL), targetProcessName(processName) {}
+};
 #endif
 
 namespace H {
@@ -28,11 +36,24 @@ namespace H {
         int x, y, width, height;
     };
 
+    enum class ProcessMethod {
+        ContinueExecution,
+        WaitForTerminate,
+        WaitUntilStarts,
+        SystemCall,
+        AsyncProcessCreate,
+        ForkProcess,
+        CreateNewWindow,
+        SameWindow,
+        Shell,
+        Invalid // Added for error handling
+    };
+
 class WindowManager {
 public:
     WindowManager();
     ~WindowManager() = default;
-
+    static str defaultTerminal;
     static WindowStats activeWindow;
     // Static window methods
     static XWindow GetActiveWindow();
@@ -45,11 +66,10 @@ public:
     static XWindow NewWindow(cstr name, std::vector<int>* dimensions = nullptr, bool hide = false);
 
     // Process management
-    static ProcessMethodType toMethod(cstr method);
     static void SetPriority(int priority, pID procID = 0);
-    static int64_t Terminal(cstr command, bool canPause, str windowState, bool continueExecution, cstr terminal = "");
+    static int64_t Terminal(cstr command, bool canPause, str windowState, bool continueExecution, cstr terminal = defaultTerminal);
 
-    template<typename T>
+    template <typename T>
     static int64_t Run(str path, T method, str windowState, str command, int priority);
 
     // Window manager info
@@ -102,7 +122,7 @@ private:
     static bool InitializeX11();
     std::string DetectWindowManager() const;
     bool CheckWMProtocols() const;
-
+    static ProcessMethod toMethod(cstr method);
     // Private members
     std::string wmName;
     bool wmSupported{false};
@@ -111,68 +131,4 @@ private:
     // Static member to track previous active window
     static XWindow previousActiveWindow;
 };
-
-// Template definition
-template<typename T>
-int64_t WindowManager::Run(str path, T method, str windowState, str command, int priority) {
-#ifdef __linux__
-    (void)windowState; // Suppress unused parameter warning
-    (void)priority;    // Suppress unused parameter warning
-
-    ProcessMethodType processMethod;
-    if constexpr (std::is_same_v<T, ProcessMethodType>) {
-        processMethod = method;
-    } else if constexpr (std::is_same_v<T, int>) {
-        processMethod = static_cast<ProcessMethodType>(method);
-    } else if constexpr (std::is_same_v<T, str>) {
-        processMethod = toMethod(method);
-    } else {
-        return -1;
-    }
-
-    // Implementation of process creation logic
-    switch (processMethod) {
-        case ProcessMethodType::WaitForTerminate: {
-            pid_t childPid = ::fork();
-            if (childPid == 0) {
-                // Child process
-                ::execl(path.c_str(), path.c_str(), command.c_str(), nullptr);
-                ::exit(1);
-            } else if (childPid > 0) {
-                // Parent process
-                int status;
-                ::waitpid(childPid, &status, 0);
-                return static_cast<int64_t>(childPid);
-            }
-            return -1;
-        }
-
-        case ProcessMethodType::ForkProcess: {
-            pid_t childPid = ::fork();
-            if (childPid == 0) {
-                // Child process
-                ::execl(path.c_str(), path.c_str(), command.c_str(), nullptr);
-                ::exit(1);
-            } else if (childPid > 0) {
-                // Parent process
-                return static_cast<int64_t>(childPid);
-            }
-            return -1;
-        }
-
-        // Add other cases as needed...
-
-        default:
-            return -1;
-    }
-#else
-    (void)path;       // Suppress unused parameter warnings
-    (void)method;
-    (void)windowState;
-    (void)command;
-    (void)priority;
-    return -1;
-#endif
-}
-
 } // namespace H

@@ -67,8 +67,8 @@ namespace H {
         // Key sending methods
         void Send(Key key, bool down = true);
 
-        void Send(const std::string &keys);
-
+        void Send(cstr keys);
+        void SendUInput(int keycode, bool down);
         void SendSpecific(const std::string &keys);
 
         void ControlSend(const std::string &control, const std::string &keys);
@@ -149,6 +149,7 @@ namespace H {
 
         // Call this to stop the thread cleanly
         void StopEvdevHotkeyListener();
+        bool Click();
 
     private:
         bool InitUinputDevice();
@@ -156,7 +157,7 @@ namespace H {
         void EmitToUinput(int code, bool down);
 
         void CleanupUinputDevice();
-
+        bool SetupUinputDevice();
         // X11 hotkey monitoring
         void MonitorHotkeys();
 

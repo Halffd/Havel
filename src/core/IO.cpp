@@ -1354,8 +1354,6 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
         // Use our improved method to grab with all modifier variants
         if (!hotkey.evdev) {
             Grab(keycode, hotkey.modifiers, root, hotkey.exclusive);
-        } else {
-            hotkeys[hotkeyId].enabled = true;
         }
 
         std::cout << "Successfully grabbed hotkey: " << hotkey.alias <<
@@ -1389,8 +1387,6 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
         // Use our improved method to ungrab with all modifier variants
         if (!hotkey.evdev) {
             Ungrab(keycode, hotkey.modifiers, root);
-        } else {
-            hotkeys[hotkeyId].enabled = false;
         }
 
         std::cout << "Successfully ungrabbed hotkey: " << hotkey.alias <<

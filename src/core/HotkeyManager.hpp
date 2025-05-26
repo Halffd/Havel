@@ -129,8 +129,9 @@ namespace H {
             static std::string currentMode;
     private:
         void PlayPause();
-        bool netflix_detected = false;
         IO &io;
+        std::atomic<bool> genshinAutomationActive = false;
+        std::thread genshinThread;
         WindowManager &windowManager;
         MPVController &mpv;
         ScriptEngine &scriptEngine;

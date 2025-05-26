@@ -407,68 +407,63 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
 
     // Special hotkeys for Genshin Impact - Start automation
-    AddContextualHotkey("enter", "currentMode == 'gaming'",
-        [this]() {
-            lo.info("Genshin Impact detected - Starting specialized auto actions");
+    AddContextualHotkey("enter", "currentMode == 'gaming'", [this]() {
+    if (genshinAutomationActive) {
+        lo.warning("Genshin automation is already active");
+        return;
+    }
 
-            // Set the flag to active
-            genshinAutomationActive = true;
-            showNotification("Genshin Automation", "Starting automation sequence");
+    lo.info("Genshin Impact detected - Starting specialized auto actions");
+    showNotification("Genshin Automation", "Starting automation sequence");
+    genshinAutomationActive = true;
 
-            // Start autoclicking
-            startAutoclicker("Button1");
-            return;
-            // Press E every 2 seconds
-            std::thread eKeyThread([this]() {
-                int counter = 0;
-                const int maxIterations = 300; // Stop after 10 minutes (300 * 2 seconds)
-                while (counter < maxIterations && currentMode == "gaming" && genshinAutomationActive) {
-                    // Check if Genshin is still the active window
-                    wID activeWindow = WindowManager::GetActiveWindow();
-                    bool isGenshinActive = false;
+    startAutoclicker("Button1");
 
-                    if (activeWindow != 0) {
-                        try {
-                            Window window(std::to_string(activeWindow), activeWindow);
-                            std::string windowTitle = window.Title();
-                            isGenshinActive = (windowTitle.find("Genshin") != std::string::npos);
-                        } catch (...) {
-                            lo.error("Failed to get active window title in Genshin automation");
-                        }
-                    }
+    // Launch automation thread
+    std::thread([this]() {
+        const int maxIterations = 300;
+        int counter = 0;
 
-                    // Only continue if Genshin is still active
-                    if (!isGenshinActive) {
-                        lo.info("Genshin automation: Window no longer active, stopping automation");
-                        genshinAutomationActive = false;
-                        break;
-                    }
+        while (counter < maxIterations && genshinAutomationActive && currentMode == "gaming") {
+            // Verify Genshin window is active
+            bool isGenshinActive = false;
+            wID activeWindow = WindowManager::GetActiveWindow();
 
-                    // Press E
-                    io.Send("e");
-                    std::this_thread::sleep_for(std::chrono::seconds(2));
-
-                    // Every 5th iteration (10 seconds), press Q
-                    if (counter % 5 == 0) {
-                        io.Send("q");
-                        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                        lo.info("Genshin automation: Pressed Q");
-                    }
-
-                    counter++;
-                    lo.info("Genshin automation: Pressed E (" + std::to_string(counter) + "/" + std::to_string(maxIterations) + ")");
+            if (activeWindow != 0) {
+                try {
+                    Window window(std::to_string(activeWindow), activeWindow);
+                    isGenshinActive = window.Title().find("Genshin") != std::string::npos;
+                } catch (...) {
+                    lo.error("Genshin automation: Could not get window title");
+                    break;
                 }
+            }
 
-                // If we exited the loop, make sure the automation is marked as stopped
-                genshinAutomationActive = false;
-                lo.info("Genshin automation: Stopping automation sequence");
-            });
-            eKeyThread.detach();
-        },
-        nullptr, // No action when not in gaming mode
-        0 // ID parameter
-    );
+            if (!isGenshinActive) {
+                lo.info("Genshin automation: Window no longer active");
+                break;
+            }
 
+            // Press E
+            io.Send("e");
+            lo.debug("Genshin automation: Pressed E (" + std::to_string(counter + 1) + "/" + std::to_string(maxIterations) + ")");
+
+            // Every 5th loop, press Q
+            if (counter % 5 == 0) {
+                io.Send("q");
+                lo.debug("Genshin automation: Pressed Q");
+            }
+
+            counter++;
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+        }
+
+        genshinAutomationActive = false;
+        lo.info("Genshin automation: Automation ended");
+
+    }).detach();
+
+}, nullptr, 0);
     // Add hotkey to stop Genshin automation
     AddHotkey("!+g", [this]() {
         if (genshinAutomationActive) {
@@ -1105,8 +1100,19 @@ bool HotkeyManager::isGamingWindow() {
             }
 
             // Click that mouse!
-            io.Click();
-
+            if (button == "Button1" || button == "Left") {
+                io.Click(MouseButton::Left, MouseAction::Click);
+            } else if (button == "Button2" || button == "Right") {
+                io.Click(MouseButton::Right, MouseAction::Click);
+            } else if (button == "Button3" || button == "Middle") {
+                io.Click(MouseButton::Middle, MouseAction::Click);
+            } else if (button == "Side1") {
+                io.Click(MouseButton::Side1, MouseAction::Click);
+            } else if (button == "Side2") {
+                io.Click(MouseButton::Side2, MouseAction::Click);
+            } else {
+                lo.error("Invalid mouse button: " + button);
+            }
             // Sleep between clicks (don't destroy the CPU)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }

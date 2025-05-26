@@ -17,8 +17,24 @@
 #include <sstream>
 #include <linux/uinput.h>   // ✅ This gives you UI_SET_* and uinput_setup
 #include <sys/ioctl.h>
+#include <memory>
 
 namespace H {
+
+enum class MouseButton {
+    Left = BTN_LEFT,
+    Right = BTN_RIGHT,
+    Middle = BTN_MIDDLE,
+    Side1 = BTN_SIDE,
+    Side2 = BTN_EXTRA
+};
+
+enum class MouseAction {
+    Hold = 1,
+    Release = 0,
+    Click = 2
+};
+
     struct HotKey {
         std::string alias;
         Key key;
@@ -110,7 +126,7 @@ namespace H {
         static void PressKey(const std::string &keyName, bool press);
 
         // Utility methods
-        void SetTimer(int milliseconds, const std::function<void()> &func);
+        std::shared_ptr<std::atomic<bool>> SetTimer(int milliseconds, const std::function<void()> &func);
 
         void MsgBox(const std::string &message);
 
@@ -149,9 +165,46 @@ namespace H {
 
         // Call this to stop the thread cleanly
         void StopEvdevHotkeyListener();
-        bool Click();
 
+        template<typename T, typename S>
+        bool Click(T button, S action) {
+            int btnCode;
+
+            if constexpr (std::is_same_v<T, int>) {
+                btnCode = button;
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                if (button == "left") btnCode = BTN_LEFT;
+                else if (button == "right") btnCode = BTN_RIGHT;
+                else if (button == "middle") btnCode = BTN_MIDDLE;
+                else if (button == "side1") btnCode = BTN_SIDE;
+                else if (button == "side2") btnCode = BTN_EXTRA;
+                else {
+                    std::cerr << "Unknown button string: " << button << "\n";
+                    return false;
+                }
+            } else if constexpr (std::is_enum_v<T>) {
+                btnCode = static_cast<int>(button);
+            } else {
+                static_assert(always_false<T>, "Unsupported type for button");
+            }
+
+            if constexpr (std::is_same_v<S, int>) {
+                return EmitClick(btnCode, S(action));
+            } else if constexpr (std::is_enum_v<S>) {
+                return EmitClick(btnCode, static_cast<int>(action));
+            } else {
+                static_assert(always_false<S>, "Unsupported type for action");
+            }
+        }
+
+        bool MouseClick(int btnCode, int dx, int dy, int speed, float accel);
+        bool MouseMove(int dx, int dy, int speed, float accel);
+        bool Scroll(int dy, int dx = 0);
     private:
+        template<typename T>
+        static constexpr bool always_false = false;
+        bool EmitClick(int btnCode, int action);
+
         bool InitUinputDevice();
 
         void EmitToUinput(int code, bool down);

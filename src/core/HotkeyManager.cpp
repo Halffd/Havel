@@ -1028,7 +1028,8 @@ bool HotkeyManager::isGamingWindow() {
         "heroic",         // Epic Games launcher for Linux
         "gamescope",      // Valve's gaming compositor
         "games",           // Generic games category
-        "minecraft"
+        "minecraft",
+		"nierautomata"
     };
     // Convert window class to lowercase
     std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(), ::tolower);

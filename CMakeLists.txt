@@ -26,7 +26,7 @@ set(MAIN_SOURCES
     src/core/DisplayManager.cpp
     src/core/HotkeyManager.cpp
     src/core/IO.cpp
-    src/core/MPVController.cpp
+        src/media/MPVController.cpp
     src/core/ScriptEngine.cpp
     src/core/SocketServer.cpp
     src/core/BrightnessManager.cpp
@@ -46,7 +46,7 @@ set(HEADERS
     src/core/DisplayManager.hpp
     src/core/HotkeyManager.hpp
     src/core/IO.hpp
-    src/core/MPVController.hpp
+        src/media/MPVController.hpp
     src/core/ScriptEngine.hpp
     src/core/SocketServer.hpp
     src/core/BrightnessManager.hpp

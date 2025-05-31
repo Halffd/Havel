@@ -3,7 +3,7 @@
 #include <vector>
 #include <chrono>
 
-namespace H {
+namespace havel {
 
     class MPVController {
     public:

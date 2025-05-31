@@ -13,7 +13,7 @@
 #include "Window.hpp"
 #include "WindowManager.hpp"
 
-namespace H {
+namespace havel {
 
 // Custom exceptions
 class WindowMonitorError : public std::runtime_error {

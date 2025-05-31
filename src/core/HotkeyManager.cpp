@@ -21,7 +21,7 @@
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
 #endif
-namespace H {
+namespace havel {
 std::string HotkeyManager::currentMode = "default";
 void HotkeyManager::Zoom(int zoom, IO& io) {
     if (zoom < 0) zoom = 0;
@@ -50,7 +50,7 @@ void HotkeyManager::loadVideoSites() {
     videoSites.clear();
 
     // Get video sites from config
-    std::string sitesStr = H::Configs::Get().Get<std::string>("VideoSites.Sites", "netflix,animelon,youtube");
+    std::string sitesStr = havel::Configs::Get().Get<std::string>("VideoSites.Sites", "netflix,animelon,youtube");
 
     // Split the comma-separated string into vector
     std::istringstream ss(sitesStr);
@@ -261,7 +261,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         {"#Esc", {"Restart application", [this]() {
             lo.info("Restarting application");
             // Get current executable path using the correct namespace
-            std::string exePath = H::GetExecutablePath();
+            std::string exePath = havel::GetExecutablePath();
             if (!exePath.empty()) {
                 lo.debug("Executable path: " + exePath);
                 // Fork and exec to restart
@@ -1569,7 +1569,7 @@ void HotkeyManager::printActiveWindowInfo() {
     }
 
     // Create window instance ONCE
-    H::Window window("ActiveWindow", activeWindow);
+    havel::Window window("ActiveWindow", activeWindow);
 
     // Get window class
     std::string windowClass = WindowManager::GetActiveWindowClass();
@@ -1586,7 +1586,7 @@ void HotkeyManager::printActiveWindowInfo() {
     // Get window geometry
     int x = 0, y = 0, width = 0, height = 0;
     try {
-        H::Rect rect = window.Pos();
+        havel::Rect rect = window.Pos();
         x = rect.x;
         y = rect.y;
         width = rect.width;

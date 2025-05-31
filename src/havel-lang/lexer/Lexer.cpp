@@ -1,11 +1,11 @@
 // havel_lexer.cpp
-#include "havel_lexer.hpp"
+#include "Lexer.hpp"
 #include <regex>
 
 namespace havel {
 
 // Static member definitions
-const std::unordered_map<std::string, TokenType> HavelLexer::KEYWORDS = {
+const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"let", TokenType::Let},
     {"if", TokenType::If},
     {"else", TokenType::Else},
@@ -15,7 +15,7 @@ const std::unordered_map<std::string, TokenType> HavelLexer::KEYWORDS = {
     {"window", TokenType::Identifier}     // Built-in module
 };
 
-const std::unordered_map<char, TokenType> HavelLexer::SINGLE_CHAR_TOKENS = {
+const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {'(', TokenType::OpenParen},
     {')', TokenType::CloseParen},
     {'{', TokenType::OpenBrace},
@@ -32,15 +32,15 @@ const std::unordered_map<char, TokenType> HavelLexer::SINGLE_CHAR_TOKENS = {
     {'\n', TokenType::NewLine}
 };
 
-HavelLexer::HavelLexer(const std::string& sourceCode) : source(sourceCode) {}
+Lexer::Lexer(const std::string& sourceCode) : source(sourceCode) {}
 
-char HavelLexer::peek(size_t offset) const {
+char Lexer::peek(size_t offset) const {
     size_t pos = position + offset;
     if (pos >= source.length()) return '\0';
     return source[pos];
 }
 
-char HavelLexer::advance() {
+char Lexer::advance() {
     if (isAtEnd()) return '\0';
     
     char current = source[position++];
@@ -55,41 +55,41 @@ char HavelLexer::advance() {
     return current;
 }
 
-bool HavelLexer::isAtEnd() const {
+bool Lexer::isAtEnd() const {
     return position >= source.length();
 }
 
-bool HavelLexer::isAlpha(char c) const {
+bool Lexer::isAlpha(char c) const {
     return std::isalpha(c) || c == '_';
 }
 
-bool HavelLexer::isDigit(char c) const {
+bool Lexer::isDigit(char c) const {
     return std::isdigit(c);
 }
 
-bool HavelLexer::isAlphaNumeric(char c) const {
+bool Lexer::isAlphaNumeric(char c) const {
     return isAlpha(c) || isDigit(c);
 }
 
-bool HavelLexer::isSkippable(char c) const {
+bool Lexer::isSkippable(char c) const {
     return c == ' ' || c == '\t' || c == '\r';
 }
 
-bool HavelLexer::isHotkeyChar(char c) const {
+bool Lexer::isHotkeyChar(char c) const {
     return isAlphaNumeric(c) || c == '+' || c == '-';
 }
 
-Token HavelLexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
+Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
     return Token(value, type, raw.empty() ? value : raw, line, column - value.length());
 }
 
-void HavelLexer::skipWhitespace() {
+void Lexer::skipWhitespace() {
     while (!isAtEnd() && isSkippable(peek())) {
         advance();
     }
 }
 
-void HavelLexer::skipComment() {
+void Lexer::skipComment() {
     // Single line comment //
     if (peek() == '/' && peek(1) == '/') {
         while (!isAtEnd() && peek() != '\n') {
@@ -112,7 +112,7 @@ void HavelLexer::skipComment() {
     }
 }
 
-Token HavelLexer::scanNumber() {
+Token Lexer::scanNumber() {
     size_t start = position - 1; // Include the first digit we already consumed
     std::string number;
     number += source[start];
@@ -140,7 +140,7 @@ Token HavelLexer::scanNumber() {
     return makeToken(number, TokenType::Number);
 }
 
-Token HavelLexer::scanString() {
+Token Lexer::scanString() {
     std::string value;
     std::string raw;
     
@@ -183,7 +183,7 @@ Token HavelLexer::scanString() {
     return makeToken(value, TokenType::String, raw);
 }
 
-Token HavelLexer::scanIdentifier() {
+Token Lexer::scanIdentifier() {
     std::string identifier;
     
     // First character (already consumed)
@@ -201,7 +201,7 @@ Token HavelLexer::scanIdentifier() {
     return makeToken(identifier, type);
 }
 
-Token HavelLexer::scanHotkey() {
+Token Lexer::scanHotkey() {
     std::string hotkey;
     
     // Add the character we already consumed
@@ -245,7 +245,7 @@ Token HavelLexer::scanHotkey() {
     return scanIdentifier();
 }
 
-std::vector<Token> HavelLexer::tokenize() {
+std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
     
     while (!isAtEnd()) {
@@ -306,7 +306,51 @@ std::vector<Token> HavelLexer::tokenize() {
             continue;
         }
         
-        // Handle potential modifier hotkeys (Ctrl, Alt, Shift, Win)
-        if (c == 'C' || c == 'A' || c == 'S' || c == 'W') {
+        // Handle potential modifier hotkeys (Ctrl, Alt, Shift, Win), special keys (Suspend, Grab, etc.)
+        if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@' || c == '$' || c == '~' || c == '&' || c == '*') {
             size_t saved_pos = position - 1;
             std::string word;
+            word += c;
+
+            // Read the full modifier name
+            while (!isAtEnd() && isAlpha(peek())) {
+                word += advance();
+            }
+
+            // Check if it's a modifier + hotkey combination
+            if ((word == "Ctrl" || word == "Alt" || word == "Shift" || word == "Win")
+                && peek() == '+') {
+                // This is a hotkey combination, scan it
+                position = saved_pos; // Reset position
+                advance(); // Re-consume first character
+                tokens.push_back(scanHotkey());
+            } else {
+                // Not a hotkey, treat as regular identifier
+                position = saved_pos; // Reset position
+                advance(); // Re-consume first character
+                tokens.push_back(scanIdentifier());
+            }
+            continue;
+        }
+
+        // Handle unrecognized characters
+        throw std::runtime_error("Unrecognized character '" + std::string(1, c) +
+                                "' at line " + std::to_string(line) +
+                                ", column " + std::to_string(column));
+    }
+
+    // Add EOF token
+    tokens.push_back(makeToken("EndOfFile", TokenType::EOF_TOKEN));
+
+    return tokens;
+}
+
+void Lexer::printTokens(const std::vector<Token>& tokens) const {
+    std::cout << "=== HAVEL TOKENS ===" << std::endl;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        std::cout << "[" << i << "] " << tokens[i].toString() << std::endl;
+    }
+    std::cout << "===================" << std::endl;
+}
+
+} // namespace havel

@@ -3,7 +3,7 @@
 #include <fstream>
 #include <mutex>
 
-namespace H {
+namespace havel {
 
 class Logger {
 public:
@@ -31,7 +31,7 @@ private:
 } // namespace H
 
 // Global logger instance
-extern H::Logger lo;
+extern havel::Logger lo;
 
 class LoggerPaths {
 public:

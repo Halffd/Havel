@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <system_error>
 
-namespace H {
+namespace havel {
 
 WindowMonitor::WindowMonitor(std::chrono::milliseconds pollInterval)
     : interval(pollInterval) {

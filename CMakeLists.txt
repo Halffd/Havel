@@ -95,7 +95,20 @@ target_link_libraries(hotkey_test
 if(X11_Xrandr_FOUND)
     target_link_libraries(hotkey_test ${X11_Xrandr_LIB})
 endif()
+# Havel Language Lexer Test
+set(HAVEL_LANG_SOURCES
+        src/havel-lang/lexer/Lexer.cpp
+)
 
+set(HAVEL_LANG_HEADERS
+        src/havel-lang/lexer/Lexer.hpp
+)
+
+add_executable(test_havel
+        src/havel-lang/test_havel.cpp
+        ${HAVEL_LANG_SOURCES}
+        ${HAVEL_LANG_HEADERS}
+)
 # Install targets
 install(TARGETS hvc hotkey_test
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

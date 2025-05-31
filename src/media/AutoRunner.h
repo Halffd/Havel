@@ -6,7 +6,7 @@
 #include "../core/HotkeyManager.hpp"
 #include <thread>
 // Auto-runner class
-namespace H {
+namespace havel {
 class AutoRunner {
 private:
     bool running = false;

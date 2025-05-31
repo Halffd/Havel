@@ -13,7 +13,7 @@
 #include <vector>
 #include <ctime>
 
-namespace H {
+namespace havel {
     struct HotkeyDefinition {
         std::string key;
         std::string condition;

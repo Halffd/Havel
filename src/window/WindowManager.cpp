@@ -18,7 +18,7 @@
 #include <X11/extensions/Xrandr.h>
 #endif
 
-namespace H {
+namespace havel {
     // Define global variables
     static group groups;
 
@@ -30,8 +30,8 @@ static str defaultTerminal = "Cmd";
 #endif
 
     // Initialize the static previousActiveWindow variable
-    XWindow H::WindowManager::previousActiveWindow = None;
-    WindowStats H::WindowManager::activeWindow = {};
+    XWindow havel::WindowManager::previousActiveWindow = None;
+    WindowStats havel::WindowManager::activeWindow = {};
 
     WindowManager::WindowManager() {
 #ifdef _WIN32

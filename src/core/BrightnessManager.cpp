@@ -8,7 +8,7 @@
 #include <cmath>
 #include <regex>
 
-namespace H {
+namespace havel {
 
 BrightnessManager::BrightnessManager() {
     // Initialize default settings

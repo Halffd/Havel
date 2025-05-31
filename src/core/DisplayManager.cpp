@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 
-namespace H {
+namespace havel {
     Display* DisplayManager::display = nullptr;
     ::Window DisplayManager::root = 0;
     bool DisplayManager::initialized = false;

@@ -2,7 +2,7 @@
 #include <iostream>
 #include <cstring>
 
-namespace H {
+namespace havel {
 
 SocketServer::SocketServer() : port(0) {
 }

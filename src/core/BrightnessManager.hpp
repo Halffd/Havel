@@ -5,7 +5,7 @@
     #include <cstdint>
     #include <optional>
 
-    namespace H {
+    namespace havel {
 
     class BrightnessManager {
     public:

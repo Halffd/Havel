@@ -51,7 +51,7 @@ void SignalHandler(int signal) {
     }
 }
 
-using namespace H;
+using namespace havel;
 
 // Simple socket server for external control
 class AppServer : public SocketServer {

@@ -3,7 +3,7 @@
 #include <vector>
 #include <functional>
 
-namespace H {
+namespace havel {
 
 class SequenceDetector {
 public:

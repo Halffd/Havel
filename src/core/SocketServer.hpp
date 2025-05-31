@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <atomic>
 
-namespace H {
+namespace havel {
 
 class SocketServer {
 public:

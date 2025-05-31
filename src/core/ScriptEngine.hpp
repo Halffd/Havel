@@ -7,7 +7,7 @@
 #include <functional>
 #include <sol/sol.hpp>
 
-namespace H {
+namespace havel {
     // Forward declarations to avoid circular dependencies
     class IO;
     class WindowManager;

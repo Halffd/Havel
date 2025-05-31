@@ -19,7 +19,7 @@
 #include <iostream>
 #include "../common/types.hpp"
 
-namespace H {
+namespace havel {
 
 // Forward declarations
 class IO;
@@ -241,7 +241,7 @@ inline float Configs::Convert<float>(const std::string& val) {
 // Now Mappings class can properly reference Configs
 class Mappings {
 public:
-    Mappings(H::IO& ioRef) : io(ioRef) {}
+    Mappings(havel::IO& ioRef) : io(ioRef) {}
 
     static Mappings& Get() {
         static IO io; // Create a static IO instance
@@ -334,7 +334,7 @@ public:
     }
 
 private:
-    H::IO& io;
+    havel::IO& io;
     std::unordered_map<std::string, std::string> hotkeys;
     bool needsRebind = false;
 
@@ -357,7 +357,7 @@ private:
             // Handle different command types
             if(parts[0] == "@run") {
                 if(parts.size() >= 2) {
-                    H::WindowManager::Run(parts[1], H::ProcessMethodType::ForkProcess,
+                    havel::WindowManager::Run(parts[1], havel::ProcessMethodType::ForkProcess,
                                         "", "", 0);
                 }
             }

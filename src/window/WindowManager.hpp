@@ -27,7 +27,7 @@ struct EnumWindowsData {
 };
 #endif
 
-namespace H {
+namespace havel {
     struct WindowStats {
         wID id;
         std::string className;

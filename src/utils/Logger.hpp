@@ -4,7 +4,7 @@
 #include <mutex>
 #include <memory>
 
-namespace H {
+namespace havel {
 
 class Logger {
 public:
@@ -50,4 +50,4 @@ private:
 } // namespace H
 
 // Global logger instance declaration
-extern H::Logger& lo; 
+extern havel::Logger& lo; 

@@ -31,12 +31,12 @@ void test_play_pause() {
 
 void test_always_on_top() {
     std::cout << "Always On Top hotkey triggered!" << std::endl;
-    H::WindowManager::ToggleAlwaysOnTop();
+    havel::WindowManager::ToggleAlwaysOnTop();
 }
 
 void test_alt_tab() {
     std::cout << "Alt+Tab hotkey triggered!" << std::endl;
-    H::WindowManager::AltTab();
+    havel::WindowManager::AltTab();
 }
 
 int main() {
@@ -47,7 +47,7 @@ int main() {
     std::cout << "Starting hotkey test program..." << std::endl;
     
     // Initialize the IO system
-    H::IO io;
+    havel::IO io;
     
     // Register hotkeys
     std::cout << "Registering hotkeys..." << std::endl;

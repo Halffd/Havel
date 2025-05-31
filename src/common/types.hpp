@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <algorithm>
 
-namespace H {
+namespace havel {
 
 // Common type aliases
 using str = std::string;

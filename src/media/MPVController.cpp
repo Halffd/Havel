@@ -7,7 +7,7 @@
 #include <chrono>
 #include <thread>
 
-namespace H {
+namespace havel {
 
 MPVController::MPVController() {
     initialized = false;

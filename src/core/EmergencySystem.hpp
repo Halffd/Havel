@@ -2,7 +2,7 @@
 #include <functional>
 #include <string>
 
-namespace H {
+namespace havel {
 
 class EmergencySystem {
 public:

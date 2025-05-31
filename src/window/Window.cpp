@@ -19,8 +19,8 @@
 #include <X11/Xutil.h>
 
 // Initialize static members
-std::shared_ptr<Display> H::Window::display;
-H::DisplayServer H::Window::displayServer = H::DisplayServer::X11;
+std::shared_ptr<Display> havel::Window::display;
+havel::DisplayServer havel::Window::displayServer = havel::DisplayServer::X11;
 
 // Custom deleter for Display
 struct DisplayDeleter {
@@ -32,7 +32,7 @@ struct DisplayDeleter {
 };
 #endif
 
-namespace H {
+namespace havel {
 
 // Constructor
 Window::Window(cstr title, wID id) : m_title(title), m_id(id) {
@@ -108,7 +108,7 @@ wID Window::Find2(cstr identifier, cstr type) {
         win = FindByTitle(identifier.c_str());
     } else if (type == "class") {
         // Use the FindByClass method
-        win = H::WindowManager::FindByClass(identifier);
+        win = havel::WindowManager::FindByClass(identifier);
     } else if (type == "pid") {
         pID pid = std::stoi(identifier);
         win = GetwIDByPID(pid);
@@ -133,7 +133,7 @@ wID Window::Find(cstr identifier) {
     // Check if it's a class
     else if (identifier.find("class=") == 0) {
         std::string className = identifier.substr(6);
-        win = H::WindowManager::FindByClass(className);
+        win = havel::WindowManager::FindByClass(className);
     }
     // Check if it's a PID
     else if (identifier.find("pid=") == 0) {

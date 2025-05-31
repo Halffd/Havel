@@ -2,7 +2,7 @@
 #include "x11_includes.h"
 #include <iostream>
 
-namespace H {
+namespace havel {
 
 class DisplayManager {
 public:

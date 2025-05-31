@@ -9,7 +9,7 @@
 #include <thread>
 #include <cmath>
 
-namespace H {
+namespace havel {
 #if defined(WINDOWS)
 HHOOK IO::keyboardHook = NULL;
 #endif
@@ -1659,7 +1659,7 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 << std::endl;
 
 #ifdef __linux__
-        Display *display = H::DisplayManager::GetDisplay();
+        Display *display = havel::DisplayManager::GetDisplay();
         if (!display) {
             std::cerr << "No X11 display available for key press\n";
             return;

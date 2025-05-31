@@ -6,7 +6,7 @@
 #include <fmt/format.h>
 #include "../window/WindowManagerDetector.hpp"
 
-namespace H {
+namespace havel {
 
 ScriptEngine::ScriptEngine(IO& io, WindowManager& windowManager)
     : io(io), windowManager(windowManager) {

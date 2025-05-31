@@ -8,9 +8,9 @@
 #include <fstream>
 
 // Define the global logger instance
-H::Logger& lo = H::Logger::getInstance();
+havel::Logger& lo = havel::Logger::getInstance();
 
-namespace H {
+namespace havel {
 
 struct Logger::Impl {
     std::ofstream logFile;

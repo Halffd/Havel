@@ -3,7 +3,7 @@
 #include <string>
 #include <limits.h>  // For PATH_MAX
 
-namespace H {
+namespace havel {
 
 // String conversion utilities
 std::string ToLower(const std::string& str);

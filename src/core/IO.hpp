@@ -19,7 +19,7 @@
 #include <sys/ioctl.h>
 #include <memory>
 
-namespace H {
+namespace havel {
 
 enum class MouseButton {
     Left = BTN_LEFT,

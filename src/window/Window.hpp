@@ -10,7 +10,7 @@ struct _XDisplay;
 typedef struct _XDisplay Display;
 #endif
 
-namespace H {
+namespace havel {
 
 class Window {
 public:

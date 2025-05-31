@@ -1,6 +1,6 @@
-// src/havel-lang/ast/ast.hpp
+// src/havel-lang/ast/AST.h
 #pragma once
-#include "../lexer/havel_lexer.hpp"
+#include "../lexer/Lexer.hpp"
 #include <vector>
 #include <memory>
 #include <string>
@@ -186,7 +186,3 @@ struct BlockStatement : public Statement {
 };
 
 } // namespace havel::ast
-
-
-
-#endif //AST_H

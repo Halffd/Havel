@@ -1,6 +1,7 @@
-// havel_lexer.cpp
+// src/havel-lang/lexer/Lexer.cpp
 #include "Lexer.hpp"
 #include <regex>
+#include <iostream>
 
 namespace havel {
 
@@ -308,7 +309,56 @@ std::vector<Token> Lexer::tokenize() {
         
         // Handle potential modifier hotkeys (Ctrl, Alt, Shift, Win), special keys (Suspend, Grab, etc.)
         if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@' || c == '$' || c == '~' || c == '&' || c == '*') {
-            // TODO: Handle modifiers
+            std::string modifierKey;
+            modifierKey += c;
+            
+            // Map special characters to modifier names
+            std::unordered_map<char, std::string> modifierMap = {
+                {'^', "Ctrl"},
+                {'!', "Alt"},
+                {'+', "Shift"},
+                {'#', "Win"},
+                {'@', "Super"},
+                {'$', "Meta"},
+                {'~', "Tilde"},
+                {'&', "Ampersand"},
+                {'*', "Asterisk"}
+            };
+            
+            // Convert the special character to its modifier name
+            std::string modifierName = modifierMap[c];
+            
+            // Check if there's a key after the modifier
+            if (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '{')) {
+                if (peek() == '{') {
+                    // Handle complex key names like {F1}, {Home}, etc.
+                    advance(); // consume '{'
+                    std::string keyName;
+                    
+                    while (!isAtEnd() && peek() != '}') {
+                        keyName += advance();
+                    }
+                    
+                    if (isAtEnd() || peek() != '}') {
+                        throw std::runtime_error("Unterminated key name in braces at line " + std::to_string(line));
+                    }
+                    
+                    advance(); // consume '}'
+                    
+                    // Create the full hotkey with modifier+key
+                    std::string fullHotkey = modifierName + "+" + keyName;
+                    tokens.push_back(makeToken(fullHotkey, TokenType::Hotkey));
+                } else {
+                    // Handle simple keys like Ctrl+C, Alt+F4, etc.
+                    char key = advance();
+                    std::string fullHotkey = modifierName + "+" + key;
+                    tokens.push_back(makeToken(fullHotkey, TokenType::Hotkey));
+                }
+            } else {
+                // Just the modifier by itself
+                tokens.push_back(makeToken(modifierName, TokenType::Identifier));
+            }
+            
             continue;
         }
 

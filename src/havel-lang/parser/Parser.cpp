@@ -1,5 +1,5 @@
-// src/havel-lang/parser/havel_parser.cpp
-#include "havel_parser.hpp"
+// src/havel-lang/parser/Parser.cpp
+#include "Parser.h"
 #include <iostream>
 #include <stdexcept>
 
@@ -200,4 +200,47 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
         }
 
         default:
-            throw std::runtime_error("Unexpected token in expression: " +
+            throw std::runtime_error("Unexpected token in expression: " + tk.value);
+    }
+}
+
+void Parser::printAST(const havel::ast::ASTNode& node, int indent) const {
+    std::string padding(indent * 2, ' ');
+    std::cout << padding << node.toString() << std::endl;
+    
+    // Print children based on node type
+    if (node.kind == havel::ast::NodeType::Program) {
+        const auto& program = static_cast<const havel::ast::Program&>(node);
+        for (const auto& stmt : program.body) {
+            printAST(*stmt, indent + 1);
+        }
+    } else if (node.kind == havel::ast::NodeType::BlockStatement) {
+        const auto& block = static_cast<const havel::ast::BlockStatement&>(node);
+        for (const auto& stmt : block.body) {
+            printAST(*stmt, indent + 1);
+        }
+    } else if (node.kind == havel::ast::NodeType::HotkeyBinding) {
+        const auto& binding = static_cast<const havel::ast::HotkeyBinding&>(node);
+        printAST(*binding.hotkey, indent + 1);
+        printAST(*binding.action, indent + 1);
+    } else if (node.kind == havel::ast::NodeType::PipelineExpression) {
+        const auto& pipeline = static_cast<const havel::ast::PipelineExpression&>(node);
+        for (const auto& stage : pipeline.stages) {
+            printAST(*stage, indent + 1);
+        }
+    } else if (node.kind == havel::ast::NodeType::BinaryExpression) {
+        const auto& binary = static_cast<const havel::ast::BinaryExpression&>(node);
+        printAST(*binary.left, indent + 1);
+        printAST(*binary.right, indent + 1);
+    } else if (node.kind == havel::ast::NodeType::MemberExpression) {
+        const auto& member = static_cast<const havel::ast::MemberExpression&>(node);
+        printAST(*member.object, indent + 1);
+        printAST(*member.property, indent + 1);
+    } else if (node.kind == havel::ast::NodeType::CallExpression) {
+        const auto& call = static_cast<const havel::ast::CallExpression&>(node);
+        printAST(*call.callee, indent + 1);
+        for (const auto& arg : call.args) {
+            printAST(*arg, indent + 1);
+        }
+    }
+}

@@ -1,7 +1,7 @@
-// src/havel-lang/parser/havel_parser.hpp
+// src/havel-lang/parser/Parser.h
 #pragma once
-#include "../lexer/havel_lexer.hpp"
-#include "../ast/ast.hpp"
+#include "../lexer/Lexer.hpp"
+#include "../ast/AST.h"
 #include <vector>
 #include <memory>
 

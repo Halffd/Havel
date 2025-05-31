@@ -117,12 +117,20 @@ add_executable(test_havel
         src/havel-lang/tests/test_havel.cpp
         ${HAVEL_LANG_SOURCES}
         ${HAVEL_LANG_HEADERS}
+        src/window/Window.cpp
+        src/window/WindowManager.cpp
+        src/window/WindowManagerDetector.cpp
+        src/core/IO.cpp
+        src/utils/Logger.cpp
+        src/utils/Utils.cpp
 )
 
 target_link_libraries(test_havel
         ${X11_LIBRARIES}
         ${X11_Xtst_LIB}
+        ${LUA_LIBRARIES}
         pthread
+        cairo
 )
 # Install targets
 install(TARGETS hvc hotkey_test

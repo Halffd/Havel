@@ -308,28 +308,7 @@ std::vector<Token> Lexer::tokenize() {
         
         // Handle potential modifier hotkeys (Ctrl, Alt, Shift, Win), special keys (Suspend, Grab, etc.)
         if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@' || c == '$' || c == '~' || c == '&' || c == '*') {
-            size_t saved_pos = position - 1;
-            std::string word;
-            word += c;
-
-            // Read the full modifier name
-            while (!isAtEnd() && isAlpha(peek())) {
-                word += advance();
-            }
-
-            // Check if it's a modifier + hotkey combination
-            if ((word == "Ctrl" || word == "Alt" || word == "Shift" || word == "Win")
-                && peek() == '+') {
-                // This is a hotkey combination, scan it
-                position = saved_pos; // Reset position
-                advance(); // Re-consume first character
-                tokens.push_back(scanHotkey());
-            } else {
-                // Not a hotkey, treat as regular identifier
-                position = saved_pos; // Reset position
-                advance(); // Re-consume first character
-                tokens.push_back(scanIdentifier());
-            }
+            // TODO: Handle modifiers
             continue;
         }
 

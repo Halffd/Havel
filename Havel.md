@@ -2,7 +2,7 @@ HAVEL PROGRAMMING LANGUAGE
 Design Document v1.0
 ----
 
-📋 Executive Summary
+📋 Summary
 Havel is a declarative automation scripting language designed for hotkey management and workflow automation. Named after the resilient knight from Dark Souls, Havel embodies strength, reliability, and unwavering functionality in automation tasks.
 
 ----
@@ -38,13 +38,13 @@ Core Language Features
 F1 => send "Hello World!"
 
 // Pipeline transformations
-clipboard.out 
+clipboard.get 
     | text.upper 
     | text.replace " " "_"
     | send
 
 // Complex workflows
-Ctrl+V => {
+^V => {
     clipboard.out
         | text.trim
         | text.sanitize
@@ -92,10 +92,9 @@ Typography
 
 🖥️ Platform Support
 Target Platforms
-	* Windows 10/11 (Primary)
+	* Linux (Ubuntu, Fedora, Arch)
+	* Windows 10/11
 	* macOS 12+ (Secondary)
-	* Linux (Ubuntu, Fedora, Arch) (Secondary)
-
 Architecture Support
 	* x86_64 (Primary)
 	* ARM64 (Apple Silicon, ARM Linux)
@@ -125,8 +124,8 @@ Language Runtime
 
 Standard Library Modules
 Clipboard Module
-clipboard.out        // Get clipboard content
-clipboard.in(text)   // Set clipboard content  
+clipboard.get        // Get clipboard content
+clipboard.set(text)   // Set clipboard content  
 clipboard.clear()    // Clear clipboard
 clipboard.history    // Access clipboard history
 
@@ -142,42 +141,14 @@ Window Management Module
 window.active        // Get active window
 window.list          // List all windows
 window.focus(name)   // Focus specific window
-window.minimize()    // Minimize window
-window.maximize()    // Maximize window
+window.min()    // Minimize window
+window.max()    // Maximize window
 
 System Integration Module
 system.run(cmd)      // Execute system command
 system.notify(msg)   // Show notification
 system.beep()        // System beep
 system.sleep(ms)     // Delay execution
-
-----
-
-📁 Project Structure
-havel-lang/
-├── src/
-│   ├── core/           # Language runtime
-│   ├── parser/         # Syntax parser
-│   ├── stdlib/         # Standard library
-│   └── platform/       # Platform-specific code
-├── docs/
-│   ├── tutorials/      # Getting started guides
-│   ├── reference/      # Language reference
-│   └── examples/       # Code examples
-├── tools/
-│   ├── lsp/           # Language Server Protocol
-│   ├── formatter/     # Code formatter
-│   └── debugger/      # Debugging tools
-├── tests/
-│   ├── unit/          # Unit tests
-│   ├── integration/   # Integration tests
-│   └── examples/      # Example test scripts
-└── packages/
-    ├── vscode-ext/    # VS Code extension
-    ├── installer/     # Platform installers
-    └── docker/        # Container images
-
-----
 
 🛠️ Development Tools
 IDE Integration
@@ -209,79 +180,6 @@ Debugging & Testing
 	* Step Debugger - Debug automation flows
 	* Unit Testing Framework - Built-in testing capabilities
 	* Performance Profiler - Optimize automation scripts
-
-----
-
-🚀 Roadmap
-Phase 1: Core Language (Q1 2025)
-	* [ ] Basic syntax parser and interpreter
-	* [ ] Core standard library modules
-	* [ ] Windows platform support
-	* [ ] VS Code extension
-	* [ ] Documentation website
-
-Phase 2: Cross-Platform (Q2 2025)
-	* [ ] macOS platform support
-	* [ ] Linux platform support
-	* [ ] Package manager integration
-	* [ ] Language Server Protocol
-	* [ ] Advanced debugging tools
-
-Phase 3: Ecosystem (Q3 2025)
-	* [ ] Plugin system for extensions
-	* [ ] Community package repository
-	* [ ] Advanced workflow features
-	* [ ] GUI automation capabilities
-	* [ ] Enterprise security features
-
-Phase 4: Advanced Features (Q4 2025)
-	* [ ] Visual workflow editor
-	* [ ] Machine learning integrations
-	* [ ] Cloud automation support
-	* [ ] Mobile companion apps
-	* [ ] Enterprise management console
-
-----
-
-📊 Success Metrics
-Technical KPIs
-	* Performance: Sub-10ms hotkey response time
-	* Reliability: 99.9% uptime for automation scripts
-	* Compatibility: Support for 95% of common automation tasks
-	* Security: Zero critical vulnerabilities in core runtime
-
-Adoption Goals
-	* Year 1: 10,000 active users
-	* Year 2: 100,000 active users
-	* Year 3: 1,000,000 automation scripts deployed
-
-Community Metrics
-	* GitHub Stars: 10,000+ stars
-	* Package Ecosystem: 500+ community packages
-	* Documentation: 95% user satisfaction rating
-	* Support: <24hr response time for issues
-
-----
-
-⚖️ License & Governance
-Open Source License
-MIT License - Permissive licensing for maximum adoption
-
-Governance Model
-	* Core Team - Language design and runtime development
-	* Community Council - Feature requests and ecosystem guidance
-	* Security Team - Vulnerability response and patches
-	* Documentation Team - Tutorials, guides, and examples
-
-----
-
-🔗 Resources
-Official Links
-	* Website: https://havel-lang.org
-	* Documentation: https://docs.havel-lang.org
-	* GitHub: https://github.com/havel-lang/havel
-	* Discord: https://discord.gg/havel-lang
-	* Package Repository: https://packages.havel-lang.org
 
 Getting Started
 # Quick start

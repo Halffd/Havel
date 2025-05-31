@@ -5,7 +5,7 @@
 
 namespace havel::parser {
 
-havel::Token HavelParser::at(size_t offset) const {
+havel::Token Parser::at(size_t offset) const {
     size_t pos = position + offset;
     if (pos >= tokens.size()) {
         return havel::Token("EOF", havel::TokenType::EOF_TOKEN);
@@ -13,18 +13,18 @@ havel::Token HavelParser::at(size_t offset) const {
     return tokens[pos];
 }
 
-havel::Token HavelParser::advance() {
+havel::Token Parser::advance() {
     if (position >= tokens.size()) {
         return havel::Token("EOF", havel::TokenType::EOF_TOKEN);
     }
     return tokens[position++];
 }
 
-bool HavelParser::notEOF() const {
+bool Parser::notEOF() const {
     return at().type != havel::TokenType::EOF_TOKEN;
 }
 
-std::unique_ptr<havel::ast::Program> HavelParser::produceAST(const std::string& sourceCode) {
+std::unique_ptr<havel::ast::Program> Parser::produceAST(const std::string& sourceCode) {
     // Tokenize source code (like Tyler's approach)
     havel::HavelLexer lexer(sourceCode);
     tokens = lexer.tokenize();
@@ -44,7 +44,7 @@ std::unique_ptr<havel::ast::Program> HavelParser::produceAST(const std::string& 
     return program;
 }
 
-std::unique_ptr<havel::ast::Statement> HavelParser::parseStatement() {
+std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     // Check for hotkey bindings (F1 =>, Ctrl+V =>, etc.)
     if (at().type == havel::TokenType::Hotkey) {
         return parseHotkeyBinding();
@@ -68,7 +68,7 @@ std::unique_ptr<havel::ast::Statement> HavelParser::parseStatement() {
     );
 }
 
-std::unique_ptr<havel::ast::HotkeyBinding> HavelParser::parseHotkeyBinding() {
+std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
     auto binding = std::make_unique<havel::ast::HotkeyBinding>();
 
     // Parse hotkey (F1, Ctrl+V, etc.)
@@ -87,7 +87,7 @@ std::unique_ptr<havel::ast::HotkeyBinding> HavelParser::parseHotkeyBinding() {
     return binding;
 }
 
-std::unique_ptr<havel::ast::BlockStatement> HavelParser::parseBlockStatement() {
+std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
     auto block = std::make_unique<havel::ast::BlockStatement>();
 
     // Consume opening brace
@@ -113,11 +113,11 @@ std::unique_ptr<havel::ast::BlockStatement> HavelParser::parseBlockStatement() {
     return block;
 }
 
-std::unique_ptr<havel::ast::Expression> HavelParser::parseExpression() {
+std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
     return parsePipelineExpression();
 }
 
-std::unique_ptr<havel::ast::Expression> HavelParser::parsePipelineExpression() {
+std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
     auto left = parseBinaryExpression();
 
     // Check for pipeline operator |
@@ -137,13 +137,13 @@ std::unique_ptr<havel::ast::Expression> HavelParser::parsePipelineExpression() {
     return left;
 }
 
-std::unique_ptr<havel::ast::Expression> HavelParser::parseBinaryExpression() {
+std::unique_ptr<havel::ast::Expression> Parser::parseBinaryExpression() {
     // For now, just parse primary expressions
     // TODO: Implement proper operator precedence
     return parsePrimaryExpression();
 }
 
-std::unique_ptr<havel::ast::Expression> HavelParser::parsePrimaryExpression() {
+std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     havel::Token tk = at();
 
     switch (tk.type) {

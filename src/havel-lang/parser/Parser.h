@@ -7,7 +7,7 @@
 
 namespace havel::parser {
 
-class HavelParser {
+class Parser {
 private:
     std::vector<havel::Token> tokens;
     size_t position = 0;
@@ -29,7 +29,7 @@ private:
     std::unique_ptr<havel::ast::BlockStatement> parseBlockStatement();
 
 public:
-    explicit HavelParser() = default;
+    explicit Parser() = default;
 
     // Main entry point (like Tyler's produceAST)
     std::unique_ptr<havel::ast::Program> produceAST(const std::string& sourceCode);

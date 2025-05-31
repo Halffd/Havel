@@ -108,7 +108,7 @@ private:
     
 public:
     MockX11EventGenerator() {
-        display = H::DisplayManager::GetDisplay();
+        display = havel::DisplayManager::GetDisplay();
         if (!display) {
             std::cerr << "Failed to get X11 display" << std::endl;
             return;
@@ -150,7 +150,7 @@ public:
         
         // Directly call the IO handler to simulate the event
         // This bypasses the actual X11 event queue
-        H::IO::HandleKeyEvent(event);
+        havel::IO::HandleKeyEvent(event);
     }
     
     // Simulate a sequence of modifier key presses followed by a regular key
@@ -174,12 +174,12 @@ public:
             
             // Simulate modifier key press
             XEvent mod_event = create_key_press_event(mod, state);
-            H::IO::HandleKeyEvent(mod_event);
+            havel::IO::HandleKeyEvent(mod_event);
         }
         
         // Finally press the actual key with all modifiers
         XEvent key_event = create_key_press_event(key, state);
-        H::IO::HandleKeyEvent(key_event);
+        havel::IO::HandleKeyEvent(key_event);
     }
 };
 
@@ -207,7 +207,7 @@ public:
 
 // Test basic modifier key detection
 bool test_basic_modifier_detection() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys with different modifiers
@@ -249,7 +249,7 @@ bool test_basic_modifier_detection() {
 
 // Test multiple modifier keys
 bool test_multiple_modifiers() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys with multiple modifiers
@@ -286,7 +286,7 @@ bool test_multiple_modifiers() {
 
 // Test for the issue where modifiers are being detected as single keys
 bool test_modifier_detection_issue() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a hotkey with modifiers
@@ -325,7 +325,7 @@ bool test_modifier_detection_issue() {
 
 // Test for the issue with Alt+key combinations
 bool test_alt_key_combinations() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register Alt+key hotkeys
@@ -388,7 +388,7 @@ bool test_alt_key_combinations() {
 
 // Test for the issue with Win+function key combinations
 bool test_win_function_key_combinations() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register Win+function key hotkeys
@@ -451,7 +451,7 @@ bool test_win_function_key_combinations() {
 
 // Test for the issue with modifier state handling
 bool test_modifier_state_handling() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys with various modifier combinations

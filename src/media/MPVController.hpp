@@ -60,4 +60,4 @@ namespace havel {
         std::chrono::steady_clock::time_point last_error_time;
     };
 
-} // namespace H
+} // namespace havel

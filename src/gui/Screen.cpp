@@ -4,7 +4,7 @@
 #include <cairo/cairo-xlib.h>
 #include <algorithm>
 
-namespace H {
+namespace havel {
 
 Screen::Screen() {
     UpdateMonitorInfo();
@@ -237,4 +237,4 @@ void Screen::UpdateMonitorInfo() {
     XCloseDisplay(display);
 }
 
-} // namespace H 
+} // namespace havel 

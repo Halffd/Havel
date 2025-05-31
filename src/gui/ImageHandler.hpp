@@ -3,7 +3,7 @@
 #include <vector>
 #include <memory>
 
-namespace H {
+namespace havel {
 
 class ImageHandler {
 public:
@@ -28,4 +28,4 @@ private:
     static cairo_status_t ReadFromVector(void* closure, unsigned char* data, unsigned int length);
 };
 
-} // namespace H 
+} // namespace havel 

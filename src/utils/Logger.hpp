@@ -47,7 +47,7 @@ private:
     bool consoleOutput;
 };
 
-} // namespace H
+} // namespace havel
 
 // Global logger instance declaration
 extern havel::Logger& lo; 

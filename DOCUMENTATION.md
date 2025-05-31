@@ -580,10 +580,10 @@ Configuration values can be accessed using the `Configs` singleton:
 
 ```cpp
 // Get a configuration value with a default fallback
-int moveSpeed = H::Configs::Get().Get<int>("Window.MoveSpeed", 10);
+int moveSpeed = havel::Configs::Get().Get<int>("Window.MoveSpeed", 10);
 
 // Watch for configuration changes
-H::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
+havel::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
     lo.info("Theme changed from " + oldVal + " to " + newVal);
 });
 ```
@@ -603,7 +603,7 @@ void test_volume_up() {
 
 int main() {
     // Initialize the IO system
-    H::IO io;
+    havel::IO io;
     
     // Register test hotkeys
     io.Hotkey("^F10", test_volume_up);

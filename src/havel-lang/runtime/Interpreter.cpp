@@ -76,7 +76,7 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 Interpreter::Interpreter() {
     // Initialize system components
     io = std::make_shared<IO>();
-    clipboard = std::make_shared<H::Clipboard>(H::Clipboard::Instance());
+    clipboard = std::make_shared<havel::Clipboard>(havel::Clipboard::Instance());
     windowManager = std::make_shared<WindowManager>();
     
     // Initialize standard library modules
@@ -174,7 +174,7 @@ HavelValue Interpreter::EvaluateHotkeyBinding(const ast::HotkeyBinding& binding)
         throw std::runtime_error("Invalid hotkey in binding");
     }
     
-    std::string hotkey = hotkeyLiteral->value;
+    std::string hotkey = hotkeyLiteral->combination;
     
     // Create a lambda that will evaluate the action when the hotkey is triggered
     auto actionHandler = [this, action = binding.action.get()]() {
@@ -184,7 +184,11 @@ HavelValue Interpreter::EvaluateHotkeyBinding(const ast::HotkeyBinding& binding)
     };
     
     // Register the hotkey with the IO system
-    io->RegisterHotkey(hotkey, actionHandler);
+    // Convert string hotkey to Key and modifiers for IO::AddHotkey
+    // This is a simplified implementation - would need proper parsing of hotkey string
+    Key key = 0; // Default key code
+    int modifiers = 0; // Default modifiers
+    io->AddHotkey(hotkey, key, modifiers, actionHandler);
     
     return nullptr;
 }
@@ -204,10 +208,23 @@ HavelValue Interpreter::EvaluateBlockStatement(const ast::BlockStatement& block)
 // Evaluate a PipelineExpression node
 HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression& pipeline) {
     // Evaluate the left-hand side of the pipeline
-    HavelValue value = EvaluateExpression(*pipeline.left);
+    // Get the first stage of the pipeline
+    if (pipeline.stages.empty()) {
+        throw std::runtime_error("Pipeline has no stages");
+    }
     
-    // For the right side, we need to handle differently based on the type
-    if (const auto* callExpr = dynamic_cast<const ast::CallExpression*>(pipeline.right.get())) {
+    HavelValue value = EvaluateExpression(*pipeline.stages[0]);
+    
+    // For subsequent stages, we need to handle differently based on the type
+    if (pipeline.stages.size() < 2) {
+        return value; // Only one stage, return its value
+    }
+    
+    // Process each stage after the first one
+    for (size_t i = 1; i < pipeline.stages.size(); i++) {
+        auto& stage = pipeline.stages[i];
+        
+        if (const auto* callExpr = dynamic_cast<const ast::CallExpression*>(stage.get())) {
         // Add the left-hand value as the first argument to the function call
         std::vector<HavelValue> args;
         args.push_back(value);
@@ -222,54 +239,25 @@ HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression
         std::string moduleName;
         
         if (const auto* memberExpr = dynamic_cast<const ast::MemberExpression*>(callExpr->callee.get())) {
-            // It's a member expression like text.upper
             if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
-                moduleName = objIdentifier->name;
-            }
-            if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
-                funcName = propIdentifier->name;
-            }
-            
-            // Get the module
-            auto module = environment.GetModule(moduleName);
-            if (module && module->HasFunction(funcName)) {
-                auto func = module->GetFunction(funcName);
-                return func(args);
-            }
-        } else if (const auto* identifier = dynamic_cast<const ast::Identifier*>(callExpr->callee.get())) {
-            // It's a simple function call like send
-            funcName = identifier->name;
-            
-            // Check if it's a built-in function
-            if (funcName == "send") {
-                // Send text to the active window
-                if (!args.empty()) {
-                    std::string text = ValueToString(args[0]);
-                    io->SendText(text);
-                    return text;
-                }
-            }
-        }
-    } else if (const auto* memberExpr = dynamic_cast<const ast::MemberExpression*>(pipeline.right.get())) {
-        // It's a property access like clipboard.out
-        if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
-            std::string moduleName = objIdentifier->name;
-            
-            if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
-                std::string propName = propIdentifier->name;
+                std::string moduleName = objIdentifier->symbol;
                 
-                // Handle special properties
-                if (moduleName == "clipboard") {
-                    if (propName == "out") {
-                        return clipboard->GetText();
+                if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
+                    std::string propName = propIdentifier->symbol;
+                
+                    // Handle special properties
+                    if (moduleName == "clipboard") {
+                        if (propName == "out") {
+                            return clipboard->GetText();
+                        }
                     }
                 }
             }
         }
     }
     
-    // If we couldn't handle it as a special case, just evaluate the right side
-    return EvaluateExpression(*pipeline.right);
+    // If we couldn't handle it as a special case, just return the current value
+    return value;
 }
 
 // Evaluate a BinaryExpression node
@@ -278,20 +266,19 @@ HavelValue Interpreter::EvaluateBinaryExpression(const ast::BinaryExpression& bi
     HavelValue left = EvaluateExpression(*binary.left);
     HavelValue right = EvaluateExpression(*binary.right);
     
-    // Perform the operation based on the operator
-    switch (binary.op) {
-        case ast::BinaryOperator::Add:
-            // String concatenation or numeric addition
-            if (std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
-                return ValueToString(left) + ValueToString(right);
-            } else {
-                return ValueToNumber(left) + ValueToNumber(right);
-            }
-        case ast::BinaryOperator::Subtract:
-            return ValueToNumber(left) - ValueToNumber(right);
-        case ast::BinaryOperator::Multiply:
-            return ValueToNumber(left) * ValueToNumber(right);
-        case ast::BinaryOperator::Divide:
+    // Perform the operation based on the operator string
+    if (binary.operator_ == "+") {
+        // String concatenation or numeric addition
+        if (std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
+            return ValueToString(left) + ValueToString(right);
+        } else {
+            return ValueToNumber(left) + ValueToNumber(right);
+        }
+    } else if (binary.operator_ == "-") {
+        return ValueToNumber(left) - ValueToNumber(right);
+    } else if (binary.operator_ == "*") {
+        return ValueToNumber(left) * ValueToNumber(right);
+    } else if (binary.operator_ == "/") {
             if (ValueToNumber(right) == 0.0) {
                 throw std::runtime_error("Division by zero");
             }

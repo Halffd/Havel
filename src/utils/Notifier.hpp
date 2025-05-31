@@ -11,4 +11,4 @@ public:
     static void Info(const std::string& message, const std::string& title = "Information");
 };
 
-} // namespace H 
+} // namespace havel 

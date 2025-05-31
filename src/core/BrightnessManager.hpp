@@ -70,4 +70,4 @@
         std::string displayMethod; // "randr" or "wayland"
     };
 
-    } // namespace H
+    } // namespace havel

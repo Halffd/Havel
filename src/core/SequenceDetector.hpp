@@ -24,4 +24,4 @@ private:
     std::string currentInput;
 };
 
-} // namespace H 
+} // namespace havel 

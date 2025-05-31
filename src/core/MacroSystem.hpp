@@ -37,4 +37,4 @@ private:
     std::string currentMacro;
 };
 
-} // namespace H 
+} // namespace havel 

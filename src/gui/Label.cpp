@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace H {
+namespace havel {
 
 Label::Label() = default;
 
@@ -363,4 +363,4 @@ float Label::Bounce(float t) {
     return sin(t * M_PI * 2) * exp(-t * 3);
 }
 
-} // namespace H 
+} // namespace havel 

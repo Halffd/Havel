@@ -8,14 +8,14 @@ namespace havel::parser {
 havel::Token Parser::at(size_t offset) const {
     size_t pos = position + offset;
     if (pos >= tokens.size()) {
-        return havel::Token("EOF", havel::TokenType::EOF_TOKEN);
+        return havel::Token("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
     }
     return tokens[pos];
 }
 
 havel::Token Parser::advance() {
     if (position >= tokens.size()) {
-        return havel::Token("EOF", havel::TokenType::EOF_TOKEN);
+        return havel::Token("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
     }
     return tokens[position++];
 }
@@ -25,8 +25,8 @@ bool Parser::notEOF() const {
 }
 
 std::unique_ptr<havel::ast::Program> Parser::produceAST(const std::string& sourceCode) {
-    // Tokenize source code (like Tyler's approach)
-    havel::HavelLexer lexer(sourceCode);
+    // Tokenize source code
+    havel::Lexer lexer(sourceCode);
     tokens = lexer.tokenize();
     position = 0;
 
@@ -63,9 +63,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
     // Otherwise, parse as expression statement
     auto expr = parseExpression();
-    return std::unique_ptr<havel::ast::Statement>(
-        static_cast<havel::ast::Statement*>(expr.release())
-    );
+    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
 }
 
 std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
@@ -244,3 +242,5 @@ void Parser::printAST(const havel::ast::ASTNode& node, int indent) const {
         }
     }
 }
+
+} // namespace havel::parser

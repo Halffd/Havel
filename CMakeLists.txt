@@ -30,6 +30,7 @@ set(MAIN_SOURCES
     src/core/ScriptEngine.cpp
     src/core/SocketServer.cpp
     src/core/BrightnessManager.cpp
+    src/core/AutoClicker.cpp
     src/window/CompizManager.cpp
     src/window/Window.cpp
     src/window/WindowManager.cpp
@@ -50,6 +51,7 @@ set(HEADERS
     src/core/ScriptEngine.hpp
     src/core/SocketServer.hpp
     src/core/BrightnessManager.hpp
+    src/core/AutoClicker.hpp
     src/window/CompizManager.hpp
     src/window/Window.hpp
     src/window/WindowManager.hpp

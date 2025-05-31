@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
-namespace H {
+namespace havel {
 
 std::vector<uint8_t> ImageHandler::SurfaceToPNG(cairo_surface_t* surface) {
     std::vector<uint8_t> result;
@@ -148,4 +148,4 @@ cairo_status_t ImageHandler::ReadFromVector(void* closure, unsigned char* data, 
     return CAIRO_STATUS_SUCCESS;
 }
 
-} // namespace H 
+} // namespace havel 

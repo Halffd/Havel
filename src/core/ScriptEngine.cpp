@@ -152,4 +152,4 @@ bool ScriptEngine::CheckContext(const std::string& context) {
     return false;
 }
 
-} // namespace H 
+} // namespace havel 

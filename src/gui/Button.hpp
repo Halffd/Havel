@@ -5,7 +5,7 @@
 #include <functional>
 #include <memory>
 
-namespace H {
+namespace havel {
 
 class Button : public Widget {
 public:
@@ -60,4 +60,4 @@ private:
     void UpdateAnimations(float deltaTime);
 };
 
-} // namespace H 
+} // namespace havel 

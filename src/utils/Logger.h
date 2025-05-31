@@ -28,7 +28,7 @@ private:
     std::mutex logMutex;
 };
 
-} // namespace H
+} // namespace havel
 
 // Global logger instance
 extern havel::Logger lo;

@@ -3,7 +3,7 @@
 #include "Theme.hpp"
 #include "GUIEvent.hpp"
 
-namespace H {
+namespace havel {
 
 enum class IconPosition {
     LEFT,
@@ -74,4 +74,4 @@ private:
     bool needsLayout{false};
 };
 
-} // namespace H 
+} // namespace havel 

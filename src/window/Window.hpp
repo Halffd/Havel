@@ -87,4 +87,4 @@ private:
     wID m_id;
 };
 
-} // namespace H
+} // namespace havel

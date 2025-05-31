@@ -4,7 +4,7 @@
 #include <X11/Xlib.h>
 #endif
 
-namespace H {
+namespace havel {
     class DisplayManager {
     public:
         static bool Initialize();

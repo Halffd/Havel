@@ -131,4 +131,4 @@ private:
     // Static member to track previous active window
     static XWindow previousActiveWindow;
 };
-} // namespace H
+} // namespace havel

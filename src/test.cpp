@@ -9,24 +9,24 @@
 #include "logger.h"
 #include <iostream>
 
-namespace H {
+namespace havel {
     extern Logger lo;  // Forward declaration of the logger object
 }
 
-void testSend(H::IO& io) {
+void testSend(havel::IO& io) {
     std::cout << "Testing Send function...\n";
     io.Send("Hello");
     io.Send("{Shift down}A{Shift up}"); // Test sending 'A' with Shift
     io.Send("{Ctrl down}C{Ctrl up}"); // Test sending Ctrl+C
 }
 
-void testControlSend(H::IO& io) {
+void testControlSend(havel::IO& io) {
     std::cout << "Testing ControlSend function...\n";
     // io.ControlSend("Notepad", "Hello");
     // io.ControlSend("Calculator", "1+2=");
 }
 
-void testRegisterHotkey(H::IO& io) {
+void testRegisterHotkey(havel::IO& io) {
     std::cout << "Testing RegisterHotkey function...\n";
     
     io.Hotkey("f1", []() {
@@ -73,30 +73,30 @@ void testRegisterHotkey(H::IO& io) {
 
 // Comment out problematic test functions
 /*
-void testHotkeyListen(H::IO& io) {
+void testHotkeyListen(havel::IO& io) {
     std::cout << "Testing HotkeyListen function...\n";
     io.HotkeyListen();
 }
 
-void testHandleKeyAction(H::IO& io) {
+void testHandleKeyAction(havel::IO& io) {
     std::cout << "Testing HandleKeyAction function...\n";
     io.HandleKeyAction("down", "a");
 }
 */
 
-void testSetTimer(H::IO& io) {
+void testSetTimer(havel::IO& io) {
     std::cout << "Testing SetTimer function...\n";
     io.SetTimer(1000, []() {
         std::cout << "Timer fired\n";
     });
 }
 
-void testMsgBox(H::IO& io) {
+void testMsgBox(havel::IO& io) {
     std::cout << "Testing MsgBox function...\n";
     io.MsgBox("Hello, world!");
 }
 
-void linux_test(H::WindowManager& w){
+void linux_test(havel::WindowManager& w){
     std::cout << "Linux Test Suite\n";
     
     // Comment out the GetAllWindows call that doesn't exist
@@ -107,7 +107,7 @@ void linux_test(H::WindowManager& w){
     std::cout << "Window manager detected: " << w.GetCurrentWMName() << std::endl;
 }
 
-void windowsTest(H::WindowManager& w){
+void windowsTest(havel::WindowManager& w){
     std::cout << "Windows Test Suite\n";
     
     // Comment out the GetAllWindows call that doesn't exist
@@ -118,22 +118,22 @@ void windowsTest(H::WindowManager& w){
     std::cout << "Windows test completed" << std::endl;
 }
 
-void setupAHKHotkeys(H::IO& io) {
-    io.Hotkey("!Up", [](){ H::WindowManager::MoveWindow(1); });
-    io.Hotkey("!Down", [](){ H::WindowManager::MoveWindow(2); });
-    io.Hotkey("!Left", [](){ H::WindowManager::MoveWindow(3); });
-    io.Hotkey("!Right", [](){ H::WindowManager::MoveWindow(4); });
+void setupAHKHotkeys(havel::IO& io) {
+    io.Hotkey("!Up", [](){ havel::WindowManager::MoveWindow(1); });
+    io.Hotkey("!Down", [](){ havel::WindowManager::MoveWindow(2); });
+    io.Hotkey("!Left", [](){ havel::WindowManager::MoveWindow(3); });
+    io.Hotkey("!Right", [](){ havel::WindowManager::MoveWindow(4); });
     
     // Window resizing hotkeys
-    io.Hotkey("!+Up", [](){ H::WindowManager::ResizeWindow(1); });
-    io.Hotkey("!+Down", [](){ H::WindowManager::ResizeWindow(2); });
-    io.Hotkey("!+Left", [](){ H::WindowManager::ResizeWindow(3); });
-    io.Hotkey("!+Right", [](){ H::WindowManager::ResizeWindow(4); });
+    io.Hotkey("!+Up", [](){ havel::WindowManager::ResizeWindow(1); });
+    io.Hotkey("!+Down", [](){ havel::WindowManager::ResizeWindow(2); });
+    io.Hotkey("!+Left", [](){ havel::WindowManager::ResizeWindow(3); });
+    io.Hotkey("!+Right", [](){ havel::WindowManager::ResizeWindow(4); });
     
-    io.Hotkey("^r", [](){ H::WindowManager::ToggleAlwaysOnTop(); });
+    io.Hotkey("^r", [](){ havel::WindowManager::ToggleAlwaysOnTop(); });
 }
 
-void test(H::IO& io) {
+void test(havel::IO& io) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     
     // Register test hotkeys
@@ -141,11 +141,11 @@ void test(H::IO& io) {
     testRegisterHotkey(io);
     
     // Create a Window object
-    H::Window myWindow;
+    havel::Window myWindow;
     std::cout << "Created Window object\n";
     
     // Find Firefox window
-    H::wID firefoxWindow = myWindow.Find("firefox");
+    havel::wID firefoxWindow = myWindow.Find("firefox");
     if (firefoxWindow) {
         std::cout << "Found Firefox window: " << firefoxWindow << std::endl;
         std::cout << "Window title: " << myWindow.Title(firefoxWindow) << std::endl;
@@ -153,10 +153,10 @@ void test(H::IO& io) {
 }
 
 int test_main(int argc, char* argv[]) {
-    H::IO io;
+    havel::IO io;
     std::cout << "Test main function initialized\n";
     
-    H::WindowManager wm;
+    havel::WindowManager wm;
     
     setupAHKHotkeys(io);
     test(io);

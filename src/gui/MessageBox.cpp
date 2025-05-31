@@ -2,7 +2,7 @@
 #include "Screen.hpp"
 #include <cmath>
 
-namespace H {
+namespace havel {
 
 MessageBox::MessageBox(Type type, Buttons buttons)
     : type(type)
@@ -321,4 +321,4 @@ bool MessageBox::Contains(int x, int y) const {
            y >= bounds.y && y < bounds.y + bounds.height;
 }
 
-} // namespace H 
+} // namespace havel 

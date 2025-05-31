@@ -4,7 +4,7 @@
 #include <memory>
 #include <cairo/cairo.h>
 
-namespace H {
+namespace havel {
 
 class Label : public Widget {
 public:
@@ -147,4 +147,4 @@ private:
     void CreateGradientPattern(cairo_t* cr, double x, double y, double width, double height);
 };
 
-} // namespace H 
+} // namespace havel 

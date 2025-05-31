@@ -5,7 +5,7 @@
 #include <X11/Xlib.h>
 #include <cairo/cairo.h>
 
-namespace H {
+namespace havel {
 
 class Clipboard {
 public:
@@ -89,4 +89,4 @@ private:
     bool ConvertData(const std::vector<uint8_t>& data, Format fromFormat, Format toFormat, std::vector<uint8_t>& result);
 };
 
-} // namespace H 
+} // namespace havel 

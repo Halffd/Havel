@@ -9,7 +9,7 @@
 #include "WindowManager.hpp"
 #include "IO.hpp"
 
-namespace H {
+namespace havel {
 
 // Forward declarations
 class Window;
@@ -354,4 +354,4 @@ class FlowLayout : public Layout {
     // Flow-based layout
 };
 
-} // namespace H 
+} // namespace havel 

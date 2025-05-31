@@ -18,4 +18,4 @@ private:
     std::string emergencyHotkey;
 };
 
-} // namespace H 
+} // namespace havel 

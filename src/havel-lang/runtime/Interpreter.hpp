@@ -141,7 +141,7 @@ public:
 private:
     Environment environment;
     std::shared_ptr<havel::IO> io;
-    std::shared_ptr<H::Clipboard> clipboard;
+    std::shared_ptr<havel::Clipboard> clipboard;
     std::shared_ptr<havel::WindowManager> windowManager;
     
     // Initialize built-in modules

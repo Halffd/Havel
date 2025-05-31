@@ -3,7 +3,7 @@
 #include <any>
 #include <mutex>
 
-namespace H {
+namespace havel {
 class StateManager {
 public:
     template<typename T>

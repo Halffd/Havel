@@ -165,4 +165,4 @@ void WindowMonitor::SetPollInterval(std::chrono::milliseconds newInterval) {
     interval = newInterval;
 }
 
-} // namespace H 
+} // namespace havel 

@@ -22,4 +22,4 @@ private:
     std::vector<Rule> rules;
 };
 
-} // namespace H 
+} // namespace havel 

@@ -1,7 +1,7 @@
 #ifndef RECT_HPP
 #define RECT_HPP
 
-namespace H {
+namespace havel {
     struct Rect {
         int left;
         int top;

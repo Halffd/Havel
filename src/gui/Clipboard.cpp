@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace H {
+namespace havel {
 
 struct ClipboardData {
     std::vector<uint8_t> data;
@@ -411,4 +411,4 @@ bool Clipboard::ConvertData(const std::vector<uint8_t>& data,
     return false;
 }
 
-} // namespace H 
+} // namespace havel 

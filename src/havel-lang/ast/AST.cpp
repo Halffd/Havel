@@ -4,10 +4,7 @@
 
 namespace havel::ast {
 
-// Implementation of virtual destructors for polymorphic classes
-ASTNode::~ASTNode() = default;
-Expression::~Expression() = default;
-Statement::~Statement() = default;
+// Virtual destructors are already defaulted in the header
 
 // Visitor pattern implementation for AST traversal
 class ASTVisitor {
@@ -15,6 +12,7 @@ public:
     virtual void visitProgram(const Program& node) = 0;
     virtual void visitHotkeyBinding(const HotkeyBinding& node) = 0;
     virtual void visitBlockStatement(const BlockStatement& node) = 0;
+    virtual void visitExpressionStatement(const ExpressionStatement& node) = 0;
     virtual void visitPipelineExpression(const PipelineExpression& node) = 0;
     virtual void visitBinaryExpression(const BinaryExpression& node) = 0;
     virtual void visitCallExpression(const CallExpression& node) = 0;
@@ -61,6 +59,14 @@ public:
         for (const auto& stmt : node.body) {
             std::cout << getIndent() << stmt->toString() << std::endl;
         }
+        indentLevel--;
+        std::cout << getIndent() << "}" << std::endl;
+    }
+
+    void visitExpressionStatement(const ExpressionStatement& node) override {
+        std::cout << getIndent() << "ExpressionStatement {" << std::endl;
+        indentLevel++;
+        std::cout << getIndent() << node.expression->toString() << std::endl;
         indentLevel--;
         std::cout << getIndent() << "}" << std::endl;
     }

@@ -1,7 +1,7 @@
 #include "Button.hpp"
 #include <cmath>
 
-namespace H {
+namespace havel {
 
 Button::Button() : icon(nullptr, cairo_surface_destroy) {}
 
@@ -268,4 +268,4 @@ void Button::UpdateAnimations(float deltaTime) {
     }
 }
 
-} // namespace H 
+} // namespace havel 

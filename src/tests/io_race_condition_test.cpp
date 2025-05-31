@@ -135,7 +135,7 @@ private:
     
 public:
     TimedEventGenerator() {
-        display = H::DisplayManager::GetDisplay();
+        display = havel::DisplayManager::GetDisplay();
         if (!display) {
             std::cerr << "Failed to get X11 display" << std::endl;
         }
@@ -163,7 +163,7 @@ public:
             event.xkey.keycode = XKeysymToKeycode(display, keysym);
             event.xkey.same_screen = True;
             
-            H::IO::HandleKeyEvent(event);
+            havel::IO::HandleKeyEvent(event);
         }, delay_ms);
         
         timer.start();
@@ -189,7 +189,7 @@ public:
 
 // Test rapid hotkey registration and unregistration
 bool test_rapid_registration() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     const int num_threads = 10;
@@ -225,7 +225,7 @@ bool test_rapid_registration() {
 
 // Test concurrent hotkey triggering
 bool test_concurrent_triggering() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a set of hotkeys
@@ -261,7 +261,7 @@ bool test_concurrent_triggering() {
 
 // Test rapid modifier key state changes
 bool test_rapid_modifier_changes() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys with different modifier combinations
@@ -308,7 +308,7 @@ bool test_rapid_modifier_changes() {
 
 // Test interleaved key press events
 bool test_interleaved_key_presses() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys
@@ -352,7 +352,7 @@ bool test_interleaved_key_presses() {
 
 // Test suspend/resume during key press
 bool test_suspend_during_key_press() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a hotkey
@@ -394,7 +394,7 @@ bool test_suspend_during_key_press() {
 
 // Test for race conditions in modifier state tracking
 bool test_modifier_state_race() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register hotkeys with different modifier combinations

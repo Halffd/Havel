@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace H {
+namespace havel {
 
 struct GUIEvent {
     enum class Type {
@@ -52,4 +52,4 @@ constexpr unsigned int KEY_ESCAPE = 0xFF1B;
 constexpr unsigned int KEY_TAB = 0xFF09;
 constexpr unsigned int KEY_SPACE = 0x0020;
 
-} // namespace H 
+} // namespace havel 

@@ -52,4 +52,4 @@ void SocketServer::ServerThread() {
     RunServer();
 }
 
-} // namespace H 
+} // namespace havel 

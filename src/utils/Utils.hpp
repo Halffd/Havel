@@ -24,4 +24,4 @@ bool IsElevated();
 void ElevateProcess();
 void SetProcessPriority(int priority);
 
-} // namespace H 
+} // namespace havel 

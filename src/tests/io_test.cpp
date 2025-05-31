@@ -105,7 +105,7 @@ public:
         memset(&event, 0, sizeof(event));
         
         event.type = KeyPress;
-        event.xkey.keycode = XKeysymToKeycode(H::DisplayManager::GetDisplay(), keysym);
+        event.xkey.keycode = XKeysymToKeycode(havel::DisplayManager::GetDisplay(), keysym);
         event.xkey.state = modifiers;
         
         return event;
@@ -115,7 +115,7 @@ public:
         // This is a simplified simulation - in a real environment, 
         // we would need to inject events into the X11 event queue
         XEvent event = create_key_press_event(keysym, modifiers);
-        H::IO::HandleKeyEvent(event);
+        havel::IO::HandleKeyEvent(event);
     }
 };
 
@@ -123,13 +123,13 @@ public:
 
 // 1. Basic functionality tests
 bool test_io_initialization() {
-    H::IO io;
+    havel::IO io;
     // Basic initialization test - if it doesn't crash, that's a good start
     return true;
 }
 
 bool test_hotkey_registration() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a simple hotkey
@@ -140,7 +140,7 @@ bool test_hotkey_registration() {
 }
 
 bool test_multiple_hotkey_registration() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register multiple hotkeys
@@ -154,7 +154,7 @@ bool test_multiple_hotkey_registration() {
 
 // 2. Race condition tests
 bool test_concurrent_hotkey_registration() {
-    H::IO io;
+    havel::IO io;
     std::atomic<int> success_count(0);
     
     // Launch multiple threads to register hotkeys concurrently
@@ -178,7 +178,7 @@ bool test_concurrent_hotkey_registration() {
 }
 
 bool test_hotkey_suspend_resume_race() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a hotkey
@@ -211,7 +211,7 @@ bool test_hotkey_suspend_resume_race() {
 }
 
 bool test_callback_execution_race() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     std::mutex m;
     std::condition_variable cv;
@@ -258,7 +258,7 @@ bool test_callback_execution_race() {
 
 // 3. Complexity reduction tests
 bool test_isolated_hotkey_functionality() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Test individual components of hotkey functionality
@@ -283,7 +283,7 @@ bool test_isolated_hotkey_functionality() {
 }
 
 bool test_boundary_conditions() {
-    H::IO io;
+    havel::IO io;
     
     // Test empty hotkey string
     bool empty_result = io.Hotkey("", MockCallbacks::simple_callback);
@@ -309,7 +309,7 @@ bool test_boundary_conditions() {
 
 bool test_resource_cleanup() {
     {
-        H::IO io;
+        havel::IO io;
         MockCallbacks::reset();
         
         // Register a hotkey
@@ -320,7 +320,7 @@ bool test_resource_cleanup() {
     }
     
     // Create a new IO object
-    H::IO new_io;
+    havel::IO new_io;
     
     // Try to register the same hotkey again
     bool new_reg_result = new_io.Hotkey("ctrl+r", MockCallbacks::simple_callback);
@@ -333,7 +333,7 @@ bool test_resource_cleanup() {
 
 // 4. Asynchronous operation tests
 bool test_delayed_callback_execution() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     
     // Register a hotkey with a delayed callback
@@ -359,7 +359,7 @@ bool test_delayed_callback_execution() {
 }
 
 bool test_multiple_concurrent_callbacks() {
-    H::IO io;
+    havel::IO io;
     MockCallbacks::reset();
     std::atomic<int> callback_count(0);
     

@@ -248,4 +248,4 @@ enum class MouseAction {
 
         void Ungrab(Key input, unsigned int modifiers, Window root);
     };
-} // namespace H
+} // namespace havel

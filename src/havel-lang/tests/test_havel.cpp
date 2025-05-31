@@ -8,15 +8,17 @@
 #include <functional>
 
 // Test helper function to check if a condition is true
-void test(const std::string& testName, std::function<bool()> testFunc) {
+template <typename Func>
+void test(const std::string& testName, Func testFunc) {
     try {
-        if (testFunc()) {
-            std::cout << "✅ " << testName << " passed!" << std::endl;
+        bool result = testFunc();
+        if (result) {
+            std::cout << "✅ " << testName << ": PASS" << std::endl;
         } else {
-            std::cout << "❌ " << testName << " failed!" << std::endl;
+            std::cout << "❌ " << testName << ": FAIL" << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cout << "❌ " << testName << " failed with exception: " << e.what() << std::endl;
+        std::cout << "❌ " << testName << ": EXCEPTION - " << e.what() << std::endl;
     }
 }
 
@@ -31,7 +33,7 @@ void testLexer() {
         auto tokens = lexer.tokenize();
         
         return tokens.size() > 3 && 
-               tokens[0].type == havel::TokenType::HOTKEY &&
+               tokens[0].type == havel::TokenType::Hotkey &&
                tokens[1].type == havel::TokenType::Arrow &&
                tokens[2].type == havel::TokenType::Identifier &&
                tokens[3].type == havel::TokenType::String;
@@ -44,9 +46,9 @@ void testLexer() {
         auto tokens = lexer.tokenize();
         
         return tokens.size() > 4 && 
-               tokens[0].type == havel::TokenType::HOTKEY &&
+               tokens[0].type == havel::TokenType::Hotkey &&
                tokens[0].value == "Ctrl+Shift+A" &&
-               tokens[5].type == havel::TokenType::HOTKEY &&
+               tokens[5].type == havel::TokenType::Hotkey &&
                tokens[5].value == "Win+Space";
     });
     

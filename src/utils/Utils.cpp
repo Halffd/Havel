@@ -89,4 +89,4 @@ void SetProcessPriority(int priority) {
 #endif
 }
 
-} // namespace H 
+} // namespace havel 

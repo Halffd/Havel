@@ -2,7 +2,7 @@
 #include <atomic>
 #include <thread>
 
-namespace H {
+namespace havel {
 
 class AutoClicker {
 public:
@@ -21,4 +21,4 @@ private:
     int interval = 1000;
 };
 
-} // namespace H 
+} // namespace havel 

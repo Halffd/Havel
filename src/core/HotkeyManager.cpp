@@ -1714,4 +1714,4 @@ void HotkeyManager::applyDebugSettings() {
     });
 }
 
-} // namespace H
+} // namespace havel

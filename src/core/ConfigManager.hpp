@@ -420,4 +420,4 @@ inline void RestoreConfig(const std::string& path = "main.cfg") {
     }
 }
 
-} // namespace H 
+} // namespace havel 

@@ -26,6 +26,7 @@ enum class NodeType {
 
     // Statements
     BlockStatement,     // { ... }
+    ExpressionStatement, // expression;
     IfStatement,        // if condition { ... }
     LetDeclaration,     // let x = 5
 
@@ -182,6 +183,17 @@ struct BlockStatement : public Statement {
 
     std::string toString() const override {
         return "Block{" + std::to_string(body.size()) + " statements}";
+    }
+};
+
+// Expression Statement (wraps an expression as a statement)
+struct ExpressionStatement : public Statement {
+    std::unique_ptr<Expression> expression;
+    ExpressionStatement(std::unique_ptr<Expression> expr) : expression(std::move(expr)) {
+        kind = NodeType::ExpressionStatement;
+    }
+    std::string toString() const override {
+        return "ExpressionStatement{" + expression->toString() + "}";
     }
 };
 

@@ -10,7 +10,7 @@
 #include <X11/XF86keysym.h>
 #endif
 
-namespace H {
+namespace havel {
     // Forward declarations of common X11 types to avoid conflicts
     #ifdef __linux__
     extern Display* GetDisplay();

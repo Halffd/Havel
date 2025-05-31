@@ -1939,4 +1939,4 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
             uinputFd = -1;
         }
     }
-} // namespace H
+} // namespace havel

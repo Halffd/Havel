@@ -70,4 +70,4 @@ struct EnumWindowsData {
 };
 #endif
 
-} // namespace H
+} // namespace havel

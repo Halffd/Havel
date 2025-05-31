@@ -32,7 +32,7 @@ cat > src/common/types.hpp << 'EOF'
 #include <vector>
 #include <algorithm>
 
-namespace H {
+namespace havel {
 
 // Type aliases
 using str = std::string;
@@ -81,7 +81,7 @@ struct EnumWindowsData {
 };
 #endif
 
-} // namespace H
+} // namespace havel
 EOF
 
 # Fix window/types.hpp to include the common types
@@ -143,7 +143,7 @@ cat > include/x11/x11_all.hpp << 'EOF'
 #include <X11/XF86keysym.h>
 #endif
 
-namespace H {
+namespace havel {
     // Forward declarations of common X11 types to avoid conflicts
     #ifdef __linux__
     extern Display* GetDisplay();

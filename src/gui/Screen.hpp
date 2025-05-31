@@ -3,7 +3,7 @@
 #include <vector>
 #include <memory>
 
-namespace H {
+namespace havel {
 
 class Screen : public Widget {
 public:
@@ -229,4 +229,4 @@ private:
     void LayoutWidgets();
 };
 
-} // namespace H 
+} // namespace havel 

@@ -4,7 +4,7 @@
 #include <cstring>
 #include <algorithm>
 
-namespace H {
+namespace havel {
 
 InputBox::InputBox() {
     // Set default size
@@ -309,4 +309,4 @@ bool InputBox::Contains(int x, int y) const {
            y >= bounds.y && y < bounds.y + bounds.height;
 }
 
-} // namespace H
+} // namespace havel

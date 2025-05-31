@@ -43,4 +43,4 @@ private:
     using XColormap = X11Resource<Colormap, XFreeColormap>;
 };
 
-} // namespace H 
+} // namespace havel 

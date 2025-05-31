@@ -77,9 +77,9 @@ Rect Window::Pos(wID win) {
 Rect Window::GetPositionWindows(wID win) {
     RECT rect;
     if (GetWindowRect(reinterpret_cast<HWND>(win), &rect)) {
-        return H::Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+        return havel::Rect(rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
     }
-    return H::Rect(0, 0, 0, 0);
+    return havel::Rect(0, 0, 0, 0);
 }
 #endif
 

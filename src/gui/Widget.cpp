@@ -1,7 +1,7 @@
 #include "Widget.hpp"
 #include <algorithm>
 
-namespace H {
+namespace havel {
 
 Widget::Widget() = default;
 
@@ -93,4 +93,4 @@ void Widget::InvalidateLayout() {
     }
 }
 
-} // namespace H 
+} // namespace havel 

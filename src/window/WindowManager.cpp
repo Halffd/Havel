@@ -1955,4 +1955,4 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
     template int64_t WindowManager::Run<ProcessMethod>(
         str, ProcessMethod, str, str, int);
-} // namespace H
+} // namespace havel

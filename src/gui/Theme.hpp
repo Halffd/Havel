@@ -2,7 +2,7 @@
 #include <string>
 #include <cstdint>
 
-namespace H {
+namespace havel {
 
 class Theme {
 public:
@@ -56,4 +56,4 @@ public:
     Metrics metrics;
 };
 
-} // namespace H 
+} // namespace havel 

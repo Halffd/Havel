@@ -100,4 +100,4 @@ std::string Logger::getCurrentTimestamp() {
     return ss.str();
 }
 
-} // namespace H
+} // namespace havel

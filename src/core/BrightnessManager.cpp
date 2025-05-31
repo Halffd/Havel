@@ -329,4 +329,4 @@ bool BrightnessManager::decreaseGamma(int amount) {
     return false;
 }
 
-} // namespace H 
+} // namespace havel 

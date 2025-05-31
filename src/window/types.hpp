@@ -6,4 +6,4 @@
 
 namespace havel {
     // Any window-specific types that don't exist in common/types.hpp can go here
-} // namespace H
+} // namespace havel

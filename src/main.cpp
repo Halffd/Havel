@@ -148,7 +148,7 @@ int main(int argc, char* argv[]) {
         server.Start();
         
         // Watch for theme changes
-        H::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
+        havel::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
             lo.info("Theme changed from " + oldVal + " to " + newVal);
         });
         

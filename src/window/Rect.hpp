@@ -1,6 +1,6 @@
 #pragma once
 
-namespace H {
+namespace havel {
 
 // Simple rectangle structure for window positions
 class Rect {
@@ -28,4 +28,4 @@ enum class DisplayServer {
     Unknown
 };
 
-} // namespace H 
+} // namespace havel 

@@ -65,7 +65,7 @@ If the automatic fixes don't resolve all issues, please refer to the detailed so
      ```
 
 3. **DisplayManager Missing**:
-   - Issue: Incomplete implementation of H::DisplayManager, with several references in the codebase.
+   - Issue: Incomplete implementation of havel::DisplayManager, with several references in the codebase.
    - Solution: The fix script adds missing static initializations. For a full implementation, you might need to manually implement missing methods.
 
 4. **Function Declarations Mismatch**:

@@ -2,7 +2,7 @@
 #include <gtkmm/cssprovider.h>
 #include <stdexcept>
 
-namespace H {
+namespace havel {
 
 class GUI::Impl {
 public:
@@ -187,6 +187,6 @@ void GUI::OnWindowClosed() {
     Stop();
 }
 
-} // namespace H 
+} // namespace havel 
 
-} // namespace H 
+} // namespace havel 

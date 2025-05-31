@@ -15,7 +15,7 @@ This document outlines the issues fixed to make the HvC project build successful
 
 3. **Window Class X11 Integration**
    - Fixed `Window` class to properly work with X11 `Window` type
-   - Added proper type casting between `H::Window`, `H::wID`, and X11's `Window`
+   - Added proper type casting between `havel::Window`, `havel::wID`, and X11's `Window`
    - Defined the `display` variable in `Window.cpp`
 
 4. **IO Class Implementation**

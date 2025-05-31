@@ -76,7 +76,7 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 Interpreter::Interpreter() {
     // Initialize system components
     io = std::make_shared<IO>();
-    clipboard = std::make_shared<havel::Clipboard>(havel::Clipboard::Instance());
+    clipboard = std::make_shared<havel::Clipboard>();
     windowManager = std::make_shared<WindowManager>();
     
     // Initialize standard library modules

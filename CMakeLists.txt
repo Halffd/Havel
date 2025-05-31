@@ -95,19 +95,32 @@ target_link_libraries(hotkey_test
 if(X11_Xrandr_FOUND)
     target_link_libraries(hotkey_test ${X11_Xrandr_LIB})
 endif()
-# Havel Language Lexer Test
+# Havel Language Sources
 set(HAVEL_LANG_SOURCES
         src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/runtime/Interpreter.cpp
 )
 
 set(HAVEL_LANG_HEADERS
         src/havel-lang/lexer/Lexer.hpp
+        src/havel-lang/parser/Parser.h
+        src/havel-lang/ast/AST.h
+        src/havel-lang/runtime/Interpreter.hpp
 )
 
+# Havel Language Test
 add_executable(test_havel
-        src/havel-lang/test_havel.cpp
+        src/havel-lang/tests/test_havel.cpp
         ${HAVEL_LANG_SOURCES}
         ${HAVEL_LANG_HEADERS}
+)
+
+target_link_libraries(test_havel
+        ${X11_LIBRARIES}
+        ${X11_Xtst_LIB}
+        pthread
 )
 # Install targets
 install(TARGETS hvc hotkey_test

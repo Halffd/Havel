@@ -1,7 +1,7 @@
 #pragma once
 #include "IO.hpp"
 #include "../window/WindowManager.hpp"
-#include "MPVController.hpp"
+#include "../media//MPVController.hpp"
 #include "ScriptEngine.hpp"
 #include "BrightnessManager.hpp"
 #include "../utils/Utils.hpp"

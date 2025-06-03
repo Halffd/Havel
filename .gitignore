@@ -11,7 +11,10 @@ exc/build
 file
 src/out
 log
+logs
 config
+build-debug
+build-release
 
 # Precompiled headers
 *.gch

@@ -1,2 +1,0 @@
-/bin/ar qc libhavel_lang.a "CMakeFiles/havel_lang.dir/src/havel-lang/ast/AST.cpp.o" "CMakeFiles/havel_lang.dir/src/havel-lang/lexer/Lexer.cpp.o" "CMakeFiles/havel_lang.dir/src/havel-lang/parser/Parser.cpp.o" "CMakeFiles/havel_lang.dir/src/havel-lang/runtime/Interpreter.cpp.o" "CMakeFiles/havel_lang.dir/src/havel-lang/tests/test_havel.cpp.o"
-/bin/ranlib libhavel_lang.a

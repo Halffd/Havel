@@ -7,9 +7,9 @@ namespace havel {
 
 class Logger {
 public:
-    enum Level { DEBUG, INFO, WARNING, ERROR, FATAL };
+    enum Level { LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_FATAL };
     
-    Logger(const std::string& filename = "hvc.log");
+    Logger(const std::string& filename = "havel.log");
     ~Logger();
     
     void debug(const std::string& message);
@@ -24,7 +24,7 @@ private:
     void log(Level level, const std::string& message);
     
     std::ofstream logFile;
-    Level logLevel = INFO;
+    Level logLevel = LOG_INFO;
     std::mutex logMutex;
 };
 

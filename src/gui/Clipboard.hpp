@@ -4,14 +4,14 @@
 #include <vector>
 #include <X11/Xlib.h>
 #include <cairo/cairo.h>
-
+#include <functional>
+#define XA_CLIPBOARD(display) XInternAtom(display, "CLIPBOARD", False)
 namespace havel {
-
 class Clipboard {
 public:
     // Singleton access
     static Clipboard& Instance();
-    
+
     // Data format types
     enum class Format {
         TEXT,

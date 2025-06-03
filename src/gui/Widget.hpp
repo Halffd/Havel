@@ -2,7 +2,9 @@
 #include <memory>
 #include "Theme.hpp"
 #include "GUIEvent.hpp"
-
+#include <cairo/cairo.h>
+#include <functional>
+#include <unordered_map>
 namespace havel {
 
 enum class IconPosition {
@@ -66,11 +68,11 @@ protected:
         std::function<void(float)> callback;
     };
     std::unordered_map<std::string, Animation> animations;
+    bool needsRedraw{false};
     void UpdateAnimations(float deltaTime);
-    
+
 private:
     Widget* parent{nullptr};
-    bool needsRedraw{false};
     bool needsLayout{false};
 };
 

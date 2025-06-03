@@ -9,11 +9,11 @@ namespace havel {
 class Logger {
 public:
     enum class Level {
-        DEBUG,
-        INFO,
-        WARNING,
-        ERROR,
-        FATAL
+        LOG_DEBUG,
+        LOG_INFO,
+        LOG_WARNING,
+        LOG_ERROR,
+        LOG_FATAL
     };
 
     static Logger& getInstance() {

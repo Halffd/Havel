@@ -522,7 +522,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "0", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "0"}); }, nullptr, mpvBaseId++ },
     { "m", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
     { "minus", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "-1"}); }, nullptr, mpvBaseId++ },
-    { "equals", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
+    { "equal", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
 
     // Special Keycode (94)
     { "<", "currentMode == 'gaming'",

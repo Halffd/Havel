@@ -416,7 +416,7 @@ void Interpreter::InitializeClipboardModule() {
     auto clipboardModule = std::make_shared<Module>("clipboard");
     
     // Add clipboard.getText() function
-    clipboardModule->AddFunction("get", [this](const std::vector<HavelValue>& args) -> HavelValue {
+    clipboardModule->AddFunction("get", [this](const std::vector<HavelValue>&) -> HavelValue {
         return clipboard->GetText();
     });
     

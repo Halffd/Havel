@@ -1233,7 +1233,7 @@ HHOOK IO::keyboardHook = NULL;
         keyName = ToLower(keyName);
         if (keyName == "minus")
             return XK_minus;
-        if (keyName == "equals")
+        if (keyName == "equals" || keyName == "equal")
             return XK_equal;
         if (keyName == "esc")
             return XK_Escape;

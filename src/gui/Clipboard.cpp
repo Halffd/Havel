@@ -9,11 +9,15 @@
 
 namespace havel {
 
-struct ClipboardData {
-    std::vector<uint8_t> data;
-    Format format;
-    std::string mimeType;
-};
+    struct ClipboardData {
+        std::string text_data;           // For text data
+        std::vector<uint8_t> binary_data; // For binary data
+        Clipboard::Format format;
+
+        // Getter that returns the right type based on format
+        std::string& data() { return text_data; }
+        const std::string& data() const { return text_data; }
+    };
 
 struct Clipboard::Impl {
     Display* display{nullptr};

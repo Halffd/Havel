@@ -45,7 +45,7 @@ clipboard.get
 
 // Complex workflows
 ^V => {
-    clipboard.out
+    clipbooard.get
         | text.trim
         | text.sanitize
         | window.paste
@@ -53,10 +53,10 @@ clipboard.get
 
 // Conditional logic
 F2 => {
-    if clipboard.out | text.contains "error" {
+    if clipbooard.get | text.contains "error" {
         send "DEBUG: "
     }
-    clipboard.out | send
+    clipbooard.get | send
 }
 
 ----

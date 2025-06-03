@@ -18,7 +18,7 @@ struct Logger::Impl {
 
 Logger::Logger() 
     : pImpl(std::make_unique<Impl>())
-    , currentLevel(Level::INFO)
+    , currentLevel(Level::LOG_INFO)
     , consoleOutput(true) {
 }
 
@@ -38,23 +38,23 @@ void Logger::setLogLevel(Level level) {
 }
 
 void Logger::debug(const std::string& message) {
-    log(Level::DEBUG, message);
+    log(Level::LOG_DEBUG, message);
 }
 
 void Logger::info(const std::string& message) {
-    log(Level::INFO, message);
+    log(Level::LOG_INFO, message);
 }
 
 void Logger::warning(const std::string& message) {
-    log(Level::WARNING, message);
+    log(Level::LOG_WARNING, message);
 }
 
 void Logger::error(const std::string& message) {
-    log(Level::ERROR, message);
+    log(Level::LOG_ERROR, message);
 }
 
 void Logger::fatal(const std::string& message) {
-    log(Level::FATAL, message);
+    log(Level::LOG_FATAL, message);
 }
 
 void Logger::log(Level level, const std::string& message) {
@@ -79,11 +79,11 @@ void Logger::log(Level level, const std::string& message) {
 
 std::string Logger::getLevelString(Level level) {
     switch (level) {
-        case Level::DEBUG:   return "DEBUG";
-        case Level::INFO:    return "INFO";
-        case Level::WARNING: return "WARNING";
-        case Level::ERROR:   return "ERROR";
-        case Level::FATAL:   return "FATAL";
+        case Level::LOG_DEBUG:   return "DEBUG";
+        case Level::LOG_INFO:    return "INFO";
+        case Level::LOG_WARNING: return "WARNING";
+        case Level::LOG_ERROR:   return "ERROR";
+        case Level::LOG_FATAL:   return "FATAL";
         default:            return "UNKNOWN";
     }
 }

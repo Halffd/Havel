@@ -1,0 +1,158 @@
+F1 => send "hello"
+Ctrl+V => clipboard.get | text.upper | send
+
+let clipboard_history = []
+
+^+V => {
+    let current = clipboard.get()
+    if (current != clipboard_history[0]) {
+        clipboard_history.push(current)
+    }
+
+    while (clipboard_history.length > 10) {
+        clipboard_history.shift()
+    }
+
+    show_clipboard_menu(clipboard_history)
+}
+let clicking = false
+
+F6 => {
+    clicking = !clicking
+    if (clicking) {
+        while (clicking) {
+            mouse.click(mouse.position())
+            sleep(100)  // 100ms between clicks
+        }
+    }
+}
+
+// Or more advanced with coordinates
+F7 => {
+    let target = {x: 500, y: 300}
+    repeat(10) {
+        mouse.click(target)
+        sleep(50)
+    }
+}
+
+let spamming = false
+
+F8 => {
+    if (window.active().title.contains("Minecraft")) {
+        spamming = !spamming
+        while (spamming) {
+            send "w"  // spam W key
+            sleep(16)  // ~60fps spam rate
+        }
+    } else {
+        gui.message("Only works in Minecraft!")
+    }
+}
+
+// Or target specific window class
+F9 => {
+    if (window.active().class == "notepad.exe") {
+        repeat(100) {
+            send "spam text "
+            sleep(10)
+        }
+    }
+}
+F10 => {
+    gui.message("Hello World!", "Title")
+}
+
+F11 => {
+    let name = gui.input("Enter your name:", "User Input")
+    if (name != null) {
+        send "Hello " + name + "!"
+    }
+}
+
+// Advanced GUI with choices
+F12 => {
+    let choice = gui.choice("Pick action:", ["Copy", "Paste", "Clear"])
+    if (choice == "Copy") {
+        send "^c"
+    } else if (choice == "Paste") {
+        send "^v"
+    } else if (choice == "Clear") {
+        send "^a{Del}"
+    }
+}
+
+let fishing_active = false
+
+^F => {
+    if (window.active().title.contains("World of Warcraft")) {
+        fishing_active = !fishing_active
+
+        gui.message("Fishing macro " + (fishing_active ? "ON" : "OFF"))
+
+        while (fishing_active) {
+            send "1"  // cast fishing line
+            sleep(2000)  // wait for fish
+
+            // Check for fish bite (pixel color change)
+            if (screen.pixel(600, 400).color == "#FF0000") {
+                send "1"  // reel in
+                sleep(1000)
+            }
+        }
+    }
+}
+F12 => {
+    takeScreenshot("screenshot.png")
+    gui.message("Screenshot saved as screenshot.png")
+}
+F11 => {
+    let level = gui.input("Set brightness level (0.0 to 1.0):", "Brightness")
+    setBrightness(level.toFloat())
+}
+F10 => {
+    let text = gui.input("Enter text to copy:", "Clipboard")
+    clipboard.set(text)
+}
+
+F9 => {
+    let pastedText = clipboard.get()
+    gui.message("Pasted text: " + pastedText)
+}
+// Clipboard GUI
+F10 => {
+    let clipboardHistory = getClipboardHistory() // Fetch clipboard history
+    gui.window("Clipboard Manager") {
+        for (item in clipboardHistory) {
+            gui.label(item) // Display each item
+        }
+        gui.button("Clear History") {
+            clearClipboardHistory()
+            gui.message("Clipboard history cleared.")
+        }
+    }
+}
+
+// Screenshot GUI
+F11 => {
+    gui.window("Screenshot Tool") {
+        gui.button("Take Screenshot") {
+            takeScreenshot("screenshot.png")
+            gui.message("Screenshot saved as screenshot.png")
+        }
+        gui.button("Open Screenshot Folder") {
+            openFolder("/path/to/screenshots") // Open folder where screenshots are saved
+        }
+    }
+}
+
+// Brightness GUI
+F12 => {
+    gui.window("Brightness Control") {
+        let currentBrightness = getCurrentBrightness()
+        gui.slider("Adjust Brightness", currentBrightness, 0.0, 1.0) {
+            setBrightness(value)
+            gui.message("Brightness set to " + value)
+        }
+    }
+}

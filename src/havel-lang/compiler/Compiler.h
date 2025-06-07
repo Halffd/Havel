@@ -3,15 +3,32 @@
 #pragma once
 
 #include "../ast/AST.h"
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Module.h>
-#include <llvm/ExecutionEngine/ExecutionEngine.h>
-#include <llvm/ExecutionEngine/MCJIT.h>
-#include <llvm/IR/Verifier.h>
-#include <llvm/Support/TargetSelect.h>
+#include "../runtime/Interpreter.hpp"
+
+// Include our LLVM wrapper which handles X11 macro conflicts
+#include "../llvm/LLVMWrapper.h"
+
+// Import commonly used LLVM types
+using llvm::LLVMContext;
+using llvm::Module;
+using llvm::Function;
+using llvm::BasicBlock;
+using llvm::Value;
+using llvm::Type;
+using llvm::IRBuilder;
+using llvm::StringRef;
+
+// Forward declare LLVM types we need
+namespace llvm {
+class ExecutionEngine;
+class TargetMachine;
+class DataLayout;
+} // namespace llvm
+
 #include <memory>
 #include <unordered_map>
+#include <string>
+#include <vector>
 
 namespace havel::compiler {
 

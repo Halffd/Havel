@@ -1,10 +1,10 @@
 // src/havel-lang/engine/Engine.hpp
 #pragma once
 
-#include "../lexer/Lexer.hpp"
-#include "../parser/Parser.h"
-#include "../runtime/Interpreter.hpp"
-#include "../ast/AST.h"
+#include "lexer/Lexer.hpp"
+#include "parser/Parser.h"
+#include "runtime/Interpreter.hpp"
+#include "ast/AST.h"
 #include <string>
 #include <memory>
 #include <fstream>
@@ -13,8 +13,8 @@
 #include <thread>
 
 #ifdef HAVEL_ENABLE_LLVM
-#include "../compiler/Compiler.hpp"
-#include "../compiler/JIT.hpp"
+#include "compiler/Compiler.h"
+#include "compiler/JIT.h"
 #endif
 
 namespace havel::engine {

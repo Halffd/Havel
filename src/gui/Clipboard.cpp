@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <unordered_map>
 #include <functional>
+#include <cstring>  // For std::memcpy
 
 namespace havel {
 
@@ -17,6 +18,9 @@ namespace havel {
         // Getter that returns the right type based on format
         std::string& data() { return text_data; }
         const std::string& data() const { return text_data; }
+        
+        // Get binary data
+        const std::vector<uint8_t>& get_binary_data() const { return binary_data; }
     };
 
 struct Clipboard::Impl {
@@ -103,27 +107,34 @@ std::string Clipboard::GetText() const {
 }
 
 void Clipboard::SetText(const std::string& text, Selection selection) {
-    Atom selAtom;
-    std::string& selText = pImpl->data[selection][0].data;
-    bool& ownsSelection = pImpl->ownsSelection[selection];
+    Atom selAtom = None;
     
-    selText = text;
-    
-    // Take ownership of selection
-    XSetSelectionOwner(pImpl->display, selAtom, pImpl->window, CurrentTime);
-    
-    if (XGetSelectionOwner(pImpl->display, selAtom) == pImpl->window) {
-        ownsSelection = true;
-    } else {
-        throw std::runtime_error("Failed to take ownership of selection");
+    // Set the appropriate selection atom
+    switch (selection) {
+        case Selection::CLIPBOARD: selAtom = XA_CLIPBOARD(pImpl->display); break;
+        case Selection::PRIMARY: selAtom = XA_PRIMARY; break;
+        case Selection::SECONDARY: selAtom = XA_SECONDARY; break;
     }
     
-    XFlush(pImpl->display);
+    if (selAtom == None) {
+        return;  // Invalid selection
+    }
+    
+    // Prepare the data
+    auto& dataList = pImpl->data[selection];
+    dataList.clear();
+    dataList.emplace_back();
+    dataList.back().text_data = text;
+    dataList.back().format = Format::TEXT;
+    
+    // Take ownership of the selection
+    XSetSelectionOwner(pImpl->display, selAtom, pImpl->window, CurrentTime);
+    pImpl->ownsSelection[selection] = true;
 }
 
 std::string Clipboard::GetText(Selection selection) const {
     Atom selAtom;
-    const std::string& selText = pImpl->data[selection][0].data;
+    const std::string& selText = pImpl->data[selection][0].data();
     const bool& ownsSelection = pImpl->ownsSelection[selection];
     
     // If we own the selection, return our copy
@@ -188,11 +199,11 @@ void Clipboard::HandleSelectionRequest(XSelectionRequestEvent* event) {
     const std::string* text = nullptr;
     
     if (event->selection == XA_CLIPBOARD(pImpl->display) && pImpl->ownsSelection[Selection::CLIPBOARD]) {
-        text = &pImpl->data[Selection::CLIPBOARD][0].data;
+        text = &pImpl->data[Selection::CLIPBOARD][0].data();
     } else if (event->selection == XA_PRIMARY && pImpl->ownsSelection[Selection::PRIMARY]) {
-        text = &pImpl->data[Selection::PRIMARY][0].data;
+        text = &pImpl->data[Selection::PRIMARY][0].data();
     } else if (event->selection == XA_SECONDARY && pImpl->ownsSelection[Selection::SECONDARY]) {
-        text = &pImpl->data[Selection::SECONDARY][0].data;
+        text = &pImpl->data[Selection::SECONDARY][0].data();
     }
     
     if (!text) {
@@ -232,122 +243,147 @@ void Clipboard::SetImage(cairo_surface_t* surface) {
 void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
     if (!surface) return;
     
-    // Convert surface to PNG data
+    // Convert surface to PNG in memory
     std::vector<uint8_t> pngData;
-    cairo_surface_write_to_png_stream(surface, 
-        [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
-            auto* pngData = static_cast<std::vector<uint8_t>*>(closure);
-            pngData->insert(pngData->end(), data, data + length);
-            return CAIRO_STATUS_SUCCESS;
-        }, &pngData);
     
-    // Store the PNG data
-    ClipboardData imageData{
-        std::move(pngData),
-        Format::IMAGE_PNG,
-        "image/png"
+    // Create a memory writer function
+    auto writeFunc = [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
+        std::vector<uint8_t>* vec = static_cast<std::vector<uint8_t>*>(closure);
+        vec->insert(vec->end(), data, data + length);
+        return CAIRO_STATUS_SUCCESS;
     };
     
-    pImpl->data[selection].clear();
-    pImpl->data[selection].push_back(std::move(imageData));
+    // Write surface to PNG in memory
+    cairo_status_t status = cairo_surface_write_to_png_stream(surface, writeFunc, &pngData);
+    if (status != CAIRO_STATUS_SUCCESS) {
+        throw std::runtime_error("Failed to convert surface to PNG");
+    }
     
-    // Take ownership of selection
-    XSetSelectionOwner(pImpl->display, pImpl->atoms.pngImage,
-                      pImpl->window, CurrentTime);
+    // Store the PNG data
+    auto& dataList = pImpl->data[selection];
+    dataList.clear();
+    dataList.emplace_back();
+    dataList.back().binary_data = std::move(pngData);
+    dataList.back().format = Format::IMAGE_PNG;
     
-    NotifyListeners(selection, Format::IMAGE_PNG);
+    // Set the selection owner
+    Atom selAtom = None;
+    switch (selection) {
+        case Selection::CLIPBOARD: selAtom = XA_CLIPBOARD(pImpl->display); break;
+        case Selection::PRIMARY: selAtom = XA_PRIMARY; break;
+        case Selection::SECONDARY: selAtom = XA_SECONDARY; break;
+    }
+    
+    if (selAtom != None) {
+        XSetSelectionOwner(pImpl->display, selAtom, pImpl->window, CurrentTime);
+        pImpl->ownsSelection[selection] = true;
+    }
 }
 
 std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage() const {
     return GetImage(Selection::CLIPBOARD);
 }
 
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> 
-Clipboard::GetImage(Selection selection) const {
-    // Try PNG first
-    if (HasFormat(Format::IMAGE_PNG)) {
-        auto pngData = GetData("image/png");
-        if (!pngData.empty()) {
-            return std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)>(
+std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage(Selection selection) const {
+    // Check if we have data for this selection
+    auto it = pImpl->data.find(selection);
+    if (it == pImpl->data.end() || it->second.empty()) {
+        return {nullptr, cairo_surface_destroy};
+    }
+
+    // Look for image data in the selected clipboard
+    const auto& clipboardData = it->second;
+    for (const auto& data : clipboardData) {
+        if (data.format == Format::IMAGE_PNG) {
+            // Create a memory stream from the PNG data
+            std::vector<uint8_t> pngData = data.binary_data;
+            if (pngData.empty()) {
+                continue;
+            }
+            
+            // Create a copy of the data for the callback
+            auto* pngDataPtr = new std::vector<uint8_t>(pngData);
+            
+            // Use cairo to create a surface from the PNG data
+            auto surface = std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)>(
                 cairo_image_surface_create_from_png_stream(
                     [](void* closure, unsigned char* data, unsigned int length) -> cairo_status_t {
-                        auto* src = static_cast<const std::vector<uint8_t>*>(closure);
-                        static size_t offset = 0;
+                        auto* pngData = static_cast<std::vector<uint8_t>*>(closure);
+                        if (pngData->empty()) {
+                            delete pngData;
+                            return CAIRO_STATUS_READ_ERROR;
+                        }
                         
-                        if (offset >= src->size()) return CAIRO_STATUS_READ_ERROR;
+                        size_t toCopy = std::min<size_t>(length, pngData->size());
+                        std::memcpy(data, pngData->data(), toCopy);
+                        pngData->erase(pngData->begin(), pngData->begin() + toCopy);
                         
-                        size_t remaining = std::min(static_cast<size_t>(length),
-                                                  src->size() - offset);
-                        std::copy_n(src->begin() + offset, remaining, data);
-                        offset += remaining;
+                        if (pngData->empty()) {
+                            delete pngData;
+                        }
                         
-                        return CAIRO_STATUS_SUCCESS;
+                        return toCopy > 0 ? CAIRO_STATUS_SUCCESS : CAIRO_STATUS_READ_ERROR;
                     },
-                    &pngData
+                    pngDataPtr
                 ),
                 cairo_surface_destroy
             );
+
+            if (cairo_surface_status(surface.get()) == CAIRO_STATUS_SUCCESS) {
+                return surface;
+            } else if (pngDataPtr) {
+                delete pngDataPtr;
+            }
         }
     }
-    
-    // Try JPEG
-    if (HasFormat(Format::IMAGE_JPEG)) {
-        // Implementation for JPEG...
-    }
-    
-    // Try BMP
-    if (HasFormat(Format::IMAGE_BMP)) {
-        // Implementation for BMP...
-    }
-    
-    return std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)>(
-        nullptr, cairo_surface_destroy);
-}
 
-// File handling methods
-void Clipboard::SetFiles(const std::vector<std::string>& paths) {
-    SetFiles(paths, Selection::CLIPBOARD);
-}
-
-void Clipboard::SetFiles(const std::vector<std::string>& paths, Selection selection) {
-    std::stringstream ss;
-    for (const auto& path : paths) {
-        ss << "file://" << path << "\n";
-    }
-    
-    ClipboardData fileData{
-        std::vector<uint8_t>(ss.str().begin(), ss.str().end()),
-        Format::URI_LIST,
-        "text/uri-list"
-    };
-    
-    pImpl->data[selection].clear();
-    pImpl->data[selection].push_back(std::move(fileData));
-    
-    XSetSelectionOwner(pImpl->display, pImpl->atoms.uriList,
-                      pImpl->window, CurrentTime);
-    
-    NotifyListeners(selection, Format::URI_LIST);
-}
-
-std::vector<std::string> Clipboard::GetFiles() const {
     return GetFiles(Selection::CLIPBOARD);
 }
 
 std::vector<std::string> Clipboard::GetFiles(Selection selection) const {
-    std::vector<std::string> result;
+    std::vector<std::string> files;
     
-    auto uriList = GetData("text/uri-list");
-    if (uriList.empty()) return result;
+    // Check if we have file data
+    auto it = pImpl->data.find(selection);
+    if (it == pImpl->data.end() || it->second.empty()) {
+        return files;
+    }
     
-    std::string uriStr(uriList.begin(), uriList.end());
-    std::stringstream ss(uriStr);
-    std::string line;
-    
-    while (std::getline(ss, line)) {
-        if (line.empty() || line[0] == '#') continue;
-        if (line.substr(0, 7) == "file://") {
-            result.push_back(line.substr(7));
+    // Look for URI list data
+    for (const auto& data : it->second) {
+        if (data.format == Format::URI_LIST || data.format == Format::FILE_LIST) {
+            // Parse the URI list (one URI per line)
+            std::istringstream iss(data.text_data);
+            std::string uri;
+            while (std::getline(iss, uri)) {
+                // Skip empty lines and comments
+                if (uri.empty() || uri[0] == '#') continue;
+                
+                // Remove any trailing carriage return
+                if (!uri.empty() && uri.back() == '\r') {
+                    uri.pop_back();
+                }
+                
+                // Skip empty lines after CR removal
+                if (uri.empty()) continue;
+                
+                // Basic URI to path conversion (handles file:// URIs)
+                if (uri.find("file://") == 0) {
+                    // Remove file:// prefix
+                    uri = uri.substr(7);
+                    // Handle localhost prefix
+                    if (uri.find("localhost") == 0) {
+                        uri = uri.substr(9);
+                    }
+                    // URL decode if needed (simplified)
+                    // TODO: Implement proper URL decoding
+                }
+                
+                if (!uri.empty()) {
+                    files.push_back(uri);
+                }
+            }
+            break; // Found and processed URI list, no need to check further
         }
     }
     

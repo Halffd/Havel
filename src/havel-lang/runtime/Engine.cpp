@@ -26,8 +26,8 @@ Engine::Engine(const EngineConfig& cfg) : config(cfg) {
 
 void Engine::InitializeComponents() {
     // Always create parser and interpreter
-    parser = std::make_unique<parser::Parser>();
-    interpreter = std::make_unique<runtime::Interpreter>();
+    parser = std::make_unique<havel::parser::Parser>();
+    interpreter = std::make_unique<havel::Interpreter>();
 
     if (config.verboseOutput) {
         std::cout << "✅ Parser and Interpreter initialized" << std::endl;
@@ -72,7 +72,7 @@ void Engine::SetLLVMOptimizationLevel() {
 
 // 🔥 MAIN EXECUTION METHODS 🔥
 
-runtime::HavelValue Engine::RunScript(const std::string& filePath) {
+havel::HavelValue Engine::RunScript(const std::string& filePath) {
     if (config.enableProfiler) StartProfiling();
 
     std::string sourceCode = ReadFile(filePath);
@@ -86,7 +86,7 @@ runtime::HavelValue Engine::RunScript(const std::string& filePath) {
     return result;
 }
 
-runtime::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
+havel::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
     if (config.enableProfiler) StartProfiling();
 
     try {
@@ -116,7 +116,7 @@ runtime::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
 }
 
 #ifdef HAVEL_ENABLE_LLVM
-runtime::HavelValue Engine::ExecuteJIT(const std::string& sourceCode) {
+havel::HavelValue Engine::ExecuteJIT(const std::string& sourceCode) {
     if (config.verboseOutput) {
         std::cout << "🚀 JIT compiling Havel code..." << std::endl;
     }
@@ -293,6 +293,14 @@ std::string Engine::GetVersionInfo() const {
     return "Havel Engine v1.0.0";
 }
 
+ExecutionMode Engine::GetExecutionMode() const {
+    return config.mode;
+}
+
+const PerformanceStats& Engine::GetPerformanceStats() const {
+    return stats;
+}
+
 std::string Engine::GetBuildInfo() const {
     std::stringstream info;
     info << "Havel Engine Build Info:\n";
@@ -349,7 +357,7 @@ void Engine::ValidateScript(const std::string& filePath) {
     }
 }
 
-void Engine::PrintPerformanceStats() {
+void Engine::PrintPerformanceStats() const {
     std::cout << "\n🔥 HAVEL ENGINE PERFORMANCE STATS 🔥\n";
     std::cout << "======================================\n";
     std::cout << GetBuildInfo() << std::endl;

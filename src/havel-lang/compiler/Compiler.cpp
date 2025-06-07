@@ -1,6 +1,6 @@
 #include "Compiler.h"
-#include <llvm/Support/raw_ostream.h>
 #include <iostream>
+#include <stdexcept>
 
 namespace havel::compiler {
     Compiler::Compiler() : builder(context) {
@@ -8,25 +8,22 @@ namespace havel::compiler {
     }
 
     void Compiler::Initialize() {
-        // Initialize LLVM
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        llvm::InitializeNativeTargetAsmParser();
-
-        // Create module
+        // Module is now created by the LLVMInitializer in LLVMWrapper.h
         auto modulePtr = std::make_unique<llvm::Module>("HavelJIT", context);
-        module = modulePtr.get(); // Store raw pointer BEFORE the move
+        module = modulePtr.get();
 
-        // Create execution engine - it takes ownership
+        // Create execution engine with error handling
         std::string error;
-        executionEngine.reset(llvm::EngineBuilder(std::move(modulePtr))
-            .setErrorStr(&error)
+        auto engineBuilder = llvm::EngineBuilder(std::move(modulePtr));
+        engineBuilder.setErrorStr(&error);
+        
+        // Configure the engine
+        executionEngine.reset(engineBuilder
             .setEngineKind(llvm::EngineKind::JIT)
             .create());
 
         if (!executionEngine) {
-            throw std::runtime_error(
-                "Failed to create execution engine: " + error);
+            throw std::runtime_error("Failed to create execution engine: " + error);
         }
 
         CreateStandardLibrary();
@@ -115,7 +112,7 @@ namespace havel::compiler {
         const ast::PipelineExpression &pipeline) {
         if (pipeline.stages.empty()) {
             return llvm::ConstantPointerNull::get(
-                llvm::Type::getInt8PtrTy(context));
+                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0));
         }
 
         // Start with first stage: clipboard.out

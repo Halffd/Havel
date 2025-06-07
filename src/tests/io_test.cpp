@@ -348,7 +348,7 @@ bool test_delayed_callback_execution() {
     
     // Wait for the delayed callback to complete
     bool executed = TestTimer::wait_for_condition(
-        []() { return MockCallbacks::callback_executed; },
+        []() { return MockCallbacks::callback_executed.load(); },
         200 // 200ms timeout
     );
     TEST_ASSERT(executed);

@@ -73,10 +73,7 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 // Constructor
 Interpreter::Interpreter() {
     // Initialize system components
-    io = std::make_shared<IO>();
-    // Use a non-owning shared_ptr with custom deleter that does nothing
-    clipboard = std::shared_ptr<havel::Clipboard>(&havel::Clipboard::Instance(), [](havel::Clipboard*){});
-    windowManager = std::make_shared<WindowManager>();
+    io = std::make_unique<IO>();
     
     // Initialize standard library modules
     InitializeStandardLibrary();
@@ -166,7 +163,15 @@ HavelValue Interpreter::EvaluateHotkeyBinding(const ast::HotkeyBinding& binding)
     // Create a lambda that will evaluate the action when the hotkey is triggered
     auto actionHandler = [this, action = binding.action.get()]() {
         if (action) {
-            this->EvaluateExpression(*action);
+            // Check if the action is an ExpressionStatement
+            if (auto exprStmt = dynamic_cast<const ast::ExpressionStatement*>(action)) {
+                if (exprStmt->expression) {
+                    this->EvaluateExpression(*exprStmt->expression);
+                }
+            } else {
+                // For other statement types, evaluate them as statements
+                this->EvaluateStatement(*action);
+            }
         }
     };
     
@@ -234,7 +239,7 @@ HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression
                         // Handle special properties
                         if (moduleName == "clipboard") {
                             if (propName == "out") {
-                                return clipboard->GetText();
+                                return havel::Clipboard::Instance().GetText();
                             }
                         }
                     }
@@ -363,14 +368,14 @@ HavelValue Interpreter::EvaluateMemberExpression(const ast::MemberExpression& me
             // Handle special properties
             if (moduleName == "clipboard") {
                 if (propName == "text") {
-                    return clipboard->GetText();
+                    return havel::Clipboard::Instance().GetText();
                 }
             } else if (moduleName == "window") {
                 if (propName == "title") {
-                    wID activeWin = windowManager->GetActiveWindow();
+                    wID activeWin = WindowManager::GetActiveWindow();
                     if (activeWin != 0) {
                         Window window("", activeWin);
-                        return window.Title();
+                        return window.Title(activeWin);
                     }
                     return "";
                 }
@@ -416,15 +421,15 @@ void Interpreter::InitializeClipboardModule() {
     auto clipboardModule = std::make_shared<Module>("clipboard");
     
     // Add clipboard.getText() function
-    clipboardModule->AddFunction("get", [this](const std::vector<HavelValue>&) -> HavelValue {
-        return clipboard->GetText();
+    clipboardModule->AddFunction("getText", [](const std::vector<HavelValue>&) -> HavelValue {
+        return havel::Clipboard::Instance().GetText();
     });
     
     // Add clipboard.setText(text) function
-    clipboardModule->AddFunction("set", [this](const std::vector<HavelValue>& args) -> HavelValue {
+    clipboardModule->AddFunction("setText", [](const std::vector<HavelValue>& args) -> HavelValue {
         if (!args.empty()) {
             std::string text = Interpreter::ValueToString(args[0]);
-            clipboard->SetText(text);
+            havel::Clipboard::Instance().SetText(text);
             return true;
         }
         return false;
@@ -496,28 +501,28 @@ void Interpreter::InitializeWindowModule() {
     auto windowModule = std::make_shared<Module>("window");
     
     // Add window.getTitle() function
-    windowModule->AddFunction("getTitle", [this](const std::vector<HavelValue>& args) -> HavelValue {
-        wID activeWin = windowManager->GetActiveWindow();
+    windowModule->AddFunction("getTitle", [](const std::vector<HavelValue>& args) -> HavelValue {
+        wID activeWin = WindowManager::GetActiveWindow();
         if (activeWin != 0) {
             Window window("", activeWin);
-            return window.Title();
+            return window.Title(activeWin);
         }
         return "";
     });
     
     // Add window.getClass() function
-    windowModule->AddFunction("getClass", [this](const std::vector<HavelValue>& args) -> HavelValue {
-        return windowManager->GetActiveWindowClass();
+    windowModule->AddFunction("getClass", [](const std::vector<HavelValue>& args) -> HavelValue {
+        return WindowManager::GetActiveWindowClass();
     });
     
     // Add window.focus(title) function
-    windowModule->AddFunction("focus", [this](const std::vector<HavelValue>& args) -> HavelValue {
+    windowModule->AddFunction("focus", [](const std::vector<HavelValue>& args) -> HavelValue {
         if (!args.empty()) {
             std::string title = Interpreter::ValueToString(args[0]);
-            wID winId = windowManager->FindByTitle(title.c_str());
+            wID winId = WindowManager::FindByTitle(title.c_str());
             if (winId != 0) {
                 Window window("", winId);
-                window.Activate();
+                window.Activate(winId);
                 return true;
             }
         }

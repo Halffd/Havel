@@ -41,7 +41,7 @@ void HotkeyManager::Zoom(int zoom, IO& io) {
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
     : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine),
       brightnessManager(), verboseKeyLogging(false), verboseWindowLogging(false),
-      mpvHotkeysGrabbed(false), trackWindowFocus(false), lastActiveWindowId(0) {
+      verboseConditionLogging(false), mpvHotkeysGrabbed(false), trackWindowFocus(false), lastActiveWindowId(0), m_isZooming(false), videoPlaying(false), lastVideoCheck(0) {
     loadVideoSites();
 }
 
@@ -204,7 +204,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^!l", []() {
         system("livelink screen toggle 1");
     });
-    io.Hotkey("f10", [this]() {
+    io.Hotkey("f10", []() {
         system("~/scripts/str");
     });
     io.Hotkey("^!k", []() {
@@ -237,7 +237,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         WindowManager::MoveWindow(3);
     });
 
-    io.Hotkey("#right", [this]() {
+    io.Hotkey("#right", []() {
         lo.debug("Moving window right");
         // Move window to next monitor using MoveWindow(4) for right movement
         WindowManager::MoveWindow(4);
@@ -258,7 +258,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
             io.Suspend(0); // Special case: 0 means suspend all hotkeys
             lo.debug("Hotkeys suspended");
         }}},
-        {"#Esc", {"Restart application", [this]() {
+        {"#Esc", {"Restart application", []() {
             lo.info("Restarting application");
             // Get current executable path using the correct namespace
             std::string exePath = havel::GetExecutablePath();
@@ -398,7 +398,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     static std::atomic<bool> genshinAutomationActive(false);
     static AutoRunner genshinAutoRunner(io);
     AddContextualHotkey("/", "currentMode == 'gaming'",
-        [this]() {
+        []() {
             lo.info("Genshin Impact detected - Starting specialized auto actions");
             genshinAutoRunner.toggle();
         },
@@ -1089,8 +1089,33 @@ bool HotkeyManager::isGamingWindow() {
 
     lo.info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
 
+    // Configuration for autoclicker timing (in milliseconds)
+    struct AutoClickerConfig {
+        int clickInterval = 50;  // Time between click sequences
+        int clickHold = 20;      // Time to hold button down
+    };
+    
+    static AutoClickerConfig config;  // Static to persist between calls
+    
+    // Helper function to handle mouse button clicks
+    auto clickButton = [this, &button](MouseAction action) {
+        if (button == "Button1" || button == "Left") {
+            io.Click(MouseButton::Left, action);
+        } else if (button == "Button2" || button == "Right") {
+            io.Click(MouseButton::Right, action);
+        } else if (button == "Button3" || button == "Middle") {
+            io.Click(MouseButton::Middle, action);
+        } else if (button == "Side1") {
+            io.Click(MouseButton::Side1, action);
+        } else if (button == "Side2") {
+            io.Click(MouseButton::Side2, action);
+        } else {
+            lo.error("Invalid mouse button: " + button);
+        }
+    };
+
     // ONE thread that handles everything
-    autoclickerThread = std::thread([this, button]() {
+    autoclickerThread = std::thread([this, button, clickButton]() {
         while (autoclickerActive) {
             // Check if window changed
             wID activeWindow = WindowManager::GetActiveWindow();
@@ -1100,22 +1125,14 @@ bool HotkeyManager::isGamingWindow() {
                 break;
             }
 
-            // Click that mouse!
-            if (button == "Button1" || button == "Left") {
-                io.Click(MouseButton::Left, MouseAction::Click);
-            } else if (button == "Button2" || button == "Right") {
-                io.Click(MouseButton::Right, MouseAction::Click);
-            } else if (button == "Button3" || button == "Middle") {
-                io.Click(MouseButton::Middle, MouseAction::Click);
-            } else if (button == "Side1") {
-                io.Click(MouseButton::Side1, MouseAction::Click);
-            } else if (button == "Side2") {
-                io.Click(MouseButton::Side2, MouseAction::Click);
-            } else {
-                lo.error("Invalid mouse button: " + button);
-            }
-            // Sleep between clicks (don't destroy the CPU)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Click sequence
+            clickButton(MouseAction::Hold);
+            std::this_thread::sleep_for(std::chrono::milliseconds(config.clickHold));
+            clickButton(MouseAction::Release);
+            
+            // Sleep for the rest of the interval
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(config.clickInterval - config.clickHold));
         }
 
         lo.info("Autoclicker thread terminated");

@@ -17,6 +17,7 @@ namespace havel {
                 static Cleanup cleanup;
                 XSetErrorHandler(X11ErrorHandler);
                 XSetIOErrorHandler([](Display* display) -> int {
+                    (void)display; // Mark as unused
                     std::cerr << "X11 I/O Error - Display connection lost\n";
                     std::exit(EXIT_FAILURE);
                     return 0;

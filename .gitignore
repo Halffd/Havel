@@ -18,4 +18,6 @@ build-release
 
 # Precompiled headers
 *.gch
-*.pch
+*.pch# Log files
+log/*.log
+log/*.log.*

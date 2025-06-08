@@ -257,7 +257,7 @@ HHOOK IO::keyboardHook = NULL;
         XSelectInput(display, root, KeyPressMask);
 
         // Helper function to check if a keysym is a modifier
-        auto IsModifierKey = [](KeySym ks) -> bool {
+        [[maybe_unused]] auto IsModifierKey = [](KeySym ks) -> bool {
             return ks == XK_Shift_L || ks == XK_Shift_R ||
                    ks == XK_Control_L || ks == XK_Control_R ||
                    ks == XK_Alt_L || ks == XK_Alt_R ||
@@ -552,10 +552,18 @@ HHOOK IO::keyboardHook = NULL;
     }
 
     bool IO::EmitClick(int btnCode, int action) {
+        // For autoclicker: always send down, short delay, then up, for each cycle
+        if (action == 1) {
+            // Click is implemented as Hold followed by Release
+            EmitToUinput(btnCode, true);
+            std::this_thread::sleep_for(std::chrono::milliseconds(20)); // 20ms hold
+            EmitToUinput(btnCode, false);
+            return true;
+        }
+
         input_event ev = {};
 
         if (action == 2) {
-            // Click
             // Press
             ev.type = EV_KEY;
             ev.code = btnCode;
@@ -818,7 +826,7 @@ HHOOK IO::keyboardHook = NULL;
             {'@', "toggle_uinput"},
         };
 
-        auto SendKey = [&](const std::string &keyName, bool down) {
+        auto SendKeyImpl = [&](const std::string &keyName, bool down) {
             if (useUinput) {
                 int code = EvdevNameToKeyCode(keyName);
                 // must return evdev keycode
@@ -826,6 +834,21 @@ HHOOK IO::keyboardHook = NULL;
             } else {
                 SendX11Key(keyName, down);
             }
+        };
+
+        auto SendKey = [&](const std::string &keyName, bool down) {
+            // Before sending a new hotkey, always release stuck modifiers
+            if (!down) {
+                // If releasing, nothing special
+            } else if (!activeModifiers.empty()) {
+                for (const auto &mod : activeModifiers) {
+                    SendKeyImpl(mod, false);
+                }
+                activeModifiers.clear();
+            }
+
+            // Use SendKeyImpl to handle the actual key sending
+            SendKeyImpl(keyName, down);
         };
 
         size_t i = 0;
@@ -889,11 +912,15 @@ HHOOK IO::keyboardHook = NULL;
             ++i;
         }
 
-        // Release all modifiers that are still held
+        // Release all modifiers that are still held as a fail-safe
         for (const auto &mod: activeModifiers) {
-            if (modifierKeys.count(mod))
+            if (modifierKeys.count(mod)) {
                 SendKey(modifierKeys[mod], false);
+            } else {
+                SendKey(mod, false);
+            }
         }
+        activeModifiers.clear();
 #endif
     }
 
@@ -972,18 +999,18 @@ HHOOK IO::keyboardHook = NULL;
             }
         }
 
-        HotKey hk{
-            .alias = rawInput,
-            .key = static_cast<Key>(keycode),
-            .modifiers = modifiers,
-            .callback = std::move(action),
-            .enabled = true,
-            .blockInput = exclusive,
-            .suspend = suspendKey,
-            .exclusive = exclusive,
-            .success = (display && keycode > 0),
-            .evdev = isEvdev
-        };
+        HotKey hk;
+        hk.alias = rawInput;
+        hk.key = static_cast<Key>(keycode);
+        hk.modifiers = modifiers;
+        hk.callback = std::move(action);
+        hk.action = "";  // Initialize empty action string
+        hk.enabled = true;
+        hk.blockInput = exclusive;
+        hk.suspend = suspendKey;
+        hk.exclusive = exclusive;
+        hk.success = (display && keycode > 0);
+        hk.evdev = isEvdev;
 
         hotkeys[id] = hk;
         return hotkeys[id];
@@ -1476,21 +1503,23 @@ HHOOK IO::keyboardHook = NULL;
 
         std::thread([=]() {
             if (milliseconds < 0) {
+                // One-time timer after delay
                 std::this_thread::sleep_for(
                     std::chrono::milliseconds(-milliseconds));
                 if (*running) func();
             } else {
+                // Repeating timer
                 while (*running) {
                     std::this_thread::sleep_for(
                         std::chrono::milliseconds(milliseconds));
-                    if (*running) func();
+                    if (!*running) break;
+                    func();
                 }
             }
         }).detach();
 
         return running;
     }
-
 
     // Display a message box
     void IO::MsgBox(const std::string &message) {
@@ -1885,8 +1914,7 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                     std::vector<HotKey *> matches;
 
                     for (auto &[id, hotkey]: hotkeys) {
-                        if (!hotkey.enabled || !hotkey.evdev || hotkey.key !=
-                            code)
+                        if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
                             continue;
 
                         // Exact modifier matching

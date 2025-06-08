@@ -1,26 +1,38 @@
 #include "Clipboard.hpp"
 #include <X11/Xatom.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
 #include <sstream>
+#include <cstring>
+#include <memory>
 #include <algorithm>
+#include <system_error>
 #include <unordered_map>
 #include <functional>
-#include <cstring>  // For std::memcpy
+#include <algorithm>
+using namespace havel;
 
 namespace havel {
 
     struct ClipboardData {
-        std::string text_data;           // For text data
-        std::vector<uint8_t> binary_data; // For binary data
-        Clipboard::Format format;
-
-        // Getter that returns the right type based on format
+        std::string text_data;
+        std::vector<uint8_t> binary_data;
+        std::vector<std::string> file_paths;
+        havel::Clipboard::Format format;
+        std::string mime_type;
+        
+        ClipboardData() : format(havel::Clipboard::Format::TEXT) {}
+        
         std::string& data() { return text_data; }
         const std::string& data() const { return text_data; }
-        
-        // Get binary data
         const std::vector<uint8_t>& get_binary_data() const { return binary_data; }
+        
+        bool empty() const { 
+            return text_data.empty() && binary_data.empty() && file_paths.empty();
+        }
     };
 
 struct Clipboard::Impl {
@@ -133,21 +145,65 @@ void Clipboard::SetText(const std::string& text, Selection selection) {
 }
 
 std::string Clipboard::GetText(Selection selection) const {
-    Atom selAtom;
+    Atom selAtom = XA_PRIMARY; // Default to PRIMARY selection
     const std::string& selText = pImpl->data[selection][0].data();
     const bool& ownsSelection = pImpl->ownsSelection[selection];
     
-    // If we own the selection, return our copy
-    if (ownsSelection) {
-        return selText;
+    try {
+        // Default implementation: only support direct copy for now
+        if (ownsSelection) {
+            return selText;
+        }
+        
+        // Request the selection from its owner
+        Window owner = XGetSelectionOwner(pImpl->display, selAtom);
+        if (owner == None) {
+            return "";
+        }
+        
+        // Convert selection to UTF8
+        XConvertSelection(pImpl->display, selAtom, pImpl->atoms.utf8String,
+                         selAtom, pImpl->window, CurrentTime);
+        
+        // Wait for SelectionNotify event
+        XEvent event;
+        do {
+            XNextEvent(pImpl->display, &event);
+        } while (event.type != SelectionNotify ||
+                 event.xselection.selection != selAtom);
+        
+        if (event.xselection.property == None) {
+            return "";
+        }
+        
+        // Read the selection property
+        Atom type;
+        int format;
+        unsigned long nitems, bytes_after;
+        unsigned char* data;
+        
+        XGetWindowProperty(pImpl->display, pImpl->window, selAtom,
+                          0, LONG_MAX, False, AnyPropertyType,
+                          &type, &format, &nitems, &bytes_after, &data);
+        
+        std::string result;
+        if (data) {
+            result = std::string(reinterpret_cast<char*>(data), nitems);
+            XFree(data);
+        }
+        
+        return result;
+    } catch (const ClipboardAccessException& e) {
+        // Actually handle this specific case
+        initialize_clipboard();
+        return get_clipboard_text(); // retry
+    } catch (const std::system_error& e) {
+        if (e.code() == std::errc::permission_denied) {
+            log_permission_error();
+            return ""; // reasonable fallback
+        }
+        throw; // re-throw what we can't handle
     }
-    
-    // Request the selection from its owner
-    Window owner = XGetSelectionOwner(pImpl->display, selAtom);
-    if (owner == None) {
-        return "";
-    }
-    
     // Convert selection to UTF8
     XConvertSelection(pImpl->display, selAtom, pImpl->atoms.utf8String,
                      selAtom, pImpl->window, CurrentTime);
@@ -231,7 +287,7 @@ void Clipboard::HandleSelectionRequest(XSelectionRequestEvent* event) {
     XFlush(pImpl->display);
 }
 
-void Clipboard::HandleSelectionNotify(XSelectionEvent* event) {
+void Clipboard::HandleSelectionNotify(XSelectionEvent* /*event*/) {
     // Handle incoming selection data if needed
 }
 
@@ -246,27 +302,24 @@ void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
     // Convert surface to PNG in memory
     std::vector<uint8_t> pngData;
     
-    // Create a memory writer function
-    auto writeFunc = [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
-        std::vector<uint8_t>* vec = static_cast<std::vector<uint8_t>*>(closure);
-        vec->insert(vec->end(), data, data + length);
+    // Proper C++ capture - no void* nonsense
+    auto writeFunc = [&pngData](void*, const unsigned char* data, unsigned int length) -> cairo_status_t {
+        pngData.insert(pngData.end(), data, data + length);
         return CAIRO_STATUS_SUCCESS;
     };
     
-    // Write surface to PNG in memory
-    cairo_status_t status = cairo_surface_write_to_png_stream(surface, writeFunc, &pngData);
+    cairo_status_t status = cairo_surface_write_to_png_stream(surface, writeFunc, nullptr);
     if (status != CAIRO_STATUS_SUCCESS) {
-        throw std::runtime_error("Failed to convert surface to PNG");
+        throw std::runtime_error("Failed to convert surface to PNG: " + std::string(cairo_status_to_string(status)));
     }
     
-    // Store the PNG data
+    // Rest stays the same...
     auto& dataList = pImpl->data[selection];
     dataList.clear();
     dataList.emplace_back();
     dataList.back().binary_data = std::move(pngData);
     dataList.back().format = Format::IMAGE_PNG;
     
-    // Set the selection owner
     Atom selAtom = None;
     switch (selection) {
         case Selection::CLIPBOARD: selAtom = XA_CLIPBOARD(pImpl->display); break;
@@ -280,68 +333,9 @@ void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
     }
 }
 
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage() const {
-    return GetImage(Selection::CLIPBOARD);
-}
-
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage(Selection selection) const {
-    // Check if we have data for this selection
-    auto it = pImpl->data.find(selection);
-    if (it == pImpl->data.end() || it->second.empty()) {
-        return {nullptr, cairo_surface_destroy};
-    }
-
-    // Look for image data in the selected clipboard
-    const auto& clipboardData = it->second;
-    for (const auto& data : clipboardData) {
-        if (data.format == Format::IMAGE_PNG) {
-            // Create a memory stream from the PNG data
-            std::vector<uint8_t> pngData = data.binary_data;
-            if (pngData.empty()) {
-                continue;
-            }
-            
-            // Create a copy of the data for the callback
-            auto* pngDataPtr = new std::vector<uint8_t>(pngData);
-            
-            // Use cairo to create a surface from the PNG data
-            auto surface = std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)>(
-                cairo_image_surface_create_from_png_stream(
-                    [](void* closure, unsigned char* data, unsigned int length) -> cairo_status_t {
-                        auto* pngData = static_cast<std::vector<uint8_t>*>(closure);
-                        if (pngData->empty()) {
-                            delete pngData;
-                            return CAIRO_STATUS_READ_ERROR;
-                        }
-                        
-                        size_t toCopy = std::min<size_t>(length, pngData->size());
-                        std::memcpy(data, pngData->data(), toCopy);
-                        pngData->erase(pngData->begin(), pngData->begin() + toCopy);
-                        
-                        if (pngData->empty()) {
-                            delete pngData;
-                        }
-                        
-                        return toCopy > 0 ? CAIRO_STATUS_SUCCESS : CAIRO_STATUS_READ_ERROR;
-                    },
-                    pngDataPtr
-                ),
-                cairo_surface_destroy
-            );
-
-            if (cairo_surface_status(surface.get()) == CAIRO_STATUS_SUCCESS) {
-                return surface;
-            } else if (pngDataPtr) {
-                delete pngDataPtr;
-            }
-        }
-    }
-
-    return GetFiles(Selection::CLIPBOARD);
-}
-
-std::vector<std::string> Clipboard::GetFiles(Selection selection) const {
+std::vector<std::string> Clipboard::GetFiles() const {
     std::vector<std::string> files;
+    Selection selection = Selection::CLIPBOARD;
     
     // Check if we have file data
     auto it = pImpl->data.find(selection);
@@ -387,68 +381,103 @@ std::vector<std::string> Clipboard::GetFiles(Selection selection) const {
         }
     }
     
-    return result;
+    return files;
 }
 
-// HTML/RTF handling
-void Clipboard::SetHTML(const std::string& html) {
-    ClipboardData htmlData{
-        std::vector<uint8_t>(html.begin(), html.end()),
-        Format::HTML,
-        "text/html"
-    };
-    
-    pImpl->data[Selection::CLIPBOARD].clear();
-    pImpl->data[Selection::CLIPBOARD].push_back(std::move(htmlData));
-    
-    XSetSelectionOwner(pImpl->display, pImpl->atoms.html,
-                      pImpl->window, CurrentTime);
-    
-    NotifyListeners(Selection::CLIPBOARD, Format::HTML);
+void havel::Clipboard::SetHTML(const std::string& html) {
+    try {
+        ClipboardData htmlData;
+        htmlData.text_data = html;
+        htmlData.format = Format::HTML;
+        htmlData.mime_type = "text/html";
+        
+        pImpl->data[Selection::CLIPBOARD].clear();
+        pImpl->data[Selection::CLIPBOARD].push_back(std::move(htmlData));
+        
+        XSetSelectionOwner(pImpl->display, pImpl->atoms.html,
+                         pImpl->window, CurrentTime);
+        
+        NotifyListeners(Selection::CLIPBOARD, Format::HTML);
+    } catch (const std::exception& e) {
+        std::cerr << "Error in SetHTML: " << e.what() << std::endl;
+        throw;
+    }
 }
 
-std::string Clipboard::GetHTML() const {
-    auto htmlData = GetData("text/html");
-    return std::string(htmlData.begin(), htmlData.end());
+std::string havel::Clipboard::GetHTML() const {
+    try {
+        auto& dataList = pImpl->data[Selection::CLIPBOARD];
+        if (!dataList.empty() && dataList[0].format == Format::HTML) {
+            return dataList[0].data();
+        }
+        return "";
+    } catch (const std::exception& e) {
+        std::cerr << "Error in GetHTML: " << e.what() << std::endl;
+        return "";
+    }
 }
 
 // Custom format handling
-void Clipboard::SetData(const std::string& format, const std::vector<uint8_t>& data) {
-    RegisterFormat(format);
-    
-    ClipboardData customData{
-        data,
-        Format::CUSTOM,
-        format
-    };
-    
-    pImpl->data[Selection::CLIPBOARD].clear();
-    pImpl->data[Selection::CLIPBOARD].push_back(std::move(customData));
-    
-    XSetSelectionOwner(pImpl->display, pImpl->customFormats[format],
-                      pImpl->window, CurrentTime);
-    
-    NotifyListeners(Selection::CLIPBOARD, Format::CUSTOM);
+void havel::Clipboard::SetData(const std::string& format, const std::vector<uint8_t>& data) {
+    try {
+        RegisterFormat(format);
+        
+        ClipboardData customData;
+        customData.binary_data = data;
+        customData.format = Format::CUSTOM;
+        customData.mime_type = format;
+        
+        pImpl->data[Selection::CLIPBOARD].clear();
+        pImpl->data[Selection::CLIPBOARD].push_back(std::move(customData));
+        
+        // Set selection owner for custom format
+        Atom formatAtom = XInternAtom(pImpl->display, format.c_str(), False);
+        XSetSelectionOwner(pImpl->display, formatAtom, pImpl->window, CurrentTime);
+        
+        NotifyListeners(Selection::CLIPBOARD, Format::CUSTOM);
+    } catch (const std::exception& e) {
+        std::cerr << "Error in SetData: " << e.what() << std::endl;
+        throw;
+    }
 }
 
-std::vector<uint8_t> Clipboard::GetData(const std::string& format) const {
-    // Implementation for getting custom format data...
-    return std::vector<uint8_t>();
+std::vector<uint8_t> havel::Clipboard::GetData(const std::string& format) const {
+    try {
+        auto& dataList = pImpl->data[Selection::CLIPBOARD];
+        for (const auto& data : dataList) {
+            if (data.format == Format::CUSTOM && data.mime_type == format) {
+                return data.get_binary_data();
+            }
+        }
+        return {};
+    } catch (const std::exception& e) {
+        std::cerr << "Error in GetData: " << e.what() << std::endl;
+        return {};
+    }
 }
 
 // Helper methods
-void Clipboard::RegisterFormat(const std::string& format) {
+void havel::Clipboard::RegisterFormat(const std::string& format) {
     if (pImpl->customFormats.find(format) == pImpl->customFormats.end()) {
         Atom atom = XInternAtom(pImpl->display, format.c_str(), False);
         pImpl->customFormats[format] = atom;
     }
 }
 
-bool Clipboard::ConvertData(const std::vector<uint8_t>& data,
-                          Format fromFormat, Format toFormat,
-                          std::vector<uint8_t>& result) {
-    // Implementation for data format conversion...
-    return false;
+bool havel::Clipboard::ConvertData(const std::vector<uint8_t>& data,
+                                 Format fromFormat, Format toFormat,
+                                 std::vector<uint8_t>& result) {
+    try {
+        // Default implementation: only support direct copy for now
+        if (fromFormat == toFormat) {
+            result = data;
+            return true;
+        }
+        return false;
+    } catch (const std::exception& e) {
+        std::cerr << "Error in ConvertData: " << e.what() << std::endl;
+        return false;
+    }
 }
 
-} // namespace havel 
+} // namespace havel

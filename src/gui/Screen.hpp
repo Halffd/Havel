@@ -1,7 +1,22 @@
 #pragma once
+
 #include "Widget.hpp"
-#include <vector>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
+#include <functional>
+
+// Forward declarations
+namespace havel {
+class Button;
+class Screen;
+class InputBox;
+class Dropdown;
+class MessageBox;
+}
+
+#include "Button.hpp"  // Include after forward declarations
 
 namespace havel {
 
@@ -201,15 +216,15 @@ public:
     Dialog& WithIcon(const std::string& iconPath);
     Dialog& WithTheme(const Theme& theme);
     
-    // Show dialog
-    void Show(std::function<void(const DialogResult&)> callback = nullptr);
-    
     // Result handling
     struct DialogResult {
-        int buttonPressed;
+        int buttonPressed{0};
         std::string inputText;
-        size_t dropdownSelection;
+        size_t dropdownSelection{0};
     };
+    
+    // Show dialog
+    void Show(std::function<void(const DialogResult&)> callback = nullptr);
 
 private:
     std::string title;

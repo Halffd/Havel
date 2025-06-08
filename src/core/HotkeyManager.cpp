@@ -1,5 +1,5 @@
 #include "HotkeyManager.hpp"
-#include "utils/Logger.hpp"
+#include "../utils/Logger.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include <iostream>
@@ -168,7 +168,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         io.Send("@!{backspace}");
     });
 
-    io.Hotkey("@ralt", [this]() {
+    io.Hotkey("@ralt", []() {
         std::cout << "ralt" << std::endl;
         WindowManager::MoveWindowToNextMonitor();
     });
@@ -1445,10 +1445,6 @@ void HotkeyManager::showBlackOverlay() {
     Screen* screen = DefaultScreenOfDisplay(display);
     int screenWidth = WidthOfScreen(screen);
     int screenHeight = HeightOfScreen(screen);
-
-    // Check if we can get all monitor information
-    int numMonitors = 0;
-    bool multiMonitorSupport = false;
 
     #ifdef HAVE_XRANDR
     // Use XRandR to get multi-monitor information

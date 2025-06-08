@@ -1,54 +1,122 @@
 #include "GUI.hpp"
+#include "Widget.hpp"
+#include "Layout.hpp"
 #include <gtkmm/cssprovider.h>
+#include <gtkmm/main.h>
+#include <gtkmm/window.h>
+#include <gdk/gdk.h>
 #include <stdexcept>
+#include <iostream>
 
 namespace havel {
 
+// GUI Implementation class
 class GUI::Impl {
 public:
     Impl() = default;
+    ~Impl() = default;
     
     // GTK-specific members
     Glib::RefPtr<Gtk::CssProvider> cssProvider;
     Glib::RefPtr<Gtk::Settings> settings;
+    
+    // Window management
+    std::unique_ptr<Gtk::Window> mainWindow;
+    std::unique_ptr<Gtk::Box> mainBox;
+    std::unique_ptr<Gtk::MenuBar> menuBar;
+    std::unique_ptr<Gtk::Notebook> notebook;
+    
+    // Initialize GTK components
+    void InitializeGTK() {
+        // Initialize GTK if not already initialized
+        if (!Gtk::Main::instance()) {
+            int argc = 0;
+            char** argv = nullptr;
+            Gtk::Main kit(argc, argv);
+        }
+        
+        // Create main window
+        mainWindow = std::make_unique<Gtk::Window>();
+        mainWindow->set_title("Havel Window Manager");
+        mainWindow->set_default_size(1024, 768);
+        
+        // Create main box
+        mainBox = std::make_unique<Gtk::Box>(Gtk::ORIENTATION_VERTICAL, 0);
+        mainWindow->add(*mainBox);
+        
+        // Create menu bar
+        menuBar = std::make_unique<Gtk::MenuBar>();
+        
+        // Create file menu
+        auto fileMenuItem = std::make_unique<Gtk::MenuItem>("_File", true);
+        auto fileMenu = std::make_unique<Gtk::Menu>();
+        
+        // Create quit item
+        auto quitItem = std::make_unique<Gtk::MenuItem>("_Quit", true);
+        quitItem->signal_activate().connect([]() {
+            Gtk::Main::quit();
+        });
+        
+        fileMenu->append(*quitItem);
+        fileMenuItem->set_submenu(*fileMenu);
+        menuBar->append(*fileMenuItem);
+        
+        // Create notebook
+        notebook = std::make_unique<Gtk::Notebook>();
+        
+        // Pack everything
+        mainBox->pack_start(*menuBar, Gtk::PACK_SHRINK);
+        mainBox->pack_start(*notebook);
+        
+        // Show all widgets
+        mainWindow->show_all();
+    }
+    
+    // Cleanup GTK resources
+    void CleanupGTK() {
+        if (mainWindow) {
+            mainWindow->hide();
+            mainWindow.reset();
+        }
+        notebook.reset();
+        menuBar.reset();
+        mainBox.reset();
+    }
 };
 
-MainWindow::MainWindow()
-    : mainBox(Gtk::ORIENTATION_VERTICAL)
-    , notebook() {
-    // Setup window
-    set_title("Window Manager");
-    set_default_size(800, 600);
+// GUI constructor
+GUI::GUI(std::shared_ptr<WindowManager> wm, Mode mode)
+    : windowManager(std::move(wm))
+    , currentMode(mode)
+    , pImpl(std::make_unique<Impl>()) {
     
-    // Add main box
-    add(mainBox);
-    
-    // Setup menu bar
-    auto fileMenu = Gtk::manage(new Gtk::MenuItem("_File", true));
-    auto fileSubMenu = Gtk::manage(new Gtk::Menu());
-    auto quitItem = Gtk::manage(new Gtk::MenuItem("_Quit", true));
-    
-    fileSubMenu->append(*quitItem);
-    fileMenu->set_submenu(*fileSubMenu);
-    menuBar.append(*fileMenu);
-    
-    mainBox.pack_start(menuBar, Gtk::PACK_SHRINK);
-    mainBox.pack_start(notebook);
-    
-    // Connect signals
-    quitItem->signal_activate().connect(
-        sigc::mem_fun(*this, &MainWindow::on_button_clicked));
-    
-    show_all_children();
+    // Initialize the backend based on the specified mode
+    InitializeBackend();
 }
 
-void MainWindow::on_button_clicked() {
-    hide();
+// GUI destructor
+GUI::~GUI() {
+    try {
+        Stop();
+        CleanupBackend();
+    } catch (const std::exception& e) {
+        std::cerr << "Error in GUI destructor: " << e.what() << std::endl;
+    }
 }
 
-bool MainWindow::on_key_press_event(GdkEventKey* event) {
-    // Handle keyboard shortcuts
-    if ((event->state & GDK_CONTROL_MASK) && event->keyval == GDK_KEY_q) {
+// Initialize the appropriate backend
+void GUI::InitializeBackend() {
+    if (pImpl) {
+        pImpl->InitializeGTK();
+    }
+}
+
+// Cleanup backend resources
+void GUI::CleanupBackend() {
+    if (pImpl) {
+        pImpl->CleanupGTK();
+    }
+}
         hide();
         return true;
     }
@@ -165,17 +233,18 @@ void GUI::SetTitle(const std::string& title) { backend->SetTitle(title); }
 void GUI::SetOpacity(float opacity) { backend->SetOpacity(opacity); }
 void GUI::QueueRedraw() { backend->QueueRedraw(); }
 
-void GUI::SetTheme(const Glib::RefPtr<Gtk::Settings>& settings) {
-    pImpl->settings = settings;
-    RefreshTheme();
-}
-
-void GUI::RefreshTheme() {
-    // Apply theme settings
-    if (pImpl->settings) {
-        pImpl->settings->property_gtk_theme_name() = "Adwaita";
-        pImpl->settings->property_gtk_application_prefer_dark_theme() = true;
+void GUI::SetTheme(const Theme& theme) {
+    this->theme = theme;
+    
+    // Apply theme to all widgets
+    for (const auto& widget : widgets) {
+        if (widget) {
+            widget->SetTheme(theme);
+        }
     }
+    
+    // Queue a redraw
+    QueueRedraw();
 }
 
 void GUI::SetupSignals() {
@@ -187,6 +256,4 @@ void GUI::OnWindowClosed() {
     Stop();
 }
 
-} // namespace havel 
-
-} // namespace havel 
+} // namespace havel

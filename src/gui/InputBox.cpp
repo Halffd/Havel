@@ -1,7 +1,15 @@
+#define _USE_MATH_DEFINES  // For M_PI on Linux
+#include <cmath>           // For M_PI and other math constants
 #include "x11_includes.h"
+
+// Define M_PI if not already defined by cmath
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include "Screen.hpp"
 #include <X11/keysym.h>
 #include <cstring>
+#include <limits>  // For std::numeric_limits
 #include <algorithm>
 
 namespace havel {
@@ -92,7 +100,7 @@ void InputBox::Draw(cairo_t* cr) {
     
     // Calculate text position
     cairo_text_extents_t extents;
-    std::string displayText = isPassword ? std::string(text.length(), '•') : text;
+    std::string displayText = isPassword ? std::string(text.length(), '*') : text;
     cairo_text_extents(cr, displayText.c_str(), &extents);
     
     double textX = bounds.x + theme.metrics.padding;
@@ -271,7 +279,7 @@ void InputBox::UpdateCursor(int x) {
         CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size(cr, theme.fonts.dpi / 96.0 * 14);
     
-    std::string displayText = isPassword ? std::string(text.length(), '•') : text;
+    std::string displayText = isPassword ? std::string(text.length(), '*') : text;
     size_t bestPos = 0;
     double bestDist = std::numeric_limits<double>::max();
     

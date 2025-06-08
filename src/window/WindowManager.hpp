@@ -6,7 +6,7 @@
 #include <functional>
 #include <type_traits>
 #include "WindowManagerDetector.hpp"
-#include "utils/Logger.hpp"
+#include "../utils/Logger.hpp"
 
 #ifdef __linux__
 #include <X11/Xlib.h>

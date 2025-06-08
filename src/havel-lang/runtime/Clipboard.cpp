@@ -1,7 +1,6 @@
 #include "Clipboard.hpp"
-#include <X11/Xatom.h>
-#include <X11/Xutil.h>
-#include <cairo/cairo.h>
+
+// Standard C++ includes
 #include <stdexcept>
 #include <vector>
 #include <sstream>
@@ -13,6 +12,454 @@
 #include <chrono>
 #include <thread>
 #include <iostream>
+#include <fstream>
+#include <cstdint>
+#include <cctype>
+#include <iomanip>
+
+// X11 headers must be included in the correct order
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xatom.h>
+#include <X11/X.h>
+#include <X11/keysym.h>
+#include <X11/XF86keysym.h>
+
+// Cairo for image handling
+#include <cairo/cairo.h>
+
+// For file operations
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// For mmap
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+// Standard library includes
+#include <iostream>
+#include <stdexcept>
+#include <algorithm>
+#include <cstring>
+#include <sstream>
+#include <fstream>
+
+// Helper function to convert selection enum to X11 atom
+namespace {
+    Atom GetSelectionAtom(havel::Clipboard::Selection selection, Display* display) {
+        switch (selection) {
+            case havel::Clipboard::Selection::PRIMARY:
+                return XA_PRIMARY;
+            case havel::Clipboard::Selection::SECONDARY: {
+                static Atom secondary = XInternAtom(display, "SECONDARY", False);
+                return secondary;
+            }
+            case havel::Clipboard::Selection::CLIPBOARD: {
+                static Atom clipboard = XInternAtom(display, "CLIPBOARD", False);
+                return clipboard;
+            }
+            default:
+                return None;
+        }
+    }
+
+    // Helper function to convert X11 atom to selection enum
+    havel::Clipboard::Selection GetSelectionFromAtom(Atom atom, Display* display) {
+        if (atom == XA_PRIMARY) {
+            return havel::Clipboard::Selection::PRIMARY;
+        }
+        
+        static Atom secondary = XInternAtom(display, "SECONDARY", False);
+        if (atom == secondary) {
+            return havel::Clipboard::Selection::SECONDARY;
+        }
+        
+        static Atom clipboard = XInternAtom(display, "CLIPBOARD", False);
+        if (atom == clipboard) {
+            return havel::Clipboard::Selection::CLIPBOARD;
+        }
+        
+        return havel::Clipboard::Selection::CLIPBOARD; // Default to CLIPBOARD
+    }
+    
+    // Helper function to get format name as string
+    std::string GetFormatName(havel::Clipboard::Format format) {
+        switch (format) {
+            case havel::Clipboard::Format::TEXT: return "TEXT";
+            case havel::Clipboard::Format::HTML: return "HTML";
+            case havel::Clipboard::Format::RTF: return "RTF";
+            case havel::Clipboard::Format::IMAGE_PNG: return "IMAGE_PNG";
+            case havel::Clipboard::Format::IMAGE_JPEG: return "IMAGE_JPEG";
+            case havel::Clipboard::Format::IMAGE_BMP: return "IMAGE_BMP";
+            case havel::Clipboard::Format::URI_LIST: return "URI_LIST";
+            case havel::Clipboard::Format::FILE_LIST: return "FILE_LIST";
+            case havel::Clipboard::Format::CUSTOM: return "CUSTOM";
+            default: return "UNKNOWN";
+        }
+    }
+    
+    // Helper function to convert string to format
+    havel::Clipboard::Format GetFormatFromName(const std::string& name) {
+        static const std::unordered_map<std::string, havel::Clipboard::Format> formatMap = {
+            {"TEXT", havel::Clipboard::Format::TEXT},
+            {"HTML", havel::Clipboard::Format::HTML},
+            {"RTF", havel::Clipboard::Format::RTF},
+            {"IMAGE_PNG", havel::Clipboard::Format::IMAGE_PNG},
+            {"IMAGE_JPEG", havel::Clipboard::Format::IMAGE_JPEG},
+            {"IMAGE_BMP", havel::Clipboard::Format::IMAGE_BMP},
+            {"URI_LIST", havel::Clipboard::Format::URI_LIST},
+            {"FILE_LIST", havel::Clipboard::Format::FILE_LIST},
+            {"CUSTOM", havel::Clipboard::Format::CUSTOM}
+        };
+        
+        auto it = formatMap.find(name);
+        return (it != formatMap.end()) ? it->second : havel::Clipboard::Format::UNKNOWN;
+    }
+    
+    // Helper function to convert Cairo surface to PNG data
+    bool SurfaceToPNG(cairo_surface_t* surface, std::vector<uint8_t>& pngData) {
+        if (!surface || cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+            return false;
+        }
+        
+        // Create a memory write context
+        cairo_surface_t* pngSurface = nullptr;
+        cairo_status_t status;
+        
+        // Use a lambda function as the write function
+        auto writeFunc = [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
+            std::vector<uint8_t>* pngData = static_cast<std::vector<uint8_t>*>(closure);
+            pngData->insert(pngData->end(), data, data + length);
+            return CAIRO_STATUS_SUCCESS;
+        };
+        
+        // Create a surface that writes to our vector
+        pngSurface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 
+                                              cairo_image_surface_get_width(surface),
+                                              cairo_image_surface_get_height(surface));
+        
+        if (cairo_surface_status(pngSurface) != CAIRO_STATUS_SUCCESS) {
+            if (pngSurface) cairo_surface_destroy(pngSurface);
+            return false;
+        }
+        
+        // Copy the source surface to our new surface
+        cairo_t* cr = cairo_create(pngSurface);
+        cairo_set_source_surface(cr, surface, 0, 0);
+        cairo_paint(cr);
+        
+        // Write PNG data to our vector
+        status = cairo_surface_write_to_png_stream(pngSurface, writeFunc, &pngData);
+        
+        // Cleanup
+        cairo_destroy(cr);
+        cairo_surface_destroy(pngSurface);
+        
+        return status == CAIRO_STATUS_SUCCESS;
+    }
+    
+    // Helper function to create a Cairo surface from PNG data
+    cairo_surface_t* CreateSurfaceFromPNG(const std::vector<uint8_t>& pngData) {
+        if (pngData.empty()) {
+            return nullptr;
+        }
+        
+        // Create a memory read context
+        struct ReadContext {
+            const uint8_t* data;
+            size_t size;
+            size_t offset;
+        };
+        
+        ReadContext ctx{ pngData.data(), pngData.size(), 0 };
+        
+        // Read function for cairo
+        auto readFunc = [](void* closure, unsigned char* data, unsigned int length) -> cairo_status_t {
+            ReadContext* ctx = static_cast<ReadContext*>(closure);
+            if (ctx->offset + length > ctx->size) {
+                return CAIRO_STATUS_READ_ERROR;
+            }
+            
+            std::memcpy(data, ctx->data + ctx->offset, length);
+            ctx->offset += length;
+            return CAIRO_STATUS_SUCCESS;
+        };
+        
+        // Create the surface from PNG data
+        cairo_surface_t* surface = cairo_image_surface_create_from_png_stream(readFunc, &ctx);
+        if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+            if (surface) cairo_surface_destroy(surface);
+            return nullptr;
+        }
+        
+        return surface;
+    }
+    
+    // Helper function to get MIME type from format
+    const char* GetMimeType(havel::Clipboard::Format format) {
+        switch (format) {
+            case havel::Clipboard::Format::TEXT: return "text/plain";
+            case havel::Clipboard::Format::HTML: return "text/html";
+            case havel::Clipboard::Format::RTF: return "text/rtf";
+            case havel::Clipboard::Format::IMAGE_PNG: return "image/png";
+            case havel::Clipboard::Format::IMAGE_JPEG: return "image/jpeg";
+            case havel::Clipboard::Format::IMAGE_BMP: return "image/bmp";
+            case havel::Clipboard::Format::URI_LIST: return "text/uri-list";
+            case havel::Clipboard::Format::FILE_LIST: return "text/uri-list";
+            default: return "application/octet-stream";
+        }
+    }
+    
+    // Helper function to get the current timestamp
+    Time GetCurrentTime(Display* /*display*/) {
+        return CurrentTime; // X11's CurrentTime is 0L
+    }
+    
+    // Helper function to wait for a selection notify event
+    bool WaitForNotify(Display* display, Window window, Atom selection, Atom target, Time /*time*/) {
+        XEvent event;
+        XSync(display, False);
+        
+        // Wait for the selection notify event with a timeout
+        for (int i = 0; i < 50; ++i) { // 50 * 20ms = 1 second timeout
+            if (XCheckTypedWindowEvent(display, window, SelectionNotify, &event)) {
+                XSelectionEvent* sev = reinterpret_cast<XSelectionEvent*>(&event.xselection);
+                if (sev->selection == selection && sev->target == target) {
+                    return true;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        return false;
+    }
+    
+    // Helper function to read property from window
+    std::vector<unsigned char> GetWindowProperty(Display* display, Window window, 
+                                                Atom property, Atom* type_ret = nullptr, 
+                                                int* format_ret = nullptr) {
+        Atom actual_type;
+        int actual_format;
+        unsigned long nitems, bytes_after;
+        unsigned char* data = nullptr;
+        
+        // First get the size of the property
+        if (XGetWindowProperty(display, window, property, 0, 0, False, 
+                              AnyPropertyType, &actual_type, &actual_format, 
+                              &nitems, &bytes_after, &data) != Success) {
+            return {};
+        }
+        
+        if (data) {
+            XFree(data);
+            data = nullptr;
+        }
+        
+        if (nitems == 0 || bytes_after == 0) {
+            return {};
+        }
+        
+        // Now get the actual data
+        if (XGetWindowProperty(display, window, property, 0, nitems + (bytes_after / 4), 
+                              False, AnyPropertyType, &actual_type, &actual_format, 
+                              &nitems, &bytes_after, &data) != Success) {
+            return {};
+        }
+        
+        std::vector<unsigned char> result(data, data + (nitems * (actual_format / 8)));
+        
+        if (type_ret) *type_ret = actual_type;
+        if (format_ret) *format_ret = actual_format;
+        
+        XFree(data);
+        return result;
+    }
+    
+    // Helper function to convert string to atom
+    Atom GetAtom(Display* display, const std::string& name, bool onlyIfExists = false) {
+        return XInternAtom(display, name.c_str(), onlyIfExists ? True : False);
+    }
+    
+    // Helper function to get atom name
+    std::string GetAtomName(Display* display, Atom atom) {
+        if (atom == None) return "None";
+        
+        char* name = XGetAtomName(display, atom);
+        if (!name) return "";
+        
+        std::string result(name);
+        XFree(name);
+        return result;
+    }
+    
+    // Helper function to check if a window is valid
+    bool IsWindowValid(Display* display, Window window) {
+        if (window == None) return false;
+        
+        XWindowAttributes attrs;
+        return XGetWindowAttributes(display, window, &attrs) != 0;
+    }
+    
+    // Helper function to get the current timestamp
+    Time GetTimestamp(Display* display) {
+        XEvent event;
+        Window root = DefaultRootWindow(display);
+        Window win;
+        int x, y;
+        unsigned int mask;
+        
+        // Get the current pointer position to generate a timestamp
+        if (XQueryPointer(display, root, &root, &win, &x, &y, &x, &y, &mask)) {
+            return event.xbutton.time;
+        }
+        
+        // Fallback to current server time
+        XSelectInput(display, root, PropertyChangeMask);
+        XChangeProperty(display, root, XA_WM_NAME, XA_STRING, 8, PropModeAppend, nullptr, 0);
+        XFlush(display);
+        
+        XNextEvent(display, &event);
+        return event.xproperty.time;
+    }
+    
+    // Helper function to convert a vector of strings to a single string with newlines
+    std::string JoinStrings(const std::vector<std::string>& strings, const std::string& delimiter = "\n") {
+        if (strings.empty()) return "";
+        
+        std::string result;
+        for (size_t i = 0; i < strings.size(); ++i) {
+            if (i > 0) result += delimiter;
+            result += strings[i];
+        }
+        return result;
+    }
+    
+    // Helper function to split a string by delimiter
+    std::vector<std::string> SplitString(const std::string& str, char delimiter) {
+        std::vector<std::string> result;
+        std::stringstream ss(str);
+        std::string item;
+        
+        while (std::getline(ss, item, delimiter)) {
+            if (!item.empty()) {
+                result.push_back(item);
+            }
+        }
+        
+        return result;
+    }
+    
+    // Helper function to trim whitespace from string
+    std::string TrimString(const std::string& str) {
+        size_t first = str.find_first_not_of(" \t\n\r\f\v");
+        if (first == std::string::npos) return "";
+        
+        size_t last = str.find_last_not_of(" \t\n\r\f\v");
+        return str.substr(first, (last - first + 1));
+    }
+    
+    // Helper function to check if a string starts with a prefix
+    bool StartsWith(const std::string& str, const std::string& prefix) {
+        return str.size() >= prefix.size() && 
+               str.compare(0, prefix.size(), prefix) == 0;
+    }
+    
+    // Helper function to check if a string ends with a suffix
+    bool EndsWith(const std::string& str, const std::string& suffix) {
+        return str.size() >= suffix.size() && 
+               str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+    }
+    
+    // Helper function to convert string to lowercase
+    std::string ToLower(const std::string& str) {
+        std::string result = str;
+        std::transform(result.begin(), result.end(), result.begin(),
+                      [](unsigned char c) { return std::tolower(c); });
+        return result;
+    }
+    
+    // Helper function to convert string to uppercase
+    std::string ToUpper(const std::string& str) {
+        std::string result = str;
+        std::transform(result.begin(), result.end(), result.begin(),
+                     [](unsigned char c) { return std::toupper(c); });
+        return result;
+    }
+    
+    // Helper function to URL encode a string
+    std::string URLEncode(const std::string& value) {
+        std::ostringstream escaped;
+        escaped.fill('0');
+        escaped << std::hex;
+
+        for (std::string::const_iterator i = value.begin(), n = value.end(); i != n; ++i) {
+            std::string::value_type c = (*i);
+
+            // Keep alphanumeric and other accepted characters intact
+            if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~' || c == '/' || c == '\\') {
+                escaped << c;
+                continue;
+            }
+
+            // Any other characters are percent-encoded
+            escaped << '%' << std::setw(2) << int((unsigned char)c);
+        }
+
+        return escaped.str();
+    }
+
+    // Helper function to URL decode a string
+    std::string URLDecode(const std::string& encoded) {
+        std::string result;
+        result.reserve(encoded.size());
+        
+        for (size_t i = 0; i < encoded.size(); ++i) {
+            if (encoded[i] == '%' && i + 2 < encoded.size()) {
+                // Try to decode percent-encoded sequence
+                char hex[3] = {encoded[i+1], encoded[i+2], '\0'};
+                char* end = nullptr;
+                long value = std::strtol(hex, &end, 16);
+                if (*end == '\0') {
+                    result += static_cast<char>(value);
+                    i += 2; // Skip the next two characters
+                    continue;
+                }
+            } else if (encoded[i] == '+') {
+                // Handle + as space
+                result += ' ';
+                continue;
+            }
+            result += encoded[i];
+        }
+        
+        return result;
+    }
+}
+// Standard C++ includes
+#include <stdexcept>
+#include <vector>
+#include <sstream>
+#include <algorithm>
+#include <unordered_map>
+#include <functional>
+#include <cstring>
+#include <memory>
+#include <chrono>
+#include <thread>
+#include <iostream>
+#include <fstream>
+#include <cstdint>
+
+// For file operations
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+// For mmap
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 namespace havel {
 
@@ -22,15 +469,18 @@ namespace havel {
 struct ClipboardData {
     std::string text_data; ///< Text representation of the data
     std::vector<uint8_t> binary_data; ///< Binary representation of the data
-    Clipboard::Format format; ///< Format type of the data
+    std::vector<std::string> file_paths; ///< File paths for file lists
+    havel::Clipboard::Format format; ///< Format type of the data
     std::string mime_type; ///< MIME type for the data
 
-    ClipboardData() : format(Clipboard::Format::TEXT) {}
+    ClipboardData() : format(havel::Clipboard::Format::TEXT) {}
 
     const std::string& data() const { return text_data; }
     std::string& data() { return text_data; }
     const std::vector<uint8_t>& get_binary_data() const { return binary_data; }
-    bool empty() const { return text_data.empty() && binary_data.empty(); }
+    bool empty() const { 
+        return text_data.empty() && binary_data.empty() && file_paths.empty(); 
+    }
 };
 
 /**
@@ -46,20 +496,21 @@ struct Clipboard::Impl {
 
     // X11 Atoms for various data formats
     struct {
-        Atom targets{0}; 
-        Atom utf8String{0}; 
-        Atom plainText{0}; 
-        Atom pngImage{0}; 
-        Atom jpegImage{0}; 
-        Atom bmpImage{0}; 
-        Atom uriList{0}; 
-        Atom html{0}; 
-        Atom rtf{0}; 
-        Atom clipboard{0}; 
-        Atom primary{0}; 
-        Atom secondary{0}; 
-        Atom timestamp{0}; 
-        Atom multiple{0}; 
+        Atom targets{0};
+        Atom text{0};  // Added missing text atom
+        Atom utf8String{0};
+        Atom plainText{0};
+        Atom pngImage{0};
+        Atom jpegImage{0};
+        Atom bmpImage{0};
+        Atom uriList{0};
+        Atom html{0};
+        Atom rtf{0};
+        Atom clipboard{0};
+        Atom primary{0};
+        Atom secondary{0};
+        Atom timestamp{0};
+        Atom multiple{0};
     } atoms;
 
     std::unordered_map<std::string, Atom> customFormats;
@@ -100,8 +551,45 @@ Clipboard::~Clipboard() {
 void Clipboard::initializeX11() {
     pImpl->display = XOpenDisplay(nullptr);
     if (!pImpl->display) {
-        throw std::runtime_error("Failed to open X11 display connection");
+        throw std::runtime_error("Failed to open X11 display");
     }
+
+    // Create a hidden window for clipboard handling
+    int screen = DefaultScreen(pImpl->display);
+    Window root = DefaultRootWindow(pImpl->display);
+    XSetWindowAttributes attrs;
+    attrs.override_redirect = True;
+    attrs.event_mask = PropertyChangeMask | StructureNotifyMask | ExposureMask | 
+                      SelectionClear | SelectionRequest | SelectionNotify;
+
+    pImpl->window = XCreateWindow(
+        pImpl->display, root,
+        -100, -100, 1, 1, 0,  // x, y, width, height, border_width
+        CopyFromParent,        // depth
+        CopyFromParent,        // class
+        CopyFromParent,        // visual
+        CWOverrideRedirect | CWEventMask, &attrs);
+
+    if (!pImpl->window) {
+        XCloseDisplay(pImpl->display);
+        pImpl->display = nullptr;
+        throw std::runtime_error("Failed to create X11 window");
+    }
+
+    // Initialize X11 atoms
+    pImpl->atoms.primary = XA_PRIMARY;
+    pImpl->atoms.secondary = XInternAtom(pImpl->display, "SECONDARY", False);
+    pImpl->atoms.clipboard = XInternAtom(pImpl->display, "CLIPBOARD", False);
+    pImpl->atoms.utf8String = XInternAtom(pImpl->display, "UTF8_STRING", False);
+    pImpl->atoms.targets = XInternAtom(pImpl->display, "TARGETS", False);
+    pImpl->atoms.text = XA_STRING;
+    pImpl->atoms.html = XInternAtom(pImpl->display, "text/html", False);
+    pImpl->atoms.uriList = XInternAtom(pImpl->display, "text/uri-list", False);
+    
+    // Register for selection events
+    XSelectInput(pImpl->display, pImpl->window, PropertyChangeMask | StructureNotifyMask | 
+                ExposureMask | SelectionClear | SelectionRequest | SelectionNotify);
+    XFlush(pImpl->display);
 }
 
 void Clipboard::initializeAtoms() {
@@ -109,20 +597,12 @@ void Clipboard::initializeAtoms() {
         throw std::runtime_error("Display not initialized");
     }
 
-    pImpl->atoms.clipboard = XInternAtom(pImpl->display, "CLIPBOARD", False);
-    pImpl->atoms.primary = XA_PRIMARY;
-    pImpl->atoms.secondary = XA_SECONDARY;
-    pImpl->atoms.targets = XInternAtom(pImpl->display, "TARGETS", False);
-    pImpl->atoms.timestamp = XInternAtom(pImpl->display, "TIMESTAMP", False);
-    pImpl->atoms.multiple = XInternAtom(pImpl->display, "MULTIPLE", False);
-    pImpl->atoms.utf8String = XInternAtom(pImpl->display, "UTF8_STRING", False);
-    pImpl->atoms.plainText = XInternAtom(pImpl->display, "TEXT", False);
     pImpl->atoms.pngImage = XInternAtom(pImpl->display, "image/png", False);
     pImpl->atoms.jpegImage = XInternAtom(pImpl->display, "image/jpeg", False);
     pImpl->atoms.bmpImage = XInternAtom(pImpl->display, "image/bmp", False);
-    pImpl->atoms.uriList = XInternAtom(pImpl->display, "text/uri-list", False);
-    pImpl->atoms.html = XInternAtom(pImpl->display, "text/html", False);
     pImpl->atoms.rtf = XInternAtom(pImpl->display, "text/rtf", False);
+    pImpl->atoms.timestamp = XInternAtom(pImpl->display, "TIMESTAMP", False);
+    pImpl->atoms.multiple = XInternAtom(pImpl->display, "MULTIPLE", False);
 }
 
 void Clipboard::createWindow() {
@@ -133,7 +613,7 @@ void Clipboard::createWindow() {
     Window root = DefaultRootWindow(pImpl->display);
     XSetWindowAttributes attrs;
     attrs.override_redirect = True;
-    attrs.event_mask = PropertyChangeMask | SelectionClearMask | SelectionRequestMask;
+    attrs.event_mask = PropertyChangeMask | StructureNotifyMask | ExposureMask;
 
     pImpl->window = XCreateWindow(
         pImpl->display, root,
@@ -164,8 +644,145 @@ void Clipboard::SetText(const std::string& text) {
     SetText(text, Selection::CLIPBOARD);
 }
 
+// Text operations
 std::string Clipboard::GetText() const {
     return GetText(Selection::CLIPBOARD);
+}
+
+std::string Clipboard::GetText(Selection selection) const {
+    if (!pImpl->display) {
+        return "";
+    }
+
+    auto it = pImpl->data.find(selection);
+    if (it != pImpl->data.end() && !it->second.empty()) {
+        return it->second[0].text_data;
+    }
+    
+    // Request text from X11 selection
+    Atom selectionAtom = pImpl->getSelectionAtom(selection);
+    return requestSelectionData(selectionAtom, pImpl->atoms.utf8String);
+}
+
+// File operations
+std::vector<std::string> Clipboard::GetFiles(Selection selection) const {
+    if (!pImpl || !pImpl->display) return {};
+    
+    auto it = pImpl->data.find(selection);
+    if (it != pImpl->data.end()) {
+        for (const auto& data : it->second) {
+            if (data.format == Format::URI_LIST || data.format == Format::FILE_LIST) {
+                if (!data.file_paths.empty()) {
+                    return data.file_paths;
+                }
+                
+                // Fall back to parsing the text data
+                if (!data.text_data.empty()) {
+                    std::vector<std::string> files;
+                    parseURIList(data.text_data, files);
+                    return files;
+                }
+            }
+        }
+    }
+    
+    // Try to get files from X11 selection
+    std::string uriList = requestSelectionData(pImpl->getSelectionAtom(selection), pImpl->atoms.uriList);
+    if (!uriList.empty()) {
+        std::vector<std::string> files;
+        parseURIList(uriList, files);
+        return files;
+    }
+    
+    return {};
+}
+
+void Clipboard::parseURIList(const std::string& uriData, std::vector<std::string>& files) const {
+    files.clear();
+    
+    std::istringstream stream(uriData);
+    std::string line;
+    while (std::getline(stream, line)) {
+        // Skip comments and empty lines
+        if (line.empty() || line[0] == '#') continue;
+        
+        // Remove any trailing whitespace and CR characters
+        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
+        line = line.substr(0, line.find_last_not_of(" \t\n\r\f\v") + 1);
+        
+        // Skip empty lines after trimming
+        if (line.empty()) continue;
+        
+        // Check if the line is a valid URI (starts with file://)
+        if (line.rfind("file://", 0) == 0) {
+            std::string path = line.substr(7); // Remove file:// prefix
+            // Handle localhost prefix if present
+            if (path.rfind("localhost", 0) == 0) {
+                path = path.substr(9);
+            }
+            // URL decode the path
+            files.push_back(URLDecode(path));
+        } else {
+            // Assume it's a plain file path
+            files.push_back(line);
+        }
+    }
+}
+
+void Clipboard::SetFiles(const std::vector<std::string>& paths, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
+    
+    // Convert paths to URI list format
+    std::string uriList;
+    std::vector<std::string> validPaths;
+    
+    for (const auto& path : paths) {
+        if (path.empty()) continue;
+        
+        validPaths.push_back(path);
+        
+        // Check if path is already a file URI
+        if (path.find("file://") == 0) {
+            uriList += path + "\r\n";
+        } else {
+            // Convert local path to properly encoded file URI
+            std::string encodedPath = path;
+            // Only encode the path part, not the protocol
+            size_t protoPos = path.find("://");
+            if (protoPos != std::string::npos) {
+                // If there's already a protocol, only encode the part after ://
+                std::string proto = path.substr(0, protoPos + 3);
+                std::string pathPart = path.substr(protoPos + 3);
+                encodedPath = proto + URLEncode(pathPart);
+            } else {
+                // No protocol, encode the whole path
+                encodedPath = "file://" + URLEncode(path);
+            }
+            uriList += encodedPath + "\r\n";
+        }
+    }
+    
+    if (uriList.empty()) return;
+    
+    // Remove trailing newline
+    if (uriList.size() >= 2) {
+        uriList = uriList.substr(0, uriList.length() - 2);
+    }
+    
+    // Store the URI list
+    ClipboardData data;
+    data.format = Format::URI_LIST;
+    data.text_data = uriList;
+    data.file_paths = validPaths; // Store original paths for easy access
+    
+    pImpl->data[selection] = {std::move(data)};
+    
+    // Take ownership of the selection
+    Atom selectionAtom = pImpl->getSelectionAtom(selection);
+    XSetSelectionOwner(pImpl->display, selectionAtom, pImpl->window, CurrentTime);
+    pImpl->ownsSelection[selection] = true;
+    
+    NotifyListeners(selection, Format::URI_LIST);
 }
 
 void Clipboard::SetText(const std::string& text, Selection selection) {
@@ -207,695 +824,104 @@ void Clipboard::SetText(const std::string& text, Selection selection) {
     }
 }
 
-std::string Clipboard::GetText(Selection selection) const {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-
-    Atom selAtom = pImpl->getSelectionAtom(selection); // FIXED: Initialize selAtom properly
-    if (selAtom == None) {
-        return "";
-    }
-
-    // If we own this selection, return our local copy
-    if (pImpl->ownsSelection[selection]) {
-        auto it = pImpl->data.find(selection);
-        if (it != pImpl->data.end() && !it->second.empty()) {
-            return it->second[0].data();
-        }
-    }
-
-    // Request selection from external owner
-    return requestSelectionData(selAtom, pImpl->atoms.utf8String);
-}
-
-void Clipboard::Clear(Selection selection) {
-    SetText("", selection);
-}
-
-// Image operations
-void Clipboard::SetImage(cairo_surface_t* surface) {
-    SetImage(surface, Selection::CLIPBOARD);
-}
-
-void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
-    if (!surface) {
-        throw std::invalid_argument("Surface cannot be null");
-    }
-
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-
-    Atom selAtom = pImpl->getSelectionAtom(selection);
-    if (selAtom == None) {
-        throw std::invalid_argument("Invalid selection type");
-    }
-
-    try {
-        std::vector<uint8_t> pngData;
-        if (!surfaceToPNG(surface, pngData)) {
-            throw std::runtime_error("Failed to convert surface to PNG");
-        }
-
-        ClipboardData clipData;
-        clipData.binary_data = std::move(pngData);
-        clipData.format = Format::IMAGE_PNG;
-        clipData.mime_type = "image/png";
-
-        auto& dataList = pImpl->data[selection];
-        dataList.clear();
-        dataList.push_back(std::move(clipData));
-
-        XSetSelectionOwner(pImpl->display, selAtom, pImpl->window, CurrentTime);
-
-        Window owner = XGetSelectionOwner(pImpl->display, selAtom);
-        if (owner == pImpl->window) {
-            pImpl->ownsSelection[selection] = true;
-            NotifyListeners(selection, Format::IMAGE_PNG);
-        } else {
-            pImpl->ownsSelection[selection] = false;
-            throw std::runtime_error("Failed to acquire selection ownership");
-        }
-
-        XFlush(pImpl->display);
-
-    } catch (const std::exception& e) {
-        pImpl->ownsSelection[selection] = false;
-        throw std::runtime_error(std::string("Failed to set image: ") + e.what());
-    }
-}
-
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage() const {
-    // FIXED: Remove the function call, implement directly
-    if (!pImpl->display) {
-        return {nullptr, cairo_surface_destroy};
-    }
-
-    Selection selection = Selection::CLIPBOARD;
-    
-    auto it = pImpl->data.find(selection);
-    if (it != pImpl->data.end()) {
-        for (const auto& data : it->second) {
-            if (data.format == Format::IMAGE_PNG && !data.binary_data.empty()) {
-                auto surface = pngToSurface(data.binary_data);
-                if (surface) {
-                    return surface;
-                }
-            }
-        }
-    }
-
-    Atom selAtom = pImpl->getSelectionAtom(selection);
-    if (selAtom != None) {
-        std::string pngData = requestSelectionData(selAtom, pImpl->atoms.pngImage);
-        if (!pngData.empty()) {
-            std::vector<uint8_t> binaryData(pngData.begin(), pngData.end());
-            return pngToSurface(binaryData);
-        }
-    }
-
-    return {nullptr, cairo_surface_destroy};
-}
-
-// File operations
-void Clipboard::SetFiles(const std::vector<std::string>& paths) {
-    SetFiles(paths, Selection::CLIPBOARD);
-}
-
-void Clipboard::SetFiles(const std::vector<std::string>& paths, Selection selection) {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-
-    Atom selAtom = pImpl->getSelectionAtom(selection);
-    if (selAtom == None) {
-        throw std::invalid_argument("Invalid selection type");
-    }
-
-    try {
-        // Convert file paths to URI list format
-        std::ostringstream uriList;
-        for (const auto& path : paths) {
-            uriList << "file://" << path << "\r\n";
-        }
-
-        ClipboardData clipData;
-        clipData.text_data = uriList.str();
-        clipData.format = Format::URI_LIST;
-        clipData.mime_type = "text/uri-list";
-
-        auto& dataList = pImpl->data[selection];
-        dataList.clear();
-        dataList.push_back(std::move(clipData));
-
-        XSetSelectionOwner(pImpl->display, selAtom, pImpl->window, CurrentTime);
-
-        Window owner = XGetSelectionOwner(pImpl->display, selAtom);
-        if (owner == pImpl->window) {
-            pImpl->ownsSelection[selection] = true;
-            NotifyListeners(selection, Format::URI_LIST);
-        } else {
-            pImpl->ownsSelection[selection] = false;
-            throw std::runtime_error("Failed to acquire selection ownership");
-        }
-
-        XFlush(pImpl->display);
-
-    } catch (const std::exception& e) {
-        pImpl->ownsSelection[selection] = false;
-        throw std::runtime_error(std::string("Failed to set files: ") + e.what());
-    }
-}
-
-std::vector<std::string> Clipboard::GetFiles() const {
-    // FIXED: Remove function call, implement directly
-    std::vector<std::string> files;
-    Selection selection = Selection::CLIPBOARD;
-
-    if (!pImpl->display) {
-        return files;
-    }
-
-    auto it = pImpl->data.find(selection);
-    if (it != pImpl->data.end()) {
-        for (const auto& data : it->second) {
-            if (data.format == Format::URI_LIST || data.format == Format::FILE_LIST) {
-                parseURIList(data.text_data, files);
-                if (!files.empty()) {
-                    return files;
-                }
-            }
-        }
-    }
-
-    Atom selAtom = pImpl->getSelectionAtom(selection);
-    if (selAtom != None) {
-        std::string uriData = requestSelectionData(selAtom, pImpl->atoms.uriList);
-        if (!uriData.empty()) {
-            parseURIList(uriData, files);
-        }
-    }
-
-    return files; // FIXED: Return files instead of undefined result
-}
-
-// HTML operations
-void Clipboard::SetHTML(const std::string& html) {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-
-    try {
-        ClipboardData clipData;
-        clipData.text_data = html; // FIXED: Assign string directly
-        clipData.format = Format::HTML; // FIXED: Use enum directly
-        clipData.mime_type = "text/html"; // FIXED: Assign string directly
-
-        auto& dataList = pImpl->data[Selection::CLIPBOARD];
-        dataList.clear();
-        dataList.push_back(std::move(clipData));
-
-        XSetSelectionOwner(pImpl->display, pImpl->atoms.html, pImpl->window, CurrentTime);
-
-        Window owner = XGetSelectionOwner(pImpl->display, pImpl->atoms.html);
-        if (owner == pImpl->window) {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = true;
-            NotifyListeners(Selection::CLIPBOARD, Format::HTML);
-        } else {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = false;
-            throw std::runtime_error("Failed to acquire selection ownership");
-        }
-
-        XFlush(pImpl->display);
-
-    } catch (const std::exception& e) {
-        pImpl->ownsSelection[Selection::CLIPBOARD] = false;
-        throw std::runtime_error(std::string("Failed to set HTML: ") + e.what());
-    }
-}
-
-// HTML/RTF handling
-void Clipboard::SetHTML(const std::string& html) {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-    
-    try {
-        ClipboardData clipData;
-        clipData.text_data = html;
-        clipData.format = Format::HTML;
-        clipData.mime_type = "text/html";
-        
-        auto& dataList = pImpl->data[Selection::CLIPBOARD];
-        dataList.clear();
-        dataList.push_back(std::move(clipData));
-        
-        // Take ownership
-        XSetSelectionOwner(pImpl->display, pImpl->atoms.clipboard, pImpl->window, CurrentTime);
-        
-        Window owner = XGetSelectionOwner(pImpl->display, pImpl->atoms.clipboard);
-        if (owner == pImpl->window) {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = true;
-            NotifyListeners(Selection::CLIPBOARD, Format::HTML);
-        } else {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = false;
-            throw std::runtime_error("Failed to acquire selection ownership");
-        }
-        
-        XFlush(pImpl->display);
-        
-    } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("Failed to set HTML: ") + e.what());
-    }
-}
-
-std::string Clipboard::GetHTML() const {
-    if (!pImpl->display) {
-        return "";
-    }
-    
-    // Check local data
-    auto it = pImpl->data.find(Selection::CLIPBOARD);
-    if (it != pImpl->data.end()) {
-        for (const auto& data : it->second) {
-            if (data.format == Format::HTML) {
-                return data.text_data;
-            }
-        }
-    }
-    
-    // Request from external owner
-    return requestSelectionData(pImpl->atoms.clipboard, pImpl->atoms.html);
-}
-
-// Custom format handling
-void Clipboard::SetData(const std::string& format, const std::vector<uint8_t>& data) {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-    
-    try {
-        RegisterFormat(format);
-        
-        ClipboardData clipData;
-        clipData.binary_data = data;
-        clipData.format = Format::CUSTOM;
-        clipData.mime_type = format;
-        
-        auto& dataList = pImpl->data[Selection::CLIPBOARD];
-        dataList.clear();
-        dataList.push_back(std::move(clipData));
-        
-        // Take ownership using custom format atom
-        Atom formatAtom = pImpl->customFormats[format];
-        XSetSelectionOwner(pImpl->display, formatAtom, pImpl->window, CurrentTime);
-        
-        Window owner = XGetSelectionOwner(pImpl->display, formatAtom);
-        if (owner == pImpl->window) {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = true;
-            NotifyListeners(Selection::CLIPBOARD, Format::CUSTOM);
-        } else {
-            pImpl->ownsSelection[Selection::CLIPBOARD] = false;
-            throw std::runtime_error("Failed to acquire selection ownership");
-        }
-        
-        XFlush(pImpl->display);
-        
-    } catch (const std::exception& e) {
-        throw std::runtime_error(std::string("Failed to set custom data: ") + e.what());
-    }
-}
-
-std::vector<uint8_t> Clipboard::GetData(const std::string& format) const {
-    if (!pImpl->display) {
-        return {};
-    }
-    
-    // Check local data
-    auto it = pImpl->data.find(Selection::CLIPBOARD);
-    if (it != pImpl->data.end()) {
-        for (const auto& data : it->second) {
-            if (data.format == Format::CUSTOM && data.mime_type == format) {
-                return data.binary_data;
-            }
-        }
-    }
-    
-    // Request from external owner
-    auto formatIt = pImpl->customFormats.find(format);
-    if (formatIt != pImpl->customFormats.end()) {
-        std::string strData = requestSelectionData(pImpl->atoms.clipboard, formatIt->second);
-        return std::vector<uint8_t>(strData.begin(), strData.end());
-    }
-    
-    return {};
-}
-
 // Event handling
 void Clipboard::HandleSelectionRequest(XSelectionRequestEvent* event) {
-    if (!event || !pImpl->display) {
-        return;
-    }
-    
+    if (!pImpl->display) return;
+
     XSelectionEvent response;
     response.type = SelectionNotify;
     response.display = event->display;
     response.requestor = event->requestor;
     response.selection = event->selection;
     response.target = event->target;
-    response.property = event->property;
+    response.property = None;
     response.time = event->time;
-    
+
     try {
-        // Determine which selection is being requested
-        Selection sel = Selection::CLIPBOARD;
-        if (event->selection == pImpl->atoms.primary) {
-            sel = Selection::PRIMARY;
-        } else if (event->selection == pImpl->atoms.secondary) {
-            sel = Selection::SECONDARY;
+        Selection selection = GetSelectionFromAtom(event->selection, pImpl->display);
+        auto& dataList = pImpl->data[selection];
+
+        if (event->target == pImpl->atoms.targets) {
+            // Handle TARGETS request
+            std::vector<Atom> targets = {
+                pImpl->atoms.targets,
+                pImpl->atoms.utf8String,
+                pImpl->atoms.text
+            };
+            
+            XChangeProperty(pImpl->display, event->requestor, event->property, 
+                          XA_ATOM, 32, PropModeReplace, 
+                          reinterpret_cast<const unsigned char*>(targets.data()), 
+                          targets.size());
+            response.property = event->property;
+        } 
+        else if (!dataList.empty()) {
+            // Handle data requests
+            const auto& data = dataList[0];
+            
+            if ((event->target == pImpl->atoms.text || 
+                 event->target == XA_STRING || 
+                 event->target == pImpl->atoms.utf8String) && 
+                !data.text_data.empty()) {
+                // Handle text request
+                const char* text = data.text_data.c_str();
+                XChangeProperty(pImpl->display, event->requestor, event->property,
+                              event->target, 8, PropModeReplace,
+                              reinterpret_cast<const unsigned char*>(text), 
+                              data.text_data.length());
+                response.property = event->property;
+            }
+            else if (event->target == pImpl->atoms.uriList && 
+                    data.format == Format::FILE_LIST) {
+                // Handle URI list request
+                std::string uriList;
+                for (const auto& path : data.file_paths) {
+                    uriList += "file://" + path + "\r\n";
+                }
+                XChangeProperty(pImpl->display, event->requestor, event->property,
+                              pImpl->atoms.utf8String, 8, PropModeReplace,
+                              reinterpret_cast<const unsigned char*>(uriList.c_str()),
+                              uriList.length());
+                response.property = event->property;
+            }
         }
-        
-        // Check if we own this selection
-        if (!pImpl->ownsSelection[sel]) {
-            response.property = None;
-        } else if (event->target == pImpl->atoms.targets) {
-            handleTargetsRequest(event, response);
-        } else if (event->target == pImpl->atoms.utf8String || event->target == pImpl->atoms.plainText) {
-            handleTextRequest(event, response, sel);
-        } else if (event->target == pImpl->atoms.pngImage) {
-            handleImageRequest(event, response, sel);
-        } else if (event->target == pImpl->atoms.uriList) {
-            handleFileListRequest(event, response, sel);
-        } else if (event->target == pImpl->atoms.html) {
-            handleHTMLRequest(event, response, sel);
-        } else {
-            // Unknown target
-            response.property = None;
-        }
-        
     } catch (const std::exception& e) {
         std::cerr << "Error handling selection request: " << e.what() << std::endl;
-        response.property = None;
     }
-    
-    // Send response
-    XSendEvent(event->display, event->requestor, False, 0, reinterpret_cast<XEvent*>(&response));
+
+    XSendEvent(pImpl->display, event->requestor, False, 0, 
+              reinterpret_cast<XEvent*>(&response));
     XFlush(pImpl->display);
 }
 
-void Clipboard::HandleSelectionNotify(XSelectionEvent* /* event */) {
-    // This is called when we receive data from another application
-    // The actual data handling is done in requestSelectionData()
+void Clipboard::HandleSelectionNotify(XSelectionEvent* event) {
+    if (!pImpl->display || !event) return;
+    // Handle selection notify event if needed
 }
 
 void Clipboard::HandleSelectionClear(XSelectionClearEvent* event) {
-    if (!event || !pImpl->display) {
-        return;
+    if (!pImpl->display || !event) return;
+    
+    try {
+        Selection sel = GetSelectionFromAtom(event->selection, pImpl->display);
+        pImpl->ownsSelection[sel] = false;
+        pImpl->data[sel].clear();
+        NotifyListeners(sel, Format::UNKNOWN);
+    if (fromFormat == toFormat) {
+        result = data;
+        return true;
     }
     
-    // We've lost ownership of a selection
-    Selection sel = Selection::CLIPBOARD;
-    if (event->selection == pImpl->atoms.primary) {
-        sel = Selection::PRIMARY;
-    } else if (event->selection == pImpl->atoms.secondary) {
-        sel = Selection::SECONDARY;
-    }
-    
-    pImpl->ownsSelection[sel] = false;
-    pImpl->data[sel].clear();
-    
-    // Notify listeners
-    for (const auto& callback : pImpl->changeListeners) {
-        try {
-            callback(sel, Format::TEXT);  // Assume text for simplicity
-        } catch (const std::exception& e) {
-            std::cerr << "Error in change callback: " << e.what() << std::endl;
-        }
-    }
-}
-
-// Helper methods
-void Clipboard::RegisterFormat(const std::string& format) {
-    if (!pImpl->display) {
-        throw std::runtime_error("Clipboard not initialized");
-    }
-    
-    if (pImpl->customFormats.find(format) == pImpl->customFormats.end()) {
-        Atom atom = XInternAtom(pImpl->display, format.c_str(), False);
-        if (atom == None) {
-            throw std::runtime_error("Failed to register format: " + format);
-        }
-        pImpl->customFormats[format] = atom;
-    }
-}
-
-bool Clipboard::ConvertData(const std::vector<uint8_t>& /* data */,
-                          Format /* fromFormat */, Format /* toFormat */,
-                          std::vector<uint8_t>& /* result */) {
-    // TODO: Implement data format conversion
-    // This could include text encoding conversions, image format conversions, etc.
+    // Add format conversion logic here
+    // For now, we only support direct copy
     return false;
 }
 
-void Clipboard::AddChangeListener(ChangeCallback callback) {
-    if (callback) {
-        pImpl->changeListeners.push_back(std::move(callback));
-    }
-}
-
-void Clipboard::RemoveChangeListener(ChangeCallback /* callback */) {
-    // TODO: Implement callback removal
-    // This requires storing callbacks in a way that allows comparison/removal
-}
-
-// Private helper methods
-
-/**
- * @brief Convert Cairo surface to PNG data
- */
-bool Clipboard::surfaceToPNG(cairo_surface_t* surface, std::vector<uint8_t>& pngData) const {
-    if (!surface) {
-        return false;
-    }
-    
-    // Cairo write function that appends to our vector
-    auto writeFunc = [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
-        std::vector<uint8_t>* vec = static_cast<std::vector<uint8_t>*>(closure);
-        vec->insert(vec->end(), data, data + length);
-        return CAIRO_STATUS_SUCCESS;
-    };
-    
-    cairo_status_t status = cairo_surface_write_to_png_stream(surface, writeFunc, &pngData);
-    return status == CAIRO_STATUS_SUCCESS;
-}
-
-/**
- * @brief Convert PNG data to Cairo surface
- */
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> 
-Clipboard::pngToSurface(const std::vector<uint8_t>& pngData) const {
-    if (pngData.empty()) {
-        return {nullptr, cairo_surface_destroy};
-    }
-    
-    // Create a copy of the data for the read function
-    auto dataPtr = std::make_unique<std::vector<uint8_t>>(pngData);
-    size_t offset = 0;
-    
-    // Cairo read function
-    auto readFunc = [](void* closure, unsigned char* data, unsigned int length) -> cairo_status_t {
-        struct ReadContext {
-            std::vector<uint8_t>* dataPtr;
-            size_t* offset;
-        };
-        
-        ReadContext* ctx = static_cast<ReadContext*>(closure);
-        if (!ctx->dataPtr || *ctx->offset >= ctx->dataPtr->size()) {
-            return CAIRO_STATUS_READ_ERROR;
-        }
-        
-        size_t available = ctx->dataPtr->size() - *ctx->offset;
-        size_t toCopy = std::min<size_t>(length, available);
-        
-        std::memcpy(data, ctx->dataPtr->data() + *ctx->offset, toCopy);
-        *ctx->offset += toCopy;
-        
-        return toCopy > 0 ? CAIRO_STATUS_SUCCESS : CAIRO_STATUS_READ_ERROR;
-    };
-    
-    ReadContext ctx{dataPtr.get(), &offset};
-    cairo_surface_t* surface = cairo_image_surface_create_from_png_stream(readFunc, &ctx);
-    
-    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
-        cairo_surface_destroy(surface);
-        return {nullptr, cairo_surface_destroy};
-    }
-    
-    return {surface, cairo_surface_destroy};
-}
-
-/**
- * @brief Parse URI list text into file paths
- */
-void Clipboard::parseURIList(const std::string& uriText, std::vector<std::string>& files) const {
-    std::istringstream iss(uriText);
-    std::string line;
-    
-    while (std::getline(iss, line)) {
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
-        
-        // Remove carriage return if present
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
-        
-        if (line.empty()) {
-            continue;
-        }
-        
-        // Convert file:// URIs to local paths
-        if (line.find("file://") == 0) {
-            std::string path = line.substr(7);  // Remove "file://"
-            
-            // Handle localhost prefix
-            if (path.find("localhost") == 0) {
-                path = path.substr(9);  // Remove "localhost"
-            }
-            
-            // Basic URL decoding for common cases
-            urlDecode(path);
-            
-            if (!path.empty()) {
-                files.push_back(path);
-            }
-        } else {
-            // Non-file URI or already a local path
-            files.push_back(line);
-        }
-    }
-}
-
-/**
- * @brief Simple URL decoder for file paths
- */
-void Clipboard::urlDecode(std::string& str) const {
-    std::string result;
-    result.reserve(str.length());
-    
-    for (size_t i = 0; i < str.length(); ++i) {
-        if (str[i] == '%' && i + 2 < str.length()) {
-            // Try to decode hex sequence
-            char hex[3] = {str[i + 1], str[i + 2], 0};
-            char* end;
-            long value = std::strtol(hex, &end, 16);
-            
-            if (end == hex + 2) {  // Successfully parsed
-                result += static_cast<char>(value);
-                i += 2;  // Skip the hex digits
-            } else {
-                result += str[i];  // Keep the % if decoding failed
-            }
-        } else {
-            result += str[i];
-        }
-    }
-    
-    str = std::move(result);
-}
-
-/**
- * @brief Request selection data from external owner
- */
-
- std::string Clipboard::requestSelectionData(Atom selection, Atom target) const {
-    if (!pImpl->display || !pImpl->window) {
-        return "";
-    }
-
-    // Create a property to receive the data
-    Atom property = XInternAtom(pImpl->display, "HAVEL_CLIPBOARD_PROP", False);
-    
-    // Request the selection
-    XConvertSelection(pImpl->display, selection, target, property, pImpl->window, CurrentTime);
-    XFlush(pImpl->display);
-
-    // Wait for SelectionNotify event with timeout
-    auto startTime = std::chrono::steady_clock::now();
-    const auto timeout = std::chrono::milliseconds(pImpl->SELECTION_TIMEOUT_MS);
-
-    while (std::chrono::steady_clock::now() - startTime < timeout) {
-        XEvent event;
-        if (XCheckTypedWindowEvent(pImpl->display, pImpl->window, SelectionNotify, &event)) {
-            XSelectionEvent* selEvent = &event.xselection;
-            
-            if (selEvent->property == property) {
-                // Read the property data
-                Atom actualType;
-                int actualFormat;
-                unsigned long nitems, bytesAfter;
-                unsigned char* data = nullptr;
-
-                int result = XGetWindowProperty(
-                    pImpl->display, pImpl->window, property,
-                    0, LONG_MAX, False, AnyPropertyType,
-                    &actualType, &actualFormat, &nitems, &bytesAfter, &data
-                );
-
-                std::string resultData;
-                if (result == Success && data) {
-                    resultData = std::string(reinterpret_cast<char*>(data), nitems);
-                    XFree(data);
-                }
-
-                // Clean up the property
-                XDeleteProperty(pImpl->display, pImpl->window, property);
-                return resultData;
-            }
-        }
-
-        // Small delay to prevent busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-
-    return ""; // Timeout
-}
-
-std::vector<Atom> Clipboard::getAvailableTargets(Atom selection) const {
-    std::vector<Atom> targets;
-    
-    std::string targetsData = requestSelectionData(selection, pImpl->atoms.targets);
-    if (!targetsData.empty() && targetsData.size() % sizeof(Atom) == 0) {
-        const Atom* atomData = reinterpret_cast<const Atom*>(targetsData.data());
-        size_t atomCount = targetsData.size() / sizeof(Atom);
-        
-        targets.reserve(atomCount);
-        for (size_t i = 0; i < atomCount; ++i) {
-            targets.push_back(atomData[i]);
-        }
-    }
-
-    return targets;
-}
-
-Atom Clipboard::formatToAtom(Format format) const {
-    switch (format) {
-        case Format::TEXT: return pImpl->atoms.utf8String;
-        case Format::HTML: return pImpl->atoms.html;
-        case Format::RTF: return pImpl->atoms.rtf;
-        case Format::IMAGE_PNG: return pImpl->atoms.pngImage;
-        case Format::IMAGE_JPEG: return pImpl->atoms.jpegImage;
-        case Format::IMAGE_BMP: return pImpl->atoms.bmpImage;
-        case Format::URI_LIST:
-        case Format::FILE_LIST: return pImpl->atoms.uriList;
-        default: return None;
-    }
-}
-
 Clipboard::Format Clipboard::atomToFormat(Atom atom) const {
+    if (!pImpl) return Format::TEXT;
+    if (atom == None) return Format::TEXT;
+    
+    // Check standard formats
     if (atom == pImpl->atoms.utf8String || atom == pImpl->atoms.plainText) {
         return Format::TEXT;
     } else if (atom == pImpl->atoms.html) {
@@ -912,11 +938,95 @@ Clipboard::Format Clipboard::atomToFormat(Atom atom) const {
         return Format::URI_LIST;
     }
     
+    // Check custom formats
+    for (const auto& [name, customAtom] : pImpl->customFormats) {
+        if (customAtom == atom) {
+            return Format::CUSTOM;
+        }
+    }
+    
     return Format::UNKNOWN;
+}
+
+void Clipboard::HandlePropertyNotify(XPropertyEvent* event) {
+    if (!pImpl || !pImpl->display || !event) return;
+    
+    // Handle property change
+    XEvent event_return;
+    if (XCheckTypedEvent(pImpl->display, PropertyNotify, &event_return)) {
+        // Handle property change event
+    }
+}
+
+void Clipboard::NotifyListeners(Selection selection, Format format) const {
+    if (!pImpl) return;
+    
+    for (const auto& listener : pImpl->changeListeners) {
+        try {
+            if (listener) {
+                listener(selection, format);
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Error in clipboard listener: " << e.what() << std::endl;
+        }
+    }
+}
+
+void Clipboard::RegisterFormat(const std::string& format) {
+    if (!pImpl || !pImpl->display) return;
+    
+    if (pImpl->customFormats.find(format) == pImpl->customFormats.end()) {
+        Atom atom = XInternAtom(pImpl->display, format.c_str(), False);
+        if (atom != None) {
+            pImpl->customFormats[format] = atom;
+        }
+    }
+}
+
+void Clipboard::AddChangeListener(const ChangeCallback& callback) {
+    if (!pImpl) return;
+    
+    if (callback) {
+        pImpl->changeListeners.push_back(callback);
+    }
+}
+
+void Clipboard::RemoveChangeListener(const ChangeCallback& callback) {
+    if (!pImpl) return;
+    
+    auto& listeners = pImpl->changeListeners;
+    if (callback) {
+        listeners.erase(
+            std::remove_if(listeners.begin(), listeners.end(),
+                [&](const ChangeCallback& cb) {
+                    return cb.target_type() == callback.target_type();
+                }),
+            listeners.end()
+        );
+    }
+}
+
+Atom Clipboard::formatToAtom(Format format) const {
+    if (!pImpl) return None;
+    
+    switch (format) {
+        case Format::TEXT: return pImpl->atoms.utf8String;
+        case Format::HTML: return pImpl->atoms.html;
+        case Format::RTF: return pImpl->atoms.rtf;
+        case Format::IMAGE_PNG: return pImpl->atoms.pngImage;
+        case Format::IMAGE_JPEG: return pImpl->atoms.jpegImage;
+        case Format::IMAGE_BMP: return pImpl->atoms.bmpImage;
+        case Format::URI_LIST:
+        case Format::FILE_LIST: return pImpl->atoms.uriList;
+        case Format::CUSTOM: return None; // Must be handled by custom format lookup
+        default: return None;
+    }
 }
 
 // Selection request handlers
 void Clipboard::handleTargetsRequest(XSelectionRequestEvent* event, XSelectionEvent& response) {
+    if (!pImpl || !pImpl->display) return;
+    
     std::vector<Atom> targets;
     
     // Always support TARGETS
@@ -947,6 +1057,8 @@ void Clipboard::handleTargetsRequest(XSelectionRequestEvent* event, XSelectionEv
 }
 
 void Clipboard::handleTextRequest(XSelectionRequestEvent* event, XSelectionEvent& response, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
+    
     auto it = pImpl->data.find(selection);
     if (it != pImpl->data.end() && !it->second.empty()) {
         const std::string& text = it->second[0].text_data;
@@ -963,6 +1075,8 @@ void Clipboard::handleTextRequest(XSelectionRequestEvent* event, XSelectionEvent
 }
 
 void Clipboard::handleImageRequest(XSelectionRequestEvent* event, XSelectionEvent& response, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
+    
     auto it = pImpl->data.find(selection);
     if (it != pImpl->data.end()) {
         for (const auto& data : it->second) {
@@ -980,7 +1094,10 @@ void Clipboard::handleImageRequest(XSelectionRequestEvent* event, XSelectionEven
     response.property = None;
 }
 
+// Handle file list selection request
 void Clipboard::handleFileListRequest(XSelectionRequestEvent* event, XSelectionEvent& response, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
+    
     auto it = pImpl->data.find(selection);
     if (it != pImpl->data.end()) {
         for (const auto& data : it->second) {
@@ -999,7 +1116,10 @@ void Clipboard::handleFileListRequest(XSelectionRequestEvent* event, XSelectionE
     response.property = None;
 }
 
+// Handle HTML selection request
 void Clipboard::handleHTMLRequest(XSelectionRequestEvent* event, XSelectionEvent& response, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
+    
     auto it = pImpl->data.find(selection);
     if (it != pImpl->data.end()) {
         for (const auto& data : it->second) {
@@ -1017,129 +1137,146 @@ void Clipboard::handleHTMLRequest(XSelectionRequestEvent* event, XSelectionEvent
     response.property = None;
 }
 
-// Image conversion helpers
-bool Clipboard::surfaceToPNG(cairo_surface_t* surface, std::vector<uint8_t>& pngData) const {
-    if (!surface) return false;
-
-    // Create a temporary file in memory using cairo's PNG writer
-    struct PNGWriteData {
-        std::vector<uint8_t>* data;
-        cairo_status_t status = CAIRO_STATUS_SUCCESS;
-    };
-
-    PNGWriteData writeData;
-    writeData.data = &pngData;
-
-    auto writeFunc = [](void* closure, const unsigned char* data, unsigned int length) -> cairo_status_t {
-        PNGWriteData* wd = static_cast<PNGWriteData*>(closure);
-        try {
-            wd->data->insert(wd->data->end(), data, data + length);
-            return CAIRO_STATUS_SUCCESS;
-        } catch (...) {
-            return CAIRO_STATUS_WRITE_ERROR;
-        }
-    };
-
-    cairo_status_t status = cairo_surface_write_to_png_stream(surface, writeFunc, &writeData);
-    return status == CAIRO_STATUS_SUCCESS && !pngData.empty();
+// Image operations
+void Clipboard::SetImage(cairo_surface_t* surface) {
+    SetImage(surface, Selection::CLIPBOARD);
 }
 
-std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> 
-Clipboard::pngToSurface(const std::vector<uint8_t>& pngData) const {
-    if (pngData.empty()) {
-        return {nullptr, cairo_surface_destroy};
-    }
-
-    struct PNGReadData {
-        const std::vector<uint8_t>* data;
-        size_t offset = 0;
-    };
-
-    PNGReadData readData;
-    readData.data = &pngData;
-
-    auto readFunc = [](void* closure, unsigned char* data, unsigned int length) -> cairo_status_t {
-        PNGReadData* rd = static_cast<PNGReadData*>(closure);
-        if (rd->offset + length > rd->data->size()) {
-            return CAIRO_STATUS_READ_ERROR;
-        }
-        
-        std::memcpy(data, rd->data->data() + rd->offset, length);
-        rd->offset += length;
-        return CAIRO_STATUS_SUCCESS;
-    };
-
-    cairo_surface_t* surface = cairo_image_surface_create_from_png_stream(readFunc, &readData);
-    if (!surface || cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
-        if (surface) {
-            cairo_surface_destroy(surface);
-        }
-        return {nullptr, cairo_surface_destroy};
-    }
-
-    return {surface, cairo_surface_destroy};
-}
-
-void Clipboard::parseURIList(const std::string& uriData, std::vector<std::string>& files) const {
-    if (uriData.empty()) {
-        return;
-    }
-
-    std::istringstream stream(uriData);
-    std::string line;
+void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
+    if (!pImpl || !pImpl->display || !surface) return;
     
-    while (std::getline(stream, line)) {
-        // Remove carriage return if present
-        if (!line.empty() && line.back() == '\r') {
-            line.pop_back();
-        }
+    std::vector<uint8_t> pngData;
+    if (SurfaceToPNG(surface, pngData)) {
+        ClipboardData data;
+        data.format = Format::IMAGE_PNG;
+        data.binary_data = std::move(pngData);
+        pImpl->data[selection] = {std::move(data)};
         
-        // Skip empty lines and comments
-        if (line.empty() || line[0] == '#') {
-            continue;
-        }
+        // Take ownership of the selection
+        Atom selectionAtom = pImpl->getSelectionAtom(selection);
+        XSetSelectionOwner(pImpl->display, selectionAtom, pImpl->window, CurrentTime);
+        pImpl->ownsSelection[selection] = true;
         
-        // Convert file:// URIs to local paths
-        if (line.find("file://") == 0) {
-            std::string path = line.substr(7); // Remove "file://"
-            
-            // URL decode the path
-            std::string decoded = urlDecode(path);
-            if (!decoded.empty()) {
-                files.push_back(decoded);
+        NotifyListeners(selection, Format::IMAGE_PNG);
+    }
+}
+
+std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage() const {
+    return GetImage(Selection::CLIPBOARD);
+}
+
+std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> Clipboard::GetImage(Selection selection) const {
+    if (!pImpl || !pImpl->display) return {nullptr, nullptr};
+    
+    auto it = pImpl->data.find(selection);
+    if (it != pImpl->data.end()) {
+        for (const auto& data : it->second) {
+            if (data.format == Format::IMAGE_PNG && !data.binary_data.empty()) {
+                cairo_surface_t* surface = CreateSurfaceFromPNG(data.binary_data);
+                if (surface) {
+                    return {surface, cairo_surface_destroy};
+                }
             }
-        } else {
-            // Non-file URI, keep as-is
-            files.push_back(line);
         }
     }
+    
+    return {nullptr, nullptr};
 }
 
-std::string Clipboard::urlDecode(const std::string& encoded) const {
-    std::string decoded;
-    decoded.reserve(encoded.length());
+// Rich text operations
+void Clipboard::SetHTML(const std::string& html) {
+    SetHTML(html, Selection::CLIPBOARD);
+}
+
+void Clipboard::SetHTML(const std::string& html, Selection selection) {
+    if (!pImpl || !pImpl->display) return;
     
-    for (size_t i = 0; i < encoded.length(); ++i) {
-        if (encoded[i] == '%' && i + 2 < encoded.length()) {
-            // Parse hex digits
-            char hex[3] = {encoded[i + 1], encoded[i + 2], 0};
-            char* end;
-            long value = std::strtol(hex, &end, 16);
-            
-            if (end == hex + 2) { // Successfully parsed 2 hex digits
-                decoded += static_cast<char>(value);
-                i += 2; // Skip the hex digits
-            } else {
-                decoded += encoded[i]; // Invalid encoding, keep original
+    ClipboardData data;
+    data.format = Format::HTML;
+    data.text_data = html;
+    pImpl->data[selection] = {std::move(data)};
+    
+    // Take ownership of the selection
+    Atom selectionAtom = pImpl->getSelectionAtom(selection);
+    XSetSelectionOwner(pImpl->display, selectionAtom, pImpl->window, CurrentTime);
+    pImpl->ownsSelection[selection] = true;
+    
+    NotifyListeners(selection, Format::HTML);
+}
+
+std::string Clipboard::GetHTML() const {
+    return GetHTML(Selection::CLIPBOARD);
+}
+
+std::string Clipboard::GetHTML(Selection selection) const {
+    if (!pImpl || !pImpl->display) return "";
+    
+    auto it = pImpl->data.find(selection);
+    if (it != pImpl->data.end()) {
+        for (const auto& data : it->second) {
+            if (data.format == Format::HTML) {
+                return data.text_data;
             }
-        } else if (encoded[i] == '+') {
-            decoded += ' '; // + represents space in URL encoding
-        } else {
-            decoded += encoded[i];
         }
     }
     
-    return decoded;
+    return "";
 }
 
+// Custom data operations
+void Clipboard::SetData(const std::string& format, const std::vector<uint8_t>& data) {
+    SetData(format, data, Selection::CLIPBOARD);
+}
+
+void Clipboard::SetData(const std::string& format, const std::vector<uint8_t>& data, Selection selection) {
+    if (!pImpl || !pImpl->display || format.empty()) return;
+    
+    // Register the custom format if not already registered
+    if (pImpl->customFormats.find(format) == pImpl->customFormats.end()) {
+        RegisterFormat(format);
+    }
+    
+    ClipboardData clipboardData;
+    clipboardData.format = Format::CUSTOM;
+    clipboardData.mime_type = format;
+    clipboardData.binary_data = data;
+    
+    // Replace any existing data for this format
+    auto& selectionData = pImpl->data[selection];
+    selectionData.erase(
+        std::remove_if(selectionData.begin(), selectionData.end(),
+            [&](const ClipboardData& d) {
+                return d.format == Format::CUSTOM && d.mime_type == format;
+            }),
+        selectionData.end()
+    );
+    
+    selectionData.push_back(std::move(clipboardData));
+    
+    // Take ownership of the selection
+    Atom selectionAtom = pImpl->getSelectionAtom(selection);
+    XSetSelectionOwner(pImpl->display, selectionAtom, pImpl->window, CurrentTime);
+    pImpl->ownsSelection[selection] = true;
+    
+    NotifyListeners(selection, Format::CUSTOM);
+}
+
+std::vector<uint8_t> Clipboard::GetData(const std::string& format) const {
+    return GetData(format, Selection::CLIPBOARD);
+}
+
+std::vector<uint8_t> Clipboard::GetData(const std::string& format, Selection selection) const {
+    if (!pImpl || !pImpl->display || format.empty()) return {};
+    
+    auto it = pImpl->data.find(selection);
+    if (it != pImpl->data.end()) {
+        for (const auto& data : it->second) {
+            if (data.format == Format::CUSTOM && data.mime_type == format) {
+                return data.binary_data;
+            }
+        }
+    }
+    
+    return {};
+}
 } // namespace havel

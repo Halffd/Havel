@@ -1,7 +1,7 @@
 #include "WindowManager.hpp"
 #include "types.hpp"
 #include "core/DisplayManager.hpp"
-#include "utils/Logger.hpp"
+#include "../utils/Logger.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>

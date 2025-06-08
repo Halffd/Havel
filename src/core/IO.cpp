@@ -303,7 +303,7 @@ HHOOK IO::keyboardHook = NULL;
                         if (hotkey.enabled) {
                             // KeySym was stored in hotkey.key during registration
                             if (hotkey.key == keyEvent->keycode &&
-                                cleanedState == hotkey.modifiers) {
+                                static_cast<int>(cleanedState) == hotkey.modifiers) {
                                 // Compare base key AND cleaned modifier state
                                 std::cout << "Hotkey matched: " << hotkey.alias
                                         << " (state: " << cleanedState <<

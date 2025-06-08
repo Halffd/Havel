@@ -6,6 +6,8 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+export CC=clang
+export CXX=clang++
 
 # Default build mode (0 = Debug, 1 = Release)
 BUILD_MODE=0
@@ -73,7 +75,7 @@ build() {
     mkdir -p "${BUILD_DIR}"
 
     log "INFO" "Generating build files with CMake..." "${YELLOW}"
-    (cd "${BUILD_DIR}" && cmake -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
+    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=ON -DENABLE_LLVM=OFF -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=ON -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "CMake generation"
 
     log "INFO" "Building project with $(nproc) parallel jobs..." "${YELLOW}"

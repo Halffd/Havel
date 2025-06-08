@@ -1,6 +1,16 @@
+#include "MessageBox.hpp"
+#include "Button.hpp"
+#include "Theme.hpp"
 #include "x11_includes.h"
-#include "Screen.hpp"
 #include <cmath>
+#include <sstream>
+#include <cstring>
+#include <cairo/cairo.h>
+#include <cairo/cairo-xlib.h>
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/extensions/shape.h>
+#include <X11/keysym.h>
 
 namespace havel {
 
@@ -15,6 +25,37 @@ MessageBox::MessageBox(Type type, Buttons buttons)
     
     // Create buttons
     CreateButtons();
+}
+
+void MessageBox::SetBounds(int x, int y, int width, int height) {
+    bounds.x = x;
+    bounds.y = y;
+    bounds.width = width;
+    bounds.height = height;
+    
+    // Update button positions
+    UpdateButtonPositions();
+    NeedsRedraw();
+}
+
+void MessageBox::UpdateButtonPositions() {
+    if (buttonWidgets.empty()) return;
+    
+    const int buttonWidth = 80;
+    const int buttonSpacing = theme.metrics.buttonSpacing;
+    const int buttonMargin = theme.metrics.buttonMargin;
+    const int buttonHeight = theme.metrics.buttonHeight;
+    
+    int totalButtonsWidth = (buttonWidth + buttonSpacing) * buttonWidgets.size() - buttonSpacing;
+    int startX = bounds.x + (bounds.width - totalButtonsWidth) / 2;
+    int buttonY = bounds.y + bounds.height - buttonHeight - buttonMargin;
+    
+    for (auto& button : buttonWidgets) {
+        if (button) {
+            button->SetBounds(startX, buttonY, buttonWidth, buttonHeight);
+            startX += buttonWidth + buttonSpacing;
+        }
+    }
 }
 
 void MessageBox::SetTitle(const std::string& newTitle) {
@@ -127,81 +168,125 @@ void MessageBox::DrawTitleBar(cairo_t* cr) {
     }
     cairo_fill(cr);
     
+    cairo_save(cr);
+    
+    // Draw title bar background
+    cairo_set_source_rgba(cr, 
+        ((colors.titleBar >> 16) & 0xFF) / 255.0,
+        ((colors.titleBar >> 8) & 0xFF) / 255.0,
+        (colors.titleBar & 0xFF) / 255.0,
+        1.0);
+    
+    cairo_rectangle(cr, bounds.x, bounds.y, bounds.width, metrics.titleBarHeight);
+    cairo_fill(cr);
+    
     // Draw title text
-    cairo_select_font_face(cr, theme.fonts.title.c_str(),
-        CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
-    cairo_set_font_size(cr, theme.fonts.dpi / 96.0 * 16);
+    if (!title.empty()) {
+        cairo_set_source_rgba(cr, 
+            ((colors.titleText >> 16) & 0xFF) / 255.0,
+            ((colors.titleText >> 8) & 0xFF) / 255.0,
+            (colors.titleText & 0xFF) / 255.0,
+            1.0);
+            
+        cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_BOLD);
+        cairo_set_font_size(cr, 12);
+        
+        cairo_text_extents_t extents;
+        cairo_text_extents(cr, title.c_str(), &extents);
+        
+        double x = bounds.x + metrics.padding;
+        double y = bounds.y + metrics.titleBarHeight / 2 + extents.height / 2;
+        
+        cairo_move_to(cr, x, y);
+        cairo_show_text(cr, title.c_str());
+    }
     
-    cairo_text_extents_t extents;
-    cairo_text_extents(cr, title.c_str(), &extents);
-    
-    cairo_set_source_rgba(cr,
-        ((theme.colors.foreground >> 16) & 0xFF) / 255.0,
-        ((theme.colors.foreground >> 8) & 0xFF) / 255.0,
-        (theme.colors.foreground & 0xFF) / 255.0,
-        ((theme.colors.foreground >> 24) & 0xFF) / 255.0);
-    
-    cairo_move_to(cr,
-        x + theme.metrics.padding,
-        y + (titleHeight + extents.height) / 2);
-    cairo_show_text(cr, title.c_str());
+    cairo_restore(cr);
 }
 
 void MessageBox::DrawContent(cairo_t* cr) {
-    double x = bounds.x + theme.metrics.padding;
-    double y = bounds.y + 40 + theme.metrics.padding;
-    double width = bounds.width - theme.metrics.padding * 2;
+    if (!isVisible || message.empty()) return;
     
-    // Draw icon if present
-    if (icon) {
-        int iconWidth = cairo_image_surface_get_width(icon.get());
-        int iconHeight = cairo_image_surface_get_height(icon.get());
-        cairo_set_source_surface(cr, icon.get(), x, y);
-        cairo_paint(cr);
-        x += iconWidth + theme.metrics.padding;
-        width -= iconWidth + theme.metrics.padding;
-    }
+    cairo_save(cr);
     
-    // Draw message text
-    cairo_select_font_face(cr, theme.fonts.regular.c_str(),
-        CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size(cr, theme.fonts.dpi / 96.0 * 14);
-    
-    cairo_set_source_rgba(cr,
+    // Set up text properties
+    cairo_set_source_rgba(cr, 
         ((theme.colors.foreground >> 16) & 0xFF) / 255.0,
         ((theme.colors.foreground >> 8) & 0xFF) / 255.0,
         (theme.colors.foreground & 0xFF) / 255.0,
-        ((theme.colors.foreground >> 24) & 0xFF) / 255.0);
+        1.0);
     
-    // Word wrap message
+    cairo_select_font_face(cr, "Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_size(cr, 11);
+    
+    // Calculate content area
+    double contentX = bounds.x + metrics.padding;
+    double contentY = bounds.y + metrics.titleBarHeight + metrics.padding;
+    double contentWidth = bounds.width - 2 * metrics.padding;
+    double contentHeight = bounds.height - metrics.titleBarHeight - metrics.buttonHeight - 3 * metrics.padding;
+    
+    // Wrap text
     std::vector<std::string> lines;
-    WrapText(cr, message, width, lines);
+    WrapText(cr, message, contentWidth, lines);
     
-    double lineHeight = theme.fonts.dpi / 96.0 * 20;
+    // Draw wrapped text
+    cairo_text_extents_t extents;
+    cairo_text_extents(cr, "Hg", &extents);
+    double lineHeight = extents.height * 1.2;
+    
+    double y = contentY + extents.height;
     for (const auto& line : lines) {
-        cairo_move_to(cr, x, y);
+        if (y > contentY + contentHeight) break;
+        cairo_move_to(cr, contentX, y);
         cairo_show_text(cr, line.c_str());
         y += lineHeight;
     }
+    
+    cairo_restore(cr);
 }
 
 void MessageBox::DrawButtons(cairo_t* cr) {
-    // Each button draws itself
+    if (!isVisible || buttonWidgets.empty()) return;
+    
+    cairo_save(cr);
+    
+    // Draw each button
     for (auto& button : buttonWidgets) {
-        button->Draw(cr);
+        if (button) {
+            button->Draw(cr);
+        }
     }
+    
+    cairo_restore(cr);
 }
 
 void MessageBox::HandleEvent(const GUIEvent& event) {
-    if (!isEnabled) return;
+    if (!isVisible || !isEnabled) return;
     
-    // Forward events to buttons
-    for (auto& button : buttonWidgets) {
-        button->HandleEvent(event);
+    // Handle mouse events
+    if (event.type == GUIEvent::Type::MOUSE_BUTTON_PRESS ||
+        event.type == GUIEvent::Type::MOUSE_BUTTON_RELEASE) {
+        
+        // Check if click is inside our bounds
+        if (Contains(event.mouseX, event.mouseY)) {
+            // Forward event to buttons
+            for (auto& button : buttonWidgets) {
+                if (button) {
+                    button->HandleEvent(event);
+                }
+            }
+        }
     }
-    
+    // Handle mouse move for hover effects
+    else if (event.type == GUIEvent::Type::MOUSE_MOVE) {
+        for (auto& button : buttonWidgets) {
+            if (button) {
+                button->HandleEvent(event);
+            }
+        }
+    }
     // Handle escape key
-    if (event.type == GUIEvent::Type::KEY_PRESS && 
+    else if (event.type == GUIEvent::Type::KEY_PRESS && 
         event.keycode == XK_Escape) {
         if (onResult) {
             onResult(0); // Cancel/No result
@@ -212,17 +297,17 @@ void MessageBox::HandleEvent(const GUIEvent& event) {
 void MessageBox::CreateButtons() {
     buttonWidgets.clear();
     
-    int buttonWidth = 100;
-    int buttonHeight = 30;
-    int spacing = theme.metrics.padding;
-    int y = bounds.y + bounds.height - buttonHeight - spacing;
+    const int buttonWidth = 80;
+    const int buttonHeight = 32;
+    const int spacing = 8;
+    const int y = bounds.y + bounds.height - buttonHeight - 16;
     
     switch (buttons) {
         case Buttons::OK: {
             auto okButton = std::make_unique<Button>();
             okButton->SetText("OK");
             okButton->SetBounds(
-                bounds.x + bounds.width - buttonWidth - spacing,
+                bounds.x + (bounds.width - buttonWidth) / 2,
                 y, buttonWidth, buttonHeight);
             okButton->SetCallback([this]() {
                 if (onResult) onResult(1);
@@ -230,6 +315,7 @@ void MessageBox::CreateButtons() {
             buttonWidgets.push_back(std::move(okButton));
             break;
         }
+            
         
         case Buttons::OK_CANCEL: {
             auto cancelButton = std::make_unique<Button>();
@@ -255,37 +341,63 @@ void MessageBox::CreateButtons() {
             break;
         }
         
-        // Add other button configurations...
-    }
-}
-
-void MessageBox::WrapText(cairo_t* cr, const std::string& text, double maxWidth,
-                         std::vector<std::string>& lines) {
-    std::istringstream stream(text);
-    std::string word;
-    std::string currentLine;
-    double lineWidth = 0;
-    
-    while (stream >> word) {
-        cairo_text_extents_t extents;
-        cairo_text_extents(cr, (currentLine + " " + word).c_str(), &extents);
-        
-        if (lineWidth + extents.width <= maxWidth) {
-            if (!currentLine.empty()) currentLine += " ";
-            currentLine += word;
-            lineWidth = extents.width;
-        } else {
-            if (!currentLine.empty()) {
-                lines.push_back(currentLine);
-            }
-            currentLine = word;
-            cairo_text_extents(cr, word.c_str(), &extents);
-            lineWidth = extents.width;
+        case Buttons::YES_NO: {
+            auto noButton = std::make_unique<Button>();
+            noButton->SetText("No");
+            noButton->SetBounds(
+                bounds.x + bounds.width - buttonWidth * 2 - spacing * 2,
+                y, buttonWidth, buttonHeight);
+            noButton->SetCallback([this]() {
+                if (onResult) onResult(0);
+            });
+            
+            auto yesButton = std::make_unique<Button>();
+            yesButton->SetText("Yes");
+            yesButton->SetBounds(
+                bounds.x + bounds.width - buttonWidth - spacing,
+                y, buttonWidth, buttonHeight);
+            yesButton->SetCallback([this]() {
+                if (onResult) onResult(1);
+            });
+            
+            buttonWidgets.push_back(std::move(noButton));
+            buttonWidgets.push_back(std::move(yesButton));
+            break;
         }
-    }
-    
-    if (!currentLine.empty()) {
-        lines.push_back(currentLine);
+        
+        case Buttons::YES_NO_CANCEL: {
+            auto cancelButton = std::make_unique<Button>();
+            cancelButton->SetText("Cancel");
+            cancelButton->SetBounds(
+                bounds.x + bounds.width - buttonWidth * 3 - spacing * 3,
+                y, buttonWidth, buttonHeight);
+            cancelButton->SetCallback([this]() {
+                if (onResult) onResult(0);
+            });
+            
+            auto noButton = std::make_unique<Button>();
+            noButton->SetText("No");
+            noButton->SetBounds(
+                bounds.x + bounds.width - buttonWidth * 2 - spacing * 2,
+                y, buttonWidth, buttonHeight);
+            noButton->SetCallback([this]() {
+                if (onResult) onResult(2);
+            });
+            
+            auto yesButton = std::make_unique<Button>();
+            yesButton->SetText("Yes");
+            yesButton->SetBounds(
+                bounds.x + bounds.width - buttonWidth - spacing,
+                y, buttonWidth, buttonHeight);
+            yesButton->SetCallback([this]() {
+                if (onResult) onResult(1);
+            });
+            
+            buttonWidgets.push_back(std::move(cancelButton));
+            buttonWidgets.push_back(std::move(noButton));
+            buttonWidgets.push_back(std::move(yesButton));
+            break;
+        }
     }
 }
 
@@ -316,9 +428,36 @@ void MessageBox::Show(const std::string& title, const std::string& message,
     screen->Show();
 }
 
-bool MessageBox::Contains(int x, int y) const {
-    return x >= bounds.x && x < bounds.x + bounds.width &&
-           y >= bounds.y && y < bounds.y + bounds.height;
+bool MessageBox::Contains(int x, int y) {
+    return (x >= bounds.x && x < bounds.x + bounds.width &&
+            y >= bounds.y && y < bounds.y + bounds.height);
 }
 
-} // namespace havel 
+void MessageBox::WrapText(cairo_t* cr, const std::string& text, double maxWidth, std::vector<std::string>& lines) {
+    if (text.empty()) return;
+    
+    std::istringstream iss(text);
+    std::string word;
+    std::string currentLine;
+    
+    while (iss >> word) {
+        std::string testLine = currentLine.empty() ? word : currentLine + " " + word;
+        cairo_text_extents_t extents;
+        cairo_text_extents(cr, testLine.c_str(), &extents);
+        
+        if (extents.width <= maxWidth) {
+            currentLine = testLine;
+        } else {
+            if (!currentLine.empty()) {
+                lines.push_back(currentLine);
+            }
+            currentLine = word;
+        }
+    }
+    
+    if (!currentLine.empty()) {
+        lines.push_back(currentLine);
+    }
+}
+
+} // namespace havel

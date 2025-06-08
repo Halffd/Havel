@@ -9,7 +9,7 @@ using llvm::orc::ThreadSafeModule;
 using llvm::orc::ExecutionSession;
 using llvm::orc::RTDyldObjectLinkingLayer;
 using llvm::orc::IRCompileLayer;
-using llvm::orc::JITEvaluatedSymbol;
+using llvm::JITEvaluatedSymbol;  // Moved from llvm::orc to llvm namespace
 using llvm::orc::JITDylib;
 using llvm::orc::ResourceTrackerSP;
 using llvm::orc::SelfExecutorProcessControl;

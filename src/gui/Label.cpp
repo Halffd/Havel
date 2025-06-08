@@ -1,6 +1,7 @@
 #include "Label.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace havel {
 

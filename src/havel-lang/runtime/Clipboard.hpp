@@ -4,26 +4,20 @@
 #include <vector>
 #include <functional>
 
-// Forward declarations
-struct _XDisplay;
-typedef struct _XDisplay Display;
-struct _cairo_surface;
+// Use system X11 headers for type definitions
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xatom.h>
+
+// Forward declarations for Cairo
 typedef struct _cairo_surface cairo_surface_t;
-union _XEvent;
-typedef union _XEvent XEvent;
-struct _XSelectionRequestEvent;
-typedef struct _XSelectionRequestEvent XSelectionRequestEvent;
-struct _XSelectionEvent;
-typedef struct _XSelectionEvent XSelectionEvent;
-struct _XSelectionClearEvent;
-typedef struct _XSelectionClearEvent XSelectionClearEvent;
 
 namespace havel {
 
 /**
  * @brief Cross-platform clipboard manager with support for multiple data formats
  */
-class Clipboard {
+class Clipboard final {
 public:
     /**
      * @brief Supported clipboard data formats
@@ -80,15 +74,14 @@ public:
     std::unique_ptr<cairo_surface_t, void(*)(cairo_surface_t*)> GetImage() const;
 
     // File operations
-    void SetFiles(const std::vector<std::string>& paths);
-    void SetFiles(const std::vector<std::string>& paths, Selection selection);
-    std::vector<std::string> GetFiles() const;
+    void SetFiles(const std::vector<std::string>& paths, Selection selection = Selection::CLIPBOARD);
+    std::vector<std::string> GetFiles(Selection selection = Selection::CLIPBOARD) const;
 
     // Rich text operations
     void SetHTML(const std::string& html);
     std::string GetHTML() const;
 
-    // Custom format operations
+    // Custom data operations
     void SetData(const std::string& format, const std::vector<uint8_t>& data);
     std::vector<uint8_t> GetData(const std::string& format) const;
 

@@ -39,14 +39,16 @@ find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(DBUS REQUIRED dbus-1)
 
-# Find Lua (only if Havel lang enabled)
-if(NOT DISABLE_HAVEL_LANG)
-    find_package(Lua 5.4 QUIET)
-    if(NOT Lua_FOUND)
-        find_package(PkgConfig REQUIRED)
-        pkg_search_module(LUA REQUIRED lua5.4 lua-5.4 lua54)
-    endif()
+find_package(Lua 5.4 QUIET)
+if(NOT Lua_FOUND)
+    find_package(PkgConfig REQUIRED)
+    pkg_search_module(LUA REQUIRED lua5.4 lua-5.4 lua54)
 endif()
+message(STATUS "LUA_LIBRARIES: ${LUA_LIBRARIES}")
+message(STATUS "LUA_INCLUDE_DIR: ${LUA_INCLUDE_DIR}")
+
+find_library(XTEST_LIB Xtst)
+message(STATUS "XTEST_LIB: ${XTEST_LIB}")
 
 # GUI dependencies (only if not disabled)
 if(NOT DISABLE_GUI)
@@ -90,12 +92,13 @@ set(COMMON_LIBS
     Threads::Threads
     dl
     ${DBUS_LIBRARIES}
+    ${XTEST_LIB}
+    Xrandr
+    pthread
+    m
 )
 
-# Add Lua if Havel lang enabled
-if(NOT DISABLE_HAVEL_LANG)
-    list(APPEND COMMON_LIBS ${LUA_LIBRARIES})
-endif()
+list(APPEND COMMON_LIBS ${LUA_LIBRARIES})
 
 # Add GUI libs if not disabled
 if(NOT DISABLE_GUI)
@@ -163,9 +166,22 @@ endif()
 
 # Hotkey test (if test sources exist)
 if(TEST_SOURCES)
-    add_executable(hotkey_test ${TEST_SOURCES} ${CORE_SOURCES})
-    target_link_libraries(hotkey_test ${COMMON_LIBS})
-    target_compile_definitions(hotkey_test PRIVATE RUN_TESTS)
+    # Create a separate test executable for each test file
+    foreach(test_file ${TEST_SOURCES})
+        get_filename_component(test_name ${test_file} NAME_WE)
+        add_executable(${test_name} ${test_file} ${CORE_SOURCES})
+        target_link_libraries(${test_name} ${COMMON_LIBS})
+        target_compile_definitions(${test_name} PRIVATE RUN_TESTS)
+        
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(${test_name} PRIVATE -Wall -Wextra -Werror)
+        endif()
+        
+        # Add a test target for each test executable
+        add_test(NAME ${test_name}
+                 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${test_name}
+                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    endforeach()
     
     if(DISABLE_GUI)
         target_compile_definitions(hotkey_test PRIVATE DISABLE_GUI)

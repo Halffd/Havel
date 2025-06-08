@@ -294,7 +294,7 @@ void Clipboard::HandleSelectionNotify(XSelectionEvent* /*event*/) {
 // Image handling methods
 void Clipboard::SetImage(cairo_surface_t* surface) {
     SetImage(surface, Selection::CLIPBOARD);
-}
+}<<
 
 void Clipboard::SetImage(cairo_surface_t* surface, Selection selection) {
     if (!surface) return;

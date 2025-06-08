@@ -1910,33 +1910,39 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                     EmitToUinput(code, down);
                     continue;
                 } {
-                    std::scoped_lock hotkeyLock(hotkeyMutex);
-                    std::vector<HotKey *> matches;
-
-                    for (auto &[id, hotkey]: hotkeys) {
-                        if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
-                            continue;
-
-                        // Exact modifier matching
-                        if (!MatchModifiers(hotkey.modifiers, evdevKeyState))
-                            continue;
-
-                        // Context checks
-                        if (!hotkey.contexts.empty()) {
-                            if (!std::all_of(hotkey.contexts.begin(),
-                                             hotkey.contexts.end(),
-                                             [](auto &ctx) { return ctx(); })) {
+                    std::vector<std::function<void()>> callbacks;
+                        {
+                            std::scoped_lock hotkeyLock(hotkeyMutex);  // Only lock here
+                            for (auto &[id, hotkey]: hotkeys) {
+                            if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
                                 continue;
+
+                            // Exact modifier matching
+                            if (!MatchModifiers(hotkey.modifiers, evdevKeyState))
+                                continue;
+
+                            // Context checks
+                            if (!hotkey.contexts.empty()) {
+                                if (!std::all_of(hotkey.contexts.begin(),
+                                                hotkey.contexts.end(),
+                                                [](auto &ctx) { return ctx(); })) {
+                                    continue;
+                                }
+                            }
+
+                            hotkey.success = true;
+                            if (hotkey.callback) {
+                                callbacks.push_back(hotkey.callback);
                             }
                         }
-
-                        matches.push_back(&hotkey);
                     }
 
-                    for (auto *hotkey: matches) {
-                        if (down) {
-                            hotkey->success = true;
-                            if (hotkey->callback) hotkey->callback();
+                    // Then, execute all callbacks without holding the lock
+                    for (auto &callback: callbacks) {
+                        try {
+                            callback();
+                        } catch (const std::exception &e) {
+                            std::cerr << "Error in hotkey callback: " << e.what() << std::endl;
                         }
                     }
                 }

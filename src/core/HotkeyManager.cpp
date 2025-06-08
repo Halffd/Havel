@@ -39,9 +39,10 @@ void HotkeyManager::Zoom(int zoom, IO& io) {
     }
 }
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
-    : io(io), windowManager(windowManager), mpv(mpv), scriptEngine(scriptEngine),
-      brightnessManager(), verboseKeyLogging(false), verboseWindowLogging(false),
-      verboseConditionLogging(false), mpvHotkeysGrabbed(false), trackWindowFocus(false), lastActiveWindowId(0), m_isZooming(false), videoPlaying(false), lastVideoCheck(0) {
+    : io(io),
+      windowManager(windowManager),
+      mpv(mpv),
+      scriptEngine(scriptEngine){
     loadVideoSites();
 }
 

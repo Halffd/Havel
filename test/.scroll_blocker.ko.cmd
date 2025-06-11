@@ -1,0 +1,1 @@
+savedcmd_scroll_blocker.ko := ld -r -m elf_x86_64 -z noexecstack --no-warn-rwx-segments --build-id=sha1  -T /usr/lib/modules/6.15.1-arch1-2/build/scripts/module.lds -o scroll_blocker.ko scroll_blocker.o scroll_blocker.mod.o .module-common.o

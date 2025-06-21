@@ -1894,13 +1894,6 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 modState[Mod4Mask] =
                         evdevKeyState[KEY_LEFTMETA] || evdevKeyState[
                             KEY_RIGHTMETA];
-                // Emergency exit: Ctrl + Alt + Esc
-                if (code == KEY_ESC && down && modState[ControlMask] && modState
-                    [Mod1Mask]) {
-                    std::cerr << "[evdev] Emergency exit triggered\n";
-                    StopEvdevHotkeyListener();
-                    return;
-                }
 
                 bool wasDown = keyDownState[code];
                 keyDownState[code] = down;

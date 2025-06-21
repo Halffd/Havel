@@ -194,7 +194,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(2, io);
     });
 
-    io.Hotkey("!f1", []() {
+    io.Hotkey("^f1", []() {
         system("~/scripts/f1.sh -1");
     });
 
@@ -521,7 +521,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+x", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "0.1"}); }, nullptr, mpvBaseId++ },
     { "9", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub"}); }, nullptr, mpvBaseId++ },
     { "0", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "0"}); }, nullptr, mpvBaseId++ },
-    { "m", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
+    { "+c", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
     { "minus", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "-1"}); }, nullptr, mpvBaseId++ },
     { "equal", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
 

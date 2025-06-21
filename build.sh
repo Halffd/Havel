@@ -56,7 +56,7 @@ check_status() {
 # Clean build
 clean() {
     log "INFO" "Cleaning ${BUILD_TYPE} build directory..." "${YELLOW}"
-    rm -rf "${BUILD_DIR}"
+#    rm -rf "${BUILD_DIR}"
     rm -f "${BUILD_LOG}"
     check_status "Clean completed"
 }

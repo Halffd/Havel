@@ -1,73 +1,29 @@
 #ifndef AUTORUNNER_H
 #define AUTORUNNER_H
-#include "../utils/Utils.hpp"
-#include "../window/WindowManager.hpp"
-#include "../core/IO.hpp"
-#include "../core/HotkeyManager.hpp"
+
+#include <string>
 #include <thread>
-// Auto-runner class
+
 namespace havel {
-class AutoRunner {
-private:
-    bool running = false;
-    std::thread runnerThread;
-    IO& io;
-    std::string direction;
+    class IO; // Forward declaration
+    class HotkeyManager; // Forward declaration
 
-public:
-    AutoRunner(IO& ioRef) : io(ioRef) {}
+    class AutoRunner {
+    private:
+        bool running;
+        std::thread runnerThread;
+        IO& io;
+        std::string direction;
 
-    void start(const std::string& dir = "w") {
-        if (running) return;
+    public:
+        explicit AutoRunner(IO& ioRef);
+        ~AutoRunner();
 
-        direction = dir;
-        running = true;
+        void start(const std::string& dir = "w");
+        void stop();
+        void toggle(const std::string& dir = "w");
+        [[nodiscard]] bool isRunning() const;
+    };
+}
 
-        // Press and hold the key
-        io.Send(direction);
-
-        // Start monitoring thread
-        runnerThread = std::thread([this]() {
-            while (running) {
-                // Keep checking if window changed, etc.
-                if (!HotkeyManager::isGamingWindow()) {
-                    stop();
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        });
-        runnerThread.detach();
-    }
-
-    void stop() {
-        if (!running) return;
-
-        running = false;
-
-        // Release the key
-        io.Send(direction + " up");
-
-        // Clean up thread if needed
-    }
-
-    void toggle(const std::string& dir = "w") {
-        if (running) {
-            stop();
-        } else {
-            start(dir);
-        }
-    }
-
-    bool isRunning() const {
-        return running;
-    }
-
-    ~AutoRunner() {
-        if (running) {
-            stop();
-        }
-    }
-};
-} // namespace havel
-#endif //AUTORUNNER_H
+#endif // AUTORUNNER_H

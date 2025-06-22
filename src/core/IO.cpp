@@ -543,31 +543,55 @@ Key IO::handleKeyString(const std::string &key) {
 }
 
 bool IO::EmitClick(int btnCode, int action) {
-  // For autoclicker: always send down, short delay, then up, for each cycle
-  if (action == 1) {
-    // Click is implemented as Hold followed by Release
-    EmitToUinput(btnCode, true);
-    std::this_thread::sleep_for(std::chrono::milliseconds(20)); // 20ms hold
-    EmitToUinput(btnCode, false);
+  input_event ev = {};
+  
+  // action values:
+  // 0 = Release
+  // 1 = Hold
+  // 2 = Click (press and release)
+  
+  if (action == 1) { // Hold
+    ev.type = EV_KEY;
+    ev.code = btnCode;
+    ev.value = 1; // Press
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
+    ev.type = EV_SYN;
+    ev.code = SYN_REPORT;
+    ev.value = 0;
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
+    return true;
+  } 
+  else if (action == 0) { // Release
+    ev.type = EV_KEY;
+    ev.code = btnCode;
+    ev.value = 0; // Release
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
+    ev.type = EV_SYN;
+    ev.code = SYN_REPORT;
+    ev.value = 0;
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
     return true;
   }
-
-  input_event ev = {};
-
-  if (action == 2) {
+  else if (action == 2) { // Click (press and release)
     // Press
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = 1;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
     // Sync
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+    
+    // Small delay to make it a click
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    
     // Release
     ev.type = EV_KEY;
     ev.code = btnCode;

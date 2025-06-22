@@ -187,7 +187,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     }, 0);
     AddContextualHotkey("u", "currentMode == 'gaming'", 
         [this]() {
-            io.Click("left", MouseAction::Hold);
+            if (!holdClick) {
+                io.Click(MouseButton::Left, MouseAction::Hold);
+                holdClick = true;
+            } else {
+                io.Click(MouseButton::Left, MouseAction::Release);
+                holdClick = false;
+            }
         },
         nullptr,
         0);
@@ -1655,20 +1661,6 @@ void HotkeyManager::loadDebugSettings() {
     lo.info("Debug settings: KeyLogging=" + std::to_string(verboseKeyLogging) +
             ", WindowLogging=" + std::to_string(verboseWindowLogging) +
             ", ConditionLogging=" + std::to_string(verboseConditionLogging));
-}
-
-void HotkeyManager::initDebugSettings() {
-    lo.info("Initializing debug settings in config file");
-
-    // Set default values in config if they don't exist
-    Configs::Get().Set<bool>("Debug.VerboseKeyLogging", verboseKeyLogging);
-    Configs::Get().Set<bool>("Debug.VerboseWindowLogging", verboseWindowLogging);
-    Configs::Get().Set<bool>("Debug.VerboseConditionLogging", verboseConditionLogging);
-
-    // Save the config to persist the settings
-    Configs::Get().Save();
-
-    lo.info("Debug settings initialized and saved to config");
 }
 
 void HotkeyManager::applyDebugSettings() {

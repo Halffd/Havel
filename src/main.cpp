@@ -131,7 +131,6 @@ int main(int argc, char* argv[]){
         auto hotkeyManager = std::make_shared<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
         
         // Initialize and load debug settings
-        hotkeyManager->initDebugSettings();
         hotkeyManager->loadDebugSettings();
         hotkeyManager->applyDebugSettings();
         
@@ -143,13 +142,9 @@ int main(int argc, char* argv[]){
         
         // Register default hotkeys
         hotkeyManager->RegisterDefaultHotkeys();
-        print_hotkeys();
         hotkeyManager->RegisterMediaHotkeys();
-        print_hotkeys();
         hotkeyManager->RegisterWindowHotkeys();
-        print_hotkeys();
         hotkeyManager->RegisterSystemHotkeys();
-        print_hotkeys();
         
         // Load user hotkey configurations
         hotkeyManager->LoadHotkeyConfigurations();

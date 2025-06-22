@@ -50,9 +50,6 @@ namespace havel {
         // Load debug settings from config
         void loadDebugSettings();
 
-        // Initialize debug settings
-        void initDebugSettings();
-
         // Apply current debug settings
         void applyDebugSettings();
 
@@ -144,6 +141,7 @@ namespace havel {
         bool videoPlaying{false};
         time_t lastVideoCheck{0};
         const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
+        bool holdClick = false;
 
         // Hotkey state management
         bool mpvHotkeysGrabbed{false};

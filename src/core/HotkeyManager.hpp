@@ -5,6 +5,7 @@
 #include "ScriptEngine.hpp"
 #include "BrightnessManager.hpp"
 #include "../utils/Utils.hpp"
+#include "ConfigManager.hpp"
 #include <functional>
 #include <filesystem>
 #include <string>
@@ -136,6 +137,7 @@ namespace havel {
         MPVController &mpv;
         ScriptEngine &scriptEngine;
         BrightnessManager brightnessManager;
+        Configs config;
 
         // Mode management
         bool m_isZooming{false};

@@ -10,47 +10,56 @@
 #include "core/HotkeyManager.hpp"
 // #include "media/MPVController.hpp"  // Comment out this include since we already have core/MPVController.hpp
 #include "core/SocketServer.hpp"
-#include "core/AutoClicker.hpp"
-#include "core/EmergencySystem.hpp"
-#include "core/SequenceDetector.hpp"
-#include "utils/Notifier.hpp"
-#include "window/WindowRules.hpp"
-#include "core/MouseGesture.hpp"
-#include "core/MacroSystem.hpp"
+#include <atomic>
+#include <iostream>
 
 // Forward declare test_main
 int test_main(int argc, char* argv[]);
 
-volatile std::sig_atomic_t gSignalStatus = 0;
-volatile bool gShouldExit = false;
-std::thread* gForcedExitThread = nullptr;
+// ONLY use atomic types in signal handlers
+std::atomic<bool> gShouldExit(false);
+std::atomic<int> gSignalStatus(0);
 
+// Minimal, signal-safe handler
 void SignalHandler(int signal) {
-    lo.info("Received signal: " + std::to_string(signal));
-    gSignalStatus = signal;
+    // ONLY async-signal-safe operations allowed here!
+    gSignalStatus.store(signal);
     
     if (signal == SIGINT || signal == SIGTERM) {
-        lo.info("Termination signal received. Exiting...");
-        gShouldExit = true;
-        
-        // Force exit after a timeout if clean shutdown doesn't work
-        // Use a global thread pointer instead of a static thread variable
-        if (gForcedExitThread == nullptr) {
-            gForcedExitThread = new std::thread([]() {
-                std::this_thread::sleep_for(std::chrono::seconds(3));
-                if (gShouldExit) {
-                    lo.error("Forced exit due to timeout");
-                    _exit(1); // Emergency exit
-                }
-            });
-            gForcedExitThread->detach();
-        }
-
-        // Don't call exit(0) immediately; let the main loop exit gracefully
-        // This avoids segfaults with the thread still running
+        gShouldExit.store(true);
     }
+    
+    // That's it! No logging, no threads, no complex logic!
 }
 
+void shutdown() {
+    lo.info("Starting graceful shutdown...");
+    
+    // Start shutdown process
+    std::atomic<bool> shutdownComplete(false);
+    
+    std::thread shutdownThread([&shutdownComplete]() {
+        // Do your cleanup here
+        shutdownComplete.store(true);
+    });
+    
+    // Wait with timeout
+    auto start = std::chrono::steady_clock::now();
+    const auto timeout = std::chrono::seconds(3);
+    
+    while (!shutdownComplete.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        if (std::chrono::steady_clock::now() - start > timeout) {
+            lo.error("Shutdown timeout reached, forcing exit");
+            shutdownThread.detach(); // Let it die
+            _exit(1);
+        }
+    }
+    
+    shutdownThread.join();
+    lo.info("Graceful shutdown complete");
+}
 using namespace havel;
 
 // Simple socket server for external control
@@ -79,7 +88,17 @@ void print_hotkeys() {
     }
 }
 #ifndef RUN_TESTS
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]){
+    // Ensure config file exists and load config
+    auto& config = Configs::Get();
+    try {
+        config.EnsureConfigFile();
+        config.Load();
+    } catch (const std::exception& e) {
+        std::cerr << "Critical: Failed to initialize config: " << e.what() << std::endl;
+        return 1;
+    }
+
     // Set up signal handlers
     std::signal(SIGINT, SignalHandler);
     std::signal(SIGTERM, SignalHandler);
@@ -95,10 +114,6 @@ int main(int argc, char* argv[]) {
                 break;
             }
         }
-        
-        // Load configuration
-        auto& config = Configs::Get();
-        config.Load("config.json");
         
         // Create IO manager
         auto io = std::make_shared<IO>();
@@ -153,19 +168,20 @@ int main(int argc, char* argv[]) {
         auto lastCheck = std::chrono::steady_clock::now();
         auto lastWindowCheck = std::chrono::steady_clock::now();
         print_hotkeys();
-        while (running && !gShouldExit) {
+        while (running && !gShouldExit.load()) {
             // Process events
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             
             // Check for signals
-            if (gSignalStatus != 0) {
-                lo.info("Handling signal: " + std::to_string(gSignalStatus));
-                if (gSignalStatus == SIGINT || gSignalStatus == SIGTERM) {
+            int signal = gSignalStatus.load();
+            if (signal != 0) {
+                lo.info("Handling signal: " + std::to_string(signal));
+                if (signal == SIGINT || signal == SIGTERM) {
+                    lo.info("Termination signal received. Exiting...");
                     running = false;
                 }
-                gSignalStatus = 0;
+                gSignalStatus.store(0); // Reset
             }
-            
             // Check active window periodically to update hotkey states
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= 300) {
@@ -174,11 +190,8 @@ int main(int argc, char* argv[]) {
                 bool isGamingWindow = hotkeyManager->evaluateCondition("currentMode == 'gaming'");
 
                 if (isGamingWindow) {
-                    //lo.info("Gaming window detected");
-                    // Register hotkeys if a gaming window is found
                     hotkeyManager->grabGamingHotkeys();
                 } else {
-                    // Unregister hotkeys if no gaming window is found
                     hotkeyManager->ungrabGamingHotkeys();
                 }
                 lastWindowCheck = now;
@@ -203,12 +216,8 @@ int main(int argc, char* argv[]) {
         
         lo.info("Shutting down HvC...");
         
-        // Clean up the forced exit thread if it was created
-        if (gForcedExitThread) {
-            delete gForcedExitThread;
-            gForcedExitThread = nullptr;
-        }
-        
+        shutdown();
+
         return 0;
     }
     catch (const std::exception& e) {

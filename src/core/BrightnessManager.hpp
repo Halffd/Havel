@@ -27,7 +27,9 @@
         static constexpr double DEFAULT_BRIGHTNESS = 0.85;
         static constexpr double STARTUP_BRIGHTNESS = 0.3;
         static constexpr int STARTUP_GAMMA = 7500; // 75% of 10000K
-
+        double brightnessAmount = 0.02;
+        int gammaAmount = 200;
+        
         BrightnessManager();
         ~BrightnessManager() = default;
 
@@ -38,10 +40,13 @@
         bool setDefaultBrightness();
 
         // Incremental adjustments
-        bool increaseBrightness(double amount = 0.1);
-        bool decreaseBrightness(double amount = 0.1);
-        bool increaseGamma(int amount = 500);
-        bool decreaseGamma(int amount = 500);
+        static constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.02;
+        static constexpr int DEFAULT_GAMMA_AMOUNT = 200;
+
+        bool increaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
+        bool decreaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
+        bool increaseGamma(int amount = DEFAULT_GAMMA_AMOUNT);
+        bool decreaseGamma(int amount = DEFAULT_GAMMA_AMOUNT);
 
         // Setters
         void setVerbose(bool verbose) { settings.verbose = verbose; }

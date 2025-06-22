@@ -1968,7 +1968,6 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       modState[Mod4Mask] =
           evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
 
-      bool wasDown = keyDownState[code];
       keyDownState[code] = down;
 
       // Dispatch both key down and key up events based on registration

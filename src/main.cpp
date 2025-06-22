@@ -139,10 +139,6 @@ int main(int argc, char* argv[]) {
         // Load user hotkey configurations
         hotkeyManager->LoadHotkeyConfigurations();
         print_hotkeys();
-        // Initialize window manager
-        int moveSpeed = config.Get<int>("Window.MoveSpeed", 10);
-        // windowManager->SetMoveSpeed(moveSpeed);
-        
         // Start socket server for external control
         AppServer server(config.Get<int>("Network.Port", 8765));
         server.Start();

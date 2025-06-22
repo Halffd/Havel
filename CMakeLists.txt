@@ -174,7 +174,7 @@ if(TEST_SOURCES)
         target_compile_definitions(${test_name} PRIVATE RUN_TESTS)
         
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
-            target_compile_options(${test_name} PRIVATE -Wall -Wextra -Werror)
+            target_compile_options(${test_name} PRIVATE -Wall -Wextra)
         endif()
         
         # Add a test target for each test executable

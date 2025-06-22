@@ -30,7 +30,7 @@ namespace havel {
         // Lua environment
         sol::state lua;
         IO& io;
-        WindowManager& windowManager;
+        [[maybe_unused]] WindowManager& windowManager;
         
         // API binding
         void RegisterFunctions();

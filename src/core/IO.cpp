@@ -942,39 +942,123 @@ HHOOK IO::keyboardHook = NULL;
     }
     return false;
 }
-
 HotKey IO::AddHotkey(const std::string &rawInput,
-                     std::function<void()> action, int id) const {
-    // Parse event type suffix and keycode hotkeys
-    std::string hotkeyStr = rawInput;
-    std::string eventTypeStr;
-    HotkeyEventType eventType = HotkeyEventType::Both;
+    std::function<void()> action,
+    int id) const {
+std::string hotkeyStr = rawInput;
 
-    // Support hotkeyStr like "kc123:down" or "kc123:up"
-    size_t colonPos = hotkeyStr.rfind(':');
-    if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
-        eventTypeStr = hotkeyStr.substr(colonPos + 1);
-        eventType = ParseHotkeyEventType(eventTypeStr);
-        hotkeyStr = hotkeyStr.substr(0, colonPos);
-    }
+// Parse event type from ":up"/":down"
+HotkeyEventType eventType = HotkeyEventType::Down;
+size_t colonPos = hotkeyStr.rfind(':');
+if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
+std::string suffix = hotkeyStr.substr(colonPos + 1);
+if (suffix == "up")
+eventType = HotkeyEventType::Up;
+hotkeyStr = hotkeyStr.substr(0, colonPos);
+}
 
-    if (id == 0) id = ++hotkeyCount;
-        if (result.success) {
-            std::cout << "Grabbing hotkey: " << rawInput << std::endl;
-            Grab(result.key, result.modifiers, DefaultRootWindow(display),
-                 result.exclusive);
-            std::cout << "Registered hotkey: " << rawInput << (result.suspend
-                ? " (suspend key)"
-                : "") << "\n";
-            std::cout << "  Key: " << result.key << ", keycode: " << result.key
-                    << ", modifiers: " << result.modifiers << ", exclusive: " <<
-                    result.exclusive << "\n";
-            return true;
-        } else {
-            std::cout << "Failed to register hotkey: " << rawInput << std::endl;
-            return false;
-        }
-    }
+// Generate ID if not provided
+if (id == 0)
+id = ++hotkeyCount;
+
+// Parse modifier prefix
+bool exclusive = true;
+bool suspendKey = false;
+int modifiers = 0;
+size_t i = 0;
+
+while (i < hotkeyStr.size()) {
+switch (hotkeyStr[i]) {
+case '!': modifiers |= Mod1Mask; break;     // Alt
+case '^': modifiers |= ControlMask; break;  // Ctrl
+case '+': modifiers |= ShiftMask; break;    // Shift
+case '#': modifiers |= Mod4Mask; break;     // Win
+case '*': case '~': exclusive = false; break;
+case '$': suspendKey = true; break;
+default: goto done_parsing;
+}
+++i;
+}
+
+done_parsing:
+hotkeyStr = hotkeyStr.substr(i); // Remove modifiers
+
+// Determine keycode
+KeyCode keycode = 0;
+bool isEvdev = false;
+
+if (!hotkeyStr.empty() && hotkeyStr[0] == '@') {
+// evdev mode
+std::string evdevKey = hotkeyStr.substr(1);
+keycode = EvdevNameToKeyCode(evdevKey);
+if (keycode == 0) {
+std::cerr << "Invalid evdev key name: " << evdevKey << "\n";
+return {};
+}
+isEvdev = true;
+} else if (hotkeyStr.substr(0, 2) == "kc") {
+// raw keycode like kc123
+int kc = std::stoi(hotkeyStr.substr(2));
+if (kc <= 0 || kc > 255) {
+std::cerr << "Invalid raw keycode: " << kc << "\n";
+return {};
+}
+keycode = kc;
+} else {
+std::string keyLower = hotkeyStr;
+std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(), ::tolower);
+Key keysym = StringToVirtualKey(keyLower);
+keycode = keysym < 10 ? keysym : XKeysymToKeycode(display, keysym);
+
+if (keycode == 0) {
+std::cerr << "Invalid X11 keysym: " << keyLower << "\n";
+return {};
+}
+}
+
+// Build hotkey
+HotKey hk;
+hk.alias = rawInput;
+hk.key = static_cast<Key>(keycode);
+hk.modifiers = modifiers;
+hk.callback = std::move(action);
+hk.action = "";
+hk.enabled = true;
+hk.blockInput = exclusive;
+hk.suspend = suspendKey;
+hk.exclusive = exclusive;
+hk.success = (display && keycode > 0);
+hk.evdev = isEvdev;
+hk.eventType = eventType;
+
+hotkeys[id] = hk;
+return hotkeys.at(id);
+}
+bool IO::Hotkey(const std::string &rawInput,
+    std::function<void()> action,
+    int id) {
+HotKey hk = AddHotkey(rawInput, std::move(action), id);
+
+if (!hk.success) {
+std::cerr << "Failed to register hotkey: " << rawInput << "\n";
+return false;
+}
+
+std::cout << "Registered hotkey: " << rawInput
+  << (hk.suspend ? " (suspend key)" : "")
+  << "\n  Key: " << hk.key
+  << ", Modifiers: " << hk.modifiers
+  << ", Exclusive: " << hk.exclusive
+  << ", EventType: " << (hk.eventType == HotkeyEventType::Down ? "Down" :
+                         hk.eventType == HotkeyEventType::Up ? "Up" : "Both")
+  << "\n";
+
+if (!hk.evdev && display) {
+Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.exclusive);
+}
+
+return true;
+}
 
     // Method to control send
     void IO::ControlSend(const std::string &control, const std::string &keys) {

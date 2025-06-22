@@ -671,11 +671,18 @@ void HotkeyManager::RegisterSystemHotkeys() {
     });
 }
 
-bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()> callback) {
+bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()> callback, HotkeyEventType eventType) {
     std::string convertedHotkey = parseHotkeyString(hotkeyStr);
     logKeyEvent(hotkeyStr, "REGISTER", "Converted to: " + convertedHotkey);
 
-    return io.Hotkey(convertedHotkey, [this, hotkeyStr, callback]() {
+    // Support event type and keycode hotkeys
+    std::string fullHotkey = convertedHotkey;
+    if (eventType == HotkeyEventType::Down)
+        fullHotkey += ":down";
+    else if (eventType == HotkeyEventType::Up)
+        fullHotkey += ":up";
+
+    return io.Hotkey(fullHotkey, [this, hotkeyStr, callback]() {
         logKeyEvent(hotkeyStr, "PRESS");
         if (verboseWindowLogging) {
             logWindowEvent("ACTIVE", "Key pressed: " + hotkeyStr);
@@ -683,6 +690,32 @@ bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()
         callback();
     });
 }
+
+// Overload for backwards compatibility
+bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()> callback) {
+    return AddHotkey(hotkeyStr, callback, HotkeyEventType::Both);
+}
+
+// Register RWin keydown and keyup hotkeys for gaming and non-gaming mode
+void HotkeyManager::RegisterSpecialRWinHotkeys() {
+    // RWin keycode for X11 is usually 134, but should use mapping if needed
+    // For keycode hotkey: "kc134:down" and "kc134:up"
+    // If gaming mode: play/pause on keydown
+    AddHotkey("kc134", [this]() {
+        if (currentMode == "gaming") {
+            PlayPause();
+        }
+    }, HotkeyEventType::Down);
+
+    // If not gaming mode: open whisker menu on keyup
+    AddHotkey("kc134", [this]() {
+        if (currentMode != "gaming") {
+            // Replace with actual call to open whisker menu
+            io.Send("#w"); // Example: Win+w to open menu
+        }
+    }, HotkeyEventType::Up);
+}
+
 
 bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, const std::string& action) {
     std::string convertedHotkey = parseHotkeyString(hotkeyStr);

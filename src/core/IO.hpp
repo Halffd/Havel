@@ -35,20 +35,31 @@ enum class MouseAction {
     Click = 2
 };
 
-    struct HotKey {
-        std::string alias;
-        Key key;
-        int modifiers;
-        std::function<void()> callback;
-        std::string action;
-        std::vector<std::function<bool()> > contexts;
-        bool enabled = true;
-        bool blockInput = false;
-        bool suspend = false;
-        bool exclusive = false;
-        bool success = false;
-        bool evdev = false;
-    };
+    enum class HotkeyEventType { Both, Down, Up };
+
+struct HotKey {
+    std::string alias;
+    Key key;
+    int modifiers;
+    std::function<void()> callback;
+    std::string action;
+    std::vector<std::function<bool()> > contexts;
+    bool enabled = true;
+    bool blockInput = false;
+    bool suspend = false;
+    bool exclusive = false;
+    bool success = false;
+    bool evdev = false;
+    HotkeyEventType eventType = HotkeyEventType::Both;
+};
+
+// Helper for parsing event type from string
+inline HotkeyEventType ParseHotkeyEventType(const std::string& str) {
+    if (str == "down") return HotkeyEventType::Down;
+    if (str == "up") return HotkeyEventType::Up;
+    return HotkeyEventType::Both;
+}
+;
 
     struct ModifierState {
         bool leftCtrl = false;

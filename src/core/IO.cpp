@@ -254,7 +254,7 @@ HHOOK IO::keyboardHook = NULL;
         Window root = DefaultRootWindow(display);
 
         // Select events on the root window
-        XSelectInput(display, root, KeyPressMask);
+        XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
 
         // Helper function to check if a keysym is a modifier
         [[maybe_unused]] auto IsModifierKey = [](KeySym ks) -> bool {
@@ -273,51 +273,48 @@ HHOOK IO::keyboardHook = NULL;
             if (XPending(display) > 0) {
                 XNextEvent(display, &event);
 
-                if (event.type == KeyPress) {
-                    XKeyEvent *keyEvent = &event.xkey;
-                    KeySym keysym = XLookupKeysym(keyEvent, 0);
+                bool isDown = false;
+                if (event.type == KeyPress) isDown = true;
+                else if (event.type == KeyRelease) isDown = false;
+                XKeyEvent *keyEvent = &event.xkey;
+                KeySym keysym = XLookupKeysym(keyEvent, 0);
 
-                    // --- FIX: Ignore events for modifier keys themselves ---
-                    if (IsModifierKey(keysym)) {
-                        continue;
-                    }
-                    // ------------------------------------------------------
+                // Ignore events for modifier keys themselves
+                if (IsModifierKey(keysym)) {
+                    continue;
+                }
 
-                    std::cout << "KeyPress event detected: " << XKeysymToString(
-                                keysym)
-                            << " (keycode: " << keyEvent->keycode << ")"
-                            << " with state: " << keyEvent->state << std::endl;
+                std::cout << (isDown ? "KeyPress" : "KeyRelease") << " event detected: " << XKeysymToString(
+                            keysym)
+                        << " (keycode: " << keyEvent->keycode << ")"
+                        << " with state: " << keyEvent->state << std::endl;
 
-                    // --- FIX: Clean the modifier state mask ---
-                    // Include standard modifiers + LockMask (Caps Lock)
-                    // Exclude Mod2Mask (NumLock) and Mod3Mask (ScrollLock) typically
-                    unsigned int relevantModifiers =
-                            ShiftMask | LockMask | ControlMask | Mod1Mask |
-                            Mod4Mask | Mod5Mask;
-                    unsigned int cleanedState =
-                            keyEvent->state & relevantModifiers;
-                    // ------------------------------------------
+                unsigned int relevantModifiers =
+                        ShiftMask | LockMask | ControlMask | Mod1Mask |
+                        Mod4Mask | Mod5Mask;
+                unsigned int cleanedState =
+                        keyEvent->state & relevantModifiers;
 
-                    // Find and execute matching hotkeys
-                    for (const auto &[id, hotkey]: hotkeys) {
-                        if (hotkey.enabled) {
-                            // KeySym was stored in hotkey.key during registration
-                            if (hotkey.key == keyEvent->keycode &&
-                                static_cast<int>(cleanedState) == hotkey.modifiers) {
-                                // Compare base key AND cleaned modifier state
-                                std::cout << "Hotkey matched: " << hotkey.alias
-                                        << " (state: " << cleanedState <<
-                                        " vs expected: " << hotkey.modifiers <<
-                                        ")" << std::endl;
-                                // Execute the callback in a separate thread to avoid blocking
-                                if (hotkey.callback) {
-                                    std::thread([callback = hotkey.callback]() {
-                                        callback();
-                                    }).detach();
-                                }
-                                // Consider breaking if only one hotkey should match per event
-                                break;
+                // Find and execute matching hotkeys
+                for (const auto &[id, hotkey]: hotkeys) {
+                    if (hotkey.enabled) {
+                        if (hotkey.key == keyEvent->keycode &&
+                            static_cast<int>(cleanedState) == hotkey.modifiers) {
+                            // Event type check
+                            if (hotkey.eventType == HotkeyEventType::Down && !isDown) continue;
+                            if (hotkey.eventType == HotkeyEventType::Up && isDown) continue;
+                            std::cout << "Hotkey matched: " << hotkey.alias
+                                    << " (state: " << cleanedState <<
+                                    " vs expected: " << hotkey.modifiers <<
+                                    ")" << std::endl;
+                            // Execute the callback in a separate thread to avoid blocking
+                            if (hotkey.callback) {
+                                std::thread([callback = hotkey.callback]() {
+                                    callback();
+                                }).detach();
                             }
+                            // Consider breaking if only one hotkey should match per event
+                            break;
                         }
                     }
                 }
@@ -942,83 +939,26 @@ HHOOK IO::keyboardHook = NULL;
         if (it != hotkeys.end()) {
             it->second.enabled = true;
             return true;
-        }
-        return false;
+    }
+    return false;
+}
+
+HotKey IO::AddHotkey(const std::string &rawInput,
+                     std::function<void()> action, int id) const {
+    // Parse event type suffix and keycode hotkeys
+    std::string hotkeyStr = rawInput;
+    std::string eventTypeStr;
+    HotkeyEventType eventType = HotkeyEventType::Both;
+
+    // Support hotkeyStr like "kc123:down" or "kc123:up"
+    size_t colonPos = hotkeyStr.rfind(':');
+    if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
+        eventTypeStr = hotkeyStr.substr(colonPos + 1);
+        eventType = ParseHotkeyEventType(eventTypeStr);
+        hotkeyStr = hotkeyStr.substr(0, colonPos);
     }
 
-    HotKey IO::AddHotkey(const std::string &rawInput,
-                         std::function<void()> action, int id) const {
-        if (id == 0) id = ++hotkeyCount;
-
-        std::string hotkeyStr = rawInput;
-        bool exclusive = true;
-        bool suspendKey = false;
-        int modifiers = 0;
-        std::string keyName;
-
-        size_t i = 0;
-        while (i < hotkeyStr.size()) {
-            char c = hotkeyStr[i];
-            if (c == '!') modifiers |= Mod1Mask; // Alt
-            else if (c == '^') modifiers |= ControlMask; // Ctrl
-            else if (c == '+') modifiers |= ShiftMask; // Shift
-            else if (c == '#') modifiers |= Mod4Mask; // Win/Super
-            else if (c == '*' || c == '~') exclusive = false;
-            else if (c == '$') suspendKey = true;
-            else break;
-            ++i;
-        }
-
-        hotkeyStr = hotkeyStr.substr(i); // Strip modifiers
-
-        KeyCode keycode = 0;
-        bool isEvdev = false;
-
-        if (!hotkeyStr.empty() && hotkeyStr[0] == '@') {
-            // evdev mode: raw linux input event keycode (e.g. @KEY_F13)
-            std::string evdevKey = hotkeyStr.substr(1); // remove '@'
-
-            // You can use a lookup or hardcode a few common ones
-            keycode = EvdevNameToKeyCode(evdevKey);
-            if (keycode == 0) {
-                std::cerr << "Invalid evdev key name: " << evdevKey << "\n";
-                return {};
-            }
-            isEvdev = true;
-        } else {
-            // X11 keysym -> keycode
-            std::string keyLower = hotkeyStr;
-            std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
-                           ::tolower);
-            Key keysym = StringToVirtualKey(keyLower);
-            keycode = keysym < 10 ? keysym : XKeysymToKeycode(display, keysym);
-            if (keycode <= 0) {
-                std::cerr << "Failed to convert keysym to keycode: " << keyLower
-                        << std::endl;
-                return HotKey();
-            }
-        }
-
-        HotKey hk;
-        hk.alias = rawInput;
-        hk.key = static_cast<Key>(keycode);
-        hk.modifiers = modifiers;
-        hk.callback = std::move(action);
-        hk.action = "";  // Initialize empty action string
-        hk.enabled = true;
-        hk.blockInput = exclusive;
-        hk.suspend = suspendKey;
-        hk.exclusive = exclusive;
-        hk.success = (display && keycode > 0);
-        hk.evdev = isEvdev;
-
-        hotkeys[id] = hk;
-        return hotkeys[id];
-    }
-
-    bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
-                    int id) {
-        HotKey result = AddHotkey(rawInput, action, id);
+    if (id == 0) id = ++hotkeyCount;
         if (result.success) {
             std::cout << "Grabbing hotkey: " << rawInput << std::endl;
             Grab(result.key, result.modifiers, DefaultRootWindow(display),
@@ -1898,45 +1838,39 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
                 bool wasDown = keyDownState[code];
                 keyDownState[code] = down;
 
-                // Only trigger on fresh key press
-                if (!down || wasDown) {
-                    EmitToUinput(code, down);
-                    continue;
-                } {
-                    std::vector<std::function<void()>> callbacks;
-                        {
-                            std::scoped_lock hotkeyLock(hotkeyMutex);  // Only lock here
-                            for (auto &[id, hotkey]: hotkeys) {
-                            if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
+                // Dispatch both key down and key up events based on registration
+                std::vector<std::function<void()>> callbacks;
+                {
+                    std::scoped_lock hotkeyLock(hotkeyMutex);
+                    for (auto &[id, hotkey]: hotkeys) {
+                        if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
+                            continue;
+                        // Event type check
+                        if (hotkey.eventType == HotkeyEventType::Down && !down) continue;
+                        if (hotkey.eventType == HotkeyEventType::Up && down) continue;
+                        // Exact modifier matching
+                        if (!MatchModifiers(hotkey.modifiers, evdevKeyState))
+                            continue;
+                        // Context checks
+                        if (!hotkey.contexts.empty()) {
+                            if (!std::all_of(hotkey.contexts.begin(),
+                                             hotkey.contexts.end(),
+                                             [](auto &ctx) { return ctx(); })) {
                                 continue;
-
-                            // Exact modifier matching
-                            if (!MatchModifiers(hotkey.modifiers, evdevKeyState))
-                                continue;
-
-                            // Context checks
-                            if (!hotkey.contexts.empty()) {
-                                if (!std::all_of(hotkey.contexts.begin(),
-                                                hotkey.contexts.end(),
-                                                [](auto &ctx) { return ctx(); })) {
-                                    continue;
-                                }
                             }
-
-                            hotkey.success = true;
-                            if (hotkey.callback) {
-                                callbacks.push_back(hotkey.callback);
-                            }
+                        }
+                        hotkey.success = true;
+                        if (hotkey.callback) {
+                            callbacks.push_back(hotkey.callback);
                         }
                     }
-
-                    // Then, execute all callbacks without holding the lock
-                    for (auto &callback: callbacks) {
-                        try {
-                            callback();
-                        } catch (const std::exception &e) {
-                            std::cerr << "Error in hotkey callback: " << e.what() << std::endl;
-                        }
+                }
+                // Execute all callbacks without holding the lock
+                for (auto &callback: callbacks) {
+                    try {
+                        callback();
+                    } catch (const std::exception &e) {
+                        std::cerr << "Error in hotkey callback: " << e.what() << std::endl;
                     }
                 }
                 EmitToUinput(code, down);

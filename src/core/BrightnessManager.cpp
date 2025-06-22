@@ -1,4 +1,5 @@
 #include "BrightnessManager.hpp"
+#include "ConfigManager.hpp"
 #include "../utils/Logger.hpp"
 #include <cstdlib>
 #include <iostream>
@@ -280,6 +281,9 @@ bool BrightnessManager::setDefaultBrightness() {
 }
 
 bool BrightnessManager::increaseBrightness(double amount) {
+    if (amount == DEFAULT_BRIGHTNESS_AMOUNT) {
+        amount = havel::Configs::Get().GetBrightnessAmount();
+    }
     double newBrightness = std::min(1.0, settings.currentBrightness + amount);
     if (newBrightness != settings.currentBrightness) {
         lo.info("Increasing brightness from " + std::to_string(settings.currentBrightness) + 
@@ -293,6 +297,9 @@ bool BrightnessManager::increaseBrightness(double amount) {
 }
 
 bool BrightnessManager::decreaseBrightness(double amount) {
+    if (amount == DEFAULT_BRIGHTNESS_AMOUNT) {
+        amount = havel::Configs::Get().GetBrightnessAmount();
+    }
     double newBrightness = std::max(0.0, settings.currentBrightness - amount);
     if (newBrightness != settings.currentBrightness) {
         lo.info("Decreasing brightness from " + std::to_string(settings.currentBrightness) + 
@@ -306,6 +313,9 @@ bool BrightnessManager::decreaseBrightness(double amount) {
 }
 
 bool BrightnessManager::increaseGamma(int amount) {
+    if (amount == DEFAULT_GAMMA_AMOUNT) {
+        amount = havel::Configs::Get().GetGammaAmount();
+    }
     int newGamma = std::min(MAX_TEMPERATURE, settings.currentGamma + amount);
     if (newGamma != settings.currentGamma) {
         settings.currentGamma = newGamma;
@@ -318,6 +328,9 @@ bool BrightnessManager::increaseGamma(int amount) {
 }
 
 bool BrightnessManager::decreaseGamma(int amount) {
+    if (amount == DEFAULT_GAMMA_AMOUNT) {
+        amount = havel::Configs::Get().GetGammaAmount();
+    }
     int newGamma = std::max(MIN_TEMPERATURE, settings.currentGamma - amount);
     if (newGamma != settings.currentGamma) {
         settings.currentGamma = newGamma;

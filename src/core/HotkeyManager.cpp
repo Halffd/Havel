@@ -1,5 +1,6 @@
 #include "HotkeyManager.hpp"
 #include "../utils/Logger.hpp"
+#include "IO.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include <iostream>
@@ -43,6 +44,7 @@ HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController
       windowManager(windowManager),
       mpv(mpv),
       scriptEngine(scriptEngine){
+    config = Configs::Get();
     loadVideoSites();
 }
 
@@ -159,8 +161,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         system("pactl set-sink-volume @DEFAULT_SINK@ +5%");
     });
 
-    io.Hotkey("+f6", [this]() {
-        mpv.SendCommand({"cycle", "pause"});
+    io.Hotkey("f6", [this]() {
+        PlayPause();
     });
 
     // Application Shortcuts
@@ -180,9 +182,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // If not gaming mode: open whisker menu on keyup
     AddContextualHotkey("@lwin:up", "currentMode == 'gaming'", 
         nullptr,
-        [this]() {
+        []() {
         system("xfce4-popup-whiskermenu");
     }, 0);
+    AddContextualHotkey("u", "currentMode == 'gaming'", 
+        [this]() {
+            io.Click("left", MouseAction::Hold);
+        },
+        nullptr,
+        0);
     io.Hotkey("~Button1", [this]() {
         lo.info("Button1");
         mouse1Pressed = true;
@@ -340,11 +348,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::cout << "alt+Button5" << std::endl;
         Zoom(1, io);
     });
-    // Add contextual hotkey for D key in Koikatu
     AddHotkey("!d", [this]() {
-            // Show black overlay when D is pressed in Koikatu
             showBlackOverlay();
-            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (class match)");
+            logWindowEvent("BLACK_OVERLAY", "Showing black overlay");
         });
 
     // Also add a title-based hotkey for Koikatu window title (as a fallback)
@@ -508,12 +514,6 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+Esc", "currentMode == 'gaming'", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
     { "+PgUp", "currentMode == 'gaming'", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
     { "+PgDn", "currentMode == 'gaming'", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },
-
-    // Netflix pause fallback — same key
-    { "@LWin", "currentMode == 'gaming'", [this]() {
-        PlayPause();
-    }, []() { system("xfce4-popup-whiskermenu"); }, mpvBaseId++ },
-
     // Seek
     { "o", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "-3"}); }, nullptr, mpvBaseId++ },
     { "p", "currentMode == 'gaming'", [this]() { mpv.SendCommand({"seek", "3"}); }, nullptr, mpvBaseId++ },
@@ -638,15 +638,6 @@ void HotkeyManager::RegisterSystemHotkeys() {
         // Show system monitor
         system("gnome-system-monitor &");
     });
-
-    AddHotkey("f7", [this]() {
-        brightnessManager.decreaseBrightness();
-    });
-
-    AddHotkey("f8", [this]() {
-        brightnessManager.increaseBrightness();
-    });
-
     // Toggle zooming mode
     AddHotkey("!+z", [this]() {
         setZooming(!isZooming());
@@ -1014,26 +1005,7 @@ bool HotkeyManager::isGamingWindow() {
     std::string windowClass = WindowManager::activeWindow.className;
 
     // List of window classes for gaming applications
-    const std::vector<std::string> gamingApps = {
-        "steam_app_default",      // Steam games
-        "retroarch",      // RetroArch emulator
-        "ryujinx",        // Nintendo Switch emulator
-        "pcsx2",          // PlayStation 2 emulator
-        "dolphin-emu",    // GameCube/Wii emulator
-        "rpcs3",          // PlayStation 3 emulator
-        "cemu",           // Wii U emulator
-        "yuzu",           // Another Switch emulator
-        "duckstation",    // PlayStation 1 emulator
-        "ppsspp",         // PSP emulator
-        "xemu",           // Original Xbox emulator
-        "wine",           // Wine (Windows games on Linux)
-        "lutris",         // Lutris game launcher
-        "heroic",         // Epic Games launcher for Linux
-        "gamescope",      // Valve's gaming compositor
-        "games",           // Generic games category
-        "minecraft",
-		"nierautomata"
-    };
+    const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
     // Convert window class to lowercase
     std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(), ::tolower);
     // Check if window class contains any gaming app identifier
@@ -1729,5 +1701,4 @@ void HotkeyManager::applyDebugSettings() {
         setVerboseConditionLogging(newValue);
     });
 }
-
 } // namespace havel

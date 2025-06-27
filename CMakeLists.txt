@@ -94,6 +94,9 @@ set(COMMON_LIBS
     ${DBUS_LIBRARIES}
     ${XTEST_LIB}
     Xrandr
+    crypto
+    zip
+    ssl
     pthread
     m
 )

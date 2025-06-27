@@ -3,6 +3,7 @@
 #include "IO.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
+#include "../process/Launcher.hpp"
 #include <iostream>
 #include <map>
 #include <vector>
@@ -183,7 +184,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey("@lwin:up", "currentMode == 'gaming'", 
         nullptr,
         []() {
-        system("xfce4-popup-whiskermenu");
+        Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
     }, 0);
     AddContextualHotkey("u", "currentMode == 'gaming'", 
         [this]() {
@@ -267,7 +268,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         // Move window to next monitor using MoveWindow(4) for right movement
         WindowManager::MoveWindow(4);
     });
-
+    io.Hotkey("&f9", [this]() {
+        lo.info("Suspending all hotkeys");
+        io.Suspend(); // Special case: 0 means suspend all hotkeys
+        lo.debug("Hotkeys suspended");
+    });
     // Quick window switching hotkeys
     auto switchToLastWindow = []() {
         lo.debug("Switching to last window");
@@ -278,11 +283,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // Emergency Features
     const std::map<std::string, std::pair<std::string, std::function<void()>>> emergencyHotkeys = {
-        {"f9", {"Suspend hotkeys", [this]() {
-            lo.info("Suspending all hotkeys");
-            io.Suspend(0); // Special case: 0 means suspend all hotkeys
-            lo.debug("Hotkeys suspended");
-        }}},
         {"#Esc", {"Restart application", []() {
             lo.info("Restarting application");
             // Get current executable path using the correct namespace

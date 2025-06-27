@@ -36,19 +36,6 @@ namespace havel {
         int x, y, width, height;
     };
 
-    enum class ProcessMethod {
-        ContinueExecution,
-        WaitForTerminate,
-        WaitUntilStarts,
-        SystemCall,
-        AsyncProcessCreate,
-        ForkProcess,
-        CreateNewWindow,
-        SameWindow,
-        Shell,
-        Invalid // Added for error handling
-    };
-
 class WindowManager {
 public:
     WindowManager();
@@ -64,13 +51,6 @@ public:
     static XWindow Find(cstr identifier);
     static XWindow FindWindowInGroup(cstr groupName);
     static XWindow NewWindow(cstr name, std::vector<int>* dimensions = nullptr, bool hide = false);
-
-    // Process management
-    static void SetPriority(int priority, pID procID = 0);
-    static int64_t Terminal(cstr command, bool canPause, str windowState, bool continueExecution, cstr terminal = defaultTerminal);
-
-    template <typename T>
-    static int64_t Run(str path, T method, str windowState, str command, int priority);
 
     // Window manager info
     std::string GetCurrentWMName() const;
@@ -122,7 +102,6 @@ private:
     static bool InitializeX11();
     std::string DetectWindowManager() const;
     bool CheckWMProtocols() const;
-    static ProcessMethod toMethod(cstr method);
     // Private members
     std::string wmName;
     bool wmSupported{false};

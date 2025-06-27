@@ -75,7 +75,18 @@ struct IoEvent {
   int modifiers;
   bool isDown;
 };
-
+class GrabException : public std::exception {
+public:
+  const char *what() const noexcept override {
+    return "Failed to grab hotkey";
+  }
+};
+class EvdevException : public std::exception {
+public:
+  const char *what() const noexcept override {
+    return "Failed to initialize evdev";
+  }
+};
 class IO {
   std::thread evdevThread;
   std::atomic<bool> evdevRunning{false};
@@ -83,7 +94,7 @@ class IO {
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
-  bool suspendHotkeys = false;
+  bool isSuspended = false;
 
   IO();
 
@@ -113,7 +124,7 @@ public:
 
   bool Hotkey(const std::string &hotkeyStr, std::function<void()> action,
               int id = 0);
-
+  bool Suspend();
   bool Suspend(int id);
 
   bool Resume(int id);

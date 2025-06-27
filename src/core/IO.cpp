@@ -178,6 +178,8 @@ void IO::EmitToUinput(int code, bool down) {
 
 void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
               bool isMouse) {
+  Logger lo;
+
   if (!display)
     return;
 
@@ -209,8 +211,7 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
         Status status = XGrabKey(display, input, finalMods, root, True,
                                  GrabModeAsync, GrabModeAsync);
         if (status != Success) {
-          std::cerr << "Failed to grab key (code: " << (int)input
-                    << ") with modifiers: " << finalMods << std::endl;
+          lo.error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
         }
       } else {
         XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
@@ -938,7 +939,35 @@ void IO::Send(cstr keys) {
   activeModifiers.clear();
 #endif
 }
-
+bool IO::Suspend(){
+  try {
+    if(isSuspended) {
+      for(auto& [id, hotkey] : hotkeys) {
+        if(!hotkey.suspend){
+          if(!hotkey.evdev){
+            Grab(hotkey.key, hotkey.modifiers, display->root, hotkey.exclusive);
+          }
+          hotkey.enabled = true;
+        }
+      }
+      isSuspended = false;
+      return true;
+    }
+    for(auto& [id, hotkey] : hotkeys) {
+      if(!hotkey.suspend){
+        if(!hotkey.evdev){
+          Ungrab(hotkey.key, hotkey.modifiers, display->root);
+        }
+        hotkey.enabled = false;
+      }
+    }
+    isSuspended = true;
+    return true;
+  } catch (const std::exception &e) {
+    std::cerr << "Error in IO::Suspend: " << e.what() << std::endl;
+    return false;
+  }
+}
 // Method to suspend hotkeys
 bool IO::Suspend(int id) {
   std::cout << "Suspending hotkey ID: " << id << std::endl;
@@ -962,6 +991,8 @@ bool IO::Resume(int id) {
 }
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
                      int id) const {
+  Logger lo;
+
   std::string hotkeyStr = rawInput;
 
   // Parse event type from ":up"/":down"
@@ -1062,6 +1093,27 @@ done_parsing:
   hk.success = (display && keycode > 0);
   hk.evdev = isEvdev;
   hk.eventType = eventType;
+
+  // Attempt to grab the hotkey (if not evdev)
+  bool grabSuccess = true;
+  if (!hk.evdev && display && keycode > 0) {
+    Window root = DefaultRootWindow(display);
+    // Try to grab the key
+    unsigned int modVariants[] = {hk.modifiers};
+    for (unsigned int mods : modVariants) {
+      Status status = XGrabKey(display, keycode, mods, root, True, GrabModeAsync, GrabModeAsync);
+      if (status != Success) {
+        lo.error("Failed to register hotkey for ID: " + std::to_string(id) + ", key: " + std::to_string(keycode) + ", mods: " + std::to_string(mods));
+        grabSuccess = false;
+        break;
+      }
+    }
+  }
+
+  if (!grabSuccess) {
+    lo.error("Hotkey registration failed, not adding to hotkey map for ID: " + std::to_string(id));
+    return {};
+  }
 
   hotkeys[id] = hk;
   return hotkeys.at(id);

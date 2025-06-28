@@ -92,7 +92,8 @@ public:
     static std::string getLastError();
     static std::string escapeArgument(const std::string& arg);
     static std::vector<std::string> parseCommandLine(const std::string& cmdLine);
-
+    static std::string expandPath(const std::string& path);
+    static std::string resolveExecutable(const std::string& executable);
 private:
     static ProcessResult executeWindows(const std::string& executable,
                                       const std::vector<std::string>& args,

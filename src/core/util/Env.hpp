@@ -19,7 +19,7 @@
 #include <sys/types.h>
 #include <wordexp.h>
 #endif
-
+namespace havel {
 class Env {
 public:
     // Singleton access
@@ -101,3 +101,4 @@ private:
     static std::string unixExpandPath(const std::string& path);
     static std::vector<std::string> splitPath(const std::string& pathStr);
 };
+}

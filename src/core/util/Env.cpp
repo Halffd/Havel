@@ -1,4 +1,4 @@
-#include "Env.h"
+#include "Env.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -16,7 +16,7 @@
 #endif
 
 namespace fs = std::filesystem;
-
+namespace havel {
 // Path expansion and resolution
 std::string Env::expand(const std::string& path) {
     if (path.empty()) return path;
@@ -709,3 +709,5 @@ std::string Env::hostname() {
             
             return paths;
         }
+    }
+}

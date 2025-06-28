@@ -1,7 +1,27 @@
 #include "Launcher.hpp"
+#include "../core/util/Env.hpp"
 #include <sstream>
 #include <chrono>
 #include <algorithm>
+#include <thread>
+#include <mutex>
+#include <cstring>
+#include <fcntl.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <tlhelp32.h>
+#include <io.h>
+#include <direct.h>
+#else
+#include <sys/wait.h>
+#include <sys/select.h>
+#include <signal.h>
+#include <unistd.h>
+#include <spawn.h>
+#include <sys/resource.h>
+#include <poll.h>
+#endif
 
 #ifdef _WIN32
 #pragma comment(lib, "shell32.lib")
@@ -114,6 +134,12 @@ ProcessResult Launcher::terminal(const std::string& command, const std::string& 
 ProcessResult Launcher::executeWindows(const std::string& executable,
                                      const std::vector<std::string>& args,
                                      const LaunchParams& params) {
+    // Resolve the executable path and working directory
+    std::string resolvedExe = resolveExecutable(executable);
+    std::string workingDir = params.workingDir.empty() ? 
+        Env::current() : 
+        Env::expand(params.workingDir);
+        
     STARTUPINFOA si = {};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {};
@@ -223,6 +249,12 @@ DWORD Launcher::getWindowsPriorityClass(Priority priority) {
 ProcessResult Launcher::executeUnix(const std::string& executable,
                                   const std::vector<std::string>& args,
                                   const LaunchParams& params) {
+    // Resolve the executable path and working directory
+    std::string resolvedExe = resolveExecutable(executable);
+    std::string workingDir = params.workingDir.empty() ? 
+        Env::current() : 
+        Env::expand(params.workingDir);
+        
     pid_t pid = fork();
     
     if (pid == -1) {
@@ -315,28 +347,246 @@ void Launcher::setupUnixEnvironment(const LaunchParams& params) {
 
 #endif
 
+namespace {
+    std::mutex g_processMutex;
+    std::unordered_map<int64_t, std::thread> g_activeProcesses;
+
+    void cleanupProcess(int64_t pid) {
+        std::lock_guard<std::mutex> lock(g_processMutex);
+        auto it = g_activeProcesses.find(pid);
+        if (it != g_activeProcesses.end()) {
+            if (it->second.joinable()) {
+                it->second.detach();
+            }
+            g_activeProcesses.erase(it);
+        }
+    }
+
+    void waitForProcess(int64_t pid, std::function<void(int)> callback) {
+        std::thread([pid, callback]() {
+            int status = 0;
+            #ifdef _WIN32
+                HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, static_cast<DWORD>(pid));
+                if (hProcess) {
+                    WaitForSingleObject(hProcess, INFINITE);
+                    DWORD exitCode = 0;
+                    GetExitCodeProcess(hProcess, &exitCode);
+                    CloseHandle(hProcess);
+                    status = static_cast<int>(exitCode);
+                }
+            #else
+                waitpid(static_cast<pid_t>(pid), &status, 0);
+            #endif
+            callback(status);
+            cleanupProcess(pid);
+        }).detach();
+    }
+}
+
 ProcessResult Launcher::executeShell(const std::string& command, const LaunchParams& params) {
-#ifdef _WIN32
-    if (params.method == Method::Async) {
-        system(command.c_str());
-        return {0, 0, true, ""};
-    }
+    ProcessResult result;
     
-    int exitCode = system(command.c_str());
-    return {0, exitCode, exitCode != -1, exitCode == -1 ? "System call failed" : ""};
-#else
-    if (params.method == Method::Async) {
-        system(command.c_str());
-        return {0, 0, true, ""};
-    }
+    #ifdef _WIN32
+        STARTUPINFOA si = { sizeof(STARTUPINFOA) };
+        PROCESS_INFORMATION pi = {0};
+        
+        // Prepare command line
+        std::string cmd = "cmd.exe /c " + command;
+        
+        // Set up process creation flags
+        DWORD creationFlags = 0;
+        if (params.windowState == WindowState::Hidden) {
+            creationFlags |= CREATE_NO_WINDOW;
+        }
+        
+        // Create the process
+        if (!CreateProcessA(
+            NULL,                   // No module name (use command line)
+            const_cast<char*>(cmd.c_str()), // Command line
+            NULL,                   // Process handle not inheritable
+            NULL,                   // Thread handle not inheritable
+            FALSE,                  // Set handle inheritance to FALSE
+            creationFlags,          // Creation flags
+            NULL,                   // Use parent's environment block
+            params.workingDir.empty() ? NULL : params.workingDir.c_str(),
+            &si,                    // Pointer to STARTUPINFO structure
+            &pi                     // Pointer to PROCESS_INFORMATION structure
+        )) {
+            result.error = "CreateProcess failed: " + std::to_string(GetLastError());
+            result.success = false;
+            return result;
+        }
+        
+        result.pid = static_cast<int64_t>(pi.dwProcessId);
+        
+        if (params.method == Method::Async) {
+            CloseHandle(pi.hProcess);
+            CloseHandle(pi.hThread);
+            result.success = true;
+            return result;
+        }
+        
+        // Wait for the process to complete or timeout
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, params.timeoutMs > 0 ? params.timeoutMs : INFINITE);
+        
+        if (waitResult == WAIT_TIMEOUT) {
+            // Process timed out, terminate it
+            TerminateProcess(pi.hProcess, 1);
+            result.error = "Process timed out";
+            result.success = false;
+        } else if (waitResult == WAIT_OBJECT_0) {
+            // Process completed
+            DWORD exitCode;
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+            result.exitCode = static_cast<int>(exitCode);
+            result.success = true;
+        } else {
+            // Some other error
+            result.error = "WaitForSingleObject failed: " + std::to_string(GetLastError());
+            result.success = false;
+        }
+        
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        
+    #else
+        // Unix implementation
+        int pipe_stdin[2] = {-1, -1};
+        int pipe_stdout[2] = {-1, -1};
+        int pipe_stderr[2] = {-1, -1};
+        
+        // Create pipes for IPC
+        if (pipe(pipe_stdin) == -1 || pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
+            result.error = "Failed to create pipes: " + std::string(strerror(errno));
+            result.success = false;
+            return result;
+        }
+        
+        pid_t pid = fork();
+        
+        if (pid < 0) {
+            result.error = "fork() failed: " + std::string(strerror(errno));
+            close(pipe_stdin[0]);
+            close(pipe_stdin[1]);
+            close(pipe_stdout[0]);
+            close(pipe_stdout[1]);
+            close(pipe_stderr[0]);
+            close(pipe_stderr[1]);
+            result.success = false;
+            return result;
+        }
+        
+        if (pid == 0) {
+            // Child process
+            close(pipe_stdin[1]);
+            close(pipe_stdout[0]);
+            close(pipe_stderr[0]);
+            
+            // Redirect standard file descriptors
+            dup2(pipe_stdin[0], STDIN_FILENO);
+            dup2(pipe_stdout[1], STDOUT_FILENO);
+            dup2(pipe_stderr[1], STDERR_FILENO);
+            
+            // Close the original file descriptors
+            close(pipe_stdin[0]);
+            close(pipe_stdout[1]);
+            close(pipe_stderr[1]);
+            
+            // Execute the command
+            execl("/bin/sh", "sh", "-c", command.c_str(), (char*)NULL);
+            
+            // If we get here, execl failed
+            _exit(127);
+        } else {
+            // Parent process
+            close(pipe_stdin[0]);
+            close(pipe_stdout[1]);
+            close(pipe_stderr[1]);
+            
+            result.pid = static_cast<int64_t>(pid);
+            
+            if (params.method == Method::Async) {
+                // For async, we don't wait for the process
+                close(pipe_stdin[1]);
+                close(pipe_stdout[0]);
+                close(pipe_stderr[0]);
+                result.success = true;
+                return result;
+            }
+            
+            // Set non-blocking mode for pipes
+            fcntl(pipe_stdout[0], F_SETFL, O_NONBLOCK);
+            fcntl(pipe_stderr[0], F_SETFL, O_NONBLOCK);
+            
+            // Wait for process completion with timeout
+            int status;
+            auto start = std::chrono::steady_clock::now();
+            bool timed_out = false;
+            
+            while (true) {
+                pid_t w = waitpid(pid, &status, WNOHANG);
+                
+                if (w == -1) {
+                    // Error
+                    result.error = "waitpid failed: " + std::string(strerror(errno));
+                    result.success = false;
+                    break;
+                } else if (w > 0) {
+                    // Process completed
+                    if (WIFEXITED(status)) {
+                        result.exitCode = WEXITSTATUS(status);
+                    } else if (WIFSIGNALED(status)) {
+                        result.exitCode = 128 + WTERMSIG(status);
+                    }
+                    result.success = true;
+                    break;
+                } else {
+                    // Process still running, check timeout
+                    if (params.timeoutMs > 0) {
+                        auto now = std::chrono::steady_clock::now();
+                        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now - start).count();
+                        
+                        if (elapsed >= params.timeoutMs) {
+                            // Timeout reached, kill the process
+                            kill(pid, SIGTERM);
+                            timed_out = true;
+                            result.error = "Process timed out";
+                            result.success = false;
+                            break;
+                        }
+                    }
+                    
+                    // Sleep for a short time before checking again
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+            }
+            
+            // Clean up pipes
+            close(pipe_stdin[1]);
+            close(pipe_stdout[0]);
+            close(pipe_stderr[0]);
+            
+            if (timed_out) {
+                // Wait a bit for the process to terminate
+                int status;
+                for (int i = 0; i < 5; ++i) {
+                    if (waitpid(pid, &status, WNOHANG) == pid) {
+                        break;
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                
+                // If still running, force kill it
+                if (waitpid(pid, &status, WNOHANG) != pid) {
+                    kill(pid, SIGKILL);
+                    waitpid(pid, &status, 0);
+                }
+            }
+        }
+    #endif
     
-    int status = system(command.c_str());
-    if (status == -1) {
-        return {0, -1, false, "System call failed"};
-    }
-    
-    return {0, WEXITSTATUS(status), true, ""};
-#endif
+    return result;
 }
 
 bool Launcher::kill(int64_t pid, bool force) {
@@ -477,7 +727,21 @@ std::string Launcher::escapeArgument(const std::string& arg) {
     return escaped;
 #endif
 }
-
+std::string Launcher::expandPath(const std::string& path) {
+    return Env::expand(path);
+}
+std::string Launcher::resolveExecutable(const std::string& executable){
+    // If it's a path with directory, expand it
+    if (executable.find('/') != std::string::npos || 
+        executable.find('\\') != std::string::npos ||
+        executable.find('~') == 0) {
+        return expandPath(executable);
+    }
+    
+    // Otherwise, try to find it in PATH
+    std::string resolved = Env::which(executable);
+    return resolved.empty() ? executable : resolved;
+}
 std::vector<std::string> Launcher::parseCommandLine(const std::string& cmdLine) {
     std::vector<std::string> args;
     std::string current;
@@ -524,13 +788,15 @@ std::vector<std::string> Launcher::parseCommandLine(const std::string& cmdLine) 
 
 std::string Launcher::buildCommandLine(const std::string& executable, 
                                      const std::vector<std::string>& args) {
-    std::string cmdLine = escapeArgument(executable);
+    // Resolve the executable path
+    std::string resolvedExe = resolveExecutable(executable);
+    std::string command = escapeArgument(resolvedExe);
     
+    // Add arguments
     for (const auto& arg : args) {
-        cmdLine += " " + escapeArgument(arg);
+        command += " " + escapeArgument(arg);
     }
-    
-    return cmdLine;
+    return command;
 }
 
 } // namespace havel

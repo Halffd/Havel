@@ -77,7 +77,6 @@ public:
     static std::string makeAbsolute(const std::string& path, const std::string& base = "");
     
     // File system helpers
-    static bool exists(const std::string& path);
     static bool isFile(const std::string& path);
     static bool isDirectory(const std::string& path);
     static bool isExecutable(const std::string& path);

@@ -956,7 +956,7 @@ bool IO::Suspend(){
     for(auto& [id, hotkey] : hotkeys) {
       if(!hotkey.suspend){
         if(!hotkey.evdev){
-          Ungrab(hotkey.key, hotkey.modifiers, display->root);
+          Ungrab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow());
         }
         hotkey.enabled = false;
       }
@@ -1099,7 +1099,8 @@ done_parsing:
   if (!hk.evdev && display && keycode > 0) {
     Window root = DefaultRootWindow(display);
     // Try to grab the key
-    unsigned int modVariants[] = {hk.modifiers};
+    unsigned int modVariants[] = { static_cast<unsigned int>(hk.modifiers) };
+
     for (unsigned int mods : modVariants) {
       Status status = XGrabKey(display, keycode, mods, root, True, GrabModeAsync, GrabModeAsync);
       if (status != Success) {

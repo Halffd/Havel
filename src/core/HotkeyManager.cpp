@@ -220,21 +220,21 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     io.Hotkey("^f1", []() {
-        system("~/scripts/f1.sh -1");
+        Launcher::runShell("~/scripts/f1.sh -1");
     });
 
     io.Hotkey("+!l", []() {
-        system("~/scripts/livelink.sh");
+        Launcher::runShell("~/scripts/livelink.sh");
     });
 
     io.Hotkey("^!l", []() {
-        system("livelink screen toggle 1");
+        Launcher::runShell("livelink screen toggle 1");
     });
     io.Hotkey("f10", []() {
-        system("~/scripts/str");
+        Launcher::runShell("~/scripts/str");
     });
     io.Hotkey("^!k", []() {
-        system("livelink screen toggle 2");
+        Launcher::runShell("livelink screen toggle 2");
     });
 
     // Context-sensitive hotkeys

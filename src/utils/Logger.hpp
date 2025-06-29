@@ -1,25 +1,17 @@
 #pragma once
-
 #include <string>
 #include <mutex>
 #include <memory>
+#include <fstream>
+#define lo havel::Logger::getInstance()
 
 namespace havel {
 
 class Logger {
 public:
-    enum class Level {
-        LOG_DEBUG,
-        LOG_INFO,
-        LOG_WARNING,
-        LOG_ERROR,
-        LOG_FATAL
-    };
+    enum Level { LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR, LOG_FATAL };
 
-    static Logger& getInstance() {
-        static Logger instance;
-        return instance;
-    }
+    static Logger& getInstance();
 
     void setLogFile(const std::string& filename);
     void setLogLevel(Level level);
@@ -31,8 +23,8 @@ public:
     void fatal(const std::string& message);
 
 private:
-    Logger();
-    ~Logger();
+    Logger(); // make constructor private
+    ~Logger(); // and destructor
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
@@ -42,12 +34,28 @@ private:
 
     struct Impl;
     std::unique_ptr<Impl> pImpl;
-    Level currentLevel;
     std::mutex mutex;
+    Level currentLevel;
     bool consoleOutput;
 };
 
-} // namespace havel
+inline void log(const std::string& message) {
+    Logger::getInstance().info(message);
+}
+inline void debug(const std::string& message) {
+    Logger::getInstance().debug(message);
+}
+inline void info(const std::string& message) {
+    Logger::getInstance().info(message);
+}
+inline void warning(const std::string& message) {
+    Logger::getInstance().warning(message);
+}
+inline void error(const std::string& message) {
+    Logger::getInstance().error(message);
+}
+inline void fatal(const std::string& message) {
+    Logger::getInstance().fatal(message);
+}
 
-// Global logger instance declaration
-extern havel::Logger& lo; 
+} // namespace havel

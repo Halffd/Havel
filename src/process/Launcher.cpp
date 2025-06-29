@@ -1,5 +1,6 @@
 #include "Launcher.hpp"
 #include "../core/util/Env.hpp"
+#include "utils/Logger.hpp"
 #include <sstream>
 #include <chrono>
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <cstring>
 #include <fcntl.h>
+#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,11 +40,12 @@ ProcessResult Launcher::run(const std::string& executable,
     
     auto start = std::chrono::steady_clock::now();
     ProcessResult result;
-    
     try {
         if (params.method == Method::Shell) {
+            debug("Running shell command: " + executable);
             result = executeShell(buildCommandLine(executable, args), params);
         } else {
+            debug("Running command: " + executable);
 #ifdef _WIN32
             result = executeWindows(executable, args, params);
 #else
@@ -56,7 +59,7 @@ ProcessResult Launcher::run(const std::string& executable,
     
     auto end = std::chrono::steady_clock::now();
     result.executionTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    
+    debug("Execution time: " + std::to_string(result.executionTimeMs) + " ms");
     return result;
 }
 
@@ -68,7 +71,11 @@ ProcessResult Launcher::run(const std::string& commandLine, const LaunchParams& 
     
     std::string executable = args[0];
     args.erase(args.begin());
-    
+    std::string argsString = "";
+    for (const auto& arg : args) {
+        argsString += arg + " ";
+    }
+    debug("Running command: " + executable + " " + argsString);
     return run(executable, args, params);
 }
 

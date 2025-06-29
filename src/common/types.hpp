@@ -29,15 +29,6 @@ enum class DisplayServer {
     Wayland
 };
 
-// Process method enum
-enum class ProcessMethodType {
-    WaitForTerminate,
-    ForkProcess,
-    CreateProcess,
-    ShellExecute,
-    System
-};
-
 // Rectangle structure
 struct Rect {
     int x, y, width, height;

@@ -20,7 +20,7 @@
 #include "IO.hpp"
 #include "../window/WindowManager.hpp"
 #include "../common/types.hpp"
-
+#include "../process/Launcher.hpp"
 namespace havel {
 // Path handling helper functions
 namespace ConfigPaths {
@@ -475,8 +475,9 @@ private:
             // Handle different command types
             if(parts[0] == "@run") {
                 if(parts.size() >= 2) {
-                    havel::WindowManager::Run(parts[1], havel::ProcessMethodType::ForkProcess,
-                                        "", "", 0);
+                    LaunchParams params;
+                    params.method = Method::Async;
+                    Launcher::run(parts[1], params);
                 }
             }
             else if(parts[0] == "@send") {

@@ -9,6 +9,7 @@
 #include "../utils/Util.hpp"
 using namespace havel;
 
+#ifdef TEST_UTILS
 // Test function
 void testChain() {
     std::vector<int> nums = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -89,3 +90,4 @@ int main() {
     testChain();
     return 0;
 }
+#endif

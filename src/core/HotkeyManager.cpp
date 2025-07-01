@@ -47,6 +47,8 @@ HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController
       scriptEngine(scriptEngine){
     config = Configs::Get();
     loadVideoSites();
+    loadDebugSettings();
+    applyDebugSettings();
 }
 
 void HotkeyManager::loadVideoSites() {
@@ -268,7 +270,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         // Move window to next monitor using MoveWindow(4) for right movement
         WindowManager::MoveWindow(4);
     });
-    io.Hotkey("&f9", [this]() {
+    io.Hotkey("$f9", [this]() {
         info("Suspending all hotkeys");
         io.Suspend(); // Special case: 0 means suspend all hotkeys
         debug("Hotkeys suspended");

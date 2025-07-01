@@ -168,6 +168,10 @@ public:
 
   bool UngrabHotkeysByPrefix(const std::string &prefix);
 
+  // Key mapping
+  void Map(const std::string& from, const std::string& to);
+  void Remap(const std::string& key1, const std::string& key2);
+
   // Static methods
   static void removeSpecialCharacters(std::string &keyName);
 
@@ -262,6 +266,8 @@ private:
 
   // Key mapping and sending utilities
   void InitKeyMap();
+  std::unordered_map<KeySym, KeySym> keyMapInternal;
+  std::unordered_map<KeySym, KeySym> remappedKeys;
 
   void SendKeyEvent(Key key, bool down);
 

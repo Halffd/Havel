@@ -314,6 +314,26 @@ void IO::MonitorHotkeys() {
       XKeyEvent *keyEvent = &event.xkey;
       KeySym keysym = XLookupKeysym(keyEvent, 0);
 
+      // Handle remapped keys
+      auto remappedIt = remappedKeys.find(keysym);
+      if (remappedIt != remappedKeys.end()) {
+          int keycode = EvdevNameToKeyCode(XKeysymToString(remappedIt->second));
+          if (keycode != -1) {
+              SendUInput(keycode, isDown);
+          }
+          continue; // Suppress original event
+      }
+
+      // Handle mapped keys
+      auto mappedIt = keyMapInternal.find(keysym);
+      if (mappedIt != keyMapInternal.end()) {
+          int keycode = EvdevNameToKeyCode(XKeysymToString(mappedIt->second));
+          if (keycode != -1) {
+              SendUInput(keycode, isDown);
+          }
+          continue; // Suppress original event
+      }
+
       // Ignore events for modifier keys themselves
       if (IsModifierKey(keysym)) {
         continue;
@@ -1026,7 +1046,7 @@ bool IO::Resume(int id) {
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
                      int id) const {
   std::string hotkeyStr = rawInput;
-  action = [action, hotkeyStr]() {
+  auto wrapped_action = [action, hotkeyStr]() {
     if(Configs::Get().GetVerboseKeyLogging())
       info("Hotkey pressed: " + hotkeyStr);
     action();
@@ -1126,7 +1146,7 @@ done_parsing:
   hk.alias = rawInput;
   hk.key = static_cast<Key>(keycode);
   hk.modifiers = modifiers;
-  hk.callback = std::move(action);
+  hk.callback = std::move(wrapped_action);
   hk.action = "";
   hk.enabled = true;
   hk.blockInput = exclusive;
@@ -2004,6 +2024,23 @@ bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
 #else
   return false;
 #endif
+}
+
+void IO::Map(const std::string& from, const std::string& to) {
+    KeySym fromKey = StringToVirtualKey(from);
+    KeySym toKey = StringToVirtualKey(to);
+    if (fromKey != NoSymbol && toKey != NoSymbol) {
+        keyMapInternal[fromKey] = toKey;
+    }
+}
+
+void IO::Remap(const std::string& key1, const std::string& key2) {
+    KeySym k1 = StringToVirtualKey(key1);
+    KeySym k2 = StringToVirtualKey(key2);
+    if (k1 != NoSymbol && k2 != NoSymbol) {
+        remappedKeys[k1] = k2;
+        remappedKeys[k2] = k1;
+    }
 }
 
 bool IO::MatchModifiers(uint hotkeyMods, const std::map<int, bool> &keyState) {

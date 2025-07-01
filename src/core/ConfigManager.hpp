@@ -203,27 +203,50 @@ public:
 
     void Save(const std::string& filename = "main.cfg") {
         std::string configPath = ConfigPaths::GetConfigPath(filename);
+        std::string tempPath = configPath + ".tmp";
         ConfigPaths::EnsureConfigDir();
         
-        std::ofstream file(configPath);
+        std::ofstream file(tempPath);
         if (!file.is_open()) {
-            std::cerr << "Error: Could not save config file: " << configPath << std::endl;
+            std::cerr << "Error: Could not save config file to temporary path: " << tempPath << std::endl;
             return;
         }
         
         std::string currentSection;
         
-        for (const auto& [key, value] : settings) {
+        // Sort settings by key to ensure consistent output
+        std::map<std::string, std::string> sortedSettings(settings.begin(), settings.end());
+
+        for (const auto& [key, value] : sortedSettings) {
             size_t dotPos = key.find('.');
+            if (dotPos == std::string::npos) continue; // Skip invalid keys
             std::string section = key.substr(0, dotPos);
             std::string name = key.substr(dotPos+1);
 
             if (section != currentSection) {
+                if (!file.tellp() == 0) { // Don't write newline at the beginning of the file
+                    file << "\n";
+                }
                 file << "[" << section << "]\n";
                 currentSection = section;
             }
             
             file << name << "=" << value << "\n";
+        }
+        file.close();
+
+        // Atomically replace the old config with the new one
+        try {
+            std::filesystem::rename(tempPath, configPath);
+        } catch (const std::filesystem::filesystem_error& e) {
+            std::cerr << "Error renaming temporary config file: " << e.what() << std::endl;
+            // As a fallback, try to copy and delete
+            try {
+                std::filesystem::copy_file(tempPath, configPath, std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::remove(tempPath);
+            } catch (const std::filesystem::filesystem_error& e2) {
+                std::cerr << "Error copying temporary config file: " << e2.what() << std::endl;
+            }
         }
     }
 

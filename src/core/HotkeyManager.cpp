@@ -154,11 +154,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         system("playerctl next");
     });
 
-    io.Hotkey("NumpaAdd", []() {
+    io.Hotkey("NumpadAdd", []() {
         system("pactl set-sink-volume @DEFAULT_SINK@ -5%");
     });
 
-    io.Hotkey("NumpaSub", []() {
+    io.Hotkey("NumpadSub", []() {
         system("pactl set-sink-volume @DEFAULT_SINK@ +5%");
     });
 

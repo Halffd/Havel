@@ -6,8 +6,6 @@ src/file
 .idea
 .vscode
 cmake-build-debug
-exc/bin
-exc/build
 file
 src/out
 log
@@ -15,9 +13,9 @@ logs
 config
 build-debug
 build-release
-
 # Precompiled headers
 *.gch
 *.pch# Log files
 log/*.log
 log/*.log.*
+*.log

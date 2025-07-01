@@ -1625,6 +1625,24 @@ void HotkeyManager::printActiveWindowInfo() {
         "\", Gaming: " + (isGaming ? "YES" : "NO") + ", Geometry: " + geometry);
 }
 
+void HotkeyManager::cleanup() {
+    // Stop all autoclickers if any are running
+    stopAllAutoclickers();
+    
+    // Release any grabbed gaming hotkeys
+    ungrabGamingHotkeys();
+    
+    // Reset mode to default to release any special key states
+    setMode("default");
+    
+    // Ensure all keys are released
+    io.Send("{LAlt up}{RAlt up}{LShift up}{RShift up}{LCtrl up}{RCtrl up}{LWin up}{RWin up}");
+    
+    if (verboseWindowLogging) {
+        logWindowEvent("CLEANUP", "HotkeyManager resources cleaned up");
+    }
+}
+
 void HotkeyManager::toggleWindowFocusTracking() {
     trackWindowFocus = !trackWindowFocus;
 

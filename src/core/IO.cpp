@@ -57,35 +57,70 @@ IO::IO() {
 }
 
 IO::~IO() {
-  std::cout << "IO destructor called" << std::endl;
-  if (timerRunning && timerThread.joinable()) {
-    timerRunning = false;
-    timerThread.join();
-  }
-
-  // Ungrab all hotkeys before closing
-#ifdef __linux__
-  if (display) {
-    Window root = DefaultRootWindow(display);
-    for (const auto &[id, hotkey] : hotkeys) {
-      if (hotkey.key != 0) {
-        KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
-        if (keycode != 0) {
-          Ungrab(keycode, hotkey.modifiers, root);
-        }
-      }
+    std::cout << "IO destructor called" << std::endl;
+    
+    // Stop the hotkey monitoring thread
+    if (timerRunning && timerThread.joinable()) {
+        timerRunning = false;
+        timerThread.join();
     }
-  }
-  if (InitUinputDevice()) {
-    std::cout << "Initialized uinput device" << std::endl;
-  } else {
-    std::cout << "Failed to initialize uinput device" << std::endl;
-  }
+    
+    // Stop the evdev listener if it's running
+    StopEvdevHotkeyListener();
 
+    // Release all keys that might be pressed
+    PressKey("LAlt", false);
+    PressKey("RAlt", false);
+    PressKey("LShift", false);
+    PressKey("RShift", false);
+    PressKey("LCtrl", false);
+    PressKey("RCtrl", false);
+    PressKey("LWin", false);
+    PressKey("RWin", false);
+
+    // Ungrab all hotkeys before closing
+#ifdef __linux__
+    if (display) {
+        Window root = DefaultRootWindow(display);
+        
+        // First, ungrab all hotkeys from the instance
+        for (const auto &[id, hotkey] : instanceHotkeys) {
+            if (hotkey.key != 0) {
+                KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+                if (keycode != 0) {
+                    Ungrab(keycode, hotkey.modifiers, root);
+                }
+            }
+        }
+        
+        // Then, ungrab all static hotkeys
+        for (const auto &[id, hotkey] : hotkeys) {
+            if (hotkey.key != 0) {
+                KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
+                if (keycode != 0) {
+                    Ungrab(keycode, hotkey.modifiers, root);
+                }
+            }
+        }
+        
+        // Sync to ensure all ungrabs are processed
+        XSync(display, False);
+    }
+    
+    // Clean up uinput device
+    CleanupUinputDevice();
+    
+    // Close the uinput file descriptor if it's open
+    if (uinputFd >= 0) {
+        close(uinputFd);
+        uinputFd = -1;
+    }
 #endif
 
-  // Don't close the display here, it's managed by DisplayManager
-  display = nullptr;
+    // Don't close the display here, it's managed by DisplayManager
+    display = nullptr;
+    
+    std::cout << "IO cleanup completed" << std::endl;
 }
 
 bool IO::SetupUinputDevice() {
@@ -1066,11 +1101,17 @@ done_parsing:
     std::string keyLower = hotkeyStr;
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
                    ::tolower);
-    Key keysym = StringToVirtualKey(keyLower);
-    keycode = keysym < 10 ? keysym : XKeysymToKeycode(display, keysym);
+    // Convert string to keysym first
+    KeySym keysym = XStringToKeysym(keyLower.c_str());
+    if (keysym == NoSymbol) {
+      std::cerr << "Invalid key name: " << keyLower << "\n";
+      return {};
+    }
 
+    // Convert keysym to keycode
+    keycode = XKeysymToKeycode(display, keysym);
     if (keycode == 0) {
-      std::cerr << "Invalid X11 keysym: " << keyLower << "\n";
+      std::cerr << "Key '" << keyLower << "' not available on this keyboard layout\n";
       return {};
     }
   }
@@ -1089,28 +1130,6 @@ done_parsing:
   hk.success = (display && keycode > 0);
   hk.evdev = isEvdev;
   hk.eventType = eventType;
-
-  // Attempt to grab the hotkey (if not evdev)
-  bool grabSuccess = true;
-  if (!hk.evdev && display && keycode > 0) {
-    Window root = DefaultRootWindow(display);
-    // Try to grab the key
-    unsigned int modVariants[] = { static_cast<unsigned int>(hk.modifiers) };
-
-    for (unsigned int mods : modVariants) {
-      Status status = XGrabKey(display, keycode, mods, root, True, GrabModeAsync, GrabModeAsync);
-      if (status != Success) {
-        error("Failed to register hotkey for ID: " + std::to_string(id) + ", key: " + std::to_string(keycode) + ", mods: " + std::to_string(mods));
-        grabSuccess = false;
-        break;
-      }
-    }
-  }
-
-  if (!grabSuccess) {
-    error("Hotkey registration failed, not adding to hotkey map for ID: " + std::to_string(id));
-    return {};
-  }
 
   hotkeys[id] = hk;
   return hotkeys.at(id);

@@ -2,6 +2,9 @@
 #include <iostream>
 #include <thread>
 #include <memory>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stdexcept>
 #include "window/WindowManager.hpp"
 #include "core/IO.hpp"
 #include "core/ConfigManager.hpp"
@@ -17,21 +20,58 @@ using namespace havel;
 // Forward declare test_main
 int test_main(int argc, char* argv[]);
 
-// ONLY use atomic types in signal handlers
-std::atomic<bool> gShouldExit(false);
-std::atomic<int> gSignalStatus(0);
-
-// Minimal, signal-safe handler
-void SignalHandler(int signal) {
-    // ONLY async-signal-safe operations allowed here!
-    gSignalStatus.store(signal);
+// SignalHandler class for proper signal handling
+class SignalHandler {
+private:
+    static int signal_pipe[2];
+    static std::atomic<bool> gShouldExit;
+    static std::atomic<int> gSignalStatus;
     
-    if (signal == SIGINT || signal == SIGTERM) {
-        gShouldExit.store(true);
+public:
+    static void Initialize() {
+        if (pipe(signal_pipe) == -1) {
+            throw std::runtime_error("Failed to create signal pipe");
+        }
+        
+        // Make write end non-blocking
+        int flags = fcntl(signal_pipe[1], F_GETFL);
+        fcntl(signal_pipe[1], F_SETFL, flags | O_NONBLOCK);
     }
     
-    // That's it! No logging, no threads, no complex logic!
-}
+    static void Handler(int signal) {
+        // Write signal number to pipe to wake up select()
+        fprintf(stderr, "SIGNAL HANDLER CALLED: %d\n", signal);
+    
+        char sig = static_cast<char>(signal);
+        ssize_t result = write(signal_pipe[1], &sig, 1);
+        if (result == -1) {
+            // Pipe is broken or full
+            _exit(1);  // Emergency exit from signal handler
+        }
+        // Set the signal status
+        gSignalStatus.store(signal, std::memory_order_relaxed);
+        
+        // Set the exit flag for termination signals
+        if (signal == SIGINT || signal == SIGTERM) {
+            gShouldExit.store(true, std::memory_order_relaxed);
+        }
+    }
+    
+    static int GetReadFd() { return signal_pipe[0]; }
+    static bool ShouldExit() { return gShouldExit.load(std::memory_order_relaxed); }
+    static int GetSignalStatus() { return gSignalStatus.load(std::memory_order_relaxed); }
+    static void ClearSignalStatus() { gSignalStatus.store(0, std::memory_order_relaxed); }
+    
+    static void Cleanup() {
+        close(signal_pipe[0]);
+        close(signal_pipe[1]);
+    }
+};
+
+// Static member definitions
+int SignalHandler::signal_pipe[2];
+std::atomic<bool> SignalHandler::gShouldExit(false);
+std::atomic<int> SignalHandler::gSignalStatus(0);
 
 void shutdown() {
     info("Starting graceful shutdown...");
@@ -100,9 +140,31 @@ int main(int argc, char* argv[]){
         return 1;
     }
 
-    // Set up signal handlers
-    std::signal(SIGINT, SignalHandler);
-    std::signal(SIGTERM, SignalHandler);
+    // Initialize signal handling with self-pipe
+    try {
+        SignalHandler::Initialize();
+    } catch (const std::exception& e) {
+        error(std::string("Failed to initialize signal handling: ") + e.what());
+        return EXIT_FAILURE;
+    }
+    
+    // Set up signal handlers using sigaction
+    struct sigaction sa;
+    sa.sa_handler = SignalHandler::Handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART; // Restart interrupted system calls
+    
+    if (sigaction(SIGINT, &sa, NULL) == -1) {
+        error("Failed to set up SIGINT handler");
+        SignalHandler::Cleanup();
+        return EXIT_FAILURE;
+    }
+    
+    if (sigaction(SIGTERM, &sa, NULL) == -1) {
+        error("Failed to set up SIGTERM handler");
+        SignalHandler::Cleanup();
+        return EXIT_FAILURE;
+    }
     
     try {
         info("Starting HvC...");
@@ -159,25 +221,56 @@ int main(int argc, char* argv[]){
             info("Theme changed from " + oldVal + " to " + newVal);
         });
         
-        // Main loop
+        // Set up X11 display for event handling
+        Display* display = XOpenDisplay(NULL);
+        if (!display) {
+            error("Failed to open X11 display");
+            return 1;
+        }
+        int x11_fd = ConnectionNumber(display);
+        
+        // Main loop with better signal handling
         bool running = true;
         auto lastCheck = std::chrono::steady_clock::now();
         auto lastWindowCheck = std::chrono::steady_clock::now();
         print_hotkeys();
-        while (running && !gShouldExit.load()) {
-            // Process events
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        
+        while (running && !SignalHandler::ShouldExit()) {
+            // Use select to wait for X11 events, signals, or timeout
+            fd_set in_fds;
+            struct timeval tv;
+            FD_ZERO(&in_fds);
+            FD_SET(x11_fd, &in_fds);
+            FD_SET(SignalHandler::GetReadFd(), &in_fds);
             
-            // Check for signals
-            int signal = gSignalStatus.load();
-            if (signal != 0) {
-                info("Handling signal: " + std::to_string(signal));
-                if (signal == SIGINT || signal == SIGTERM) {
-                    info("Termination signal received. Exiting...");
-                    running = false;
+            int max_fd = std::max(x11_fd, SignalHandler::GetReadFd());
+            tv.tv_usec = 100000;
+            tv.tv_sec = 0;
+            
+            int result = select(max_fd + 1, &in_fds, NULL, NULL, &tv);
+            
+            // Check if signal pipe has data (means signal was received)
+            if (FD_ISSET(SignalHandler::GetReadFd(), &in_fds)) {
+                char signal_data;
+                ssize_t bytes_read = read(SignalHandler::GetReadFd(), &signal_data, 1);
+                if (bytes_read > 0) {
+                    info("Signal received: " + std::to_string(static_cast<int>(signal_data)));
+                    if (signal_data == SIGINT || signal_data == SIGTERM) {
+                        info("Termination signal received. Exiting...");
+                        running = false;
+                        break;
+                    }
                 }
-                gSignalStatus.store(0); // Reset
             }
+            
+            // Process X11 events if any are available
+            while (XPending(display) > 0) {
+                XEvent event;
+                XNextEvent(display, &event);
+                // Process the event here if needed
+                // For now, we'll just discard it since we're not handling specific events
+            }
+            
             // Check active window periodically to update hotkey states
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= 300) {
@@ -207,14 +300,31 @@ int main(int argc, char* argv[]){
         }
         
         // Cleanup
-        info("Stopping server...");
-        server.Stop();
+        info("Cleaning up...");
         
-        info("Shutting down HvC...");
+        try {
+            // Stop the server
+            server.Stop();
+            
+            // Shutdown MPV
+            mpv->Shutdown();
+            
+            // Close the X11 display if it's still open
+            if (display) {
+                XCloseDisplay(display);
+                display = nullptr;
+            }
+            
+            // Clean up signal handling resources
+            SignalHandler::Cleanup();
+            
+            info("HvC shutdown complete");
+        } catch (const std::exception& e) {
+            error(std::string("Error during cleanup: ") + e.what());
+            return EXIT_FAILURE;
+        }
         
-        shutdown();
-
-        return 0;
+        return EXIT_SUCCESS;
     }
     catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;

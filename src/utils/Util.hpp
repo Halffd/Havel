@@ -125,22 +125,68 @@ concept Iterable = requires(const T& t) {
     std::begin(t);
     std::end(t);
 };
-
-// Concept for containers with size()
+// Base concept for searchable containers
 template<typename T>
-concept Sizeable = requires(const T& t) {
-    t.size();
+concept Searchable = requires(const T& t) {
+    std::begin(t);
+    std::end(t);
 };
 
-// contains - exact element match
-template<Iterable T>
-bool contains(const T& input, const typename T::value_type& value) {
-    return std::find(std::begin(input), std::end(input), value) != std::end(input);
+// String concept for substring search
+template<typename T>
+concept StringLike = std::convertible_to<T, std::string_view>;
+
+template<Searchable Container>
+constexpr auto find(const Container& container, const typename Container::value_type& value) {
+    auto it = std::find(std::begin(container), std::end(container), value);
+    if (it != std::end(container)) {
+        return std::optional{std::distance(std::begin(container), it)};
+    }
+    return std::optional<size_t>{};
 }
 
-// String-specific contains (substring search)
-inline bool contains(const std::string& input, const std::string& substring) {
-    return input.find(substring) != std::string::npos;
+// String overload for substring search
+template<StringLike String>
+constexpr auto find(const String& str, const String& substr) {
+    std::string_view sv{str};
+    std::string_view pattern{substr};
+    
+    auto pos = sv.find(pattern);
+    if (pos != std::string_view::npos) {
+        return std::optional{pos};
+    }
+    return std::optional<size_t>{};
+}
+
+// Find with custom predicate
+template<Searchable Container, typename Predicate>
+constexpr auto findIf(const Container& container, Predicate pred) {
+    auto it = std::find_if(std::begin(container), std::end(container), pred);
+    if (it != std::end(container)) {
+        return std::optional{std::distance(std::begin(container), it)};
+    }
+    return std::optional<size_t>{};
+}
+
+// Find last occurrence
+template<Searchable Container>
+constexpr auto findLast(const Container& container, const typename Container::value_type& value) {
+    auto it = std::find(std::rbegin(container), std::rend(container), value);
+    if (it != std::rend(container)) {
+        return std::optional{std::distance(it, std::rend(container)) - 1};
+    }
+    return std::optional<size_t>{};
+}
+
+// Contains - just a wrapper around find
+template<Searchable Container>
+constexpr bool contains(const Container& container, const typename Container::value_type& value) {
+    return find(container, value).has_value();
+}
+
+template<StringLike String>
+constexpr bool contains(const String& str, const String& substr) {
+    return find(str, substr).has_value();
 }
 
 // includes - checks if ALL elements of second container are in first
@@ -225,7 +271,7 @@ size_t count(const T& input, const typename T::value_type& value) {
     return std::count(std::begin(input), std::end(input), value);
 }
 
-template<Sizeable T>
+template<Iterable T>
 bool startsWith(const T& input, const T& prefix) {
     if (prefix.size() > input.size()) return false;
     return std::equal(std::begin(prefix), std::end(prefix), std::begin(input));
@@ -236,7 +282,7 @@ inline bool startsWith(const std::string& input, const std::string& prefix) {
            input.compare(0, prefix.size(), prefix) == 0;
 }
 
-template<Sizeable T>
+template<Iterable T>
 bool endsWith(const T& input, const T& suffix) {
     if (suffix.size() > input.size()) return false;
     return std::equal(std::rbegin(suffix), std::rend(suffix), std::rbegin(input));

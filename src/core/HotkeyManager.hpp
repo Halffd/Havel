@@ -29,7 +29,9 @@ namespace havel {
         HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
                       ScriptEngine &scriptEngine);
 
-        ~HotkeyManager() = default;
+        virtual ~HotkeyManager() {
+            cleanup();
+        }
         void Zoom(int zoom, IO& io);
 
         // Debug flags
@@ -123,7 +125,11 @@ namespace havel {
         void printActiveWindowInfo();
 
         void toggleWindowFocusTracking();
+        
         static bool isGamingWindow();
+        
+        // Clean up resources and release all keys
+        void cleanup();
             static std::string currentMode;
     private:
         void PlayPause();

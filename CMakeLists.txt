@@ -52,9 +52,10 @@ message(STATUS "XTEST_LIB: ${XTEST_LIB}")
 
 # GUI dependencies (only if not disabled)
 if(NOT DISABLE_GUI)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(CAIRO REQUIRED cairo)
-    pkg_check_modules(GTKMM REQUIRED gtkmm-4.0)
+    set(CMAKE_AUTOMOC ON)
+    set(CMAKE_AUTORCC ON)
+    set(CMAKE_AUTOUIC ON)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets)
     find_package(GTest QUIET)
 endif()
 
@@ -105,7 +106,7 @@ list(APPEND COMMON_LIBS ${LUA_LIBRARIES})
 
 # Add GUI libs if not disabled
 if(NOT DISABLE_GUI)
-    list(APPEND COMMON_LIBS ${CAIRO_LIBRARIES} ${GTKMM_LIBRARIES})
+    list(APPEND COMMON_LIBS Qt6::Widgets)
 endif()
 
 # Include directories
@@ -121,7 +122,7 @@ if(NOT DISABLE_HAVEL_LANG)
 endif()
 
 if(NOT DISABLE_GUI)
-    include_directories(${CAIRO_INCLUDE_DIRS} ${GTKMM_INCLUDE_DIRS})
+    # No need to add Qt6 include directories manually, find_package does it.
 endif()
 
 if(ENABLE_LLVM)
@@ -198,10 +199,10 @@ endif()
 # GUI targets (only if GUI enabled)
 if(NOT DISABLE_GUI AND GTest_FOUND)
     add_executable(havel_gui_test tests/TestGUI.cpp)
-    target_link_libraries(havel_gui_test ${GTKMM_LIBRARIES} GTest::GTest GTest::Main)
+    target_link_libraries(havel_gui_test Qt6::Widgets GTest::GTest GTest::Main)
     
     add_executable(havel_gui_example examples/simple_gui_example.cpp)
-    target_link_libraries(havel_gui_example ${GTKMM_LIBRARIES} ${X11_LIBRARIES})
+    target_link_libraries(havel_gui_example Qt6::Widgets ${X11_LIBRARIES})
 endif()
 
 # Install

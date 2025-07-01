@@ -73,7 +73,7 @@ elseif(ENABLE_LLVM AND DISABLE_HAVEL_LANG)
 endif()
 
 # Source files - conditional compilation
-file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/window/*.cpp" "src/utils/*.cpp" "src/media/*.cpp")
+file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/window/*.cpp" "src/utils/*.cpp" "src/media/*.cpp" "src/process/*.cpp" "src/fs/*.cpp" "src/core/util/*.cpp")
 
 if(NOT DISABLE_GUI)
     file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")

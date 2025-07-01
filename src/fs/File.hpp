@@ -1,6 +1,6 @@
 #pragma once
 
-#include "FileManager.h"
+#include "FileManager.hpp"
 #include <string>
 #include <vector>
 #include <list>
@@ -10,7 +10,7 @@
 #include <sstream>
 #include <algorithm>
 #include <numeric>
-
+#include "utils/Util.hpp"
 namespace havel {
 
 class File : public FileManager {
@@ -74,9 +74,6 @@ private:
     void createParentDirectories(const std::string& filepath) const;
     std::string readContent() const;
     void writeContent(const std::string& content) const;
-    std::string toLower(const std::string& str) const;
-    std::string toUpper(const std::string& str) const;
-    std::string trimString(const std::string& str) const;
 };
 
 } // namespace havel

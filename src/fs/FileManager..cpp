@@ -341,7 +341,7 @@ bool FileManager::compress(const string& outputPath, int compressionLevel) const
     zipFile zf = zipOpen(outputPath.c_str(), APPEND_STATUS_CREATE);
     if (!zf) return false;
     
-    zip_fileinfo zi = {0};
+    zip_fileinfo zi = {};
     int err = zipOpenNewFileInZip(zf, fileName.c_str(), &zi,
                                  nullptr, 0, nullptr, 0, nullptr,
                                  Z_DEFLATED, compressionLevel);

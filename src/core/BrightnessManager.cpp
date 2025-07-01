@@ -28,7 +28,7 @@ BrightnessManager::BrightnessManager() {
     // Determine display method
     displayMethod = isX11() ? "randr" : "wayland";
     if (settings.verbose) {
-        lo.info("Using display method: " + displayMethod);
+        info("Using display method: " + displayMethod);
     }
 }
 
@@ -40,7 +40,7 @@ void BrightnessManager::setLocation(const std::string& lat, const std::string& l
 bool BrightnessManager::resetToDefaults() {
     std::string cmd = "gammastep -m " + displayMethod + " -o -x";
     if (settings.verbose) {
-        lo.info("Resetting to defaults with command: " + cmd);
+        info("Resetting to defaults with command: " + cmd);
     }
     return system(cmd.c_str()) == 0;
 }
@@ -112,7 +112,7 @@ bool BrightnessManager::isX11() {
         popen("pgrep -x \"Xorg\"", "r"), pclose);
     
     if (!pipe) {
-        lo.error("Failed to execute pgrep command");
+        error("Failed to execute pgrep command");
         return false;
     }
     
@@ -133,7 +133,7 @@ std::optional<double> BrightnessManager::getCurrentBrightness() {
         pclose);
     
     if (!pipe) {
-        lo.error("Failed to get current brightness");
+        error("Failed to get current brightness");
         return std::nullopt;
     }
     
@@ -141,7 +141,7 @@ std::optional<double> BrightnessManager::getCurrentBrightness() {
         try {
             return std::stod(buffer.data());
         } catch (const std::exception& e) {
-            lo.error("Failed to parse current brightness: " + std::string(e.what()));
+            error("Failed to parse current brightness: " + std::string(e.what()));
         }
     }
     
@@ -187,29 +187,29 @@ bool BrightnessManager::executeGammastep() {
         << " -O " << settings.currentGamma;
 
     if (settings.verbose) {
-        lo.info("Executing command: " + cmd.str());
+        info("Executing command: " + cmd.str());
     }
 
     if (system(nullptr)) {
         int ret = system(cmd.str().c_str());
         if (ret != 0) {
-            lo.error("Command failed with exit code: " + std::to_string(ret));
+            error("Command failed with exit code: " + std::to_string(ret));
         }
         return ret == 0;
     } else {
-        lo.error("System shell not available");
+        error("System shell not available");
         return false;
     }
 }
 
 bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightness, const std::string& gamma) {
     if (!validateBrightness(brightness)) {
-        lo.error("Invalid brightness value: " + brightness);
+        error("Invalid brightness value: " + brightness);
         return false;
     }
 
     if (!validateGamma(gamma)) {
-        lo.error("Invalid gamma value: " + gamma);
+        error("Invalid gamma value: " + gamma);
         return false;
     }
 
@@ -234,7 +234,7 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightnes
 
     if (settings.dayTemperature < MIN_TEMPERATURE || settings.nightTemperature < MIN_TEMPERATURE ||
         settings.dayTemperature > MAX_TEMPERATURE || settings.nightTemperature > MAX_TEMPERATURE) {
-        lo.error("Temperature values out of range (1000K-25000K)");
+        error("Temperature values out of range (1000K-25000K)");
         return false;
     }
 
@@ -248,14 +248,14 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightnes
 
     // Execute gammastep
     if (!executeGammastep()) {
-        lo.error("Failed to set brightness and temperature");
+        error("Failed to set brightness and temperature");
         return false;
     }
 
     if (settings.verbose) {
-        lo.info("Successfully set brightness to " + std::to_string(settings.dayBrightness) + 
+        info("Successfully set brightness to " + std::to_string(settings.dayBrightness) + 
                 " (day) and " + std::to_string(settings.nightBrightness) + " (night)");
-        lo.info("Color temperature set to " + std::to_string(settings.dayTemperature) + 
+        info("Color temperature set to " + std::to_string(settings.dayTemperature) + 
                 "K (day) and " + std::to_string(settings.nightTemperature) + "K (night)");
     }
 
@@ -286,7 +286,7 @@ bool BrightnessManager::increaseBrightness(double amount) {
     }
     double newBrightness = std::min(1.0, settings.currentBrightness + amount);
     if (newBrightness != settings.currentBrightness) {
-        lo.info("Increasing brightness from " + std::to_string(settings.currentBrightness) + 
+        info("Increasing brightness from " + std::to_string(settings.currentBrightness) + 
                 " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
         settings.dayBrightness = newBrightness;
@@ -302,7 +302,7 @@ bool BrightnessManager::decreaseBrightness(double amount) {
     }
     double newBrightness = std::max(0.0, settings.currentBrightness - amount);
     if (newBrightness != settings.currentBrightness) {
-        lo.info("Decreasing brightness from " + std::to_string(settings.currentBrightness) + 
+        info("Decreasing brightness from " + std::to_string(settings.currentBrightness) + 
                 " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
         settings.dayBrightness = newBrightness;

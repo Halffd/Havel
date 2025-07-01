@@ -58,14 +58,6 @@ inline std::string toUpper(std::string s) {
     return s;
 }
 
-inline bool startsWith(const std::string& s, const std::string& prefix) {
-    return s.rfind(prefix, 0) == 0;
-}
-
-inline bool endsWith(const std::string& s, const std::string& suffix) {
-    return s.size() >= suffix.size() && s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
-}
-
 // ===== Join / Split =====
 
 template<typename Iterable>
@@ -127,9 +119,182 @@ auto reverse(const T& input) {
     return copy;
 }
 
+// Concept for iterable containers
 template<typename T>
+concept Iterable = requires(const T& t) {
+    std::begin(t);
+    std::end(t);
+};
+
+// Concept for containers with size()
+template<typename T>
+concept Sizeable = requires(const T& t) {
+    t.size();
+};
+
+// contains - exact element match
+template<Iterable T>
 bool contains(const T& input, const typename T::value_type& value) {
     return std::find(std::begin(input), std::end(input), value) != std::end(input);
+}
+
+// String-specific contains (substring search)
+inline bool contains(const std::string& input, const std::string& substring) {
+    return input.find(substring) != std::string::npos;
+}
+
+// includes - checks if ALL elements of second container are in first
+template<Iterable T1, Iterable T2>
+bool includes(const T1& input, const T2& elements) {
+    return std::all_of(std::begin(elements), std::end(elements),
+        [&input](const auto& element) {
+            return contains(input, element);
+        });
+}
+
+// includes - single element version (subset check)
+template<Iterable T>
+bool includes(const T& input, const typename T::value_type& value) {
+    return contains(input, value);  // Same as contains for single element
+}
+
+// String-specific includes (case-insensitive contains)
+inline bool includes(const std::string& input, const std::string& substring) {
+    std::string input_lower = input;
+    std::string sub_lower = substring;
+    std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);
+    std::transform(sub_lower.begin(), sub_lower.end(), sub_lower.begin(), ::tolower);
+    return input_lower.find(sub_lower) != std::string::npos;
+}
+
+// indexOf - returns int, -1 if not found
+template<Iterable T>
+int indexOf(const T& input, const typename T::value_type& value) {
+    auto it = std::find(std::begin(input), std::end(input), value);
+    if (it == std::end(input)) {
+        return -1;  // Not found
+    }
+    return static_cast<int>(std::distance(std::begin(input), it));
+}
+
+// String-specific indexOf
+inline int indexOf(const std::string& input, const std::string& substring) {
+    auto pos = input.find(substring);
+    return pos == std::string::npos ? -1 : static_cast<int>(pos);
+}
+
+// indexOf with start position
+template<Iterable T>
+int indexOf(const T& input, const typename T::value_type& value, size_t start) {
+    if (start >= input.size()) return -1;
+    
+    auto begin_it = std::begin(input);
+    std::advance(begin_it, start);
+    auto it = std::find(begin_it, std::end(input), value);
+    
+    if (it == std::end(input)) {
+        return -1;
+    }
+    return static_cast<int>(std::distance(std::begin(input), it));
+}
+
+inline int indexOf(const std::string& input, const std::string& substring, size_t start) {
+    auto pos = input.find(substring, start);
+    return pos == std::string::npos ? -1 : static_cast<int>(pos);
+}
+
+// lastIndexOf - returns int, -1 if not found
+template<Iterable T>
+int lastIndexOf(const T& input, const typename T::value_type& value) {
+    auto it = std::find(std::rbegin(input), std::rend(input), value);
+    if (it == std::rend(input)) {
+        return -1;  // Not found
+    }
+    // Convert reverse iterator to forward index
+    return static_cast<int>(std::distance(it, std::rend(input)) - 1);
+}
+
+// String-specific lastIndexOf
+inline int lastIndexOf(const std::string& input, const std::string& substring) {
+    auto pos = input.rfind(substring);
+    return pos == std::string::npos ? -1 : static_cast<int>(pos);
+}
+
+template<Iterable T>
+size_t count(const T& input, const typename T::value_type& value) {
+    return std::count(std::begin(input), std::end(input), value);
+}
+
+template<Sizeable T>
+bool startsWith(const T& input, const T& prefix) {
+    if (prefix.size() > input.size()) return false;
+    return std::equal(std::begin(prefix), std::end(prefix), std::begin(input));
+}
+
+inline bool startsWith(const std::string& input, const std::string& prefix) {
+    return input.size() >= prefix.size() && 
+           input.compare(0, prefix.size(), prefix) == 0;
+}
+
+template<Sizeable T>
+bool endsWith(const T& input, const T& suffix) {
+    if (suffix.size() > input.size()) return false;
+    return std::equal(std::rbegin(suffix), std::rend(suffix), std::rbegin(input));
+}
+
+inline bool endsWith(const std::string& input, const std::string& suffix) {
+    return input.size() >= suffix.size() && 
+           input.compare(input.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+template<typename T>
+bool isEmpty(const T& input) requires requires { input.empty(); } {
+    return input.empty();
+}
+
+template<typename T>
+bool isNotEmpty(const T& input) requires requires { input.empty(); } {
+    return !input.empty();
+}
+
+template<typename T>
+bool isNull(T* input) {
+    return input == nullptr;
+}
+
+template<typename T>
+bool isNotNull(T* input) {
+    return input != nullptr;
+}
+
+template<typename T>
+bool isNull(const std::unique_ptr<T>& input) {
+    return input == nullptr;
+}
+
+template<typename T>
+bool isNull(const std::shared_ptr<T>& input) {
+    return input == nullptr;
+}
+
+template<typename T>
+bool isNotNull(const std::unique_ptr<T>& input) {
+    return input != nullptr;
+}
+
+template<typename T>
+bool isNotNull(const std::shared_ptr<T>& input) {
+    return input != nullptr;
+}
+
+template<typename T>
+bool isNull(const std::optional<T>& input) {
+    return !input.has_value();
+}
+
+template<typename T>
+bool isNotNull(const std::optional<T>& input) {
+    return input.has_value();
 }
 
 // ===== Random =====
@@ -143,21 +308,189 @@ inline double randfloat(double min = 0.0, double max = 1.0) {
     static std::mt19937 rng(std::chrono::steady_clock::now().time_since_epoch().count());
     return std::uniform_real_distribution<double>(min, max)(rng);
 }
-
-template<typename T>
-T choice(const T& input) {
-    auto size = std::distance(std::begin(input), std::end(input));
-    auto it = std::begin(input);
-    std::advance(it, randint(0, size - 1));
-    return *it;
+template<typename Container>
+auto choice(const Container& container) {
+    if (container.empty()) {
+        throw std::runtime_error("choice() called on empty container");
+    }
+    
+    auto it = container.begin();
+    std::advance(it, rand() % container.size());
+    return *it;  // This returns the element, not the container
 }
 
 // ===== Misc =====
 
+// Forward declaration for recursive types
+template<typename T>
+std::string toString(const T& val);
+
+// Helper concepts
+template<typename T>
+concept Streamable = requires(std::ostringstream& oss, const T& t) {
+    oss << t;
+};
+
+template<typename T>
+concept PairLike = requires(const T& t) {
+    t.first;
+    t.second;
+};
+
+template<typename T>
+concept TupleLike = requires(const T& t) {
+    std::tuple_size<T>::value;
+} && !PairLike<T>;
+
+// Helper for tuple printing
+template<typename Tuple, std::size_t... I>
+std::string tupleToString(const Tuple& t, std::index_sequence<I...>) {
+    std::ostringstream oss;
+    oss << "(";
+    ((oss << (I == 0 ? "" : ", ") << toString(std::get<I>(t))), ...);
+    oss << ")";
+    return oss.str();
+}
+
+// Main toString implementations
 template<typename T>
 std::string toString(const T& val) {
+    if constexpr (std::is_same_v<T, std::string>) {
+        return val;
+    }
+    else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, char*>) {
+        return std::string(val);
+    }
+    else if constexpr (std::is_same_v<T, char>) {
+        return std::string(1, val);
+    }
+    else if constexpr (std::is_same_v<T, bool>) {
+        return val ? "true" : "false";
+    }
+    else if constexpr (std::is_null_pointer_v<T>) {
+        return "nullptr";
+    }
+    else if constexpr (std::is_pointer_v<T>) {
+        if (val == nullptr) {
+            return "nullptr";
+        }
+        std::ostringstream oss;
+        oss << "0x" << std::hex << reinterpret_cast<uintptr_t>(val);
+        return oss.str();
+    }
+    else if constexpr (PairLike<T>) {
+        return "(" + toString(val.first) + ", " + toString(val.second) + ")";
+    }
+    else if constexpr (TupleLike<T>) {
+        return tupleToString(val, std::make_index_sequence<std::tuple_size_v<T>>{});
+    }
+    else if constexpr (Iterable<T>) {
+        std::ostringstream oss;
+        
+        // Detect container type for different brackets
+        if constexpr (requires { typename T::key_type; }) {
+            // Map-like containers
+            oss << "{";
+        } else if constexpr (std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>) {
+            oss << "[";
+        } else if constexpr (std::is_same_v<T, std::set<typename T::value_type, typename T::key_compare, typename T::allocator_type>>) {
+            oss << "{";
+        } else {
+            oss << "[";
+        }
+        
+        bool first = true;
+        for (const auto& item : val) {
+            if (!first) oss << ", ";
+            oss << toString(item);
+            first = false;
+        }
+        
+        // Matching closing bracket
+        if constexpr (requires { typename T::key_type; }) {
+            oss << "}";
+        } else if constexpr (std::is_same_v<T, std::vector<typename T::value_type, typename T::allocator_type>>) {
+            oss << "]";
+        } else if constexpr (std::is_same_v<T, std::set<typename T::value_type, typename T::key_compare, typename T::allocator_type>>) {
+            oss << "}";
+        } else {
+            oss << "]";
+        }
+        
+        return oss.str();
+    }
+    else if constexpr (Streamable<T>) {
+        std::ostringstream oss;
+        oss << val;
+        return oss.str();
+    }
+    else {
+        // Fallback for non-streamable types
+        return "<unprintable:" + std::string(typeid(T).name()) + ">";
+    }
+}
+
+// Specializations for common types that need special handling
+template<>
+inline std::string toString(const std::string& val) {
+    return val;
+}
+
+// Optional support
+template<typename T>
+std::string toString(const std::optional<T>& opt) {
+    if (opt.has_value()) {
+        return "Some(" + toString(*opt) + ")";
+    }
+    return "None";
+}
+
+// Variant support
+template<typename... Types>
+std::string toString(const std::variant<Types...>& var) {
+    return std::visit([](const auto& v) { return toString(v); }, var);
+}
+
+// Smart pointer support
+template<typename T>
+std::string toString(const std::unique_ptr<T>& ptr) {
+    if (ptr) {
+        return "unique_ptr(" + toString(*ptr) + ")";
+    }
+    return "unique_ptr(nullptr)";
+}
+
+template<typename T>
+std::string toString(const std::shared_ptr<T>& ptr) {
+    if (ptr) {
+        return "shared_ptr(" + toString(*ptr) + ")";
+    }
+    return "shared_ptr(nullptr)";
+}
+
+// Array support
+template<typename T, std::size_t N>
+std::string toString(const std::array<T, N>& arr) {
     std::ostringstream oss;
-    oss << val;
+    oss << "[";
+    for (std::size_t i = 0; i < N; ++i) {
+        if (i > 0) oss << ", ";
+        oss << toString(arr[i]);
+    }
+    oss << "]";
+    return oss.str();
+}
+
+// C-style array support
+template<typename T, std::size_t N>
+std::string toString(const T (&arr)[N]) {
+    std::ostringstream oss;
+    oss << "[";
+    for (std::size_t i = 0; i < N; ++i) {
+        if (i > 0) oss << ", ";
+        oss << toString(arr[i]);
+    }
+    oss << "]";
     return oss.str();
 }
 

@@ -133,11 +133,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Basic application hotkeys
     io.Hotkey("^!r", [this]() {
         ReloadConfigurations();
-        lo.info("Reloading configuration");
+        info("Reloading configuration");
     });
 
     io.Hotkey("!Esc", []() {
-        lo.info("Quitting application");
+        info("Quitting application");
         exit(0);
     });
 
@@ -199,11 +199,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         nullptr,
         0);
     io.Hotkey("~Button1", [this]() {
-        lo.info("Button1");
+        info("Button1");
         mouse1Pressed = true;
     });
     io.Hotkey("~Button2", [this]() {
-        lo.info("Button2");
+        info("Button2");
         mouse2Pressed = true;
     });
 
@@ -259,23 +259,23 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // Window Management
     io.Hotkey("#left", []() {
-        lo.debug("Moving window left");
+        debug("Moving window left");
         WindowManager::MoveWindow(3);
     });
 
     io.Hotkey("#right", []() {
-        lo.debug("Moving window right");
+        debug("Moving window right");
         // Move window to next monitor using MoveWindow(4) for right movement
         WindowManager::MoveWindow(4);
     });
     io.Hotkey("&f9", [this]() {
-        lo.info("Suspending all hotkeys");
+        info("Suspending all hotkeys");
         io.Suspend(); // Special case: 0 means suspend all hotkeys
-        lo.debug("Hotkeys suspended");
+        debug("Hotkeys suspended");
     });
     // Quick window switching hotkeys
     auto switchToLastWindow = []() {
-        lo.debug("Switching to last window");
+        debug("Switching to last window");
         WindowManager::AltTab();
     };
 
@@ -284,69 +284,69 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Emergency Features
     const std::map<std::string, std::pair<std::string, std::function<void()>>> emergencyHotkeys = {
         {"#Esc", {"Restart application", []() {
-            lo.info("Restarting application");
+            info("Restarting application");
             // Get current executable path using the correct namespace
             std::string exePath = havel::GetExecutablePath();
             if (!exePath.empty()) {
-                lo.debug("Executable path: " + exePath);
+                debug("Executable path: " + exePath);
                 // Fork and exec to restart
                 if(fork() == 0) {
-                    lo.debug("Child process started, executing: " + exePath);
+                    debug("Child process started, executing: " + exePath);
                     execl(exePath.c_str(), exePath.c_str(), nullptr);
-                    lo.error("Failed to restart application");
+                    error("Failed to restart application");
                     exit(1); // Only reached if execl fails
                 }
-                lo.info("Parent process exiting for restart");
+                info("Parent process exiting for restart");
                 exit(0); // Parent process exits
             } else {
-                lo.error("Failed to get executable path");
+                error("Failed to get executable path");
             }
         }}},
         {"^#esc", {"Reload configuration", [this]() {
-            lo.info("Reloading configuration");
+            info("Reloading configuration");
             ReloadConfigurations();
-            lo.debug("Configuration reload complete");
+            debug("Configuration reload complete");
         }}}
     };
 
     // Register all emergency hotkeys
-    for (const auto& [key, info] : emergencyHotkeys) {
-        const auto& [description, action] = info;
+    for (const auto& [key, hotkeyInfo] : emergencyHotkeys) {
+        const auto& [description, action] = hotkeyInfo;
         io.Hotkey(key, [description, action]() {
-            lo.info("Executing emergency hotkey: " + description);
+            info("Executing emergency hotkey: " + description);
             action();
         });
     }
 
     // Brightness and gamma control
     io.Hotkey("f3", [this]() {
-        lo.info("Setting default brightness");
+        info("Setting default brightness");
         brightnessManager.setDefaultBrightness();
-        lo.info("Brightness set to: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        info("Brightness set to: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
     });
 
     io.Hotkey("f7", [this]() {
-        lo.info("Decreasing brightness");
+        info("Decreasing brightness");
         brightnessManager.decreaseBrightness(0.05);
-        lo.info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
     });
 
     io.Hotkey("f8", [this]() {
-        lo.info("Increasing brightness");
+        info("Increasing brightness");
         brightnessManager.increaseBrightness(0.05);
-        lo.info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
     });
 
     io.Hotkey("+f7", [this]() {
-        lo.info("Decreasing gamma");
+        info("Decreasing gamma");
         brightnessManager.decreaseGamma(500);
-        lo.info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
+        info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
     });
 
     io.Hotkey("+f8", [this]() {
-        lo.info("Increasing gamma");
+        info("Increasing gamma");
         brightnessManager.increaseGamma(500);
-        lo.info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
+        info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
     });
 
     // Mouse wheel + click combinations
@@ -363,7 +363,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey("~d", "Window.Active('name:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu window
-            lo.info("Koikatu window title detected - D key pressed - showing black overlay");
+            info("Koikatu window title detected - D key pressed - showing black overlay");
             showBlackOverlay();
             logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
         },
@@ -374,7 +374,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // '/' key to hold 'w' down in gaming mode
     AddContextualHotkey("@y", "currentMode == 'gaming'",
         [this]() {
-            lo.info("Gaming hotkey: Holding 'w' key down");
+            info("Gaming hotkey: Holding 'w' key down");
             io.Send("{w down}");
 
             // Register the same key to release when pressed again
@@ -382,10 +382,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
             wKeyPressed = !wKeyPressed;
 
             if (wKeyPressed) {
-                lo.info("W key pressed and held down");
+                info("W key pressed and held down");
             } else {
                 io.Send("{w up}");
-                lo.info("W key released");
+                info("W key released");
             }
         },
         nullptr, // No action when not in gaming mode
@@ -395,7 +395,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // "'" key to move mouse to coordinates and autoclick in gaming mode
     AddContextualHotkey("'", "currentMode == 'gaming'",
         [this]() {
-            lo.info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
+            info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
             // Move mouse to coordinates
             std::string moveCmd = "xdotool mousemove 1600 700";
             system(moveCmd.c_str());
@@ -410,7 +410,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // autoclick in gaming mode
     AddContextualHotkey("#Enter", "currentMode == 'gaming'",
         [this]() {
-            lo.info("Gaming hotkey: Starting autoclicker with Enter key");
+            info("Gaming hotkey: Starting autoclicker with Enter key");
             startAutoclicker("Button1");
         },
         nullptr, // No action when not in gaming mode
@@ -422,7 +422,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     static AutoRunner genshinAutoRunner(io);
     AddContextualHotkey("/", "currentMode == 'gaming'",
         []() {
-            lo.info("Genshin Impact detected - Starting specialized auto actions");
+            info("Genshin Impact detected - Starting specialized auto actions");
             genshinAutoRunner.toggle();
         },
         nullptr, // No action when not in gaming mode
@@ -432,11 +432,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Special hotkeys for Genshin Impact - Start automation
     AddContextualHotkey("enter", "currentMode == 'gaming'", [this]() {
     if (genshinAutomationActive) {
-        lo.warning("Genshin automation is already active");
+        warning("Genshin automation is already active");
         return;
     }
 
-    lo.info("Genshin Impact detected - Starting specialized auto actions");
+    info("Genshin Impact detected - Starting specialized auto actions");
     showNotification("Genshin Automation", "Starting automation sequence");
     genshinAutomationActive = true;
 
@@ -457,24 +457,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                     Window window(std::to_string(activeWindow), activeWindow);
                     isGenshinActive = window.Title().find("Genshin") != std::string::npos;
                 } catch (...) {
-                    lo.error("Genshin automation: Could not get window title");
+                    error("Genshin automation: Could not get window title");
                     break;
                 }
             }
 
             if (!isGenshinActive) {
-                lo.info("Genshin automation: Window no longer active");
+                info("Genshin automation: Window no longer active");
                 break;
             }
 
             // Press E
             io.Send("e");
-            lo.debug("Genshin automation: Pressed E (" + std::to_string(counter + 1) + "/" + std::to_string(maxIterations) + ")");
+            debug("Genshin automation: Pressed E (" + std::to_string(counter + 1) + "/" + std::to_string(maxIterations) + ")");
 
             // Every 5th loop, press Q
             if (counter % 5 == 0) {
                 io.Send("q");
-                lo.debug("Genshin automation: Pressed Q");
+                debug("Genshin automation: Pressed Q");
             }
 
             counter++;
@@ -482,7 +482,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }
 
         genshinAutomationActive = false;
-        lo.info("Genshin automation: Automation ended");
+        info("Genshin automation: Automation ended");
 
     }).detach();
 
@@ -491,10 +491,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("!+g", [this]() {
         if (genshinAutomationActive) {
             genshinAutomationActive = false;
-            lo.info("Manually stopping Genshin automation");
+            info("Manually stopping Genshin automation");
             showNotification("Genshin Automation", "Automation sequence stopped");
         } else {
-            lo.info("Genshin automation is not active");
+            info("Genshin automation is not active");
             showNotification("Genshin Automation", "No active automation to stop");
         }
     });
@@ -556,7 +556,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
 
     // If not in gaming mode, immediately ungrab all MPV hotkeys
     if (currentMode != "gaming") {
-        lo.info("Starting in normal mode - unregistering MPV hotkeys");
+        info("Starting in normal mode - unregistering MPV hotkeys");
         ungrabGamingHotkeys();
     }
 }
@@ -612,7 +612,7 @@ void HotkeyManager::RegisterWindowHotkeys() {
     /*AddContextualHotkey("d", "Window.Active('class:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu
-            lo.info("Koikatu window detected - D key pressed - showing black overlay");
+            info("Koikatu window detected - D key pressed - showing black overlay");
             showBlackOverlay();
             logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (class match)");
         },
@@ -624,7 +624,7 @@ void HotkeyManager::RegisterWindowHotkeys() {
     AddContextualHotkey("d", "Window.Active('name:Koikatu')",
         [this]() {
             // Show black overlay when D is pressed in Koikatu window
-            lo.info("Koikatu window title detected - D key pressed - showing black overlay");
+            info("Koikatu window title detected - D key pressed - showing black overlay");
             showBlackOverlay();
             logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
         },
@@ -673,7 +673,7 @@ void HotkeyManager::RegisterSystemHotkeys() {
         Configs::Get().Save();
 
         std::string status = verboseConditionLogging ? "enabled" : "disabled";
-        lo.info("Verbose condition logging " + status);
+        info("Verbose condition logging " + status);
         showNotification("Debug Setting", "Condition logging " + status);
     });
 }
@@ -693,7 +693,7 @@ bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, const std::string& a
 
 bool HotkeyManager::RemoveHotkey(const std::string& hotkeyStr) {
     // Remove a hotkey
-    lo.info("Removing hotkey: " + hotkeyStr);
+    info("Removing hotkey: " + hotkeyStr);
     return true;
 }
 
@@ -702,7 +702,7 @@ void HotkeyManager::LoadHotkeyConfigurations() {
     // This would typically read from a JSON or similar config file
 
     // Example of loading a hotkey from config (placeholder implementation)
-    lo.info("Loading hotkey configurations...");
+    info("Loading hotkey configurations...");
 
     // In a real implementation, we would iterate through config entries
     // and register each hotkey with its action
@@ -710,7 +710,7 @@ void HotkeyManager::LoadHotkeyConfigurations() {
 
 void HotkeyManager::ReloadConfigurations() {
     // Reload hotkey configurations
-    lo.info("Reloading configurations");
+    info("Reloading configurations");
     LoadHotkeyConfigurations();
 
     // Reload video sites
@@ -729,20 +729,20 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     // Wrap action in condition check
     auto action = [this, condition, trueAction, falseAction]() {
         if (verboseKeyLogging)
-            lo.debug("Evaluating condition: " + condition);
+            debug("Evaluating condition: " + condition);
 
         bool conditionMet = evaluateCondition(condition);
 
         if (conditionMet) {
             if (trueAction) {
                 if (verboseKeyLogging)
-                    lo.debug("Condition met, executing true action");
+                    debug("Condition met, executing true action");
                 trueAction();
             }
         } else {
             if (falseAction) {
                 if (verboseKeyLogging)
-                    lo.debug("Condition not met, executing false action");
+                    debug("Condition not met, executing false action");
                 falseAction();
             }
         }
@@ -806,7 +806,7 @@ bool HotkeyManager::checkWindowCondition(const std::string& condition) {
                     // Check if title contains our match string
                     result = (activeWindowTitle.find(value) != std::string::npos);
                 } catch (...) {
-                    lo.error("Failed to get active window title");
+                    error("Failed to get active window title");
                     result = false;
                 }
             }
@@ -823,7 +823,7 @@ bool HotkeyManager::checkWindowCondition(const std::string& condition) {
                     // Check if title contains our match string
                     result = (activeWindowTitle.find(value) != std::string::npos);
                 } catch (...) {
-                    lo.error("Failed to get active window title");
+                    error("Failed to get active window title");
                     result = false;
                 }
             }
@@ -857,7 +857,7 @@ void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, 
             if (conditionMet) {
                 // Condition is now met, grab the keys
                 if (!mpvHotkeysGrabbed && (condition.find("currentMode == 'gaming'") != std::string::npos)) {
-                    lo.info("Condition met: " + condition + " - Grabbing MPV hotkeys");
+                    info("Condition met: " + condition + " - Grabbing MPV hotkeys");
                     grabGamingHotkeys();
                 }
 
@@ -868,7 +868,7 @@ void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, 
             } else {
                 // Condition is now not met, ungrab the keys
                 if (mpvHotkeysGrabbed && (condition.find("currentMode == 'gaming'") != std::string::npos)) {
-                    lo.info("Condition no longer met: " + condition + " - Ungrabbing MPV hotkeys");
+                    info("Condition no longer met: " + condition + " - Ungrabbing MPV hotkeys");
                     ungrabGamingHotkeys();
                 }
 
@@ -916,9 +916,9 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
                 logModeSwitch(old, currentMode);
                 if (verboseWindowLogging)
                     logWindowEvent("AUTO_MODE_CHANGE", "Switched to gaming mode (detected)");
-                lo.info(WindowManager::activeWindow.className);
-                lo.info(WindowManager::activeWindow.title);
-                lo.info("Auto-switched to gaming mode (detected)");
+                info(WindowManager::activeWindow.className);
+                info(WindowManager::activeWindow.title);
+                info("Auto-switched to gaming mode (detected)");
             }
             result = true;
         }
@@ -929,7 +929,7 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
             logModeSwitch(old, currentMode);
             if (verboseWindowLogging)
                 logWindowEvent("AUTO_MODE_CHANGE", "Switched to normal mode");
-            lo.info("Auto-switched to normal mode");
+            info("Auto-switched to normal mode");
         }
 
         if (verboseWindowLogging && !result)
@@ -941,7 +941,7 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
             logWindowEvent("CONDITION_CHECK", actual + " = " + (result ? "TRUE" : "FALSE"));
     }
     else {
-        lo.warning("Unrecognized condition: " + actual);
+        warning("Unrecognized condition: " + actual);
     }
 
     if (negated) {
@@ -979,12 +979,12 @@ void HotkeyManager::grabGamingHotkeys() {
     }
     // Grab all MPV hotkey IDs that we've stored
     for (int id : conditionalHotkeyIds) {
-        lo.info("Grabbing hotkey: " + std::to_string(id));
+        info("Grabbing hotkey: " + std::to_string(id));
         io.GrabHotkey(id);
     }
 
     mpvHotkeysGrabbed = true;
-    lo.info("Grabbed all MPV hotkeys for gaming mode");
+    info("Grabbed all MPV hotkeys for gaming mode");
 }
 
 void HotkeyManager::ungrabGamingHotkeys() {
@@ -999,7 +999,7 @@ void HotkeyManager::ungrabGamingHotkeys() {
     }
 
     mpvHotkeysGrabbed = false;
-    lo.info("Released all MPV hotkeys for normal mode");
+    info("Released all MPV hotkeys for normal mode");
 }
 
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
@@ -1050,7 +1050,7 @@ bool HotkeyManager::isGamingWindow() {
 
     // If already running, stop it (toggle behavior)
     if (autoclickerActive) {
-        lo.info("Stopping autoclicker - toggled off");
+        info("Stopping autoclicker - toggled off");
         autoclickerActive = false;
         if (autoclickerThread.joinable()) {
             autoclickerThread.join();
@@ -1060,7 +1060,7 @@ bool HotkeyManager::isGamingWindow() {
 
     // Not a gaming window? Abort!
     if (!isGamingWindow()) {
-        lo.debug("Autoclicker not activated - not in gaming window");
+        debug("Autoclicker not activated - not in gaming window");
         return;
     }
 
@@ -1068,7 +1068,7 @@ bool HotkeyManager::isGamingWindow() {
     autoclickerWindowID = currentWindow;
     autoclickerActive = true;
 
-    lo.info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
+    info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
 
     // Configuration for autoclicker timing (in milliseconds)
     struct AutoClickerConfig {
@@ -1091,7 +1091,7 @@ bool HotkeyManager::isGamingWindow() {
         } else if (button == "Side2") {
             io.Click(MouseButton::Side2, action);
         } else {
-            lo.error("Invalid mouse button: " + button);
+            error("Invalid mouse button: " + button);
         }
     };
 
@@ -1101,7 +1101,7 @@ bool HotkeyManager::isGamingWindow() {
             // Check if window changed
             wID activeWindow = WindowManager::GetActiveWindow();
             if (activeWindow != autoclickerWindowID) {
-                lo.info("Stopping autoclicker - window changed");
+                info("Stopping autoclicker - window changed");
                 autoclickerActive = false;
                 break;
             }
@@ -1116,7 +1116,7 @@ bool HotkeyManager::isGamingWindow() {
                 std::chrono::milliseconds(config.clickInterval - config.clickHold));
         }
 
-        lo.info("Autoclicker thread terminated");
+        info("Autoclicker thread terminated");
     });
 
     // Detach so it runs independently
@@ -1126,7 +1126,7 @@ bool HotkeyManager::isGamingWindow() {
     // Call this when you need to force-stop (e.g., on app exit)
     void HotkeyManager::stopAllAutoclickers() {
     if (autoclickerActive) {
-        lo.info("Force stopping all autoclickers");
+        info("Force stopping all autoclickers");
         autoclickerActive = false;
         if (autoclickerThread.joinable()) {
             autoclickerThread.join();
@@ -1141,7 +1141,7 @@ std::string HotkeyManager::handleKeycode(const std::string& input) {
         // Convert keycode to keysym using X11
         Display* display = XOpenDisplay(nullptr);
         if (!display) {
-            lo.error("Failed to open X display for keycode conversion");
+            error("Failed to open X display for keycode conversion");
             return input;
         }
 
@@ -1153,7 +1153,7 @@ std::string HotkeyManager::handleKeycode(const std::string& input) {
             return keyName;
         }
     } catch (const std::exception& e) {
-        lo.error("Failed to convert keycode: " + input + " - " + e.what());
+        error("Failed to convert keycode: " + input + " - " + e.what());
     }
     return input;
 }
@@ -1168,7 +1168,7 @@ std::string HotkeyManager::handleScancode(const std::string& input) {
         int keycode = scancode + 8; // Common offset on Linux
         return handleKeycode("kc" + std::to_string(keycode));
     } catch (const std::exception& e) {
-        lo.error("Failed to convert scancode: " + input + " - " + e.what());
+        error("Failed to convert scancode: " + input + " - " + e.what());
     }
     return input;
 }
@@ -1267,7 +1267,7 @@ std::string HotkeyManager::parseHotkeyString(const std::string& hotkeyStr) {
 void HotkeyManager::logHotkeyEvent(const std::string& eventType, const std::string& details) {
     std::string timestamp = "[" + COLOR_DIM + std::to_string(time(nullptr)) + COLOR_RESET + "]";
     std::string type = COLOR_BOLD + COLOR_CYAN + "[" + eventType + "]" + COLOR_RESET;
-    lo.info(timestamp + " " + type + " " + details);
+    info(timestamp + " " + type + " " + details);
 }
 
 void HotkeyManager::logKeyConversion(const std::string& from, const std::string& to) {
@@ -1292,7 +1292,7 @@ void HotkeyManager::logKeyEvent(const std::string& key, const std::string& event
     std::string keyInfo = COLOR_YELLOW + key + COLOR_RESET;
     std::string detailInfo = details.empty() ? "" : " (" + COLOR_GREEN + details + COLOR_RESET + ")";
 
-    lo.info(timestamp + " " + type + " " + keyInfo + detailInfo);
+    info(timestamp + " " + type + " " + keyInfo + detailInfo);
 }
 
 void HotkeyManager::logWindowEvent(const std::string& eventType, const std::string& details) {
@@ -1321,7 +1321,7 @@ void HotkeyManager::logWindowEvent(const std::string& eventType, const std::stri
 
     std::string detailInfo = details.empty() ? "" : " (" + COLOR_GREEN + details + COLOR_RESET + ")";
 
-    lo.info(timestamp + " " + type + " " + windowInfo + detailInfo);
+    info(timestamp + " " + type + " " + windowInfo + detailInfo);
 }
 
 std::string HotkeyManager::getWindowInfo(wID windowId) {
@@ -1428,11 +1428,11 @@ void HotkeyManager::setMode(const std::string& mode) {
 
 void HotkeyManager::showBlackOverlay() {
     // Log that we're showing the black overlay
-    lo.info("Showing black overlay window on all monitors");
+    info("Showing black overlay window on all monitors");
 
     Display* display = DisplayManager::GetDisplay();
     if (!display) {
-        lo.error("Failed to get display for black overlay");
+        error("Failed to get display for black overlay");
         return;
     }
 
@@ -1523,7 +1523,7 @@ void HotkeyManager::showBlackOverlay() {
             // Check for timeout
             auto now = std::chrono::steady_clock::now();
             if (now - startTime > timeout) {
-                lo.info("Black overlay auto-closed after timeout");
+                info("Black overlay auto-closed after timeout");
                 running = false;
                 break;
             }
@@ -1535,7 +1535,7 @@ void HotkeyManager::showBlackOverlay() {
                 // Close on any key press or mouse click
                 if (event.type == KeyPress || event.type == ButtonPress) {
                     running = false;
-                    lo.info("Black overlay closed by user input");
+                    info("Black overlay closed by user input");
                     break;
                 }
             }
@@ -1556,9 +1556,9 @@ void HotkeyManager::showBlackOverlay() {
 void HotkeyManager::printActiveWindowInfo() {
     wID activeWindow = WindowManager::GetActiveWindow();
     if (activeWindow == 0) {
-        lo.info("╔══════════════════════════════════════╗");
-        lo.info("║      NO ACTIVE WINDOW DETECTED       ║");
-        lo.info("╚══════════════════════════════════════╝");
+        info("╔══════════════════════════════════════╗");
+        info("║      NO ACTIVE WINDOW DETECTED       ║");
+        info("╚══════════════════════════════════════╝");
         return;
     }
 
@@ -1574,7 +1574,7 @@ void HotkeyManager::printActiveWindowInfo() {
         windowTitle = window.Title();
     } catch (...) {
         windowTitle = "Unknown";
-        lo.error("Failed to get active window title");
+        error("Failed to get active window title");
     }
 
     // Get window geometry
@@ -1586,7 +1586,7 @@ void HotkeyManager::printActiveWindowInfo() {
         width = rect.width;
         height = rect.height;
     } catch (...) {
-        lo.error("Failed to get window position");
+        error("Failed to get window position");
     }
 
     // Check if it's a gaming window
@@ -1605,19 +1605,19 @@ void HotkeyManager::printActiveWindowInfo() {
         return "║ " + line + std::string(52 - line.length(), ' ') + "║";
     };
 
-    lo.info("╔══════════════════════════════════════════════════════════╗");
-    lo.info("║             ACTIVE WINDOW INFORMATION                    ║");
-    lo.info("╠══════════════════════════════════════════════════════════╣");
-    lo.info(formatLine("Window ID: ", std::to_string(activeWindow)));
-    lo.info(formatLine("Window Title: \"", windowTitle + "\""));
-    lo.info(formatLine("Window Class: \"", windowClass + "\""));
-    lo.info(formatLine("Window Geometry: ", geometry));
+    info("╔══════════════════════════════════════════════════════════╗");
+    info("║             ACTIVE WINDOW INFORMATION                    ║");
+    info("╠══════════════════════════════════════════════════════════╣");
+    info(formatLine("Window ID: ", std::to_string(activeWindow)));
+    info(formatLine("Window Title: \"", windowTitle + "\""));
+    info(formatLine("Window Class: \"", windowClass + "\""));
+    info(formatLine("Window Geometry: ", geometry));
 
     std::string gamingStatus = isGaming ? (COLOR_GREEN + std::string("YES ✓") + COLOR_RESET) : (COLOR_RED + std::string("NO ✗") + COLOR_RESET);
-    lo.info(formatLine("Is Gaming Window: ", gamingStatus));
+    info(formatLine("Is Gaming Window: ", gamingStatus));
 
-    lo.info(formatLine("Current Mode: ", currentMode));
-    lo.info("╚══════════════════════════════════════════════════════════╝");
+    info(formatLine("Current Mode: ", currentMode));
+    info("╚══════════════════════════════════════════════════════════╝");
 
     // Log to window event history
     logWindowEvent("WINDOW_INFO",
@@ -1629,7 +1629,7 @@ void HotkeyManager::toggleWindowFocusTracking() {
     trackWindowFocus = !trackWindowFocus;
 
     if (trackWindowFocus) {
-        lo.info("Window focus tracking ENABLED - will log all window changes");
+        info("Window focus tracking ENABLED - will log all window changes");
         logWindowEvent("FOCUS_TRACKING", "Enabled");
 
         // Initialize with current window
@@ -1638,14 +1638,14 @@ void HotkeyManager::toggleWindowFocusTracking() {
             printActiveWindowInfo();
         }
     } else {
-        lo.info("Window focus tracking DISABLED");
+        info("Window focus tracking DISABLED");
         logWindowEvent("FOCUS_TRACKING", "Disabled");
     }
 }
 
 // Implement the debug settings methods
 void HotkeyManager::loadDebugSettings() {
-    lo.info("Loading debug settings from config");
+    info("Loading debug settings from config");
 
     // Get settings from config file with default values if not present
     bool keyLogging = Configs::Get().Get<bool>("Debug.VerboseKeyLogging", false);
@@ -1658,7 +1658,7 @@ void HotkeyManager::loadDebugSettings() {
     setVerboseConditionLogging(conditionLogging);
 
     // Log the current debug settings
-    lo.info("Debug settings: KeyLogging=" + std::to_string(verboseKeyLogging) +
+    info("Debug settings: KeyLogging=" + std::to_string(verboseKeyLogging) +
             ", WindowLogging=" + std::to_string(verboseWindowLogging) +
             ", ConditionLogging=" + std::to_string(verboseConditionLogging));
 }
@@ -1666,30 +1666,30 @@ void HotkeyManager::loadDebugSettings() {
 void HotkeyManager::applyDebugSettings() {
     // Apply current debug settings
     if (verboseKeyLogging) {
-        lo.info("Verbose key logging is enabled");
+        info("Verbose key logging is enabled");
     }
 
     if (verboseWindowLogging) {
-        lo.info("Verbose window logging is enabled");
+        info("Verbose window logging is enabled");
     }
 
     if (verboseConditionLogging) {
-        lo.info("Verbose condition logging is enabled");
+        info("Verbose condition logging is enabled");
     }
 
     // Set up config watchers to react to changes in real-time
     Configs::Get().Watch<bool>("Debug.VerboseKeyLogging", [this](bool oldValue, bool newValue) {
-        lo.info("Key logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        info("Key logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
         setVerboseKeyLogging(newValue);
     });
 
     Configs::Get().Watch<bool>("Debug.VerboseWindowLogging", [this](bool oldValue, bool newValue) {
-        lo.info("Window logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        info("Window logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
         setVerboseWindowLogging(newValue);
     });
 
     Configs::Get().Watch<bool>("Debug.VerboseConditionLogging", [this](bool oldValue, bool newValue) {
-        lo.info("Condition logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
+        info("Condition logging setting changed from " + std::to_string(oldValue) + " to " + std::to_string(newValue));
         setVerboseConditionLogging(newValue);
     });
 }

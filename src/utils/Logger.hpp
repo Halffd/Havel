@@ -3,7 +3,6 @@
 #include <mutex>
 #include <memory>
 #include <fstream>
-#define lo havel::Logger::getInstance()
 
 namespace havel {
 

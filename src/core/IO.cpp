@@ -178,8 +178,6 @@ void IO::EmitToUinput(int code, bool down) {
 
 void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
               bool isMouse) {
-  Logger lo;
-
   if (!display)
     return;
 
@@ -211,7 +209,7 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
         Status status = XGrabKey(display, input, finalMods, root, True,
                                  GrabModeAsync, GrabModeAsync);
         if (status != Success) {
-          lo.error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
+          error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
         }
       } else {
         XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
@@ -490,29 +488,29 @@ void IO::HandleMouseEvent(XEvent &event) {
 
 // Static method to handle key strings
 Key IO::handleKeyString(const std::string &key) {
-  lo.debug("Handling key string: " + key);
+  debug("Handling key string: " + key);
 
   // Handle keycodes (kcXXX)
   if (key.size() > 2 && key.substr(0, 2) == "kc") {
     try {
       int keycode = std::stoi(key.substr(2));
-      lo.debug("Detected direct keycode: " + std::to_string(keycode));
+      debug("Detected direct keycode: " + std::to_string(keycode));
       return keycode;
     } catch (const std::exception &e) {
-      lo.error("Failed to parse keycode from '" + key + "': " + e.what());
+      error("Failed to parse keycode from '" + key + "': " + e.what());
       return -1;
     }
   }
 
   // Special handling for NoSymbol
   if (key == "NoSymbol") {
-    lo.debug("Explicitly handling NoSymbol as keysym 0x0");
+    debug("Explicitly handling NoSymbol as keysym 0x0");
     return 0x0; // Use keysym 0x0 for NoSymbol as requested
   }
 
   // Handle the "Menu" key explicitly
   if (key == "Menu" || key == "menu") {
-    lo.debug("Explicitly handling Menu key via keysym");
+    debug("Explicitly handling Menu key via keysym");
     KeySym keysym = XK_Menu;
     int keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
     return keycode > 0 ? keycode : -1;
@@ -521,22 +519,22 @@ Key IO::handleKeyString(const std::string &key) {
   // The rest of the implementation handles normal keys
   KeySym keysym = XStringToKeysym(key.c_str());
   if (keysym == NoSymbol) {
-    lo.warning("Key '" + key + "' could not be converted to KeySym (NoSymbol)");
+    warning("Key '" + key + "' could not be converted to KeySym (NoSymbol)");
     return -1;
   }
 
   Display *display = DisplayManager::GetDisplay();
   if (!display) {
-    lo.error("No X display available for key conversion");
+    error("No X display available for key conversion");
     return -1;
   }
 
   int keycode = XKeysymToKeycode(display, keysym);
-  lo.debug("Converted key '" + key + "' to keycode " + std::to_string(keycode) +
+  debug("Converted key '" + key + "' to keycode " + std::to_string(keycode) +
            " (keysym: " + std::to_string(keysym) + ")");
 
   if (keycode == 0) {
-    lo.warning("KeySym for '" + key + "' could not be converted to keycode");
+    warning("KeySym for '" + key + "' could not be converted to keycode");
     return -1;
   }
 
@@ -751,7 +749,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
     std::cerr << "Cannot find keycode for " << keyName << std::endl;
     return;
   }
-  lo.info("Sending key: " + keyName + " (" + std::to_string(keycode) + ")");
+  info("Sending key: " + keyName + " (" + std::to_string(keycode) + ")");
   XTestFakeKeyEvent(display, keycode, press, CurrentTime);
   XFlush(display);
 #endif
@@ -760,7 +758,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
 void IO::SendUInput(int keycode, bool down) {
   if (uinputFd < 0)
     return;
-  lo.info("Sending UInput key: " + std::to_string(keycode) + " (" +
+  info("Sending UInput key: " + std::to_string(keycode) + " (" +
           std::to_string(down) + ")");
   struct input_event ev{};
   ev.type = EV_KEY;
@@ -945,7 +943,7 @@ bool IO::Suspend(){
       for(auto& [id, hotkey] : hotkeys) {
         if(!hotkey.suspend){
           if(!hotkey.evdev){
-            Grab(hotkey.key, hotkey.modifiers, display->root, hotkey.exclusive);
+            Grab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow(), hotkey.exclusive);
           }
           hotkey.enabled = true;
         }
@@ -991,8 +989,6 @@ bool IO::Resume(int id) {
 }
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
                      int id) const {
-  Logger lo;
-
   std::string hotkeyStr = rawInput;
 
   // Parse event type from ":up"/":down"
@@ -1104,7 +1100,7 @@ done_parsing:
     for (unsigned int mods : modVariants) {
       Status status = XGrabKey(display, keycode, mods, root, True, GrabModeAsync, GrabModeAsync);
       if (status != Success) {
-        lo.error("Failed to register hotkey for ID: " + std::to_string(id) + ", key: " + std::to_string(keycode) + ", mods: " + std::to_string(mods));
+        error("Failed to register hotkey for ID: " + std::to_string(id) + ", key: " + std::to_string(keycode) + ", mods: " + std::to_string(mods));
         grabSuccess = false;
         break;
       }
@@ -1112,7 +1108,7 @@ done_parsing:
   }
 
   if (!grabSuccess) {
-    lo.error("Hotkey registration failed, not adding to hotkey map for ID: " + std::to_string(id));
+    error("Hotkey registration failed, not adding to hotkey map for ID: " + std::to_string(id));
     return {};
   }
 
@@ -1927,7 +1923,7 @@ bool IO::UngrabHotkey(int hotkeyId) {
     return false;
   }
   const HotKey &hotkey = it->second;
-  lo.info("Ungrabbing hotkey: " + hotkey.alias);
+  info("Ungrabbing hotkey: " + hotkey.alias);
   Window root = DefaultRootWindow(display);
   KeyCode keycode = hotkey.key;
 

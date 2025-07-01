@@ -13,6 +13,7 @@
 #include <atomic>
 #include <iostream>
 
+using namespace havel;
 // Forward declare test_main
 int test_main(int argc, char* argv[]);
 
@@ -33,7 +34,7 @@ void SignalHandler(int signal) {
 }
 
 void shutdown() {
-    lo.info("Starting graceful shutdown...");
+    info("Starting graceful shutdown...");
     
     // Start shutdown process
     std::atomic<bool> shutdownComplete(false);
@@ -51,14 +52,14 @@ void shutdown() {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
         if (std::chrono::steady_clock::now() - start > timeout) {
-            lo.error("Shutdown timeout reached, forcing exit");
+            error("Shutdown timeout reached, forcing exit");
             shutdownThread.detach(); // Let it die
             _exit(1);
         }
     }
     
     shutdownThread.join();
-    lo.info("Graceful shutdown complete");
+    info("Graceful shutdown complete");
 }
 using namespace havel;
 
@@ -68,7 +69,7 @@ public:
     AppServer(int port) : SocketServer(port) {}
     
     void HandleCommand(const std::string& cmd) override {
-        lo.debug("Socket command received: " + cmd);
+        debug("Socket command received: " + cmd);
         if (cmd == "toggle_mute") ToggleMute();
         else if (cmd.find("volume:") == 0) {
             int vol = std::stoi(cmd.substr(7));
@@ -82,9 +83,9 @@ public:
 void print_hotkeys() {
     static int counter = 0;
     counter++;
-    lo.info("Hotkeys " + std::to_string(counter));
+    info("Hotkeys " + std::to_string(counter));
     for (const auto& [id, hotkey] : IO::hotkeys) {
-        lo.info("Hotkey ID: " + std::to_string(id) + ", alias: " + hotkey.alias + ", keycode: " + std::to_string(hotkey.key) + ", modifiers: " + std::to_string(hotkey.modifiers) + ", action: " + hotkey.action + ", enabled: " + std::to_string(hotkey.enabled) + ", blockInput: " + std::to_string(hotkey.blockInput) + ", exclusive: " + std::to_string(hotkey.exclusive) + ", success: " + std::to_string(hotkey.success) + ", suspend: " + std::to_string(hotkey.suspend));
+        info("Hotkey ID: " + std::to_string(id) + ", alias: " + hotkey.alias + ", keycode: " + std::to_string(hotkey.key) + ", modifiers: " + std::to_string(hotkey.modifiers) + ", action: " + hotkey.action + ", enabled: " + std::to_string(hotkey.enabled) + ", blockInput: " + std::to_string(hotkey.blockInput) + ", exclusive: " + std::to_string(hotkey.exclusive) + ", success: " + std::to_string(hotkey.success) + ", suspend: " + std::to_string(hotkey.suspend));
     }
 }
 #ifndef RUN_TESTS
@@ -104,7 +105,7 @@ int main(int argc, char* argv[]){
     std::signal(SIGTERM, SignalHandler);
     
     try {
-        lo.info("Starting HvC...");
+        info("Starting HvC...");
         
         // Check for startup argument
         bool isStartup = false;
@@ -136,7 +137,7 @@ int main(int argc, char* argv[]){
         
         // If starting up, set initial brightness and gamma
         if (isStartup) {
-            lo.info("Setting startup brightness and gamma values");
+            info("Setting startup brightness and gamma values");
             hotkeyManager->getBrightnessManager().setStartupValues();
         }
         
@@ -155,7 +156,7 @@ int main(int argc, char* argv[]){
         
         // Watch for theme changes
         havel::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
-            lo.info("Theme changed from " + oldVal + " to " + newVal);
+            info("Theme changed from " + oldVal + " to " + newVal);
         });
         
         // Main loop
@@ -170,9 +171,9 @@ int main(int argc, char* argv[]){
             // Check for signals
             int signal = gSignalStatus.load();
             if (signal != 0) {
-                lo.info("Handling signal: " + std::to_string(signal));
+                info("Handling signal: " + std::to_string(signal));
                 if (signal == SIGINT || signal == SIGTERM) {
-                    lo.info("Termination signal received. Exiting...");
+                    info("Termination signal received. Exiting...");
                     running = false;
                 }
                 gSignalStatus.store(0); // Reset
@@ -206,10 +207,10 @@ int main(int argc, char* argv[]){
         }
         
         // Cleanup
-        lo.info("Stopping server...");
+        info("Stopping server...");
         server.Stop();
         
-        lo.info("Shutting down HvC...");
+        info("Shutting down HvC...");
         
         shutdown();
 
@@ -217,7 +218,7 @@ int main(int argc, char* argv[]){
     }
     catch (const std::exception& e) {
         std::cerr << "Fatal error: " << e.what() << std::endl;
-        lo.fatal(std::string("Fatal error: ") + e.what());
+        fatal(std::string("Fatal error: ") + e.what());
         return 1;
     }
 }

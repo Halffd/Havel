@@ -6,12 +6,8 @@
 #include "core/HotkeyManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "window/WindowManager.hpp"
-#include "logger.h"
+#include "utils/Logger.hpp"
 #include <iostream>
-
-namespace havel {
-    extern Logger lo;  // Forward declaration of the logger object
-}
 
 void testSend(havel::IO& io) {
     std::cout << "Testing Send function...\n";

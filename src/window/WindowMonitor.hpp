@@ -72,12 +72,11 @@ public:
     explicit WindowMonitor(std::chrono::milliseconds pollInterval = std::chrono::milliseconds(100));
     ~WindowMonitor();
     
-    // Non-copyable, movable
+    // Non-copyable, non-movable (because of shared_mutex)
     WindowMonitor(const WindowMonitor&) = delete;
     WindowMonitor& operator=(const WindowMonitor&) = delete;
-    WindowMonitor(WindowMonitor&&) noexcept = default;
-    WindowMonitor& operator=(WindowMonitor&&) noexcept = default;
-    
+    WindowMonitor(WindowMonitor&&) noexcept = delete;
+    WindowMonitor& operator=(WindowMonitor&&) noexcept = delete;
     // Start/Stop monitoring with error handling
     void Start();
     void Stop();

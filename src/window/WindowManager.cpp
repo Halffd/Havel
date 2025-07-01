@@ -158,7 +158,7 @@ static str defaultTerminal = "Cmd";
 #ifdef __linux__
         Display *display = XOpenDisplay(nullptr);
         if (!display) {
-            lo.error("Failed to open X display for Alt+Tab");
+            error("Failed to open X display for Alt+Tab");
             return;
         }
 
@@ -167,7 +167,7 @@ static str defaultTerminal = "Cmd";
 
         // Get the current active window
         wID currentActiveWindow = GetActiveWindow();
-        lo.info(
+        info(
             "Alt+Tab: Current active window: " + std::to_string(
                 currentActiveWindow) +
             ", Previous window: " + std::to_string(previousActiveWindow));
@@ -188,13 +188,13 @@ static str defaultTerminal = "Cmd";
                     XFree(classHint.res_class);
                 }
 
-                lo.info(
+                info(
                     "Alt+Tab: Found valid previous window " + std::to_string(
                         previousActiveWindow) +
                     " class: " + windowClass);
                 previousWindowValid = true;
             } else {
-                lo.warning(
+                warning(
                     "Alt+Tab: Previous window " + std::to_string(
                         previousActiveWindow) +
                     " is no longer valid or viewable");
@@ -206,7 +206,7 @@ static str defaultTerminal = "Cmd";
         Window windowToActivate = None;
 
         if (!previousWindowValid) {
-            lo.info("Alt+Tab: Looking for an alternative window");
+            info("Alt+Tab: Looking for an alternative window");
 
             // Get the list of windows
             Atom clientListAtom = XInternAtom(display,
@@ -216,7 +216,7 @@ static str defaultTerminal = "Cmd";
                 clientListAtom =
                         XInternAtom(display, "_NET_CLIENT_LIST", False);
                 if (clientListAtom == None) {
-                    lo.error("Failed to get window list atom");
+                    error("Failed to get window list atom");
                     XCloseDisplay(display);
                     return;
                 }
@@ -234,7 +234,7 @@ static str defaultTerminal = "Cmd";
                                    &data) != Success ||
                 numWindows < 1) {
                 if (data) XFree(data);
-                lo.error("Failed to get window list or empty list");
+                error("Failed to get window list or empty list");
                 XCloseDisplay(display);
                 return;
             }
@@ -298,7 +298,7 @@ static str defaultTerminal = "Cmd";
                                 XFree(classHint.res_class);
                             }
 
-                            lo.info(
+                            info(
                                 "Alt+Tab: Found alternative window " +
                                 std::to_string(windowToActivate) +
                                 " class: " + windowClass);
@@ -316,7 +316,7 @@ static str defaultTerminal = "Cmd";
         // Store current window as previous before switching
         if (currentActiveWindow != None) {
             previousActiveWindow = currentActiveWindow;
-            lo.debug(
+            debug(
                 "Alt+Tab: Stored current window as previous: " + std::to_string(
                     previousActiveWindow));
         }
@@ -343,12 +343,12 @@ static str defaultTerminal = "Cmd";
                 XSetInputFocus(display, windowToActivate, RevertToParent,
                                CurrentTime);
 
-                lo.info(
+                info(
                     "Alt+Tab: Switched to window: " + std::to_string(
                         windowToActivate));
             }
         } else {
-            lo.warning(
+            warning(
                 "Alt+Tab: Could not find a suitable window to switch to");
         }
 
@@ -762,24 +762,24 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 #ifdef __linux__
         Display *display = DisplayManager::GetDisplay();
         if (!display) {
-            lo.error("No X11 display available");
+            error("No X11 display available");
             return;
         }
 
         ::Window win = GetActiveWindow(); // Use X11's Window type
         if (win == 0) {
-            lo.error("No active window to move");
+            error("No active window to move");
             return;
         }
 
         std::string windowClass = GetActiveWindowClass();
-        lo.debug(
+        debug(
             "Moving window of class '" + windowClass + "' in direction " +
             std::to_string(direction));
 
         XWindowAttributes attrs;
         if (!XGetWindowAttributes(display, win, &attrs)) {
-            lo.error("Failed to get window attributes");
+            error("Failed to get window attributes");
             return;
         }
 
@@ -803,7 +803,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
         XMoveWindow(display, win, newX, newY);
         XFlush(display);
-        lo.debug(
+        debug(
             "Window moved to position: x=" + std::to_string(newX) + ", y=" +
             std::to_string(newY));
 #endif
@@ -1069,26 +1069,26 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
     std::string WindowManager::GetActiveWindowClass() {
         Display *display = DisplayManager::GetDisplay();
         if (!display) {
-            lo.error("Failed to get display in GetActiveWindowClass");
+            error("Failed to get display in GetActiveWindowClass");
             return "";
         }
 
         ::Window focusedWindow; // Use X11's Window type
         int revertTo;
         if (XGetInputFocus(display, &focusedWindow, &revertTo) == 0) {
-            lo.error("Failed to get input focus");
+            error("Failed to get input focus");
             return "";
         }
 
         if (focusedWindow == None) {
-            lo.debug("No window currently focused");
+            debug("No window currently focused");
             return "";
         }
 
         XClassHint classHint;
         Status status = XGetClassHint(display, focusedWindow, &classHint);
         if (status == 0) {
-            lo.debug("Failed to get class hint for window");
+            debug("Failed to get class hint for window");
             return "";
         }
 
@@ -1096,7 +1096,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         XFree(classHint.res_name);
         XFree(classHint.res_class);
 
-        lo.debug("Active window class: " + className);
+        debug("Active window class: " + className);
         return className;
     }
 
@@ -1382,3 +1382,4 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
     }
 }
 #endif
+}

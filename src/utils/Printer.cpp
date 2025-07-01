@@ -1,8 +1,8 @@
 #include "Printer.hpp"
-#include "Logger.h"
+#include "Logger.hpp"
 #include <sstream>
 #include "../common/types.hpp"
-
+using namespace havel;
 // Variadic template function for printing with a delimiter
 template <typename... Args>
 void Printer::print(const std::string& format, const std::string& prefix, Args... args) {
@@ -10,7 +10,7 @@ void Printer::print(const std::string& format, const std::string& prefix, Args..
     oss << prefix;
     processArgs(oss, format, args...);
     std::string out = oss.str();
-    lo.info(out);  // Print with newline at the end
+    info(out);  // Print with newline at the end
 }
 
 template<typename T, typename... Rest>

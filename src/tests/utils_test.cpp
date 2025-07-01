@@ -9,7 +9,6 @@
 #include "../utils/Util.hpp"
 using namespace havel;
 
-#ifdef TEST_UTILS
 // Test function
 void testChain() {
     std::vector<int> nums = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
@@ -36,11 +35,12 @@ void testChain() {
 
     // More complex example
     auto stats = chain(nums)
-        .filter([](int x) { return x % 2 == 0; })  // Even numbers
-        .map([](int x) { return x * x; });         // Square them
+    .filter([](int x) { return x % 2 == 0; })
+    .map([](int x) { return x * x; });
 
+    auto more_stats = stats.map([](int x) { return x + 1; });
     std::cout << "Even squares: ";
-    stats.for_each([](int x) { std::cout << x << " "; });
+    more_stats.for_each([](int x) { std::cout << x << " "; });
     std::cout << "\n";
 
     std::cout << "Count: " << stats.count() << "\n";
@@ -74,15 +74,15 @@ int main() {
     // Random
     std::cout << randint(1, 10) << " " << randfloat() << "\n";
 
-    auto user = OBJECT("name", "age", "score")("Alice", 22, 4.2);
-    printMap(user);
+    //auto user = OBJECT("name", "age", "score")("Alice", 22, 4.2);
+    //printMap(user);
     // → {"name": "Alice", "age": "22", "score": "4.2"}
     std::map<std::string, int> m = {{"a", 1}, {"b", 2}};
     printMap(m);
     // → {"a": "1", "b": "2"}
     for (int i : range(0, 10, 2))
         std::cout << i << " ";  // → 0 2 4 6 8
-    std::cout << toJson(user) << "\n";
+    std::cout << toJson(m) << "\n";
     // → {"name": "Alice", "age": "22", "score": "4.2"}
     char* c =  ::substring("Hello", 1, 3);
     std::cout << c << "\n";
@@ -90,4 +90,3 @@ int main() {
     testChain();
     return 0;
 }
-#endif

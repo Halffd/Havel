@@ -584,7 +584,7 @@ int moveSpeed = havel::Configs::Get().Get<int>("Window.MoveSpeed", 10);
 
 // Watch for configuration changes
 havel::Configs::Get().Watch<std::string>("UI.Theme", [](auto oldVal, auto newVal) {
-    lo.info("Theme changed from " + oldVal + " to " + newVal);
+    info("Theme changed from " + oldVal + " to " + newVal);
 });
 ```
 
@@ -685,9 +685,9 @@ To create custom scripts:
 The system uses a comprehensive logging system for debugging:
 
 ```cpp
-lo.info("Starting HvC...");
-lo.error("Failed to initialize: " + errorMessage);
-lo.debug("Hotkey registered: " + hotkeyStr);
+info("Starting HvC...");
+error("Failed to initialize: " + errorMessage);
+debug("Hotkey registered: " + hotkeyStr);
 ```
 
 ### 9.2 Debug Settings
@@ -1117,7 +1117,7 @@ bool ScriptEngine::ExecuteString(const std::string& code) {
     // Check for potentially harmful operations
     if (code.find("os.execute") != std::string::npos ||
         code.find("io.popen") != std::string::npos) {
-        lo.error("Script contains potentially unsafe system calls");
+        error("Script contains potentially unsafe system calls");
         return false;
     }
     
@@ -1125,7 +1125,7 @@ bool ScriptEngine::ExecuteString(const std::string& code) {
         auto result = lua.script(code);
         return result.valid();
     } catch (const sol::error& e) {
-        lo.error("Lua error: " + std::string(e.what()));
+        error("Lua error: " + std::string(e.what()));
         return false;
     }
 }
@@ -1140,7 +1140,7 @@ The system should run with the minimum required privileges:
 bool IO::CheckPermissions() {
     Display* testDisplay = XOpenDisplay(NULL);
     if (!testDisplay) {
-        lo.error("Cannot open X display. Check DISPLAY environment variable.");
+        error("Cannot open X display. Check DISPLAY environment variable.");
         return false;
     }
     
@@ -1156,7 +1156,7 @@ bool IO::CheckPermissions() {
     XCloseDisplay(testDisplay);
     
     if (!success) {
-        lo.error("Insufficient permissions to grab keys. Try running with appropriate privileges.");
+        error("Insufficient permissions to grab keys. Try running with appropriate privileges.");
         return false;
     }
     
@@ -1200,7 +1200,7 @@ Enable debug mode for detailed logging:
 
 ```cpp
 // Enable debug mode
-lo.setLogLevel(LogLevel::DEBUG);
+setLogLevel(LogLevel::DEBUG);
 hotkeyManager.setVerboseKeyLogging(true);
 hotkeyManager.setVerboseWindowLogging(true);
 hotkeyManager.setVerboseConditionLogging(true);

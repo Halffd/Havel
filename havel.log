@@ -1,0 +1,157 @@
+2025-06-30 23:34:57.086 [INFO] Starting HvC...
+2025-06-30 23:34:58.023 [INFO] Loading debug settings from config
+2025-06-30 23:34:58.024 [INFO] Debug settings: KeyLogging=0, WindowLogging=0, ConditionLogging=0
+2025-06-30 23:34:58.025 [ERROR] Failed to register hotkey for ID: 1, key: 42, mods: 12
+2025-06-30 23:34:58.025 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1
+2025-06-30 23:34:58.025 [ERROR] Failed to register hotkey for ID: 2, key: 27, mods: 12
+2025-06-30 23:34:58.026 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 2
+2025-06-30 23:34:58.026 [ERROR] Failed to register hotkey for ID: 3, key: 9, mods: 8
+2025-06-30 23:34:58.026 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 3
+2025-06-30 23:34:58.026 [ERROR] Failed to register hotkey for ID: 4, key: 67, mods: 64
+2025-06-30 23:34:58.026 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 4
+2025-06-30 23:34:58.026 [ERROR] Failed to register hotkey for ID: 5, key: 68, mods: 64
+2025-06-30 23:34:58.026 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 5
+2025-06-30 23:34:58.027 [ERROR] Failed to register hotkey for ID: 6, key: 69, mods: 64
+2025-06-30 23:34:58.027 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 6
+2025-06-30 23:34:58.029 [ERROR] Failed to register hotkey for ID: 9, key: 72, mods: 0
+2025-06-30 23:34:58.030 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 9
+2025-06-30 23:34:58.032 [ERROR] Failed to register hotkey for ID: 1002, key: 30, mods: 0
+2025-06-30 23:34:58.032 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1002
+2025-06-30 23:34:58.032 [ERROR] Failed to register hotkey for ID: 12, key: 1, mods: 0
+2025-06-30 23:34:58.034 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 12
+2025-06-30 23:34:58.034 [ERROR] Failed to register hotkey for ID: 13, key: 2, mods: 0
+2025-06-30 23:34:58.035 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 13
+2025-06-30 23:34:58.036 [ERROR] Failed to register hotkey for ID: 17, key: 67, mods: 4
+2025-06-30 23:34:58.036 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 17
+2025-06-30 23:34:58.037 [ERROR] Failed to register hotkey for ID: 18, key: 46, mods: 9
+2025-06-30 23:34:58.038 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 18
+2025-06-30 23:34:58.040 [ERROR] Failed to register hotkey for ID: 19, key: 46, mods: 12
+2025-06-30 23:34:58.040 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 19
+2025-06-30 23:34:58.040 [ERROR] Failed to register hotkey for ID: 20, key: 76, mods: 0
+2025-06-30 23:34:58.040 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 20
+2025-06-30 23:34:58.040 [ERROR] Failed to register hotkey for ID: 21, key: 45, mods: 12
+2025-06-30 23:34:58.041 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 21
+2025-06-30 23:34:58.042 [ERROR] Failed to register hotkey for ID: 1004, key: 53, mods: 8
+2025-06-30 23:34:58.043 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1004
+2025-06-30 23:34:58.043 [ERROR] Failed to register hotkey for ID: 22, key: 113, mods: 64
+2025-06-30 23:34:58.044 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 22
+2025-06-30 23:34:58.045 [ERROR] Failed to register hotkey for ID: 23, key: 114, mods: 64
+2025-06-30 23:34:58.045 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 23
+2025-06-30 23:34:58.046 [ERROR] Failed to register hotkey for ID: 24, key: 75, mods: 0
+2025-06-30 23:34:58.047 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 24
+2025-06-30 23:34:58.049 [ERROR] Failed to register hotkey for ID: 25, key: 28, mods: 12
+2025-06-30 23:34:58.049 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 25
+2025-06-30 23:34:58.049 [ERROR] Failed to register hotkey for ID: 26, key: 9, mods: 64
+2025-06-30 23:34:58.050 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 26
+2025-06-30 23:34:58.050 [ERROR] Failed to register hotkey for ID: 27, key: 9, mods: 68
+2025-06-30 23:34:58.050 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 27
+2025-06-30 23:34:58.051 [ERROR] Failed to register hotkey for ID: 28, key: 69, mods: 0
+2025-06-30 23:34:58.052 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 28
+2025-06-30 23:34:58.052 [ERROR] Failed to register hotkey for ID: 29, key: 73, mods: 0
+2025-06-30 23:34:58.052 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 29
+2025-06-30 23:34:58.052 [ERROR] Failed to register hotkey for ID: 30, key: 74, mods: 0
+2025-06-30 23:34:58.052 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 30
+2025-06-30 23:34:58.053 [ERROR] Failed to register hotkey for ID: 31, key: 73, mods: 1
+2025-06-30 23:34:58.053 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 31
+2025-06-30 23:34:58.053 [ERROR] Failed to register hotkey for ID: 32, key: 74, mods: 1
+2025-06-30 23:34:58.053 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 32
+2025-06-30 23:34:58.053 [ERROR] Failed to register hotkey for ID: 33, key: 5, mods: 8
+2025-06-30 23:34:58.053 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 33
+2025-06-30 23:34:58.053 [ERROR] Failed to register hotkey for ID: 34, key: 40, mods: 8
+2025-06-30 23:34:58.053 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 34
+2025-06-30 23:34:58.053 [ERROR] Failed to register hotkey for ID: 1005, key: 40, mods: 0
+2025-06-30 23:34:58.053 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1005
+2025-06-30 23:34:58.054 [ERROR] Failed to register hotkey for ID: 1008, key: 36, mods: 64
+2025-06-30 23:34:58.054 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1008
+2025-06-30 23:34:58.054 [ERROR] Failed to register hotkey for ID: 1010, key: 36, mods: 0
+2025-06-30 23:34:58.054 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 1010
+2025-06-30 23:34:58.054 [ERROR] Failed to register hotkey for ID: 35, key: 42, mods: 9
+2025-06-30 23:34:58.054 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 35
+2025-06-30 23:34:58.054 [ERROR] Failed to register hotkey for ID: 10000, key: 19, mods: 1
+2025-06-30 23:34:58.054 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10000
+2025-06-30 23:34:58.054 [ERROR] Failed to register hotkey for ID: 10001, key: 18, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10001
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10004, key: 9, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10004
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10005, key: 112, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10005
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10006, key: 117, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10006
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10007, key: 32, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10007
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10008, key: 33, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10008
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10009, key: 32, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10009
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10010, key: 33, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10010
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10011, key: 57, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10011
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10012, key: 57, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10012
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10013, key: 16, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10013
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10014, key: 17, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10014
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10015, key: 52, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10015
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10016, key: 53, mods: 1
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10016
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10017, key: 18, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10017
+2025-06-30 23:34:58.055 [ERROR] Failed to register hotkey for ID: 10018, key: 19, mods: 0
+2025-06-30 23:34:58.055 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10018
+2025-06-30 23:34:58.056 [ERROR] Failed to register hotkey for ID: 10019, key: 54, mods: 1
+2025-06-30 23:34:58.056 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10019
+2025-06-30 23:34:58.056 [ERROR] Failed to register hotkey for ID: 10020, key: 20, mods: 0
+2025-06-30 23:34:58.056 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10020
+2025-06-30 23:34:58.056 [ERROR] Failed to register hotkey for ID: 10021, key: 21, mods: 0
+2025-06-30 23:34:58.056 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 10021
+2025-06-30 23:34:58.056 [INFO] Starting in normal mode - unregistering MPV hotkeys
+2025-06-30 23:34:58.056 [ERROR] Failed to register hotkey for ID: 36, key: 111, mods: 12
+2025-06-30 23:34:58.056 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 36
+2025-06-30 23:34:58.056 [ERROR] Failed to register hotkey for ID: 37, key: 116, mods: 12
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 37
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 38, key: 113, mods: 12
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 38
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 39, key: 114, mods: 12
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 39
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 40, key: 111, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 40
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 41, key: 116, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 41
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 42, key: 113, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 42
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 43, key: 114, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 43
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 44, key: 38, mods: 8
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 44
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 45, key: 46, mods: 64
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 45
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 46, key: 9, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 46
+2025-06-30 23:34:58.057 [ERROR] Failed to register hotkey for ID: 47, key: 52, mods: 9
+2025-06-30 23:34:58.057 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 47
+2025-06-30 23:34:58.058 [ERROR] Failed to register hotkey for ID: 48, key: 40, mods: 8
+2025-06-30 23:34:58.058 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 48
+2025-06-30 23:34:58.058 [ERROR] Failed to register hotkey for ID: 49, key: 11, mods: 64
+2025-06-30 23:34:58.058 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 49
+2025-06-30 23:34:58.058 [ERROR] Failed to register hotkey for ID: 50, key: 31, mods: 9
+2025-06-30 23:34:58.059 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 50
+2025-06-30 23:34:58.059 [ERROR] Failed to register hotkey for ID: 51, key: 40, mods: 12
+2025-06-30 23:34:58.059 [ERROR] Hotkey registration failed, not adding to hotkey map for ID: 51
+2025-06-30 23:34:58.059 [INFO] Loading hotkey configurations...
+2025-06-30 23:34:58.059 [INFO] Hotkeys 1
+2025-06-30 23:34:58.059 [INFO] Hotkey ID: 10003, alias: @RCtrl, keycode: 97, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1006, alias: @y, keycode: 21, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1001, alias: @lwin:up, keycode: 125, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1000, alias: @lwin, keycode: 125, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 11, alias: @ralt, keycode: 100, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 10, alias: @rwin, keycode: 126, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkeys 2
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 10003, alias: @RCtrl, keycode: 97, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1006, alias: @y, keycode: 21, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1001, alias: @lwin:up, keycode: 125, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 1000, alias: @lwin, keycode: 125, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 11, alias: @ralt, keycode: 100, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0
+2025-06-30 23:34:58.060 [INFO] Hotkey ID: 10, alias: @rwin, keycode: 126, modifiers: 0, action: , enabled: 1, blockInput: 1, exclusive: 1, success: 1, suspend: 0

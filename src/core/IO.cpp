@@ -2,6 +2,7 @@
 #include "../utils/Logger.hpp"
 #include "../utils/Utils.hpp"
 #include "../window/WindowManager.hpp"
+#include "./ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "x11_includes.h"
 #include <algorithm>
@@ -1025,7 +1026,11 @@ bool IO::Resume(int id) {
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
                      int id) const {
   std::string hotkeyStr = rawInput;
-
+  action = [action, hotkeyStr]() {
+    if(Configs::Get().GetVerboseKeyLogging())
+      info("Hotkey pressed: " + hotkeyStr);
+    action();
+  };
   // Parse event type from ":up"/":down"
   HotkeyEventType eventType = HotkeyEventType::Down;
   size_t colonPos = hotkeyStr.rfind(':');
@@ -1102,8 +1107,8 @@ done_parsing:
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
                    ::tolower);
     // Convert string to keysym first
-    KeySym keysym = XStringToKeysym(keyLower.c_str());
-    if (keysym == NoSymbol) {
+    KeySym keysym = StringToVirtualKey(keyLower);
+    if (keysym == 0) {
       std::cerr << "Invalid key name: " << keyLower << "\n";
       return {};
     }

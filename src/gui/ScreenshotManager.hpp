@@ -9,7 +9,7 @@ QT_END_NAMESPACE
 
 namespace havel {
 
-class ScreenRegionSelector : public Widget {
+class ScreenRegionSelector : public QWindow {
     Q_OBJECT
 
 public:
@@ -30,7 +30,7 @@ private:
     QPoint startPos;
 };
 
-class ScreenshotManager : public Window {
+class ScreenshotManager : public QWindow {
     Q_OBJECT
 
 public:

@@ -3,7 +3,7 @@
 #include "types.hpp"
 #include <QFileSystemModel>
 
-class FileAutomator : public havel::Window {
+class FileAutomator : public havel::QWindow {
     Q_OBJECT
 
 public:

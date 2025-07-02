@@ -5,10 +5,7 @@
 #include <QtCharts/QChart>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QChartView>
-
-QT_CHARTS_USE_NAMESPACE
-
-class SystemMonitor : public havel::Window {
+class SystemMonitor : public havel::QWindow {
     Q_OBJECT
 
 public:

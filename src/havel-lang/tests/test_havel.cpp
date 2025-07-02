@@ -1,5 +1,14 @@
 // src/havel-lang/tests/test_havel.cpp
 #pragma once
+
+#ifdef Status
+#undef Status
+#endif
+
+#ifdef CursorShape
+#undef CursorShape
+#endif
+
 #include "../lexer/Lexer.hpp"
 #include "../parser/Parser.h"
 #include "../runtime/Interpreter.hpp"

@@ -1,5 +1,7 @@
 // src/havel-lang/runtime/Interpreter.cpp
 #include "Interpreter.hpp"
+#include "../../gui/AutomationSuite.hpp"
+#include <QClipboard>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -114,6 +116,10 @@ HavelValue Interpreter::EvaluateProgram(const ast::Program& program) {
 // Evaluate a Statement node
 HavelValue Interpreter::EvaluateStatement(const ast::Statement& statement) {
     switch (statement.kind) {
+        case ast::NodeType::LetDeclaration:
+            return EvaluateLetDeclaration(static_cast<const ast::LetDeclaration&>(statement));
+        case ast::NodeType::IfStatement:
+            return EvaluateIfStatement(static_cast<const ast::IfStatement&>(statement));
         case ast::NodeType::HotkeyBinding:
             return EvaluateHotkeyBinding(static_cast<const ast::HotkeyBinding&>(statement));
         case ast::NodeType::BlockStatement:
@@ -123,6 +129,25 @@ HavelValue Interpreter::EvaluateStatement(const ast::Statement& statement) {
         default:
             throw std::runtime_error("Unknown statement type");
     }
+}
+
+HavelValue Interpreter::EvaluateIfStatement(const ast::IfStatement& statement) {
+    HavelValue condition = EvaluateExpression(*statement.condition);
+    if (ValueToBool(condition)) {
+        return EvaluateStatement(*statement.consequence);
+    } else if (statement.alternative) {
+        return EvaluateStatement(*statement.alternative);
+    }
+    return nullptr;
+}
+
+HavelValue Interpreter::EvaluateLetDeclaration(const ast::LetDeclaration& declaration) {
+    HavelValue value = nullptr;
+    if (declaration.value) {
+        value = EvaluateExpression(*declaration.value);
+    }
+    environment.DefineVariable(declaration.name->symbol, value);
+    return value;
 }
 
 // Evaluate an Expression node
@@ -233,13 +258,13 @@ HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression
                 if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
                     std::string moduleName = objIdentifier->symbol;
                     
-                    if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
+                    if (const auto* propIdentifier = dynamic__cast<const ast::Identifier*>(memberExpr->property.get())) {
                         std::string propName = propIdentifier->symbol;
                         
                         // Handle special properties
                         if (moduleName == "clipboard") {
                             if (propName == "out") {
-                                return havel::Clipboard::Instance().GetText();
+                                return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text();
                             }
                         }
                     }
@@ -368,7 +393,7 @@ HavelValue Interpreter::EvaluateMemberExpression(const ast::MemberExpression& me
             // Handle special properties
             if (moduleName == "clipboard") {
                 if (propName == "text") {
-                    return havel::Clipboard::Instance().GetText();
+                    return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
                 }
             } else if (moduleName == "window") {
                 if (propName == "title") {
@@ -422,14 +447,14 @@ void Interpreter::InitializeClipboardModule() {
     
     // Add clipboard.getText() function
     clipboardModule->AddFunction("getText", [](const std::vector<HavelValue>&) -> HavelValue {
-        return havel::Clipboard::Instance().GetText();
+        return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
     });
     
     // Add clipboard.setText(text) function
     clipboardModule->AddFunction("setText", [](const std::vector<HavelValue>& args) -> HavelValue {
         if (!args.empty()) {
             std::string text = Interpreter::ValueToString(args[0]);
-            havel::Clipboard::Instance().SetText(text);
+            AutomationSuite::Instance()->getClipboardManager()->getClipboard()->setText(QString::fromStdString(text));
             return true;
         }
         return false;
@@ -467,9 +492,11 @@ void Interpreter::InitializeTextModule() {
         if (!args.empty()) {
             std::string text = Interpreter::ValueToString(args[0]);
             // Trim leading whitespace
-            text.erase(0, text.find_first_not_of(" \t\n\r"));
+            text.erase(0, text.find_first_not_of(" 	
+"));
             // Trim trailing whitespace
-            text.erase(text.find_last_not_of(" \t\n\r") + 1);
+            text.erase(text.find_last_not_of(" 	
+") + 1);
             return text;
         }
         return "";
@@ -559,3 +586,4 @@ void Interpreter::InitializeSystemModule() {
 }
 
 } // namespace havel
+

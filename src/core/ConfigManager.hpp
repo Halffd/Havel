@@ -18,9 +18,9 @@
 #include <vector>
 #include <iostream>
 #include "IO.hpp"
-#include "../window/WindowManager.hpp"
-#include "../common/types.hpp"
-#include "../process/Launcher.hpp"
+#include "window/WindowManager.hpp"
+#include "types.hpp"
+#include "process/Launcher.hpp"
 namespace havel {
 // Path handling helper functions
 namespace ConfigPaths {
@@ -349,7 +349,13 @@ public:
     int GetStartupGamma() const { return Get<int>("General.StartupGamma", STARTUP_GAMMA); }
     double GetBrightnessAmount() const { return Get<double>("General.BrightnessAmount", DEFAULT_BRIGHTNESS_AMOUNT); }
     int GetGammaAmount() const { return Get<int>("General.GammaAmount", DEFAULT_GAMMA_AMOUNT); }
-
+    std::vector<std::string> GetConfigs() const {
+        std::vector<std::string> configs;
+        for(const auto& [key, val] : settings) {
+            configs.push_back(key + "=" + val);
+        }
+        return configs;
+    }
 private:
     std::unordered_map<std::string, std::string> settings;
     std::unordered_map<std::string, std::vector<std::function<void(std::string, std::string)>>> watchers;

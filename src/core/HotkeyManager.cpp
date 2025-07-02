@@ -40,6 +40,33 @@ void HotkeyManager::Zoom(int zoom, IO& io) {
         std::cout << "Invalid zoom level: " << zoom << std::endl;
     }
 }
+void HotkeyManager::printHotkeys() const {
+    static int counter = 0;
+    counter++;
+    
+    info("=== Hotkey Status Report #" + std::to_string(counter) + " ===");
+    
+    if (IO::hotkeys.empty()) {
+        info("No hotkeys registered");
+        return;
+    }
+    
+    for (const auto& [id, hotkey] : IO::hotkeys) {
+        std::string status = "Hotkey[" + std::to_string(id) + "] " +
+                           "alias='" + hotkey.alias + "' " +
+                           "key=" + std::to_string(hotkey.key) + " " +
+                           "mod=" + std::to_string(hotkey.modifiers) + " " +
+                           "action='" + hotkey.action + "' " +
+                           "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
+                           "block=" + (hotkey.blockInput ? "Y" : "N") + " " +
+                           "excl=" + (hotkey.exclusive ? "Y" : "N") + " " +
+                           "succ=" + (hotkey.success ? "Y" : "N") + " " +
+                           "susp=" + (hotkey.suspend ? "Y" : "N");
+        info(status);
+    }
+    
+    info("=== End Hotkey Report ===");
+}
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
     : io(io),
       windowManager(windowManager),
@@ -1564,7 +1591,7 @@ void HotkeyManager::printActiveWindowInfo() {
         return;
     }
 
-    // Create window instance ONCE
+    // Create window instance
     havel::Window window("ActiveWindow", activeWindow);
 
     // Get window class

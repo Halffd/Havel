@@ -33,7 +33,7 @@ namespace havel {
             cleanup();
         }
         void Zoom(int zoom, IO& io);
-
+        void printHotkeys() const;
         // Debug flags
         bool verboseKeyLogging = false;
         bool verboseWindowLogging = false;

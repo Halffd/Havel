@@ -1,7 +1,7 @@
 // src/havel-lang/engine/Engine.hpp
 #pragma once
 
-#include "lexer/Lexer.hpp"
+#include "../lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "runtime/Interpreter.hpp"
 #include "ast/AST.h"

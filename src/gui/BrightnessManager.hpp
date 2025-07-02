@@ -5,7 +5,7 @@
 
 namespace havel {
 
-class BrightnessManager : public Window {
+class BrightnessManager : public havel::QWindow {
     Q_OBJECT
 
 public:

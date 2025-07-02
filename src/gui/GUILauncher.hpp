@@ -1,11 +1,10 @@
 #pragma once
 
-#include "types.hpp"
 #include "SystemMonitor.hpp"
 #include "FileAutomator.hpp"
 #include "ScriptRunner.hpp"
 
-class GUILauncher : public havel::Window {
+class GUILauncher : public havel::QWindow {
     Q_OBJECT
 
 public:

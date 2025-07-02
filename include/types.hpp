@@ -47,26 +47,12 @@ using pID = unsigned long;
 // Group type definition
 using group = std::unordered_map<std::string, std::vector<std::string>>;
 
-// Process method enum
-enum class ProcessMethod {
-    Invalid = -1,
-    WaitForTerminate = 0,
-    ForkProcess = 1,
-    ContinueExecution = 2,
-    WaitUntilStarts = 3,
-    CreateNewWindow = 4,
-    AsyncProcessCreate = 5,
-    SystemCall = 6,
-    SameWindow = 7,
-    Shell = 8
-};
-
 namespace havel {
     using Button = QPushButton;
     using Label = QLabel;
     using Layout = QVBoxLayout;
     using HLayout = QHBoxLayout;
-    using Window = QMainWindow;
+    using QWindow = QMainWindow;
     using Widget = QWidget;
     using MessageBox = QMessageBox;
     using App = QApplication;

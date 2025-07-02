@@ -54,8 +54,12 @@ namespace havel::parser {
 
         // Check for let declarations
         if (at().type == havel::TokenType::Let) {
-            // TODO: Implement let declarations
-            throw std::runtime_error("Let declarations not implemented yet");
+            return parseLetDeclaration();
+        }
+
+        // Check for if statements
+        if (at().type == havel::TokenType::If) {
+            return parseIfStatement();
         }
 
         // Check for block statements
@@ -67,6 +71,50 @@ namespace havel::parser {
         auto expr = parseExpression();
         return std::make_unique<havel::ast::ExpressionStatement>(
             std::move(expr));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
+        advance(); // consume "if"
+
+        auto condition = parseExpression();
+
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after if condition");
+        }
+
+        auto consequence = parseBlockStatement();
+
+        std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+        if (at().type == havel::TokenType::Else) {
+            advance(); // consume "else"
+
+            if (at().type == havel::TokenType::If) {
+                alternative = parseIfStatement();
+            } else {
+                alternative = parseBlockStatement();
+            }
+        }
+
+        return std::make_unique<havel::ast::IfStatement>(std::move(condition), std::move(consequence), std::move(alternative));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
+        advance(); // consume "let"
+
+        if (at().type != havel::TokenType::Identifier) {
+            throw std::runtime_error("Expected identifier after 'let'");
+        }
+        auto name = std::make_unique<havel::ast::Identifier>(advance().value);
+
+        if (at().type != havel::TokenType::Equals) {
+            // Allow declarations without assignment, e.g., `let x;`
+            return std::make_unique<havel::ast::LetDeclaration>(std::move(name));
+        }
+        advance(); // consume "="
+
+        auto value = parseExpression();
+
+        return std::make_unique<havel::ast::LetDeclaration>(std::move(name), std::move(value));
     }
 
     std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {

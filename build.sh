@@ -15,7 +15,7 @@ BUILD_TYPE="Debug"
 BUILD_DIR="build"
 LOG_DIR="logs"
 BUILD_LOG="${LOG_DIR}/build.log"
-
+THREADS=3
 # Parse build mode from environment or first arg
 if [[ "$1" =~ ^[01]$ ]]; then
     BUILD_MODE=$1
@@ -75,11 +75,11 @@ build() {
     mkdir -p "${BUILD_DIR}"
 
     log "INFO" "Generating build files with CMake..." "${YELLOW}"
-    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=ON -DENABLE_LLVM=OFF -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=ON -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
+    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=OFF -DENABLE_LLVM=OFF -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=ON -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "CMake generation"
 
-    log "INFO" "Building project with $(nproc) parallel jobs..." "${YELLOW}"
-    (cd "${BUILD_DIR}" && make -j$(nproc)) 2>&1 | tee -a "${BUILD_LOG}"
+    log "INFO" "Building project with ${THREADS} parallel jobs..." "${YELLOW}"
+    (cd "${BUILD_DIR}" && make -j${THREADS}) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "Build"
     
     # Show build results

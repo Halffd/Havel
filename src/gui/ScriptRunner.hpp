@@ -3,7 +3,7 @@
 #include "types.hpp"
 #include <QProcess>
 
-class ScriptRunner : public havel::Window {
+class ScriptRunner : public havel::QWindow {
     Q_OBJECT
 
 public:

@@ -1,13 +1,12 @@
 #pragma once
 
-#include "../lexer/Lexer.hpp"
-#include "../parser/Parser.h"
-#include "../ast/AST.h"
-#include "../../window/Window.hpp"
-#include "../../window/WindowManager.hpp"
-#include "../../gui/Clipboard.hpp"
-#include "../../core/IO.hpp"
-#include "../../utils/Logger.hpp"
+#include "lexer/Lexer.hpp"
+#include "parser/Parser.h"
+#include "ast/AST.h"
+#include "window/Window.hpp"
+#include "window/WindowManager.hpp"
+#include "core/IO.hpp"
+#include "utils/Logger.hpp"
 
 #include <memory>
 #include <unordered_map>
@@ -119,6 +118,8 @@ public:
     // Evaluate AST nodes
     HavelValue EvaluateProgram(const ast::Program& program);
     HavelValue EvaluateStatement(const ast::Statement& statement);
+    HavelValue EvaluateLetDeclaration(const ast::LetDeclaration& declaration);
+    HavelValue EvaluateIfStatement(const ast::IfStatement& statement);
     HavelValue EvaluateExpression(const ast::Expression& expression);
     HavelValue EvaluateHotkeyBinding(const ast::HotkeyBinding& binding);
     HavelValue EvaluateBlockStatement(const ast::BlockStatement& block);

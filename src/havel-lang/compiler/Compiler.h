@@ -1,14 +1,9 @@
-    #pragma once
-// src/havel-lang/compiler/Compiler.hpp
 #pragma once
 
 #include "../ast/AST.h"
-#include "../runtime/Interpreter.hpp"
 
-// Include our LLVM wrapper which handles X11 macro conflicts
 #include "../llvm/LLVMWrapper.h"
 
-// Import commonly used LLVM types
 using llvm::LLVMContext;
 using llvm::Module;
 using llvm::Function;

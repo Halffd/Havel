@@ -25,6 +25,8 @@ private:
     std::unique_ptr<havel::ast::Expression> parsePrimaryExpression();
 
     // Havel-specific parsers
+    std::unique_ptr<havel::ast::Statement> parseLetDeclaration();
+    std::unique_ptr<havel::ast::Statement> parseIfStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();
     std::unique_ptr<havel::ast::BlockStatement> parseBlockStatement();
 

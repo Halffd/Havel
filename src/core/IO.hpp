@@ -1,13 +1,12 @@
 #pragma once
-#include "../common/types.hpp"
+#include "types.hpp"
 #include <X11/Xlib.h>
 #include <atomic>
-#include <cstring>
 #include <fcntl.h>
 #include <functional>
 #include <iostream>
 #include <linux/input.h>
-#include <linux/uinput.h> // ✅ This gives you UI_SET_* and uinput_setup
+#include <linux/uinput.h>
 #include <map>
 #include <memory>
 #include <set>

@@ -1,15 +1,15 @@
 cmake_minimum_required(VERSION 3.16)
-project(HvC VERSION 1.0.0 LANGUAGES C CXX)
+project(Havel VERSION 1.0.0 LANGUAGES C CXX)
 
 # Options - declare these FIRST
 option(USE_CLANG "Force use of Clang compiler" ON)
 option(ENABLE_LLVM "Enable LLVM JIT compilation" OFF)
-option(DISABLE_GUI "Disable GUI components" OFF)
+option(ENABLE_TESTS "Enable building tests" ON)
 option(DISABLE_HAVEL_LANG "Disable Havel language compilation" OFF)
 
-# Compiler selection (must be before project() ideally, but whatever)
+# Compiler selection warning
 if(USE_CLANG AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(WARNING "USE_CLANG set but not using Clang. Set CC/CXX env vars instead.")
+    message(WARNING "USE_CLANG set but not using Clang. Set CC=clang CXX=clang++ before cmake.")
 endif()
 
 # Standards
@@ -34,47 +34,63 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto -DNDEBUG -ffast-math")
 endif()
 
-# Find packages
+# Find required packages
+find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 pkg_check_modules(DBUS REQUIRED dbus-1)
 
+# Lua
 find_package(Lua 5.4 QUIET)
 if(NOT Lua_FOUND)
-    find_package(PkgConfig REQUIRED)
     pkg_search_module(LUA REQUIRED lua5.4 lua-5.4 lua54)
 endif()
 message(STATUS "LUA_LIBRARIES: ${LUA_LIBRARIES}")
 message(STATUS "LUA_INCLUDE_DIR: ${LUA_INCLUDE_DIR}")
 
-find_library(XTEST_LIB Xtst)
+# X11 libraries
+find_library(XTEST_LIB Xtst REQUIRED)
+find_library(XRANDR_LIB Xrandr REQUIRED)
 message(STATUS "XTEST_LIB: ${XTEST_LIB}")
 
-# GUI dependencies (only if not disabled)
-if(NOT DISABLE_GUI)
-    set(CMAKE_AUTOMOC ON)
-    set(CMAKE_AUTORCC ON)
-    set(CMAKE_AUTOUIC ON)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets Charts)
+# Qt6 is now REQUIRED (GUI always enabled)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
+set(CMAKE_AUTOUIC ON)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Charts)
+message(STATUS "Qt6 found: ${Qt6_FOUND}")
+
+# GTest (only if tests enabled)
+if(ENABLE_TESTS)
     find_package(GTest QUIET)
+    if(GTest_FOUND)
+        enable_testing()
+        message(STATUS "GTest found: ${GTest_FOUND}")
+    else()
+        message(STATUS "GTest not found - some tests will be skipped")
+    endif()
 endif()
 
 # LLVM (only if enabled and Havel lang enabled)
 if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     find_package(LLVM REQUIRED CONFIG)
+    
     execute_process(
         COMMAND llvm-config --libs --system-libs --ldflags
-        OUTPUT_VARIABLE LLVM_LDFLAGS
+        OUTPUT_VARIABLE LLVM_LDFLAGS_RAW
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE LLVM_CONFIG_RESULT
     )
+    
+    if(NOT LLVM_CONFIG_RESULT EQUAL 0)
+        message(FATAL_ERROR "llvm-config failed")
+    endif()
 
-    # Remove newlines and extra spaces
-    string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
-    string(REPLACE "\t" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
-    string(REPLACE "  " " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
-
-    # Convert to CMake list format
-    string(REPLACE " " ";" LLVM_LIBS "${LLVM_LDFLAGS}")
+    # Clean up LLVM flags
+    string(REGEX REPLACE "[\r\n\t ]+" " " LLVM_LDFLAGS "${LLVM_LDFLAGS_RAW}")
+    string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
+    separate_arguments(LLVM_LIBS UNIX_COMMAND "${LLVM_LDFLAGS}")
+    
     message(STATUS "LLVM_LIBS: ${LLVM_LIBS}")
 
     add_definitions(${LLVM_DEFINITIONS})
@@ -84,38 +100,52 @@ elseif(ENABLE_LLVM AND DISABLE_HAVEL_LANG)
     set(ENABLE_LLVM OFF)
 endif()
 
-# Source files - conditional compilation
-file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/window/*.cpp" "src/utils/*.cpp" "src/media/*.cpp" "src/process/*.cpp" "src/fs/*.cpp" "src/core/util/*.cpp")
+# Source files
+file(GLOB_RECURSE CORE_SOURCES 
+    "src/core/*.cpp" 
+    "src/window/*.cpp" 
+    "src/utils/*.cpp" 
+    "src/media/*.cpp" 
+    "src/process/*.cpp" 
+    "src/fs/*.cpp"
+    "src/core/util/*.cpp"
+)
 
-if(NOT DISABLE_GUI)
-    file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
-    list(REMOVE_ITEM GUI_SOURCES "${CMAKE_SOURCE_DIR}/src/gui/main.cpp")
-endif()
+# GUI sources (always included now)
+file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
+# Remove standalone main.cpp files
+list(FILTER GUI_SOURCES EXCLUDE REGEX "main\\.cpp$")
 
+# Havel language sources
+set(HAVEL_LANG_SOURCES "")
 if(NOT DISABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
 endif()
 
-file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
+# Test sources (only if tests enabled)
+set(TEST_SOURCES "")
+if(ENABLE_TESTS)
+    file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
+endif()
 
-# Common libraries
+# Common libraries (Qt6 always included)
 set(COMMON_LIBS
     ${X11_LIBRARIES}
-    Threads::Threads
-    dl
-    ${DBUS_LIBRARIES}
     ${XTEST_LIB}
-    Xrandr
+    ${XRANDR_LIB}
+    Threads::Threads
+    ${DBUS_LIBRARIES}
+    ${LUA_LIBRARIES}
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Charts
+    dl
     crypto
     zip
     ssl
     pthread
     m
-    Qt6::Widgets
-    Qt6::Charts
 )
-
-list(APPEND COMMON_LIBS ${LUA_LIBRARIES})
 
 # Include directories
 include_directories(
@@ -123,63 +153,71 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${X11_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
+    ${LUA_INCLUDE_DIR}
 )
 
 if(NOT DISABLE_HAVEL_LANG)
-    include_directories(${LUA_INCLUDE_DIR})
+    include_directories(${CMAKE_SOURCE_DIR}/src/havel-lang)
 endif()
 
 if(ENABLE_LLVM)
     include_directories(${LLVM_INCLUDE_DIRS})
 endif()
 
-# Main executable
-add_executable(hvc src/main.cpp ${CORE_SOURCES})
-target_link_libraries(hvc ${COMMON_LIBS})
+# Main executable (renamed from hvc to havel)
+add_executable(havel 
+    src/main.cpp 
+    ${CORE_SOURCES}
+    ${GUI_SOURCES}
+    ${HAVEL_LANG_SOURCES}
+)
+
+target_link_libraries(havel ${COMMON_LIBS})
 
 # Compile definitions for main executable
-if(DISABLE_GUI)
-    target_compile_definitions(hvc PRIVATE DISABLE_GUI)
+if(DISABLE_HAVEL_LANG)
+    target_compile_definitions(havel PRIVATE DISABLE_HAVEL_LANG)
 endif()
 
-if(DISABLE_HAVEL_LANG)
-    target_compile_definitions(hvc PRIVATE DISABLE_HAVEL_LANG)
+if(ENABLE_LLVM)
+    target_link_libraries(havel ${LLVM_LIBS})
 endif()
-if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
-    target_link_libraries(hvc ${LLVM_LIBS})
-endif()
-# Test executable (only if Havel lang enabled)
+
+# Havel Language Library (if enabled)
 if(NOT DISABLE_HAVEL_LANG)
-    add_executable(test_havel
-        src/havel-lang/tests/test_havel.cpp
-        ${HAVEL_LANG_SOURCES}
-        ${CORE_SOURCES}
-    )
-    target_link_libraries(test_havel ${COMMON_LIBS})
-    target_compile_definitions(test_havel PRIVATE DISABLE_GUI)
-    
-    # Havel Language Library
     add_library(havel_lang STATIC ${HAVEL_LANG_SOURCES})
     target_link_libraries(havel_lang ${COMMON_LIBS})
     
     if(ENABLE_LLVM)
-        target_link_libraries(test_havel ${LLVM_LIBS})
         target_link_libraries(havel_lang ${LLVM_LIBS})
         target_compile_definitions(havel_lang PRIVATE HAVEL_ENABLE_LLVM)
     endif()
+    
+    # Test executable for Havel language
+    if(ENABLE_TESTS)
+        add_executable(test_havel
+            src/havel-lang/tests/test_havel.cpp
+            ${CORE_SOURCES}
+        )
+        target_link_libraries(test_havel havel_lang ${COMMON_LIBS})
+        
+        if(ENABLE_LLVM)
+            target_link_libraries(test_havel ${LLVM_LIBS})
+        endif()
+        
+        add_test(NAME test_havel COMMAND test_havel)
+    endif()
 endif()
 
-# LLVM linking for main executable
-if(ENABLE_LLVM)
-    target_link_libraries(hvc ${LLVM_LIBS})
-endif()
-
-# Hotkey test (if test sources exist)
-if(TEST_SOURCES)
-    # Create a separate test executable for each test file
+# General tests (if enabled)
+if(ENABLE_TESTS AND TEST_SOURCES)
     foreach(test_file ${TEST_SOURCES})
         get_filename_component(test_name ${test_file} NAME_WE)
-        add_executable(${test_name} ${test_file} ${CORE_SOURCES})
+        add_executable(${test_name} 
+            ${test_file} 
+            ${CORE_SOURCES}
+            ${GUI_SOURCES}
+        )
         target_link_libraries(${test_name} ${COMMON_LIBS})
         target_compile_definitions(${test_name} PRIVATE RUN_TESTS)
         
@@ -187,60 +225,75 @@ if(TEST_SOURCES)
             target_compile_options(${test_name} PRIVATE -Wall -Wextra)
         endif()
         
-        # Add a test target for each test executable
-        add_test(NAME ${test_name}
-                 COMMAND ${CMAKE_CURRENT_BINARY_DIR}/${test_name}
-                 WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+        if(DISABLE_HAVEL_LANG)
+            target_compile_definitions(${test_name} PRIVATE DISABLE_HAVEL_LANG)
+        endif()
+        
+        add_test(NAME ${test_name} COMMAND ${test_name})
     endforeach()
-    
-    if(DISABLE_GUI)
-        target_compile_definitions(hotkey_test PRIVATE DISABLE_GUI)
-    endif()
-    
-    if(DISABLE_HAVEL_LANG)
-        target_compile_definitions(hotkey_test PRIVATE DISABLE_HAVEL_LANG)
+endif()
+
+# GUI tests (if GTest found and tests enabled)
+if(ENABLE_TESTS AND GTest_FOUND)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp")
+        add_executable(havel_gui_test tests/TestGUI.cpp)
+        target_link_libraries(havel_gui_test 
+            Qt6::Widgets 
+            GTest::GTest 
+            GTest::Main
+        )
+        add_test(NAME havel_gui_test COMMAND havel_gui_test)
     endif()
 endif()
 
-# GUI targets (only if GUI enabled)
-if(NOT DISABLE_GUI)
-    add_executable(havel_gui src/gui/main.cpp src/gui/GUILauncher.cpp src/gui/SystemMonitor.cpp src/gui/FileAutomator.cpp src/gui/ScriptRunner.cpp src/gui/AutomationSuite.cpp src/gui/ClipboardManager.cpp src/gui/ScreenshotManager.cpp src/gui/BrightnessManager.cpp)
-    target_link_libraries(havel_gui Qt6::Widgets Qt6::Charts)
-    target_include_directories(havel_gui PRIVATE ${Qt6_Charts_INCLUDE_DIRS})
-
-    if(GTest_FOUND)
-        add_executable(havel_gui_test tests/TestGUI.cpp)
-        target_link_libraries(havel_gui_test Qt6::Widgets GTest::GTest GTest::Main)
-    endif()
-
+# GUI example
+if(EXISTS "${CMAKE_SOURCE_DIR}/examples/simple_gui_example.cpp")
     add_executable(havel_gui_example examples/simple_gui_example.cpp)
     target_link_libraries(havel_gui_example Qt6::Widgets ${X11_LIBRARIES})
 endif()
 
-# Install
-set(INSTALL_TARGETS hvc)
+# Install targets
+set(INSTALL_TARGETS havel)
+
 if(NOT DISABLE_HAVEL_LANG)
-    list(APPEND INSTALL_TARGETS test_havel)
+    list(APPEND INSTALL_TARGETS havel_lang)
+    if(ENABLE_TESTS)
+        list(APPEND INSTALL_TARGETS test_havel)
+    endif()
 endif()
 
-install(TARGETS ${INSTALL_TARGETS} RUNTIME DESTINATION bin)
+if(TARGET havel_gui)
+    list(APPEND INSTALL_TARGETS havel_gui)
+endif()
+
+install(TARGETS ${INSTALL_TARGETS} 
+    RUNTIME DESTINATION bin
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+)
 
 # Status messages
-message(STATUS "Build configuration:")
-if(DISABLE_GUI)
-    message(STATUS "  GUI: DISABLED")
-else()
-    message(STATUS "  GUI: ENABLED")
-endif()
+message(STATUS "=== Build Configuration ===")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Compiler: ${CMAKE_CXX_COMPILER_ID}")
+message(STATUS "Main executable: havel (GUI always enabled)")
 
 if(DISABLE_HAVEL_LANG)
-    message(STATUS "  Havel Language: DISABLED")
+    message(STATUS "Havel Language: DISABLED")
 else()
-    message(STATUS "  Havel Language: ENABLED")
+    message(STATUS "Havel Language: ENABLED")
 endif()
 
 if(ENABLE_LLVM)
-    message(STATUS "  LLVM: ENABLED")
+    message(STATUS "LLVM: ENABLED")
 else()
-    message(STATUS "  LLVM: DISABLED")
+    message(STATUS "LLVM: DISABLED")
 endif()
+
+if(ENABLE_TESTS)
+    message(STATUS "Tests: ENABLED")
+else()
+    message(STATUS "Tests: DISABLED")
+endif()
+
+message(STATUS "Qt6 version: ${Qt6_VERSION}")

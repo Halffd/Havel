@@ -5,7 +5,7 @@
 #include <atomic>
 #include <string>
 
-namespace Havel::Util {
+namespace havel::Util {
 
 class SignalWatcher {
 private:

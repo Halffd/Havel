@@ -62,10 +62,21 @@ endif()
 # LLVM (only if enabled and Havel lang enabled)
 if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     find_package(LLVM REQUIRED CONFIG)
-    llvm_map_components_to_libnames(LLVM_LIBS
-        Core ExecutionEngine MCJIT OrcJIT Support Target
-        X86CodeGen X86Desc X86Info Analysis TransformUtils
+    execute_process(
+        COMMAND llvm-config --libs --system-libs --ldflags
+        OUTPUT_VARIABLE LLVM_LDFLAGS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
     )
+
+    # Remove newlines and extra spaces
+    string(REPLACE "\n" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
+    string(REPLACE "\t" " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
+    string(REPLACE "  " " " LLVM_LDFLAGS "${LLVM_LDFLAGS}")
+
+    # Convert to CMake list format
+    string(REPLACE " " ";" LLVM_LIBS "${LLVM_LDFLAGS}")
+    message(STATUS "LLVM_LIBS: ${LLVM_LIBS}")
+
     add_definitions(${LLVM_DEFINITIONS})
     add_definitions(-DHAVEL_ENABLE_LLVM)
 elseif(ENABLE_LLVM AND DISABLE_HAVEL_LANG)
@@ -134,7 +145,9 @@ endif()
 if(DISABLE_HAVEL_LANG)
     target_compile_definitions(hvc PRIVATE DISABLE_HAVEL_LANG)
 endif()
-
+if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
+    target_link_libraries(hvc ${LLVM_LIBS})
+endif()
 # Test executable (only if Havel lang enabled)
 if(NOT DISABLE_HAVEL_LANG)
     add_executable(test_havel

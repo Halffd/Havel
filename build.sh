@@ -8,6 +8,8 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 export CC=clang
 export CXX=clang++
+OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH
+unset LD_LIBRARY_PATH
 
 # Default build mode (0 = Debug, 1 = Release)
 BUILD_MODE=0
@@ -75,7 +77,7 @@ build() {
     mkdir -p "${BUILD_DIR}"
 
     log "INFO" "Generating build files with CMake..." "${YELLOW}"
-    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=OFF -DENABLE_LLVM=OFF -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=ON -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
+    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=OFF -DENABLE_LLVM=ON -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=OFF -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "CMake generation"
 
     log "INFO" "Building project with ${THREADS} parallel jobs..." "${YELLOW}"
@@ -200,5 +202,6 @@ log "INFO" "Build mode: ${BUILD_TYPE} (${BUILD_MODE})" "${BLUE}"
 
 # Process all commands
 process_commands "$@"
+LD_LIBRARY_PATH=$OLD_LD_LIBRARY_PATH
 
 exit 0

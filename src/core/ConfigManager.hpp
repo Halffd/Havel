@@ -224,7 +224,7 @@ public:
             std::string name = key.substr(dotPos+1);
 
             if (section != currentSection) {
-                if (!file.tellp() == 0) { // Don't write newline at the beginning of the file
+                if (file.tellp() != 0) { // Don't write newline at the beginning of the file
                     file << "\n";
                 }
                 file << "[" << section << "]\n";

@@ -26,6 +26,7 @@
 #include <QProgressBar>
 #include <QTreeWidget>
 #include <QTableWidget>
+#include <QListView>
 #include <QListWidget>
 #include <QTabWidget>
 #include <QScrollArea>
@@ -33,6 +34,8 @@
 #include <QStatusBar>
 #include <QToolBar>
 #include <QMenuBar>
+#include <QTreeView>
+#include <QFileSystemModel>
 
 
 // Type aliases
@@ -81,13 +84,15 @@ namespace havel {
     using ProgressBar = QProgressBar;
     using TreeWidget = QTreeWidget;
     using TableWidget = QTableWidget;
-    using ListView = QListWidget;
+    using ListView = QListView;
     using TabWidget = QTabWidget;
     using ScrollArea = QScrollArea;
     using Splitter = QSplitter;
     using StatusBar = QStatusBar;
     using ToolBar = QToolBar;
     using MenuBar = QMenuBar;
+    using TreeView = QTreeView;
+    using FileSystemModel = QFileSystemModel;
 }
 
 // Helper function to convert string to lowercase

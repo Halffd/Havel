@@ -1,9 +1,9 @@
-#include "GUILauncher.hpp"
+#include "AutomationSuite.hpp"
 #include <QApplication>
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    GUILauncher launcher;
-    launcher.show();
+    havel::AutomationSuite suite;
+    
     return app.exec();
 }

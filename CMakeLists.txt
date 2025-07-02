@@ -79,7 +79,6 @@ file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/window/*.cpp" "src/utils/*.
 if(NOT DISABLE_GUI)
     file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
     list(REMOVE_ITEM GUI_SOURCES "${CMAKE_SOURCE_DIR}/src/gui/main.cpp")
-    list(APPEND CORE_SOURCES ${GUI_SOURCES})
 endif()
 
 if(NOT DISABLE_HAVEL_LANG)
@@ -101,14 +100,11 @@ set(COMMON_LIBS
     ssl
     pthread
     m
+    Qt6::Widgets
+    Qt6::Charts
 )
 
 list(APPEND COMMON_LIBS ${LUA_LIBRARIES})
-
-# Add GUI libs if not disabled
-if(NOT DISABLE_GUI)
-    list(APPEND COMMON_LIBS Qt6::Widgets)
-endif()
 
 # Include directories
 include_directories(
@@ -120,10 +116,6 @@ include_directories(
 
 if(NOT DISABLE_HAVEL_LANG)
     include_directories(${LUA_INCLUDE_DIR})
-endif()
-
-if(NOT DISABLE_GUI)
-    # No need to add Qt6 include directories manually, find_package does it.
 endif()
 
 if(ENABLE_LLVM)
@@ -199,8 +191,9 @@ endif()
 
 # GUI targets (only if GUI enabled)
 if(NOT DISABLE_GUI)
-    add_executable(havel_gui src/gui/main.cpp src/gui/GUILauncher.cpp src/gui/SystemMonitor.cpp src/gui/FileAutomator.cpp src/gui/ScriptRunner.cpp)
-    target_link_libraries(havel_gui Qt6::Widgets)
+    add_executable(havel_gui src/gui/main.cpp src/gui/GUILauncher.cpp src/gui/SystemMonitor.cpp src/gui/FileAutomator.cpp src/gui/ScriptRunner.cpp src/gui/AutomationSuite.cpp src/gui/ClipboardManager.cpp src/gui/ScreenshotManager.cpp src/gui/BrightnessManager.cpp)
+    target_link_libraries(havel_gui Qt6::Widgets Qt6::Charts)
+    target_include_directories(havel_gui PRIVATE ${Qt6_Charts_INCLUDE_DIRS})
 
     if(GTest_FOUND)
         add_executable(havel_gui_test tests/TestGUI.cpp)

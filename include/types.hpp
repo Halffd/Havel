@@ -4,6 +4,37 @@
 #include <vector>
 #include <algorithm>
 
+#include <QApplication>
+#include <QPushButton>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QMainWindow>
+#include <QWidget>
+#include <QMessageBox>
+#include <QMenu>
+#include <QAction>
+#include <QTimer>
+#include <QThread>
+#include <QDialog>
+#include <QLineEdit>
+#include <QTextEdit>
+#include <QCheckBox>
+#include <QRadioButton>
+#include <QComboBox>
+#include <QSlider>
+#include <QProgressBar>
+#include <QTreeWidget>
+#include <QTableWidget>
+#include <QListWidget>
+#include <QTabWidget>
+#include <QScrollArea>
+#include <QSplitter>
+#include <QStatusBar>
+#include <QToolBar>
+#include <QMenuBar>
+
+
 // Type aliases
 using str = std::string;
 using cstr = const std::string&;
@@ -26,6 +57,38 @@ enum class ProcessMethod {
     SameWindow = 7,
     Shell = 8
 };
+
+namespace havel {
+    using Button = QPushButton;
+    using Label = QLabel;
+    using Layout = QVBoxLayout;
+    using HLayout = QHBoxLayout;
+    using Window = QMainWindow;
+    using Widget = QWidget;
+    using MessageBox = QMessageBox;
+    using App = QApplication;
+    using Menu = QMenu;
+    using Action = QAction;
+    using Timer = QTimer;
+    using Thread = QThread;
+    using Dialog = QDialog;
+    using LineEdit = QLineEdit;
+    using TextEdit = QTextEdit;
+    using CheckBox = QCheckBox;
+    using RadioButton = QRadioButton;
+    using ComboBox = QComboBox;
+    using Slider = QSlider;
+    using ProgressBar = QProgressBar;
+    using TreeWidget = QTreeWidget;
+    using TableWidget = QTableWidget;
+    using ListView = QListWidget;
+    using TabWidget = QTabWidget;
+    using ScrollArea = QScrollArea;
+    using Splitter = QSplitter;
+    using StatusBar = QStatusBar;
+    using ToolBar = QToolBar;
+    using MenuBar = QMenuBar;
+}
 
 // Helper function to convert string to lowercase
 inline std::string ToLower(const std::string& str) {

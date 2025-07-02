@@ -5,12 +5,12 @@
 
 namespace havel {
 
-class Widget : public QWidget {
+class BaseWidget : public QWidget {
     Q_OBJECT
 
 public:
-    explicit Widget(QWidget *parent = nullptr);
-    ~Widget() override;
+    explicit BaseWidget(QWidget *parent = nullptr);
+    ~BaseWidget() override;
 };
 
 } // namespace havel

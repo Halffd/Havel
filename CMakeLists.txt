@@ -55,7 +55,7 @@ if(NOT DISABLE_GUI)
     set(CMAKE_AUTOMOC ON)
     set(CMAKE_AUTORCC ON)
     set(CMAKE_AUTOUIC ON)
-    find_package(Qt6 REQUIRED COMPONENTS Widgets)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Charts)
     find_package(GTest QUIET)
 endif()
 
@@ -78,6 +78,7 @@ file(GLOB_RECURSE CORE_SOURCES "src/core/*.cpp" "src/window/*.cpp" "src/utils/*.
 
 if(NOT DISABLE_GUI)
     file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
+    list(REMOVE_ITEM GUI_SOURCES "${CMAKE_SOURCE_DIR}/src/gui/main.cpp")
     list(APPEND CORE_SOURCES ${GUI_SOURCES})
 endif()
 
@@ -197,10 +198,15 @@ if(TEST_SOURCES)
 endif()
 
 # GUI targets (only if GUI enabled)
-if(NOT DISABLE_GUI AND GTest_FOUND)
-    add_executable(havel_gui_test tests/TestGUI.cpp)
-    target_link_libraries(havel_gui_test Qt6::Widgets GTest::GTest GTest::Main)
-    
+if(NOT DISABLE_GUI)
+    add_executable(havel_gui src/gui/main.cpp src/gui/GUILauncher.cpp src/gui/SystemMonitor.cpp src/gui/FileAutomator.cpp src/gui/ScriptRunner.cpp)
+    target_link_libraries(havel_gui Qt6::Widgets)
+
+    if(GTest_FOUND)
+        add_executable(havel_gui_test tests/TestGUI.cpp)
+        target_link_libraries(havel_gui_test Qt6::Widgets GTest::GTest GTest::Main)
+    endif()
+
     add_executable(havel_gui_example examples/simple_gui_example.cpp)
     target_link_libraries(havel_gui_example Qt6::Widgets ${X11_LIBRARIES})
 endif()

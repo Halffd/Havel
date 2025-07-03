@@ -5,9 +5,10 @@
 #include <QTimer>
 #include <QMenu>
 #include <QIcon>
+#include "qt.hpp"
+#include "gui/SettingsWindow.hpp"
 #include <memory>
 #include <chrono>
-#include <X11/Xlib.h>
 
 #include "core/util/SignalWatcher.hpp"
 #include "window/WindowManager.hpp"
@@ -15,7 +16,7 @@
 #include "core/ScriptEngine.hpp"
 #include "core/HotkeyManager.hpp"
 #include "media/MPVController.hpp"
-#include "gui/SettingsWindow.hpp"
+#include <X11/Xlib.h>
 namespace havel {
 
 class HavelApp : public QObject {

@@ -1,5 +1,5 @@
+#include "qt.hpp"
 #include "gui/HavelApp.hpp"
-#include <QApplication>
 #include <iostream>
 #include <string>
 #include "core/ConfigManager.hpp"

@@ -1,8 +1,4 @@
 #include "FileAutomator.hpp"
-#include <QSplitter>
-#include <QListView>
-#include <QTreeView>
-#include <QDir>
 
 FileAutomator::FileAutomator(QWidget* parent) : havel::Window(parent) {
     setupUI();

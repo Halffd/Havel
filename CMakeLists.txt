@@ -175,6 +175,19 @@ add_executable(havel
 target_link_libraries(havel ${COMMON_LIBS})
 
 # Compile definitions for main executable
+if(NOT DISABLE_GUI)
+    # Set MOC options to handle X11 conflicts
+    set(CMAKE_AUTOMOC_MOC_OPTIONS 
+        "-DQT_NO_KEYWORDS"
+        "-DMOC_PARSING"
+        "-DNone=0L"
+        "-DTrue=1" 
+        "-DFalse=0"
+        "-DStatus=int"
+        "-DBool=int"
+        "-DSuccess=0"
+    )
+endif()
 if(DISABLE_HAVEL_LANG)
     target_compile_definitions(havel PRIVATE DISABLE_HAVEL_LANG)
 endif()
@@ -182,6 +195,7 @@ endif()
 if(ENABLE_LLVM)
     target_link_libraries(havel ${LLVM_LIBS})
 endif()
+
 
 # Havel Language Library (if enabled)
 if(NOT DISABLE_HAVEL_LANG)

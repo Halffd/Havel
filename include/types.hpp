@@ -4,6 +4,7 @@
 #include <string>
 #include <map>
 #include <vector>
+#ifndef Q_MOC_RUN
 #include <cstdlib> // For getenv()
 
 // Platform detection and macro definitions
@@ -41,8 +42,8 @@
     using wID = void*; // Use void* or an appropriate type for Linux
     #else
     #include "x11.h"
-    using wID = XID; // X11 Window type
-    using Key = XID;
+    using wID = unsigned long; // X11 Window type
+    using Key = unsigned long;
     #endif
     using pID = pid_t; // Example type for process ID
 #elif defined(__APPLE__)
@@ -56,16 +57,16 @@
 #else
     #error "Unsupported platform"
 #endif
-
+#endif
 using str = std::string; // Alias for string type
 using cstr = const str&; // Alias for const string reference
 using group = std::map<str, std::vector<str>>; // Alias for a map of string to vector of strings
 using null = decltype(nullptr); // Use nullptr instead of NULL for better type safety
 namespace havel {
-    enum DisplayServer {
+    enum class DisplayServer {
         X11,
         Wayland,
-        None
+        Unknown
     };
 }
 #endif // TYPES_H

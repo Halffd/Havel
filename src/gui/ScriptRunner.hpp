@@ -1,7 +1,7 @@
 #pragma once
 
-#include "types.hpp"
 #include <QProcess>
+#include "types.hpp"
 
 class ScriptRunner : public havel::QWindow {
     Q_OBJECT

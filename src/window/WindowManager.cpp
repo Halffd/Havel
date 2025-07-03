@@ -13,9 +13,7 @@
 #include <sys/resource.h>
 
 #ifdef __linux__
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
-#include <X11/extensions/Xrandr.h>
+#include "x11.h"
 #endif
 
 namespace havel {

@@ -4,7 +4,7 @@
 #include "../window/WindowManager.hpp"
 #include "./ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
-#include "x11_includes.h"
+#include "x11.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>

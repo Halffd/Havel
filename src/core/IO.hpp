@@ -1,6 +1,5 @@
 #pragma once
 #include "types.hpp"
-#include <X11/Xlib.h>
 #include <atomic>
 #include <fcntl.h>
 #include <functional>
@@ -17,6 +16,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+#include "x11.h"
 
 
 namespace havel {

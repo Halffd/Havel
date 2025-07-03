@@ -1,0 +1,14 @@
+#pragma once
+// Auto-generated Qt+X11 compatibility header
+
+#ifdef USE_QT_X11_FIX
+    #ifdef None
+    #undef None
+    #endif
+    #ifdef Bool
+    #undef Bool  
+    #endif
+    #ifdef Status
+    #undef Status
+    #endif
+#endif

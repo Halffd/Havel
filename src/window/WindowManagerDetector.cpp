@@ -8,7 +8,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <unistd.h>
-#include <X11/Xlib.h>
+#include "x11.h"
 #endif
 
 WindowManagerDetector::WMType WindowManagerDetector::Detect() noexcept {

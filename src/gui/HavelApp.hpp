@@ -16,7 +16,7 @@
 #include "core/ScriptEngine.hpp"
 #include "core/HotkeyManager.hpp"
 #include "media/MPVController.hpp"
-#include <X11/Xlib.h>
+#include "x11.h"
 namespace havel {
 
 class HavelApp : public QObject {

@@ -1,15 +1,9 @@
 #pragma once
-#include "types.hpp"
 #include <string>
 #include <chrono>
 #include <memory>
 #include "utils/Rect.hpp"
-#ifdef __linux__
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-struct _XDisplay;
-typedef struct _XDisplay Display;
-#endif
+#include "types.hpp"
 
 namespace havel {
 
@@ -21,7 +15,7 @@ public:
     // Static display pointer
     #ifdef __linux__
     static std::shared_ptr<Display> display;
-    static Display displayServer;
+    static DisplayServer displayServer;
     #endif
 
     // Window properties

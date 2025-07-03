@@ -1,4 +1,3 @@
-#include "x11_includes.h"
 #include "system_includes.h"
 #include "window/Window.hpp"
 #include "core/IO.hpp"
@@ -7,6 +6,7 @@
 #include "core/DisplayManager.hpp"
 #include "window/WindowManager.hpp"
 #include "utils/Logger.hpp"
+#include "x11.h"
 #include <iostream>
 
 void testSend(havel::IO& io) {

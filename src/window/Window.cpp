@@ -1,13 +1,10 @@
 #include "Window.hpp"
 #include "WindowManager.hpp"
+#include "types.hpp"
 #include <iostream>
 #include <sstream>
 #include <memory>
-#include <X11/Xlib.h>
-#include <X11/Xatom.h>
 #include <cstring>
-#include <X11/Xutil.h>
-#include <X11/extensions/XTest.h>
 #include <cstdio>
 #include <unistd.h>
 #include <sys/types.h>
@@ -15,9 +12,7 @@
 #include <cstring>
 
 #ifdef __linux__
-#include <X11/Xatom.h>
-#include <X11/Xutil.h>
-
+#include "x11.h"
 // Initialize static members
 std::shared_ptr<Display> havel::Window::display;
 havel::DisplayServer havel::Window::displayServer = havel::DisplayServer::X11;

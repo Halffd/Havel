@@ -9,9 +9,6 @@
 #include <cassert>
 #include <signal.h>
 #include <cstring> // For memset
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
 #include "../core/IO.hpp"
 #include "../core/DisplayManager.hpp"
 

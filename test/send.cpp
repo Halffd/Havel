@@ -1,5 +1,4 @@
-#include <X11/Xlib.h>
-#include <X11/keysym.h>
+#include "x11.h"
 #include <xdo.h>
 #include <string>
 #include <vector>

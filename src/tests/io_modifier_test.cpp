@@ -9,11 +9,8 @@
 #include <cassert>
 #include <signal.h>
 #include <cstring> // For memset
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/keysym.h>
-#include "../core/IO.hpp"
 #include "../core/DisplayManager.hpp"
+#include "../core/IO.hpp"
 
 // Test framework macros
 #define TEST_ASSERT(condition) do { \

@@ -1,7 +1,7 @@
 #pragma once
 
 #ifdef __linux__
-#include <X11/Xlib.h>
+#include "x11.h"
 #endif
 
 namespace havel {

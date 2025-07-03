@@ -1,5 +1,5 @@
 #include "DisplayManager.hpp"
-#include "x11_includes.h"
+#include "x11.h"
 #include <iostream>
 #include <stdexcept>
 

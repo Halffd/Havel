@@ -1,7 +1,7 @@
 #include "ScriptEngine.hpp"
 #include "IO.hpp"
 #include "../window/WindowManager.hpp"
-#include "../common/types.hpp"
+#include "types.hpp"
 #include <regex>
 #include <fmt/format.h>
 #include "../window/WindowManagerDetector.hpp"

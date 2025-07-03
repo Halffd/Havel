@@ -1,5 +1,5 @@
 #pragma once
-
+#include <QClipboard>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "ast/AST.h"

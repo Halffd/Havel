@@ -1,7 +1,7 @@
 #include "Printer.hpp"
 #include "Logger.hpp"
 #include <sstream>
-#include "../common/types.hpp"
+#include "types.hpp"
 using namespace havel;
 // Variadic template function for printing with a delimiter
 template <typename... Args>

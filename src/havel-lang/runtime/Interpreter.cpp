@@ -1,7 +1,6 @@
 // src/havel-lang/runtime/Interpreter.cpp
 #include "Interpreter.hpp"
 #include "../../gui/AutomationSuite.hpp"
-#include <QClipboard>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
@@ -493,10 +492,12 @@ void Interpreter::InitializeTextModule() {
             std::string text = Interpreter::ValueToString(args[0]);
             // Trim leading whitespace
             text.erase(0, text.find_first_not_of(" 	
-"));
+
+"));
             // Trim trailing whitespace
             text.erase(text.find_last_not_of(" 	
-") + 1);
+
+") + 1);
             return text;
         }
         return "";

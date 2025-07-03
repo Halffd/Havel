@@ -9,8 +9,7 @@
 #include "../utils/Logger.hpp"
 
 #ifdef __linux__
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
+#include "x11.h"
 #include <unistd.h>
 #include <sys/wait.h>
 // Use X11's Window type directly

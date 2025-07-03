@@ -22,7 +22,7 @@ class Compiler {
 private:
     llvm::LLVMContext context;
     llvm::IRBuilder<> builder;
-    std::unique_ptr<llvm::Module> module;
+    llvm::Module* module;  // Raw pointer (owned by ExecutionEngine)
     std::unique_ptr<llvm::ExecutionEngine> executionEngine;
 
     // Symbol tables

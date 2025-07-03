@@ -1,6 +1,12 @@
 #include "Compiler.h"
-#include <iostream>
 #include <stdexcept>
+
+namespace {
+    template<typename Container, typename Key>
+    bool contains(const Container& container, const Key& key) {
+        return container.find(key) != container.end();
+    }
+}
 
 namespace havel::compiler {
     Compiler::Compiler() : builder(context) {
@@ -8,13 +14,13 @@ namespace havel::compiler {
     }
 
     void Compiler::Initialize() {
-        // Module is now created by the LLVMInitializer in LLVMWrapper.h
+        // Create module and keep raw pointer
         auto modulePtr = std::make_unique<llvm::Module>("HavelJIT", context);
-        module = modulePtr.get();
+        module = modulePtr.get();  // Keep raw pointer for later use
 
         // Create execution engine with error handling
         std::string error;
-        auto engineBuilder = llvm::EngineBuilder(std::move(modulePtr));
+        auto engineBuilder = llvm::EngineBuilder(std::move(modulePtr));  // Move ownership
         engineBuilder.setErrorStr(&error);
         
         // Configure the engine
@@ -68,12 +74,12 @@ namespace havel::compiler {
 
     llvm::Value *Compiler::GenerateIdentifier(const ast::Identifier &id) {
         // First check variables (like function parameters, let bindings)
-        if (namedValues.contains(id.symbol)) {
+        if (contains(namedValues, id.symbol)) {
             return namedValues[id.symbol]; // Return variable value
         }
 
         // Then check functions (for function references)
-        if (functions.contains(id.symbol)) {
+        if (contains(functions, id.symbol)) {
             return functions[id.symbol]; // Return function pointer
         }
 
@@ -147,7 +153,7 @@ namespace havel::compiler {
                 const auto &id = static_cast<const ast::Identifier &>(*
                     stageExpr);
 
-                if (!functions.contains(id.symbol)) {
+                if (!contains(functions, id.symbol)) {
                     throw std::runtime_error(
                         "Unknown pipeline function: " + id.symbol);
                 }
@@ -204,7 +210,7 @@ namespace havel::compiler {
         std::string memberName = objectId->symbol + "." + propertyId->symbol;
 
         // Look up in functions table
-        if (functions.contains(memberName)) {
+        if (contains(functions, memberName)) {
             return functions[memberName];
         }
 
@@ -217,7 +223,7 @@ namespace havel::compiler {
     }
 
     llvm::Value *Compiler::GetVariable(const std::string &name) {
-        if (namedValues.contains(name)) {
+        if (contains(namedValues, name)) {
             return namedValues[name];
         }
         throw std::runtime_error("Unknown variable: " + name);

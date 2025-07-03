@@ -1,10 +1,10 @@
 #pragma once
 
-#include "types.hpp"
 #include <QTimer>
 #include <QtCharts/QChart>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QChartView>
+#include "types.hpp"
 class SystemMonitor : public havel::QWindow {
     Q_OBJECT
 

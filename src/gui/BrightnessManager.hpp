@@ -1,7 +1,13 @@
 #pragma once
 
-#include "types.hpp"
 #include <QSystemTrayIcon>
+#include <QTimer>
+#include <QVBoxLayout>
+#include <QFile>
+#include <QTime>
+#include <QShortcut>
+#include "qt.hpp"
+#include "types.hpp"
 
 namespace havel {
 

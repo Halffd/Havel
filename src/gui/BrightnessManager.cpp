@@ -1,10 +1,6 @@
 #include "BrightnessManager.hpp"
-#include <QVBoxLayout>
-#include <QFile>
-#include <QTime>
-#include <QShortcut>
 
-havel::BrightnessManager::BrightnessManager(QWidget *parent) : Window(parent) {
+havel::BrightnessManager::BrightnessManager(QWidget *parent) : QWindow(parent) {
     setupUI();
 
     scheduleTimer = new QTimer(this);

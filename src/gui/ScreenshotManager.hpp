@@ -1,7 +1,9 @@
 #pragma once
 
-#include "types.hpp"
 #include <QFileSystemWatcher>
+#include <QTimer>
+#include "qt.hpp"
+#include "types.hpp"
 
 QT_BEGIN_NAMESPACE
 class QPaintEvent;

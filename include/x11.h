@@ -135,14 +135,6 @@ namespace havel::x11 {
     inline int CloseDisplay(Display* display) {
         return XCloseDisplay(display);
     }
-    
-    inline Window DefaultRootWindow(Display* display) {
-        return XDefaultRootWindow(display);
-    }
-    
-    inline int DefaultScreen(Display* display) {
-        return XDefaultScreen(display);
-    }
 }
 
 // NOW undefine X11 macros to protect Qt/LLVM

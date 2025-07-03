@@ -1,7 +1,12 @@
 #pragma once
 
-#include "types.hpp"
 #include <QFileSystemModel>
+#include <QSplitter>
+#include <QListView>
+#include <QTreeView>
+#include <QDir>
+#include "qt.hpp"
+#include "types.hpp"
 
 class FileAutomator : public havel::QWindow {
     Q_OBJECT

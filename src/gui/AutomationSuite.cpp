@@ -21,7 +21,7 @@ AutomationSuite* AutomationSuite::Instance() {
 AutomationSuite::AutomationSuite(QObject *parent) : QObject(parent) {
     clipboardMgr = new ClipboardManager();
     screenshotMgr = new ScreenshotManager();
-    brightnessMgr = new BrightnessManager();
+    brightnessMgr = new GuiBrightnessManager();
 
     trayIcon = new QSystemTrayIcon(this);
     trayIcon->setIcon(QIcon::fromTheme("applications-utilities"));

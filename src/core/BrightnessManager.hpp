@@ -46,7 +46,7 @@
         bool increaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
         bool decreaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
         bool increaseGamma(int amount = DEFAULT_GAMMA_AMOUNT);
-        bool decreaseGamma(int amount = DEFAULT_GAMMA_AMOUNT);
+                bool decreaseGamma(int amount = DEFAULT_GAMMA_AMOUNT);
 
         // Setters
         void setVerbose(bool verbose) { settings.verbose = verbose; }

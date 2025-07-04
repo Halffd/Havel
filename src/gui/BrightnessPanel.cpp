@@ -1,10 +1,12 @@
-#include "BrightnessManager.hpp"
+#include "BrightnessPanel.hpp"
 
-havel::BrightnessManager::BrightnessManager(QWidget *parent) : QWindow(parent) {
+#include <QShortcut>
+
+havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QWindow(parent) {
     setupUI();
 
     scheduleTimer = new QTimer(this);
-    connect(scheduleTimer, &QTimer::timeout, this, &BrightnessManager::scheduleAdjustment);
+    connect(scheduleTimer, &QTimer::timeout, this, &BrightnessPanel::scheduleAdjustment);
     scheduleTimer->start(60000); // Check every minute
 
     trayIcon = new QSystemTrayIcon(this);
@@ -15,17 +17,15 @@ havel::BrightnessManager::BrightnessManager(QWidget *parent) : QWindow(parent) {
     auto brightnessDown = new QShortcut(QKeySequence("Ctrl+Alt+Down"), this);
 
     connect(brightnessUp, &QShortcut::activated, [this]() {
-        int current = brightnessSlider->value();
-        setBrightness(qMin(100, current + 10));
+        brightnessManager.increaseBrightness();
     });
 
     connect(brightnessDown, &QShortcut::activated, [this]() {
-        int current = brightnessSlider->value();
-        setBrightness(qMax(0, current - 10));
+        brightnessManager.decreaseBrightness();
     });
 }
 
-void havel::BrightnessManager::setupUI() {
+void havel::BrightnessPanel::setupUI() {
     setWindowTitle("Brightness Manager");
     setMinimumSize(300, 100);
 
@@ -38,30 +38,30 @@ void havel::BrightnessManager::setupUI() {
     percentageLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(percentageLabel);
 
-    connect(brightnessSlider, &Slider::valueChanged, this, &BrightnessManager::setBrightness);
+    connect(brightnessSlider, &Slider::valueChanged, this, &BrightnessPanel::setBrightness);
 }
 
-void havel::BrightnessManager::setBrightness(int value) {
-#ifdef Q_OS_LINUX
-    QFile backlightFile("/sys/class/backlight/intel_backlight/brightness");
-    if (backlightFile.open(QIODevice::WriteOnly)) {
-        backlightFile.write(QString::number(value).toUtf8());
-    }
-#endif
-
+void havel::BrightnessPanel::setBrightness(int value) {
+    double brightness = value / 100.0;
+    brightnessManager.setBrightnessAndTemperature(
+        std::to_string(brightness),
+        std::to_string(brightnessManager.getCurrentGamma())
+    );
     percentageLabel->setText(QString("%1%").arg(value));
     trayIcon->setToolTip(QString("Brightness: %1%").arg(value));
     brightnessSlider->setValue(value);
 }
 
-void havel::BrightnessManager::scheduleAdjustment() {
+void havel::BrightnessPanel::scheduleAdjustment() {
+
+
     auto now = QTime::currentTime();
 
     if (now.hour() >= 22 || now.hour() <= 6) {
-        setBrightness(30); // Night mode
+        setBrightness(30); // This will call the method above
     } else if (now.hour() >= 6 && now.hour() <= 8) {
-        setBrightness(70); // Morning
+        setBrightness(70);
     } else {
-        setBrightness(100); // Day
+        setBrightness(100);
     }
 }

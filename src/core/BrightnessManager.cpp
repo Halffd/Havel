@@ -20,7 +20,7 @@ BrightnessManager::BrightnessManager() {
     settings.latitude = "22";
     settings.longitude = "44";
     settings.verbose = false;
-    
+
     // Initialize current state
     settings.currentBrightness = 1.0;
     settings.currentGamma = 6500;
@@ -73,7 +73,7 @@ int BrightnessManager::convertGammaToTemperature(int gamma) {
 std::tuple<double, double> BrightnessManager::parseBrightnessValue(const std::string& brightness) {
     double day, night;
     size_t colonPos = brightness.find(':');
-    
+
     if (colonPos != std::string::npos) {
         day = std::stod(brightness.substr(0, colonPos));
         night = std::stod(brightness.substr(colonPos + 1));
@@ -84,7 +84,7 @@ std::tuple<double, double> BrightnessManager::parseBrightnessValue(const std::st
     // Convert percentages to decimal
     if (std::abs(day) > 10) day /= 100;
     else if (std::abs(day) > 1) day /= 10;
-    
+
     if (std::abs(night) > 10) night /= 100;
     else if (std::abs(night) > 1) night /= 10;
 
@@ -94,7 +94,7 @@ std::tuple<double, double> BrightnessManager::parseBrightnessValue(const std::st
 std::tuple<int, int> BrightnessManager::parseGammaValue(const std::string& gamma) {
     int day, night;
     size_t colonPos = gamma.find(':');
-    
+
     if (colonPos != std::string::npos) {
         day = std::stoi(gamma.substr(0, colonPos));
         night = std::stoi(gamma.substr(colonPos + 1));
@@ -110,16 +110,16 @@ bool BrightnessManager::isX11() {
     std::string result;
     std::unique_ptr<FILE, decltype(&pclose)> pipe(
         popen("pgrep -x \"Xorg\"", "r"), pclose);
-    
+
     if (!pipe) {
         error("Failed to execute pgrep command");
         return false;
     }
-    
+
     while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         result += buffer.data();
     }
-    
+
     return !result.empty();
 }
 
@@ -129,14 +129,14 @@ std::optional<double> BrightnessManager::getCurrentBrightness() {
     std::array<char, 128> buffer;
     std::string result;
     std::unique_ptr<FILE, decltype(&pclose)> pipe(
-        popen("xrandr --verbose | grep \"Brightness\" | awk '{print $2}'", "r"), 
+        popen("xrandr --verbose | grep \"Brightness\" | awk '{print $2}'", "r"),
         pclose);
-    
+
     if (!pipe) {
         error("Failed to get current brightness");
         return std::nullopt;
     }
-    
+
     if (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
         try {
             return std::stod(buffer.data());
@@ -144,7 +144,7 @@ std::optional<double> BrightnessManager::getCurrentBrightness() {
             error("Failed to parse current brightness: " + std::string(e.what()));
         }
     }
-    
+
     return std::nullopt;
 }
 
@@ -171,7 +171,7 @@ bool BrightnessManager::adjustBrightnessWayland(double& dayBrightness, double& n
     // Convert percentages to decimal if needed
     if (dayBrightness > 10) dayBrightness /= 100;
     else if (dayBrightness > 1) dayBrightness /= 10;
-    
+
     if (nightBrightness > 10) nightBrightness /= 100;
     else if (nightBrightness > 1) nightBrightness /= 10;
 
@@ -253,9 +253,9 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string& brightnes
     }
 
     if (settings.verbose) {
-        info("Successfully set brightness to " + std::to_string(settings.dayBrightness) + 
+        info("Successfully set brightness to " + std::to_string(settings.dayBrightness) +
                 " (day) and " + std::to_string(settings.nightBrightness) + " (night)");
-        info("Color temperature set to " + std::to_string(settings.dayTemperature) + 
+        info("Color temperature set to " + std::to_string(settings.dayTemperature) +
                 "K (day) and " + std::to_string(settings.nightTemperature) + "K (night)");
     }
 
@@ -286,7 +286,7 @@ bool BrightnessManager::increaseBrightness(double amount) {
     }
     double newBrightness = std::min(1.0, settings.currentBrightness + amount);
     if (newBrightness != settings.currentBrightness) {
-        info("Increasing brightness from " + std::to_string(settings.currentBrightness) + 
+        info("Increasing brightness from " + std::to_string(settings.currentBrightness) +
                 " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
         settings.dayBrightness = newBrightness;
@@ -302,7 +302,7 @@ bool BrightnessManager::decreaseBrightness(double amount) {
     }
     double newBrightness = std::max(0.0, settings.currentBrightness - amount);
     if (newBrightness != settings.currentBrightness) {
-        info("Decreasing brightness from " + std::to_string(settings.currentBrightness) + 
+        info("Decreasing brightness from " + std::to_string(settings.currentBrightness) +
                 " to " + std::to_string(newBrightness));
         settings.currentBrightness = newBrightness;
         settings.dayBrightness = newBrightness;

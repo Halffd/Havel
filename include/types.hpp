@@ -41,6 +41,7 @@
     #include <xkbcommon/xkbcommon.h>
     using wID = void*; // Use void* or an appropriate type for Linux
     #else
+    #include "x11_defs.h" // Include X11 macro undefinitions first
     #include "x11.h"
     using wID = unsigned long; // X11 Window type
     using Key = unsigned long;

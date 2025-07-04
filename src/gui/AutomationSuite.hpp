@@ -2,7 +2,7 @@
 
 #include "gui/ClipboardManager.hpp"
 #include "gui/ScreenshotManager.hpp"
-#include "gui/BrightnessManager.hpp"
+#include "gui/BrightnessPanel.hpp"
 #include <QObject>
 #include <QSystemTrayIcon>
 #include <QMainWindow>
@@ -20,7 +20,7 @@ public:
 
     ClipboardManager* getClipboardManager() const { return clipboardMgr; }
     ScreenshotManager* getScreenshotManager() const { return screenshotMgr; }
-    BrightnessManager* getBrightnessManager() const { return brightnessMgr; }
+    GuiBrightnessManager* getBrightnessManager() const { return brightnessMgr; }
     
     // Show settings window
     void showSettings();
@@ -32,7 +32,7 @@ private:
 
     ClipboardManager* clipboardMgr;
     ScreenshotManager* screenshotMgr;
-    BrightnessManager* brightnessMgr;
+    GuiBrightnessManager* brightnessMgr;
     QSystemTrayIcon* trayIcon;
     QMenu* trayMenu;
     

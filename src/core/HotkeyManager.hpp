@@ -75,7 +75,7 @@ namespace havel {
         void ReloadConfigurations();
 
         // Add public getter for brightnessManager
-        BrightnessManager &getBrightnessManager() { return brightnessManager; }
+        havel::BrightnessManager &getBrightnessManager() { return coreBrightnessManager; }
 
         // Mode management
         void setMode(const std::string &mode);
@@ -139,7 +139,7 @@ namespace havel {
         WindowManager &windowManager;
         MPVController &mpv;
         ScriptEngine &scriptEngine;
-        BrightnessManager brightnessManager;
+        BrightnessManager coreBrightnessManager;
         Configs config;
 
         // Mode management

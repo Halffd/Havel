@@ -38,6 +38,6 @@ public:
 void blockAllSignals();
 
 // Block specific signals in the calling thread
-void blockSignals(const std::initializer_list<int>& signals);
+void blockSignals(const std::initializer_list<int>& signalsToBlock);
 
 } // namespace Havel::Util

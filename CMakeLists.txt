@@ -102,6 +102,7 @@ endif()
 
 # Source files
 file(GLOB_RECURSE CORE_SOURCES 
+    "src/core/CoreBrightnessManager.cpp"
     "src/core/*.cpp" 
     "src/window/*.cpp" 
     "src/utils/*.cpp" 

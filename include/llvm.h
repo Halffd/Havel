@@ -1,22 +1,7 @@
 #pragma once
 // Safe LLVM wrapper - use this for LLVM code
 
-// Ensure X11 macros are not defined
-#ifdef None
-#undef None
-#endif
-#ifdef True
-#undef True
-#endif
-#ifdef False
-#undef False
-#endif
-#ifdef Bool
-#undef Bool
-#endif
-#ifdef Status
-#undef Status
-#endif
+#include "x11_defs.h" // Include X11 macro undefinitions first
 
 // Safe LLVM includes
 #include <llvm/IR/LLVMContext.h>

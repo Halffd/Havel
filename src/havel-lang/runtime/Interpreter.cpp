@@ -72,7 +72,7 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 }
 
 // Constructor
-Interpreter::Interpreter() {
+Interpreter::Interpreter() : coreBrightnessManager() {
     // Initialize system components
     io = std::make_unique<IO>();
     
@@ -257,13 +257,13 @@ HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression
                 if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
                     std::string moduleName = objIdentifier->symbol;
                     
-                    if (const auto* propIdentifier = dynamic__cast<const ast::Identifier*>(memberExpr->property.get())) {
+                    if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
                         std::string propName = propIdentifier->symbol;
                         
                         // Handle special properties
                         if (moduleName == "clipboard") {
                             if (propName == "out") {
-                                return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text();
+                                return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
                             }
                         }
                     }
@@ -492,12 +492,10 @@ void Interpreter::InitializeTextModule() {
             std::string text = Interpreter::ValueToString(args[0]);
             // Trim leading whitespace
             text.erase(0, text.find_first_not_of(" 	
-
-"));
+"));
             // Trim trailing whitespace
             text.erase(text.find_last_not_of(" 	
-
-") + 1);
+") + 1);
             return text;
         }
         return "";

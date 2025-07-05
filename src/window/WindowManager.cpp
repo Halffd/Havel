@@ -28,7 +28,7 @@ static str defaultTerminal = "Cmd";
 #endif
 
     // Initialize the static previousActiveWindow variable
-    XWindow havel::WindowManager::previousActiveWindow = None;
+    XWindow havel::WindowManager::previousActiveWindow = x11::XNone;
     WindowStats havel::WindowManager::activeWindow = {};
 
     WindowManager::WindowManager() {
@@ -92,8 +92,8 @@ static str defaultTerminal = "Cmd";
         }
 
         Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW",
-                                            False);
-        if (activeWindowAtom == None) return 0;
+                                            x11::XFalse);
+        if (activeWindowAtom == x11::XNone) return 0;
 
         Atom actualType;
         int actualFormat;
@@ -103,9 +103,9 @@ static str defaultTerminal = "Cmd";
 
         if (XGetWindowProperty(display, DefaultRootWindow(display),
                                activeWindowAtom, 0, 1,
-                               False, XA_WINDOW, &actualType, &actualFormat,
+                               x11::XFalse, XA_WINDOW, &actualType, &actualFormat,
                                &nitems, &bytesAfter,
-                               &prop) == Success) {
+                               &prop) == x11::XSuccess) {
             if (prop) {
                 activeWindow = *reinterpret_cast<Window *>(prop);
                 XFree(prop);
@@ -172,7 +172,7 @@ static str defaultTerminal = "Cmd";
 
         // Check if we have a valid previous window to switch to
         bool previousWindowValid = false;
-        if (previousActiveWindow != None && previousActiveWindow !=
+        if (previousActiveWindow != x11::XNone && previousActiveWindow !=
             currentActiveWindow) {
             XWindowAttributes attrs;
             if (XGetWindowAttributes(display, previousActiveWindow, &attrs) &&
@@ -196,12 +196,12 @@ static str defaultTerminal = "Cmd";
                     "Alt+Tab: Previous window " + std::to_string(
                         previousActiveWindow) +
                     " is no longer valid or viewable");
-                previousActiveWindow = None; // Reset invalid window
+                previousActiveWindow = x11::XNone; // Reset invalid window
             }
         }
 
         // If we don't have a valid previous window, find another suitable window
-        Window windowToActivate = None;
+        Window windowToActivate = x11::XNone;
 
         if (!previousWindowValid) {
             info("Alt+Tab: Looking for an alternative window");
@@ -209,11 +209,11 @@ static str defaultTerminal = "Cmd";
             // Get the list of windows
             Atom clientListAtom = XInternAtom(display,
                                               "_NET_CLIENT_LIST_STACKING",
-                                              False);
-            if (clientListAtom == None) {
+                                              x11::XFalse);
+            if (clientListAtom == x11::XNone) {
                 clientListAtom =
-                        XInternAtom(display, "_NET_CLIENT_LIST", False);
-                if (clientListAtom == None) {
+                        XInternAtom(display, "_NET_CLIENT_LIST", x11::XFalse);
+                if (clientListAtom == x11::XNone) {
                     error("Failed to get window list atom");
                     XCloseDisplay(display);
                     return;
@@ -226,10 +226,10 @@ static str defaultTerminal = "Cmd";
             unsigned char *data = nullptr;
 
             if (XGetWindowProperty(display, root, clientListAtom,
-                                   0, ~0L, False, XA_WINDOW,
+                                   0, ~0L, x11::XFalse, XA_WINDOW,
                                    &actualType, &actualFormat,
                                    &numWindows, &bytesAfter,
-                                   &data) != Success ||
+                                   &data) != x11::XSuccess ||
                 numWindows < 1) {
                 if (data) XFree(data);
                 error("Failed to get window list or empty list");
@@ -245,13 +245,13 @@ static str defaultTerminal = "Cmd";
                 unsigned long idx = i - 1; // Convert to zero-based index
 
                 if (windows[idx] != currentActiveWindow && windows[idx] !=
-                    None) {
+                    x11::XNone) {
                     XWindowAttributes attrs;
                     if (XGetWindowAttributes(display, windows[idx], &attrs) &&
                         attrs.map_state == IsViewable) {
                         // Check if this is a normal window (not a desktop, dock, etc.)
                         Atom windowTypeAtom = XInternAtom(
-                            display, "_NET_WM_WINDOW_TYPE", False);
+                            display, "_NET_WM_WINDOW_TYPE", x11::XFalse);
                         Atom actualType;
                         int actualFormat;
                         unsigned long numItems, bytesAfter;
@@ -260,16 +260,16 @@ static str defaultTerminal = "Cmd";
 
                         if (XGetWindowProperty(display, windows[idx],
                                                windowTypeAtom, 0, ~0L,
-                                               False, AnyPropertyType,
+                                               x11::XFalse, AnyPropertyType,
                                                &actualType, &actualFormat,
                                                &numItems, &bytesAfter,
-                                               &typeData) == Success &&
+                                               &typeData) == x11::XSuccess &&
                             typeData) {
                             Atom *types = reinterpret_cast<Atom *>(typeData);
                             Atom normalAtom = XInternAtom(
-                                display, "_NET_WM_WINDOW_TYPE_NORMAL", False);
+                                display, "_NET_WM_WINDOW_TYPE_NORMAL", x11::XFalse);
                             Atom dialogAtom = XInternAtom(
-                                display, "_NET_WM_WINDOW_TYPE_DIALOG", False);
+                                display, "_NET_WM_WINDOW_TYPE_DIALOG", x11::XFalse);
 
                             isNormalWindow = false;
                             for (unsigned long j = 0; j < numItems; j++) {
@@ -312,7 +312,7 @@ static str defaultTerminal = "Cmd";
         }
 
         // Store current window as previous before switching
-        if (currentActiveWindow != None) {
+        if (currentActiveWindow != x11::XNone) {
             previousActiveWindow = currentActiveWindow;
             debug(
                 "Alt+Tab: Stored current window as previous: " + std::to_string(
@@ -320,19 +320,19 @@ static str defaultTerminal = "Cmd";
         }
 
         // Activate the selected window
-        if (windowToActivate != None) {
+        if (windowToActivate != x11::XNone) {
             Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW",
-                                                False);
-            if (activeWindowAtom != None) {
+                                                x11::XFalse);
+            if (activeWindowAtom != x11::XNone) {
                 XEvent event = {};
-                event.type = ClientMessage;
+                event.type = x11::XClientMessage;
                 event.xclient.window = windowToActivate;
                 event.xclient.message_type = activeWindowAtom;
                 event.xclient.format = 32;
                 event.xclient.data.l[0] = 2; // Source: pager
                 event.xclient.data.l[1] = CurrentTime;
 
-                XSendEvent(display, root, False,
+                XSendEvent(display, root, x11::XFalse,
                            SubstructureRedirectMask | SubstructureNotifyMask,
                            &event);
 
@@ -350,7 +350,7 @@ static str defaultTerminal = "Cmd";
                 "Alt+Tab: Could not find a suitable window to switch to");
         }
 
-        XSync(display, x11::False);
+        XSync(display, x11::XFalse);
         XCloseDisplay(display);
 #endif
     }
@@ -369,8 +369,8 @@ static str defaultTerminal = "Cmd";
         }
 
         Atom pidAtom = XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID",
-                                   True);
-        if (pidAtom == None) {
+                                   x11::XTrue);
+        if (pidAtom == x11::XNone) {
             std::cerr << "X11 does not support _NET_WM_PID." << std::endl;
             return 0;
         }
@@ -387,9 +387,9 @@ static str defaultTerminal = "Cmd";
                 unsigned char *propPID = nullptr;
 
                 if (XGetWindowProperty(display, children[i], pidAtom, 0, 1,
-                                       False, XA_CARDINAL,
+                                       x11::XFalse, XA_CARDINAL,
                                        &actualType, &actualFormat, &nItems,
-                                       &bytesAfter, &propPID) == Success) {
+                                       &bytesAfter, &propPID) == x11::XSuccess) {
                     if (nItems > 0) {
                         pid_t windowPID = *reinterpret_cast<pid_t *>(propPID);
                         if (windowPID == pid) {
@@ -422,8 +422,8 @@ static str defaultTerminal = "Cmd";
         }
 
         Atom pidAtom = XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_PID",
-                                   True);
-        if (pidAtom == None) {
+                                   x11::XTrue);
+        if (pidAtom == x11::XNone) {
             std::cerr << "X11 does not support _NET_WM_PID." << std::endl;
             return 0;
         }
@@ -440,9 +440,9 @@ static str defaultTerminal = "Cmd";
                 unsigned char *propPID = nullptr;
 
                 if (XGetWindowProperty(display, children[i], pidAtom, 0, 1,
-                                       False, XA_CARDINAL,
+                                       x11::XFalse, XA_CARDINAL,
                                        &actualType, &actualFormat, &nItems,
-                                       &bytesAfter, &propPID) == Success) {
+                                       &bytesAfter, &propPID) == x11::XSuccess) {
                     if (nItems > 0) {
                         pid_t windowPID = *reinterpret_cast<pid_t *>(propPID);
                         std::string procName = getProcessName(windowPID);
@@ -681,10 +681,10 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         Atom netSupportingWmCheck = XInternAtom(
-            display, "_NET_SUPPORTING_WM_CHECK", False);
-        Atom netWmName = XInternAtom(display, "_NET_WM_NAME", False);
+            display, "_NET_SUPPORTING_WM_CHECK", x11::XFalse);
+        Atom netWmName = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
 
-        if (netSupportingWmCheck != None && netWmName != None) {
+        if (netSupportingWmCheck != x11::XNone && netWmName != x11::XNone) {
             Atom actualType;
             int actualFormat;
             unsigned long nItems, bytesAfter;
@@ -692,20 +692,20 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
             if (XGetWindowProperty(display, DefaultRootWindow(display),
                                    netSupportingWmCheck,
-                                   0, 1, False, XA_WINDOW, &actualType,
+                                   0, 1, x11::XFalse, XA_WINDOW, &actualType,
                                    &actualFormat,
                                    &nItems, &bytesAfter,
-                                   &data) == Success && data) {
+                                   &data) == x11::XSuccess && data) {
                 Window wmWindow = *(reinterpret_cast<Window *>(data));
                 XFree(data);
 
                 if (XGetWindowProperty(display, wmWindow, netWmName, 0, 1024,
-                                       False,
+                                       x11::XFalse,
                                        XInternAtom(
-                                           display, "UTF8_STRING", False),
+                                           display, "UTF8_STRING", x11::XFalse),
                                        &actualType, &actualFormat,
                                        &nItems, &bytesAfter,
-                                       &data) == Success && data) {
+                                       &data) == x11::XSuccess && data) {
                     std::string name(reinterpret_cast<char *>(data));
                     XFree(data);
                     return name;
@@ -724,12 +724,12 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         Display *display = DisplayManager::GetDisplay();
         if (!display) return false;
 
-        Atom wmProtocols = XInternAtom(display, "WM_PROTOCOLS", False);
-        Atom wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", False);
-        Atom wmTakeFocus = XInternAtom(display, "WM_TAKE_FOCUS", False);
+        Atom wmProtocols = XInternAtom(display, "WM_PROTOCOLS", x11::XFalse);
+        Atom wmDeleteWindow = XInternAtom(display, "WM_DELETE_WINDOW", x11::XFalse);
+        Atom wmTakeFocus = XInternAtom(display, "WM_TAKE_FOCUS", x11::XFalse);
 
-        if (wmProtocols != None && wmDeleteWindow != None && wmTakeFocus !=
-            None) {
+        if (wmProtocols != x11::XNone && wmDeleteWindow != x11::XNone && wmTakeFocus !=
+            x11::XNone) {
             Window dummyWindow = XCreateSimpleWindow(
                 display, DefaultRootWindow(display),
                 0, 0, 1, 1, 0, 0, 0);
@@ -907,9 +907,9 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         Window root = DisplayManager::GetRootWindow();
-        Atom desktopAtom = XInternAtom(display, "_NET_CURRENT_DESKTOP", False);
+        Atom desktopAtom = XInternAtom(display, "_NET_CURRENT_DESKTOP", x11::XFalse);
         Atom desktopCountAtom = XInternAtom(display, "_NET_NUMBER_OF_DESKTOPS",
-                                            False);
+                                            x11::XFalse);
 
         unsigned long nitems, bytes;
         unsigned char *data = NULL;
@@ -918,7 +918,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
         // Get current desktop
         XGetWindowProperty(display, root, desktopAtom,
-                           0, 1, False, XA_CARDINAL, &type, &format, &nitems,
+                           0, 1, x11::XFalse, XA_CARDINAL, &type, &format, &nitems,
                            &bytes, &data);
 
         int currentDesktop = *(int *) data;
@@ -926,7 +926,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
         // Get total desktops
         XGetWindowProperty(display, root, desktopCountAtom,
-                           0, 1, False, XA_CARDINAL, &type, &format, &nitems,
+                           0, 1, x11::XFalse, XA_CARDINAL, &type, &format, &nitems,
                            &bytes, &data);
 
         int totalDesktops = *(int *) data;
@@ -942,13 +942,13 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         XEvent event;
-        event.xclient.type = ClientMessage;
+        event.xclient.type = x11::XClientMessage;
         event.xclient.message_type = desktopAtom;
         event.xclient.format = 32;
         event.xclient.data.l[0] = newDesktop;
         event.xclient.data.l[1] = CurrentTime;
 
-        XSendEvent(display, root, False,
+        XSendEvent(display, root, x11::XFalse,
                    SubstructureRedirectMask | SubstructureNotifyMask, &event);
         XFlush(display);
 #endif
@@ -1011,10 +1011,10 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         // Get the current state
-        Atom wmState = XInternAtom(display, "_NET_WM_STATE", False);
-        Atom wmStateAbove = XInternAtom(display, "_NET_WM_STATE_ABOVE", False);
+        Atom wmState = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
+        Atom wmStateAbove = XInternAtom(display, "_NET_WM_STATE_ABOVE", x11::XFalse);
 
-        if (wmState == None || wmStateAbove == None) {
+        if (wmState == x11::XNone || wmStateAbove == x11::XNone) {
             std::cerr << "Required X11 atoms not available" << std::endl;
             return;
         }
@@ -1025,10 +1025,10 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         unsigned char *propData = NULL;
         bool isOnTop = false;
 
-        if (XGetWindowProperty(display, activeWindow, wmState, 0, 64, False,
+        if (XGetWindowProperty(display, activeWindow, wmState, 0, 64, x11::XFalse,
                                XA_ATOM,
                                &actualType, &actualFormat, &nitems, &bytesAfter,
-                               &propData) == Success) {
+                               &propData) == x11::XSuccess) {
             if (propData) {
                 Atom *atoms = (Atom *) propData;
                 for (unsigned long i = 0; i < nitems; i++) {
@@ -1046,7 +1046,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         XEvent event;
         memset(&event, 0, sizeof(event));
 
-        event.type = ClientMessage;
+        event.type = x11::XClientMessage;
         event.xclient.window = activeWindow;
         event.xclient.message_type = wmState;
         event.xclient.format = 32;
@@ -1055,7 +1055,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         event.xclient.data.l[2] = 0;
         event.xclient.data.l[3] = 1; // source is application
 
-        XSendEvent(display, root, False,
+        XSendEvent(display, root, x11::XFalse,
                    SubstructureNotifyMask | SubstructureRedirectMask, &event);
         XFlush(display);
 
@@ -1078,7 +1078,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
             return "";
         }
 
-        if (focusedWindow == None) {
+        if (focusedWindow == x11::XNone) {
             debug("No window currently focused");
             return "";
         }
@@ -1105,8 +1105,8 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         if (!display) return;
 
         Atom activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW",
-                                            False);
-        if (activeWindowAtom == None) return;
+                                            x11::XFalse);
+        if (activeWindowAtom == x11::XNone) return;
 
         Atom actualType;
         int actualFormat;
@@ -1115,15 +1115,15 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         activeWindow.className = GetActiveWindowClass();
         if (XGetWindowProperty(display, DefaultRootWindow(display),
                                activeWindowAtom, 0, 1,
-                               False, XA_WINDOW, &actualType, &actualFormat,
+                               x11::XFalse, XA_WINDOW, &actualType, &actualFormat,
                                &nitems, &bytesAfter,
-                               &prop) == Success) {
+                               &prop) == x11::XSuccess) {
             if (prop) {
                 Window currentActive = *reinterpret_cast<Window *>(prop);
                 XFree(prop);
 
                 // Only update if both windows are valid and different
-                if (currentActive != None && previousActiveWindow !=
+                if (currentActive != x11::XNone && previousActiveWindow !=
                     currentActive) {
                     previousActiveWindow = currentActive;
                     std::cout << "Updated previous active window to: " <<
@@ -1144,8 +1144,8 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         Window root = DefaultRootWindow(display);
 
         // Get active window
-        Atom activeAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", True);
-        if (activeAtom == None) {
+        Atom activeAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", x11::XTrue);
+        if (activeAtom == x11::XNone) {
             std::cerr << "No _NET_ACTIVE_WINDOW atom.\n";
             return;
         }
@@ -1155,10 +1155,10 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         unsigned long nItems, bytesAfter;
         unsigned char *prop = nullptr;
 
-        if (XGetWindowProperty(display, root, activeAtom, 0, 1, False,
+        if (XGetWindowProperty(display, root, activeAtom, 0, 1, x11::XFalse,
                                AnyPropertyType,
                                &actualType, &actualFormat, &nItems, &bytesAfter,
-                               &prop) != Success || !prop) {
+                               &prop) != x11::XSuccess || !prop) {
             std::cerr << "Failed to get active window.\n";
             return;
         }
@@ -1166,7 +1166,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         Window activeWin = *(Window *) prop;
         XFree(prop);
 
-        if (!activeWin || activeWin == None) {
+        if (!activeWin || activeWin == x11::XNone) {
             std::cerr << "No active window.\n";
             return;
         }
@@ -1195,17 +1195,17 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
 
         // Check if window is fullscreen
         bool isFullscreen = false;
-        Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", False);
-        Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", False);
+        Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
+        Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
         Atom typeRet;
         int formatRet;
         unsigned long nItemsRet, bytesAfterRet;
         unsigned char *propRet = nullptr;
 
-        if (XGetWindowProperty(display, activeWin, stateAtom, 0, (~0L), False,
+        if (XGetWindowProperty(display, activeWin, stateAtom, 0, (~0L), x11::XFalse,
                                AnyPropertyType,
                                &typeRet, &formatRet, &nItemsRet, &bytesAfterRet,
-                               &propRet) == Success && propRet) {
+                               &propRet) == x11::XSuccess && propRet) {
             Atom *states = (Atom *) propRet;
             for (unsigned long i = 0; i < nItemsRet; ++i) {
                 if (states[i] == fsAtom) {
@@ -1253,7 +1253,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
             }
 
             // Only consider active monitors (with valid mode)
-            if (crtc->mode != None) {
+            if (crtc->mode != x11::XNone) {
                 monitors.emplace_back(Monitor{
                     static_cast<unsigned int>(crtc->x),
                     static_cast<unsigned int>(crtc->y),
@@ -1323,7 +1323,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
                                          Atom stateAtom, Atom fsAtom,
                                          bool enable) {
         XEvent ev = {0};
-        ev.xclient.type = ClientMessage;
+        ev.xclient.type = x11::XClientMessage;
         ev.xclient.window = win;
         ev.xclient.message_type = stateAtom;
         ev.xclient.format = 32;
@@ -1332,7 +1332,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         ev.xclient.data.l[2] = 0;
         ev.xclient.data.l[3] = 1;
         ev.xclient.data.l[4] = 0;
-        XSendEvent(display, DefaultRootWindow(display), False,
+        XSendEvent(display, DefaultRootWindow(display), x11::XFalse,
                    SubstructureRedirectMask | SubstructureNotifyMask, &ev);
     }
 #ifdef WINDOWS

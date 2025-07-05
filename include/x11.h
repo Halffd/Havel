@@ -2,6 +2,8 @@
 // Safe X11 wrapper - use this instead of direct X11 includes
 namespace x11 {
     // X11 constants - use the actual macro values, not the names
+    using XStatus = int;
+    using XBool = int;
     constexpr unsigned long XNone = 0L;
     constexpr int XTrue = 1;
     constexpr int XFalse = 0;

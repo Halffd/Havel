@@ -143,7 +143,7 @@ void HavelApp::setupTimers() {
 
 void HavelApp::setupSignalHandling() {
     try {
-        havel::Util::blockAllSignals();
+        havel::util::blockAllSignals();
         signalWatcher.start();
         info("Signal handling initialized");
     } catch (const std::exception& e) {

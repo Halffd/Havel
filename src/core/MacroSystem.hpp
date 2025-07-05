@@ -17,8 +17,8 @@ public:
 private:
     struct MacroAction {
         enum ActionType { 
-            KeyPressAction, 
-            KeyReleaseAction, 
+            x11::XKeyPressAction, 
+            x11::XKeyReleaseAction, 
             MouseMoveAction, 
             MouseClickAction 
         };

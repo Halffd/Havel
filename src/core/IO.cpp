@@ -105,7 +105,7 @@ IO::~IO() {
         }
         
         // Sync to ensure all ungrabs are processed
-        XSync(display, x11::Xx11::XFalse);
+        XSync(display, x11::XFalse);
     }
     
     // Clean up uinput device
@@ -242,18 +242,18 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
       XUngrabKey(display, input, finalMods, root);
 
       if (exclusive) {
-        Status status = XGrabKey(display, input, finalMods, root, x11::XTrue,
+        x11::XStatus status = XGrabKey(display, input, finalMods, root, x11::XTrue,
                                  GrabModeAsync, GrabModeAsync);
-        if (status != Success) {
+        if (status != x11::XSuccess) {
           error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
         }
       } else {
-        XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
+        XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
       }
     }
   }
 
-  XSync(display, x11::Xx11::XFalse);
+  XSync(display, x11::XFalse);
 }
 
 void crash() {
@@ -275,7 +275,7 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
     XUngrabButton(display, input, modifiers | LockMask, root);
   }
 
-  XSync(display, x11::Xx11::XFalse);
+  XSync(display, x11::XFalse);
 }
 
 // X11 hotkey monitoring thread
@@ -289,7 +289,7 @@ void IO::MonitorHotkeys() {
   Window root = DefaultRootWindow(display);
 
   // Select events on the root window
-  XSelectInput(display, root, KeyPressMask | KeyReleaseMask);
+  XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
 
   // Helper function to check if a keysym is a modifier
   [[maybe_unused]] auto IsModifierKey = [](KeySym ks) -> bool {
@@ -307,9 +307,9 @@ void IO::MonitorHotkeys() {
       XNextEvent(display, &event);
 
       bool isDown = false;
-      if (event.type == KeyPress)
+      if (event.type == x11::XKeyPress)
         isDown = true;
-      else if (event.type == KeyRelease)
+      else if (event.type == x11::XKeyRelease)
         isDown = false;
       XKeyEvent *keyEvent = &event.xkey;
       KeySym keysym = XLookupKeysym(keyEvent, 0);
@@ -339,7 +339,7 @@ void IO::MonitorHotkeys() {
         continue;
       }
 
-      std::cout << (isDown ? "KeyPress" : "KeyRelease")
+      std::cout << (isDown ? "x11::XKeyPress" : "x11::XKeyRelease")
                 << " event detected: " << XKeysymToString(keysym)
                 << " (keycode: " << keyEvent->keycode << ")"
                 << " with state: " << keyEvent->state << std::endl;
@@ -1758,7 +1758,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
 
   // Grab the key
   if (XGrabKey(display, keycode, hotkey.modifiers, root, x11::XFalse, GrabModeAsync,
-               GrabModeAsync) != Success) {
+               GrabModeAsync) != x11::XSuccess) {
     std::cerr << "Failed to grab key: " << hotkey.alias << std::endl;
   }
 
@@ -1826,7 +1826,7 @@ int IO::GetKeyboard() {
   XEvent event;
   while (true) {
     XNextEvent(display, &event);
-    if (event.type == KeyPress) {
+    if (event.type == x11::XKeyPress) {
       std::cout << "Key pressed: " << event.xkey.keycode << std::endl;
     }
   }

@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <system_error>
 
-namespace Havel::Util {
+namespace havel::util {
 
 void SignalWatcher::logSignal(int sig) {
     const char* signame = "Unknown";

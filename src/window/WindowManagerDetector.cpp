@@ -206,8 +206,8 @@ bool WindowManagerDetector::CheckXProperty(const std::string& property) noexcept
             return false;
         }
         
-        Atom atom = XInternAtom(display, property.c_str(), False);
-        if (atom == None) {
+        Atom atom = XInternAtom(display, property.c_str(), x11::XFalse);
+        if (atom == x11::XNone) {
             XCloseDisplay(display);
             return false;
         }

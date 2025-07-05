@@ -74,9 +74,6 @@ namespace havel {
 
         void ReloadConfigurations();
 
-        // Add public getter for brightnessManager
-        havel::BrightnessManager &getBrightnessManager() { return coreBrightnessManager; }
-
         // Mode management
         void setMode(const std::string &mode);
 
@@ -131,6 +128,7 @@ namespace havel {
         // Clean up resources and release all keys
         void cleanup();
             static std::string currentMode;
+        BrightnessManager brightnessManager;
     private:
         void PlayPause();
         IO &io;
@@ -139,7 +137,6 @@ namespace havel {
         WindowManager &windowManager;
         MPVController &mpv;
         ScriptEngine &scriptEngine;
-        BrightnessManager coreBrightnessManager;
         Configs config;
 
         // Mode management

@@ -37,7 +37,7 @@ int main() {
                              GrabModeAsync, GrabModeAsync);
     
     // Force processing of any errors
-    XSync(display, False);
+    XSync(display, x11::False);
     
     if (status != Success) {
         std::cerr << "Failed to grab key (code: " << (int)keycode << ") with modifiers: 0" << std::endl;

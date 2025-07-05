@@ -105,7 +105,7 @@ IO::~IO() {
         }
         
         // Sync to ensure all ungrabs are processed
-        XSync(display, False);
+        XSync(display, x11::Xx11::XFalse);
     }
     
     // Clean up uinput device
@@ -231,9 +231,9 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
       XUngrabButton(display, input, finalMods, root);
 
       if (exclusive) {
-        XGrabButton(display, input, finalMods, root, True,
+        XGrabButton(display, input, finalMods, root, x11::XTrue,
                     ButtonPressMask | ButtonReleaseMask, GrabModeAsync,
-                    GrabModeAsync, None, None);
+                    GrabModeAsync, x11::XNone, x11::XNone);
       } else {
         XSelectInput(display, root, ButtonPressMask | ButtonReleaseMask);
       }
@@ -242,7 +242,7 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
       XUngrabKey(display, input, finalMods, root);
 
       if (exclusive) {
-        Status status = XGrabKey(display, input, finalMods, root, True,
+        Status status = XGrabKey(display, input, finalMods, root, x11::XTrue,
                                  GrabModeAsync, GrabModeAsync);
         if (status != Success) {
           error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
@@ -253,7 +253,7 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
     }
   }
 
-  XSync(display, False);
+  XSync(display, x11::Xx11::XFalse);
 }
 
 void crash() {
@@ -275,7 +275,7 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
     XUngrabButton(display, input, modifiers | LockMask, root);
   }
 
-  XSync(display, False);
+  XSync(display, x11::Xx11::XFalse);
 }
 
 // X11 hotkey monitoring thread
@@ -1757,7 +1757,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
   XUngrabKey(display, keycode, hotkey.modifiers, root);
 
   // Grab the key
-  if (XGrabKey(display, keycode, hotkey.modifiers, root, False, GrabModeAsync,
+  if (XGrabKey(display, keycode, hotkey.modifiers, root, x11::XFalse, GrabModeAsync,
                GrabModeAsync) != Success) {
     std::cerr << "Failed to grab key: " << hotkey.alias << std::endl;
   }
@@ -1816,7 +1816,7 @@ int IO::GetKeyboard() {
 
   Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
                                       1, 1, 0, 0, 0);
-  if (XGrabKeyboard(display, window, True, GrabModeAsync, GrabModeAsync,
+  if (XGrabKeyboard(display, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
                     CurrentTime) != GrabSuccess) {
     std::cerr << "Unable to grab keyboard!" << std::endl;
     XDestroyWindow(display, window);
@@ -1903,7 +1903,7 @@ void IO::PressKey(const std::string &keyName, bool press) {
   }
 
   // Send fake key event
-  XTestFakeKeyEvent(display, keycode, press ? True : False, CurrentTime);
+  XTestFakeKeyEvent(display, keycode, press ? x11::XTrue : x11::XFalse, CurrentTime);
   XFlush(display);
 #endif
 }

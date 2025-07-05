@@ -20,7 +20,7 @@ public:
 
     ClipboardManager* getClipboardManager() const { return clipboardMgr; }
     ScreenshotManager* getScreenshotManager() const { return screenshotMgr; }
-    GuiBrightnessManager* getBrightnessManager() const { return brightnessMgr; }
+    BrightnessPanel* getBrightnessManager() const { return brightnessMgr; }
     
     // Show settings window
     void showSettings();
@@ -32,7 +32,7 @@ private:
 
     ClipboardManager* clipboardMgr;
     ScreenshotManager* screenshotMgr;
-    GuiBrightnessManager* brightnessMgr;
+    BrightnessPanel* brightnessMgr;
     QSystemTrayIcon* trayIcon;
     QMenu* trayMenu;
     

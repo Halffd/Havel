@@ -1,7 +1,101 @@
 #pragma once
 // Safe X11 wrapper - use this instead of direct X11 includes
+namespace x11 {
+    // X11 constants - use the actual macro values, not the names
+    constexpr unsigned long XNone = 0L;
+    constexpr int XTrue = 1;
+    constexpr int XFalse = 0;
+    constexpr int XSuccess = 0;
+    constexpr int XBadRequest = 1;
+    constexpr int XBadValue = 2;
+    constexpr int XBadWindow = 3;
+    constexpr int XBadPixmap = 4;
+    constexpr int XBadAtom = 5;
+    constexpr int XBadCursor = 6;
+    constexpr int XBadFont = 7;
+    constexpr int XBadMatch = 8;
+    constexpr int XBadDrawable = 9;
+    constexpr int XBadAccess = 10;
+    constexpr int XBadAlloc = 11;
+    constexpr int XBadColor = 12;
+    constexpr int XBadGC = 13;
+    constexpr int XBadIDChoice = 14;
+    constexpr int XBadName = 15;
+    constexpr int XBadLength = 16;
+    constexpr int XBadImplementation = 17;
+    
+    // Event types
+    constexpr int XKeyPress = 2;
+    constexpr int XKeyRelease = 3;
+    constexpr int XButtonPress = 4;
+    constexpr int XButtonRelease = 5;
+    constexpr int XMotionNotify = 6;
+    constexpr int XEnterNotify = 7;
+    constexpr int XLeaveNotify = 8;
+    constexpr int XFocusIn = 9;
+    constexpr int XFocusOut = 10;
+    constexpr int XKeymapNotify = 11;
+    constexpr int XExpose = 12;
+    constexpr int XGraphicsExpose = 13;
+    constexpr int XNoExpose = 14;
+    constexpr int XVisibilityNotify = 15;
+    constexpr int XCreateNotify = 16;
+    constexpr int XDestroyNotify = 17;
+    constexpr int XUnmapNotify = 18;
+    constexpr int XMapNotify = 19;
+    constexpr int XMapRequest = 20;
+    constexpr int XReparentNotify = 21;
+    constexpr int XConfigureNotify = 22;
+    constexpr int XConfigureRequest = 23;
+    constexpr int XGravityNotify = 24;
+    constexpr int XResizeRequest = 25;
+    constexpr int XCirculateNotify = 26;
+    constexpr int XCirculateRequest = 27;
+    constexpr int XPropertyNotify = 28;
+    constexpr int XSelectionClear = 29;
+    constexpr int XSelectionRequest = 30;
+    constexpr int XSelectionNotify = 31;
+    constexpr int XColormapNotify = 32;
+    constexpr int XClientMessage = 33;
+    constexpr int XMappingNotify = 34;
+    constexpr int XGenericEventType = 35;  // Renamed to avoid collision
+    constexpr int XLASTEvent = 36;
+    
+    // Window classes
+    constexpr int XInputOutput = 1;
+    constexpr int XInputOnly = 2;
 
-// Include X11 headers FIRST (they will define the macros)
+    constexpr int XCurrentTime = 0L;
+    constexpr int XNoSymbol = 0L;
+    constexpr int XGrabModeSync = 0;
+    constexpr int XGrabModeAsync = 1;
+    constexpr int XRevertToNone = 0;
+    constexpr int XRevertToPointerRoot = 1;
+    constexpr int XRevertToParent = 2;
+    
+    // Grab status  
+    constexpr int XGrabSuccess = 0;
+    constexpr int XBadTime = 2;
+    constexpr int XGrabInvalidTime = 2;
+    constexpr int XGrabNotViewable = 3;
+    constexpr int XGrabFrozen = 4;
+    
+    // Window attributes
+    constexpr unsigned long XCWBackPixel = 1L<<1;
+    constexpr unsigned long XCWBorderPixel = 1L<<3;
+    constexpr unsigned long XCWEventMask = 1L<<11;
+    constexpr unsigned long XCWOverrideRedirect = 1L<<9;
+    
+    // Event masks
+    constexpr long XKeyPressMask = 1L<<0;
+    constexpr long XKeyReleaseMask = 1L<<1;
+    constexpr long XButtonPressMask = 1L<<2;
+    constexpr long XButtonReleaseMask = 1L<<3;
+    constexpr long XPointerMotionMask = 1L<<6;
+    constexpr long XStructureNotifyMask = 1L<<17;
+}
+
+// Include X11 headers 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XTest.h>
@@ -11,8 +105,73 @@
 #include <X11/XF86keysym.h>
 #include <X11/Xatom.h>
 
-// X11 types and constants in a safe namespace
-namespace havel::x11 {
+// IMMEDIATELY kill ALL X11 macros
+#undef None
+#undef True
+#undef False
+#undef Success
+#undef Status
+#undef Bool
+#undef Always
+#undef DestroyAll
+#undef Absolute
+#undef BadRequest
+#undef BadValue
+#undef BadWindow
+#undef BadPixmap
+#undef BadAtom
+#undef BadCursor
+#undef BadFont
+#undef BadMatch
+#undef BadDrawable
+#undef BadAccess
+#undef BadAlloc
+#undef BadColor
+#undef BadGC
+#undef BadIDChoice
+#undef BadName
+#undef BadLength
+#undef BadImplementation
+#undef KeyPress
+#undef KeyRelease
+#undef ButtonPress
+#undef ButtonRelease
+#undef MotionNotify
+#undef EnterNotify
+#undef LeaveNotify
+#undef FocusIn
+#undef FocusOut
+#undef KeymapNotify
+#undef Expose
+#undef GraphicsExpose
+#undef NoExpose
+#undef VisibilityNotify
+#undef CreateNotify
+#undef DestroyNotify
+#undef UnmapNotify
+#undef MapNotify
+#undef MapRequest
+#undef ReparentNotify
+#undef ConfigureNotify
+#undef ConfigureRequest
+#undef GravityNotify
+#undef ResizeRequest
+#undef CirculateNotify
+#undef CirculateRequest
+#undef PropertyNotify
+#undef SelectionClear
+#undef SelectionRequest
+#undef SelectionNotify
+#undef ColormapNotify
+#undef ClientMessage
+#undef MappingNotify
+#undef GenericEvent
+#undef LASTEvent
+#undef InputOutput
+#undef InputOnly
+
+// X11 types in safe namespace
+namespace x11 {
     // Type aliases
     using Display = ::Display;
     using Window = ::Window;
@@ -60,74 +219,10 @@ namespace havel::x11 {
     using XMappingEvent = ::XMappingEvent;
     using XErrorEvent = ::XErrorEvent;
     using XAnyEvent = ::XAnyEvent;
-    using XGenericEvent = ::XGenericEvent;
+    using XGenericEvent = ::XGenericEvent;  // Now safe - no collision
     using XGenericEventCookie = ::XGenericEventCookie;
     
-    // X11 constants - use the actual macro values, not the names
-    constexpr unsigned long X11_None = 0L;
-    constexpr int X11_True = 1;
-    constexpr int X11_False = 0;
-    constexpr int X11_Success = 0;
-    constexpr int X11_BadRequest = 1;
-    constexpr int X11_BadValue = 2;
-    constexpr int X11_BadWindow = 3;
-    constexpr int X11_BadPixmap = 4;
-    constexpr int X11_BadAtom = 5;
-    constexpr int X11_BadCursor = 6;
-    constexpr int X11_BadFont = 7;
-    constexpr int X11_BadMatch = 8;
-    constexpr int X11_BadDrawable = 9;
-    constexpr int X11_BadAccess = 10;
-    constexpr int X11_BadAlloc = 11;
-    constexpr int X11_BadColor = 12;
-    constexpr int X11_BadGC = 13;
-    constexpr int X11_BadIDChoice = 14;
-    constexpr int X11_BadName = 15;
-    constexpr int X11_BadLength = 16;
-    constexpr int X11_BadImplementation = 17;
-    
-    // Event types
-    constexpr int X11_KeyPress = 2;
-    constexpr int X11_KeyRelease = 3;
-    constexpr int X11_ButtonPress = 4;
-    constexpr int X11_ButtonRelease = 5;
-    constexpr int X11_MotionNotify = 6;
-    constexpr int X11_EnterNotify = 7;
-    constexpr int X11_LeaveNotify = 8;
-    constexpr int X11_FocusIn = 9;
-    constexpr int X11_FocusOut = 10;
-    constexpr int X11_KeymapNotify = 11;
-    constexpr int X11_Expose = 12;
-    constexpr int X11_GraphicsExpose = 13;
-    constexpr int X11_NoExpose = 14;
-    constexpr int X11_VisibilityNotify = 15;
-    constexpr int X11_CreateNotify = 16;
-    constexpr int X11_DestroyNotify = 17;
-    constexpr int X11_UnmapNotify = 18;
-    constexpr int X11_MapNotify = 19;
-    constexpr int X11_MapRequest = 20;
-    constexpr int X11_ReparentNotify = 21;
-    constexpr int X11_ConfigureNotify = 22;
-    constexpr int X11_ConfigureRequest = 23;
-    constexpr int X11_GravityNotify = 24;
-    constexpr int X11_ResizeRequest = 25;
-    constexpr int X11_CirculateNotify = 26;
-    constexpr int X11_CirculateRequest = 27;
-    constexpr int X11_PropertyNotify = 28;
-    constexpr int X11_SelectionClear = 29;
-    constexpr int X11_SelectionRequest = 30;
-    constexpr int X11_SelectionNotify = 31;
-    constexpr int X11_ColormapNotify = 32;
-    constexpr int X11_ClientMessage = 33;
-    constexpr int X11_MappingNotify = 34;
-    constexpr int X11_GenericEvent = 35;
-    constexpr int X11_LASTEvent = 36;
-    
-    // Window classes
-    constexpr int X11_InputOutput = 1;
-    constexpr int X11_InputOnly = 2;
-    
-    // Common functions (optional - for convenience)
+    // Function wrappers
     inline Display* OpenDisplay(const char* display_name) {
         return XOpenDisplay(display_name);
     }
@@ -136,23 +231,3 @@ namespace havel::x11 {
         return XCloseDisplay(display);
     }
 }
-
-// NOW undefine X11 macros to protect Qt/LLVM
-#ifdef None
-#undef None
-#endif
-#ifdef True
-#undef True
-#endif
-#ifdef False
-#undef False
-#endif
-#ifdef Success
-#undef Success
-#endif
-#ifdef Status
-#undef Status
-#endif
-#ifdef Bool
-#undef Bool
-#endif

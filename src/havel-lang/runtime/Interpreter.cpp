@@ -72,7 +72,7 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 }
 
 // Constructor
-Interpreter::Interpreter() : coreBrightnessManager() {
+Interpreter::Interpreter() {
     // Initialize system components
     io = std::make_unique<IO>();
     
@@ -491,11 +491,7 @@ void Interpreter::InitializeTextModule() {
         if (!args.empty()) {
             std::string text = Interpreter::ValueToString(args[0]);
             // Trim leading whitespace
-            text.erase(0, text.find_first_not_of(" 	
-"));
-            // Trim trailing whitespace
-            text.erase(text.find_last_not_of(" 	
-") + 1);
+            text = trim(text);
             return text;
         }
         return "";

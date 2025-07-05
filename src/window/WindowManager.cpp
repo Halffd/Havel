@@ -1084,7 +1084,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         XClassHint classHint;
-        Status status = XGetClassHint(display, focusedWindow, &classHint);
+        x11::XStatus status = XGetClassHint(display, focusedWindow, &classHint);
         if (status == 0) {
             debug("Failed to get class hint for window");
             return "";

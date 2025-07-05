@@ -798,7 +798,7 @@ void testIntegration(Tests& tf) {
             if (ast && ast->body.size() == 1) {
                 auto hotkeyBinding = dynamic_cast<havel::ast::HotkeyBinding*>(ast->body[0].get());
                 if (hotkeyBinding) {
-                    auto result = compiler.GenerateExpression(*hotkeyBinding->action);
+                    auto result = compiler.GenerateStatement(*hotkeyBinding->action);
                     return result != nullptr;
                 }
             }

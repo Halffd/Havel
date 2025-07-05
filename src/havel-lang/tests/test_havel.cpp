@@ -1,5 +1,4 @@
 // src/havel-lang/tests/test_havel.cpp
-#pragma once
 
 #ifdef Status
 #undef Status
@@ -15,8 +14,8 @@
 #include "../runtime/Engine.h"
 
 #ifdef HAVEL_ENABLE_LLVM
-#include "../compiler/Compiler.hpp"
-#include "../compiler/JIT.hpp"
+#include "../compiler/Compiler.h"
+#include "../compiler/JIT.h"
 #endif
 
 #include <iostream>

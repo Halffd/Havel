@@ -122,7 +122,7 @@ public:
         XEvent event;
         std::memset(&event, 0, sizeof(event));
         
-        event.type = KeyPress;
+        event.type = x11::XKeyPress;
         event.xkey.display = display;
         event.xkey.window = root;
         event.xkey.root = root;

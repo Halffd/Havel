@@ -407,10 +407,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
             io.Send("{w down}");
 
             // Register the same key to release when pressed again
-            static bool wKeyPressed = false;
-            wKeyPressed = !wKeyPressed;
+            static bool keyDown = false;
+            keyDown = !keyDown;
 
-            if (wKeyPressed) {
+            if (keyDown) {
                 info("W key pressed and held down");
             } else {
                 io.Send("{w up}");
@@ -1515,10 +1515,10 @@ void HotkeyManager::showBlackOverlay() {
 
     // Create black window attributes
     XSetWindowAttributes attrs;
-    attrs.override_redirect = True;  // Bypass window manager
+    attrs.override_redirect = x11::XTrue;  // Bypass window manager
     attrs.background_pixel = BlackPixel(display, DefaultScreen(display));
     attrs.border_pixel = BlackPixel(display, DefaultScreen(display));
-    attrs.event_mask = ButtonPressMask | KeyPressMask;  // Capture events to close it
+    attrs.event_mask = ButtonPressMask | x11::XKeyPressMask;  // Capture events to close it
 
     // Create the black window - save as X11's Window type, not our Window class
     ::Window blackWindow = XCreateWindow(display,
@@ -1527,7 +1527,7 @@ void HotkeyManager::showBlackOverlay() {
                                       screenWidth, screenHeight,       // width, height
                                       0,                               // border width
                                       CopyFromParent,                  // depth
-                                      InputOutput,                     // class
+                                      x11::XInputOutput,                     // class
                                       CopyFromParent,                  // visual
                                       CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
                                       &attrs);
@@ -1562,7 +1562,7 @@ void HotkeyManager::showBlackOverlay() {
                 XNextEvent(display, &event);
 
                 // Close on any key press or mouse click
-                if (event.type == KeyPress || event.type == ButtonPress) {
+                if (event.type == x11::XKeyPress || event.type == x11::XButtonPress) {
                     running = false;
                     info("Black overlay closed by user input");
                     break;

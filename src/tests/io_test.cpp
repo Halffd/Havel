@@ -104,7 +104,7 @@ public:
         XEvent event;
         memset(&event, 0, sizeof(event));
         
-        event.type = KeyPress;
+        event.type = x11::XKeyPress;
         event.xkey.keycode = XKeysymToKeycode(havel::DisplayManager::GetDisplay(), keysym);
         event.xkey.state = modifiers;
         

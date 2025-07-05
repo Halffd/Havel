@@ -17,6 +17,7 @@
 #include <unordered_map>
 #include <vector>
 #include <cstring>
+#include <cerrno>
 #include "x11.h"
 
 

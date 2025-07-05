@@ -60,7 +60,7 @@ private:
     std::unique_ptr<QMenu> trayMenu;
     
     // System components
-    havel::Util::SignalWatcher signalWatcher;
+    havel::util::SignalWatcher signalWatcher;
     Display* display = nullptr;
     
     // Timing

@@ -1,7 +1,7 @@
 #pragma once
 // Safe LLVM wrapper - use this for LLVM code
 
-#include "x11_defs.h" // Include X11 macro undefinitions first
+#include "x11.h" // Include X11 macro undefinitions first
 
 // Safe LLVM includes
 #include <llvm/IR/LLVMContext.h>

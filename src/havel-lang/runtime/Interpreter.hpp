@@ -7,6 +7,7 @@
 #include "window/WindowManager.hpp"
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
+#include "utils/Util.hpp"
 
 #include <memory>
 #include <unordered_map>

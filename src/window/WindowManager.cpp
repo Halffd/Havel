@@ -350,7 +350,7 @@ static str defaultTerminal = "Cmd";
                 "Alt+Tab: Could not find a suitable window to switch to");
         }
 
-        XSync(display, False);
+        XSync(display, x11::False);
         XCloseDisplay(display);
 #endif
     }

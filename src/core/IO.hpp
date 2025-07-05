@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
+#include <cstring>
 #include "x11.h"
 
 

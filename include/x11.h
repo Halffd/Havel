@@ -177,9 +177,6 @@ namespace x11 {
 #ifdef CursorShape
 #undef CursorShape
 #endif
-#ifdef emit
-#undef emit
-#endif
 #ifdef MCStreamer
 #undef MCStreamer
 #endif

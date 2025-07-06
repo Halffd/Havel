@@ -1,17 +1,7 @@
-// src/havel-lang/tests/test_havel.cpp
-
-#ifdef Status
-#undef Status
-#endif
-
-#ifdef CursorShape
-#undef CursorShape
-#endif
-
-#include "../lexer/Lexer.hpp"
-#include "../parser/Parser.h"
-#include "../runtime/Interpreter.hpp"
-#include "../runtime/Engine.h"
+#include "../havel-lang/lexer/Lexer.hpp"
+#include "../havel-lang/parser/Parser.h"
+#include "../havel-lang/runtime/Interpreter.hpp"
+#include "../havel-lang/runtime/Engine.h"
 
 #ifdef HAVEL_ENABLE_LLVM
 #include "../compiler/Compiler.h"
@@ -25,7 +15,7 @@
 #include <chrono>
 #include <vector>
 #include <sstream>
-#include "Tests.h"
+#include "../havel-lang/tests/Tests.h"
 
 // LEXER TESTS
 void testLexer(Tests& tf) {

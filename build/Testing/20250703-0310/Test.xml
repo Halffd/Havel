@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Site BuildName="(empty)"
+	BuildStamp="20250703-0310-Experimental"
+	Name="(empty)"
+	Generator="ctest-4.0.3-dirty"
+	CompilerName=""
+	CompilerVersion=""
+	OSName="Linux"
+	Hostname="half-pc"
+	OSRelease="6.15.4-zen2-1-zen"
+	OSVersion="#1 ZEN SMP PREEMPT_DYNAMIC Fri, 27 Jun 2025 15:34:50 +0000"
+	OSPlatform="x86_64"
+	Is64Bits="1"
+	VendorString="GenuineIntel"
+	VendorID="Intel Corporation"
+	FamilyID="6"
+	ModelID="158"
+	ModelName="Intel(R) Core(TM) i3-8300 CPU @ 3.70GHz"
+	ProcessorCacheSize="8192"
+	NumberOfLogicalCPU="4"
+	NumberOfPhysicalCPU="4"
+	TotalVirtualMemory="72786"
+	TotalPhysicalMemory="32008"
+	LogicalProcessorsPerPhysical="1"
+	ProcessorClockFrequency="3700"
+	>
+	<Testing>
+		<StartDateTime>Jul 05 14:33 -03</StartDateTime>
+		<StartTestTime>1751736799</StartTestTime>
+		<TestList/>
+		<EndDateTime>Jul 05 14:33 -03</EndDateTime>
+		<EndTestTime>1751736799</EndTestTime>
+		<ElapsedMinutes>0</ElapsedMinutes>
+	</Testing>
+</Site>

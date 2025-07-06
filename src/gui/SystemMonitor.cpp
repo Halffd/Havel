@@ -7,8 +7,15 @@
 #include <dirent.h>
 #include <QtCharts/QAbstractAxis>
 #include <QtCharts/QValueAxis>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QTabWidget>
+#include <QTreeWidgetItem>
 
-SystemMonitor::SystemMonitor(QWidget* parent) : havel::Window(parent) {
+#undef Window
+#undef None
+
+SystemMonitor::SystemMonitor(QWidget* parent) : QMainWindow(parent) {
     setupUI();
 
     timer = new QTimer(this);
@@ -22,26 +29,26 @@ void SystemMonitor::setupUI() {
     setWindowTitle("System Monitor");
     resize(800, 600);
 
-    havel::Widget* centralWidget = new havel::Widget(this);
+    QWidget* centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    havel::HLayout* mainLayout = new havel::HLayout(centralWidget);
-    havel::VLayout* leftLayout = new havel::VLayout();
-    havel::VLayout* rightLayout = new havel::VLayout();
+    QHBoxLayout* mainLayout = new QHBoxLayout(centralWidget);
+    QVBoxLayout* leftLayout = new QVBoxLayout();
+    QVBoxLayout* rightLayout = new QVBoxLayout();
     mainLayout->addLayout(leftLayout, 1);
     mainLayout->addLayout(rightLayout, 2);
 
     // Left side: Gauges and Labels
-    cpuLabel = new havel::Label("CPU Usage:", this);
-    cpuBar = new havel::ProgressBar(this);
+    cpuLabel = new QLabel("CPU Usage:", this);
+    cpuBar = new QProgressBar(this);
     cpuBar->setRange(0, 100);
 
-    memLabel = new havel::Label("Memory Usage:", this);
-    memBar = new havel::ProgressBar(this);
+    memLabel = new QLabel("Memory Usage:", this);
+    memBar = new QProgressBar(this);
     memBar->setRange(0, 100);
 
-    uptimeLabel = new havel::Label(this);
-    netLabel = new havel::Label(this);
+    uptimeLabel = new QLabel(this);
+    netLabel = new QLabel(this);
 
     leftLayout->addWidget(cpuLabel);
     leftLayout->addWidget(cpuBar);
@@ -51,12 +58,12 @@ void SystemMonitor::setupUI() {
     leftLayout->addWidget(netLabel);
 
     // Right side: Charts and Process List
-    havel::TabWidget* tabWidget = new havel::TabWidget(this);
+    QTabWidget* tabWidget = new QTabWidget(this);
     rightLayout->addWidget(tabWidget);
 
     // -- Charts Tab --
-    havel::Widget* chartsTab = new havel::Widget(this);
-    havel::VLayout* chartsLayout = new havel::VLayout(chartsTab);
+    QWidget* chartsTab = new QWidget(this);
+    QVBoxLayout* chartsLayout = new QVBoxLayout(chartsTab);
     tabWidget->addTab(chartsTab, "Usage Graphs");
 
     cpuChart = new QChart();
@@ -78,7 +85,7 @@ void SystemMonitor::setupUI() {
     chartsLayout->addWidget(memChartView);
 
     // -- Process List Tab --
-    processTree = new havel::TreeWidget(this);
+    processTree = new QTreeWidget(static_cast<QWidget*>(this));
     processTree->setHeaderLabels({"PID", "Name", "CPU %", "Memory"});
     tabWidget->addTab(processTree, "Processes");
 }

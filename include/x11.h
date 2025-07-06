@@ -102,6 +102,9 @@ namespace x11 {
 #include <X11/Xutil.h>
 #include <X11/extensions/XTest.h>
 #include <X11/extensions/Xrandr.h>
+#include <X11/extensions/XInput2.h>
+#include <X11/extensions/Xfixes.h>
+#include <X11/extensions/Xge.h>
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 #include <X11/XF86keysym.h>
@@ -171,6 +174,15 @@ namespace x11 {
 #undef LASTEvent
 #undef InputOutput
 #undef InputOnly
+#ifdef CursorShape
+#undef CursorShape
+#endif
+#ifdef emit
+#undef emit
+#endif
+#ifdef MCStreamer
+#undef MCStreamer
+#endif
 
 // X11 types in safe namespace
 namespace x11 {

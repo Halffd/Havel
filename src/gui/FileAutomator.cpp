@@ -1,6 +1,7 @@
 #include "FileAutomator.hpp"
+#include <QMainWindow>
 
-FileAutomator::FileAutomator(QWidget* parent) : havel::Window(parent) {
+FileAutomator::FileAutomator(QWidget* parent) : QMainWindow(parent) {
     setupUI();
 }
 

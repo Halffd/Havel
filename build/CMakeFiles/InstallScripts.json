@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/all/repos/havel/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

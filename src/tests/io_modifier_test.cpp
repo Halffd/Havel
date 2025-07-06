@@ -11,7 +11,7 @@
 #include <cstring> // For memset
 #include "../core/DisplayManager.hpp"
 #include "../core/IO.hpp"
-
+#include "x11.h"
 // Test framework macros
 #define TEST_ASSERT(condition) do { \
     if (!(condition)) { \
@@ -126,7 +126,7 @@ public:
         event.xkey.display = display;
         event.xkey.window = root;
         event.xkey.root = root;
-        event.xkey.subwindow = None;
+        event.xkey.subwindow = x11::XNone;
         event.xkey.time = CurrentTime;
         event.xkey.x = 1;
         event.xkey.y = 1;
@@ -134,7 +134,7 @@ public:
         event.xkey.y_root = 1;
         event.xkey.state = modifiers;
         event.xkey.keycode = XKeysymToKeycode(display, keysym);
-        event.xkey.same_screen = True;
+        event.xkey.same_screen = x11::XTrue;
         
         return event;
     }

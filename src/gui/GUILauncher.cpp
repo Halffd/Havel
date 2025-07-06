@@ -1,6 +1,10 @@
 #include "GUILauncher.hpp"
+#include <QMainWindow>
+#include <QWidget>
+#include <QPushButton>
+#include <QVBoxLayout>
 
-GUILauncher::GUILauncher(QWidget* parent) : havel::Window(parent) {
+GUILauncher::GUILauncher(QWidget* parent) : QMainWindow(parent) {
     setupUI();
     systemMonitor = nullptr;
     fileAutomator = nullptr;
@@ -11,19 +15,19 @@ void GUILauncher::setupUI() {
     setWindowTitle("Havel GUI Launcher");
     resize(300, 200);
 
-    havel::Widget* centralWidget = new havel::Widget(this);
+    QWidget* centralWidget = new QWidget(this);
     setCentralWidget(centralWidget);
 
-    havel::Layout* layout = new havel::Layout(centralWidget);
+    QVBoxLayout* layout = new QVBoxLayout(centralWidget);
 
-    havel::Button* sysMonButton = new havel::Button("System Monitor", this);
-    connect(sysMonButton, &havel::Button::clicked, this, &GUILauncher::showSystemMonitor);
+    QPushButton* sysMonButton = new QPushButton("System Monitor", this);
+    connect(sysMonButton, &QPushButton::clicked, this, &GUILauncher::showSystemMonitor);
 
-    havel::Button* fileAutoButton = new havel::Button("File Automator", this);
-    connect(fileAutoButton, &havel::Button::clicked, this, &GUILauncher::showFileAutomator);
+    QPushButton* fileAutoButton = new QPushButton("File Automator", this);
+    connect(fileAutoButton, &QPushButton::clicked, this, &GUILauncher::showFileAutomator);
 
-    havel::Button* scriptRunButton = new havel::Button("Script Runner", this);
-    connect(scriptRunButton, &havel::Button::clicked, this, &GUILauncher::showScriptRunner);
+    QPushButton* scriptRunButton = new QPushButton("Script Runner", this);
+    connect(scriptRunButton, &QPushButton::clicked, this, &GUILauncher::showScriptRunner);
 
     layout->addWidget(sysMonButton);
     layout->addWidget(fileAutoButton);

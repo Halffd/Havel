@@ -1,0 +1,800 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineSystem.cmake:205 (message)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      The system is: Linux - 6.15.4-zen2-1-zen - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /usr/bin/clang 
+      Build flags: -O3;-march=native;-mtune=skylake;-mavx2;-mfma;-mf16c;-maes;-mpclmul;-flto;-ffast-math;-pipe;-fomit-frame-pointer;-ftree-vectorize;-fPIC
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is Clang, found in:
+        /home/all/repos/havel/build/CMakeFiles/4.0.3-dirty/CompilerIdC/a.out
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCXXCompiler.cmake:126 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Compiling the CXX compiler identification source file "CMakeCXXCompilerId.cpp" succeeded.
+      Compiler: /usr/bin/clang++ 
+      Build flags: -O3;-march=native;-mtune=skylake;-mavx2;-mfma;-mf16c;-maes;-mpclmul;-flto;-ffast-math;-pipe;-fomit-frame-pointer;-ftree-vectorize;-fPIC
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the CXX compiler identification source "CMakeCXXCompilerId.cpp" produced "a.out"
+      
+      The CXX compiler identification is Clang, found in:
+        /home/all/repos/havel/build/CMakeFiles/4.0.3-dirty/CompilerIdCXX/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_b4bec
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC    -v -MD -MT CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake/Modules/CMakeCCompilerABI.c
+        clang version 20.1.7
+        Target: x86_64-pc-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/bin
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Candidate multilib: .;@m64
+        Candidate multilib: 32;@m32
+        Selected multilib: .;@m64
+        Found CUDA installation: /opt/cuda, version 
+         (in-process)
+         "/usr/bin/clang-20" -cc1 -triple x86_64-pc-linux-gnu -emit-llvm-bc -flto=full -flto-unit -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -fhalf-no-semantic-interposition -mframe-pointer=none -menable-no-infs -menable-no-nans -fapprox-func -funsafe-math-optimizations -fno-signed-zeros -mreassociate -freciprocal-math -ffp-contract=fast -fno-rounding-math -ffast-math -ffinite-math-only -complex-range=basic -mconstructor-aliases -funwind-tables=2 -target-cpu skylake -target-feature +prfchw -target-feature -cldemote -target-feature +avx -target-feature +sahf -target-feature -xop -target-feature +crc32 -target-feature -amx-fp8 -target-feature +xsaves -target-feature -avx512fp16 -target-feature -usermsr -target-feature -sm4 -target-feature -egpr -target-feature +sse4.1 -target-feature -avx512ifma -target-feature +xsave -target-feature +sse4.2 -target-feature -tsxldtrk -target-feature -sm3 -target-feature -ptwrite -target-feature -widekl -target-feature -movrs -target-feature +invpcid -target-feature +64bit -target-feature +xsavec -target-feature -avx10.1-512 -target-feature -avx512vpopcntdq -target-feature +cmov -target-feature -avx512vp2intersect -target-feature -avx512cd -target-feature +movbe -target-feature -avxvnniint8 -target-feature -ccmp -target-feature -amx-int8 -target-feature -kl -target-feature -avx10.1-256 -target-feature -sha512 -target-feature -avxvnni -target-feature -rtm -target-feature +adx -target-feature -hreset -target-feature -movdiri -target-feature -serialize -target-feature -vpclmulqdq -target-feature -avx512vl -target-feature -uintr -target-feature -cf -target-feature +clflushopt -target-feature -raoint -target-feature -cmpccxadd -target-feature +bmi -target-feature -amx-tile -target-feature +sse -target-feature -avx10.2-256 -target-feature -gfni -target-feature -avxvnniint16 -target-feature -amx-fp16 -target-feature -zu -target-feature -ndd -target-feature +xsaveopt -target-feature +rdrnd -target-feature -avx512f -target-feature -amx-bf16 -target-feature -avx512bf16 -target-feature -avx512vnni -target-feature -push2pop2 -target-feature +cx8 -target-feature -avx512bw -target-feature +sse3 -target-feature -pku -target-feature -nf -target-feature -amx-tf32 -target-feature -amx-avx512 -target-feature +fsgsbase -target-feature -clzero -target-feature -mwaitx -target-feature -lwp -target-feature +lzcnt -target-feature -sha -target-feature -movdir64b -target-feature -ppx -target-feature -wbnoinvd -target-feature -enqcmd -target-feature -amx-transpose -target-feature -avx10.2-512 -target-feature -avxneconvert -target-feature -tbm -target-feature -pconfig -target-feature -amx-complex -target-feature +ssse3 -target-feature +cx16 -target-feature +bmi2 -target-feature +popcnt -target-feature -avxifma -target-feature -avx512bitalg -target-feature -rdpru -target-feature -clwb -target-feature +mmx -target-feature +sse2 -target-feature +rdseed -target-feature -avx512vbmi2 -target-feature -prefetchi -target-feature -amx-movrs -target-feature -rdpid -target-feature -fma4 -target-feature -avx512vbmi -target-feature -shstk -target-feature -vaes -target-feature -waitpkg -target-feature +sgx -target-feature +fxsr -target-feature -avx512dq -target-feature -sse4a -target-feature +avx2 -target-feature +fma -target-feature +f16c -target-feature +aes -target-feature +pclmul -tune-cpu skylake -debugger-tuning=gdb -fdebug-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT -v -fcoverage-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT -resource-dir /usr/lib/clang/20 -dependency-file CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -sys-header-deps -internal-isystem /usr/lib/clang/20/include -internal-isystem /usr/local/include -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include -internal-externc-isystem /include -internal-externc-isystem /usr/include -O3 -ferror-limit 19 -stack-protector 2 -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -vectorize-loops -vectorize-slp -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -x c /usr/share/cmake/Modules/CMakeCCompilerABI.c
+        clang -cc1 version 20.1.7 based upon LLVM 20.1.7 default target x86_64-pc-linux-gnu
+        ignoring nonexistent directory "/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include"
+        ignoring nonexistent directory "/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/lib/clang/20/include
+         /usr/local/include
+         /usr/include
+        End of search list.
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu -v -Wl,-v CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -o cmTC_b4bec   && :
+        clang version 20.1.7
+        Target: x86_64-pc-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/bin
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Candidate multilib: .;@m64
+        Candidate multilib: 32;@m32
+        Selected multilib: .;@m64
+        Found CUDA installation: /opt/cuda, version 
+         "/usr/bin/ld" --hash-style=gnu --build-id --eh-frame-hdr -m elf_x86_64 -pie -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_b4bec /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1 -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/lib -L/usr/lib -plugin /usr/bin/../lib/LLVMgold.so -plugin-opt=mcpu=skylake -plugin-opt=O3 -O1 --as-needed --hash-style=gnu -v CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -lgcc --as-needed -lgcc_s --no-as-needed -lc -lgcc --as-needed -lgcc_s --no-as-needed /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o
+        GNU ld (GNU Binutils) 2.44.0
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:191 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/lib/clang/20/include]
+          add: [/usr/local/include]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/lib/clang/20/include] ==> [/usr/lib/clang/20/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/lib/clang/20/include;/usr/local/include;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:227 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
+        ignore line: [Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT']
+        ignore line: []
+        ignore line: [Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_b4bec]
+        ignore line: [[1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC    -v -MD -MT CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -MF CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o.d -o CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake/Modules/CMakeCCompilerABI.c]
+        ignore line: [clang version 20.1.7]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/bin]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Candidate multilib: 32]
+        ignore line: [@m32]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [Found CUDA installation: /opt/cuda  version ]
+        ignore line: [ (in-process)]
+        ignore line: [ "/usr/bin/clang-20" -cc1 -triple x86_64-pc-linux-gnu -emit-llvm-bc -flto=full -flto-unit -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCCompilerABI.c -mrelocation-model pic -pic-level 2 -fhalf-no-semantic-interposition -mframe-pointer=none -menable-no-infs -menable-no-nans -fapprox-func -funsafe-math-optimizations -fno-signed-zeros -mreassociate -freciprocal-math -ffp-contract=fast -fno-rounding-math -ffast-math -ffinite-math-only -complex-range=basic -mconstructor-aliases -funwind-tables=2 -target-cpu skylake -target-feature +prfchw -target-feature -cldemote -target-feature +avx -target-feature +sahf -target-feature -xop -target-feature +crc32 -target-feature -amx-fp8 -target-feature +xsaves -target-feature -avx512fp16 -target-feature -usermsr -target-feature -sm4 -target-feature -egpr -target-feature +sse4.1 -target-feature -avx512ifma -target-feature +xsave -target-feature +sse4.2 -target-feature -tsxldtrk -target-feature -sm3 -target-feature -ptwrite -target-feature -widekl -target-feature -movrs -target-feature +invpcid -target-feature +64bit -target-feature +xsavec -target-feature -avx10.1-512 -target-feature -avx512vpopcntdq -target-feature +cmov -target-feature -avx512vp2intersect -target-feature -avx512cd -target-feature +movbe -target-feature -avxvnniint8 -target-feature -ccmp -target-feature -amx-int8 -target-feature -kl -target-feature -avx10.1-256 -target-feature -sha512 -target-feature -avxvnni -target-feature -rtm -target-feature +adx -target-feature -hreset -target-feature -movdiri -target-feature -serialize -target-feature -vpclmulqdq -target-feature -avx512vl -target-feature -uintr -target-feature -cf -target-feature +clflushopt -target-feature -raoint -target-feature -cmpccxadd -target-feature +bmi -target-feature -amx-tile -target-feature +sse -target-feature -avx10.2-256 -target-feature -gfni -target-feature -avxvnniint16 -target-feature -amx-fp16 -target-feature -zu -target-feature -ndd -target-feature +xsaveopt -target-feature +rdrnd -target-feature -avx512f -target-feature -amx-bf16 -target-feature -avx512bf16 -target-feature -avx512vnni -target-feature -push2pop2 -target-feature +cx8 -target-feature -avx512bw -target-feature +sse3 -target-feature -pku -target-feature -nf -target-feature -amx-tf32 -target-feature -amx-avx512 -target-feature +fsgsbase -target-feature -clzero -target-feature -mwaitx -target-feature -lwp -target-feature +lzcnt -target-feature -sha -target-feature -movdir64b -target-feature -ppx -target-feature -wbnoinvd -target-feature -enqcmd -target-feature -amx-transpose -target-feature -avx10.2-512 -target-feature -avxneconvert -target-feature -tbm -target-feature -pconfig -target-feature -amx-complex -target-feature +ssse3 -target-feature +cx16 -target-feature +bmi2 -target-feature +popcnt -target-feature -avxifma -target-feature -avx512bitalg -target-feature -rdpru -target-feature -clwb -target-feature +mmx -target-feature +sse2 -target-feature +rdseed -target-feature -avx512vbmi2 -target-feature -prefetchi -target-feature -amx-movrs -target-feature -rdpid -target-feature -fma4 -target-feature -avx512vbmi -target-feature -shstk -target-feature -vaes -target-feature -waitpkg -target-feature +sgx -target-feature +fxsr -target-feature -avx512dq -target-feature -sse4a -target-feature +avx2 -target-feature +fma -target-feature +f16c -target-feature +aes -target-feature +pclmul -tune-cpu skylake -debugger-tuning=gdb -fdebug-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT -v -fcoverage-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-JVeMUT -resource-dir /usr/lib/clang/20 -dependency-file CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o.d -MT CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -sys-header-deps -internal-isystem /usr/lib/clang/20/include -internal-isystem /usr/local/include -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include -internal-externc-isystem /include -internal-externc-isystem /usr/include -O3 -ferror-limit 19 -stack-protector 2 -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -vectorize-loops -vectorize-slp -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -x c /usr/share/cmake/Modules/CMakeCCompilerABI.c]
+        ignore line: [clang -cc1 version 20.1.7 based upon LLVM 20.1.7 default target x86_64-pc-linux-gnu]
+        ignore line: [ignoring nonexistent directory "/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include"]
+        ignore line: [ignoring nonexistent directory "/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/lib/clang/20/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl -O1 -Wl --as-needed -Wl --hash-style=gnu -v -Wl -v CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -o cmTC_b4bec   && :]
+        ignore line: [clang version 20.1.7]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/bin]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Candidate multilib: 32]
+        ignore line: [@m32]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [Found CUDA installation: /opt/cuda  version ]
+        link line: [ "/usr/bin/ld" --hash-style=gnu --build-id --eh-frame-hdr -m elf_x86_64 -pie -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_b4bec /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1 -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/lib -L/usr/lib -plugin /usr/bin/../lib/LLVMgold.so -plugin-opt=mcpu=skylake -plugin-opt=O3 -O1 --as-needed --hash-style=gnu -v CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o -lgcc --as-needed -lgcc_s --no-as-needed -lc -lgcc --as-needed -lgcc_s --no-as-needed /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o]
+          arg [/usr/bin/ld] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_b4bec] ==> ignore
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o]
+          arg [-L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1] ==> dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+          arg [-L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64] ==> dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64]
+          arg [-L/lib/../lib64] ==> dir [/lib/../lib64]
+          arg [-L/usr/lib/../lib64] ==> dir [/usr/lib/../lib64]
+          arg [-L/lib] ==> dir [/lib]
+          arg [-L/usr/lib] ==> dir [/usr/lib]
+          arg [-plugin] ==> ignore
+          arg [/usr/bin/../lib/LLVMgold.so] ==> ignore
+          arg [-plugin-opt=mcpu=skylake] ==> ignore
+          arg [-plugin-opt=O3] ==> ignore
+          arg [-O1] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_b4bec.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--no-as-needed] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--no-as-needed] ==> ignore
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o]
+        linker tool for 'C': /usr/bin/ld
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o] ==> [/usr/lib64/Scrt1.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o] ==> [/usr/lib64/crti.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o] ==> [/usr/lib64/crtn.o]
+        collapse library dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        collapse library dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64] ==> [/usr/lib64]
+        collapse library dir [/lib/../lib64] ==> [/lib64]
+        collapse library dir [/usr/lib/../lib64] ==> [/usr/lib64]
+        collapse library dir [/lib] ==> [/lib]
+        collapse library dir [/usr/lib] ==> [/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/usr/lib64/Scrt1.o;/usr/lib64/crti.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o;/usr/lib64/crtn.o]
+        implicit dirs: [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1;/usr/lib64;/lib64;/lib;/usr/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:36 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:270 (cmake_determine_linker_id)"
+      - "/usr/share/cmake/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the C compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils) 2.44.0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:83 (try_compile)"
+      - "/usr/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    checks:
+      - "Detecting CXX compiler ABI info"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_CXX_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_CXX_FLAGS_DEBUG: "-g"
+      CMAKE_CXX_SCAN_FOR_MODULES: "OFF"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_CXX_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_08dc8
+        [1/2] /usr/bin/clang++   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC    -v -MD -MT CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake/Modules/CMakeCXXCompilerABI.cpp
+        clang version 20.1.7
+        Target: x86_64-pc-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/bin
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Candidate multilib: .;@m64
+        Candidate multilib: 32;@m32
+        Selected multilib: .;@m64
+        Found CUDA installation: /opt/cuda, version 
+         (in-process)
+         "/usr/bin/clang++" -cc1 -triple x86_64-pc-linux-gnu -emit-llvm-bc -flto=full -flto-unit -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -fhalf-no-semantic-interposition -mframe-pointer=none -menable-no-infs -menable-no-nans -fapprox-func -funsafe-math-optimizations -fno-signed-zeros -mreassociate -freciprocal-math -ffp-contract=fast -fno-rounding-math -ffast-math -ffinite-math-only -complex-range=basic -mconstructor-aliases -funwind-tables=2 -target-cpu skylake -target-feature +prfchw -target-feature -cldemote -target-feature +avx -target-feature +sahf -target-feature -xop -target-feature +crc32 -target-feature -amx-fp8 -target-feature +xsaves -target-feature -avx512fp16 -target-feature -usermsr -target-feature -sm4 -target-feature -egpr -target-feature +sse4.1 -target-feature -avx512ifma -target-feature +xsave -target-feature +sse4.2 -target-feature -tsxldtrk -target-feature -sm3 -target-feature -ptwrite -target-feature -widekl -target-feature -movrs -target-feature +invpcid -target-feature +64bit -target-feature +xsavec -target-feature -avx10.1-512 -target-feature -avx512vpopcntdq -target-feature +cmov -target-feature -avx512vp2intersect -target-feature -avx512cd -target-feature +movbe -target-feature -avxvnniint8 -target-feature -ccmp -target-feature -amx-int8 -target-feature -kl -target-feature -avx10.1-256 -target-feature -sha512 -target-feature -avxvnni -target-feature -rtm -target-feature +adx -target-feature -hreset -target-feature -movdiri -target-feature -serialize -target-feature -vpclmulqdq -target-feature -avx512vl -target-feature -uintr -target-feature -cf -target-feature +clflushopt -target-feature -raoint -target-feature -cmpccxadd -target-feature +bmi -target-feature -amx-tile -target-feature +sse -target-feature -avx10.2-256 -target-feature -gfni -target-feature -avxvnniint16 -target-feature -amx-fp16 -target-feature -zu -target-feature -ndd -target-feature +xsaveopt -target-feature +rdrnd -target-feature -avx512f -target-feature -amx-bf16 -target-feature -avx512bf16 -target-feature -avx512vnni -target-feature -push2pop2 -target-feature +cx8 -target-feature -avx512bw -target-feature +sse3 -target-feature -pku -target-feature -nf -target-feature -amx-tf32 -target-feature -amx-avx512 -target-feature +fsgsbase -target-feature -clzero -target-feature -mwaitx -target-feature -lwp -target-feature +lzcnt -target-feature -sha -target-feature -movdir64b -target-feature -ppx -target-feature -wbnoinvd -target-feature -enqcmd -target-feature -amx-transpose -target-feature -avx10.2-512 -target-feature -avxneconvert -target-feature -tbm -target-feature -pconfig -target-feature -amx-complex -target-feature +ssse3 -target-feature +cx16 -target-feature +bmi2 -target-feature +popcnt -target-feature -avxifma -target-feature -avx512bitalg -target-feature -rdpru -target-feature -clwb -target-feature +mmx -target-feature +sse2 -target-feature +rdseed -target-feature -avx512vbmi2 -target-feature -prefetchi -target-feature -amx-movrs -target-feature -rdpid -target-feature -fma4 -target-feature -avx512vbmi -target-feature -shstk -target-feature -vaes -target-feature -waitpkg -target-feature +sgx -target-feature +fxsr -target-feature -avx512dq -target-feature -sse4a -target-feature +avx2 -target-feature +fma -target-feature +f16c -target-feature +aes -target-feature +pclmul -tune-cpu skylake -debugger-tuning=gdb -fdebug-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9 -v -fcoverage-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9 -resource-dir /usr/lib/clang/20 -dependency-file CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1 -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward -internal-isystem /usr/lib/clang/20/include -internal-isystem /usr/local/include -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include -internal-externc-isystem /include -internal-externc-isystem /usr/include -O3 -fdeprecated-macro -ferror-limit 19 -stack-protector 2 -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -vectorize-loops -vectorize-slp -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake/Modules/CMakeCXXCompilerABI.cpp
+        clang -cc1 version 20.1.7 based upon LLVM 20.1.7 default target x86_64-pc-linux-gnu
+        ignoring nonexistent directory "/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include"
+        ignoring nonexistent directory "/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1
+         /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu
+         /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward
+         /usr/lib/clang/20/include
+         /usr/local/include
+         /usr/include
+        End of search list.
+        [2/2] : && /usr/bin/clang++ -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu -v -Wl,-v CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_08dc8   && :
+        clang version 20.1.7
+        Target: x86_64-pc-linux-gnu
+        Thread model: posix
+        InstalledDir: /usr/bin
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1
+        Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1
+        Candidate multilib: .;@m64
+        Candidate multilib: 32;@m32
+        Selected multilib: .;@m64
+        Found CUDA installation: /opt/cuda, version 
+         "/usr/bin/ld" --hash-style=gnu --build-id --eh-frame-hdr -m elf_x86_64 -pie -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_08dc8 /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1 -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/lib -L/usr/lib -plugin /usr/bin/../lib/LLVMgold.so -plugin-opt=mcpu=skylake -plugin-opt=O3 -O1 --as-needed --hash-style=gnu -v CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o
+        GNU ld (GNU Binutils) 2.44.0
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:191 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1]
+          add: [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu]
+          add: [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward]
+          add: [/usr/lib/clang/20/include]
+          add: [/usr/local/include]
+          add: [/usr/include]
+        end of search list found
+        collapse include dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1] ==> [/usr/include/c++/15.1.1]
+        collapse include dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu] ==> [/usr/include/c++/15.1.1/x86_64-pc-linux-gnu]
+        collapse include dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward] ==> [/usr/include/c++/15.1.1/backward]
+        collapse include dir [/usr/lib/clang/20/include] ==> [/usr/lib/clang/20/include]
+        collapse include dir [/usr/local/include] ==> [/usr/local/include]
+        collapse include dir [/usr/include] ==> [/usr/include]
+        implicit include dirs: [/usr/include/c++/15.1.1;/usr/include/c++/15.1.1/x86_64-pc-linux-gnu;/usr/include/c++/15.1.1/backward;/usr/lib/clang/20/include;/usr/local/include;/usr/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:227 (message)"
+      - "/usr/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Parsed CXX implicit link information:
+        link line regex: [^( *|.*[/\\])(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        linker tool regex: [^[ 	]*(->|")?[ 	]*(([^"]*[/\\])?(ld[0-9]*(|\\.[a-rt-z][a-z]*|\\.s[a-np-z][a-z]*|\\.so[a-z]+)))("|,| |$)]
+        ignore line: [Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9']
+        ignore line: []
+        ignore line: [Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_08dc8]
+        ignore line: [[1/2] /usr/bin/clang++   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC    -v -MD -MT CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -MF CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o.d -o CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -c /usr/share/cmake/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang version 20.1.7]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/bin]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Candidate multilib: 32]
+        ignore line: [@m32]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [Found CUDA installation: /opt/cuda  version ]
+        ignore line: [ (in-process)]
+        ignore line: [ "/usr/bin/clang++" -cc1 -triple x86_64-pc-linux-gnu -emit-llvm-bc -flto=full -flto-unit -disable-free -clear-ast-before-backend -disable-llvm-verifier -discard-value-names -main-file-name CMakeCXXCompilerABI.cpp -mrelocation-model pic -pic-level 2 -fhalf-no-semantic-interposition -mframe-pointer=none -menable-no-infs -menable-no-nans -fapprox-func -funsafe-math-optimizations -fno-signed-zeros -mreassociate -freciprocal-math -ffp-contract=fast -fno-rounding-math -ffast-math -ffinite-math-only -complex-range=basic -mconstructor-aliases -funwind-tables=2 -target-cpu skylake -target-feature +prfchw -target-feature -cldemote -target-feature +avx -target-feature +sahf -target-feature -xop -target-feature +crc32 -target-feature -amx-fp8 -target-feature +xsaves -target-feature -avx512fp16 -target-feature -usermsr -target-feature -sm4 -target-feature -egpr -target-feature +sse4.1 -target-feature -avx512ifma -target-feature +xsave -target-feature +sse4.2 -target-feature -tsxldtrk -target-feature -sm3 -target-feature -ptwrite -target-feature -widekl -target-feature -movrs -target-feature +invpcid -target-feature +64bit -target-feature +xsavec -target-feature -avx10.1-512 -target-feature -avx512vpopcntdq -target-feature +cmov -target-feature -avx512vp2intersect -target-feature -avx512cd -target-feature +movbe -target-feature -avxvnniint8 -target-feature -ccmp -target-feature -amx-int8 -target-feature -kl -target-feature -avx10.1-256 -target-feature -sha512 -target-feature -avxvnni -target-feature -rtm -target-feature +adx -target-feature -hreset -target-feature -movdiri -target-feature -serialize -target-feature -vpclmulqdq -target-feature -avx512vl -target-feature -uintr -target-feature -cf -target-feature +clflushopt -target-feature -raoint -target-feature -cmpccxadd -target-feature +bmi -target-feature -amx-tile -target-feature +sse -target-feature -avx10.2-256 -target-feature -gfni -target-feature -avxvnniint16 -target-feature -amx-fp16 -target-feature -zu -target-feature -ndd -target-feature +xsaveopt -target-feature +rdrnd -target-feature -avx512f -target-feature -amx-bf16 -target-feature -avx512bf16 -target-feature -avx512vnni -target-feature -push2pop2 -target-feature +cx8 -target-feature -avx512bw -target-feature +sse3 -target-feature -pku -target-feature -nf -target-feature -amx-tf32 -target-feature -amx-avx512 -target-feature +fsgsbase -target-feature -clzero -target-feature -mwaitx -target-feature -lwp -target-feature +lzcnt -target-feature -sha -target-feature -movdir64b -target-feature -ppx -target-feature -wbnoinvd -target-feature -enqcmd -target-feature -amx-transpose -target-feature -avx10.2-512 -target-feature -avxneconvert -target-feature -tbm -target-feature -pconfig -target-feature -amx-complex -target-feature +ssse3 -target-feature +cx16 -target-feature +bmi2 -target-feature +popcnt -target-feature -avxifma -target-feature -avx512bitalg -target-feature -rdpru -target-feature -clwb -target-feature +mmx -target-feature +sse2 -target-feature +rdseed -target-feature -avx512vbmi2 -target-feature -prefetchi -target-feature -amx-movrs -target-feature -rdpid -target-feature -fma4 -target-feature -avx512vbmi -target-feature -shstk -target-feature -vaes -target-feature -waitpkg -target-feature +sgx -target-feature +fxsr -target-feature -avx512dq -target-feature -sse4a -target-feature +avx2 -target-feature +fma -target-feature +f16c -target-feature +aes -target-feature +pclmul -tune-cpu skylake -debugger-tuning=gdb -fdebug-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9 -v -fcoverage-compilation-dir=/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OXO1Y9 -resource-dir /usr/lib/clang/20 -dependency-file CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o.d -MT CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -sys-header-deps -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1 -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward -internal-isystem /usr/lib/clang/20/include -internal-isystem /usr/local/include -internal-isystem /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include -internal-externc-isystem /include -internal-externc-isystem /usr/include -O3 -fdeprecated-macro -ferror-limit 19 -stack-protector 2 -fgnuc-version=4.2.1 -fskip-odr-check-in-gmf -fcxx-exceptions -fexceptions -vectorize-loops -vectorize-slp -faddrsig -D__GCC_HAVE_DWARF2_CFI_ASM=1 -o CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -x c++ /usr/share/cmake/Modules/CMakeCXXCompilerABI.cpp]
+        ignore line: [clang -cc1 version 20.1.7 based upon LLVM 20.1.7 default target x86_64-pc-linux-gnu]
+        ignore line: [ignoring nonexistent directory "/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../x86_64-pc-linux-gnu/include"]
+        ignore line: [ignoring nonexistent directory "/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1]
+        ignore line: [ /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/x86_64-pc-linux-gnu]
+        ignore line: [ /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../include/c++/15.1.1/backward]
+        ignore line: [ /usr/lib/clang/20/include]
+        ignore line: [ /usr/local/include]
+        ignore line: [ /usr/include]
+        ignore line: [End of search list.]
+        ignore line: [[2/2] : && /usr/bin/clang++ -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl -O1 -Wl --as-needed -Wl --hash-style=gnu -v -Wl -v CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -o cmTC_08dc8   && :]
+        ignore line: [clang version 20.1.7]
+        ignore line: [Target: x86_64-pc-linux-gnu]
+        ignore line: [Thread model: posix]
+        ignore line: [InstalledDir: /usr/bin]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/13.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/14.3.1]
+        ignore line: [Found candidate GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Selected GCC installation: /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        ignore line: [Candidate multilib: .]
+        ignore line: [@m64]
+        ignore line: [Candidate multilib: 32]
+        ignore line: [@m32]
+        ignore line: [Selected multilib: .]
+        ignore line: [@m64]
+        ignore line: [Found CUDA installation: /opt/cuda  version ]
+        link line: [ "/usr/bin/ld" --hash-style=gnu --build-id --eh-frame-hdr -m elf_x86_64 -pie -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_08dc8 /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1 -L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/lib -L/usr/lib -plugin /usr/bin/../lib/LLVMgold.so -plugin-opt=mcpu=skylake -plugin-opt=O3 -O1 --as-needed --hash-style=gnu -v CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o -lstdc++ -lm -lgcc_s -lgcc -lc -lgcc_s -lgcc /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o /usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o]
+          arg [/usr/bin/ld] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [--build-id] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_08dc8] ==> ignore
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o]
+          arg [-L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1] ==> dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+          arg [-L/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64] ==> dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64]
+          arg [-L/lib/../lib64] ==> dir [/lib/../lib64]
+          arg [-L/usr/lib/../lib64] ==> dir [/usr/lib/../lib64]
+          arg [-L/lib] ==> dir [/lib]
+          arg [-L/usr/lib] ==> dir [/usr/lib]
+          arg [-plugin] ==> ignore
+          arg [/usr/bin/../lib/LLVMgold.so] ==> ignore
+          arg [-plugin-opt=mcpu=skylake] ==> ignore
+          arg [-plugin-opt=O3] ==> ignore
+          arg [-O1] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [--hash-style=gnu] ==> ignore
+          arg [-v] ==> ignore
+          arg [CMakeFiles/cmTC_08dc8.dir/CMakeCXXCompilerABI.cpp.o] ==> ignore
+          arg [-lstdc++] ==> lib [stdc++]
+          arg [-lm] ==> lib [m]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [-lc] ==> lib [c]
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [-lgcc] ==> lib [gcc]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o]
+          arg [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o] ==> obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o]
+        linker tool for 'CXX': /usr/bin/ld
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/Scrt1.o] ==> [/usr/lib64/Scrt1.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crti.o] ==> [/usr/lib64/crti.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o]
+        collapse obj [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64/crtn.o] ==> [/usr/lib64/crtn.o]
+        collapse library dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1] ==> [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1]
+        collapse library dir [/usr/bin/../lib64/gcc/x86_64-pc-linux-gnu/15.1.1/../../../../lib64] ==> [/usr/lib64]
+        collapse library dir [/lib/../lib64] ==> [/lib64]
+        collapse library dir [/usr/lib/../lib64] ==> [/usr/lib64]
+        collapse library dir [/lib] ==> [/lib]
+        collapse library dir [/usr/lib] ==> [/usr/lib]
+        implicit libs: [stdc++;m;gcc_s;gcc;c;gcc_s;gcc]
+        implicit objs: [/usr/lib64/Scrt1.o;/usr/lib64/crti.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtbeginS.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtfastmath.o;/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1/crtendS.o;/usr/lib64/crtn.o]
+        implicit dirs: [/usr/lib64/gcc/x86_64-pc-linux-gnu/15.1.1;/usr/lib64;/lib64;/lib;/usr/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CMakeDetermineLinkerId.cmake:36 (message)"
+      - "/usr/share/cmake/Modules/CMakeDetermineCompilerABI.cmake:270 (cmake_determine_linker_id)"
+      - "/usr/share/cmake/Modules/CMakeTestCXXCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:2 (project)"
+    message: |
+      Running the CXX compiler's linker: "/usr/bin/ld" "-v"
+      GNU ld (GNU Binutils) 2.44.0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckLibraryExists.cmake:112 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:701 (check_library_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for XOpenDisplay in /usr/lib/libX11.so;/usr/lib/libXext.so"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-zEAjTh"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-zEAjTh"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "X11_LIB_X11_SOLO"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-zEAjTh'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_0923d
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=XOpenDisplay -std=gnu11 -MD -MT CMakeFiles/cmTC_0923d.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_0923d.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_0923d.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-zEAjTh/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=XOpenDisplay -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_0923d.dir/CheckFunctionExists.c.o -o cmTC_0923d  /usr/lib/libX11.so  /usr/lib/libXext.so && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:716 (check_function_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for gethostbyname"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-NkjJaw"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-NkjJaw"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_HAVE_GETHOSTBYNAME"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-NkjJaw'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_aef58
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=gethostbyname -std=gnu11 -MD -MT CMakeFiles/cmTC_aef58.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_aef58.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_aef58.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-NkjJaw/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=gethostbyname -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_aef58.dir/CheckFunctionExists.c.o -o cmTC_aef58   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:730 (check_function_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for connect"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-D6wh73"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-D6wh73"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_HAVE_CONNECT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-D6wh73'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_f10c1
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=connect -std=gnu11 -MD -MT CMakeFiles/cmTC_f10c1.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_f10c1.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_f10c1.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-D6wh73/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=connect -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_f10c1.dir/CheckFunctionExists.c.o -o cmTC_f10c1   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:739 (check_function_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for remove"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-tMduI9"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-tMduI9"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_HAVE_REMOVE"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-tMduI9'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_2006f
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=remove -std=gnu11 -MD -MT CMakeFiles/cmTC_2006f.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_2006f.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_2006f.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-tMduI9/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=remove -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_2006f.dir/CheckFunctionExists.c.o -o cmTC_2006f   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckFunctionExists.cmake:93 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:748 (check_function_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for shmat"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WxpwhD"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WxpwhD"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_HAVE_SHMAT"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WxpwhD'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_8fdf1
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=shmat -std=gnu11 -MD -MT CMakeFiles/cmTC_8fdf1.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_8fdf1.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_8fdf1.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WxpwhD/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=shmat -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_8fdf1.dir/CheckFunctionExists.c.o -o cmTC_8fdf1   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckLibraryExists.cmake:112 (try_compile)"
+      - "/usr/share/cmake/Modules/FindX11.cmake:758 (check_library_exists)"
+      - "CMakeLists.txt:39 (find_package)"
+    checks:
+      - "Looking for IceConnectionNumber in ICE"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-SNSkwV"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-SNSkwV"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_LIB_ICE_HAS_ICECONNECTIONNUMBER"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-SNSkwV'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_df10a
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=IceConnectionNumber -std=gnu11 -MD -MT CMakeFiles/cmTC_df10a.dir/CheckFunctionExists.c.o -MF CMakeFiles/cmTC_df10a.dir/CheckFunctionExists.c.o.d -o CMakeFiles/cmTC_df10a.dir/CheckFunctionExists.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-SNSkwV/CheckFunctionExists.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -DCHECK_FUNCTION_EXISTS=IceConnectionNumber -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_df10a.dir/CheckFunctionExists.c.o -o cmTC_df10a  -lICE && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "/usr/share/cmake/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/usr/share/cmake/Modules/FindThreads.cmake:97 (check_c_source_compiles)"
+      - "/usr/share/cmake/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "CMakeLists.txt:40 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-ZctUbi"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-ZctUbi"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-ZctUbi'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_5fc1b
+        [1/2] /usr/bin/clang -DCMAKE_HAVE_LIBC_PTHREAD  -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC  -std=gnu11 -MD -MT CMakeFiles/cmTC_5fc1b.dir/src.c.o -MF CMakeFiles/cmTC_5fc1b.dir/src.c.o.d -o CMakeFiles/cmTC_5fc1b.dir/src.c.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-ZctUbi/src.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_5fc1b.dir/src.c.o -o cmTC_5fc1b   && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "/usr/share/cmake/Modules/CheckCXXSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/usr/lib/cmake/Qt6/FindWrapAtomic.cmake:36 (check_cxx_source_compiles)"
+      - "/usr/share/cmake/Modules/CMakeFindDependencyMacro.cmake:78 (find_package)"
+      - "/usr/lib/cmake/Qt6/QtPublicDependencyHelpers.cmake:36 (find_dependency)"
+      - "/lib/cmake/Qt6Core/Qt6CoreDependencies.cmake:35 (_qt_internal_find_third_party_dependencies)"
+      - "/lib/cmake/Qt6Core/Qt6CoreConfig.cmake:55 (include)"
+      - "/lib/cmake/Qt6/Qt6Config.cmake:228 (find_package)"
+      - "CMakeLists.txt:60 (find_package)"
+    checks:
+      - "Performing Test HAVE_STDATOMIC"
+    directories:
+      source: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OsCd4i"
+      binary: "/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OsCd4i"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_CXX_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_CXX_FLAGS_DEBUG: "-O0 -g -Wall -Wextra -Wno-unused-parameter"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+      CMAKE_MODULE_PATH: "/usr/lib/cmake/Qt6;/usr/lib/cmake/Qt6/3rdparty/extra-cmake-modules/find-modules;/usr/lib/cmake/Qt6/3rdparty/kwin"
+    buildResult:
+      variable: "HAVE_STDATOMIC"
+      cached: true
+      stdout: |
+        Change Dir: '/home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OsCd4i'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_df3c4
+        [1/2] /usr/bin/clang++ -DHAVE_STDATOMIC  -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC  -std=gnu++23 -MD -MT CMakeFiles/cmTC_df3c4.dir/src.cxx.o -MF CMakeFiles/cmTC_df3c4.dir/src.cxx.o.d -o CMakeFiles/cmTC_df3c4.dir/src.cxx.o -c /home/all/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-OsCd4i/src.cxx
+        [2/2] : && /usr/bin/clang++ -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_df3c4.dir/src.cxx.o -o cmTC_df3c4   && :
+        
+      exitCode: 0
+...
+
+---
+events:
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/Internal/CheckSourceCompiles.cmake:104 (try_compile)"
+      - "/usr/share/cmake/Modules/CheckCSourceCompiles.cmake:58 (cmake_check_source_compiles)"
+      - "/lib/cmake/llvm/FindFFI.cmake:59 (check_c_source_compiles)"
+      - "/lib/cmake/llvm/LLVMConfig.cmake:268 (find_package)"
+      - "CMakeLists.txt:76 (find_package)"
+    checks:
+      - "Performing Test HAVE_FFI_CALL"
+    directories:
+      source: "/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-46E7s9"
+      binary: "/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-46E7s9"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+      CMAKE_MODULE_PATH: "/usr/lib/cmake/Qt6;/usr/lib/cmake/Qt6/3rdparty/extra-cmake-modules/find-modules;/usr/lib/cmake/Qt6/3rdparty/kwin;/lib/cmake/llvm"
+    buildResult:
+      variable: "HAVE_FFI_CALL"
+      cached: true
+      stdout: |
+        Change Dir: '/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-46E7s9'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_8f992
+        [1/2] /usr/bin/clang -DHAVE_FFI_CALL  -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC  -std=gnu11 -MD -MT CMakeFiles/cmTC_8f992.dir/src.c.o -MF CMakeFiles/cmTC_8f992.dir/src.c.o.d -o CMakeFiles/cmTC_8f992.dir/src.c.o -c /home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-46E7s9/src.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_8f992.dir/src.c.o -o cmTC_8f992  /usr/lib/libffi.so && :
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake/Modules/CheckIncludeFile.cmake:99 (try_compile)"
+      - "/lib/cmake/llvm/FindLibEdit.cmake:28 (check_include_file)"
+      - "/lib/cmake/llvm/LLVMConfig.cmake:275 (find_package)"
+      - "CMakeLists.txt:76 (find_package)"
+    checks:
+      - "Looking for histedit.h"
+    directories:
+      source: "/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WiBbZk"
+      binary: "/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WiBbZk"
+    cmakeVariables:
+      CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS: "/usr/bin/clang-scan-deps"
+      CMAKE_C_FLAGS: "-O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu"
+      CMAKE_MODULE_PATH: "/usr/lib/cmake/Qt6;/usr/lib/cmake/Qt6/3rdparty/extra-cmake-modules/find-modules;/usr/lib/cmake/Qt6/3rdparty/kwin;/lib/cmake/llvm"
+    buildResult:
+      variable: "HAVE_HISTEDIT_H"
+      cached: true
+      stdout: |
+        Change Dir: '/home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WiBbZk'
+        
+        Run Build Command(s): /home/half-arch/depot_tools/ninja -v cmTC_0a78a
+        [1/2] /usr/bin/clang   -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC  -std=gnu11 -MD -MT CMakeFiles/cmTC_0a78a.dir/CheckIncludeFile.c.o -MF CMakeFiles/cmTC_0a78a.dir/CheckIncludeFile.c.o.d -o CMakeFiles/cmTC_0a78a.dir/CheckIncludeFile.c.o -c /home/half-arch/repos/havel/build/CMakeFiles/CMakeScratch/TryCompile-WiBbZk/CheckIncludeFile.c
+        [2/2] : && /usr/bin/clang -O3 -march=native -mtune=skylake -mavx2 -mfma -mf16c -maes -mpclmul -flto -ffast-math -pipe -fomit-frame-pointer -ftree-vectorize  -fPIC -flto -Wl,-O1 -Wl,--as-needed -Wl,--hash-style=gnu CMakeFiles/cmTC_0a78a.dir/CheckIncludeFile.c.o -o cmTC_0a78a  /usr/lib/libedit.so && :
+        
+      exitCode: 0
+...

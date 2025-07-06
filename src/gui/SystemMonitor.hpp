@@ -1,11 +1,20 @@
 #pragma once
 
+#undef Window
+#undef None
+
 #include <QTimer>
 #include <QtCharts/QChart>
 #include <QtCharts/QLineSeries>
 #include <QtCharts/QChartView>
+#include <QWidget>
+#include <QProgressBar>
+#include <QLabel>
+#include <QTreeWidget>
+#include <QMainWindow>
 #include "types.hpp"
-class SystemMonitor : public havel::QWindow {
+
+class SystemMonitor : public QMainWindow {
     Q_OBJECT
 
 public:
@@ -22,12 +31,12 @@ private:
     void updateProcessList();
     void updateNetworkUsage();
 
-    havel::ProgressBar* cpuBar;
-    havel::ProgressBar* memBar;
-    havel::Label* uptimeLabel;
-    havel::Label* cpuLabel;
-    havel::Label* memLabel;
-    havel::Label* netLabel;
+    QProgressBar* cpuBar;
+    QProgressBar* memBar;
+    QLabel* uptimeLabel;
+    QLabel* cpuLabel;
+    QLabel* memLabel;
+    QLabel* netLabel;
     QTimer* timer;
 
     long long prevTotal = 0;
@@ -42,5 +51,5 @@ private:
     QLineSeries* memSeries;
     QChartView* memChartView;
 
-    havel::TreeWidget* processTree;
+    QTreeWidget* processTree;
 };

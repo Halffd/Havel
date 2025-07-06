@@ -222,5 +222,116 @@ namespace havel::ast {
             indentLevel--;
             out << getIndent() << "}" << std::endl;
         }
+
+
+void visitTypeDeclaration(const TypeDeclaration& node) override {
+    out << getIndent() << "TypeDeclaration {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "name: " << node.name << std::endl;
+    if (node.definition) {
+        out << getIndent() << "definition:" << std::endl;
+        indentLevel++;
+        node.definition->accept(*this);
+        indentLevel--;
+    } else {
+        out << getIndent() << "definition: nullptr" << std::endl;
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+
+void visitTypeAnnotation(const TypeAnnotation& node) override {
+    out << getIndent() << "TypeAnnotation {" << std::endl;
+    indentLevel++;
+    printChildNode("type: ", node.type);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+
+void visitUnionType(const UnionType& node) override {
+    out << getIndent() << "UnionType {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "variants: [" << std::endl;
+    indentLevel++;
+    for (const auto& variant : node.variants) {
+        if (variant) {
+            variant->accept(*this);
+        } else {
+            out << getIndent() << "nullptr_variant" << std::endl;
+        }
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+
+void visitRecordType(const RecordType& node) override {
+    out << getIndent() << "RecordType {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "fields: [" << std::endl;
+    indentLevel++;
+    for (const auto& field : node.fields) {
+        out << getIndent() << "field: " << field.first << " -> ";
+        if (field.second) {
+            out << std::endl;
+            indentLevel++;
+            field.second->accept(*this);
+            indentLevel--;
+        } else {
+            out << "nullptr" << std::endl;
+        }
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+
+void visitFunctionType(const FunctionType& node) override {
+    out << getIndent() << "FunctionType {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "parameters: [" << std::endl;
+    indentLevel++;
+    for (const auto& param : node.paramTypes) {
+        if (param) {
+            param->accept(*this);
+        } else {
+            out << getIndent() << "nullptr_param_type" << std::endl;
+        }
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    printChildNode("returnType: ", node.returnType);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+}
+
+void visitTypeReference(const TypeReference& node) override {
+    out << getIndent() << "TypeReference{" << node.name << "}" << std::endl;
+}
     };
+    inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
+        visitor.visitTypeDeclaration(*this);
+    }
+
+    inline void TypeAnnotation::accept(ASTVisitor& visitor) const {
+        visitor.visitTypeAnnotation(*this);
+    }
+
+    inline void UnionType::accept(ASTVisitor& visitor) const {
+        visitor.visitUnionType(*this);
+    }
+
+    inline void RecordType::accept(ASTVisitor& visitor) const {
+        visitor.visitRecordType(*this);
+    }
+
+    inline void FunctionType::accept(ASTVisitor& visitor) const {
+        visitor.visitFunctionType(*this);
+    }
+
+    inline void TypeReference::accept(ASTVisitor& visitor) const {
+        visitor.visitTypeReference(*this);
+    }
 } // namespace havel::ast

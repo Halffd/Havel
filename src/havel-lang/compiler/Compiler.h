@@ -7,6 +7,7 @@
 #undef emit
 #endif
 
+#include "runtime/Interpreter.hpp"
 // Include LLVM headers in correct order
 #include "llvm.h"
 
@@ -16,6 +17,7 @@
 #include <string>
 #include <vector>
 
+
 namespace havel::compiler {
 
 class Compiler {
@@ -24,21 +26,25 @@ private:
     llvm::IRBuilder<> builder;
     llvm::Module* module;  // Raw pointer (owned by ExecutionEngine)
     std::unique_ptr<llvm::ExecutionEngine> executionEngine;
-
+    std::unordered_map<std::string, llvm::Function*> hotkeyHandlers;
     // Symbol tables
     std::unordered_map<std::string, llvm::Value*> namedValues;
     std::unordered_map<std::string, llvm::Function*> functions;
-
+    std::unordered_map<std::string, llvm::Value*> symbolTable;
+    std::unordered_map<std::string, ast::TypeDefinition> typeRegistry;
+    std::unordered_map<std::string, bool> loadedModules;
 public:
     Compiler();
     ~Compiler() = default;
-
     // Initialize LLVM
     void Initialize();
 
     // Main compilation entry points
     llvm::Function* CompileProgram(const ast::Program& program);
     llvm::Function* CompileHotkeyAction(const ast::Expression& action);
+    void RegisterHotkey(const ast::HotkeyLiteral& hotkey, llvm::Function* handler);
+
+    void RegisterSystemHotkey(const ast::HotkeyLiteral &hotkey);
 
     // JIT execution
     typedef void (*HotkeyActionFunc)();
@@ -60,6 +66,8 @@ public:
     llvm::Value* GenerateNumberLiteral(const ast::NumberLiteral& num);
     llvm::Value* GenerateIdentifier(const ast::Identifier& id);
     llvm::Value* GenerateHotkeyLiteral(const ast::HotkeyLiteral& hotkey);
+    void RegisterType(const std::string& name, const ast::TypeDefinition& definition);
+    void LoadModule(const std::string& moduleName);
 
     // Standard library functions
     void CreateStandardLibrary();
@@ -71,6 +79,10 @@ public:
     // Utility
     void DumpModule() const;
     bool VerifyModule() const;
+    // Method to get registered hotkey handlers
+    const std::unordered_map<std::string, llvm::Function*>& GetHotkeyHandlers() const {
+        return hotkeyHandlers;
+    }
 };
 
 } // namespace havel::compiler

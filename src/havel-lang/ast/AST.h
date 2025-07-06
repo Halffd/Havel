@@ -637,6 +637,7 @@ struct TypeAnnotation : public ASTNode {
         virtual void visitRecordType(const RecordType& node) = 0;
         virtual void visitFunctionType(const FunctionType& node) = 0;
         virtual void visitTypeReference(const TypeReference& node) = 0;
+        virtual void visitTryExpression(const TryExpression& node) = 0;
     };
     // Definitions of accept methods (must be after ASTVisitor declaration)
     inline void Program::accept(ASTVisitor &visitor) const {

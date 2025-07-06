@@ -76,12 +76,12 @@ namespace havel::compiler {
 
     llvm::Value *Compiler::GenerateIdentifier(const ast::Identifier &id) {
         // First check variables (like function parameters, let bindings)
-        if (includes(namedValues, id.symbol)) {
+        if (contains(namedValues, id.symbol)) {
             return namedValues[id.symbol]; // Return variable value
         }
 
         // Then check functions (for function references)
-        if (includes(functions, id.symbol)) {
+        if (contains(functions, id.symbol)) {
             return functions[id.symbol]; // Return function pointer
         }
 
@@ -546,12 +546,12 @@ namespace havel::compiler {
 
             // Generate try block
             builder.SetInsertPoint(tryBlock);
-            llvm::Value* tryValue = GenerateExpression(tryExpr.tryBody);
+            llvm::Value* tryValue = GenerateExpression(*tryExpr.tryBody);
             builder.CreateBr(continueBlock);
 
             // Generate catch block
             builder.SetInsertPoint(catchBlock);
-            llvm::Value* catchValue = GenerateExpression(tryExpr.catchBody);
+            llvm::Value* catchValue = GenerateExpression(*tryExpr.catchBody);
             builder.CreateBr(continueBlock);
 
             // Generate continue block with PHI

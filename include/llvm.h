@@ -2,7 +2,9 @@
 // Safe LLVM wrapper - use this for LLVM code
 
 #include "x11.h" // Include X11 macro undefinitions first
-
+#ifdef emit
+#undef emit
+#endif
 // Safe LLVM includes
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>

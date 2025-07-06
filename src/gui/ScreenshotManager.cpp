@@ -116,7 +116,7 @@ void ScreenRegionSelector::mouseMoveEvent(QMouseEvent *event) {
 void ScreenRegionSelector::mouseReleaseEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton && selecting) {
         selecting = false;
-        emit regionSelected(selectionRect);
+        regionSelected(selectionRect);
         close();
     }
 }

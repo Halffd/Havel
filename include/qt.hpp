@@ -96,23 +96,6 @@ namespace havel {
     using TreeView = QTreeView;
     using FileSystemModel = QFileSystemModel;
 }
-// Restore X11 macros after Qt usage (if needed)
-#ifdef X11_None
-#define None X11_None
-#endif
-
-#ifdef X11_Bool
-#define Bool X11_Bool
-#endif
-
-#ifdef X11_Status
-#define Status X11_Status
-#endif
-
-#ifdef X11_True
-#define True X11_True
-#endif
-
-#ifdef X11_False
-#define False X11_False
+#ifndef emit
+#define emit
 #endif

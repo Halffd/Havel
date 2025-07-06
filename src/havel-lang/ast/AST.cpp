@@ -310,6 +310,14 @@ void visitFunctionType(const FunctionType& node) override {
 void visitTypeReference(const TypeReference& node) override {
     out << getIndent() << "TypeReference{" << node.name << "}" << std::endl;
 }
+        void visitTryExpression(const TryExpression& node) override {
+            out << getIndent() << "TryExpression {" << std::endl;
+            indentLevel++;
+            printChildNode("tryBody: ", node.tryBody);
+            printChildNode("catchBody: ", node.catchBody);
+            indentLevel--;
+            out << getIndent() << "}" << std::endl;
+        }
     };
     inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
         visitor.visitTypeDeclaration(*this);
@@ -333,5 +341,9 @@ void visitTypeReference(const TypeReference& node) override {
 
     inline void TypeReference::accept(ASTVisitor& visitor) const {
         visitor.visitTypeReference(*this);
+    }
+
+    inline void TryExpression::accept(ASTVisitor& visitor) const {
+        visitor.visitTryExpression(*this);
     }
 } // namespace havel::ast

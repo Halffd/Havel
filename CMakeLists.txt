@@ -72,29 +72,40 @@ if(ENABLE_TESTS)
 endif()
 
 # LLVM (only if enabled and Havel lang enabled)
+# LLVM (only if enabled and Havel lang enabled)
 if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     find_package(LLVM REQUIRED CONFIG)
-    
-    execute_process(
-        COMMAND llvm-config --libs --system-libs --ldflags
-        OUTPUT_VARIABLE LLVM_LDFLAGS_RAW
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE LLVM_CONFIG_RESULT
-    )
-    
-    if(NOT LLVM_CONFIG_RESULT EQUAL 0)
-        message(FATAL_ERROR "llvm-config failed")
-    endif()
 
-    # Clean up LLVM flags
-    string(REGEX REPLACE "[\r\n\t ]+" " " LLVM_LDFLAGS "${LLVM_LDFLAGS_RAW}")
-    string(STRIP "${LLVM_LDFLAGS}" LLVM_LDFLAGS)
-    separate_arguments(LLVM_LIBS UNIX_COMMAND "${LLVM_LDFLAGS}")
-    
-    message(STATUS "LLVM_LIBS: ${LLVM_LIBS}")
+    # Use llvm-config to get the exact libraries needed
+    execute_process(
+            COMMAND llvm-config --libs core support mcjit native
+            OUTPUT_VARIABLE LLVM_LIBS_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+    )
+
+    execute_process(
+            COMMAND llvm-config --system-libs
+            OUTPUT_VARIABLE LLVM_SYSTEM_LIBS_OUTPUT
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+    )
+
+    # Clean up the output
+    string(STRIP "${LLVM_LIBS_OUTPUT}" LLVM_LIBS_CLEAN)
+    string(STRIP "${LLVM_SYSTEM_LIBS_OUTPUT}" LLVM_SYSTEM_LIBS_CLEAN)
+
+    # Convert to lists
+    separate_arguments(LLVM_LIBS_LIST UNIX_COMMAND "${LLVM_LIBS_CLEAN}")
+    separate_arguments(LLVM_SYSTEM_LIBS_LIST UNIX_COMMAND "${LLVM_SYSTEM_LIBS_CLEAN}")
+
+    message(STATUS "LLVM libraries: ${LLVM_LIBS_LIST}")
+    message(STATUS "LLVM system libraries: ${LLVM_SYSTEM_LIBS_LIST}")
 
     add_definitions(${LLVM_DEFINITIONS})
     add_definitions(-DHAVEL_ENABLE_LLVM)
+    include_directories(${LLVM_INCLUDE_DIRS})
+
 elseif(ENABLE_LLVM AND DISABLE_HAVEL_LANG)
     message(WARNING "LLVM enabled but Havel language disabled - LLVM will be ignored")
     set(ENABLE_LLVM OFF)
@@ -175,6 +186,10 @@ add_executable(havel
 
 target_link_libraries(havel ${COMMON_LIBS})
 
+if(ENABLE_LLVM)
+    target_link_libraries(havel PRIVATE ${LLVM_LIBRARIES})
+endif()
+
 # Compile definitions for main executable
 if(NOT DISABLE_GUI)
     # Set MOC options to handle X11 conflicts
@@ -204,7 +219,7 @@ if(NOT DISABLE_HAVEL_LANG)
     target_link_libraries(havel_lang ${COMMON_LIBS})
     
     if(ENABLE_LLVM)
-        target_link_libraries(havel_lang ${LLVM_LIBS})
+        target_link_libraries(havel_lang PRIVATE ${LLVM_LIBRARIES})
         target_compile_definitions(havel_lang PRIVATE HAVEL_ENABLE_LLVM)
     endif()
 endif()

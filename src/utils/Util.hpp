@@ -189,6 +189,12 @@ constexpr bool contains(const String& str, const String& substr) {
     return find(str, substr).has_value();
 }
 
+// Overload for std::unordered_map
+template<typename K, typename V, typename H, typename E>
+bool contains(const std::unordered_map<K, V, H, E>& map, const K& key) {
+    return map.find(key) != map.end();
+}
+
 // includes - checks if ALL elements of second container are in first
 template<Iterable T1, Iterable T2>
 bool includes(const T1& input, const T2& elements) {

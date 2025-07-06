@@ -10,6 +10,7 @@ src/out
 log
 logs
 config
+build
 build-debug
 build-release
 # Precompiled headers

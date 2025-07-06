@@ -1,0 +1,439 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Debug-5025a9215ddfe0830bca.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20,
+						21,
+						22,
+						23,
+						24,
+						25,
+						26,
+						27,
+						28,
+						29,
+						30,
+						31,
+						32,
+						33,
+						34,
+						35,
+						36,
+						37,
+						38,
+						39,
+						40,
+						41,
+						42
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "Havel",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+						7,
+						8,
+						9,
+						10,
+						11,
+						12,
+						13,
+						14,
+						15,
+						16,
+						17,
+						18,
+						19,
+						20,
+						21,
+						22,
+						23,
+						24,
+						25,
+						26,
+						27,
+						28,
+						29,
+						30,
+						31,
+						32,
+						33,
+						34,
+						35,
+						36,
+						37,
+						38,
+						39,
+						40,
+						41,
+						42
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "AArch64TargetParserTableGen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-AArch64TargetParserTableGen-Debug-295c034b78b6a45375a4.json",
+					"name" : "AArch64TargetParserTableGen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ARMTargetParserTableGen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ARMTargetParserTableGen-Debug-c5555f0294a9ef5bef8b.json",
+					"name" : "ARMTargetParserTableGen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "RISCVTargetParserTableGen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-RISCVTargetParserTableGen-Debug-9898474f6dd0ebbbf145.json",
+					"name" : "RISCVTargetParserTableGen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "acc_gen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-acc_gen-Debug-9c494e40035388a326e9.json",
+					"name" : "acc_gen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "files_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-files_test-Debug-d2ad318089d0ef75a4c1.json",
+					"name" : "files_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "files_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-files_test_autogen-Debug-f45c2143d0b0bfce2f6e.json",
+					"name" : "files_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "files_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-files_test_autogen_timestamp_deps-Debug-27cc936889390abaf4b5.json",
+					"name" : "files_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel-Debug-ccb13891877f823e7b28.json",
+					"name" : "havel",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_autogen-Debug-0dd23cb886765b5b7568.json",
+					"name" : "havel_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_autogen_timestamp_deps-Debug-f055be5f620d470f719b.json",
+					"name" : "havel_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_gui_example::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_gui_example-Debug-69ad5ec3f5855ee9c53b.json",
+					"name" : "havel_gui_example",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_gui_example_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_gui_example_autogen-Debug-d1eb81ff607620b09a91.json",
+					"name" : "havel_gui_example_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_gui_example_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_gui_example_autogen_timestamp_deps-Debug-00d2b5b747b030a3123a.json",
+					"name" : "havel_gui_example_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_lang::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_lang-Debug-dc5f82cc042981e43c2b.json",
+					"name" : "havel_lang",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_lang_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_lang_autogen-Debug-aabb3aa1b87e7ddbbde7.json",
+					"name" : "havel_lang_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "havel_lang_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-havel_lang_autogen_timestamp_deps-Debug-5421932bc88de6bf2838.json",
+					"name" : "havel_lang_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hotkey_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hotkey_test-Debug-bbcce1bc9bdf18b721e7.json",
+					"name" : "hotkey_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hotkey_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hotkey_test_autogen-Debug-d406cc7af060db83a2e3.json",
+					"name" : "hotkey_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "hotkey_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-hotkey_test_autogen_timestamp_deps-Debug-4254b7182390a76ebfb4.json",
+					"name" : "hotkey_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "intrinsics_gen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-intrinsics_gen-Debug-10fd7895b46b10a968e0.json",
+					"name" : "intrinsics_gen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_modifier_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_modifier_test-Debug-25b1a9511e4ac15e78c7.json",
+					"name" : "io_modifier_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_modifier_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_modifier_test_autogen-Debug-307548650dc1a9b9a169.json",
+					"name" : "io_modifier_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_modifier_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_modifier_test_autogen_timestamp_deps-Debug-cc27bdcab050c5fca501.json",
+					"name" : "io_modifier_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_race_condition_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_race_condition_test-Debug-1ff035f124816dabc996.json",
+					"name" : "io_race_condition_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_race_condition_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_race_condition_test_autogen-Debug-d78333aa079e3cf93c91.json",
+					"name" : "io_race_condition_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_race_condition_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_race_condition_test_autogen_timestamp_deps-Debug-17464ae7d4d0f1e36888.json",
+					"name" : "io_race_condition_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_test-Debug-ede15d35c2896fb93270.json",
+					"name" : "io_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_test_autogen-Debug-eb35d38eeaa21d80c581.json",
+					"name" : "io_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "io_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-io_test_autogen_timestamp_deps-Debug-a1451cf4703b7ab806f6.json",
+					"name" : "io_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "main_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-main_test-Debug-e52f096ebf55253d4feb.json",
+					"name" : "main_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "main_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-main_test_autogen-Debug-edda74fadbeef83be672.json",
+					"name" : "main_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "main_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-main_test_autogen_timestamp_deps-Debug-c7f86a42f05c1f35c7be.json",
+					"name" : "main_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "omp_gen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-omp_gen-Debug-e31bf36bd6be37f85817.json",
+					"name" : "omp_gen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_gui::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_gui-Debug-28f8bbd5f53792514b1e.json",
+					"name" : "test_gui",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_gui_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_gui_autogen-Debug-4c1b104b9b54ea0d0f8d.json",
+					"name" : "test_gui_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_gui_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_gui_autogen_timestamp_deps-Debug-451b10d672ee62240c2d.json",
+					"name" : "test_gui_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_havel::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_havel-Debug-4d9b8b8b01185d60eabd.json",
+					"name" : "test_havel",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_havel_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_havel_autogen-Debug-5ab857b33a54a83ca662.json",
+					"name" : "test_havel_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "test_havel_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-test_havel_autogen_timestamp_deps-Debug-3dbef3133a465fdbd4fd.json",
+					"name" : "test_havel_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "utils_test::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-utils_test-Debug-519495641d7adb37e170.json",
+					"name" : "utils_test",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "utils_test_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-utils_test_autogen-Debug-5ef1586c20d2d130deac.json",
+					"name" : "utils_test_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "utils_test_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-utils_test_autogen_timestamp_deps-Debug-a55a41ed3d844e25747e.json",
+					"name" : "utils_test_autogen_timestamp_deps",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "vt_gen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-vt_gen-Debug-a41a0250a5fabad05a88.json",
+					"name" : "vt_gen",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "/home/all/repos/havel/build",
+		"source" : "/home/all/repos/havel"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}

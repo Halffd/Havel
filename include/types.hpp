@@ -43,6 +43,10 @@
     #else
     #include "x11_defs.h" // Include X11 macro undefinitions first
     #include "x11.h"
+    #ifdef __X11__
+    #undef Window
+    #undef None
+    #endif
     using wID = unsigned long; // X11 Window type
     using Key = unsigned long;
     #endif

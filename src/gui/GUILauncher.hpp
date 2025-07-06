@@ -3,8 +3,15 @@
 #include "SystemMonitor.hpp"
 #include "FileAutomator.hpp"
 #include "ScriptRunner.hpp"
+#include <QMainWindow>
+#include <QWidget>
+#include <QPushButton>
+#include <QVBoxLayout>
 
-class GUILauncher : public havel::QWindow {
+#undef Window
+#undef None
+
+class GUILauncher : public QMainWindow {
     Q_OBJECT
 
 public:

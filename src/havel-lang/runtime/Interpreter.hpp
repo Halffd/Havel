@@ -115,7 +115,7 @@ public:
     
     // Register hotkeys from Havel code
     void RegisterHotkeys(const std::string& sourceCode);
-    
+
     // Evaluate AST nodes
     HavelValue EvaluateProgram(const ast::Program& program);
     HavelValue EvaluateStatement(const ast::Statement& statement);

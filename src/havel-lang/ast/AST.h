@@ -9,35 +9,81 @@
 namespace havel::ast {
     // Forward declaration for ASTVisitor
     class ASTVisitor;
-
-    // AST Node Types
     enum class NodeType {
         // Program structure
         Program,
+        Module,
+        ImportStatement,     // import List from "std/collections"
 
-        // Expressions
-        HotkeyBinding, // F1 => { ... }
-        PipelineExpression, // clipbooard.get | text.upper | send
-        BinaryExpression, // 10 + 5
-        CallExpression, // send("Hello")
-        MemberExpression, // clipbooard.get
+        // Core functional expressions
+        HotkeyBinding,       // F1 => { ... }
+        PipelineExpression,  // data | map(f) | filter(g) | reduce(h)
+        BinaryExpression,    // 10 + 5, a && b
+        UnaryExpression,     // not flag, -number
+        CallExpression,      // map(f, list)
+        MemberExpression,    // record.field
+        LambdaExpression,    // fn(x) -> x * 2, |x| x + 1
+        ApplicationExpression, // Curried function application
+
+        // Pattern matching (essential for FP)
+        MatchExpression,     // match value with | Some(x) -> x | None -> 0
+        PatternLiteral,      // Some(x), [head|tail], {x, y}
+        GuardExpression,     // | x when x > 0 -> "positive"
+        BlockStatement,      // { ... }
+        IfStatement,         // if condition { ... } else { ... }
+        ReturnStatement,     // return value;
+        WhileStatement,      // while condition { ... }
+        // Immutable data structures
+        ListExpression,      // [1, 2, 3]
+        TupleExpression,     // (1, "hello", true)
+        RecordExpression,    // {name: "John", age: 30}
+        MapExpression,       // #{key1: val1, key2: val2}
+        SetExpression,       // #{1, 2, 3}
+
+        // Destructuring
+        ListPattern,         // [head|tail], [a, b, c]
+        TuplePattern,        // (x, y)
+        RecordPattern,       // {name, age}
 
         // Literals
-        StringLiteral, // "Hello World"
-        NumberLiteral, // 42
-        Identifier, // send, clipboard, etc.
+        StringLiteral,       // "Hello"
+        NumberLiteral,       // 42, 3.14
+        BooleanLiteral,      // true, false
+        AtomLiteral,         // :ok, :error (like Elixir atoms)
+        Identifier,          // variable names
+        HotkeyLiteral,       // F1, Ctrl+V
 
-        // Statements
-        BlockStatement, // { ... }
-        ExpressionStatement, // expression;
-        IfStatement, // if condition { ... } else { ... }
-        LetDeclaration, // let x = 5
-        ReturnStatement, // return value;
-        WhileStatement, // while condition { ... }
-        FunctionDeclaration, // fn myFunc(a, b) { ... }
+        // Functional statements (minimize these)
+        ExpressionStatement, // Most things are expressions
+        LetDeclaration,          // let x = 5 (immutable)
+        FunctionDeclaration, // let add = fn(a, b) -> a + b
+
+        // Type system (if you want static typing)
+        TypeDeclaration,     // type Point = {x: Float, y: Float}
+        UnionType,          // type Result = Ok(a) | Error(String)
+        TypeAnnotation,     // : List(Int)
+
+        // Higher-order constructs
+        PartialApplication, // add(5, _) creates fn(b) -> 5 + b
+        Composition,        // f >> g, f << g
+
+        // Monadic operations (advanced)
+        DoExpression,       // do { x <- getX(); y <- getY(); return x + y }
+        BindExpression,     // >>= operator
+
+        // Error handling (functional style)
+        TryExpression,      // try expr catch pattern -> handler
+
+        // Lazy evaluation
+        LazyExpression,     // lazy { expensive_computation() }
+        ForceExpression,    // force lazy_value
+
+        // Comprehensions
+        ListComprehension,  // [x * 2 | x <- [1..10], x > 5]
 
         // Special
-        HotkeyLiteral // F1, Ctrl+V, etc.
+        ErrorNode,
+        UnknownNode
     };
 
     // Base AST Node
@@ -400,7 +446,149 @@ namespace havel::ast {
 
         void accept(ASTVisitor &visitor) const override;
     };
+    struct TryExpression : public Statement {
+        std::unique_ptr<Expression> tryBody;
+        std::unique_ptr<Expression> catchBody;
 
+        TryExpression() { kind = NodeType::TryExpression; }
+
+        std::string toString() const override {
+            return "TryExpression{}";
+        }
+
+        void accept(ASTVisitor& visitor) const override;
+    };
+// Type Definition base class
+    struct TypeDefinition : public ASTNode {
+        std::string toString() const override { return "TypeDefinition{}"; }
+        void accept(ASTVisitor& visitor) const override { /* default implementation */ }
+    };
+
+// Simple type reference (e.g., Int, String, MyCustomType)
+struct TypeReference : public TypeDefinition {
+    std::string name;
+
+    TypeReference(const std::string& typeName) : name(typeName) {
+        kind = NodeType::TypeAnnotation; // or create a new NodeType::TypeReference
+    }
+
+    std::string toString() const override {
+        return "TypeReference{" + name + "}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+
+// Union type (e.g., Result = Ok(a) | Error(String))
+struct UnionType : public TypeDefinition {
+    std::vector<std::unique_ptr<TypeDefinition>> variants;
+
+    UnionType(std::vector<std::unique_ptr<TypeDefinition>> vars)
+        : variants(std::move(vars)) {
+        kind = NodeType::UnionType;
+    }
+
+    std::string toString() const override {
+        return "UnionType{" + std::to_string(variants.size()) + " variants}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+
+// Record type (e.g., {name: String, age: Int})
+struct RecordType : public TypeDefinition {
+    std::vector<std::pair<std::string, std::unique_ptr<TypeDefinition>>> fields;
+
+    RecordType() {
+        kind = NodeType::RecordExpression; // Reuse or create RecordType
+    }
+
+    std::string toString() const override {
+        return "RecordType{" + std::to_string(fields.size()) + " fields}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+
+// Function type (e.g., (Int, String) -> Bool)
+struct FunctionType : public TypeDefinition {
+    std::vector<std::unique_ptr<TypeDefinition>> paramTypes;
+    std::unique_ptr<TypeDefinition> returnType;
+
+    FunctionType(std::vector<std::unique_ptr<TypeDefinition>> params,
+                 std::unique_ptr<TypeDefinition> ret)
+        : paramTypes(std::move(params)), returnType(std::move(ret)) {
+        kind = NodeType::FunctionDeclaration; // Reuse or create FunctionType
+    }
+
+    std::string toString() const override {
+        return "FunctionType{" + std::to_string(paramTypes.size()) + " -> 1}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+
+// Type Declaration statement (e.g., type Point = {x: Float, y: Float})
+struct TypeDeclaration : public Statement {
+    std::string name;
+    std::unique_ptr<TypeDefinition> definition;
+
+    TypeDeclaration(const std::string& typeName,
+                    std::unique_ptr<TypeDefinition> def)
+        : name(typeName), definition(std::move(def)) {
+        kind = NodeType::TypeDeclaration;
+    }
+
+    std::string toString() const override {
+        return "TypeDeclaration{name: " + name +
+               ", definition: " + (definition ? definition->toString() : "nullptr") + "}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+
+// Type Annotation (e.g., : List(Int))
+struct TypeAnnotation : public ASTNode {
+    std::unique_ptr<TypeDefinition> type;
+
+    TypeAnnotation(std::unique_ptr<TypeDefinition> t)
+        : type(std::move(t)) {
+        kind = NodeType::TypeAnnotation;
+    }
+
+    std::string toString() const override {
+        return "TypeAnnotation{" + (type ? type->toString() : "nullptr") + "}";
+    }
+
+    void accept(ASTVisitor& visitor) const override;
+};
+    // Import Statement (import List from "std/collections")
+    struct ImportStatement : public Statement {
+        std::string moduleName;
+        std::vector<std::string> importedItems; // Optional: specific items to import
+
+        ImportStatement(const std::string& module,
+                       std::vector<std::string> items = {})
+            : moduleName(module), importedItems(std::move(items)) {
+            kind = NodeType::ImportStatement;
+        }
+
+        std::string toString() const override {
+            std::string result = "ImportStatement{module: " + moduleName;
+            if (!importedItems.empty()) {
+                result += ", items: [";
+                for (size_t i = 0; i < importedItems.size(); ++i) {
+                    result += importedItems[i];
+                    if (i < importedItems.size() - 1) result += ", ";
+                }
+                result += "]";
+            }
+            result += "}";
+            return result;
+        }
+
+        void accept(ASTVisitor& visitor) const override;
+    };
     // Visitor pattern interface for AST traversal
     class ASTVisitor {
     public:
@@ -442,6 +630,13 @@ namespace havel::ast {
 
         virtual void visitFunctionDeclaration(const FunctionDeclaration &node) =
         0;
+
+        virtual void visitTypeDeclaration(const TypeDeclaration& node) = 0;
+        virtual void visitTypeAnnotation(const TypeAnnotation& node) = 0;
+        virtual void visitUnionType(const UnionType& node) = 0;
+        virtual void visitRecordType(const RecordType& node) = 0;
+        virtual void visitFunctionType(const FunctionType& node) = 0;
+        virtual void visitTypeReference(const TypeReference& node) = 0;
     };
     // Definitions of accept methods (must be after ASTVisitor declaration)
     inline void Program::accept(ASTVisitor &visitor) const {

@@ -1,9 +1,19 @@
 #pragma once
 
 #include <QProcess>
-#include "types.hpp"
+#include <QMainWindow>
+#include <QTabWidget>
+#include <QTextEdit>
+#include <QPushButton>
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QProgressBar>
 
-class ScriptRunner : public havel::QWindow {
+#undef Window // Undefine X11 macro
+#undef None // Undefine X11 macro
+
+class ScriptRunner : public QMainWindow {
     Q_OBJECT
 
 public:
@@ -19,11 +29,11 @@ private:
     void setupUI();
     QWidget* createScriptTab(const QString& language);
 
-    havel::TabWidget* tabWidget;
-    havel::TextEdit* pythonScriptEdit;
-    havel::TextEdit* luaScriptEdit;
-    havel::TextEdit* havelScriptEdit;
-    havel::TextEdit* outputLog;
-    havel::Button* runButton;
+    QTabWidget* tabWidget;
+    QTextEdit* pythonScriptEdit;
+    QTextEdit* luaScriptEdit;
+    QTextEdit* havelScriptEdit;
+    QTextEdit* outputLog;
+    QPushButton* runButton;
     QProcess* process;
 };

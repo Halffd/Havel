@@ -207,21 +207,6 @@ if(NOT DISABLE_HAVEL_LANG)
         target_link_libraries(havel_lang ${LLVM_LIBS})
         target_compile_definitions(havel_lang PRIVATE HAVEL_ENABLE_LLVM)
     endif()
-    
-    # Test executable for Havel language
-    if(ENABLE_TESTS)
-        add_executable(test_havel
-            src/havel-lang/tests/test_havel.cpp
-            ${CORE_SOURCES}
-        )
-        target_link_libraries(test_havel havel_lang ${COMMON_LIBS})
-        
-        if(ENABLE_LLVM)
-            target_link_libraries(test_havel ${LLVM_LIBS})
-        endif()
-        
-        add_test(NAME test_havel COMMAND test_havel)
-    endif()
 endif()
 
 # General tests (if enabled)
@@ -232,8 +217,9 @@ if(ENABLE_TESTS AND TEST_SOURCES)
             ${test_file} 
             ${CORE_SOURCES}
             ${GUI_SOURCES}
+            ${HAVEL_LANG_SOURCES}
         )
-        target_link_libraries(${test_name} ${COMMON_LIBS})
+        target_link_libraries(${test_name} ${COMMON_LIBS} ${LLVM_LIBS})
         target_compile_definitions(${test_name} PRIVATE RUN_TESTS)
         
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -243,8 +229,6 @@ if(ENABLE_TESTS AND TEST_SOURCES)
         if(DISABLE_HAVEL_LANG)
             target_compile_definitions(${test_name} PRIVATE DISABLE_HAVEL_LANG)
         endif()
-        
-        add_test(NAME ${test_name} COMMAND ${test_name})
     endforeach()
 endif()
 
@@ -269,13 +253,6 @@ endif()
 
 # Install targets
 set(INSTALL_TARGETS havel)
-
-if(NOT DISABLE_HAVEL_LANG)
-    list(APPEND INSTALL_TARGETS havel_lang)
-    if(ENABLE_TESTS)
-        list(APPEND INSTALL_TARGETS test_havel)
-    endif()
-endif()
 
 if(TARGET havel_gui)
     list(APPEND INSTALL_TARGETS havel_gui)

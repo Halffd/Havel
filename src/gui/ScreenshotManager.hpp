@@ -2,6 +2,10 @@
 
 #include <QFileSystemWatcher>
 #include <QTimer>
+#include <QWidget>
+#include <QMainWindow>
+#include <QTableWidget>
+#include <QLabel>
 #include "qt.hpp"
 #include "types.hpp"
 
@@ -11,7 +15,7 @@ QT_END_NAMESPACE
 
 namespace havel {
 
-class ScreenRegionSelector : public QWindow {
+class ScreenRegionSelector : public QWidget {
     Q_OBJECT
 
 public:
@@ -32,7 +36,7 @@ private:
     QPoint startPos;
 };
 
-class ScreenshotManager : public QWindow {
+class ScreenshotManager : public QMainWindow {
     Q_OBJECT
 
 public:
@@ -47,8 +51,8 @@ private:
     void setupUI();
     void addToGrid(const QString &filename, const QPixmap &pixmap);
 
-    TableWidget* screenshotGrid;
-    Label* previewLabel;
+    QTableWidget* screenshotGrid;
+    QLabel* previewLabel;
     QTimer* autoSaveTimer;
     QFileSystemWatcher* folderWatcher;
     QString screenshotDir;

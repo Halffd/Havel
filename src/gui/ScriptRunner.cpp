@@ -1,6 +1,12 @@
 #include "ScriptRunner.hpp"
+#include <QSplitter>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+#include <QTextEdit>
+#include <QProgressBar>
+#include <QPushButton>
 
-ScriptRunner::ScriptRunner(QWidget* parent) : havel::Window(parent) {
+ScriptRunner::ScriptRunner(QWidget* parent) : QMainWindow(parent) {
     setupUI();
 }
 
@@ -8,25 +14,25 @@ void ScriptRunner::setupUI() {
     setWindowTitle("Script Runner Dashboard");
     resize(800, 600);
 
-    havel::Splitter* mainSplitter = new havel::Splitter(Qt::Horizontal, this);
+    QSplitter* mainSplitter = new QSplitter(Qt::Horizontal, this);
     setCentralWidget(mainSplitter);
 
     // Left side: Script Tree
-    havel::TreeWidget* scriptTree = new havel::TreeWidget(this);
+    QTreeWidget* scriptTree = new QTreeWidget(this);
     scriptTree->setHeaderLabels({"Scripts"});
     mainSplitter->addWidget(scriptTree);
 
     // Right side: Output and controls
-    havel::Widget* rightPanel = new havel::Widget(this);
-    havel::Layout* rightLayout = new havel::Layout(rightPanel);
+    QWidget* rightPanel = new QWidget(this);
+    QVBoxLayout* rightLayout = new QVBoxLayout(rightPanel);
     mainSplitter->addWidget(rightPanel);
 
-    havel::TextEdit* outputLog = new havel::TextEdit(this);
+    QTextEdit* outputLog = new QTextEdit(this);
     outputLog->setReadOnly(true);
     outputLog->setPlaceholderText("Script output will appear here...");
 
-    havel::ProgressBar* progressBar = new havel::ProgressBar(this);
-    havel::Button* runButton = new havel::Button("Run Script", this);
+    QProgressBar* progressBar = new QProgressBar(this);
+    QPushButton* runButton = new QPushButton("Run Script", this);
 
     rightLayout->addWidget(outputLog);
     rightLayout->addWidget(progressBar);

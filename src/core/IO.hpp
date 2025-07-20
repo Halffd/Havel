@@ -226,8 +226,8 @@ public:
       static_assert(always_false<S>, "Unsupported type for action");
     }
   }
-
-  bool MouseClick(int btnCode, int dx, int dy, int speed, float accel);
+  template <typename T>
+  bool MouseClick(T btnCode, int dx, int dy, int speed, float accel);
   bool MouseMove(int dx, int dy, int speed, float accel);
   bool Scroll(int dy, int dx = 0);
 

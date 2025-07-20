@@ -166,6 +166,9 @@ include_directories(
     ${X11_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}
+    ${Qt6Core_INCLUDE_DIRS}
+    ${Qt6Widgets_INCLUDE_DIRS}
+    ${Qt6Charts_INCLUDE_DIRS}
 )
 
 if(NOT DISABLE_HAVEL_LANG)
@@ -184,7 +187,34 @@ add_executable(havel
     ${HAVEL_LANG_SOURCES}
 )
 
-target_link_libraries(havel ${COMMON_LIBS})
+# Set target properties
+set_target_properties(havel PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+# Link libraries
+target_link_libraries(havel 
+    PRIVATE 
+    ${COMMON_LIBS}
+    Qt6::Core
+    Qt6::Widgets
+    Qt6::Charts
+)
+
+# Include directories for the target
+target_include_directories(havel 
+    PRIVATE 
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${X11_INCLUDE_DIR}
+    ${DBUS_INCLUDE_DIRS}
+    ${LUA_INCLUDE_DIR}
+    ${Qt6Core_INCLUDE_DIRS}
+    ${Qt6Widgets_INCLUDE_DIRS}
+    ${Qt6Charts_INCLUDE_DIRS}
+)
 
 if(ENABLE_LLVM)
     target_link_libraries(havel PRIVATE ${LLVM_LIBRARIES})

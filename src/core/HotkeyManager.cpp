@@ -516,6 +516,19 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     }).detach();
 
 }, nullptr, 0);
+    //Cutscene skipper
+    AddContextualHotkey("+s", "currentMode == 'gaming'", [this]() {
+        info("Genshin Impact detected - Skipping cutscene");
+        io.SetTimer(100, [this]() {
+            Rect pos = {1600, 700};
+            float speed = 100.0f;
+            float accel = 5.0f;
+            io.MouseClick(MouseButton::Left, pos.x, pos.y, speed, accel);
+            io.Send("{enter}");
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            io.Send("f");
+        });
+    }, nullptr, 0);
     // Add hotkey to stop Genshin automation
     AddHotkey("!+g", [this]() {
         if (genshinAutomationActive) {

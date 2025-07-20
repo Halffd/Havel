@@ -717,43 +717,11 @@ bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
 
   return true;
 }
-
-bool IO::MouseClick(int btnCode, int dx, int dy, int speed, float accel) {
+template <typename T>
+bool IO::MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
   if (!MouseMove(dx, dy, speed, accel))
     return false;
-
-  input_event ev = {};
-
-  // Press
-  ev.type = EV_KEY;
-  ev.code = btnCode;
-  ev.value = 1;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
-    return false;
-
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
-    return false;
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  // simulate click hold
-
-  // Release
-  ev.type = EV_KEY;
-  ev.code = btnCode;
-  ev.value = 0;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
-    return false;
-
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
-    return false;
-
-  return true;
+  return Click(btnCode, MouseAction::Click);
 }
 
 bool IO::Scroll(int dy, int dx) {

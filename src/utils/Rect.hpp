@@ -12,6 +12,7 @@ namespace havel {
         int right;
         int bottom;
         Rect() = default;
+        Rect(int x, int y) : x(x), y(y), left(x), top(y), width(0), height(0), right(x), bottom(y) {}
         Rect(int x, int y, int w, int h)
             : x(x), y(y), left(x), top(y), width(w), height(h), right(x + w), bottom(y + h) {}
         Rect(int x, int y, int l, int t, int w, int h)

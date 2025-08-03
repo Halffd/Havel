@@ -39,6 +39,11 @@ namespace havel {
         bool verboseWindowLogging = false;
         bool verboseConditionLogging = false;
 
+        int winOffset = 10;
+    
+        int speed = 5;
+        float acc = 1.0f;
+        
         void setVerboseKeyLogging(bool value) { verboseKeyLogging = value; }
 
         void setVerboseWindowLogging(bool value) {

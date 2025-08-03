@@ -399,22 +399,142 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         io.EmergencyReleaseAllKeys();
     });
     
-    //Mouse emulation
-    uint speed = 5;
-    float acc = 1;
-    AddHotkey("Numpad1", [this]() {
-        uint x = speed-50;
-        uint y = speed-50;
-        io.MouseMove(x, y);
-        speed += acc;
+    // Window moving
+    // Fixed lambda syntax - should be a proper function or lambda variable
+    auto WinMove = [](int x, int y, int w, int h) {
+        havel::Window win(WindowManager::GetActiveWindow());
+        Rect pos = win.Pos();
+        WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w, pos.h + h);
+    };
+    
+    // Window movement hotkeys
+    // Meta+Numpad: Move window (5=down, 6=up, 7=left, 8=right)
+    AddHotkey("@#numpad5", [this, WinMove]() {
+        WinMove(0, winOffset, 0, 0); // Move down
     });
-    AddHotkey("Numpad5", [this]() {
+    
+    AddHotkey("@#numpad6", [this, WinMove]() {
+        WinMove(0, -winOffset, 0, 0); // Move up
+    });
+    
+    AddHotkey("@#numpad7", [this, WinMove]() {
+        WinMove(-winOffset, 0, 0, 0); // Move left
+    });
+    
+    AddHotkey("@#numpad8", [this, WinMove]() {
+        WinMove(winOffset, 0, 0, 0); // Move right
+    });
+    
+    // Meta+Shift+Numpad: Resize window (width/height adjustment)
+    AddHotkey("@#+numpad5", [this, WinMove]() {
+        WinMove(0, 0, 0, winOffset); // Increase height
+    });
+    
+    AddHotkey("@#+numpad6", [this, WinMove]() {
+        WinMove(0, 0, 0, -winOffset); // Decrease height
+    });
+    
+    AddHotkey("@#+numpad7", [this, WinMove]() {
+        WinMove(0, 0, -winOffset, 0); // Decrease width
+    });
+    
+    AddHotkey("@#+numpad8", [this, WinMove]() {
+        WinMove(0, 0, winOffset, 0); // Increase width
+    });
+    
+    // Mouse emulation
+    // Numpad mouse movement with acceleration
+    AddHotkey("numpad1", [this]() { // Bottom-left diagonal
+        static int currentSpeed = speed;
+        io.MouseMove(-currentSpeed, currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad2", [this]() { // Down
+        static int currentSpeed = speed;
+        io.MouseMove(0, currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad3", [this]() { // Bottom-right diagonal
+        static int currentSpeed = speed;
+        io.MouseMove(currentSpeed, currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad4", [this]() { // Left
+        static int currentSpeed = speed;
+        io.MouseMove(-currentSpeed, 0, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad6", [this]() { // Right
+        static int currentSpeed = speed;
+        io.MouseMove(currentSpeed, 0, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad7", [this]() { // Top-left diagonal
+        static int currentSpeed = speed;
+        io.MouseMove(-currentSpeed, -currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad8", [this]() { // Up
+        static int currentSpeed = speed;
+        io.MouseMove(0, -currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    AddHotkey("numpad9", [this]() { // Top-right diagonal
+        static int currentSpeed = speed;
+        io.MouseMove(currentSpeed, -currentSpeed, 1, acc);
+        currentSpeed += static_cast<int>(acc);
+    });
+    
+    // Mouse clicking
+    AddHotkey("numpad5", [this]() { // Left click hold
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
-    AddHotkey("Numpad5:up", [this]() {
+    
+    AddHotkey("numpad5:up", [this]() { // Left click release
         io.Click(MouseButton::Left, MouseAction::Release);
     });
+    
+    AddHotkey("numpadmult", [this]() { // Right click (*)
+        io.Click(MouseButton::Right, MouseAction::Hold);
+    });
+    
+    AddHotkey("numpadmult:up", [this]() { // Right click release
+        io.Click(MouseButton::Right, MouseAction::Release);
+    });
+    
+    AddHotkey("numpaddiv", [this]() { // Middle click (/)
+        io.Click(MouseButton::Middle, MouseAction::Hold);
+    });
 
+    AddHotkey("numpaddiv:up", [this]() { // Middle click release
+        io.Click(MouseButton::Middle, MouseAction::Release);
+    });
+    
+    // Mouse scrolling
+    AddHotkey("numpad0", [this]() { // Scroll down
+        io.Scroll(-1, 0);
+    });
+    
+    AddHotkey("numpaddec", [this]() { // Scroll up (numpad decimal/dot)
+        io.Scroll(1, 0);
+    });
+    
+    // Reset speed when any key is released
+    AddHotkey("numpad1:up", []() { /* Reset speed for numpad1 */ });
+    AddHotkey("numpad2:up", []() { /* Reset speed for numpad2 */ });
+    AddHotkey("numpad3:up", []() { /* Reset speed for numpad3 */ });
+    AddHotkey("numpad4:up", []() { /* Reset speed for numpad4 */ });
+    AddHotkey("numpad6:up", []() { /* Reset speed for numpad6 */ });
+    AddHotkey("numpad7:up", []() { /* Reset speed for numpad7 */ });
+    AddHotkey("numpad8:up", []() { /* Reset speed for numpad8 */ });
+    AddHotkey("numpad9:up", []() { /* Reset speed for numpad9 */ });
     // Also add a title-based hotkey for Koikatu window title (as a fallback)
     AddContextualHotkey("~d", "Window.Active('name:Koikatu')",
         [this]() {

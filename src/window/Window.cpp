@@ -43,6 +43,20 @@ Window::Window(cstr title, wID id) : m_title(title), m_id(id) {
     #endif
 }
 
+Window::Window(wID id) : m_id(id) {
+    #ifdef __linux__
+    if (!display) {
+        Display* rawDisplay = XOpenDisplay(nullptr);
+        if (!rawDisplay) {
+            std::cerr << "Failed to open X11 display" << std::endl;
+            return;
+        }
+        display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
+    }
+    #endif
+    m_id = id;
+}
+
 // Get the position of a window
 Rect Window::Pos() const {
     return Window::Pos(m_id);

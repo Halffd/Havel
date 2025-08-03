@@ -115,16 +115,16 @@ void windowsTest(havel::WindowManager& w){
 }
 
 void setupAHKHotkeys(havel::IO& io) {
-    io.Hotkey("!Up", [](){ havel::WindowManager::MoveWindow(1); });
-    io.Hotkey("!Down", [](){ havel::WindowManager::MoveWindow(2); });
-    io.Hotkey("!Left", [](){ havel::WindowManager::MoveWindow(3); });
-    io.Hotkey("!Right", [](){ havel::WindowManager::MoveWindow(4); });
+    io.Hotkey("!Up", [](){ havel::WindowManager::MoveToCorners(1); });
+    io.Hotkey("!Down", [](){ havel::WindowManager::MoveToCorners(2); });
+    io.Hotkey("!Left", [](){ havel::WindowManager::MoveToCorners(3); });
+    io.Hotkey("!Right", [](){ havel::WindowManager::MoveToCorners(4); });
     
     // Window resizing hotkeys
-    io.Hotkey("!+Up", [](){ havel::WindowManager::ResizeWindow(1); });
-    io.Hotkey("!+Down", [](){ havel::WindowManager::ResizeWindow(2); });
-    io.Hotkey("!+Left", [](){ havel::WindowManager::ResizeWindow(3); });
-    io.Hotkey("!+Right", [](){ havel::WindowManager::ResizeWindow(4); });
+    io.Hotkey("!+Up", [](){ havel::WindowManager::ResizeToCorners(1); });
+    io.Hotkey("!+Down", [](){ havel::WindowManager::ResizeToCorners(2); });
+    io.Hotkey("!+Left", [](){ havel::WindowManager::ResizeToCorners(3); });
+    io.Hotkey("!+Right", [](){ havel::WindowManager::ResizeToCorners(4); });
     
     io.Hotkey("^r", [](){ havel::WindowManager::ToggleAlwaysOnTop(); });
 }

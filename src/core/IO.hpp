@@ -232,7 +232,12 @@ public:
   bool Scroll(int dy, int dx = 0);
 
   void EmergencyReleaseAllKeys();
+  bool TryPressKey(int keycode);
+  bool TryReleaseKey(int keycode);
 private:
+  std::mutex emergencyMutex;
+  std::set<int> pressedKeys;
+  std::mutex keyStateMutex;
   template <typename T> static constexpr bool always_false = false;
   bool EmitClick(int btnCode, int action);
 

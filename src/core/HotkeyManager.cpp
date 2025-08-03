@@ -289,13 +289,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Window Management
     io.Hotkey("#left", []() {
         debug("Moving window left");
-        WindowManager::MoveWindow(3);
+        WindowManager::MoveToCorners(3);
     });
 
     io.Hotkey("#right", []() {
         debug("Moving window right");
         // Move window to next monitor using MoveWindow(4) for right movement
-        WindowManager::MoveWindow(4);
+        WindowManager::MoveToCorners(4);
     });
     io.Hotkey("$f9", [this]() {
         info("Suspending all hotkeys");
@@ -390,10 +390,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     //Emergency exit
     AddHotkey("@^!+#Esc", [this]() {
-        io.EmergencyReleaseAllKeys();
         info("Emergency exit");
+        io.EmergencyReleaseAllKeys();
         exit(0);
     });
+    AddHotkey("@+#Esc", [this]() {
+        info("Emergency release all keys");
+        io.EmergencyReleaseAllKeys();
+    });
+    
     //Mouse emulation
     uint speed = 5;
     float acc = 1;
@@ -628,36 +633,36 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
 void HotkeyManager::RegisterWindowHotkeys() {
     // Window movement
     io.Hotkey("^!Up", []() {
-        WindowManager::MoveWindow(1);
+        WindowManager::MoveToCorners(1);
     });
 
     io.Hotkey("^!Down", []() {
-        WindowManager::MoveWindow(2);
+        WindowManager::MoveToCorners(2);
     });
 
     io.Hotkey("^!Left", []() {
-        WindowManager::MoveWindow(3);
+        WindowManager::MoveToCorners(3);
     });
 
     io.Hotkey("^!Right", []() {
-        WindowManager::MoveWindow(4);
+        WindowManager::MoveToCorners(4);
     });
 
     // Window resizing
     io.Hotkey("+!Up", []() {
-        WindowManager::ResizeWindow(1);
+        WindowManager::ResizeToCorner(1);
     });
 
     io.Hotkey("!+Down", []() {
-        WindowManager::ResizeWindow(2);
+        WindowManager::ResizeToCorner(2);
     });
 
     io.Hotkey("!+Left", []() {
-        WindowManager::ResizeWindow(3);
+        WindowManager::ResizeToCorner(3);
     });
 
     io.Hotkey("!+Right", []() {
-        WindowManager::ResizeWindow(4);
+        WindowManager::ResizeToCorner(4);
     });
 
     // Window always on top

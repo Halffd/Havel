@@ -7,6 +7,8 @@
 #include <type_traits>
 #include "WindowManagerDetector.hpp"
 #include "../utils/Logger.hpp"
+#include "core/DisplayManager.hpp"
+#include "core/ConfigManager.hpp"
 
 #ifdef __linux__
 #include "x11.h"
@@ -71,8 +73,18 @@ public:
     static str getProcessName(pid_t windowPID);
 
     // Add to WindowManager class
-    static void MoveWindow(int direction, int distance = 10);
-    static void ResizeWindow(int direction, int distance = 10);
+    static void MoveToCorners(int direction, int distance = 10);
+    static bool Resize(wID windowId, int width, int height, bool fullscreen = false);
+    static bool SetResolution(wID windowId, const std::string& resolution);
+    static bool Resize(const std::string& windowTitle, int width, int height, bool fullscreen = false);
+    static bool Move(wID windowId, int x, int y, bool centerOnScreen = false);
+    static bool Move(const std::string& windowTitle, int x, int y, bool centerOnScreen = false);
+    static bool Center(const std::string& windowTitle);
+    static bool Center(wID windowId);
+    static bool MoveToCorner(wID windowId, const std::string& corner);
+    static bool MoveToMonitor(wID windowId, int monitorIndex);
+    static bool MoveResize(wID windowId, int x, int y, int width, int height);
+    static void ResizeToCorner(int direction, int distance = 10);
     static void ToggleAlwaysOnTop();
     static void SendToMonitor(int monitorIndex);
     static void SnapWindow(int position);

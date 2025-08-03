@@ -409,36 +409,36 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     
     // Window movement hotkeys
     // Meta+Numpad: Move window (5=down, 6=up, 7=left, 8=right)
-    AddHotkey("@#numpad5", [this, WinMove]() {
+    AddHotkey("@!numpad5", [this, WinMove]() {
         WinMove(0, winOffset, 0, 0); // Move down
     });
     
-    AddHotkey("@#numpad6", [this, WinMove]() {
+    AddHotkey("@!numpad6", [this, WinMove]() {
         WinMove(0, -winOffset, 0, 0); // Move up
     });
     
-    AddHotkey("@#numpad7", [this, WinMove]() {
+    AddHotkey("@!numpad7", [this, WinMove]() {
         WinMove(-winOffset, 0, 0, 0); // Move left
     });
     
-    AddHotkey("@#numpad8", [this, WinMove]() {
+    AddHotkey("@!numpad8", [this, WinMove]() {
         WinMove(winOffset, 0, 0, 0); // Move right
     });
     
     // Meta+Shift+Numpad: Resize window (width/height adjustment)
-    AddHotkey("@#+numpad5", [this, WinMove]() {
+    AddHotkey("@!+numpad5", [this, WinMove]() {
         WinMove(0, 0, 0, winOffset); // Increase height
     });
     
-    AddHotkey("@#+numpad6", [this, WinMove]() {
+    AddHotkey("@!+numpad6", [this, WinMove]() {
         WinMove(0, 0, 0, -winOffset); // Decrease height
     });
     
-    AddHotkey("@#+numpad7", [this, WinMove]() {
+    AddHotkey("@!+numpad7", [this, WinMove]() {
         WinMove(0, 0, -winOffset, 0); // Decrease width
     });
     
-    AddHotkey("@#+numpad8", [this, WinMove]() {
+    AddHotkey("@!+numpad8", [this, WinMove]() {
         WinMove(0, 0, winOffset, 0); // Increase width
     });
     

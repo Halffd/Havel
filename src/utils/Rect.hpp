@@ -11,12 +11,14 @@ namespace havel {
         int height;
         int right;
         int bottom;
+        int w;
+        int h;
         Rect() = default;
-        Rect(int x, int y) : x(x), y(y), left(x), top(y), width(0), height(0), right(x), bottom(y) {}
+        Rect(int x, int y) : x(x), y(y), left(x), top(y), width(0), height(0), right(x), bottom(y), w(0), h(0) {}
         Rect(int x, int y, int w, int h)
-            : x(x), y(y), left(x), top(y), width(w), height(h), right(x + w), bottom(y + h) {}
+            : x(x), y(y), left(x), top(y), width(w), height(h), right(x + w), bottom(y + h), w(w), h(h) {}
         Rect(int x, int y, int l, int t, int w, int h)
-            : x(x), y(y), left(l), top(t), width(w), height(h), right(l + w), bottom(t + h) {}
+            : x(x), y(y), left(l), top(t), width(w), height(h), right(l + w), bottom(t + h), w(w), h(h) {}
 
         int area() const { return width * height; }
 

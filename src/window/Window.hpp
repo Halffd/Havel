@@ -10,6 +10,7 @@ namespace havel {
 class Window {
 public:
     Window(cstr title, wID id = 0);
+    Window(wID id);
     ~Window() = default;
 
     // Static display pointer

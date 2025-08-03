@@ -555,30 +555,6 @@ Key IO::handleKeyString(const std::string &key) {
 
   return keycode;
 }
-void IO::EmergencyReleaseAllKeys() {
-  static std::mutex emergencyMutex;
-  std::lock_guard<std::mutex> lock(emergencyMutex);
-  
-  if (uinputFd < 0) return;
-  
-  // Force release all common modifiers
-  int modifiers[] = {KEY_LEFTCTRL, KEY_RIGHTCTRL, KEY_LEFTSHIFT, KEY_RIGHTSHIFT,
-                    KEY_LEFTALT, KEY_RIGHTALT, KEY_LEFTMETA, KEY_RIGHTMETA};
-  
-  for (int key : modifiers) {
-      struct input_event ev{};
-      gettimeofday(&ev.time, nullptr);
-      ev.type = EV_KEY;
-      ev.code = key;
-      ev.value = 0; // RELEASE
-      write(uinputFd, &ev, sizeof(ev));
-      
-      ev.type = EV_SYN;
-      ev.code = SYN_REPORT;
-      ev.value = 0;
-      write(uinputFd, &ev, sizeof(ev));
-  }
-}
 bool IO::EmitClick(int btnCode, int action) {
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> lock(uinputMutex);
@@ -744,225 +720,280 @@ bool IO::Scroll(int dy, int dx) {
 }
 
 void IO::SendX11Key(const std::string &keyName, bool press) {
-#if defined(__linux__)
-  if (!display) {
-    std::cerr << "X11 display not initialized!" << std::endl;
-    return;
+  #if defined(__linux__)
+    if (!display) {
+      std::cerr << "X11 display not initialized!" << std::endl;
+      return;
+    }
+  
+    Key keysym = StringToVirtualKey(keyName);
+    if (keysym == NoSymbol) {
+      std::cerr << "Invalid key: " << keyName << std::endl;
+      return;
+    }
+  
+    KeyCode keycode = XKeysymToKeycode(display, keysym);
+    if (keycode == 0) {
+      std::cerr << "Cannot find keycode for " << keyName << std::endl;
+      return;
+    }
+    
+    // Add state tracking to X11 as well
+    if (press) {
+      if (!TryPressKey(keycode)) return; // Already pressed
+    } else {
+      if (!TryReleaseKey(keycode)) return; // Not pressed
+    }
+    
+    info("Sending key: " + keyName + " (" + std::to_string(keycode) + ")");
+    XTestFakeKeyEvent(display, keycode, press, CurrentTime);
+    XFlush(display);
+  #endif
   }
-
-  Key keysym = StringToVirtualKey(keyName);
-  if (keysym == NoSymbol) {
-    std::cerr << "Invalid key: " << keyName << std::endl;
-    return;
-  }
-
-  KeyCode keycode = XKeysymToKeycode(display, keysym);
-  if (keycode == 0) {
-    std::cerr << "Cannot find keycode for " << keyName << std::endl;
-    return;
-  }
-  info("Sending key: " + keyName + " (" + std::to_string(keycode) + ")");
-  XTestFakeKeyEvent(display, keycode, press, CurrentTime);
-  XFlush(display);
-#endif
-}
-void IO::SendUInput(int keycode, bool down) {
-  static std::mutex uinputMutex;
-  std::lock_guard<std::mutex> lock(uinputMutex);
-  if (uinputFd < 0) {
+  
+  void IO::SendUInput(int keycode, bool down) {
+    static std::mutex uinputMutex;
+    std::lock_guard<std::mutex> lock(uinputMutex);
+    
+    // State tracking check
+    if (down) {
+      if (!TryPressKey(keycode)) return; // Already pressed
+    } else {
+      if (!TryReleaseKey(keycode)) return; // Not pressed
+    }
+    
+    if (uinputFd < 0) {
       if (!SetupUinputDevice()) {
-          std::cerr << "Failed to initialize uinput device" << std::endl;
-          return;
+        std::cerr << "Failed to initialize uinput device" << std::endl;
+        return;
       }
-  }
-
-  struct input_event ev{};
-  gettimeofday(&ev.time, nullptr); // Real timestamp matters
-
-  ev.type = EV_KEY;
-  ev.code = keycode;
-  ev.value = down ? 1 : 0;
-  if(Configs::Get().GetVerboseKeyLogging())
-    debug("Sending uinput key: " + std::to_string(keycode) + " (" +
-          std::to_string(down) + ")");
-
-  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
+    }
+  
+    struct input_event ev{};
+    gettimeofday(&ev.time, nullptr);
+  
+    ev.type = EV_KEY;
+    ev.code = keycode;
+    ev.value = down ? 1 : 0;
+    
+    if(Configs::Get().GetVerboseKeyLogging())
+      debug("Sending uinput key: " + std::to_string(keycode) + " (" +
+            std::to_string(down) + ")");
+  
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) {
       std::cerr << "Failed to write key event\n";
       return;
-  }
-
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-
-  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
+    }
+  
+    ev.type = EV_SYN;
+    ev.code = SYN_REPORT;
+    ev.value = 0;
+  
+    if (write(uinputFd, &ev, sizeof(ev)) < 0) {
       std::cerr << "Failed to write sync event\n";
+    }
   }
-}
-
-// Method to send keys
-void IO::Send(cstr keys) {
-#if defined(WINDOWS)
-  // Windows-specific implementation
-  for (size_t i = 0; i < keys.length(); ++i) {
-    if (keys[i] == '{') {
-      size_t end = keys.find('}', i);
-      if (end != std::string::npos) {
-        std::string sequence = keys.substr(i + 1, end - i - 1);
-        if (sequence == "Alt down") {
-          modifiers |= MOD_ALT;
-          keybd_event(VK_MENU, 0, 0, 0); // Press down Alt
-        } else if (sequence == "Alt up") {
-          keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0); // Release Alt
-        } else if (sequence == "Ctrl down") {
-          modifiers |= MOD_CONTROL;
-          keybd_event(VK_CONTROL, 0, 0, 0); // Press down Ctrl
-        } else if (sequence == "Ctrl up") {
-          keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0); // Release Ctrl
-        } else if (sequence == "Shift down") {
-          modifiers |= MOD_SHIFT;
-          keybd_event(VK_SHIFT, 0, 0, 0); // Press down Shift
-        } else if (sequence == "Shift up") {
-          keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0); // Release Shift
-        } else {
-          int virtualKey = StringToVirtualKey(sequence);
-          if (virtualKey) {
-            keybd_event(virtualKey, 0, 0, 0);               // Press down
-            keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0); // Release
+  
+  // State tracking implementation
+  bool IO::TryPressKey(int keycode) {
+    std::lock_guard<std::mutex> lock(keyStateMutex);
+    if (pressedKeys.count(keycode)) {
+      if(Configs::Get().GetVerboseKeyLogging())
+        debug("Key " + std::to_string(keycode) + " already pressed, ignoring");
+      return false; // Already pressed
+    }
+    pressedKeys.insert(keycode);
+    return true; // OK to press
+  }
+  
+  bool IO::TryReleaseKey(int keycode) {
+    std::lock_guard<std::mutex> lock(keyStateMutex);
+    if (!pressedKeys.count(keycode)) {
+      if(Configs::Get().GetVerboseKeyLogging())
+        debug("Key " + std::to_string(keycode) + " not pressed, ignoring release");
+      return false; // Not pressed
+    }
+    pressedKeys.erase(keycode);
+    return true; // OK to release
+  }
+  
+  void IO::EmergencyReleaseAllKeys() {
+    std::lock_guard<std::mutex> lock(keyStateMutex);
+    std::cerr << "EMERGENCY: Releasing " << pressedKeys.size() << " stuck keys\n";
+    
+    // Copy the set to avoid iterator invalidation
+    std::set<int> keysToRelease = pressedKeys;
+    pressedKeys.clear();
+    
+    // Release without state checking (bypass TryReleaseKey)
+    for (int keycode : keysToRelease) {
+      if (uinputFd >= 0) {
+        struct input_event ev{};
+        gettimeofday(&ev.time, nullptr);
+        ev.type = EV_KEY;
+        ev.code = keycode;
+        ev.value = 0; // RELEASE
+        write(uinputFd, &ev, sizeof(ev));
+        
+        ev.type = EV_SYN;
+        ev.code = SYN_REPORT;
+        ev.value = 0;
+        write(uinputFd, &ev, sizeof(ev));
+      }
+    }
+  }
+  
+  // Method to send keys with state tracking
+  void IO::Send(cstr keys) {
+  #if defined(WINDOWS)
+    // Windows implementation unchanged
+    for (size_t i = 0; i < keys.length(); ++i) {
+      if (keys[i] == '{') {
+        size_t end = keys.find('}', i);
+        if (end != std::string::npos) {
+          std::string sequence = keys.substr(i + 1, end - i - 1);
+          if (sequence == "Alt down") {
+            keybd_event(VK_MENU, 0, 0, 0);
+          } else if (sequence == "Alt up") {
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+          } else if (sequence == "Ctrl down") {
+            keybd_event(VK_CONTROL, 0, 0, 0);
+          } else if (sequence == "Ctrl up") {
+            keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+          } else if (sequence == "Shift down") {
+            keybd_event(VK_SHIFT, 0, 0, 0);
+          } else if (sequence == "Shift up") {
+            keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
+          } else {
+            int virtualKey = StringToVirtualKey(sequence);
+            if (virtualKey) {
+              keybd_event(virtualKey, 0, 0, 0);
+              keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
+            }
           }
+          i = end;
+          continue;
         }
-        i = end; // Move past the closing brace
-        continue;
+      }
+  
+      int virtualKey = StringToVirtualKey(std::string(1, keys[i]));
+      if (virtualKey) {
+        keybd_event(virtualKey, 0, 0, 0);
+        keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0);
       }
     }
-
-    int virtualKey = StringToVirtualKey(std::string(1, keys[i]));
-    if (virtualKey) {
-      keybd_event(virtualKey, 0, 0, 0);               // Press down
-      keybd_event(virtualKey, 0, KEYEVENTF_KEYUP, 0); // Release
-    }
-  }
-
-  // Release any held modifiers
-  if (modifiers & MOD_ALT)
-    keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
-  if (modifiers & MOD_CONTROL)
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
-  if (modifiers & MOD_SHIFT)
-    keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, 0);
-#else
-
-  // Linux (X11 / uinput)
-  bool useUinput = true;
-  std::vector<std::string> activeModifiers;
-  std::unordered_map<std::string, std::string> modifierKeys = {
-      {"ctrl", "LControl"}, {"rctrl", "RControl"}, {"shift", "LShift"},
-      {"rshift", "RShift"}, {"alt", "LAlt"},       {"ralt", "RAlt"},
-      {"meta", "LMeta"},    {"rmeta", "RMeta"},
-  };
-
-  std::unordered_map<char, std::string> shorthandModifiers = {
-      {'^', "ctrl"}, {'!', "alt"},           {'+', "shift"},
-      {'#', "meta"}, {'@', "toggle_uinput"},
-  };
-
-  auto SendKeyImpl = [&](const std::string &keyName, bool down) {
-    if (useUinput) {
-      int code = EvdevNameToKeyCode(keyName);
-      // must return evdev keycode
-      if (code != -1)
-        SendUInput(code, down);
-    } else {
-      SendX11Key(keyName, down);
-    }
-  };
-
-  auto SendKey = [&](const std::string &keyName, bool down) {
-    // Before sending a new hotkey, always release stuck modifiers
-    if (!down) {
-      // If releasing, nothing special
-    } else if (!activeModifiers.empty()) {
-      for (const auto &mod : activeModifiers) {
-        SendKeyImpl(mod, false);
+  #else
+    // Linux implementation with state tracking
+    bool useUinput = true;
+    std::vector<std::string> activeModifiers;
+    std::unordered_map<std::string, std::string> modifierKeys = {
+        {"ctrl", "LControl"}, {"rctrl", "RControl"}, {"shift", "LShift"},
+        {"rshift", "RShift"}, {"alt", "LAlt"}, {"ralt", "RAlt"},
+        {"meta", "LMeta"}, {"rmeta", "RMeta"},
+    };
+  
+    std::unordered_map<char, std::string> shorthandModifiers = {
+        {'^', "ctrl"}, {'!', "alt"}, {'+', "shift"},
+        {'#', "meta"}, {'@', "toggle_uinput"}, {'~', "emergency_release"},
+    };
+  
+    auto SendKeyImpl = [&](const std::string &keyName, bool down) {
+      if (useUinput) {
+        int code = EvdevNameToKeyCode(keyName);
+        if (code != -1) {
+          SendUInput(code, down); // Now includes state tracking
+        }
+      } else {
+        SendX11Key(keyName, down); // Now includes state tracking
       }
-      activeModifiers.clear();
-    }
-
-    // Use SendKeyImpl to handle the actual key sending
-    SendKeyImpl(keyName, down);
-  };
-
-  size_t i = 0;
-  while (i < keys.length()) {
-    if (shorthandModifiers.count(keys[i])) {
-      std::string mod = shorthandModifiers[keys[i]];
-      if (mod == "toggle_uinput") {
-        useUinput = !useUinput;
-      } else if (modifierKeys.count(mod)) {
-        SendKey(modifierKeys[mod], true);
-        activeModifiers.push_back(mod);
-      }
-      ++i;
-      continue;
-    }
-
-    if (keys[i] == '{') {
-      size_t end = keys.find('}', i);
-      if (end == std::string::npos) {
-        ++i;
-        continue; // malformed
-      }
-      std::string seq = keys.substr(i + 1, end - i - 1);
-      std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
-
-      if (seq.ends_with(" down")) {
-        std::string mod = seq.substr(0, seq.size() - 5);
-        if (modifierKeys.count(mod)) {
+    };
+  
+    auto SendKey = [&](const std::string &keyName, bool down) {
+      SendKeyImpl(keyName, down);
+    };
+  
+    size_t i = 0;
+    while (i < keys.length()) {
+      if (shorthandModifiers.count(keys[i])) {
+        std::string mod = shorthandModifiers[keys[i]];
+        if (mod == "toggle_uinput") {
+          useUinput = !useUinput;
+          if(Configs::Get().GetVerboseKeyLogging())
+            debug(useUinput ? "Switched to uinput" : "Switched to X11");
+        } else if (mod == "emergency_release") {
+          EmergencyReleaseAllKeys();
+        } else if (modifierKeys.count(mod)) {
           SendKey(modifierKeys[mod], true);
           activeModifiers.push_back(mod);
-        } else {
-          SendKey(mod, true);
         }
-      } else if (seq.ends_with(" up")) {
-        std::string mod = seq.substr(0, seq.size() - 3);
-        if (modifierKeys.count(mod)) {
-          SendKey(modifierKeys[mod], false);
-          activeModifiers.erase(
-              std::remove(activeModifiers.begin(), activeModifiers.end(), mod),
-              activeModifiers.end());
-        } else {
-          SendKey(mod, false);
-        }
-      } else if (modifierKeys.count(seq)) {
-        SendKey(modifierKeys[seq], true);
-        SendKey(modifierKeys[seq], false);
-      } else {
-        SendKey(seq, true);
-        SendKey(seq, false);
+        ++i;
+        continue;
       }
-      i = end + 1;
-      continue;
+  
+      if (keys[i] == '{') {
+        size_t end = keys.find('}', i);
+        if (end == std::string::npos) {
+          ++i;
+          continue;
+        }
+        std::string seq = keys.substr(i + 1, end - i - 1);
+        std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
+  
+        // Special emergency commands
+        if (seq == "emergency_release" || seq == "panic") {
+          EmergencyReleaseAllKeys();
+        } else if (seq.ends_with(" down")) {
+          std::string mod = seq.substr(0, seq.size() - 5);
+          if (modifierKeys.count(mod)) {
+            SendKey(modifierKeys[mod], true);
+            activeModifiers.push_back(mod);
+          } else {
+            SendKey(mod, true);
+          }
+        } else if (seq.ends_with(" up")) {
+          std::string mod = seq.substr(0, seq.size() - 3);
+          if (modifierKeys.count(mod)) {
+            SendKey(modifierKeys[mod], false);
+            activeModifiers.erase(
+                std::remove(activeModifiers.begin(), activeModifiers.end(), mod),
+                activeModifiers.end());
+          } else {
+            SendKey(mod, false);
+          }
+        } else if (modifierKeys.count(seq)) {
+          SendKey(modifierKeys[seq], true);
+          // Small delay to ensure press is registered before release
+          std::this_thread::sleep_for(std::chrono::microseconds(100));
+          SendKey(modifierKeys[seq], false);
+        } else {
+          SendKey(seq, true);
+          std::this_thread::sleep_for(std::chrono::microseconds(100));
+          SendKey(seq, false);
+        }
+        i = end + 1;
+        continue;
+      }
+  
+      if (!isspace(keys[i])) {
+        std::string key(1, keys[i]);
+        SendKey(key, true);
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        SendKey(key, false);
+      }
+      ++i;
     }
-
-    if (!isspace(keys[i])) {
-      std::string key(1, keys[i]);
-      SendKey(key, true);
-      SendKey(key, false);
+  
+    // Release all held modifiers (fail-safe)
+    for (const auto &mod : activeModifiers) {
+      if (modifierKeys.count(mod)) {
+        SendKey(modifierKeys[mod], false);
+      } else {
+        SendKey(mod, false);
+      }
     }
-    ++i;
+    activeModifiers.clear();
+  #endif
   }
-
-  // Release all modifiers that are still held as a fail-safe
-  for (const auto &mod : activeModifiers) {
-    if (modifierKeys.count(mod)) {
-      SendKey(modifierKeys[mod], false);
-    } else {
-      SendKey(mod, false);
-    }
-  }
-  activeModifiers.clear();
-#endif
-}
 bool IO::Suspend(){
   try {
     if(isSuspended) {

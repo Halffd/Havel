@@ -4,9 +4,7 @@
 #include "../utils/Logger.hpp"
 #include <iostream>
 #include <sstream>
-#include <fstream>
 #include <cstring>
-#include <algorithm>
 #include <thread>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -756,7 +754,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
     }
 
     // Implementation of AHK-like features
-    void WindowManager::MoveWindow(int direction, int distance) {
+    void WindowManager::MoveToCorners(int direction, int distance) {
 #ifdef __linux__
         Display *display = DisplayManager::GetDisplay();
         if (!display) {
@@ -806,8 +804,539 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
             std::to_string(newY));
 #endif
     }
-
-    void WindowManager::ResizeWindow(int direction, int distance) {
+    bool WindowManager::Resize(wID windowId, int width, int height, bool fullscreen) {
+        #if defined(__linux__)
+            if (!DisplayManager::GetDisplay()) {
+                std::cerr << "X11 display not initialized!" << std::endl;
+                return false;
+            }
+        
+            Window window = static_cast<Window>(windowId);
+            if (window == 0) {
+                std::cerr << "Invalid window ID" << std::endl;
+                return false;
+            }
+        
+            // Wine games are extra stubborn - need nuclear approach
+            
+            // 1. First, try to identify if this is actually a Wine window
+            Atom wineProp = XInternAtom(DisplayManager::GetDisplay(), "_WINE_VERSION", x11::XTrue);
+            bool isWineWindow = false;
+            if (wineProp != x11::XNone) {
+                Atom actualType;
+                int actualFormat;
+                unsigned long nitems, bytesAfter;
+                unsigned char* prop = nullptr;
+                if (XGetWindowProperty(DisplayManager::GetDisplay(), window, wineProp, 0, 1024, x11::XFalse, 
+                                      AnyPropertyType, &actualType, &actualFormat,
+                                      &nitems, &bytesAfter, &prop) == x11::XSuccess) {
+                    if (prop) {
+                        isWineWindow = true;
+                        XFree(prop);
+                    }
+                }
+            }
+        
+            if(Configs::Get().GetVerboseKeyLogging()) {
+                debug(isWineWindow ? "Detected Wine window" : "Non-Wine window");
+            }
+        
+            // 2. Get current state
+            XWindowAttributes attrs;
+            XGetWindowAttributes(DisplayManager::GetDisplay(), window, &attrs);
+        
+            // 3. Remove ALL window manager hints and constraints
+            XSizeHints* sizeHints = XAllocSizeHints();
+            if (sizeHints) {
+                // Clear everything Wine might have set
+                memset(sizeHints, 0, sizeof(XSizeHints));
+                sizeHints->flags = 0;
+                sizeHints->min_width = 1;
+                sizeHints->min_height = 1;
+                sizeHints->max_width = 65535;
+                sizeHints->max_height = 65535;
+                XSetWMNormalHints(DisplayManager::GetDisplay(), window, sizeHints);
+                XFree(sizeHints);
+            }
+        
+            // 4. Remove window manager decorations (Wine games often fight this)
+            Atom wmHints = XInternAtom(DisplayManager::GetDisplay(), "_MOTIF_WM_HINTS", x11::XFalse);
+            if (wmHints != x11::XNone) {
+                struct {
+                    unsigned long flags;
+                    unsigned long functions;
+                    unsigned long decorations;
+                    long inputMode;
+                    unsigned long status;
+                } mwmHints = {2, 0, 0, 0, 0}; // MWM_HINTS_DECORATIONS, no decorations
+                
+                XChangeProperty(DisplayManager::GetDisplay(), window, wmHints, wmHints, 32,
+                               PropModeReplace, (unsigned char*)&mwmHints, 5);
+            }
+        
+            // 5. Handle fullscreen vs windowed differently
+            Atom wmState = XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_STATE", x11::XFalse);
+            Atom wmStateFullscreen = XInternAtom(DisplayManager::GetDisplay(), "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
+        
+            if (fullscreen) {
+                // Force fullscreen mode
+                Screen* screen = DefaultScreenOfDisplay(DisplayManager::GetDisplay());
+                width = WidthOfScreen(screen);
+                height = HeightOfScreen(screen);
+        
+                // Set fullscreen property
+                XChangeProperty(DisplayManager::GetDisplay(), window, wmState, XA_ATOM, 32,
+                               PropModeReplace, (unsigned char*)&wmStateFullscreen, 1);
+                
+                // Move to 0,0 and resize to screen size
+                XMoveResizeWindow(DisplayManager::GetDisplay(), window, 0, 0, width, height);
+            } else {
+                // Remove fullscreen property
+                XChangeProperty(DisplayManager::GetDisplay(), window, wmState, XA_ATOM, 32,
+                               PropModeReplace, nullptr, 0);
+            }
+        
+            // 6. Wine-specific: Try to grab input focus (games expect this)
+            XGrabKeyboard(DisplayManager::GetDisplay(), window, x11::XTrue, GrabModeAsync, GrabModeAsync, CurrentTime);
+            XGrabPointer(DisplayManager::GetDisplay(), window, x11::XTrue, ButtonPressMask | ButtonReleaseMask | PointerMotionMask,
+                        GrabModeAsync, GrabModeAsync, window, x11::XNone, CurrentTime);
+        
+            // 7. The nuclear option: Override redirect and force everything
+            XSetWindowAttributes setAttrs;
+            setAttrs.override_redirect = x11::XTrue;
+            setAttrs.backing_store = WhenMapped;
+            setAttrs.save_under = x11::XTrue;
+            XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect | CWBackingStore | CWSaveUnder, &setAttrs);
+        
+            // 8. Multiple resize attempts (Wine games sometimes ignore the first few)
+            for (int attempt = 0; attempt < 5; ++attempt) {
+                XResizeWindow(DisplayManager::GetDisplay(), window, width, height);
+                XMoveResizeWindow(DisplayManager::GetDisplay(), window, fullscreen ? 0 : attrs.x, fullscreen ? 0 : attrs.y, width, height);
+                
+                // Send configure event directly to the game
+                XConfigureEvent configEvent = {};
+                configEvent.type = x11::XConfigureNotify;
+                configEvent.display = DisplayManager::GetDisplay();
+                configEvent.event = window;
+                configEvent.window = window;
+                configEvent.x = fullscreen ? 0 : attrs.x;
+                configEvent.y = fullscreen ? 0 : attrs.y;
+                configEvent.width = width;
+                configEvent.height = height;
+                configEvent.border_width = 0;
+                configEvent.above = x11::XNone;
+                configEvent.override_redirect = x11::XTrue;
+        
+                XSendEvent(DisplayManager::GetDisplay(), window, x11::XTrue, StructureNotifyMask, (XEvent*)&configEvent);
+                XFlush(DisplayManager::GetDisplay());
+                
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        
+            // 9. Try to trigger Wine's internal resize mechanism
+            if (isWineWindow) {
+                // Send WM_SIZE equivalent through Wine's message system
+                Atom wineMsg = XInternAtom(DisplayManager::GetDisplay(), "_WINE_MSG", x11::XFalse);
+                if (wineMsg != x11::XNone) {
+                    XClientMessageEvent clientMsg = {};
+                    clientMsg.type = x11::XClientMessage;
+                    clientMsg.window = window;
+                    clientMsg.message_type = wineMsg;
+                    clientMsg.format = 32;
+                    clientMsg.data.l[0] = 0x0005; // WM_SIZE
+                    clientMsg.data.l[1] = 0;      // wParam
+                    clientMsg.data.l[2] = (height << 16) | (width & 0xFFFF); // lParam: HIWORD=height, LOWORD=width
+                    
+                    XSendEvent(DisplayManager::GetDisplay(), window, x11::XFalse, NoEventMask, (XEvent*)&clientMsg);
+                }
+            }
+        
+            // 10. Reset override redirect but keep the size
+            setAttrs.override_redirect = x11::XFalse;
+            XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect, &setAttrs);
+        
+            // 11. Release grabs
+            XUngrabKeyboard(DisplayManager::GetDisplay(), CurrentTime);
+            XUngrabPointer(DisplayManager::GetDisplay(), CurrentTime);
+        
+            // 12. Final sync and verify
+            XSync(DisplayManager::GetDisplay(), x11::XFalse);
+            
+            // Give Wine time to process
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            
+            // Verify resize
+            XWindowAttributes newAttrs;
+            if (XGetWindowAttributes(DisplayManager::GetDisplay(), window, &newAttrs) == x11::XSuccess) {
+                bool success = (abs(newAttrs.width - width) <= 2) && (abs(newAttrs.height - height) <= 2);
+                if(Configs::Get().GetVerboseKeyLogging()) {
+                    debug("Wine resize result: " + std::to_string(newAttrs.width) + "x" + std::to_string(newAttrs.height) + 
+                          " (target: " + std::to_string(width) + "x" + std::to_string(height) + ")");
+                }
+                return success;
+            }
+        
+            return true; // Assume success if we can't verify
+        
+        #elif defined(WINDOWS)
+            // Wine on Windows - use Windows API but be more aggressive
+            HWND hwnd = reinterpret_cast<HWND>(windowId);
+            if (!IsWindow(hwnd)) return false;
+        
+            // Remove window styles that prevent resizing
+            DWORD style = GetWindowLong(hwnd, GWL_STYLE);
+            style |= WS_SIZEBOX | WS_MAXIMIZEBOX;
+            style &= ~(WS_DLGFRAME | WS_BORDER);
+            SetWindowLong(hwnd, GWL_STYLE, style);
+        
+            DWORD exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            exStyle &= ~(WS_EX_DLGMODALFRAME | WS_EX_STATICEDGE);
+            SetWindowLong(hwnd, GWL_EXSTYLE, exStyle);
+        
+            // Force the resize
+            UINT flags = SWP_NOZORDER | SWP_NOACTIVATE;
+            if (fullscreen) {
+                flags |= SWP_NOMOVE;
+                return SetWindowPos(hwnd, HWND_TOP, 0, 0, 
+                                   GetSystemMetrics(SM_CXSCREEN), 
+                                   GetSystemMetrics(SM_CYSCREEN), flags) != 0;
+            } else {
+                return SetWindowPos(hwnd, HWND_TOP, 0, 0, width, height, flags) != 0;
+            }
+        #endif
+            return false;
+        } 
+        bool WindowManager::Move(wID windowId, int x, int y, bool centerOnScreen) {
+            #if defined(__linux__)
+                if (!DisplayManager::GetDisplay()) {
+                    std::cerr << "X11 display not initialized!" << std::endl;
+                    return false;
+                }
+            
+                Window window = static_cast<Window>(windowId);
+                if (window == 0) {
+                    std::cerr << "Invalid window ID" << std::endl;
+                    return false;
+                }
+            
+                // Get screen dimensions for centering
+                Screen* screen = DefaultScreenOfDisplay(DisplayManager::GetDisplay());
+                int screenWidth = WidthOfScreen(screen);
+                int screenHeight = HeightOfScreen(screen);
+            
+                // Get current window size for centering calculation
+                XWindowAttributes attrs;
+                XGetWindowAttributes(DisplayManager::GetDisplay(), window, &attrs);
+            
+                if (centerOnScreen) {
+                    x = (screenWidth - attrs.width) / 2;
+                    y = (screenHeight - attrs.height) / 2;
+                }
+            
+                if(Configs::Get().GetVerboseKeyLogging()) {
+                    debug("Moving Wine window to " + std::to_string(x) + "," + std::to_string(y));
+                }
+            
+                // 1. Remove window manager positioning constraints
+                XSizeHints* sizeHints = XAllocSizeHints();
+                if (sizeHints) {
+                    // Clear position constraints
+                    sizeHints->flags &= ~(PPosition | PMinSize | PMaxSize | PResizeInc | PAspect);
+                    sizeHints->flags |= USPosition; // User specified position
+                    sizeHints->x = x;
+                    sizeHints->y = y;
+                    XSetWMNormalHints(DisplayManager::GetDisplay(), window, sizeHints);
+                    XFree(sizeHints);
+                }
+            
+                // 2. Try standard move first
+                XMoveWindow(DisplayManager::GetDisplay(), window, x, y);
+                XFlush(DisplayManager::GetDisplay());
+            
+                // 3. Wine games often ignore moves, so use override redirect
+                XSetWindowAttributes setAttrs;
+                setAttrs.override_redirect = x11::XTrue;
+                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect, &setAttrs);
+            
+                // Multiple move attempts (Wine games sometimes ignore first attempts)
+                for (int attempt = 0; attempt < 3; ++attempt) {
+                    XMoveWindow(DisplayManager::GetDisplay(), window, x, y);
+                    XMoveResizeWindow(DisplayManager::GetDisplay(), window, x, y, attrs.width, attrs.height);
+                    
+                    // Send configure event directly to bypass window manager
+                    XConfigureEvent configEvent = {};
+                    configEvent.type = x11::XConfigureNotify;
+                    configEvent.display = DisplayManager::GetDisplay();
+                    configEvent.event = window;
+                    configEvent.window = window;
+                    configEvent.x = x;
+                    configEvent.y = y;
+                    configEvent.width = attrs.width;
+                    configEvent.height = attrs.height;
+                    configEvent.border_width = attrs.border_width;
+                    configEvent.above = x11::XNone;
+                    configEvent.override_redirect = x11::XTrue;
+            
+                    XSendEvent(DisplayManager::GetDisplay(), window, x11::XTrue, StructureNotifyMask, (XEvent*)&configEvent);
+                    XFlush(DisplayManager::GetDisplay());
+                    
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                }
+            
+                // 4. Try Wine-specific message (WM_MOVE equivalent)
+                Atom wineProp = XInternAtom(DisplayManager::GetDisplay(), "_WINE_VERSION", x11::XTrue);
+                if (wineProp != x11::XNone) {
+                    Atom wineMsg = XInternAtom(DisplayManager::GetDisplay(), "_WINE_MSG", x11::XFalse);
+                    if (wineMsg != x11::XNone) {
+                        XClientMessageEvent clientMsg = {};
+                        clientMsg.type = x11::XClientMessage;
+                        clientMsg.window = window;
+                        clientMsg.message_type = wineMsg;
+                        clientMsg.format = 32;
+                        clientMsg.data.l[0] = 0x0003; // WM_MOVE
+                        clientMsg.data.l[1] = 0;      // wParam
+                        clientMsg.data.l[2] = (y << 16) | (x & 0xFFFF); // lParam: HIWORD=y, LOWORD=x
+                        
+                        XSendEvent(DisplayManager::GetDisplay(), window, x11::XFalse, NoEventMask, (XEvent*)&clientMsg);
+                    }
+                }
+            
+                // 5. Reset override redirect
+                setAttrs.override_redirect = x11::XFalse;
+                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect, &setAttrs);
+            
+                // 6. Final sync and verify
+                XSync(DisplayManager::GetDisplay(), x11::XFalse);
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+                // Verify the move worked
+                XWindowAttributes newAttrs;
+                if (XGetWindowAttributes(DisplayManager::GetDisplay(), window, &newAttrs) == x11::XSuccess) {
+                    bool success = (abs(newAttrs.x - x) <= 5) && (abs(newAttrs.y - y) <= 5);
+                    if(Configs::Get().GetVerboseKeyLogging()) {
+                        debug("Wine move result: " + std::to_string(newAttrs.x) + "," + std::to_string(newAttrs.y) + 
+                              " (target: " + std::to_string(x) + "," + std::to_string(y) + ")");
+                    }
+                    return success;
+                }
+            
+                return true;
+            
+            #elif defined(WINDOWS)
+                HWND hwnd = reinterpret_cast<HWND>(windowId);
+                if (!IsWindow(hwnd)) return false;
+            
+                if (centerOnScreen) {
+                    RECT rect;
+                    GetWindowRect(hwnd, &rect);
+                    int width = rect.right - rect.left;
+                    int height = rect.bottom - rect.top;
+                    x = (GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+                    y = (GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+                }
+            
+                return SetWindowPos(hwnd, HWND_TOP, x, y, 0, 0, 
+                                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE) != 0;
+            #endif
+                return false;
+            }
+            
+            bool WindowManager::MoveResize(wID windowId, int x, int y, int width, int height) {
+            #if defined(__linux__)
+                if (!DisplayManager::GetDisplay()) return false;
+            
+                Window window = static_cast<Window>(windowId);
+                if (window == 0) return false;
+            
+                if(Configs::Get().GetVerboseKeyLogging()) {
+                    debug("Moving and resizing Wine window to " + std::to_string(x) + "," + 
+                          std::to_string(y) + " " + std::to_string(width) + "x" + std::to_string(height));
+                }
+            
+                // Nuclear option: Override redirect and force everything at once
+                XSetWindowAttributes setAttrs;
+                setAttrs.override_redirect = x11::XTrue;
+                setAttrs.backing_store = WhenMapped;
+                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect | CWBackingStore, &setAttrs);
+            
+                // Remove all constraints
+                XSizeHints* sizeHints = XAllocSizeHints();
+                if (sizeHints) {
+                    memset(sizeHints, 0, sizeof(XSizeHints));
+                    sizeHints->flags = USPosition | USSize;
+                    sizeHints->x = x;
+                    sizeHints->y = y;
+                    sizeHints->width = width;
+                    sizeHints->height = height;
+                    sizeHints->min_width = 1;
+                    sizeHints->min_height = 1;
+                    sizeHints->max_width = 65535;
+                    sizeHints->max_height = 65535;
+                    XSetWMNormalHints(DisplayManager::GetDisplay(), window, sizeHints);
+                    XFree(sizeHints);
+                }
+            
+                // Multiple attempts with different methods
+                for (int attempt = 0; attempt < 5; ++attempt) {
+                    XMoveResizeWindow(DisplayManager::GetDisplay(), window, x, y, width, height);
+                    
+                    // Send configure event
+                    XConfigureEvent configEvent = {};
+                    configEvent.type = x11::XConfigureNotify;
+                    configEvent.display = DisplayManager::GetDisplay();
+                    configEvent.event = window;
+                    configEvent.window = window;
+                    configEvent.x = x;
+                    configEvent.y = y;
+                    configEvent.width = width;
+                    configEvent.height = height;
+                    configEvent.border_width = 0;
+                    configEvent.above = x11::XNone;
+                    configEvent.override_redirect = x11::XTrue;
+            
+                    XSendEvent(DisplayManager::GetDisplay(), window, x11::XTrue, StructureNotifyMask, (XEvent*)&configEvent);
+                    XFlush(DisplayManager::GetDisplay());
+                    
+                    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+                }
+            
+                // Reset override redirect
+                setAttrs.override_redirect = x11::XFalse;
+                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect, &setAttrs);
+            
+                XSync(DisplayManager::GetDisplay(), x11::XFalse);
+                return true;
+            
+            #elif defined(WINDOWS)
+                HWND hwnd = reinterpret_cast<HWND>(windowId);
+                if (!IsWindow(hwnd)) return false;
+            
+                return SetWindowPos(hwnd, HWND_TOP, x, y, width, height, 
+                                   SWP_NOZORDER | SWP_NOACTIVATE) != 0;
+            #endif
+                return false;
+            }
+            
+            // Convenience methods for common positioning scenarios
+            bool WindowManager::Center(wID windowId) {
+                return Move(windowId, 0, 0, true);
+            }
+            
+            bool WindowManager::MoveToCorner(wID windowId, const std::string& corner) {
+            #if defined(__linux__)
+                if (!DisplayManager::GetDisplay()) return false;
+                
+                Screen* screen = DefaultScreenOfDisplay(DisplayManager::GetDisplay());
+                int screenWidth = WidthOfScreen(screen);
+                int screenHeight = HeightOfScreen(screen);
+                
+                Window window = static_cast<Window>(windowId);
+                XWindowAttributes attrs;
+                XGetWindowAttributes(DisplayManager::GetDisplay(), window, &attrs);
+                
+                int x = 0, y = 0;
+                
+                if (corner == "top-left" || corner == "tl") {
+                    x = 0; y = 0;
+                } else if (corner == "top-right" || corner == "tr") {
+                    x = screenWidth - attrs.width; y = 0;
+                } else if (corner == "bottom-left" || corner == "bl") {
+                    x = 0; y = screenHeight - attrs.height;
+                } else if (corner == "bottom-right" || corner == "br") {
+                    x = screenWidth - attrs.width; y = screenHeight - attrs.height;
+                } else {
+                    std::cerr << "Unknown corner: " << corner << std::endl;
+                    return false;
+                }
+                
+                return Move(windowId, x, y);
+            #endif
+                return false;
+            }
+            
+            bool WindowManager::MoveToMonitor(wID windowId, int monitorIndex) {
+            #if defined(__linux__)
+                if (!DisplayManager::GetDisplay()) return false;
+                
+                // Get monitor information using Xinerama if available
+                int numMonitors = 0;
+                XineramaScreenInfo* monitors = XineramaQueryScreens(DisplayManager::GetDisplay(), &numMonitors);
+                
+                if (!monitors || monitorIndex >= numMonitors) {
+                    if (monitors) XFree(monitors);
+                    std::cerr << "Invalid monitor index: " << monitorIndex << std::endl;
+                    return false;
+                }
+                
+                XineramaScreenInfo& monitor = monitors[monitorIndex];
+                
+                // Center window on the specified monitor
+                Window window = static_cast<Window>(windowId);
+                XWindowAttributes attrs;
+                XGetWindowAttributes(DisplayManager::GetDisplay(), window, &attrs);
+                
+                int x = monitor.x_org + (monitor.width - attrs.width) / 2;
+                int y = monitor.y_org + (monitor.height - attrs.height) / 2;
+                
+                XFree(monitors);
+                return Move(windowId, x, y);
+            #endif
+                return false;
+            }
+            
+            // Convenience overloads with window title
+            bool WindowManager::Move(const std::string& windowTitle, int x, int y, bool centerOnScreen) {
+                wID windowId = FindByTitle(windowTitle);
+                if (!windowId) {
+                    windowId = FindByClass("Wine");
+                    if (!windowId) {
+                        std::cerr << "Wine window not found: " << windowTitle << std::endl;
+                        return false;
+                    }
+                }
+                return Move(windowId, x, y, centerOnScreen);
+            }
+            
+            bool WindowManager::Center(const std::string& windowTitle) {
+                return Move(windowTitle, 0, 0, true);
+            }
+        // Convenience methods for common Wine game scenarios
+        bool WindowManager::Resize(const std::string& windowTitle, int width, int height, bool fullscreen) {
+            wID windowId = FindByTitle(windowTitle);
+            if (!windowId) {
+                // Try to find by class name (many Wine games use generic titles)
+                windowId = FindByClass("Wine");
+                if (!windowId) {
+                    std::cerr << "Wine window not found: " << windowTitle << std::endl;
+                    return false;
+                }
+            }
+            return Resize(windowId, width, height, fullscreen);
+        }
+        
+        // Set common resolutions for Wine games
+        bool WindowManager::SetResolution(wID windowId, const std::string& resolution) {
+            static const std::unordered_map<std::string, std::pair<int, int>> resolutions = {
+                {"720p", {1280, 720}},
+                {"1080p", {1920, 1080}},
+                {"1440p", {2560, 1440}},
+                {"4k", {3840, 2160}},
+                {"fullscreen", {0, 0}} // Special case for fullscreen
+            };
+        
+            auto it = resolutions.find(resolution);
+            if (it == resolutions.end()) {
+                std::cerr << "Unknown resolution: " << resolution << std::endl;
+                return false;
+            }
+        
+            if (resolution == "fullscreen") {
+                return Resize(windowId, 0, 0, true);
+            } else {
+                return Resize(windowId, it->second.first, it->second.second, false);
+            }
+        }
+    void WindowManager::ResizeToCorner(int direction, int distance) {
 #ifdef __linux__
         Display *display = DisplayManager::GetDisplay();
         Window win = GetActiveWindow();
@@ -1285,8 +1814,8 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         int currentMonitor = 0; // Default to first monitor
         for (size_t i = 0; i < monitors.size(); ++i) {
             const auto &m = monitors[i];
-            if (winCenterX >= m.x && winCenterX < m.x + m.width &&
-                winCenterY >= m.y && winCenterY < m.y + m.height) {
+            if (static_cast<unsigned int>(winCenterX) >= m.x && static_cast<unsigned int>(winCenterX) < m.x + m.width &&
+                static_cast<unsigned int>(winCenterY) >= m.y && static_cast<unsigned int>(winCenterY) < m.y + m.height) {
                 currentMonitor = i;
                 break;
             }

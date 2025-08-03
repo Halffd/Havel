@@ -384,9 +384,31 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(1, io);
     });
     AddHotkey("!d", [this]() {
-            showBlackOverlay();
-            logWindowEvent("BLACK_OVERLAY", "Showing black overlay");
-        });
+        showBlackOverlay();
+        logWindowEvent("BLACK_OVERLAY", "Showing black overlay");
+    });
+
+    //Emergency exit
+    AddHotkey("@^!+#Esc", [this]() {
+        io.EmergencyReleaseAllKeys();
+        info("Emergency exit");
+        exit(0);
+    });
+    //Mouse emulation
+    uint speed = 5;
+    float acc = 1;
+    AddHotkey("Numpad1", [this]() {
+        uint x = speed-50;
+        uint y = speed-50;
+        io.MouseMove(x, y);
+        speed += acc;
+    });
+    AddHotkey("Numpad5", [this]() {
+        io.Click(MouseButton::Left, MouseAction::Hold);
+    });
+    AddHotkey("Numpad5:up", [this]() {
+        io.Click(MouseButton::Left, MouseAction::Release);
+    });
 
     // Also add a title-based hotkey for Koikatu window title (as a fallback)
     AddContextualHotkey("~d", "Window.Active('name:Koikatu')",

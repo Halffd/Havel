@@ -231,13 +231,10 @@ public:
   bool MouseMove(int dx, int dy, int speed, float accel);
   bool Scroll(int dy, int dx = 0);
 
+  void EmergencyReleaseAllKeys();
 private:
   template <typename T> static constexpr bool always_false = false;
   bool EmitClick(int btnCode, int action);
-
-  bool InitUinputDevice();
-
-  void EmitToUinput(int code, bool down);
 
   void CleanupUinputDevice();
   bool SetupUinputDevice();

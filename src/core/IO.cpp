@@ -171,47 +171,6 @@ error:
   return false;
 }
 
-bool IO::InitUinputDevice() {
-  uinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-  if (uinputFd < 0) {
-    std::cerr << "Failed to open /dev/uinput: " << strerror(errno) << "\n";
-    return false;
-  }
-
-  ioctl(uinputFd, UI_SET_EVBIT, EV_KEY);
-  for (int i = 0; i < 256; ++i)
-    ioctl(uinputFd, UI_SET_KEYBIT, i);
-
-  struct uinput_setup usetup{};
-  usetup.id.bustype = BUS_USB;
-  usetup.id.vendor = 0x1;
-  usetup.id.product = 0x1;
-  strcpy(usetup.name, "virtual-hotkey-kbd");
-
-  ioctl(uinputFd, UI_DEV_SETUP, &usetup);
-  ioctl(uinputFd, UI_DEV_CREATE);
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  return true;
-}
-
-void IO::EmitToUinput(int code, bool down) {
-  if (uinputFd < 0)
-    return;
-
-  input_event ev{};
-  gettimeofday(&ev.time, NULL);
-  ev.type = EV_KEY;
-  ev.code = code;
-  ev.value = down ? 1 : 0;
-  write(uinputFd, &ev, sizeof(ev));
-
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  write(uinputFd, &ev, sizeof(ev));
-}
-
 void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
               bool isMouse) {
   if (!display)
@@ -596,8 +555,33 @@ Key IO::handleKeyString(const std::string &key) {
 
   return keycode;
 }
-
+void IO::EmergencyReleaseAllKeys() {
+  static std::mutex emergencyMutex;
+  std::lock_guard<std::mutex> lock(emergencyMutex);
+  
+  if (uinputFd < 0) return;
+  
+  // Force release all common modifiers
+  int modifiers[] = {KEY_LEFTCTRL, KEY_RIGHTCTRL, KEY_LEFTSHIFT, KEY_RIGHTSHIFT,
+                    KEY_LEFTALT, KEY_RIGHTALT, KEY_LEFTMETA, KEY_RIGHTMETA};
+  
+  for (int key : modifiers) {
+      struct input_event ev{};
+      gettimeofday(&ev.time, nullptr);
+      ev.type = EV_KEY;
+      ev.code = key;
+      ev.value = 0; // RELEASE
+      write(uinputFd, &ev, sizeof(ev));
+      
+      ev.type = EV_SYN;
+      ev.code = SYN_REPORT;
+      ev.value = 0;
+      write(uinputFd, &ev, sizeof(ev));
+  }
+}
 bool IO::EmitClick(int btnCode, int action) {
+  static std::mutex uinputMutex;
+  std::lock_guard<std::mutex> lock(uinputMutex);
   input_event ev = {};
   
   // action values:
@@ -680,6 +664,8 @@ bool IO::EmitClick(int btnCode, int action) {
 }
 
 bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
+    static std::mutex uinputMutex;
+    std::lock_guard<std::mutex> lock(uinputMutex);
   if (speed <= 0)
     speed = 1;
   if (accel <= 0.0f)
@@ -725,6 +711,8 @@ bool IO::MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
 }
 
 bool IO::Scroll(int dy, int dx) {
+  static std::mutex uinputMutex;
+  std::lock_guard<std::mutex> lock(uinputMutex);
   if (uinputFd < 0)
     return false;
 
@@ -778,24 +766,38 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
   XFlush(display);
 #endif
 }
-
 void IO::SendUInput(int keycode, bool down) {
-  if (uinputFd < 0)
-    return;
-  info("Sending UInput key: " + std::to_string(keycode) + " (" +
-          std::to_string(down) + ")");
+  static std::mutex uinputMutex;
+  std::lock_guard<std::mutex> lock(uinputMutex);
+  if (uinputFd < 0) {
+      if (!SetupUinputDevice()) {
+          std::cerr << "Failed to initialize uinput device" << std::endl;
+          return;
+      }
+  }
+
   struct input_event ev{};
+  gettimeofday(&ev.time, nullptr); // Real timestamp matters
+
   ev.type = EV_KEY;
   ev.code = keycode;
   ev.value = down ? 1 : 0;
-  ev.time.tv_sec = 0;
-  ev.time.tv_usec = 0;
-  write(uinputFd, &ev, sizeof(ev));
+  if(Configs::Get().GetVerboseKeyLogging())
+    debug("Sending uinput key: " + std::to_string(keycode) + " (" +
+          std::to_string(down) + ")");
+
+  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
+      std::cerr << "Failed to write key event\n";
+      return;
+  }
 
   ev.type = EV_SYN;
   ev.code = SYN_REPORT;
   ev.value = 0;
-  write(uinputFd, &ev, sizeof(ev));
+
+  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
+      std::cerr << "Failed to write sync event\n";
+  }
 }
 
 // Method to send keys
@@ -2109,7 +2111,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
           std::cerr << "Error in hotkey callback: " << e.what() << std::endl;
         }
       }
-      EmitToUinput(code, down);
+      SendUInput(code, down);
     }
 
     close(fd);

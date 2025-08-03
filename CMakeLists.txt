@@ -102,6 +102,10 @@ if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     message(STATUS "LLVM libraries: ${LLVM_LIBS_LIST}")
     message(STATUS "LLVM system libraries: ${LLVM_SYSTEM_LIBS_LIST}")
 
+    # Combine LLVM libraries and system libraries into a single list that can be
+    # consumed by target_link_libraries later.
+    set(LLVM_LIBS ${LLVM_LIBS_LIST} ${LLVM_SYSTEM_LIBS_LIST})
+
     add_definitions(${LLVM_DEFINITIONS})
     add_definitions(-DHAVEL_ENABLE_LLVM)
     include_directories(${LLVM_INCLUDE_DIRS})
@@ -217,7 +221,7 @@ target_include_directories(havel
 )
 
 if(ENABLE_LLVM)
-    target_link_libraries(havel PRIVATE ${LLVM_LIBRARIES})
+    target_link_libraries(havel PRIVATE ${LLVM_LIBS})
 endif()
 
 # Compile definitions for main executable
@@ -249,7 +253,7 @@ if(NOT DISABLE_HAVEL_LANG)
     target_link_libraries(havel_lang ${COMMON_LIBS})
     
     if(ENABLE_LLVM)
-        target_link_libraries(havel_lang PRIVATE ${LLVM_LIBRARIES})
+        target_link_libraries(havel_lang PRIVATE ${LLVM_LIBS})
         target_compile_definitions(havel_lang PRIVATE HAVEL_ENABLE_LLVM)
     endif()
 endif()

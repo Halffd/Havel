@@ -47,7 +47,9 @@ public:
     static std::string GetWMName() noexcept;
     static bool IsWayland() noexcept;
     static bool IsX11() noexcept;
-
+    static std::string sessionType;
+    static std::string wmName;
+    static std::string sessionName;
 private:
     static bool CheckProcess(const std::string& processName) noexcept;
     static bool CheckEnvironmentVar(const std::string& varName, const std::string& value) noexcept;

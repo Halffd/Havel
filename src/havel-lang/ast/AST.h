@@ -461,7 +461,7 @@ namespace havel::ast {
 // Type Definition base class
     struct TypeDefinition : public ASTNode {
         std::string toString() const override { return "TypeDefinition{}"; }
-        void accept(ASTVisitor& visitor) const override { /* default implementation */ }
+        void accept([[maybe_unused]] ASTVisitor& visitor) const override { }
     };
 
 // Simple type reference (e.g., Int, String, MyCustomType)

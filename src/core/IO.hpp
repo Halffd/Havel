@@ -96,6 +96,7 @@ class IO {
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
+  bool globalEvdev = false;
 
   IO();
 
@@ -176,13 +177,7 @@ public:
   // Static methods
   static void removeSpecialCharacters(std::string &keyName);
 
-  static void HandleKeyEvent(XEvent &event);
-
-  static void HandleMouseEvent(XEvent &event);
-
   static Key StringToButton(const std::string &buttonNameRaw);
-
-  static Key handleKeyString(const std::string &keystr);
 
   static Key StringToVirtualKey(std::string keyName);
 
@@ -226,8 +221,14 @@ public:
       static_assert(always_false<S>, "Unsupported type for action");
     }
   }
+  
   template <typename T>
-  bool MouseClick(T btnCode, int dx, int dy, int speed, float accel);
+  bool MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
+    if (!MouseMove(dx, dy, speed, accel))
+      return false;
+    return Click(btnCode, MouseAction::Click);
+  }
+
   bool MouseMove(int dx, int dy, int speed, float accel);
   bool Scroll(int dy, int dx = 0);
 

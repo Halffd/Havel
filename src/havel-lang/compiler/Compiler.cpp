@@ -398,6 +398,7 @@ namespace havel::compiler {
             for (const auto& param : funcDecl.parameters) {
                 // Default to double for now (you might want type inference)
                 paramTypes.push_back(llvm::Type::getDoubleTy(context));
+                info("Parameter: " + param->symbol);
             }
 
             llvm::FunctionType* funcType = llvm::FunctionType::get(

@@ -51,6 +51,7 @@ message(STATUS "LUA_INCLUDE_DIR: ${LUA_INCLUDE_DIR}")
 # X11 libraries
 find_library(XTEST_LIB Xtst REQUIRED)
 find_library(XRANDR_LIB Xrandr REQUIRED)
+find_library(XINERAMA_LIB Xinerama REQUIRED)
 message(STATUS "XTEST_LIB: ${XTEST_LIB}")
 
 # Qt6 is now REQUIRED (GUI always enabled)
@@ -71,7 +72,6 @@ if(ENABLE_TESTS)
     endif()
 endif()
 
-# LLVM (only if enabled and Havel lang enabled)
 # LLVM (only if enabled and Havel lang enabled)
 if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     find_package(LLVM REQUIRED CONFIG)
@@ -102,8 +102,7 @@ if(ENABLE_LLVM AND NOT DISABLE_HAVEL_LANG)
     message(STATUS "LLVM libraries: ${LLVM_LIBS_LIST}")
     message(STATUS "LLVM system libraries: ${LLVM_SYSTEM_LIBS_LIST}")
 
-    # Combine LLVM libraries and system libraries into a single list that can be
-    # consumed by target_link_libraries later.
+    # Combine LLVM libraries and system libraries into a single list
     set(LLVM_LIBS ${LLVM_LIBS_LIST} ${LLVM_SYSTEM_LIBS_LIST})
 
     add_definitions(${LLVM_DEFINITIONS})
@@ -149,6 +148,7 @@ set(COMMON_LIBS
     ${X11_LIBRARIES}
     ${XTEST_LIB}
     ${XRANDR_LIB}
+    ${XINERAMA_LIB}
     Threads::Threads
     ${DBUS_LIBRARIES}
     ${LUA_LIBRARIES}
@@ -198,14 +198,25 @@ set_target_properties(havel PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
-# Link libraries
-target_link_libraries(havel 
-    PRIVATE 
-    ${COMMON_LIBS}
-    Qt6::Core
-    Qt6::Widgets
-    Qt6::Charts
+# Set MOC options to handle X11 conflicts
+set(CMAKE_AUTOMOC_MOC_OPTIONS 
+    "-DQT_NO_KEYWORDS"
+    "-DMOC_PARSING"
+    "-DNone=0L"
+    "-DTrue=1" 
+    "-DFalse=0"
+    "-DStatus=int"
+    "-DBool=int"
+    "-DSuccess=0"
 )
+
+# Link libraries for havel (use PRIVATE keyword consistently)
+target_link_libraries(havel PRIVATE ${COMMON_LIBS})
+
+# Add LLVM libraries if enabled
+if(ENABLE_LLVM)
+    target_link_libraries(havel PRIVATE ${LLVM_LIBS})
+endif()
 
 # Include directories for the target
 target_include_directories(havel 
@@ -220,37 +231,15 @@ target_include_directories(havel
     ${Qt6Charts_INCLUDE_DIRS}
 )
 
-if(ENABLE_LLVM)
-    target_link_libraries(havel PRIVATE ${LLVM_LIBS})
-endif()
-
 # Compile definitions for main executable
-if(NOT DISABLE_GUI)
-    # Set MOC options to handle X11 conflicts
-    set(CMAKE_AUTOMOC_MOC_OPTIONS 
-        "-DQT_NO_KEYWORDS"
-        "-DMOC_PARSING"
-        "-DNone=0L"
-        "-DTrue=1" 
-        "-DFalse=0"
-        "-DStatus=int"
-        "-DBool=int"
-        "-DSuccess=0"
-    )
-endif()
 if(DISABLE_HAVEL_LANG)
     target_compile_definitions(havel PRIVATE DISABLE_HAVEL_LANG)
 endif()
 
-if(ENABLE_LLVM)
-    target_link_libraries(havel ${LLVM_LIBS})
-endif()
-
-
 # Havel Language Library (if enabled)
 if(NOT DISABLE_HAVEL_LANG)
     add_library(havel_lang STATIC ${HAVEL_LANG_SOURCES})
-    target_link_libraries(havel_lang ${COMMON_LIBS})
+    target_link_libraries(havel_lang PRIVATE ${COMMON_LIBS})
     
     if(ENABLE_LLVM)
         target_link_libraries(havel_lang PRIVATE ${LLVM_LIBS})
@@ -268,7 +257,12 @@ if(ENABLE_TESTS AND TEST_SOURCES)
             ${GUI_SOURCES}
             ${HAVEL_LANG_SOURCES}
         )
-        target_link_libraries(${test_name} ${COMMON_LIBS} ${LLVM_LIBS})
+        target_link_libraries(${test_name} PRIVATE ${COMMON_LIBS})
+        
+        if(ENABLE_LLVM)
+            target_link_libraries(${test_name} PRIVATE ${LLVM_LIBS})
+        endif()
+        
         target_compile_definitions(${test_name} PRIVATE RUN_TESTS)
         
         if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -285,7 +279,7 @@ endif()
 if(ENABLE_TESTS AND GTest_FOUND)
     if(EXISTS "${CMAKE_SOURCE_DIR}/tests/TestGUI.cpp")
         add_executable(havel_gui_test tests/TestGUI.cpp)
-        target_link_libraries(havel_gui_test 
+        target_link_libraries(havel_gui_test PRIVATE
             Qt6::Widgets 
             GTest::GTest 
             GTest::Main
@@ -297,7 +291,7 @@ endif()
 # GUI example
 if(EXISTS "${CMAKE_SOURCE_DIR}/examples/simple_gui_example.cpp")
     add_executable(havel_gui_example examples/simple_gui_example.cpp)
-    target_link_libraries(havel_gui_example Qt6::Widgets ${X11_LIBRARIES})
+    target_link_libraries(havel_gui_example PRIVATE Qt6::Widgets ${X11_LIBRARIES})
 endif()
 
 # Install targets
@@ -330,7 +324,9 @@ if(ENABLE_LLVM)
 else()
     message(STATUS "LLVM: DISABLED")
 endif()
-
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter -Wno-unused-variable")
+endif()
 if(ENABLE_TESTS)
     message(STATUS "Tests: ENABLED")
 else()

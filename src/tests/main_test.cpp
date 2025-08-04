@@ -5,6 +5,7 @@
 #include "core/HotkeyManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "window/WindowManager.hpp"
+#include "window/WindowManagerDetector.hpp"
 #include "utils/Logger.hpp"
 #include "x11.h"
 #include <iostream>
@@ -101,6 +102,10 @@ void linux_test(havel::WindowManager& w){
     //     std::cout << "Window: " << win << std::endl;
     // }
     std::cout << "Window manager detected: " << w.GetCurrentWMName() << std::endl;
+    std::cout << "Session Type: " << WindowManagerDetector::sessionType << std::endl;
+    std::cout << "Session Name: " << WindowManagerDetector::sessionName << std::endl;
+    std::cout << "Is Wayland: " << w.IsWayland() << std::endl;
+    std::cout << "Is X11: " << w.IsX11() << std::endl;
 }
 
 void windowsTest(havel::WindowManager& w){
@@ -121,10 +126,10 @@ void setupAHKHotkeys(havel::IO& io) {
     io.Hotkey("!Right", [](){ havel::WindowManager::MoveToCorners(4); });
     
     // Window resizing hotkeys
-    io.Hotkey("!+Up", [](){ havel::WindowManager::ResizeToCorners(1); });
-    io.Hotkey("!+Down", [](){ havel::WindowManager::ResizeToCorners(2); });
-    io.Hotkey("!+Left", [](){ havel::WindowManager::ResizeToCorners(3); });
-    io.Hotkey("!+Right", [](){ havel::WindowManager::ResizeToCorners(4); });
+    io.Hotkey("!+Up", [](){ havel::WindowManager::ResizeToCorner(1); });
+    io.Hotkey("!+Down", [](){ havel::WindowManager::ResizeToCorner(2); });
+    io.Hotkey("!+Left", [](){ havel::WindowManager::ResizeToCorner(3); });
+    io.Hotkey("!+Right", [](){ havel::WindowManager::ResizeToCorner(4); });
     
     io.Hotkey("^r", [](){ havel::WindowManager::ToggleAlwaysOnTop(); });
 }
@@ -137,18 +142,18 @@ void test(havel::IO& io) {
     testRegisterHotkey(io);
     
     // Create a Window object
-    havel::Window myWindow;
+    havel::Window myWindow = havel::Window();
     std::cout << "Created Window object\n";
     
     // Find Firefox window
-    havel::wID firefoxWindow = myWindow.Find("firefox");
+    wID firefoxWindow = myWindow.Find("firefox");
     if (firefoxWindow) {
         std::cout << "Found Firefox window: " << firefoxWindow << std::endl;
         std::cout << "Window title: " << myWindow.Title(firefoxWindow) << std::endl;
     }
 }
 
-int test_main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
     havel::IO io;
     std::cout << "Test main function initialized\n";
     

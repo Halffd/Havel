@@ -239,108 +239,109 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
 
 // X11 hotkey monitoring thread
 void IO::MonitorHotkeys() {
-#ifdef __linux__
-  if (!display)
-    return;
-
-  std::cout << "Starting hotkey monitoring thread" << std::endl;
-  XEvent event;
-  Window root = DefaultRootWindow(display);
-
-  // Select events on the root window
-  XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
-
-  // Helper function to check if a keysym is a modifier
-  [[maybe_unused]] auto IsModifierKey = [](KeySym ks) -> bool {
-    return ks == XK_Shift_L || ks == XK_Shift_R || ks == XK_Control_L ||
-           ks == XK_Control_R || ks == XK_Alt_L || ks == XK_Alt_R ||
-           ks == XK_Meta_L || ks == XK_Meta_R || ks == XK_Super_L ||
-           ks == XK_Super_R || ks == XK_Hyper_L || ks == XK_Hyper_R ||
-           ks == XK_Caps_Lock || ks == XK_Shift_Lock || ks == XK_Num_Lock ||
-           ks == XK_Scroll_Lock;
-  };
-
-  while (timerRunning) {
-    // Check for pending events
-    if (XPending(display) > 0) {
-      XNextEvent(display, &event);
-
-      bool isDown = false;
-      if (event.type == x11::XKeyPress)
-        isDown = true;
-      else if (event.type == x11::XKeyRelease)
-        isDown = false;
-      XKeyEvent *keyEvent = &event.xkey;
-      KeySym keysym = XLookupKeysym(keyEvent, 0);
-
-      // Handle remapped keys
-      auto remappedIt = remappedKeys.find(keysym);
-      if (remappedIt != remappedKeys.end()) {
-          int keycode = EvdevNameToKeyCode(XKeysymToString(remappedIt->second));
-          if (keycode != -1) {
-              SendUInput(keycode, isDown);
-          }
-          continue; // Suppress original event
-      }
-
-      // Handle mapped keys
-      auto mappedIt = keyMapInternal.find(keysym);
-      if (mappedIt != keyMapInternal.end()) {
-          int keycode = EvdevNameToKeyCode(XKeysymToString(mappedIt->second));
-          if (keycode != -1) {
-              SendUInput(keycode, isDown);
-          }
-          continue; // Suppress original event
-      }
-
-      // Ignore events for modifier keys themselves
-      if (IsModifierKey(keysym)) {
-        continue;
-      }
-
-      std::cout << (isDown ? "x11::XKeyPress" : "x11::XKeyRelease")
-                << " event detected: " << XKeysymToString(keysym)
-                << " (keycode: " << keyEvent->keycode << ")"
-                << " with state: " << keyEvent->state << std::endl;
-
-      unsigned int relevantModifiers =
-          ShiftMask | LockMask | ControlMask | Mod1Mask | Mod4Mask | Mod5Mask;
-      unsigned int cleanedState = keyEvent->state & relevantModifiers;
-
-      // Find and execute matching hotkeys
-      for (const auto &[id, hotkey] : hotkeys) {
-        if (hotkey.enabled) {
-          if (hotkey.key == keyEvent->keycode &&
-              static_cast<int>(cleanedState) == hotkey.modifiers) {
-            // Event type check
-            if (hotkey.eventType == HotkeyEventType::Down && !isDown)
-              continue;
-            if (hotkey.eventType == HotkeyEventType::Up && isDown)
-              continue;
-            std::cout << "Hotkey matched: " << hotkey.alias
-                      << " (state: " << cleanedState
-                      << " vs expected: " << hotkey.modifiers << ")"
-                      << std::endl;
-            // Execute the callback in a separate thread to avoid blocking
-            if (hotkey.callback) {
-              std::thread([callback = hotkey.callback]() {
-                callback();
-              }).detach();
+  #ifdef __linux__
+    if (!display)
+      return;
+  
+    XEvent event;
+    Window root = DefaultRootWindow(display);
+  
+    // Select events on the root window
+    XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
+  
+    // Helper function to check if a keysym is a modifier
+    [[maybe_unused]] auto IsModifierKey = [](KeySym ks) -> bool {
+      return ks == XK_Shift_L || ks == XK_Shift_R || ks == XK_Control_L ||
+             ks == XK_Control_R || ks == XK_Alt_L || ks == XK_Alt_R ||
+             ks == XK_Meta_L || ks == XK_Meta_R || ks == XK_Super_L ||
+             ks == XK_Super_R || ks == XK_Hyper_L || ks == XK_Hyper_R ||
+             ks == XK_Caps_Lock || ks == XK_Shift_Lock || ks == XK_Num_Lock ||
+             ks == XK_Scroll_Lock;
+    };
+  
+    while (timerRunning) {
+      // Check for pending events
+      if (XPending(display) > 0) {
+        XNextEvent(display, &event);
+        
+        bool isDown = false;
+        if (event.type == x11::XKeyPress)
+          isDown = true;
+        else if (event.type == x11::XKeyRelease)
+          isDown = false;
+        XKeyEvent *keyEvent = &event.xkey;
+        KeySym keysym = XLookupKeysym(keyEvent, 0);
+  
+        // Handle remapped keys
+        auto remappedIt = remappedKeys.find(keysym);
+        if (remappedIt != remappedKeys.end()) {
+            int keycode = EvdevNameToKeyCode(XKeysymToString(remappedIt->second));
+            if (keycode != -1) {
+                SendUInput(keycode, isDown);
             }
-            // Consider breaking if only one hotkey should match per event
-            break;
-          }
+            continue; // Suppress original event
         }
-      }
-    }
-
-    // Sleep to avoid high CPU usage
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-  }
-  std::cout << "Hotkey monitoring thread stopped" << std::endl;
-#endif
+  
+        // Handle mapped keys
+        auto mappedIt = keyMapInternal.find(keysym);
+        if (mappedIt != keyMapInternal.end()) {
+            int keycode = EvdevNameToKeyCode(XKeysymToString(mappedIt->second));
+            if (keycode != -1) {
+                SendUInput(keycode, isDown);
+            }
+            continue; // Suppress original event
+        }
+  
+        // Ignore events for modifier keys themselves
+        if (IsModifierKey(keysym)) {
+          continue;
+        }
+  
+        std::cout << (isDown ? "x11::XKeyPress" : "x11::XKeyRelease")
+                  << " event detected: " << XKeysymToString(keysym)
+                  << " (keycode: " << keyEvent->keycode << ")"
+                  << " with state: " << keyEvent->state << std::endl;
+  
+        unsigned int relevantModifiers =
+            ShiftMask | LockMask | ControlMask | Mod1Mask | Mod4Mask | Mod5Mask;
+        unsigned int cleanedState = keyEvent->state & relevantModifiers;
+        std::vector<std::function<void()>> callbacks;
+        {
+          std::scoped_lock<std::mutex> lock(hotkeyMutex);
+          // Find and execute matching hotkeys
+          for (const auto &[id, hotkey] : hotkeys) {
+            if (hotkey.enabled) {
+              if (hotkey.key == keyEvent->keycode &&
+                  static_cast<int>(cleanedState) == hotkey.modifiers) {
+                // Event type check
+                if (hotkey.eventType == HotkeyEventType::Down && !isDown)
+                  continue;
+                if (hotkey.eventType == HotkeyEventType::Up && isDown)
+                  continue;
+                std::cout << "Hotkey matched: " << hotkey.alias
+                          << " (state: " << cleanedState
+                          << " vs expected: " << hotkey.modifiers << ")"
+                          << std::endl;
+                // Execute the callback in a separate thread to avoid blocking
+                if (hotkey.callback) {
+                  callbacks.push_back(hotkey.callback);
+                }
+                // Consider breaking if only one hotkey should match per event
+                break;
+              } // <-- ADDED: Close second if statement
+            }   // <-- ADDED: Close first if statement
+          }     // <-- ADDED: Close for loop
+        }       // <-- ADDED: Close scoped_lock block
+        
+        // Execute callbacks outside the lock
+        for (auto &callback : callbacks) {
+          callback();
+        }
+      }         // <-- ADDED: Close XPending if statement
+    }           // <-- ADDED: Close while loop
+    std::cout << "Hotkey monitoring thread stopped" << std::endl;
+  #endif
 }
-
 void IO::InitKeyMap() {
   // Basic implementation of key map
   std::cout << "Initializing key map" << std::endl;
@@ -474,87 +475,6 @@ void IO::removeSpecialCharacters(str &keyName) {
                                }),
                 keyName.end());
 }
-
-// Static method to handle key events
-void IO::HandleKeyEvent(XEvent &event) {
-  XKeyEvent *keyEvent = reinterpret_cast<XKeyEvent *>(&event);
-  KeySym keysym = XLookupKeysym(keyEvent, 0);
-
-  for (const auto &[id, hotkey] : hotkeys) {
-    if (hotkey.enabled && hotkey.key == keysym) {
-      if (hotkey.callback)
-        hotkey.callback();
-    }
-  }
-}
-
-// Static method to handle mouse events
-void IO::HandleMouseEvent(XEvent &event) {
-  XButtonEvent *buttonEvent = reinterpret_cast<XButtonEvent *>(&event);
-  unsigned int button = buttonEvent->button;
-
-  for (const auto &[id, hotkey] : hotkeys) {
-    if (hotkey.enabled && StringToButton(hotkey.alias) == button) {
-      if (hotkey.callback)
-        hotkey.callback();
-    }
-  }
-}
-
-// Static method to handle key strings
-Key IO::handleKeyString(const std::string &key) {
-  debug("Handling key string: " + key);
-
-  // Handle keycodes (kcXXX)
-  if (key.size() > 2 && key.substr(0, 2) == "kc") {
-    try {
-      int keycode = std::stoi(key.substr(2));
-      debug("Detected direct keycode: " + std::to_string(keycode));
-      return keycode;
-    } catch (const std::exception &e) {
-      error("Failed to parse keycode from '" + key + "': " + e.what());
-      return -1;
-    }
-  }
-
-  // Special handling for NoSymbol
-  if (key == "NoSymbol") {
-    debug("Explicitly handling NoSymbol as keysym 0x0");
-    return 0x0; // Use keysym 0x0 for NoSymbol as requested
-  }
-
-  // Handle the "Menu" key explicitly
-  if (key == "Menu" || key == "menu") {
-    debug("Explicitly handling Menu key via keysym");
-    KeySym keysym = XK_Menu;
-    int keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
-    return keycode > 0 ? keycode : -1;
-  }
-
-  // The rest of the implementation handles normal keys
-  KeySym keysym = XStringToKeysym(key.c_str());
-  if (keysym == NoSymbol) {
-    warning("Key '" + key + "' could not be converted to KeySym (NoSymbol)");
-    return -1;
-  }
-
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("No X display available for key conversion");
-    return -1;
-  }
-
-  int keycode = XKeysymToKeycode(display, keysym);
-  debug("Converted key '" + key + "' to keycode " + std::to_string(keycode) +
-           " (keysym: " + std::to_string(keysym) + ")");
-
-  if (keycode == 0) {
-    warning("KeySym for '" + key + "' could not be converted to keycode");
-    return -1;
-  }
-
-  return keycode;
-}
 bool IO::EmitClick(int btnCode, int action) {
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> lock(uinputMutex);
@@ -679,13 +599,6 @@ bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
 
   return true;
 }
-template <typename T>
-bool IO::MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
-  if (!MouseMove(dx, dy, speed, accel))
-    return false;
-  return Click(btnCode, MouseAction::Click);
-}
-
 bool IO::Scroll(int dy, int dx) {
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> lock(uinputMutex);
@@ -1106,9 +1019,13 @@ done_parsing:
   KeyCode keycode = 0;
   bool isEvdev = false;
 
-  if (!hotkeyStr.empty() && hotkeyStr[0] == '@') {
+  if (!hotkeyStr.empty() && (hotkeyStr[0] == '@' || globalEvdev)) {
     // evdev mode
-    std::string evdevKey = hotkeyStr.substr(1);
+    std::string evdevKey;
+    if(hotkeyStr[0] == '@')
+      evdevKey = hotkeyStr.substr(1);
+    else
+      evdevKey = hotkeyStr;
     keycode = EvdevNameToKeyCode(evdevKey);
     if (keycode == 0) {
       std::cerr << "Invalid evdev key name: " << evdevKey << "\n";
@@ -2064,15 +1981,14 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   evdevThread = std::thread([this]() {
     int fd = open(evdevDevicePath.c_str(), O_RDONLY | O_NONBLOCK);
     if (fd < 0) {
-      std::cerr << "evdev: cannot open " << evdevDevicePath << ": "
-                << strerror(errno) << "\n";
+      error("evdev: cannot open " + evdevDevicePath + ": " + std::string(strerror(errno)) + "\n");
       evdevRunning = false;
       return;
     }
     if (!SetupUinputDevice()) {
       close(fd);
       evdevRunning = false;
-      std::cerr << "evdev: failed to setup uinput device\n";
+      error("evdev: failed to setup uinput device\n");
       return;
     }
 
@@ -2139,7 +2055,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         try {
           callback();
         } catch (const std::exception &e) {
-          std::cerr << "Error in hotkey callback: " << e.what() << std::endl;
+          error("Error in hotkey callback: " + std::string(e.what()));
         }
       }
       SendUInput(code, down);

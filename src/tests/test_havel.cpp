@@ -1,11 +1,11 @@
-#include "../havel-lang/lexer/Lexer.hpp"
-#include "../havel-lang/parser/Parser.h"
-#include "../havel-lang/runtime/Interpreter.hpp"
-#include "../havel-lang/runtime/Engine.h"
+#include "havel-lang/lexer/Lexer.hpp"
+#include "havel-lang/parser/Parser.h"
+#include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/runtime/Engine.h"
 
 #ifdef HAVEL_ENABLE_LLVM
-#include "../compiler/Compiler.h"
-#include "../compiler/JIT.h"
+#include "havel-lang/compiler/Compiler.h"
+#include "havel-lang/compiler/JIT.h"
 #endif
 
 #include <iostream>

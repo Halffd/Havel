@@ -11,6 +11,7 @@ class Window {
 public:
     Window(cstr title, wID id = 0);
     Window(wID id);
+    Window() = default;
     ~Window() = default;
 
     // Static display pointer

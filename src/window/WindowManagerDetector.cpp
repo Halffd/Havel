@@ -10,12 +10,14 @@
 #include <unistd.h>
 #include "x11.h"
 #endif
-
+std::string WindowManagerDetector::wmName;
+std::string WindowManagerDetector::sessionType;
+std::string WindowManagerDetector::sessionName;
 WindowManagerDetector::WMType WindowManagerDetector::Detect() noexcept {
     try {
-        const char* wmName = std::getenv("XDG_CURRENT_DESKTOP");
-        const char* sessionType = std::getenv("XDG_SESSION_TYPE");
-        const char* wmSession = std::getenv("DESKTOP_SESSION");
+        wmName = std::string(std::getenv("XDG_CURRENT_DESKTOP"));
+        sessionType = std::string(std::getenv("XDG_SESSION_TYPE"));
+        sessionName = std::string(std::getenv("DESKTOP_SESSION"));
         
         // Check Desktop Environments first
         if (CheckEnvironmentVar("XDG_CURRENT_DESKTOP", "GNOME") || CheckProcess("gnome-shell"))

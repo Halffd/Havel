@@ -107,10 +107,37 @@ namespace havel::ast {
         // Statements don't return values
     };
     enum class BinaryOperator {
-        Add, Sub, Mul, Div,
+        Add, Sub, Mul, Div, Mod, Pow, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign, PowAssign, LessEqual, GreaterEqual,
         Equal, NotEqual, Less, Greater,
         And, Or
     };
+    
+    // Overload operator<< for BinaryOperator
+    inline std::ostream& operator<<(std::ostream& os, BinaryOperator op) {
+        switch (op) {
+            case BinaryOperator::Add: return os << "+";
+            case BinaryOperator::Sub: return os << "-";
+            case BinaryOperator::Mul: return os << "*";
+            case BinaryOperator::Div: return os << "/";
+            case BinaryOperator::Mod: return os << "%";
+            case BinaryOperator::Pow: return os << "**";
+            case BinaryOperator::AddAssign: return os << "+=";
+            case BinaryOperator::SubAssign: return os << "-=";
+            case BinaryOperator::MulAssign: return os << "*=";
+            case BinaryOperator::DivAssign: return os << "/=";
+            case BinaryOperator::ModAssign: return os << "%=";
+            case BinaryOperator::PowAssign: return os << "**=";
+            case BinaryOperator::Equal: return os << "==";
+            case BinaryOperator::NotEqual: return os << "!=";
+            case BinaryOperator::Less: return os << "<";
+            case BinaryOperator::Greater: return os << ">";
+            case BinaryOperator::LessEqual: return os << "<=";
+            case BinaryOperator::GreaterEqual: return os << ">=";
+            case BinaryOperator::And: return os << "&&";
+            case BinaryOperator::Or: return os << "||";
+            default: return os << "UNKNOWN_OPERATOR";
+        }
+    }
     
     struct BinaryExpression : public Expression {
         std::unique_ptr<Expression> left;
@@ -139,6 +166,22 @@ namespace havel::ast {
                     return "*";
                 case BinaryOperator::Div:
                     return "/";
+                case BinaryOperator::Mod:
+                    return "%";
+                case BinaryOperator::Pow:
+                    return "**";
+                case BinaryOperator::AddAssign:
+                    return "+=";
+                case BinaryOperator::SubAssign:
+                    return "-=";
+                case BinaryOperator::MulAssign:
+                    return "*=";
+                case BinaryOperator::DivAssign:
+                    return "/=";
+                case BinaryOperator::ModAssign:
+                    return "%=";
+                case BinaryOperator::PowAssign:
+                    return "**=";
                 case BinaryOperator::Equal:
                     return "==";
                 case BinaryOperator::NotEqual:
@@ -147,6 +190,10 @@ namespace havel::ast {
                     return "<";
                 case BinaryOperator::Greater:
                     return ">";
+                case BinaryOperator::LessEqual:
+                    return "<=";
+                case BinaryOperator::GreaterEqual:
+                    return ">=";
                 case BinaryOperator::And:
                     return "&&";
                 case BinaryOperator::Or:

@@ -282,49 +282,50 @@ HavelValue Interpreter::EvaluateBinaryExpression(const ast::BinaryExpression& bi
     HavelValue left = EvaluateExpression(*binary.left);
     HavelValue right = EvaluateExpression(*binary.right);
     
-    // Perform the operation based on the operator string
-    if (binary.operator_ == "+") {
+    // Perform the operation based on the operator
+    if (binary.operator_ == ast::BinaryOperator::Add) {
         // String concatenation or numeric addition
         if (std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
             return ValueToString(left) + ValueToString(right);
         } else {
             return ValueToNumber(left) + ValueToNumber(right);
         }
-    } else if (binary.operator_ == "-") {
+    } else if (binary.operator_ == ast::BinaryOperator::Sub) {
         return ValueToNumber(left) - ValueToNumber(right);
-    } else if (binary.operator_ == "*") {
+    } else if (binary.operator_ == ast::BinaryOperator::Mul) {
         return ValueToNumber(left) * ValueToNumber(right);
-    } else if (binary.operator_ == "/") {
+    } else if (binary.operator_ == ast::BinaryOperator::Div) {
         if (ValueToNumber(right) == 0.0) {
             throw std::runtime_error("Division by zero");
         }
         return ValueToNumber(left) / ValueToNumber(right);
-    } else if (binary.operator_ == "==") {
+    } else if (binary.operator_ == ast::BinaryOperator::Equal) {
         if (std::holds_alternative<std::string>(left) && std::holds_alternative<std::string>(right)) {
             return std::get<std::string>(left) == std::get<std::string>(right);
         } else {
             return ValueToNumber(left) == ValueToNumber(right);
         }
-    } else if (binary.operator_ == "!=") {
+    } else if (binary.operator_ == ast::BinaryOperator::NotEqual) {
         if (std::holds_alternative<std::string>(left) && std::holds_alternative<std::string>(right)) {
             return std::get<std::string>(left) != std::get<std::string>(right);
         } else {
             return ValueToNumber(left) != ValueToNumber(right);
         }
-    } else if (binary.operator_ == "<") {
+    } else if (binary.operator_ == ast::BinaryOperator::Less) {
         return ValueToNumber(left) < ValueToNumber(right);
-    } else if (binary.operator_ == "<=") {
+    } else if (binary.operator_ == ast::BinaryOperator::LessEqual) {  // Note: There's no LessEq in the enum
         return ValueToNumber(left) <= ValueToNumber(right);
-    } else if (binary.operator_ == ">") {
+    } else if (binary.operator_ == ast::BinaryOperator::Greater) {
         return ValueToNumber(left) > ValueToNumber(right);
-    } else if (binary.operator_ == ">=") {
+    } else if (binary.operator_ == ast::BinaryOperator::GreaterEqual) {  // Note: There's no GreaterEq in the enum
         return ValueToNumber(left) >= ValueToNumber(right);
-    } else if (binary.operator_ == "&&") {
+    } else if (binary.operator_ == ast::BinaryOperator::And) {
         return ValueToBool(left) && ValueToBool(right);
-    } else if (binary.operator_ == "||") {
+    } else if (binary.operator_ == ast::BinaryOperator::Or) {
         return ValueToBool(left) || ValueToBool(right);
     } else {
-        throw std::runtime_error("Unknown binary operator: " + binary.operator_);
+        // Use the BinaryExpression's toString method to get the operator string
+        throw std::runtime_error("Unknown binary operator: " + binary.toString(binary.operator_));
     }
 }
 

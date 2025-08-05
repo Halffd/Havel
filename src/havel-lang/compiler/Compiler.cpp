@@ -36,22 +36,160 @@ namespace havel::compiler {
 
         CreateStandardLibrary();
     }
+    
     llvm::Value* Compiler::GenerateBinary(const ast::BinaryExpression& binary) {
         llvm::Value* left = GenerateExpression(*binary.left);
         llvm::Value* right = GenerateExpression(*binary.right);
         
+        if (!left || !right) {
+            throw std::runtime_error("Null operand in binary expression");
+        }
+
+        // Check types for arithmetic operations
+        bool isFloat = left->getType()->isFloatingPointTy() || right->getType()->isFloatingPointTy();
+        bool isInt = left->getType()->isIntegerTy() && right->getType()->isIntegerTy();
+        
+        if (isFloat && isInt) {
+            throw std::runtime_error("Type mismatch: mixed integer and float operands");
+        }
+
         switch (binary.operator_) {
+            // Arithmetic Operations
             case ast::BinaryOperator::Add:
+                if (isFloat) return builder.CreateFAdd(left, right, "faddtmp");
                 return builder.CreateAdd(left, right, "addtmp");
             case ast::BinaryOperator::Sub:
+                if (isFloat) return builder.CreateFSub(left, right, "fsubtmp");
                 return builder.CreateSub(left, right, "subtmp");
             case ast::BinaryOperator::Mul:
+                if (isFloat) return builder.CreateFMul(left, right, "fmultmp");
                 return builder.CreateMul(left, right, "multmp");
             case ast::BinaryOperator::Div:
-                return builder.CreateFDiv(left, right, "divtmp");
-            // Add whatever operators you actually have
+                if (isFloat) return builder.CreateFDiv(left, right, "fdivtmp");
+                return builder.CreateSDiv(left, right, "sdivtmp");
+            case ast::BinaryOperator::Mod:
+                if (isFloat) return builder.CreateFRem(left, right, "fremtmp");
+                return builder.CreateSRem(left, right, "sremtmp");
+            case ast::BinaryOperator::Pow: {
+                if (!isFloat) {
+                    // Convert integers to doubles for pow
+                    left = builder.CreateSIToFP(left, llvm::Type::getDoubleTy(builder.getContext()), "int2double");
+                    right = builder.CreateSIToFP(right, llvm::Type::getDoubleTy(builder.getContext()), "int2double");
+                }
+                auto powFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                    module, llvm::Intrinsic::pow, {left->getType()});
+                return builder.CreateCall(powFunc, {left, right}, "powtmp");
+            }
+
+            // Assignment Operators (assumes left is an lvalue, e.g., a variable)
+            case ast::BinaryOperator::AddAssign:
+            case ast::BinaryOperator::SubAssign:
+            case ast::BinaryOperator::MulAssign:
+            case ast::BinaryOperator::DivAssign:
+            case ast::BinaryOperator::ModAssign:
+            case ast::BinaryOperator::PowAssign: {
+                if (!left->getType()->isPointerTy()) {
+                    throw std::runtime_error("Left operand of assignment must be an lvalue");
+                }
+                llvm::Value* result;
+                switch (binary.operator_) {
+                    case ast::BinaryOperator::AddAssign:
+                        result = isFloat ? builder.CreateFAdd(left, right, "faddtmp") 
+                                        : builder.CreateAdd(left, right, "addtmp");
+                        break;
+                    case ast::BinaryOperator::SubAssign:
+                        result = isFloat ? builder.CreateFSub(left, right, "fsubtmp") 
+                                        : builder.CreateSub(left, right, "subtmp");
+                        break;
+                    case ast::BinaryOperator::MulAssign:
+                        result = isFloat ? builder.CreateFMul(left, right, "fmultmp") 
+                                        : builder.CreateMul(left, right, "multmp");
+                        break;
+                    case ast::BinaryOperator::DivAssign:
+                        result = isFloat ? builder.CreateFDiv(left, right, "fdivtmp") 
+                                        : builder.CreateSDiv(left, right, "sdivtmp");
+                        break;
+                    case ast::BinaryOperator::ModAssign:
+                        result = isFloat ? builder.CreateFRem(left, right, "fremtmp") 
+                                        : builder.CreateSRem(left, right, "sremtmp");
+                        break;
+                    case ast::BinaryOperator::PowAssign: {
+                        if (!isFloat) {
+                            left = builder.CreateSIToFP(left, llvm::Type::getDoubleTy(builder.getContext()), "int2double");
+                            right = builder.CreateSIToFP(right, llvm::Type::getDoubleTy(builder.getContext()), "int2double");
+                        }
+                        auto powFunc = llvm::Intrinsic::getOrInsertDeclaration(
+                            module, llvm::Intrinsic::pow, {left->getType()});
+                        result = builder.CreateCall(powFunc, {left, right}, "powtmp");
+                        break;
+                    }
+                    default: throw std::runtime_error("Unknown assignment operator");
+                }
+                return builder.CreateStore(result, left);
+            }
+
+            // Comparison Operators
+            case ast::BinaryOperator::Equal:
+                if (isFloat) return builder.CreateFCmpOEQ(left, right, "eqtmp");
+                return builder.CreateICmpEQ(left, right, "eqtmp");
+            case ast::BinaryOperator::NotEqual:
+                if (isFloat) return builder.CreateFCmpONE(left, right, "netmp");
+                return builder.CreateICmpNE(left, right, "netmp");
+            case ast::BinaryOperator::Less:
+                if (isFloat) return builder.CreateFCmpOLT(left, right, "lttmp");
+                return builder.CreateICmpSLT(left, right, "lttmp");
+            case ast::BinaryOperator::Greater:
+                if (isFloat) return builder.CreateFCmpOGT(left, right, "gttmp");
+                return builder.CreateICmpSGT(left, right, "gttmp");
+            case ast::BinaryOperator::LessEqual:
+                if (isFloat) return builder.CreateFCmpOLE(left, right, "letmp");
+                return builder.CreateICmpSLE(left, right, "letmp");
+            case ast::BinaryOperator::GreaterEqual:
+                if (isFloat) return builder.CreateFCmpOGE(left, right, "getmp");
+                return builder.CreateICmpSGE(left, right, "getmp");
+
+            // Logical Operators (short-circuit evaluation)
+            case ast::BinaryOperator::And: {
+                auto* currentBB = builder.GetInsertBlock();
+                auto* rhsBB = llvm::BasicBlock::Create(builder.getContext(), "and.rhs", currentBB->getParent());
+                auto* endBB = llvm::BasicBlock::Create(builder.getContext(), "and.end", currentBB->getParent());
+                
+                // Evaluate left operand
+                builder.CreateCondBr(left, rhsBB, endBB);
+                builder.SetInsertPoint(rhsBB);
+                
+                // Evaluate right operand
+                builder.CreateBr(endBB);
+                builder.SetInsertPoint(endBB);
+                
+                // PHI node to combine results
+                auto* phi = builder.CreatePHI(llvm::Type::getInt1Ty(builder.getContext()), 2, "andtmp");
+                phi->addIncoming(llvm::ConstantInt::getFalse(builder.getContext()), currentBB);
+                phi->addIncoming(right, rhsBB);
+                return phi;
+            }
+            case ast::BinaryOperator::Or: {
+                auto* currentBB = builder.GetInsertBlock();
+                auto* rhsBB = llvm::BasicBlock::Create(builder.getContext(), "or.rhs", currentBB->getParent());
+                auto* endBB = llvm::BasicBlock::Create(builder.getContext(), "or.end", currentBB->getParent());
+                
+                // Evaluate left operand
+                builder.CreateCondBr(left, endBB, rhsBB);
+                builder.SetInsertPoint(rhsBB);
+                
+                // Evaluate right operand
+                builder.CreateBr(endBB);
+                builder.SetInsertPoint(endBB);
+                
+                // PHI node to combine results
+                auto* phi = builder.CreatePHI(llvm::Type::getInt1Ty(builder.getContext()), 2, "ortmp");
+                phi->addIncoming(llvm::ConstantInt::getTrue(builder.getContext()), currentBB);
+                phi->addIncoming(right, rhsBB);
+                return phi;
+            }
+
             default:
-                throw std::runtime_error("Unknown binary operator");
+                throw std::runtime_error("Unknown binary operator: " + toString(binary.operator_));
         }
     }
     // Generate LLVM IR for expressions - THIS IS WHERE THE MAGIC HAPPENS! 🔥

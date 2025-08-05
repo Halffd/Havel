@@ -106,7 +106,56 @@ namespace havel::ast {
     struct Statement : public ASTNode {
         // Statements don't return values
     };
-
+    enum class BinaryOperator {
+        Add, Sub, Mul, Div,
+        Equal, NotEqual, Less, Greater,
+        And, Or
+    };
+    
+    struct BinaryExpression : public Expression {
+        std::unique_ptr<Expression> left;
+        BinaryOperator operator_;  // Changed from string
+        std::unique_ptr<Expression> right;
+        
+        BinaryExpression(std::unique_ptr<Expression> l, BinaryOperator op,
+                         std::unique_ptr<Expression> r)
+            : left(std::move(l)), operator_(op), right(std::move(r)) {
+            kind = NodeType::BinaryExpression;
+        }
+        
+        std::string toString() const override {
+            return "BinaryExpr{" + (left ? left->toString() : "nullptr") + " " +
+                   toString(operator_) + " " +
+                   (right ? right->toString() : "nullptr") + "}";
+        }
+        
+        std::string toString(BinaryOperator op) const {
+            switch (op) {
+                case BinaryOperator::Add:
+                    return "+";
+                case BinaryOperator::Sub:
+                    return "-";
+                case BinaryOperator::Mul:
+                    return "*";
+                case BinaryOperator::Div:
+                    return "/";
+                case BinaryOperator::Equal:
+                    return "==";
+                case BinaryOperator::NotEqual:
+                    return "!=";
+                case BinaryOperator::Less:
+                    return "<";
+                case BinaryOperator::Greater:
+                    return ">";
+                case BinaryOperator::And:
+                    return "&&";
+                case BinaryOperator::Or:
+                    return "||";
+            }
+            return "UNKNOWN_OPERATOR";
+        }
+        void accept(ASTVisitor &visitor) const override;
+    };
     // Program Node
     struct Program : public Statement {
         std::vector<std::unique_ptr<Statement> > body;
@@ -185,28 +234,6 @@ namespace havel::ast {
 
         std::string toString() const override {
             return "Pipeline{stages: " + std::to_string(stages.size()) + "}";
-        }
-
-        void accept(ASTVisitor &visitor) const override;
-    };
-
-    // Binary Expression
-    struct BinaryExpression : public Expression {
-        std::unique_ptr<Expression> left;
-        std::string operator_;
-        std::unique_ptr<Expression> right;
-
-        BinaryExpression(std::unique_ptr<Expression> l, std::string op,
-                         std::unique_ptr<Expression> r)
-            : left(std::move(l)), operator_(std::move(op)),
-              right(std::move(r)) {
-            kind = NodeType::BinaryExpression;
-        }
-
-        std::string toString() const override {
-            return "BinaryExpr{" + (left ? left->toString() : "nullptr") + " " +
-                   operator_ + " " + (right ? right->toString() : "nullptr") +
-                   "}";
         }
 
         void accept(ASTVisitor &visitor) const override;

@@ -36,7 +36,24 @@ namespace havel::compiler {
 
         CreateStandardLibrary();
     }
-
+    llvm::Value* Compiler::GenerateBinary(const ast::BinaryExpression& binary) {
+        llvm::Value* left = GenerateExpression(*binary.left);
+        llvm::Value* right = GenerateExpression(*binary.right);
+        
+        switch (binary.operator_) {
+            case ast::BinaryOperator::Add:
+                return builder.CreateAdd(left, right, "addtmp");
+            case ast::BinaryOperator::Sub:
+                return builder.CreateSub(left, right, "subtmp");
+            case ast::BinaryOperator::Mul:
+                return builder.CreateMul(left, right, "multmp");
+            case ast::BinaryOperator::Div:
+                return builder.CreateFDiv(left, right, "divtmp");
+            // Add whatever operators you actually have
+            default:
+                throw std::runtime_error("Unknown binary operator");
+        }
+    }
     // Generate LLVM IR for expressions - THIS IS WHERE THE MAGIC HAPPENS! 🔥
     llvm::Value *Compiler::GenerateExpression(const ast::Expression &expr) {
         switch (expr.kind) {

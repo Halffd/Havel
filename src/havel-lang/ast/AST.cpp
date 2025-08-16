@@ -318,6 +318,38 @@ void visitTypeReference(const TypeReference& node) override {
             indentLevel--;
             out << getIndent() << "}" << std::endl;
         }
+        void visitUnaryExpression(const havel::ast::UnaryExpression &node) override {
+            out << getIndent() << "UnaryExpression {" << std::endl;
+            indentLevel++;
+            
+            // Print operator info
+            std::string operatorName;
+            std::string operatorSymbol;
+            
+            switch (node.operator_) {
+                case havel::ast::UnaryExpression::UnaryOperator::Not:
+                    operatorName = "Not";
+                    operatorSymbol = "!";
+                    break;
+                case havel::ast::UnaryExpression::UnaryOperator::Minus:
+                    operatorName = "Minus";
+                    operatorSymbol = "-";
+                    break;
+                case havel::ast::UnaryExpression::UnaryOperator::Plus:
+                    operatorName = "Plus";
+                    operatorSymbol = "+";
+                    break;
+                default:
+                    operatorName = "Unknown";
+                    operatorSymbol = "?";
+            }
+            
+            out << getIndent() << "operator: " << operatorSymbol << " (" << operatorName << ")" << std::endl;
+            printChildNode("operand: ", node.operand);
+            
+            indentLevel--;
+            out << getIndent() << "}" << std::endl;
+        }
     };
     inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
         visitor.visitTypeDeclaration(*this);
@@ -345,5 +377,8 @@ void visitTypeReference(const TypeReference& node) override {
 
     inline void TryExpression::accept(ASTVisitor& visitor) const {
         visitor.visitTryExpression(*this);
+    }
+    inline void UnaryExpression::accept(ASTVisitor &visitor) const {
+        visitor.visitUnaryExpression(*this);
     }
 } // namespace havel::ast

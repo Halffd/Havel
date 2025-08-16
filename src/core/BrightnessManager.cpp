@@ -22,9 +22,10 @@ BrightnessManager::BrightnessManager() {
     settings.verbose = false;
 
     // Initialize current state
-    settings.currentBrightness = 1.0;
-    settings.currentGamma = 6500;
-
+    settings.currentBrightness = getCurrentBrightness().value_or(1.0);
+    settings.currentGamma = getCurrentGamma();
+    info("Current brightness: " + std::to_string(settings.currentBrightness));
+    info("Current gamma: " + std::to_string(settings.currentGamma));
     // Determine display method
     displayMethod = isX11() ? "randr" : "wayland";
     if (settings.verbose) {

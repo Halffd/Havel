@@ -38,27 +38,27 @@ void testRegisterHotkey(havel::IO& io) {
         std::cout << "F3 pressed\n";
     });
     
-    io.Hotkey("ctrl+shift+a", []() {
+    io.Hotkey("^+a", []() {
         std::cout << "Ctrl+Shift+A pressed\n";
     });
     
-    io.Hotkey("ctrl+shift+b", []() {
+    io.Hotkey("^+b", []() {
         std::cout << "Ctrl+Shift+B pressed\n";
     });
     
-    io.Hotkey("ctrl+shift+c", []() {
+    io.Hotkey("^+c", []() {
         std::cout << "Ctrl+Shift+C pressed\n";
     });
     
-    io.Hotkey("shift+1", []() {
+    io.Hotkey("+1", []() {
         std::cout << "Shift+1 pressed\n";
     });
     
-    io.Hotkey("shift+2", []() {
+    io.Hotkey("+2", []() {
         std::cout << "Shift+2 pressed\n";
     });
     
-    io.Hotkey("alt+@", []() {
+    io.Hotkey("!+2", []() {
         std::cout << "Alt+@ pressed\n";
     });
     

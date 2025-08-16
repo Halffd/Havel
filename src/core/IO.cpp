@@ -1807,7 +1807,7 @@ void IO::PressKey(const std::string &keyName, bool press) {
   }
 
   // Convert string to keysym
-  KeySym keysym = XStringToKeysym(keyName.c_str());
+  KeySym keysym = StringToVirtualKey(keyName);  
   if (keysym == NoSymbol) {
     std::cerr << "Unknown keysym for: " << keyName << "\n";
     return;

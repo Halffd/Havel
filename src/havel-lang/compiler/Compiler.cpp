@@ -16,6 +16,11 @@ namespace havel::compiler {
     }
 
     void Compiler::Initialize() {
+        // Initialize LLVM targets
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
+        llvm::InitializeNativeTargetAsmParser();
+
         // Create module and keep raw pointer
         auto modulePtr = std::make_unique<llvm::Module>("HavelJIT", context);
         module = modulePtr.get();  // Keep raw pointer for later use

@@ -1,4 +1,5 @@
 #include "FileManager.hpp"
+#include "utils/Logger.hpp"
 #include <fstream>
 #include <sstream>
 #include <iomanip>
@@ -466,21 +467,63 @@ bool FileManager::changeDirectory(const string& path) {
     fs::current_path(path, ec);
     return !ec;
 }
-
 vector<string> FileManager::glob(const string& pattern) {
     vector<string> results;
     fs::path root = fs::path(pattern).parent_path();
     if (root.empty()) root = ".";
     
-    regex patternRegex(pattern);
+    // Convert glob pattern to regex
+    string regexPattern = globToRegex(pattern);
     
-    for (const auto& entry : fs::recursive_directory_iterator(root)) {
-        if (regex_match(entry.path().string(), patternRegex)) {
-            results.push_back(entry.path().string());
+    try {
+        regex patternRegex(regexPattern);
+        
+        for (const auto& entry : fs::recursive_directory_iterator(root)) {
+            if (regex_match(entry.path().filename().string(), patternRegex)) {
+                results.push_back(entry.path().string());
+            }
         }
+    } catch (const std::regex_error& e) {
+        havel::error("Invalid glob pattern '" + pattern + "': " + e.what() + "\n");
     }
     
     return results;
+}
+
+std::string FileManager::globToRegex(const std::string& glob) {
+    std::string regex;
+    regex.reserve(glob.size() * 2); // Pre-allocate space
+    
+    for (char c : glob) {
+        switch (c) {
+            case '*':
+                regex += ".*";    // * matches any sequence of characters
+                break;
+            case '?':
+                regex += ".";     // ? matches any single character
+                break;
+            case '.':
+            case '^':
+            case '$':
+            case '+':
+            case '{':
+            case '}':
+            case '[':
+            case ']':
+            case '(':
+            case ')':
+            case '|':
+            case '\\':
+                regex += "\\";    // Escape regex special characters
+                regex += c;
+                break;
+            default:
+                regex += c;       // Regular character
+                break;
+        }
+    }
+    
+    return regex;
 }
 
 void FileManager::watch(const function<void(const string&, const string&)>& callback) const {

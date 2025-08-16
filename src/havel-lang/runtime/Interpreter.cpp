@@ -380,7 +380,20 @@ HavelValue Interpreter::EvaluateCallExpression(const ast::CallExpression& call) 
     
     return nullptr;
 }
-
+HavelValue Interpreter::EvaluateUnaryExpression(const ast::UnaryExpression& unary) {
+    auto operandValue = EvaluateExpression(*unary.operand);
+    
+    switch (unary.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Not:
+            return !ValueToBool(operandValue);
+        case ast::UnaryExpression::UnaryOperator::Minus:
+            return -ValueToNumber(operandValue);
+        case ast::UnaryExpression::UnaryOperator::Plus:
+            return ValueToNumber(operandValue); // Unary + converts to number
+        default:
+            throw std::runtime_error("Unknown unary operator");
+    }
+}
 // Evaluate a MemberExpression node
 HavelValue Interpreter::EvaluateMemberExpression(const ast::MemberExpression& member) {
     // Handle property access on objects

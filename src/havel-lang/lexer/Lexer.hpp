@@ -16,7 +16,6 @@ namespace havel {
         Number,
         String,
         Hotkey,
-        Equals,
         Arrow,
         BinaryOp,
         OpenParen,
@@ -26,6 +25,21 @@ namespace havel {
         Dot,
         Comma,
         Semicolon,
+        Plus,           // +
+        Minus,          // -
+        Multiply,       // *
+        Divide,         // /
+        Modulo,         // %
+        Equals,         // ==
+        NotEquals,      // !=
+        Less,           // <
+        Greater,        // >
+        LessEquals,     // <=
+        GreaterEquals,  // >=
+        And,            // &&
+        Or,             // ||
+        Not,            // !
+        Assign,
         Pipe,
         Comment,
         NewLine,

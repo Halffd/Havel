@@ -34,13 +34,13 @@ void testLexer(Tests& tf) {
     });
 
     tf.test("Complex Hotkey Recognition", []() {
-        std::string code = "Ctrl+Shift+Alt+F12 => {}";
+        std::string code = "^+!F12 => {}";
         havel::Lexer lexer(code);
         auto tokens = lexer.tokenize();
 
         return tokens.size() >= 3 &&
                tokens[0].type == havel::TokenType::Hotkey &&
-               tokens[0].value == "Ctrl+Shift+Alt+F12";
+               tokens[0].value == "^+!F12";
     });
 
     tf.test("Pipeline Operator Recognition", []() {
@@ -142,7 +142,7 @@ void testParser(Tests& tf) {
     });
 
     tf.test("Hotkey Binding AST", []() {
-        std::string code = "Ctrl+V => clipboard.paste";
+        std::string code = "^V => clipboard.paste";
         havel::parser::Parser parser;
         auto ast = parser.produceAST(code);
 

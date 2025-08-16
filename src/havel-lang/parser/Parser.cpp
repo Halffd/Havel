@@ -212,13 +212,146 @@ namespace havel::parser {
 
         return left;
     }
-
     std::unique_ptr<havel::ast::Expression> Parser::parseBinaryExpression() {
-        // For now, just parse primary expressions
-        // TODO: Implement proper operator precedence
+        return parseLogicalOr();
+    }
+    
+    // Add these new methods for operator precedence
+    std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
+        auto left = parseLogicalAnd();
+        
+        while (at().type == havel::TokenType::Or) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseLogicalAnd();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
+        auto left = parseEquality();
+        
+        while (at().type == havel::TokenType::And) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseEquality();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
+        auto left = parseComparison();
+        
+        while (at().type == havel::TokenType::Equals || 
+               at().type == havel::TokenType::NotEquals) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseComparison();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
+        auto left = parseAdditive();
+        
+        while (at().type == havel::TokenType::Less || 
+               at().type == havel::TokenType::Greater ||
+               at().type == havel::TokenType::LessEquals ||
+               at().type == havel::TokenType::GreaterEquals) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseAdditive();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseAdditive() {
+        auto left = parseMultiplicative();
+        
+        while (at().type == havel::TokenType::Plus || 
+               at().type == havel::TokenType::Minus) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseMultiplicative();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
+        auto left = parseUnary();
+        
+        while (at().type == havel::TokenType::Multiply || 
+               at().type == havel::TokenType::Divide ||
+               at().type == havel::TokenType::Modulo) {
+            auto op = tokenToBinaryOperator(at().type);
+            advance();
+            auto right = parseUnary();
+            left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+    std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
+        if (at().type == havel::TokenType::Not || 
+            at().type == havel::TokenType::Minus ||
+            at().type == havel::TokenType::Plus) {
+            
+            // Convert TokenType to UnaryOperator
+            havel::ast::UnaryExpression::UnaryOperator unaryOp;
+            
+            switch (at().type) {
+                case havel::TokenType::Not:
+                    unaryOp = havel::ast::UnaryExpression::UnaryOperator::Not;
+                    break;
+                case havel::TokenType::Minus:
+                    unaryOp = havel::ast::UnaryExpression::UnaryOperator::Minus;
+                    break;
+                case havel::TokenType::Plus:
+                    unaryOp = havel::ast::UnaryExpression::UnaryOperator::Plus;
+                    break;
+                default:
+                    throw std::runtime_error("Invalid unary operator");
+            }
+            
+            advance(); // Consume the unary operator
+            auto operand = parseUnary(); // Right associative - handle nested unary operators
+            
+            return std::make_unique<havel::ast::UnaryExpression>(unaryOp, std::move(operand));
+        }
+        
         return parsePrimaryExpression();
     }
-
+    
+    // Add the helper method implementation
+    havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
+        switch (tokenType) {
+            case TokenType::Plus: return havel::ast::BinaryOperator::Add;
+            case TokenType::Minus: return havel::ast::BinaryOperator::Sub;
+            case TokenType::Multiply: return havel::ast::BinaryOperator::Mul;
+            case TokenType::Divide: return havel::ast::BinaryOperator::Div;
+            case TokenType::Modulo: return havel::ast::BinaryOperator::Mod;
+            case TokenType::Equals: return havel::ast::BinaryOperator::Equal;
+            case TokenType::NotEquals: return havel::ast::BinaryOperator::NotEqual;
+            case TokenType::Less: return havel::ast::BinaryOperator::Less;
+            case TokenType::Greater: return havel::ast::BinaryOperator::Greater;
+            case TokenType::LessEquals: return havel::ast::BinaryOperator::LessEqual;
+            case TokenType::GreaterEquals: return havel::ast::BinaryOperator::GreaterEqual;
+            case TokenType::And: return havel::ast::BinaryOperator::And;
+            case TokenType::Or: return havel::ast::BinaryOperator::Or;
+            default:
+                throw std::runtime_error("Invalid binary operator token: " + std::to_string(static_cast<int>(tokenType)));
+        }
+    }
     std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
         havel::Token tk = at();
 

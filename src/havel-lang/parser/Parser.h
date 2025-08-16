@@ -29,7 +29,14 @@ private:
     std::unique_ptr<havel::ast::Statement> parseIfStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();
     std::unique_ptr<havel::ast::BlockStatement> parseBlockStatement();
-
+    havel::ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
+    std::unique_ptr<havel::ast::Expression> parseLogicalOr();
+    std::unique_ptr<havel::ast::Expression> parseLogicalAnd();
+    std::unique_ptr<havel::ast::Expression> parseEquality();
+    std::unique_ptr<havel::ast::Expression> parseComparison();
+    std::unique_ptr<havel::ast::Expression> parseAdditive();
+    std::unique_ptr<havel::ast::Expression> parseMultiplicative();
+    std::unique_ptr<havel::ast::Expression> parseUnary();
 public:
     explicit Parser() = default;
 

@@ -17,6 +17,8 @@
 #include <zip.h>
 #include <minizip/zip.h>
 #include <minizip/unzip.h>
+#include "types.hpp"
+#include "utils/Util.hpp"
 
 namespace fs = std::filesystem;
 
@@ -85,6 +87,7 @@ public:
     
     // Watch functionality
     void watch(const std::function<void(const std::string&, const std::string&)>& callback) const;
+    static std::string globToRegex(const std::string& glob);
 
 private:
     std::string filePath;
@@ -92,7 +95,7 @@ private:
     std::string fileExtension;
     mutable std::string contentCache;
     mutable bool contentLoaded = false;
-    
+
     void updateContentCache() const;
     std::string detectMimeType() const;
     std::string formatSize(uintmax_t bytes) const;

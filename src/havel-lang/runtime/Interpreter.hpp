@@ -131,7 +131,7 @@ public:
     HavelValue EvaluateStringLiteral(const ast::StringLiteral& str);
     HavelValue EvaluateNumberLiteral(const ast::NumberLiteral& num);
     HavelValue EvaluateIdentifier(const ast::Identifier& id);
-    
+    HavelValue EvaluateUnaryExpression(const ast::UnaryExpression& unary);
     // Initialize built-in modules and functions
     void InitializeStandardLibrary();
     

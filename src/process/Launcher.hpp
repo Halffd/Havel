@@ -48,8 +48,8 @@ struct LaunchParams {
     Method method = Method::Sync;
     WindowState windowState = WindowState::Normal;
     Priority priority = Priority::Normal;
-    std::string workingDir;
-    std::vector<std::string> environment;
+    std::string workingDir = "";
+    std::vector<std::string> environment = {};
     bool inheritHandles = false;
     uint32_t timeoutMs = 0;
 };
@@ -58,7 +58,7 @@ struct ProcessResult {
     int64_t pid = -1;
     int32_t exitCode = -1;
     bool success = false;
-    std::string error;
+    std::string error = "";
     uint32_t executionTimeMs = 0;
 };
 

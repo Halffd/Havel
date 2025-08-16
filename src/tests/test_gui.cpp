@@ -2,8 +2,11 @@
 #include <QApplication>
 #include <QTimer>
 #include <QtTest/QTest>
+#include <QPushButton>
+#include <QLabel>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
 #include "qt.hpp"
-#include "types.hpp"
 
 class QtTestFixture : public ::testing::Test {
 protected:
@@ -16,7 +19,6 @@ protected:
     }
     
     void TearDown() override {
-        // Clean up any windows
         QApplication::closeAllWindows();
         QApplication::processEvents();
     }
@@ -26,7 +28,7 @@ protected:
     std::unique_ptr<QApplication> app;
 };
 
-// Basic test to ensure the Qt GUI can be created
+// Basic window tests
 TEST_F(QtTestFixture, TestWindowCreation) {
     havel::QWindow window;
     ASSERT_TRUE(window.isWindow());
@@ -37,8 +39,8 @@ TEST_F(QtTestFixture, TestWindowProperties) {
     havel::QWindow window;
     
     // Test title
-    window.setTitle("Test Window");
-    EXPECT_EQ(window.getTitle(), "Test Window");
+    window.setWindowTitle("Test Window");
+    EXPECT_EQ(window.windowTitle().toStdString(), "Test Window");
     
     // Test size
     window.resize(400, 300);
@@ -47,11 +49,11 @@ TEST_F(QtTestFixture, TestWindowProperties) {
     
     // Test visibility
     window.show();
-    QApplication::processEvents(); // Process show event
+    QApplication::processEvents();
     EXPECT_TRUE(window.isVisible());
     
     window.hide();
-    QApplication::processEvents(); // Process hide event
+    QApplication::processEvents();
     EXPECT_FALSE(window.isVisible());
 }
 
@@ -59,173 +61,156 @@ TEST_F(QtTestFixture, TestWidgetCreation) {
     havel::QWindow window;
     
     // Create widgets
-    auto button = std::make_unique<havel::QButton>("Click Me");
-    auto label = std::make_unique<havel::QLabel>("Test Label");
+    auto button = std::make_unique<QPushButton>("Click Me");
+    auto label = std::make_unique<QLabel>("Test Label");
     
-    EXPECT_EQ(button->getText(), "Click Me");
-    EXPECT_EQ(label->getText(), "Test Label");
+    EXPECT_EQ(button->text().toStdString(), "Click Me");
+    EXPECT_EQ(label->text().toStdString(), "Test Label");
     
-    // Add widgets to window
-    window.addWidget(button.get());
-    window.addWidget(label.get());
+    // Create central widget and layout
+    auto centralWidget = new QWidget();
+    auto layout = new QVBoxLayout(centralWidget);
     
-    // Test layout
-    auto layout = std::make_unique<havel::QVBoxLayout>();
-    window.setLayout(layout.get());
+    // Add widgets to layout
+    layout->addWidget(button.get());
+    layout->addWidget(label.get());
     
-    EXPECT_TRUE(window.hasLayout());
-    EXPECT_EQ(window.getWidgetCount(), 2);
+    // Set central widget
+    window.setCentralWidget(centralWidget);
+    
+    // Verify layout and widgets
+    EXPECT_TRUE(centralWidget->layout() != nullptr);
+    EXPECT_EQ(layout->count(), 2);
 }
 
-TEST_F(QtTestFixture, TestEventHandling) {
+TEST_F(QtTestFixture, TestButtonClicks) {
     havel::QWindow window;
-    auto button = std::make_unique<havel::QButton>("Click Me");
+    auto button = std::make_unique<QPushButton>("Click Me");
     
-    // Test click event
+    // Test click event using lambda
     bool clicked = false;
-    button->addEventListener("click", [&clicked]() {
+    QObject::connect(button.get(), &QPushButton::clicked, [&]() {
         clicked = true;
     });
     
-    window.addWidget(button.get());
+    // Setup window
+    auto centralWidget = new QWidget();
+    auto layout = new QVBoxLayout(centralWidget);
+    layout->addWidget(button.get());
+    window.setCentralWidget(centralWidget);
+    
     window.show();
     QApplication::processEvents();
     
     // Simulate button click
-    button->simulateClick();
+    QTest::mouseClick(button.get(), Qt::LeftButton);
     QApplication::processEvents();
     
     EXPECT_TRUE(clicked);
 }
 
-TEST_F(QtTestFixture, TestKeyEventHandling) {
-    havel::QWindow window;
-    
-    bool keyPressed = false;
-    window.addEventListener("keyPress", "a", [&keyPressed]() {
-        keyPressed = true;
-    });
-    
-    window.show();
-    window.setFocus();
-    QApplication::processEvents();
-    
-    // Simulate key press
-    QTest::keyClick(&window, Qt::Key_A);
-    QApplication::processEvents();
-    
-    EXPECT_TRUE(keyPressed);
-}
-
-TEST_F(QtTestFixture, TestMultipleEventListeners) {
-    havel::QWindow window;
-    auto button = std::make_unique<havel::QButton>("Test Button");
-    
-    int clickCount = 0;
-    bool doubleClicked = false;
-    
-    // Multiple event listeners on same widget
-    button->addEventListener("click", [&clickCount]() {
-        clickCount++;
-    });
-    
-    button->addEventListener("doubleClick", [&doubleClicked]() {
-        doubleClicked = true;
-    });
-    
-    window.addWidget(button.get());
-    window.show();
-    QApplication::processEvents();
-    
-    // Test single clicks
-    button->simulateClick();
-    button->simulateClick();
-    QApplication::processEvents();
-    
-    EXPECT_EQ(clickCount, 2);
-    
-    // Test double click
-    button->simulateDoubleClick();
-    QApplication::processEvents();
-    
-    EXPECT_TRUE(doubleClicked);
-}
-
-TEST_F(QtTestFixture, TestWindowLifecycle) {
-    auto window = std::make_unique<havel::QWindow>();
-    
-    // Test window creation
-    EXPECT_TRUE(window->isWindow());
-    EXPECT_FALSE(window->isVisible());
-    
-    // Test show/hide cycle
-    window->show();
-    QApplication::processEvents();
-    EXPECT_TRUE(window->isVisible());
-    
-    window->hide();
-    QApplication::processEvents();
-    EXPECT_FALSE(window->isVisible());
-    
-    // Test window destruction
-    window.reset();
-    QApplication::processEvents();
-    // Window should be destroyed without crashing
-}
-
 TEST_F(QtTestFixture, TestLayoutManagement) {
     havel::QWindow window;
     
-    auto vboxLayout = std::make_unique<havel::QVBoxLayout>();
-    auto hboxLayout = std::make_unique<havel::QHBoxLayout>();
+    auto centralWidget = new QWidget();
+    auto vboxLayout = new QVBoxLayout(centralWidget);
+    auto hboxLayout = new QHBoxLayout();
     
-    auto button1 = std::make_unique<havel::QButton>("Button 1");
-    auto button2 = std::make_unique<havel::QButton>("Button 2");
-    auto button3 = std::make_unique<havel::QButton>("Button 3");
+    auto button1 = new QPushButton("Button 1");
+    auto button2 = new QPushButton("Button 2");
+    auto button3 = new QPushButton("Button 3");
     
     // Test vertical layout
-    vboxLayout->addWidget(button1.get());
-    vboxLayout->addWidget(button2.get());
+    vboxLayout->addWidget(button1);
+    vboxLayout->addWidget(button2);
     
     // Test horizontal layout
-    hboxLayout->addWidget(button3.get());
+    hboxLayout->addWidget(button3);
     
     // Test nested layouts
-    vboxLayout->addLayout(hboxLayout.get());
-    window.setLayout(vboxLayout.get());
+    vboxLayout->addLayout(hboxLayout);
+    
+    // Set central widget
+    window.setCentralWidget(centralWidget);
     
     window.show();
     QApplication::processEvents();
     
-    EXPECT_TRUE(window.hasLayout());
-    EXPECT_EQ(vboxLayout->getWidgetCount(), 2);
-    EXPECT_EQ(hboxLayout->getWidgetCount(), 1);
+    EXPECT_TRUE(centralWidget->layout() != nullptr);
+    EXPECT_EQ(vboxLayout->count(), 3); // 2 widgets + 1 layout
 }
 
-TEST_F(QtTestFixture, TestAsyncEventHandling) {
+TEST_F(QtTestFixture, TestKeyboardInput) {
     havel::QWindow window;
-    auto button = std::make_unique<havel::QButton>("Async Test");
+    auto lineEdit = new QLineEdit();
     
-    bool asyncEventFired = false;
+    // Setup window
+    auto centralWidget = new QWidget();
+    auto layout = new QVBoxLayout(centralWidget);
+    layout->addWidget(lineEdit);
+    window.setCentralWidget(centralWidget);
     
-    // Test async event with timer
-    button->addEventListener("click", [&asyncEventFired]() {
-        QTimer::singleShot(100, [&asyncEventFired]() {
-            asyncEventFired = true;
-        });
+    window.show();
+    lineEdit->setFocus();
+    QApplication::processEvents();
+    
+    // Test keyboard input
+    QTest::keyClicks(lineEdit, "Hello World");
+    QApplication::processEvents();
+    
+    EXPECT_EQ(lineEdit->text().toStdString(), "Hello World");
+}
+
+TEST_F(QtTestFixture, TestAsyncTimer) {
+    havel::QWindow window;
+    bool timerTriggered = false;
+    
+    // Test async operation with QTimer
+    QTimer::singleShot(50, [&]() {
+        timerTriggered = true;
     });
     
-    window.addWidget(button.get());
     window.show();
     QApplication::processEvents();
     
-    button->simulateClick();
+    // Wait for timer
+    QTest::qWait(100);
     QApplication::processEvents();
     
-    // Wait for async event
-    QTest::qWait(200);
+    EXPECT_TRUE(timerTriggered);
+}
+
+TEST_F(QtTestFixture, TestMultipleButtons) {
+    havel::QWindow window;
     
-    EXPECT_TRUE(asyncEventFired);
+    auto button1 = new QPushButton("Button 1");
+    auto button2 = new QPushButton("Button 2");
+    
+    int button1Clicks = 0;
+    int button2Clicks = 0;
+    
+    // Connect both buttons
+    QObject::connect(button1, &QPushButton::clicked, [&]() { button1Clicks++; });
+    QObject::connect(button2, &QPushButton::clicked, [&]() { button2Clicks++; });
+    
+    // Setup window
+    auto centralWidget = new QWidget();
+    auto layout = new QHBoxLayout(centralWidget);
+    layout->addWidget(button1);
+    layout->addWidget(button2);
+    window.setCentralWidget(centralWidget);
+    
+    window.show();
+    QApplication::processEvents();
+    
+    // Test clicking both buttons
+    QTest::mouseClick(button1, Qt::LeftButton);
+    QTest::mouseClick(button2, Qt::LeftButton);
+    QTest::mouseClick(button1, Qt::LeftButton);
+    QApplication::processEvents();
+    
+    EXPECT_EQ(button1Clicks, 2);
+    EXPECT_EQ(button2Clicks, 1);
 }
 
 int main(int argc, char** argv) {

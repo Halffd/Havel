@@ -11,28 +11,47 @@ export CXX=clang++
 OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 unset LD_LIBRARY_PATH
 
-# Default build mode (0 = Debug, 1 = Release)
+# Default build mode
 BUILD_MODE=0
 BUILD_TYPE="Debug"
 BUILD_DIR="build"
 LOG_DIR="logs"
-BUILD_LOG="${LOG_DIR}/build.log"
 THREADS=3
+
+# Build mode configurations
+# Format: "BuildType,EnableTests,DisableHavelLang,EnableLLVM,BuildDir"
+declare -A BUILD_CONFIGS=(
+    [0]="Debug,ON,OFF,ON,build-debug"              # 0: debug, tests, lang, llvm
+    [1]="Release,OFF,ON,ON,build-release"          # 1: release, no tests, no lang, llvm  
+    [2]="Debug,OFF,ON,ON,build-debug-minimal"      # 2: debug, no tests, no lang, llvm
+    [3]="Debug,ON,ON,ON,build-debug-noland"        # 3: debug, tests, no lang, llvm
+    [5]="Release,ON,OFF,ON,build-release-full"     # 5: release, tests, lang, llvm
+    
+    # LLVM-specific modes
+    [6]="Debug,ON,OFF,OFF,build-debug-nollvm"      # 6: debug, tests, lang, NO llvm
+    [7]="Release,OFF,ON,OFF,build-release-nollvm"  # 7: release, no tests, no lang, NO llvm
+    [8]="Debug,OFF,OFF,OFF,build-debug-pure"       # 8: debug, no tests, lang, NO llvm
+    [9]="Release,ON,OFF,OFF,build-release-pure"    # 9: release, tests, lang, NO llvm
+)
+
 # Parse build mode from environment or first arg
-if [[ "$1" =~ ^[01]$ ]]; then
+if [[ "$1" =~ ^[012356789]$ ]]; then
     BUILD_MODE=$1
     shift
-    if [[ $BUILD_MODE -eq 1 ]]; then
-        BUILD_TYPE="Release"
-        BUILD_DIR="build-release"
-    else
-        BUILD_TYPE="Debug" 
-        BUILD_DIR="build-debug"
+    
+    # Parse configuration
+    IFS=',' read -r BUILD_TYPE ENABLE_TESTS DISABLE_HAVEL_LANG ENABLE_LLVM BUILD_DIR <<< "${BUILD_CONFIGS[$BUILD_MODE]}"
+    
+    # Handle missing mode
+    if [[ -z "$BUILD_TYPE" ]]; then
+        echo -e "${RED}[ERROR] Invalid build mode: $BUILD_MODE${NC}"
+        echo "Valid modes: 0, 1, 2, 3, 5, 6, 7, 8, 9"
+        exit 1
     fi
 fi
 
-# Update log file path based on build type
-BUILD_LOG="${LOG_DIR}/build-${BUILD_TYPE,,}.log"
+# Update log file path based on build type and mode
+BUILD_LOG="${LOG_DIR}/build-mode${BUILD_MODE}-${BUILD_TYPE,,}.log"
 
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
@@ -55,29 +74,70 @@ check_status() {
     fi
 }
 
+# Show build configuration
+show_config() {
+    log "INFO" "=== BUILD CONFIGURATION ===" "${BLUE}"
+    log "INFO" "Mode: ${BUILD_MODE}" "${BLUE}"
+    log "INFO" "Type: ${BUILD_TYPE}" "${BLUE}"
+    log "INFO" "Tests: $([ "$ENABLE_TESTS" = "ON" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+    log "INFO" "Havel Lang: $([ "$DISABLE_HAVEL_LANG" = "OFF" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+    log "INFO" "LLVM JIT: $([ "$ENABLE_LLVM" = "ON" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+    log "INFO" "Build Dir: ${BUILD_DIR}" "${BLUE}"
+    
+    # Show what this mode is good for
+    case $BUILD_MODE in
+        0) log "INFO" "📋 Standard development build" "${GREEN}" ;;
+        1) log "INFO" "🚀 Minimal release build" "${GREEN}" ;;
+        2) log "INFO" "🔧 Quick debug build" "${GREEN}" ;;
+        3) log "INFO" "🧪 Test-focused development" "${GREEN}" ;;
+        5) log "INFO" "💎 Full-featured release" "${GREEN}" ;;
+        6) log "INFO" "🚫 Debug without LLVM complexity" "${YELLOW}" ;;
+        7) log "INFO" "📦 Lightweight release (no LLVM)" "${YELLOW}" ;;
+        8) log "INFO" "🔍 Pure language development" "${YELLOW}" ;;
+        9) log "INFO" "✨ Feature-complete release (no LLVM)" "${YELLOW}" ;;
+    esac
+    
+    if [[ "$BUILD_TYPE" = "Release" ]]; then
+        log "INFO" "🚀 Release flags: -O3 -march=native -flto -ffast-math" "${GREEN}"
+    else
+        log "INFO" "🐛 Debug flags: -O0 -g -Wall -Wextra" "${YELLOW}"
+    fi
+    
+    if [[ "$ENABLE_LLVM" = "OFF" ]]; then
+        log "WARNING" "⚡ LLVM disabled - no JIT compilation" "${YELLOW}"
+    fi
+}
+
 # Clean build
 clean() {
     log "INFO" "Cleaning ${BUILD_TYPE} build directory..." "${YELLOW}"
-#    rm -rf "${BUILD_DIR}"
+    rm -rf "${BUILD_DIR}"
     rm -f "${BUILD_LOG}"
     check_status "Clean completed"
 }
 
 # Build project
 build() {
-    log "INFO" "Building in ${BUILD_TYPE} mode..." "${BLUE}"
+    show_config
     
-    if [[ $BUILD_MODE -eq 1 ]]; then
-        log "INFO" "🚀 Release flags: -O3 -march=native -flto -mavx2 -mfma" "${GREEN}"
-    else
-        log "INFO" "🐛 Debug flags: -O0 -g -Wall -Wextra" "${YELLOW}"
-    fi
+    log "INFO" "Building in ${BUILD_TYPE} mode..." "${BLUE}"
     
     log "INFO" "Creating build directory..." "${YELLOW}"
     mkdir -p "${BUILD_DIR}"
 
     log "INFO" "Generating build files with CMake..." "${YELLOW}"
-    (cd "${BUILD_DIR}" && cmake -DDISABLE_GUI=OFF -DENABLE_LLVM=ON -DUSE_CLANG=ON -DDISABLE_HAVEL_LANG=OFF -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" ..) 2>&1 | tee -a "${BUILD_LOG}"
+    
+    # Build CMake command based on configuration
+    local cmake_cmd="cmake"
+    cmake_cmd+=" -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
+    cmake_cmd+=" -DUSE_CLANG=ON"
+    cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
+    cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
+    cmake_cmd+=" -DDISABLE_HAVEL_LANG=${DISABLE_HAVEL_LANG}"
+    cmake_cmd+=" .."
+    
+    log "INFO" "CMake command: ${cmake_cmd}" "${YELLOW}"
+    (cd "${BUILD_DIR}" && eval "${cmake_cmd}") 2>&1 | tee -a "${BUILD_LOG}"
     check_status "CMake generation"
 
     log "INFO" "Building project with ${THREADS} parallel jobs..." "${YELLOW}"
@@ -85,26 +145,38 @@ build() {
     check_status "Build"
     
     # Show build results
-    if [[ -f "${BUILD_DIR}/hvc" ]]; then
-        local size=$(du -h "${BUILD_DIR}/hvc" | cut -f1)
-        log "SUCCESS" "✅ hvc built successfully (${size})" "${GREEN}"
+    log "INFO" "=== BUILD RESULTS ===" "${GREEN}"
+    
+    if [[ -f "${BUILD_DIR}/havel" ]]; then
+        local size=$(du -h "${BUILD_DIR}/havel" | cut -f1)
+        log "SUCCESS" "✅ havel built successfully (${size})" "${GREEN}"
     fi
     
-    if [[ -f "${BUILD_DIR}/test_havel" ]]; then
-        local size=$(du -h "${BUILD_DIR}/test_havel" | cut -f1)
-        log "SUCCESS" "✅ test_havel built successfully (${size})" "${GREEN}"
+    if [[ "$ENABLE_TESTS" = "ON" ]]; then
+        for test_exe in test_havel test_gui files_test main_test utils_test; do
+            if [[ -f "${BUILD_DIR}/${test_exe}" ]]; then
+                local size=$(du -h "${BUILD_DIR}/${test_exe}" | cut -f1)
+                log "SUCCESS" "✅ ${test_exe} built successfully (${size})" "${GREEN}"
+            fi
+        done
+    fi
+    
+    if [[ "$DISABLE_HAVEL_LANG" = "OFF" ]]; then
+        if [[ -f "${BUILD_DIR}/libhavel_lang.a" ]]; then
+            local size=$(du -h "${BUILD_DIR}/libhavel_lang.a" | cut -f1)
+            local llvm_status=$([ "$ENABLE_LLVM" = "ON" ] && echo "with LLVM JIT" || echo "interpreter only")
+            log "SUCCESS" "✅ libhavel_lang.a built successfully (${size}) - ${llvm_status}" "${GREEN}"
+        fi
     fi
 }
 
 # Run the project
 run() {
-    local executable="hvc"
+    local executable="havel"
     
-    # Check for different possible executable names
-    if [[ -f "${BUILD_DIR}/hvc" ]]; then
-        executable="hvc"
-    elif [[ -f "${BUILD_DIR}/HvC" ]]; then
-        executable="HvC"
+    # Check for executable
+    if [[ -f "${BUILD_DIR}/havel" ]]; then
+        executable="havel"
     elif [[ -f "${BUILD_DIR}/test_havel" ]]; then
         executable="test_havel"
         log "INFO" "Running Havel language tests..." "${BLUE}"
@@ -113,45 +185,83 @@ run() {
         exit 1
     fi
 
-    log "INFO" "Running ${executable} (${BUILD_TYPE} build)..." "${YELLOW}"
+    log "INFO" "Running ${executable} (mode ${BUILD_MODE}: ${BUILD_TYPE})..." "${YELLOW}"
+    
+    if [[ "$ENABLE_LLVM" = "OFF" ]]; then
+        log "WARNING" "Running without LLVM JIT - only interpreter available" "${YELLOW}"
+    fi
+    
     "${BUILD_DIR}/${executable}" "$@" 2>&1 | tee -a "${BUILD_LOG}"
 }
 
 # Test Havel language specifically
 test() {
-    if [[ ! -f "${BUILD_DIR}/test_havel" ]]; then
-        log "ERROR" "test_havel not found. Build the project first." "${RED}"
+    if [[ "$ENABLE_TESTS" = "OFF" ]]; then
+        log "ERROR" "Tests are disabled in build mode ${BUILD_MODE}" "${RED}"
         exit 1
     fi
 
-    log "INFO" "Running Havel language tests..." "${BLUE}"
-    "${BUILD_DIR}/test_havel" "$@" 2>&1 | tee -a "${BUILD_LOG}"
+    log "INFO" "Running all available tests..." "${BLUE}"
+    local test_count=0
+    
+    for test_exe in test_havel test_gui files_test main_test utils_test; do
+        if [[ -f "${BUILD_DIR}/${test_exe}" ]]; then
+            log "INFO" "Running ${test_exe}..." "${YELLOW}"
+            "${BUILD_DIR}/${test_exe}" "$@" 2>&1 | tee -a "${BUILD_LOG}"
+            ((test_count++))
+        fi
+    done
+    
+    if [[ $test_count -eq 0 ]]; then
+        log "ERROR" "No test executables found. Build the project first." "${RED}"
+        exit 1
+    fi
+    
+    local llvm_note=""
+    if [[ "$ENABLE_LLVM" = "OFF" ]]; then
+        llvm_note=" (LLVM JIT tests skipped)"
+    fi
+    
+    log "SUCCESS" "Ran ${test_count} test suite(s)${llvm_note}" "${GREEN}"
 }
 
 # Show usage
 usage() {
-    echo "Usage: $0 [0|1] [command] [args...]"
+    echo "Usage: $0 [mode] [command] [args...]"
     echo ""
-    echo "Build modes:"
-    echo "  0 (default) - Debug build (-O0 -g)"
-    echo "  1           - Release build (-O3 + optimizations)"
+    echo "Standard build modes:"
+    echo "  0 (default) - Debug + Tests + Havel Lang + LLVM"
+    echo "  1           - Release + No Tests + No Havel Lang + LLVM"  
+    echo "  2           - Debug + No Tests + No Havel Lang + LLVM"
+    echo "  3           - Debug + Tests + No Havel Lang + LLVM"
+    echo "  5           - Release + Tests + Havel Lang + LLVM"
+    echo ""
+    echo "LLVM-free modes (faster builds, no JIT):"
+    echo "  6           - Debug + Tests + Havel Lang + NO LLVM"
+    echo "  7           - Release + No Tests + No Havel Lang + NO LLVM"
+    echo "  8           - Debug + No Tests + Havel Lang + NO LLVM"
+    echo "  9           - Release + Tests + Havel Lang + NO LLVM"
     echo ""
     echo "Commands:"
     echo "  clean     - Clean build directory"
     echo "  build     - Build the project"
     echo "  run       - Run the main executable"
-    echo "  test      - Run Havel language tests"
+    echo "  test      - Run all available tests"
     echo "  all       - Clean, build, and run"
     echo ""
     echo "Examples:"
-    echo "  $0 build           # Debug build"
-    echo "  $0 1 build         # Release build"
-    echo "  $0 0 all           # Clean debug build and run"
-    echo "  $0 1 clean build   # Clean release build"
-    echo "  $0 test            # Run Havel tests (debug)"
-    echo "  $0 1 test          # Run Havel tests (release)"
+    echo "  $0 build           # Mode 0: Full debug with LLVM"
+    echo "  $0 6 build         # Mode 6: Debug without LLVM complexity"
+    echo "  $0 9 all           # Mode 9: Full release without LLVM"
+    echo "  $0 7 clean build   # Mode 7: Lightweight release"
     echo ""
-    echo "Logs are saved to: ${LOG_DIR}/"
+    echo "Use modes 6-9 for:"
+    echo "  - Faster builds (no LLVM compilation)"
+    echo "  - Systems without LLVM development libraries"
+    echo "  - Testing interpreter-only functionality"
+    echo "  - CI/CD environments"
+    echo ""
+    echo "Logs are saved to: ${LOG_DIR}/build-mode[X]-[type].log"
     exit 1
 }
 
@@ -196,9 +306,6 @@ process_commands() {
 if [[ $# -eq 0 ]]; then
     usage
 fi
-
-# Show current build mode
-log "INFO" "Build mode: ${BUILD_TYPE} (${BUILD_MODE})" "${BLUE}"
 
 # Process all commands
 process_commands "$@"

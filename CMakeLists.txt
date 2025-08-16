@@ -58,7 +58,7 @@ message(STATUS "XTEST_LIB: ${XTEST_LIB}")
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Charts)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Charts Test)
 message(STATUS "Qt6 found: ${Qt6_FOUND}")
 
 # GTest (only if tests enabled)
@@ -257,7 +257,7 @@ if(ENABLE_TESTS AND TEST_SOURCES)
             ${GUI_SOURCES}
             ${HAVEL_LANG_SOURCES}
         )
-        target_link_libraries(${test_name} PRIVATE ${COMMON_LIBS})
+        target_link_libraries(${test_name} PUBLIC ${COMMON_LIBS} GTest::gtest GTest::gtest_main Qt6::Test)
         
         if(ENABLE_LLVM)
             target_link_libraries(${test_name} PRIVATE ${LLVM_LIBS})
@@ -286,12 +286,6 @@ if(ENABLE_TESTS AND GTest_FOUND)
         )
         add_test(NAME havel_gui_test COMMAND havel_gui_test)
     endif()
-endif()
-
-# GUI example
-if(EXISTS "${CMAKE_SOURCE_DIR}/examples/simple_gui_example.cpp")
-    add_executable(havel_gui_example examples/simple_gui_example.cpp)
-    target_link_libraries(havel_gui_example PRIVATE Qt6::Widgets ${X11_LIBRARIES})
 endif()
 
 # Install targets

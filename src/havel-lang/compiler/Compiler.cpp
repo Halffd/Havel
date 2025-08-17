@@ -457,9 +457,29 @@ namespace havel::compiler {
                                        llvm::Function::ExternalLinkage,
                                        "window_next", module);
     }
-
     llvm::Value* Compiler::GenerateStringLiteral(const ast::StringLiteral& str) {
-        return builder.CreateGlobalString(str.value, "strlit");
+        // Create constant string data
+        llvm::Constant* strConstant = llvm::ConstantDataArray::getString(context, str.value, true);
+        
+        // Create global variable to hold the string
+        llvm::GlobalVariable* globalStr = new llvm::GlobalVariable(
+            *module,
+            strConstant->getType(),
+            true,                                    // isConstant
+            llvm::GlobalValue::PrivateLinkage,       // linkage
+            strConstant,                             // initializer
+            "strlit"                                 // name
+        );
+        
+        globalStr->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        
+        // Return pointer to the string data
+        return builder.CreateInBoundsGEP(
+            strConstant->getType(),
+            globalStr,
+            {builder.getInt32(0), builder.getInt32(0)},
+            "strptr"
+        );
     }
     llvm::Value* Compiler::GenerateNumberLiteral(const ast::NumberLiteral& num) {
         // Check if it's actually an integer

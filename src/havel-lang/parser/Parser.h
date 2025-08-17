@@ -37,6 +37,9 @@ private:
     std::unique_ptr<havel::ast::Expression> parseAdditive();
     std::unique_ptr<havel::ast::Expression> parseMultiplicative();
     std::unique_ptr<havel::ast::Expression> parseUnary();
+    std::unique_ptr<havel::ast::Expression> parseCallExpression(std::unique_ptr<havel::ast::Expression> callee);
+    std::unique_ptr<havel::ast::Expression> parseMemberExpression(std::unique_ptr<havel::ast::Expression> object);
+    havel::TokenType getBinaryOperatorToken(ast::BinaryOperator op);
 public:
     explicit Parser() = default;
 

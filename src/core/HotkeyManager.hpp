@@ -13,6 +13,7 @@
 #include <regex>
 #include <vector>
 #include <ctime>
+#include "qt.hpp"
 
 namespace havel {
     struct HotkeyDefinition {

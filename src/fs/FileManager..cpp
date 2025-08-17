@@ -467,29 +467,66 @@ bool FileManager::changeDirectory(const string& path) {
     fs::current_path(path, ec);
     return !ec;
 }
-vector<string> FileManager::glob(const string& pattern) {
-    vector<string> results;
-    fs::path root = fs::path(pattern).parent_path();
-    if (root.empty()) root = ".";
+std::vector<std::string> FileManager::glob(const std::string& pattern) {
+    std::vector<std::string> results;
+    fs::path patternPath(pattern);
+    fs::path root = patternPath.parent_path();
     
-    // Convert glob pattern to regex
+    // If no parent path, use current directory
+    if (root.empty()) {
+        root = ".";
+    }
+    
     string regexPattern = globToRegex(pattern);
     
     try {
         regex patternRegex(regexPattern);
         
-        for (const auto& entry : fs::recursive_directory_iterator(root)) {
-            if (regex_match(entry.path().filename().string(), patternRegex)) {
+        // Use error_code to handle permission errors gracefully
+        std::error_code ec;
+        
+        for (const auto& entry : fs::recursive_directory_iterator(root, ec)) {
+            // Check for errors after each iteration
+            if (ec) {
+                // Log the error but continue (don't crash)
+                std::cerr << "Warning: Cannot access " << entry.path() 
+                         << " - " << ec.message() << std::endl;
+                ec.clear(); // Clear the error and continue
+                continue;
+            }
+            
+            // Skip if we can't get the filename
+            std::error_code filename_ec;
+            auto filename = entry.path().filename().string();
+            
+            if (filename_ec) {
+                continue; // Skip this entry
+            }
+            
+            if (regex_match(filename, patternRegex)) {
                 results.push_back(entry.path().string());
             }
         }
-    } catch (const std::regex_error& e) {
-        havel::error("Invalid glob pattern '" + pattern + "': " + e.what() + "\n");
+        
+        // Check if there was an error during construction/iteration
+        if (ec) {
+            std::cerr << "Directory iteration error: " << ec.message() << std::endl;
+        }
+        
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Filesystem error in glob(): " << e.what() << std::endl;
+        // Return empty results instead of crashing
+        return results;
+    } catch (const regex_error& e) {
+        std::cerr << "Regex error in glob(): " << e.what() << std::endl;
+        return results;
+    } catch (const std::exception& e) {
+        std::cerr << "Unexpected error in glob(): " << e.what() << std::endl;
+        return results;
     }
     
     return results;
 }
-
 std::string FileManager::globToRegex(const std::string& glob) {
     std::string regex;
     regex.reserve(glob.size() * 2); // Pre-allocate space

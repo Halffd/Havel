@@ -240,9 +240,16 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
 // X11 hotkey monitoring thread
 void IO::MonitorHotkeys() {
   #ifdef __linux__
-    if (!display)
-      return;
-  
+    info("Starting X11 hotkey monitoring thread");
+      
+    if (!display) {
+        error("Display is null, cannot monitor hotkeys");
+        return;
+    }
+    if (!XInitThreads()) {
+        error("Failed to initialize X11 threading support");
+        return;
+    }
     XEvent event;
     Window root = DefaultRootWindow(display);
   

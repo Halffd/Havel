@@ -331,7 +331,22 @@ namespace havel::parser {
         
         return parsePrimaryExpression();
     }
-    
+    havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
+        switch (op) {
+            case ast::BinaryOperator::Add: return TokenType::Plus;
+            case ast::BinaryOperator::Sub: return TokenType::Minus;
+            case ast::BinaryOperator::Mul: return TokenType::Multiply;
+            case ast::BinaryOperator::Div: return TokenType::Divide;
+            case ast::BinaryOperator::Equal: return TokenType::Equals;
+            case ast::BinaryOperator::NotEqual: return TokenType::NotEquals;
+            case ast::BinaryOperator::Less: return TokenType::Less;
+            case ast::BinaryOperator::Greater: return TokenType::Greater;
+            case ast::BinaryOperator::And: return TokenType::And;
+            case ast::BinaryOperator::Or: return TokenType::Or;
+            default:
+                throw std::runtime_error("Unknown binary operator");
+        }
+    }
     // Add the helper method implementation
     havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
         switch (tokenType) {
@@ -354,67 +369,109 @@ namespace havel::parser {
     }
     std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
         havel::Token tk = at();
-
+    
         switch (tk.type) {
             case havel::TokenType::Number: {
                 advance();
                 double value = std::stod(tk.value);
                 return std::make_unique<havel::ast::NumberLiteral>(value);
             }
-
+    
             case havel::TokenType::String: {
                 advance();
                 return std::make_unique<havel::ast::StringLiteral>(tk.value);
             }
-
+    
             case havel::TokenType::Identifier: {
                 auto identTk = advance();
-                auto identifier = std::make_unique<havel::ast::Identifier>(
-                    identTk.value);
-
-                if (at().type == havel::TokenType::Dot) {
-                    auto member = std::make_unique<
-                        havel::ast::MemberExpression>();
-                    member->object = std::move(identifier);
-                    advance(); // consume '.'
-
-                    if (at().type != havel::TokenType::Identifier) {
-                        throw std::runtime_error(
-                            "Expected property name or method call after '.'");
-                    }
-
-                    auto property = advance();
-                    member->property = std::make_unique<havel::ast::Identifier>(
-                        property.value);
-
-                    return std::move(member);
+                auto identifier = std::make_unique<havel::ast::Identifier>(identTk.value);
+    
+                // Check for function call
+                if (at().type == havel::TokenType::OpenParen) {
+                    return parseCallExpression(std::move(identifier));
                 }
-
+                
+                // Check for member access
+                if (at().type == havel::TokenType::Dot) {
+                    return parseMemberExpression(std::move(identifier));
+                }
+    
                 return std::move(identifier);
             }
-
+    
             case havel::TokenType::Hotkey: {
                 advance();
                 return std::make_unique<havel::ast::HotkeyLiteral>(tk.value);
             }
-
+    
             case havel::TokenType::OpenParen: {
                 advance(); // consume '('
                 auto expr = parseExpression();
-
+    
                 if (at().type != havel::TokenType::CloseParen) {
                     throw std::runtime_error("Expected ')'");
                 }
                 advance(); // consume ')'
-
+    
                 return expr;
             }
+            
             default:
                 throw std::runtime_error(
                     "Unexpected token in expression: " + tk.value);
         }
     }
+// Add these method declarations to Parser.h first, then implement in Parser.cpp
 
+std::unique_ptr<havel::ast::Expression> Parser::parseCallExpression(
+    std::unique_ptr<havel::ast::Expression> callee) {
+    
+    auto call = std::make_unique<havel::ast::CallExpression>();
+    call->callee = std::move(callee);
+    
+    advance(); // consume '('
+    
+    // Parse arguments
+    while (notEOF() && at().type != havel::TokenType::CloseParen) {
+        auto arg = parseExpression();
+        call->args.push_back(std::move(arg));
+        
+        if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+        } else if (at().type != havel::TokenType::CloseParen) {
+            throw std::runtime_error("Expected ',' or ')' in function call");
+        }
+    }
+    
+    if (at().type != havel::TokenType::CloseParen) {
+        throw std::runtime_error("Expected ')' after function arguments");
+    }
+    advance(); // consume ')'
+    
+    return std::move(call);
+}
+std::unique_ptr<havel::ast::Expression> Parser::parseMemberExpression(
+    std::unique_ptr<havel::ast::Expression> object) {
+    
+    auto member = std::make_unique<havel::ast::MemberExpression>();
+    member->object = std::move(object);
+    
+    advance(); // consume '.'
+    
+    if (at().type != havel::TokenType::Identifier) {
+        throw std::runtime_error("Expected property name after '.'");
+    }
+    
+    auto property = advance();
+    member->property = std::make_unique<havel::ast::Identifier>(property.value);
+    
+    // Check if this member access is followed by a function call
+    if (at().type == havel::TokenType::OpenParen) {
+        return parseCallExpression(std::move(member));
+    }
+    
+    return std::move(member);
+}
     void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
         std::string padding(indent * 2, ' ');
         std::cout << padding << node.toString() << std::endl;

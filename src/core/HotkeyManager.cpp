@@ -166,8 +166,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     io.Hotkey("!Esc", []() {
-        info("Quitting application");
-        exit(0);
+        if (App::instance()) {
+            info("Quitting application");
+            App::quit();
+        }
     });
 
     // Media Controls
@@ -326,7 +328,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                     exit(1); // Only reached if execl fails
                 }
                 info("Parent process exiting for restart");
-                exit(0); // Parent process exits
+                if (App::instance()) {
+                    App::quit();
+                }
             } else {
                 error("Failed to get executable path");
             }

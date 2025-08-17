@@ -44,7 +44,6 @@ enum class NodeType {
   ListPattern,   // [head|tail], [a, b, c]
   TuplePattern,  // (x, y)
   RecordPattern, // {name, age}
-
   // Literals
   StringLiteral,  // "Hello"
   NumberLiteral,  // 42, 3.14

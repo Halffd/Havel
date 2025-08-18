@@ -1237,8 +1237,7 @@ bool HotkeyManager::isGamingWindow() {
     currentMode = "default";
     return false;
 }
-
-    void HotkeyManager::startAutoclicker(const std::string& button) {
+void HotkeyManager::startAutoclicker(const std::string& button) {
     wID currentWindow = WindowManager::GetActiveWindow();
 
     // If already running, stop it (toggle behavior)
@@ -1311,9 +1310,6 @@ bool HotkeyManager::isGamingWindow() {
 
         info("Autoclicker thread terminated");
     });
-
-    // Detach so it runs independently
-    autoclickerThread.detach();
 }
 
     // Call this when you need to force-stop (e.g., on app exit)

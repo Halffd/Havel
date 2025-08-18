@@ -1,10 +1,10 @@
+// src/havel-lang/runtime/Interpreter.hpp
 #pragma once
-#include <QClipboard>
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "ast/AST.h"
-#include "window/Window.hpp"
 #include "window/WindowManager.hpp"
+#include "window/Window.hpp"
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
@@ -15,140 +15,143 @@
 #include <string>
 #include <vector>
 #include <variant>
+#include <optional>
 
 namespace havel {
 
 // Forward declarations
-class Window;
+class Environment; 
+namespace ast { class FunctionDeclaration; }
+
+// Error Handling
+class HavelRuntimeError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+// Forward declare types
+struct HavelValue;
+struct HavelFunction;
+struct ReturnValue;
+
+// Recursive types
+using HavelObject = std::unordered_map<std::string, HavelValue>;
+using HavelArray = std::vector<HavelValue>;
+
+// Result type (declare BEFORE BuiltinFunction)
+using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue>;
+
+// Function type (now HavelResult is known)
+using BuiltinFunction = std::function<HavelResult(const std::vector<HavelValue>&)>;
 
 // Value type for the interpreter
-using HavelValue = std::variant<
+struct HavelValue : std::variant<
     std::nullptr_t,
     bool,
     int,
     double,
     std::string,
-    std::vector<std::string>
->;
-
-// Function type for built-in functions
-using BuiltinFunction = std::function<HavelValue(const std::vector<HavelValue>&)>;
-
-// Module class to organize related functions
-class Module {
-public:
-    Module(const std::string& name) : name(name) {}
-    
-    void AddFunction(const std::string& name, BuiltinFunction func) {
-        functions[name] = func;
-    }
-    
-    BuiltinFunction GetFunction(const std::string& name) const {
-        auto it = functions.find(name);
-        if (it != functions.end()) {
-            return it->second;
-        }
-        return nullptr;
-    }
-    
-    bool HasFunction(const std::string& name) const {
-        return functions.find(name) != functions.end();
-    }
-    
-    std::string GetName() const { return name; }
-    
-private:
-    std::string name;
-    std::unordered_map<std::string, BuiltinFunction> functions;
+    HavelArray,
+    HavelObject,
+    std::shared_ptr<HavelFunction>,
+    BuiltinFunction
+> {
+    using variant::variant;
 };
 
-// Environment class to store variables and functions
+// Return value wrapper
+struct ReturnValue {
+    HavelValue value;
+};
+
+// User-defined function
+struct HavelFunction {
+    const ast::FunctionDeclaration* declaration;
+    std::shared_ptr<Environment> closure;
+};
+
+// Environment class
 class Environment {
 public:
-    Environment() = default;
+    Environment(std::shared_ptr<Environment> parentEnv = nullptr) : parent(parentEnv) {}
     
-    void DefineVariable(const std::string& name, const HavelValue& value) {
-        variables[name] = value;
+    void Define(const std::string& name, const HavelValue& value) {
+        values[name] = value;
     }
-    
-    HavelValue GetVariable(const std::string& name) const {
-        auto it = variables.find(name);
-        if (it != variables.end()) {
+
+    std::optional<HavelValue> Get(const std::string& name) const {
+        auto it = values.find(name);
+        if (it != values.end()) {
             return it->second;
         }
-        return nullptr;
-    }
-    
-    bool HasVariable(const std::string& name) const {
-        return variables.find(name) != variables.end();
-    }
-    
-    void AddModule(std::shared_ptr<Module> module) {
-        modules[module->GetName()] = module;
-    }
-    
-    std::shared_ptr<Module> GetModule(const std::string& name) const {
-        auto it = modules.find(name);
-        if (it != modules.end()) {
-            return it->second;
+        if (parent) {
+            return parent->Get(name);
         }
-        return nullptr;
+        return std::nullopt;
     }
-    
-    bool HasModule(const std::string& name) const {
-        return modules.find(name) != modules.end();
-    }
-    
+
 private:
-    std::unordered_map<std::string, HavelValue> variables;
-    std::unordered_map<std::string, std::shared_ptr<Module>> modules;
+    std::shared_ptr<Environment> parent;
+    std::unordered_map<std::string, HavelValue> values;
 };
 
-// Main Interpreter class
-class Interpreter {
+// Main Interpreter class implementing the visitor pattern
+class Interpreter : public ast::ASTVisitor {
 public:
-    Interpreter();
+    Interpreter(IO& io_system, WindowManager& window_mgr);
     ~Interpreter() = default;
     
-    // Execute Havel code
-    HavelValue Execute(const std::string& sourceCode);
-    
-    // Register hotkeys from Havel code
+    HavelResult Execute(const std::string& sourceCode);
     void RegisterHotkeys(const std::string& sourceCode);
 
-    // Evaluate AST nodes
-    HavelValue EvaluateProgram(const ast::Program& program);
-    HavelValue EvaluateStatement(const ast::Statement& statement);
-    HavelValue EvaluateLetDeclaration(const ast::LetDeclaration& declaration);
-    HavelValue EvaluateIfStatement(const ast::IfStatement& statement);
-    HavelValue EvaluateExpression(const ast::Expression& expression);
-    HavelValue EvaluateHotkeyBinding(const ast::HotkeyBinding& binding);
-    HavelValue EvaluateBlockStatement(const ast::BlockStatement& block);
-    HavelValue EvaluatePipelineExpression(const ast::PipelineExpression& pipeline);
-    HavelValue EvaluateBinaryExpression(const ast::BinaryExpression& binary);
-    HavelValue EvaluateCallExpression(const ast::CallExpression& call);
-    HavelValue EvaluateMemberExpression(const ast::MemberExpression& member);
-    HavelValue EvaluateStringLiteral(const ast::StringLiteral& str);
-    HavelValue EvaluateNumberLiteral(const ast::NumberLiteral& num);
-    HavelValue EvaluateIdentifier(const ast::Identifier& id);
-    HavelValue EvaluateUnaryExpression(const ast::UnaryExpression& unary);
-    // Initialize built-in modules and functions
-    void InitializeStandardLibrary();
+    // ASTVisitor interface
+    void visitProgram(const ast::Program& node) override;
+    void visitLetDeclaration(const ast::LetDeclaration& node) override;
+    void visitIfStatement(const ast::IfStatement& node) override;
+    void visitFunctionDeclaration(const ast::FunctionDeclaration& node) override;
+    void visitReturnStatement(const ast::ReturnStatement& node) override;
+    void visitHotkeyBinding(const ast::HotkeyBinding& node) override;
+    void visitBlockStatement(const ast::BlockStatement& node) override;
+    void visitExpressionStatement(const ast::ExpressionStatement& node) override;
+    void visitPipelineExpression(const ast::PipelineExpression& node) override;
+    void visitBinaryExpression(const ast::BinaryExpression& node) override;
+    void visitUnaryExpression(const ast::UnaryExpression& node) override;
+    void visitCallExpression(const ast::CallExpression& node) override;
+    void visitMemberExpression(const ast::MemberExpression& node) override;
+    void visitStringLiteral(const ast::StringLiteral& node) override;
+    void visitNumberLiteral(const ast::NumberLiteral& node) override;
+    void visitIdentifier(const ast::Identifier& node) override;
+    void visitHotkeyLiteral(const ast::HotkeyLiteral& node) override;
     
+    // Stubs for unused AST nodes
+    void visitWhileStatement(const ast::WhileStatement& node) override;
+    void visitTypeDeclaration(const ast::TypeDeclaration& node) override;
+    void visitTypeAnnotation(const ast::TypeAnnotation& node) override;
+    void visitUnionType(const ast::UnionType& node) override;
+    void visitRecordType(const ast::RecordType& node) override;
+    void visitFunctionType(const ast::FunctionType& node) override;
+    void visitTypeReference(const ast::TypeReference& node) override;
+    void visitTryExpression(const ast::TryExpression& node) override;
+
     // Helper methods for value conversion
     static std::string ValueToString(const HavelValue& value);
     static bool ValueToBool(const HavelValue& value);
     static double ValueToNumber(const HavelValue& value);
     
 private:
-    Environment environment;
-    std::unique_ptr<havel::IO> io;
-    
-    // Initialize built-in modules
-    void InitializeClipboardModule();
-    void InitializeTextModule();
-    void InitializeWindowModule();
-    void InitializeSystemModule();
+    std::shared_ptr<Environment> environment;
+    IO& io;
+    WindowManager& windowManager;
+    HavelResult lastResult;
+
+    HavelResult Evaluate(const ast::ASTNode& node);
+
+    void InitializeStandardLibrary();
+    void InitializeSystemBuiltins();
+    void InitializeWindowBuiltins();
+    void InitializeClipboardBuiltins();
+    void InitializeTextBuiltins();
+    void InitializeFileBuiltins();
 };
 
 } // namespace havel

@@ -1,4 +1,4 @@
-// src/havel-lang/parser/Parser.cpp
+
 #include "Parser.h"
 #include <iostream>
 #include <stdexcept>
@@ -47,30 +47,78 @@ namespace havel::parser {
     }
 
     std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
-        // Check for hotkey bindings (F1 =>, Ctrl+V =>, etc.)
-        if (at().type == havel::TokenType::Hotkey) {
-            return parseHotkeyBinding();
+        switch (at().type) {
+            case havel::TokenType::Hotkey:
+                return parseHotkeyBinding();
+            case havel::TokenType::Let:
+                return parseLetDeclaration();
+            case havel::TokenType::If:
+                return parseIfStatement();
+            case havel::TokenType::Fn:
+                return parseFunctionDeclaration();
+            case havel::TokenType::Return:
+                return parseReturnStatement();
+            case havel::TokenType::OpenBrace:
+                return parseBlockStatement();
+            default: {
+                auto expr = parseExpression();
+                return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+            }
+        }
+    }
+    
+    std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
+        advance(); // consume "fn"
+
+        if (at().type != havel::TokenType::Identifier) {
+            throw std::runtime_error("Expected function name after 'fn'");
+        }
+        auto name = std::make_unique<havel::ast::Identifier>(advance().value);
+
+        if (at().type != havel::TokenType::OpenParen) {
+            throw std::runtime_error("Expected '(' after function name");
+        }
+        advance(); // consume '('
+
+        std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+        while (notEOF() && at().type != havel::TokenType::CloseParen) {
+            if (at().type != havel::TokenType::Identifier) {
+                throw std::runtime_error("Expected identifier in parameter list");
+            }
+            params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+
+            if (at().type == havel::TokenType::Comma) {
+                advance(); // consume ','
+            } else if (at().type != havel::TokenType::CloseParen) {
+                throw std::runtime_error("Expected ',' or ')' in parameter list");
+            }
         }
 
-        // Check for let declarations
-        if (at().type == havel::TokenType::Let) {
-            return parseLetDeclaration();
+        if (at().type != havel::TokenType::CloseParen) {
+            throw std::runtime_error("Expected ')' after parameter list");
+        }
+        advance(); // consume ')'
+
+        auto body = parseBlockStatement();
+
+        return std::make_unique<havel::ast::FunctionDeclaration>(std::move(name), std::move(params), std::move(body));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
+        advance(); // consume "return"
+        std::unique_ptr<havel::ast::Expression> value = nullptr;
+        
+        // Return value is optional
+        if (at().type != havel::TokenType::Semicolon && at().type != havel::TokenType::CloseBrace && at().type != havel::TokenType::EOF_TOKEN) {
+            value = parseExpression();
         }
 
-        // Check for if statements
-        if (at().type == havel::TokenType::If) {
-            return parseIfStatement();
+        // Optional semicolon
+        if (at().type == havel::TokenType::Semicolon) {
+            advance();
         }
 
-        // Check for block statements
-        if (at().type == havel::TokenType::OpenBrace) {
-            return parseBlockStatement();
-        }
-
-        // Otherwise, parse as expression statement
-        auto expr = parseExpression();
-        return std::make_unique<havel::ast::ExpressionStatement>(
-            std::move(expr));
+        return std::make_unique<havel::ast::ReturnStatement>(std::move(value));
     }
 
     std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {

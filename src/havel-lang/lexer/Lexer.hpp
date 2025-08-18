@@ -12,6 +12,8 @@ namespace havel {
         Let,
         If,
         Else,
+        Fn,
+        Return,
         Identifier,
         Number,
         String,

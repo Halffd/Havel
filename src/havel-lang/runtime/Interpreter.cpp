@@ -1,598 +1,591 @@
-// src/havel-lang/runtime/Interpreter.cpp
 #include "Interpreter.hpp"
-#include "../../gui/AutomationSuite.hpp"
+#include <QClipboard>
+#include <QGuiApplication>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
 
 namespace havel {
 
-// Helper function to convert HavelValue to string for output
+// Helper to check for and extract error from HavelResult
+static bool isError(const HavelResult& result) {
+    return std::holds_alternative<HavelRuntimeError>(result);
+}
+
+static HavelValue unwrap(HavelResult& result) {
+    if (auto* val = std::get_if<HavelValue>(&result)) {
+        return *val;
+    }
+    if (auto* ret = std::get_if<ReturnValue>(&result)) {
+        return ret->value;
+    }
+    // This should not be called on an error.
+    return nullptr;
+}
+
 std::string Interpreter::ValueToString(const HavelValue& value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) {
-        return "null";
-    } else if (std::holds_alternative<bool>(value)) {
-        return std::get<bool>(value) ? "true" : "false";
-    } else if (std::holds_alternative<int>(value)) {
-        return std::to_string(std::get<int>(value));
-    } else if (std::holds_alternative<double>(value)) {
-        return std::to_string(std::get<double>(value));
-    } else if (std::holds_alternative<std::string>(value)) {
-        return std::get<std::string>(value);
-    } else if (std::holds_alternative<std::vector<std::string>>(value)) {
-        const auto& vec = std::get<std::vector<std::string>>(value);
-        std::stringstream ss;
-        ss << "[";
-        for (size_t i = 0; i < vec.size(); i++) {
-            if (i > 0) ss << ", ";
-            ss << vec[i];
-        }
-        ss << "]";
-        return ss.str();
-    }
-    return "undefined";
+    return std::visit([](auto&& arg) -> std::string {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, std::nullptr_t>) return "null";
+        else if constexpr (std::is_same_v<T, bool>) return arg ? "true" : "false";
+        else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) return std::to_string(arg);
+        else if constexpr (std::is_same_v<T, std::string>) return arg;
+        else if constexpr (std::is_same_v<T, std::shared_ptr<HavelFunction>>) return "<function>";
+        else if constexpr (std::is_same_v<T, BuiltinFunction>) return "<builtin_function>";
+        // Note: Recursive types like Array/Object would need a more complex implementation here.
+        else return "unprintable";
+    }, value);
 }
 
-// Helper function to convert HavelValue to boolean
 bool Interpreter::ValueToBool(const HavelValue& value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) {
-        return false;
-    } else if (std::holds_alternative<bool>(value)) {
-        return std::get<bool>(value);
-    } else if (std::holds_alternative<int>(value)) {
-        return std::get<int>(value) != 0;
-    } else if (std::holds_alternative<double>(value)) {
-        return std::get<double>(value) != 0.0;
-    } else if (std::holds_alternative<std::string>(value)) {
-        return !std::get<std::string>(value).empty();
-    } else if (std::holds_alternative<std::vector<std::string>>(value)) {
-        return !std::get<std::vector<std::string>>(value).empty();
-    }
-    return false;
+    return std::visit([](auto&& arg) -> bool {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, std::nullptr_t>) return false;
+        else if constexpr (std::is_same_v<T, bool>) return arg;
+        else if constexpr (std::is_same_v<T, int>) return arg != 0;
+        else if constexpr (std::is_same_v<T, double>) return arg != 0.0;
+        else if constexpr (std::is_same_v<T, std::string>) return !arg.empty();
+        else return true; // Functions, objects, arrays are truthy
+    }, value);
 }
 
-// Helper function to convert HavelValue to number
 double Interpreter::ValueToNumber(const HavelValue& value) {
-    if (std::holds_alternative<std::nullptr_t>(value)) {
-        return 0.0;
-    } else if (std::holds_alternative<bool>(value)) {
-        return std::get<bool>(value) ? 1.0 : 0.0;
-    } else if (std::holds_alternative<int>(value)) {
-        return static_cast<double>(std::get<int>(value));
-    } else if (std::holds_alternative<double>(value)) {
-        return std::get<double>(value);
-    } else if (std::holds_alternative<std::string>(value)) {
-        try {
-            return std::stod(std::get<std::string>(value));
-        } catch (...) {
-            return 0.0;
+     return std::visit([](auto&& arg) -> double {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, std::nullptr_t>) return 0.0;
+        else if constexpr (std::is_same_v<T, bool>) return arg ? 1.0 : 0.0;
+        else if constexpr (std::is_same_v<T, int>) return static_cast<double>(arg);
+        else if constexpr (std::is_same_v<T, double>) return arg;
+        else if constexpr (std::is_same_v<T, std::string>) {
+            try { return std::stod(arg); } catch(...) { return 0.0; }
         }
-    }
-    return 0.0;
+        return 0.0;
+    }, value);
 }
 
-// Constructor
-Interpreter::Interpreter() {
-    // Initialize system components
-    io = std::make_unique<IO>();
-    
-    // Initialize standard library modules
+// Constructor with Dependency Injection
+Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr)
+    : io(io_system), windowManager(window_mgr), lastResult(nullptr) {
+    environment = std::make_shared<Environment>();
     InitializeStandardLibrary();
 }
 
-// Execute Havel code
-HavelValue Interpreter::Execute(const std::string& sourceCode) {
-    // Parse the source code into an AST
+HavelResult Interpreter::Execute(const std::string& sourceCode) {
     parser::Parser parser;
     auto program = parser.produceAST(sourceCode);
-    
-    // Evaluate the AST
-    return EvaluateProgram(*program);
+    return Evaluate(*program);
 }
 
-// Register hotkeys from Havel code
 void Interpreter::RegisterHotkeys(const std::string& sourceCode) {
-    // Parse the source code into an AST
-    parser::Parser parser;
-    auto program = parser.produceAST(sourceCode);
-    
-    // Evaluate the AST to register hotkeys
-    EvaluateProgram(*program);
+    Execute(sourceCode); // Evaluation now handles hotkey registration
 }
 
-// Evaluate a Program node
-HavelValue Interpreter::EvaluateProgram(const ast::Program& program) {
+HavelResult Interpreter::Evaluate(const ast::ASTNode& node) {
+    const_cast<ast::ASTNode&>(node).accept(*this);
+    return lastResult;
+}
+
+void Interpreter::visitProgram(const ast::Program& node) {
     HavelValue lastValue = nullptr;
-    
-    // Evaluate each statement in the program
-    for (const auto& statement : program.body) {
-        lastValue = EvaluateStatement(*statement);
+    for (const auto& stmt : node.body) {
+        auto result = Evaluate(*stmt);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        if (std::holds_alternative<ReturnValue>(result)) {
+            lastResult = std::get<ReturnValue>(result).value;
+            return;
+        }
+        lastValue = unwrap(result);
     }
-    
-    return lastValue;
+    lastResult = lastValue;
 }
 
-// Evaluate a Statement node
-HavelValue Interpreter::EvaluateStatement(const ast::Statement& statement) {
-    switch (statement.kind) {
-        case ast::NodeType::LetDeclaration:
-            return EvaluateLetDeclaration(static_cast<const ast::LetDeclaration&>(statement));
-        case ast::NodeType::IfStatement:
-            return EvaluateIfStatement(static_cast<const ast::IfStatement&>(statement));
-        case ast::NodeType::HotkeyBinding:
-            return EvaluateHotkeyBinding(static_cast<const ast::HotkeyBinding&>(statement));
-        case ast::NodeType::BlockStatement:
-            return EvaluateBlockStatement(static_cast<const ast::BlockStatement&>(statement));
-        case ast::NodeType::ExpressionStatement:
-            return EvaluateExpression(*static_cast<const ast::ExpressionStatement&>(statement).expression);
-        default:
-            throw std::runtime_error("Unknown statement type");
-    }
-}
-
-HavelValue Interpreter::EvaluateIfStatement(const ast::IfStatement& statement) {
-    HavelValue condition = EvaluateExpression(*statement.condition);
-    if (ValueToBool(condition)) {
-        return EvaluateStatement(*statement.consequence);
-    } else if (statement.alternative) {
-        return EvaluateStatement(*statement.alternative);
-    }
-    return nullptr;
-}
-
-HavelValue Interpreter::EvaluateLetDeclaration(const ast::LetDeclaration& declaration) {
+void Interpreter::visitLetDeclaration(const ast::LetDeclaration& node) {
     HavelValue value = nullptr;
-    if (declaration.value) {
-        value = EvaluateExpression(*declaration.value);
+    if (node.value) {
+        auto result = Evaluate(*node.value);
+        if(isError(result)) {
+            lastResult = result;
+            return;
+        }
+        value = unwrap(result);
     }
-    environment.DefineVariable(declaration.name->symbol, value);
-    return value;
+    environment->Define(node.name->symbol, value);
+    lastResult = value;
 }
 
-// Evaluate an Expression node
-HavelValue Interpreter::EvaluateExpression(const ast::Expression& expression) {
-    switch (expression.kind) {
-        case ast::NodeType::PipelineExpression:
-            return EvaluatePipelineExpression(static_cast<const ast::PipelineExpression&>(expression));
-        case ast::NodeType::BinaryExpression:
-            return EvaluateBinaryExpression(static_cast<const ast::BinaryExpression&>(expression));
-        case ast::NodeType::CallExpression:
-            return EvaluateCallExpression(static_cast<const ast::CallExpression&>(expression));
-        case ast::NodeType::MemberExpression:
-            return EvaluateMemberExpression(static_cast<const ast::MemberExpression&>(expression));
-        case ast::NodeType::StringLiteral:
-            return EvaluateStringLiteral(static_cast<const ast::StringLiteral&>(expression));
-        case ast::NodeType::NumberLiteral:
-            return EvaluateNumberLiteral(static_cast<const ast::NumberLiteral&>(expression));
-        case ast::NodeType::Identifier:
-            return EvaluateIdentifier(static_cast<const ast::Identifier&>(expression));
-        case ast::NodeType::HotkeyLiteral:
-            // Return the hotkey string as a value
-            return static_cast<const ast::HotkeyLiteral&>(expression).combination;
-        default:
-            throw std::runtime_error("Unknown expression type");
+void Interpreter::visitFunctionDeclaration(const ast::FunctionDeclaration& node) {
+    auto func = std::make_shared<HavelFunction>(HavelFunction{
+        &node,
+        this->environment // Capture closure
+    });
+    environment->Define(node.name->symbol, func);
+    lastResult = nullptr;
+}
+
+void Interpreter::visitReturnStatement(const ast::ReturnStatement& node) {
+    HavelValue value = nullptr;
+    if (node.argument) {
+        auto result = Evaluate(*node.argument);
+        if(isError(result)) {
+            lastResult = result;
+            return;
+        }
+        value = unwrap(result);
+    }
+    lastResult = ReturnValue{value};
+}
+
+void Interpreter::visitIfStatement(const ast::IfStatement& node) {
+    auto conditionResult = Evaluate(*node.condition);
+    if(isError(conditionResult)) {
+        lastResult = conditionResult;
+        return;
+    }
+
+    if (ValueToBool(unwrap(conditionResult))) {
+        lastResult = Evaluate(*node.consequence);
+    } else if (node.alternative) {
+        lastResult = Evaluate(*node.alternative);
+    } else {
+        lastResult = nullptr;
     }
 }
 
-// Evaluate a HotkeyBinding node
-HavelValue Interpreter::EvaluateHotkeyBinding(const ast::HotkeyBinding& binding) {
-    // Extract the hotkey from the binding
-    const auto* hotkeyLiteral = dynamic_cast<const ast::HotkeyLiteral*>(binding.hotkey.get());
+void Interpreter::visitBlockStatement(const ast::BlockStatement& node) {
+    auto blockEnv = std::make_shared<Environment>(this->environment);
+    auto originalEnv = this->environment;
+    this->environment = blockEnv;
+
+    HavelResult blockResult = HavelValue(nullptr);
+    for (const auto& stmt : node.body) {
+        blockResult = Evaluate(*stmt);
+        if (isError(blockResult) || std::holds_alternative<ReturnValue>(blockResult)) {
+            break;
+        }
+    }
+
+    this->environment = originalEnv;
+    lastResult = blockResult;
+}
+
+void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
+    auto hotkeyLiteral = dynamic_cast<const ast::HotkeyLiteral*>(node.hotkey.get());
     if (!hotkeyLiteral) {
-        throw std::runtime_error("Invalid hotkey in binding");
+        lastResult = HavelRuntimeError("Invalid hotkey in binding");
+        return;
     }
-    
+
     std::string hotkey = hotkeyLiteral->combination;
     
-    // Create a lambda that will evaluate the action when the hotkey is triggered
-    auto actionHandler = [this, action = binding.action.get()]() {
+    // This is complex. We need to keep the action node alive.
+    // For now, let's assume the AST lives as long as the interpreter.
+    auto action = node.action.get(); 
+
+    auto actionHandler = [this, action]() {
         if (action) {
-            // Check if the action is an ExpressionStatement
-            if (auto exprStmt = dynamic_cast<const ast::ExpressionStatement*>(action)) {
-                if (exprStmt->expression) {
-                    this->EvaluateExpression(*exprStmt->expression);
-                }
-            } else {
-                // For other statement types, evaluate them as statements
-                this->EvaluateStatement(*action);
+            auto result = this->Evaluate(*action);
+            if (isError(result)) {
+                std::cerr << "Runtime error in hotkey: " 
+                          << std::get<HavelRuntimeError>(result).what() << std::endl;
             }
         }
     };
-    
-    // Register the hotkey with the IO system
-    // Convert string hotkey to Key and modifiers for IO::AddHotkey
-    // This is a simplified implementation - would need proper parsing of hotkey string
-    Key key = 0; // Default key code
-    int modifiers = 0; // Default modifiers
-    io->AddHotkey(hotkey, key, modifiers, actionHandler);
-    
-    return nullptr;
+
+    io.Hotkey(hotkey, actionHandler);
+    lastResult = nullptr;
 }
 
-// Evaluate a BlockStatement node
-HavelValue Interpreter::EvaluateBlockStatement(const ast::BlockStatement& block) {
-    HavelValue lastValue = nullptr;
-    
-    // Evaluate each statement in the block
-    for (const auto& statement : block.body) {
-        lastValue = EvaluateStatement(*statement);
-    }
-    
-    return lastValue;
+void Interpreter::visitExpressionStatement(const ast::ExpressionStatement& node) {
+    lastResult = Evaluate(*node.expression);
 }
 
-// Evaluate a PipelineExpression node
-HavelValue Interpreter::EvaluatePipelineExpression(const ast::PipelineExpression& pipeline) {
-    // Get the first stage of the pipeline
-    if (pipeline.stages.empty()) {
-        throw std::runtime_error("Pipeline has no stages");
-    }
+void Interpreter::visitBinaryExpression(const ast::BinaryExpression& node) {
+    auto leftRes = Evaluate(*node.left);
+    if(isError(leftRes)) { lastResult = leftRes; return; }
+    auto rightRes = Evaluate(*node.right);
+    if(isError(rightRes)) { lastResult = rightRes; return; }
     
-    HavelValue value = EvaluateExpression(*pipeline.stages[0]);
-    
-    // For subsequent stages, we need to handle differently based on the type
-    if (pipeline.stages.size() < 2) {
-        return value; // Only one stage, return its value
-    }
-    
-    // Process each stage after the first one
-    for (size_t i = 1; i < pipeline.stages.size(); i++) {
-        auto& stage = pipeline.stages[i];
-        
-        if (const auto* callExpr = dynamic_cast<const ast::CallExpression*>(stage.get())) {
-            // Add the left-hand value as the first argument to the function call
-            std::vector<HavelValue> args;
-            args.push_back(value);
-            
-            // Add any other arguments from the call expression
-            for (const auto& arg : callExpr->args) {
-                args.push_back(EvaluateExpression(*arg));
+    HavelValue left = unwrap(leftRes);
+    HavelValue right = unwrap(rightRes);
+
+    switch(node.operator_){
+        case ast::BinaryOperator::Add:
+            if(std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
+                lastResult = ValueToString(left) + ValueToString(right);
+            } else {
+                lastResult = ValueToNumber(left) + ValueToNumber(right);
             }
-            
-            // Get the function to call
-            std::string funcName;
-            std::string moduleName;
-            
-            if (const auto* memberExpr = dynamic_cast<const ast::MemberExpression*>(callExpr->callee.get())) {
-                if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
-                    std::string moduleName = objIdentifier->symbol;
-                    
-                    if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
-                        std::string propName = propIdentifier->symbol;
-                        
-                        // Handle special properties
-                        if (moduleName == "clipboard") {
-                            if (propName == "out") {
-                                return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    // If we couldn't handle it as a special case, just return the current value
-    return value;
-}
-
-// Evaluate a BinaryExpression node
-HavelValue Interpreter::EvaluateBinaryExpression(const ast::BinaryExpression& binary) {
-    // Evaluate left and right operands
-    HavelValue left = EvaluateExpression(*binary.left);
-    HavelValue right = EvaluateExpression(*binary.right);
-    
-    // Perform the operation based on the operator
-    if (binary.operator_ == ast::BinaryOperator::Add) {
-        // String concatenation or numeric addition
-        if (std::holds_alternative<std::string>(left) || std::holds_alternative<std::string>(right)) {
-            return ValueToString(left) + ValueToString(right);
-        } else {
-            return ValueToNumber(left) + ValueToNumber(right);
-        }
-    } else if (binary.operator_ == ast::BinaryOperator::Sub) {
-        return ValueToNumber(left) - ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::Mul) {
-        return ValueToNumber(left) * ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::Div) {
-        if (ValueToNumber(right) == 0.0) {
-            throw std::runtime_error("Division by zero");
-        }
-        return ValueToNumber(left) / ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::Equal) {
-        if (std::holds_alternative<std::string>(left) && std::holds_alternative<std::string>(right)) {
-            return std::get<std::string>(left) == std::get<std::string>(right);
-        } else {
-            return ValueToNumber(left) == ValueToNumber(right);
-        }
-    } else if (binary.operator_ == ast::BinaryOperator::NotEqual) {
-        if (std::holds_alternative<std::string>(left) && std::holds_alternative<std::string>(right)) {
-            return std::get<std::string>(left) != std::get<std::string>(right);
-        } else {
-            return ValueToNumber(left) != ValueToNumber(right);
-        }
-    } else if (binary.operator_ == ast::BinaryOperator::Less) {
-        return ValueToNumber(left) < ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::LessEqual) {  // Note: There's no LessEq in the enum
-        return ValueToNumber(left) <= ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::Greater) {
-        return ValueToNumber(left) > ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::GreaterEqual) {  // Note: There's no GreaterEq in the enum
-        return ValueToNumber(left) >= ValueToNumber(right);
-    } else if (binary.operator_ == ast::BinaryOperator::And) {
-        return ValueToBool(left) && ValueToBool(right);
-    } else if (binary.operator_ == ast::BinaryOperator::Or) {
-        return ValueToBool(left) || ValueToBool(right);
-    } else {
-        // Use the BinaryExpression's toString method to get the operator string
-        throw std::runtime_error("Unknown binary operator: " + binary.toString(binary.operator_));
+            break;
+        case ast::BinaryOperator::Sub: lastResult = ValueToNumber(left) - ValueToNumber(right); break;
+        case ast::BinaryOperator::Mul: lastResult = ValueToNumber(left) * ValueToNumber(right); break;
+        case ast::BinaryOperator::Div:
+            if(ValueToNumber(right) == 0.0) { lastResult = HavelRuntimeError("Division by zero"); return; }
+            lastResult = ValueToNumber(left) / ValueToNumber(right); 
+            break;
+        // ... other operators
+        default: lastResult = HavelRuntimeError("Unsupported binary operator");
     }
 }
 
-// Evaluate a CallExpression node
-HavelValue Interpreter::EvaluateCallExpression(const ast::CallExpression& call) {
-    // Evaluate the arguments
+void Interpreter::visitUnaryExpression(const ast::UnaryExpression& node) {
+    auto operandRes = Evaluate(*node.operand);
+    if(isError(operandRes)) { lastResult = operandRes; return; }
+    HavelValue operand = unwrap(operandRes);
+
+    switch(node.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Not: lastResult = !ValueToBool(operand); break;
+        case ast::UnaryExpression::UnaryOperator::Minus: lastResult = -ValueToNumber(operand); break;
+        case ast::UnaryExpression::UnaryOperator::Plus: lastResult = ValueToNumber(operand); break;
+        default: lastResult = HavelRuntimeError("Unsupported unary operator");
+    }
+}
+
+void Interpreter::visitCallExpression(const ast::CallExpression& node) {
+    auto calleeRes = Evaluate(*node.callee);
+    if (isError(calleeRes)) { lastResult = calleeRes; return; }
+    HavelValue callee = unwrap(calleeRes);
+
     std::vector<HavelValue> args;
-    for (const auto& arg : call.args) {
-        args.push_back(EvaluateExpression(*arg));
+    for (const auto& arg : node.args) {
+        auto argRes = Evaluate(*arg);
+        if (isError(argRes)) { lastResult = argRes; return; }
+        args.push_back(unwrap(argRes));
     }
-    
-    // Handle different types of callees
-    if (const auto* identifier = dynamic_cast<const ast::Identifier*>(call.callee.get())) {
-        // It's a simple function call like print("Hello")
-        std::string funcName = identifier->symbol;
+
+    if (auto* builtin = std::get_if<BuiltinFunction>(&callee)) {
+        lastResult = (*builtin)(args);
+    } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&callee)) {
+        auto& func = *userFunc;
+        if (args.size() != func->declaration->parameters.size()) {
+            lastResult = HavelRuntimeError("Mismatched argument count for function " + func->declaration->name->symbol);
+            return;
+        }
+
+        auto funcEnv = std::make_shared<Environment>(func->closure);
+        for (size_t i = 0; i < args.size(); ++i) {
+            funcEnv->Define(func->declaration->parameters[i]->symbol, args[i]);
+        }
+
+        auto originalEnv = this->environment;
+        this->environment = funcEnv;
+        auto bodyResult = Evaluate(*func->declaration->body);
+        this->environment = originalEnv;
+
+        if (std::holds_alternative<ReturnValue>(bodyResult)) {
+            lastResult = std::get<ReturnValue>(bodyResult).value;
+        } else {
+            lastResult = nullptr; // Implicit return
+        }
+    } else {
+        lastResult = HavelRuntimeError("Attempted to call a non-callable value: " + ValueToString(callee));
+    }
+}
+
+void Interpreter::visitMemberExpression(const ast::MemberExpression& node) {
+     if(const auto* objId = dynamic_cast<const ast::Identifier*>(node.object.get())) {
+        if(const auto* propId = dynamic_cast<const ast::Identifier*>(node.property.get())) {
+            std::string fullName = objId->symbol + "." + propId->symbol;
+            if (auto val = environment->Get(fullName)) {
+                lastResult = *val;
+                return;
+            }
+        }
+    }
+    lastResult = HavelRuntimeError("Member access not implemented for this object type.");
+}
+
+
+void Interpreter::visitPipelineExpression(const ast::PipelineExpression& node) {
+    if (node.stages.empty()) {
+        lastResult = nullptr;
+        return;
+    }
+
+    HavelResult currentResult = Evaluate(*node.stages[0]);
+    if (isError(currentResult)) {
+        lastResult = currentResult;
+        return;
+    }
+
+    for (size_t i = 1; i < node.stages.size(); ++i) {
+        const auto& stage = node.stages[i];
         
-        // Check if it's a built-in function
-        if (funcName == "print") {
-            // Print to console
-            for (const auto& arg : args) {
-                std::cout << ValueToString(arg);
-            }
-            std::cout << std::endl;
-            return nullptr;
-        }
-        else if (funcName == "send") {
-            // Send text to the active window
-            if (!args.empty()) {
-                std::string text = ValueToString(args[0]);
-                io->Send(text.c_str());
-                return text;
-            }
-            return nullptr;
-        }
-    } else if (const auto* memberExpr = dynamic_cast<const ast::MemberExpression*>(call.callee.get())) {
-        // It's a method call like clipboard.set("text")
-        if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->object.get())) {
-            std::string moduleName = objIdentifier->symbol;
-            
-            if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(memberExpr->property.get())) {
-                std::string methodName = propIdentifier->symbol;
-                
-                // Get the module
-                auto module = environment.GetModule(moduleName);
-                if (module && module->HasFunction(methodName)) {
-                    auto func = module->GetFunction(methodName);
-                    return func(args);
-                }
-            }
-        }
-    }
-    
-    return nullptr;
-}
-HavelValue Interpreter::EvaluateUnaryExpression(const ast::UnaryExpression& unary) {
-    auto operandValue = EvaluateExpression(*unary.operand);
-    
-    switch (unary.operator_) {
-        case ast::UnaryExpression::UnaryOperator::Not:
-            return !ValueToBool(operandValue);
-        case ast::UnaryExpression::UnaryOperator::Minus:
-            return -ValueToNumber(operandValue);
-        case ast::UnaryExpression::UnaryOperator::Plus:
-            return ValueToNumber(operandValue); // Unary + converts to number
-        default:
-            throw std::runtime_error("Unknown unary operator");
-    }
-}
-// Evaluate a MemberExpression node
-HavelValue Interpreter::EvaluateMemberExpression(const ast::MemberExpression& member) {
-    // Handle property access on objects
-    if (const auto* objIdentifier = dynamic_cast<const ast::Identifier*>(member.object.get())) {
-        std::string moduleName = objIdentifier->symbol;
+        HavelValue currentValue = unwrap(currentResult);
+        std::vector<HavelValue> args = { currentValue };
         
-        if (const auto* propIdentifier = dynamic_cast<const ast::Identifier*>(member.property.get())) {
-            std::string propName = propIdentifier->symbol;
-            
-            // Handle special properties
-            if (moduleName == "clipboard") {
-                if (propName == "text") {
-                    return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
-                }
-            } else if (moduleName == "window") {
-                if (propName == "title") {
-                    wID activeWin = WindowManager::GetActiveWindow();
-                    if (activeWin != 0) {
-                        Window window("", activeWin);
-                        return window.Title(activeWin);
-                    }
-                    return "";
-                }
+        const ast::Expression* calleeExpr = stage.get();
+        if(const auto* call = dynamic_cast<const ast::CallExpression*>(stage.get())) {
+            calleeExpr = call->callee.get();
+            for(const auto& arg : call->args) {
+                auto argRes = Evaluate(*arg);
+                if(isError(argRes)) { lastResult = argRes; return; }
+                args.push_back(unwrap(argRes));
             }
         }
+
+        auto calleeRes = Evaluate(*calleeExpr);
+        if(isError(calleeRes)) { lastResult = calleeRes; return; }
+        
+        HavelValue callee = unwrap(calleeRes);
+        if (auto* builtin = std::get_if<BuiltinFunction>(&callee)) {
+            currentResult = (*builtin)(args);
+        } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&callee)) {
+            // This logic is duplicated from visitCallExpression, could be refactored
+            auto& func = *userFunc;
+            if (args.size() != func->declaration->parameters.size()) {
+                lastResult = HavelRuntimeError("Mismatched argument count for function in pipeline");
+                return;
+            }
+            auto funcEnv = std::make_shared<Environment>(func->closure);
+            for (size_t i = 0; i < args.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, args[i]);
+            }
+            auto originalEnv = this->environment;
+            this->environment = funcEnv;
+            currentResult = Evaluate(*func->declaration->body);
+            this->environment = originalEnv;
+            if(std::holds_alternative<ReturnValue>(currentResult)) {
+                currentResult = std::get<ReturnValue>(currentResult).value;
+            }
+
+        } else {
+            lastResult = HavelRuntimeError("Pipeline stage must be a callable function");
+            return;
+        }
+
+        if(isError(currentResult)) { lastResult = currentResult; return; }
     }
-    
-    return nullptr;
+    lastResult = currentResult;
 }
 
-// Evaluate a StringLiteral node
-HavelValue Interpreter::EvaluateStringLiteral(const ast::StringLiteral& str) {
-    return str.value;
-}
-
-// Evaluate a NumberLiteral node
-HavelValue Interpreter::EvaluateNumberLiteral(const ast::NumberLiteral& num) {
-    // NumberLiteral.value is already a double, so just return it
-    return num.value;
-}
-
-// Evaluate an Identifier node
-HavelValue Interpreter::EvaluateIdentifier(const ast::Identifier& id) {
-    // Check if it's a variable
-    if (environment.HasVariable(id.symbol)) {
-        return environment.GetVariable(id.symbol);
+void Interpreter::visitStringLiteral(const ast::StringLiteral& node) { lastResult = node.value; }
+void Interpreter::visitNumberLiteral(const ast::NumberLiteral& node) { lastResult = node.value; }
+void Interpreter::visitHotkeyLiteral(const ast::HotkeyLiteral& node) { lastResult = node.combination; }
+void Interpreter::visitIdentifier(const ast::Identifier& node) {
+    if (auto val = environment->Get(node.symbol)) {
+        lastResult = *val;
+    } else {
+        lastResult = HavelRuntimeError("Undefined variable: " + node.symbol);
     }
-    
-    // If not found, return null
-    return nullptr;
 }
+// Stubs for unimplemented visit methods
+void Interpreter::visitWhileStatement(const ast::WhileStatement& node) { lastResult = HavelRuntimeError("While loops not implemented."); }
+void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration& node) { lastResult = HavelRuntimeError("Type declarations not implemented."); }
+void Interpreter::visitTypeAnnotation(const ast::TypeAnnotation& node) { lastResult = HavelRuntimeError("Type annotations not implemented."); }
+void Interpreter::visitUnionType(const ast::UnionType& node) { lastResult = HavelRuntimeError("Union types not implemented."); }
+void Interpreter::visitRecordType(const ast::RecordType& node) { lastResult = HavelRuntimeError("Record types not implemented."); }
+void Interpreter::visitFunctionType(const ast::FunctionType& node) { lastResult = HavelRuntimeError("Function types not implemented."); }
+void Interpreter::visitTypeReference(const ast::TypeReference& node) { lastResult = HavelRuntimeError("Type references not implemented."); }
+void Interpreter::visitTryExpression(const ast::TryExpression& node) { lastResult = HavelRuntimeError("Try expressions not implemented."); }
 
-// Initialize the standard library
 void Interpreter::InitializeStandardLibrary() {
-    InitializeClipboardModule();
-    InitializeTextModule();
-    InitializeWindowModule();
-    InitializeSystemModule();
+    InitializeSystemBuiltins();
+    InitializeWindowBuiltins();
+    InitializeClipboardBuiltins();
+    InitializeTextBuiltins();
+    InitializeFileBuiltins();
+}
+void Interpreter::InitializeSystemBuiltins() {
+    environment->Define("print", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        for(const auto& arg : args) {
+            std::cout << this->ValueToString(arg) << " ";
+        }
+        std::cout << std::endl;
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("sleep", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("sleep() requires milliseconds");
+        double ms = ValueToNumber(args[0]);
+        std::this_thread::sleep_for(std::chrono::milliseconds((int)ms));
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("exit", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int code = args.empty() ? 0 : (int)ValueToNumber(args[0]);
+        std::exit(code);
+        return HavelValue(nullptr);
+    }));
+    environment->Define("type", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("type() requires an argument");
+        return std::visit([](auto&& arg) -> HavelValue {
+            using T = std::decay_t<decltype(arg)>;
+            if constexpr (std::is_same_v<T, std::nullptr_t>) return HavelValue("null");
+            else if constexpr (std::is_same_v<T, bool>) return HavelValue("boolean");
+            else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) return HavelValue("number");
+            else if constexpr (std::is_same_v<T, std::string>) return HavelValue("string");
+            else if constexpr (std::is_same_v<T, HavelArray>) return HavelValue("array");
+            else if constexpr (std::is_same_v<T, HavelObject>) return HavelValue("object");
+            else if constexpr (std::is_same_v<T, std::shared_ptr<HavelFunction>>) return HavelValue("function");
+            else if constexpr (std::is_same_v<T, BuiltinFunction>) return HavelValue("builtin");
+            else return HavelValue("unknown");
+        }, args[0]);
+    }));
 }
 
-// Initialize the clipboard module
-void Interpreter::InitializeClipboardModule() {
-    auto clipboardModule = std::make_shared<Module>("clipboard");
-    
-    // Add clipboard.getText() function
-    clipboardModule->AddFunction("getText", [](const std::vector<HavelValue>&) -> HavelValue {
-        return AutomationSuite::Instance()->getClipboardManager()->getClipboard()->text().toStdString();
-    });
-    
-    // Add clipboard.setText(text) function
-    clipboardModule->AddFunction("setText", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string text = Interpreter::ValueToString(args[0]);
-            AutomationSuite::Instance()->getClipboardManager()->getClipboard()->setText(QString::fromStdString(text));
-            return true;
+void Interpreter::InitializeWindowBuiltins() {
+    environment->Define("window.getTitle", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        if (activeWin.Exists()) {
+            return HavelValue(activeWin.Title());
         }
-        return false;
-    });
+        return HavelValue(std::string(""));
+    }));
     
-    environment.AddModule(clipboardModule);
+    environment->Define("window.maximize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        activeWin.Max();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.minimize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        activeWin.Minimize();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.next", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        this->windowManager.AltTab();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.previous", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        this->windowManager.AltTab();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.close", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        this->windowManager.WinClose();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.center", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        this->windowManager.Center(this->windowManager.GetActiveWindow());
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.focus", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("window.focus() requires window title");
+        std::string title = ValueToString(args[0]);
+        wID winId = havel::WindowManager::FindByTitle(title.c_str());
+        if (winId != 0) {
+            havel::Window window("", winId);
+            window.Activate(winId);
+            return HavelValue(true);
+        }
+        return HavelValue(false);
+    }));
 }
 
-// Initialize the text module
-void Interpreter::InitializeTextModule() {
-    auto textModule = std::make_shared<Module>("text");
+void Interpreter::InitializeClipboardBuiltins() {
+    environment->Define("clipboard.get", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        QClipboard* clipboard = QGuiApplication::clipboard();
+        return HavelValue(clipboard->text().toStdString());
+    }));
     
-    // Add text.upper(str) function
-    textModule->AddFunction("upper", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string text = Interpreter::ValueToString(args[0]);
-            std::transform(text.begin(), text.end(), text.begin(), ::toupper);
-            return text;
-        }
-        return "";
-    });
+    environment->Define("clipboard.set", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("clipboard.set() requires text");
+        std::string text = this->ValueToString(args[0]);
+        QClipboard* clipboard = QGuiApplication::clipboard();
+        clipboard->setText(QString::fromStdString(text));
+        return HavelValue(true);
+    }));
     
-    // Add text.lower(str) function
-    textModule->AddFunction("lower", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string text = Interpreter::ValueToString(args[0]);
-            std::transform(text.begin(), text.end(), text.begin(), ::tolower);
-            return text;
-        }
-        return "";
-    });
-    
-    // Add text.trim(str) function
-    textModule->AddFunction("trim", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string text = Interpreter::ValueToString(args[0]);
-            // Trim leading whitespace
-            text = trim(text);
-            return text;
-        }
-        return "";
-    });
-    
-    // Add text.replace(str, search, replace) function
-    textModule->AddFunction("replace", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (args.size() >= 3) {
-            std::string text = Interpreter::ValueToString(args[0]);
-            std::string search = Interpreter::ValueToString(args[1]);
-            std::string replace = Interpreter::ValueToString(args[2]);
-            
-            size_t pos = 0;
-            while ((pos = text.find(search, pos)) != std::string::npos) {
-                text.replace(pos, search.length(), replace);
-                pos += replace.length();
-            }
-            
-            return text;
-        }
-        return args.empty() ? "" : Interpreter::ValueToString(args[0]);
-    });
-    
-    environment.AddModule(textModule);
+    environment->Define("clipboard.clear", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        QClipboard* clipboard = QGuiApplication::clipboard();
+        clipboard->clear();
+        return HavelValue(nullptr);
+    }));
 }
 
-// Initialize the window module
-void Interpreter::InitializeWindowModule() {
-    auto windowModule = std::make_shared<Module>("window");
+void Interpreter::InitializeTextBuiltins() {
+    environment->Define("upper", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("upper() requires text");
+        std::string text = this->ValueToString(args[0]);
+        std::transform(text.begin(), text.end(), text.begin(), ::toupper);
+        return HavelValue(text);
+    }));
     
-    // Add window.getTitle() function
-    windowModule->AddFunction("getTitle", [](const std::vector<HavelValue>& args) -> HavelValue {
-        wID activeWin = WindowManager::GetActiveWindow();
-        if (activeWin != 0) {
-            Window window("", activeWin);
-            return window.Title(activeWin);
+    environment->Define("lower", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("lower() requires text");
+        std::string text = this->ValueToString(args[0]);
+        std::transform(text.begin(), text.end(), text.begin(), ::tolower);
+        return HavelValue(text);
+    }));
+    
+    environment->Define("trim", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("trim() requires text");
+        std::string text = this->ValueToString(args[0]);
+        // Trim whitespace
+        text.erase(text.begin(), std::find_if(text.begin(), text.end(), [](unsigned char ch) {
+            return !std::isspace(ch);
+        }));
+        text.erase(std::find_if(text.rbegin(), text.rend(), [](unsigned char ch) {
+            return !std::isspace(ch);
+        }).base(), text.end());
+        return HavelValue(text);
+    }));
+    
+    environment->Define("length", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("length() requires text");
+        std::string text = this->ValueToString(args[0]);
+        return HavelValue((double)text.length());
+    }));
+    
+    environment->Define("replace", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 3) return HavelRuntimeError("replace() requires (text, search, replacement)");
+        std::string text = this->ValueToString(args[0]);
+        std::string search = this->ValueToString(args[1]);
+        std::string replacement = this->ValueToString(args[2]);
+        
+        size_t pos = 0;
+        while ((pos = text.find(search, pos)) != std::string::npos) {
+            text.replace(pos, search.length(), replacement);
+            pos += replacement.length();
         }
-        return "";
-    });
+        return HavelValue(text);
+    }));
     
-    // Add window.getClass() function
-    windowModule->AddFunction("getClass", [](const std::vector<HavelValue>& args) -> HavelValue {
-        return WindowManager::GetActiveWindowClass();
-    });
-    
-    // Add window.focus(title) function
-    windowModule->AddFunction("focus", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string title = Interpreter::ValueToString(args[0]);
-            wID winId = WindowManager::FindByTitle(title.c_str());
-            if (winId != 0) {
-                Window window("", winId);
-                window.Activate(winId);
-                return true;
-            }
-        }
-        return false;
-    });
-    
-    environment.AddModule(windowModule);
+    environment->Define("contains", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("contains() requires (text, search)");
+        std::string text = this->ValueToString(args[0]);
+        std::string search = this->ValueToString(args[1]);
+        return HavelValue(text.find(search) != std::string::npos);
+    }));
 }
 
-// Initialize the system module
-void Interpreter::InitializeSystemModule() {
-    auto systemModule = std::make_shared<Module>("system");
+void Interpreter::InitializeFileBuiltins() {
+    environment->Define("file.read", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("file.read() requires path");
+        std::string path = this->ValueToString(args[0]);
+        std::ifstream file(path);
+        if (!file.is_open()) return HavelRuntimeError("Cannot open file: " + path);
+        
+        std::string content((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+        return HavelValue(content);
+    }));
     
-    // Add system.sleep(ms) function
-    systemModule->AddFunction("sleep", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            int ms = static_cast<int>(Interpreter::ValueToNumber(args[0]));
-            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        }
-        return nullptr;
-    });
+    environment->Define("file.write", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("file.write() requires (path, content)");
+        std::string path = this->ValueToString(args[0]);
+        std::string content = this->ValueToString(args[1]);
+        
+        std::ofstream file(path);
+        if (!file.is_open()) return HavelRuntimeError("Cannot write to file: " + path);
+        
+        file << content;
+        return HavelValue(true);
+    }));
     
-    // Add system.exec(command) function
-    systemModule->AddFunction("exec", [](const std::vector<HavelValue>& args) -> HavelValue {
-        if (!args.empty()) {
-            std::string command = Interpreter::ValueToString(args[0]);
-            int result = system(command.c_str());
-            return result;
-        }
-        return nullptr;
-    });
-    
-    environment.AddModule(systemModule);
+    environment->Define("file.exists", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("file.exists() requires path");
+        std::string path = this->ValueToString(args[0]);
+        return HavelValue(std::filesystem::exists(path));
+    }));
 }
 
 } // namespace havel
-

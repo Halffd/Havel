@@ -1,4 +1,3 @@
-// src/havel-lang/lexer/Lexer.cpp
 #include "Lexer.hpp"
 #include <regex>
 #include <iostream>
@@ -10,6 +9,8 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"let", TokenType::Let},
     {"if", TokenType::If},
     {"else", TokenType::Else},
+    {"fn", TokenType::Fn},
+    {"return", TokenType::Return},
     {"send", TokenType::Identifier},      // Built-in function
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module

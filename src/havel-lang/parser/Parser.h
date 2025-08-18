@@ -1,4 +1,4 @@
-// src/havel-lang/parser/Parser.h
+
 #pragma once
 #include "../lexer/Lexer.hpp"
 #include "../ast/AST.h"
@@ -27,6 +27,8 @@ private:
     // Havel-specific parsers
     std::unique_ptr<havel::ast::Statement> parseLetDeclaration();
     std::unique_ptr<havel::ast::Statement> parseIfStatement();
+    std::unique_ptr<havel::ast::Statement> parseFunctionDeclaration();
+    std::unique_ptr<havel::ast::Statement> parseReturnStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();
     std::unique_ptr<havel::ast::BlockStatement> parseBlockStatement();
     havel::ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);

@@ -1,10 +1,11 @@
-// src/havel-lang/engine/Engine.hpp
 #pragma once
 
 #include "../lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "runtime/Interpreter.hpp"
 #include "ast/AST.h"
+#include "core/IO.hpp"
+#include "window/WindowManager.hpp"
 #include <string>
 #include <memory>
 #include <fstream>
@@ -59,7 +60,8 @@ private:
     PerformanceStats stats;
 
     // Core components
-    std::unique_ptr<havel::Lexer> lexer;
+    havel::IO& io;
+    havel::WindowManager& windowManager;
     std::unique_ptr<havel::parser::Parser> parser;
     std::unique_ptr<havel::Interpreter> interpreter;
 
@@ -72,7 +74,7 @@ private:
     std::chrono::high_resolution_clock::time_point startTime;
 
 public:
-    explicit Engine(const EngineConfig& cfg = {});
+    explicit Engine(havel::IO& io_ref, havel::WindowManager& wm_ref, const EngineConfig& cfg = {});
     ~Engine() = default;
 
     // 🔥 MAIN EXECUTION METHODS 🔥
@@ -147,19 +149,4 @@ private:
     void SetLLVMOptimizationLevel();
 #endif
 };
-
-// 🎯 FACTORY FUNCTIONS FOR EASY CREATION 🎯
-
-// Create engine for development (interpreter mode)
-std::unique_ptr<Engine> CreateDevelopmentEngine();
-
-// Create engine for production (JIT mode)
-std::unique_ptr<Engine> CreateProductionEngine();
-
-// Create engine for compilation (AOT mode)
-std::unique_ptr<Engine> CreateCompilerEngine();
-
-// Create engine for testing
-std::unique_ptr<Engine> CreateTestEngine();
-
 } // namespace havel::engine

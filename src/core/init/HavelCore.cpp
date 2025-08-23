@@ -4,6 +4,8 @@
 #include "core/HotkeyManager.hpp"
 #include "runtime/Engine.h"
 #include "runtime/Interpreter.hpp"
+#include "media/MPVController.hpp"
+#include "core/ScriptEngine.hpp"
 namespace havel {
 
 HavelCore& HavelCore::instance() {
@@ -27,19 +29,19 @@ void HavelCore::initializeGUI() {
 
 void HavelCore::initializeHotkeys() {
     
-    
-    //hotkeyManager = std::make_unique<HotkeyManager>(io, windowManager, mpv, scriptEngine);
+    // These need to be created before HotkeyManager
+    auto mpv = std::make_unique<MPVController>();
+    auto scriptEngine = std::make_unique<ScriptEngine>(*io, *windowManager);
+
+    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
     hotkeyManager->RegisterDefaultHotkeys();
     
     info("Hotkey system initialized");
 }
 
 void HavelCore::initializeCompiler() {
-    compilerEngine = std::make_unique<engine::Engine>();
-    interpreter = std::make_unique<Interpreter>();
-    
-    // Initialize compiler components
-    interpreter->InitializeStandardLibrary();
+    compilerEngine = std::make_unique<engine::Engine>(*io, *windowManager);
+    interpreter = std::make_unique<Interpreter>(*io, *windowManager);
     
     info("Compiler and interpreter initialized");
 }

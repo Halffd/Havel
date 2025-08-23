@@ -1,4 +1,3 @@
-// src/havel-lang/ast/AST.h
 #pragma once
 #include "../lexer/Lexer.hpp"
 #include <memory>
@@ -676,21 +675,25 @@ struct UnaryExpression : public Expression {
 };
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
-  std::string moduleName;
-  std::vector<std::string> importedItems; // Optional: specific items to import
+  std::string modulePath;
+  // pair of <OriginalName, Alias>
+  std::vector<std::pair<std::string, std::string>> importedItems;
 
-  ImportStatement(const std::string &module,
-                  std::vector<std::string> items = {})
-      : moduleName(module), importedItems(std::move(items)) {
+  ImportStatement(const std::string &path,
+                  std::vector<std::pair<std::string, std::string>> items = {})
+      : modulePath(path), importedItems(std::move(items)) {
     kind = NodeType::ImportStatement;
   }
 
   std::string toString() const override {
-    std::string result = "ImportStatement{module: " + moduleName;
+    std::string result = "ImportStatement{module: " + modulePath;
     if (!importedItems.empty()) {
       result += ", items: [";
       for (size_t i = 0; i < importedItems.size(); ++i) {
-        result += importedItems[i];
+        result += importedItems[i].first;
+        if (importedItems[i].first != importedItems[i].second) {
+            result += " as " + importedItems[i].second;
+        }
         if (i < importedItems.size() - 1)
           result += ", ";
       }
@@ -749,6 +752,7 @@ public:
   virtual void visitTypeReference(const TypeReference &node) = 0;
   virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
+  virtual void visitImportStatement(const ImportStatement& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {

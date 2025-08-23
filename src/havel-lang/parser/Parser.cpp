@@ -1,4 +1,3 @@
-
 #include "Parser.h"
 #include <iostream>
 #include <stdexcept>
@@ -60,6 +59,8 @@ namespace havel::parser {
                 return parseReturnStatement();
             case havel::TokenType::OpenBrace:
                 return parseBlockStatement();
+            case havel::TokenType::Import:
+                return parseImportStatement();
             default: {
                 auto expr = parseExpression();
                 return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
@@ -235,6 +236,52 @@ namespace havel::parser {
         advance();
 
         return block;
+    }
+    std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
+        advance(); // consume 'import'
+
+        std::vector<std::pair<std::string, std::string>> items;
+        
+        // `import { item1, item2 as alias } from "path"`
+        if (at().type == havel::TokenType::OpenBrace) {
+            advance(); // consume '{'
+            while(notEOF() && at().type != havel::TokenType::CloseBrace) {
+                if (at().type != havel::TokenType::Identifier) {
+                    throw std::runtime_error("Expected identifier in import list");
+                }
+                std::string originalName = advance().value;
+                std::string alias = originalName;
+
+                if (at().type == havel::TokenType::As) {
+                    advance(); // consume 'as'
+                    if (at().type != havel::TokenType::Identifier) {
+                        throw std::runtime_error("Expected alias name after 'as'");
+                    }
+                    alias = advance().value;
+                }
+                items.push_back({originalName, alias});
+
+                if (at().type == havel::TokenType::Comma) {
+                    advance();
+                } else if (at().type != havel::TokenType::CloseBrace) {
+                    throw std::runtime_error("Expected ',' or '}' in import list");
+                }
+            }
+            if(at().type != havel::TokenType::CloseBrace) throw std::runtime_error("Expected '}'");
+            advance(); // consume '}'
+        }
+
+        if (at().type != havel::TokenType::From) {
+            throw std::runtime_error("Expected 'from' keyword in import statement");
+        }
+        advance(); // consume 'from'
+
+        if (at().type != havel::TokenType::String) {
+            throw std::runtime_error("Expected module path string after 'from'");
+        }
+        std::string path = advance().value;
+
+        return std::make_unique<havel::ast::ImportStatement>(path, items);
     }
 
     std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
@@ -474,8 +521,7 @@ namespace havel::parser {
 std::unique_ptr<havel::ast::Expression> Parser::parseCallExpression(
     std::unique_ptr<havel::ast::Expression> callee) {
     
-    auto call = std::make_unique<havel::ast::CallExpression>();
-    call->callee = std::move(callee);
+    auto call = std::make_unique<havel::ast::CallExpression>(std::move(callee));
     
     advance(); // consume '('
     

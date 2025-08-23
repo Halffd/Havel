@@ -1,4 +1,3 @@
-// Lexer.hpp
 #pragma once
 
 #include <string>
@@ -45,6 +44,9 @@ namespace havel {
         Pipe,
         Comment,
         NewLine,
+        Import,         // import
+        From,           // from
+        As,             // as
         EOF_TOKEN
     };
 

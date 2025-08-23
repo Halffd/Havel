@@ -1,4 +1,3 @@
-// src/havel-lang/engine/Engine.cpp
 #include "Engine.h"
 #include <iostream>
 #include <chrono>
@@ -7,7 +6,22 @@
 
 namespace havel::engine {
 
-Engine::Engine(const EngineConfig& cfg) : config(cfg) {
+// Helper to unwrap HavelResult
+static havel::HavelValue unwrapHavelResult(const havel::HavelResult& result) {
+    if (auto* val = std::get_if<havel::HavelValue>(&result)) {
+        return *val;
+    }
+    if (auto* err = std::get_if<havel::HavelRuntimeError>(&result)) {
+        throw *err;
+    }
+    if (auto* ret = std::get_if<havel::ReturnValue>(&result)) {
+        return ret->value;
+    }
+    return nullptr;
+}
+
+Engine::Engine(havel::IO& io_ref, havel::WindowManager& wm_ref, const EngineConfig& cfg) 
+    : config(cfg), io(io_ref), windowManager(wm_ref) {
     InitializeComponents();
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -27,7 +41,7 @@ Engine::Engine(const EngineConfig& cfg) : config(cfg) {
 void Engine::InitializeComponents() {
     // Always create parser and interpreter
     parser = std::make_unique<havel::parser::Parser>();
-    interpreter = std::make_unique<havel::Interpreter>();
+    interpreter = std::make_unique<havel::Interpreter>(io, windowManager);
 
     if (config.verboseOutput) {
         std::cout << "✅ Parser and Interpreter initialized" << std::endl;
@@ -88,15 +102,18 @@ havel::HavelValue Engine::RunScript(const std::string& filePath) {
 
 havel::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
     if (config.enableProfiler) StartProfiling();
+    HavelResult result_variant;
 
     try {
         switch (config.mode) {
             case ExecutionMode::INTERPRETER:
-                return interpreter->Execute(sourceCode);
+                result_variant = interpreter->Execute(sourceCode);
+                break;
 
 #ifdef HAVEL_ENABLE_LLVM
             case ExecutionMode::JIT:
-                return ExecuteJIT(sourceCode);
+                result_variant = ExecuteJIT(sourceCode);
+                break;
 
             case ExecutionMode::AOT:
                 throw std::runtime_error("AOT mode requires CompileToExecutable, not ExecuteCode");
@@ -113,6 +130,8 @@ havel::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
         StopProfiling();
         LogExecutionTime("ExecuteCode");
     }
+    
+    return unwrapHavelResult(result_variant);
 }
 
 #ifdef HAVEL_ENABLE_LLVM
@@ -195,7 +214,7 @@ bool Engine::CompileToObject(const std::string& inputFile, const std::string& ob
         auto program = parser->produceAST(sourceCode);
 
         // Generate LLVM IR and compile to object file
-        auto compiledFunc = llvmCompiler->CompileProgram(*program);
+        llvmCompiler->CompileProgram(*program);
 
         // TODO: Implement object file generation
         // This would involve using LLVM's TargetMachine to emit object code
@@ -382,49 +401,6 @@ void Engine::UpdateConfig(const EngineConfig& newConfig) {
         SetLLVMOptimizationLevel();
     }
 #endif
-}
-
-// 🎯 FACTORY FUNCTIONS 🎯
-
-std::unique_ptr<Engine> CreateDevelopmentEngine() {
-    EngineConfig config;
-    config.mode = ExecutionMode::INTERPRETER;
-    config.optimization = OptimizationLevel::NONE;
-    config.verboseOutput = true;
-    config.enableProfiler = true;
-    config.dumpIR = false;
-
-    return std::make_unique<Engine>(config);
-}
-
-std::unique_ptr<Engine> CreateProductionEngine() {
-    EngineConfig config;
-#ifdef HAVEL_ENABLE_LLVM
-    config.mode = ExecutionMode::JIT;
-#else
-    config.mode = ExecutionMode::INTERPRETER;
-#endif
-    config.optimization = OptimizationLevel::AGGRESSIVE;
-    config.verboseOutput = false;
-    config.enableProfiler = false;
-    config.dumpIR = false;
-
-    return std::make_unique<Engine>(config);
-}
-
-std::unique_ptr<Engine> CreateCompilerEngine() {
-    EngineConfig config;
-#ifdef HAVEL_ENABLE_LLVM
-    config.mode = ExecutionMode::AOT;
-#else
-    throw std::runtime_error("AOT compilation requires LLVM support");
-#endif
-    config.optimization = OptimizationLevel::AGGRESSIVE;
-    config.verboseOutput = true;
-    config.enableProfiler = false;
-    config.dumpIR = true;
-
-    return std::make_unique<Engine>(config);
 }
 
 } // namespace havel::engine

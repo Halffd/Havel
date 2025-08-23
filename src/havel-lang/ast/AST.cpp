@@ -1,4 +1,3 @@
-// src/havel-lang/ast/AST.cpp
 #include "AST.h"
 #include <iostream>
 namespace havel::ast {
@@ -350,6 +349,22 @@ void visitTypeReference(const TypeReference& node) override {
             indentLevel--;
             out << getIndent() << "}" << std::endl;
         }
+        void visitImportStatement(const ImportStatement& node) override {
+            out << getIndent() << "ImportStatement {" << std::endl;
+            indentLevel++;
+            out << getIndent() << "module: " << node.modulePath << std::endl;
+            if (!node.importedItems.empty()) {
+                out << getIndent() << "items: [" << std::endl;
+                indentLevel++;
+                for (const auto& item : node.importedItems) {
+                    out << getIndent() << item.first << " as " << item.second << std::endl;
+                }
+                indentLevel--;
+                out << getIndent() << "]" << std::endl;
+            }
+            indentLevel--;
+            out << getIndent() << "}" << std::endl;
+        }
     };
     inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
         visitor.visitTypeDeclaration(*this);
@@ -380,5 +395,8 @@ void visitTypeReference(const TypeReference& node) override {
     }
     inline void UnaryExpression::accept(ASTVisitor &visitor) const {
         visitor.visitUnaryExpression(*this);
+    }
+    inline void ImportStatement::accept(ASTVisitor& visitor) const {
+        visitor.visitImportStatement(*this);
     }
 } // namespace havel::ast

@@ -694,7 +694,7 @@ namespace havel::compiler {
             const auto& importStmt = static_cast<const ast::ImportStatement&>(stmt);
 
             // Load the module (you'll need to implement module loading)
-            LoadModule(importStmt.moduleName);
+            LoadModule(importStmt.modulePath);
 
             // Return null/void for import statements
             return llvm::UndefValue::get(llvm::Type::getVoidTy(context));

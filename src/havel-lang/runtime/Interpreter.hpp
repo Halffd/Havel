@@ -1,4 +1,3 @@
-// src/havel-lang/runtime/Interpreter.hpp
 #pragma once
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
@@ -21,7 +20,7 @@ namespace havel {
 
 // Forward declarations
 class Environment; 
-namespace ast { class FunctionDeclaration; }
+namespace ast { struct FunctionDeclaration; }
 
 // Error Handling
 class HavelRuntimeError : public std::runtime_error {
@@ -122,6 +121,7 @@ public:
     void visitNumberLiteral(const ast::NumberLiteral& node) override;
     void visitIdentifier(const ast::Identifier& node) override;
     void visitHotkeyLiteral(const ast::HotkeyLiteral& node) override;
+    void visitImportStatement(const ast::ImportStatement& node) override;
     
     // Stubs for unused AST nodes
     void visitWhileStatement(const ast::WhileStatement& node) override;

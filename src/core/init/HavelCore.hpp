@@ -1,3 +1,5 @@
+
+// src/core/init/HavelCore.hpp
 #pragma once
 #include <memory>
 #include "core/IO.hpp"
@@ -29,6 +31,7 @@ class HavelCore {
         void shutdown();
         
     private:
+        HavelCore() = default; // Private constructor for singleton
         // Core services (always available)
         std::unique_ptr<havel::IO> io;
         std::unique_ptr<havel::WindowManager> windowManager;

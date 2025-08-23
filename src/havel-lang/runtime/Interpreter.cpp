@@ -1,11 +1,18 @@
+// src/havel-lang/runtime/Interpreter.cpp
 #include "Interpreter.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <filesystem>
+#include <random>
+#include <cmath>
 
 namespace havel {
+
+// Module cache to avoid re-loading and re-executing files
+static std::unordered_map<std::string, HavelObject> moduleCache;
 
 // Helper to check for and extract error from HavelResult
 static bool isError(const HavelResult& result) {
@@ -20,7 +27,7 @@ static HavelValue unwrap(HavelResult& result) {
         return ret->value;
     }
     // This should not be called on an error.
-    return nullptr;
+    throw std::get<HavelRuntimeError>(result);
 }
 
 std::string Interpreter::ValueToString(const HavelValue& value) {
@@ -32,7 +39,8 @@ std::string Interpreter::ValueToString(const HavelValue& value) {
         else if constexpr (std::is_same_v<T, std::string>) return arg;
         else if constexpr (std::is_same_v<T, std::shared_ptr<HavelFunction>>) return "<function>";
         else if constexpr (std::is_same_v<T, BuiltinFunction>) return "<builtin_function>";
-        // Note: Recursive types like Array/Object would need a more complex implementation here.
+        else if constexpr (std::is_same_v<T, HavelArray>) return "<array>";
+        else if constexpr (std::is_same_v<T, HavelObject>) return "<object>";
         else return "unprintable";
     }, value);
 }
@@ -360,6 +368,69 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression& node) {
     }
     lastResult = currentResult;
 }
+
+void Interpreter::visitImportStatement(const ast::ImportStatement& node) {
+    std::string path = node.modulePath;
+    HavelObject exports;
+
+    // Check cache first
+    if (moduleCache.count(path)) {
+        exports = moduleCache.at(path);
+    } else {
+        // Check for built-in modules
+        if (path.rfind("havel:", 0) == 0) {
+            std::string moduleName = path.substr(6);
+            auto moduleVal = environment->Get(moduleName);
+            if (moduleVal && std::holds_alternative<HavelObject>(*moduleVal)) {
+                exports = std::get<HavelObject>(*moduleVal);
+            } else {
+                lastResult = HavelRuntimeError("Built-in module not found: " + moduleName);
+                return;
+            }
+        } else {
+            // Load from file
+            std::ifstream file(path);
+            if (!file) {
+                lastResult = HavelRuntimeError("Cannot open module file: " + path);
+                return;
+            }
+            std::string source((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+            // Execute module in a new environment
+            Interpreter moduleInterpreter(io, windowManager);
+            auto moduleResult = moduleInterpreter.Execute(source);
+            if (isError(moduleResult)) {
+                lastResult = moduleResult;
+                return;
+            }
+
+            HavelValue exportedValue = unwrap(moduleResult);
+            if (!std::holds_alternative<HavelObject>(exportedValue)) {
+                lastResult = HavelRuntimeError("Module must return an object of exports: " + path);
+                return;
+            }
+            exports = std::get<HavelObject>(exportedValue);
+        }
+        // Cache the result
+        moduleCache[path] = exports;
+    }
+
+    // Import symbols into the current environment
+    for (const auto& item : node.importedItems) {
+        const std::string& originalName = item.first;
+        const std::string& alias = item.second;
+        
+        if (exports.count(originalName)) {
+            environment->Define(alias, exports.at(originalName));
+        } else {
+            lastResult = HavelRuntimeError("Module '" + path + "' does not export symbol: " + originalName);
+            return;
+        }
+    }
+
+    lastResult = nullptr;
+}
+
 
 void Interpreter::visitStringLiteral(const ast::StringLiteral& node) { lastResult = node.value; }
 void Interpreter::visitNumberLiteral(const ast::NumberLiteral& node) { lastResult = node.value; }

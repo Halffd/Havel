@@ -1,4 +1,3 @@
-// src/havel-lang/runtime/Interpreter.cpp
 #include "Interpreter.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
@@ -475,12 +474,12 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(nullptr);
     }));
     
-    environment->Define("exit", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("exit", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         int code = args.empty() ? 0 : (int)ValueToNumber(args[0]);
         std::exit(code);
         return HavelValue(nullptr);
     }));
-    environment->Define("type", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("type", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("type() requires an argument");
         return std::visit([](auto&& arg) -> HavelValue {
             using T = std::decay_t<decltype(arg)>;
@@ -514,7 +513,7 @@ void Interpreter::InitializeWindowBuiltins() {
     
     environment->Define("window.minimize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
-        activeWin.Minimize();
+        activeWin.Min();
         return HavelValue(nullptr);
     }));
     
@@ -529,7 +528,8 @@ void Interpreter::InitializeWindowBuiltins() {
     }));
     
     environment->Define("window.close", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        this->windowManager.WinClose();
+        Window w(this->windowManager.GetActiveWindow());
+        w.Close();
         return HavelValue(nullptr);
     }));
     
@@ -552,7 +552,7 @@ void Interpreter::InitializeWindowBuiltins() {
 }
 
 void Interpreter::InitializeClipboardBuiltins() {
-    environment->Define("clipboard.get", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("clipboard.get", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         QClipboard* clipboard = QGuiApplication::clipboard();
         return HavelValue(clipboard->text().toStdString());
     }));
@@ -565,7 +565,7 @@ void Interpreter::InitializeClipboardBuiltins() {
         return HavelValue(true);
     }));
     
-    environment->Define("clipboard.clear", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("clipboard.clear", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         QClipboard* clipboard = QGuiApplication::clipboard();
         clipboard->clear();
         return HavelValue(nullptr);

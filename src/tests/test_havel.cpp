@@ -2,6 +2,8 @@
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/runtime/Engine.h"
+#include "core/IO.hpp"
+#include "window/WindowManager.hpp"
 
 #ifdef HAVEL_ENABLE_LLVM
 #include "havel-lang/compiler/Compiler.h"
@@ -16,6 +18,35 @@
 #include <vector>
 #include <sstream>
 #include "../havel-lang/tests/Tests.h"
+
+// Test Fixture for Interpreter
+class InterpreterTestFixture {
+protected:
+    havel::IO io;
+    havel::WindowManager windowManager;
+    std::unique_ptr<havel::Interpreter> interpreter;
+
+public:
+    InterpreterTestFixture() {
+        interpreter = std::make_unique<havel::Interpreter>(io, windowManager);
+    }
+
+    havel::Interpreter& getInterpreter() { return *interpreter; }
+};
+
+// Test Fixture for Engine
+class EngineTestFixture {
+protected:
+    havel::IO io;
+    havel::WindowManager windowManager;
+    havel::engine::EngineConfig config;
+    std::unique_ptr<havel::engine::Engine> engine;
+
+public:
+    EngineTestFixture() : engine(std::make_unique<havel::engine::Engine>(io, windowManager, config)) {}
+    
+    havel::engine::Engine& getEngine() { return *engine; }
+};
 
 // LEXER TESTS
 void testLexer(Tests& tf) {
@@ -257,71 +288,69 @@ void testInterpreter(Tests& tf) {
     std::cout << "\n=== TESTING INTERPRETER ===" << std::endl;
 
     tf.test("String Evaluation", []() {
-        havel::Interpreter interpreter;
-        auto result = interpreter.Execute("F1 => \"Hello World!\"");
+        InterpreterTestFixture fixture;
+        auto result = fixture.getInterpreter().Execute("F1 => \"Hello World!\"");
 
         return std::holds_alternative<std::string>(result) &&
                std::get<std::string>(result) == "Hello World!";
     });
 
     tf.test("Number Evaluation", []() {
-        havel::Interpreter interpreter;
-        auto result = interpreter.Execute("F1 => 42");
+        InterpreterTestFixture fixture;
+        auto result = fixture.getInterpreter().Execute("F1 => 42");
 
         return std::holds_alternative<int>(result) &&
                std::get<int>(result) == 42;
     });
 
     tf.test("Binary Expression Evaluation", []() {
-        havel::Interpreter interpreter;
-        auto result = interpreter.Execute("F1 => 2 + 3");
+        InterpreterTestFixture fixture;
+        auto result = fixture.getInterpreter().Execute("F1 => 2 + 3");
 
         return std::holds_alternative<double>(result) &&
                std::get<double>(result) == 5.0;
     });
 
     tf.test("String Concatenation", []() {
-        havel::Interpreter interpreter;
-        auto result = interpreter.Execute("F1 => \"Hello\" + \" \" + \"World\"");
+        InterpreterTestFixture fixture;
+        auto result = fixture.getInterpreter().Execute("F1 => \"Hello\" + \" \" + \"World\"");
 
         return std::holds_alternative<std::string>(result) &&
                std::get<std::string>(result) == "Hello World";
     });
 
     tf.test("Value To String Conversion", []() {
-        havel::Interpreter interpreter;
-        std::string testStr = interpreter.ValueToString(std::string("test"));
+        InterpreterTestFixture fixture;
+        std::string testStr = havel::Interpreter::ValueToString(std::string("test"));
         int testInt = 42;
-        std::string intStr = interpreter.ValueToString(testInt);
+        std::string intStr = havel::Interpreter::ValueToString(testInt);
 
         return testStr == "test" && intStr == "42";
     });
 
     tf.test("Value To Boolean Conversion", []() {
-        havel::Interpreter interpreter;
-        bool emptyStringBool = interpreter.ValueToBool(std::string(""));
-        bool nonEmptyStringBool = interpreter.ValueToBool(std::string("hello"));
-        bool zeroBool = interpreter.ValueToBool(0);
-        bool nonZeroBool = interpreter.ValueToBool(42);
+        bool emptyStringBool = havel::Interpreter::ValueToBool(std::string(""));
+        bool nonEmptyStringBool = havel::Interpreter::ValueToBool(std::string("hello"));
+        bool zeroBool = havel::Interpreter::ValueToBool(0);
+        bool nonZeroBool = havel::Interpreter::ValueToBool(42);
 
         return !emptyStringBool && nonEmptyStringBool && !zeroBool && nonZeroBool;
     });
 
     tf.test("Value To Number Conversion", []() {
-        havel::Interpreter interpreter;
-        double stringNum = interpreter.ValueToNumber(std::string("42.5"));
-        double intNum = interpreter.ValueToNumber(42);
-        double boolNum = interpreter.ValueToNumber(true);
+        double stringNum = havel::Interpreter::ValueToNumber(std::string("42.5"));
+        double intNum = havel::Interpreter::ValueToNumber(42);
+        double boolNum = havel::Interpreter::ValueToNumber(true);
 
         return stringNum == 42.5 && intNum == 42.0 && boolNum == 1.0;
     });
 
     tf.test("Hotkey Registration", []() {
-        havel::Interpreter interpreter;
+        InterpreterTestFixture fixture;
         std::string havelCode = "F1 => send \"Hello\"";
 
         // Should not throw exception
-        interpreter.RegisterHotkeys(havelCode);
+        fixture.getInterpreter().RegisterHotkeys(havelCode);
         return true;
     });
 }
@@ -574,7 +603,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Development Engine Factory", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
             return engine != nullptr;
         } catch (const std::exception&) {
             return false;
@@ -583,7 +614,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Production Engine Factory", []() {
         try {
-            auto engine = havel::engine::CreateProductionEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
             return engine != nullptr;
         } catch (const std::exception&) {
             return false;
@@ -593,8 +626,12 @@ void testEngine(Tests& tf) {
 #ifdef HAVEL_ENABLE_LLVM
     tf.test("Compiler Engine Factory", []() {
         try {
-            auto engine = havel::engine::CreateCompilerEngine();
-            return engine != nullptr;
+            havel::IO io;
+            havel::WindowManager wm;
+            havel::engine::EngineConfig config;
+            config.mode = havel::engine::EngineMode::Compiler;
+            havel::engine::Engine engine(io, wm, config);
+            return true;
         } catch (const std::exception&) {
             return false;
         }
@@ -633,7 +670,9 @@ void testEngine(Tests& tf) {
 
     tf.test("AST Dumping", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
             std::string code = "F1 => send \"AST Test\"";
             engine->DumpAST(code);
             return true;
@@ -663,7 +702,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Mode Switching", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             // Start in interpreter mode
             if (engine->GetExecutionMode() != havel::engine::ExecutionMode::INTERPRETER) {
@@ -686,7 +727,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Version Information", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             std::string version = engine->GetVersionInfo();
             std::string buildInfo = engine->GetBuildInfo();
@@ -700,7 +743,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Script Validation", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             // Create a temporary test file
             std::ofstream testFile("test_script.hav");
@@ -722,7 +767,9 @@ void testEngine(Tests& tf) {
 
     tf.test("Config Updates", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             havel::engine::EngineConfig newConfig;
             newConfig.mode = havel::engine::ExecutionMode::INTERPRETER;
@@ -743,7 +790,9 @@ void testIntegration(Tests& tf) {
 
     tf.test("Full Pipeline Integration", []() {
         try {
-            auto engine = havel::engine::CreateProductionEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             std::string complexCode = R"(
                 F1 => clipboard.out | text.upper | send
@@ -850,7 +899,9 @@ void testIntegration(Tests& tf) {
         try {
             // Test that creating and destroying multiple engines doesn't leak memory
             for (int i = 0; i < 10; i++) {
-                auto engine = havel::engine::CreateDevelopmentEngine();
+                havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
                 engine->ExecuteCode("F1 => send \"Memory test " + std::to_string(i) + "\"");
             }
             return true;
@@ -861,7 +912,9 @@ void testIntegration(Tests& tf) {
 
     tf.test("Large Script Processing", []() {
         try {
-            auto engine = havel::engine::CreateProductionEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             std::stringstream largeScript;
             for (int i = 1; i <= 24; i++) {
@@ -877,7 +930,9 @@ void testIntegration(Tests& tf) {
 
     tf.test("Error Recovery Test", []() {
         try {
-            auto engine = havel::engine::CreateDevelopmentEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             // Test with invalid syntax
             bool caughtException = false;
@@ -975,7 +1030,9 @@ void testStress(Tests& tf) {
         try {
             // Create and destroy many engines rapidly
             for (int i = 0; i < 100; i++) {
-                auto engine = havel::engine::CreateDevelopmentEngine();
+                havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
                 engine->ExecuteCode("F1 => send \"Memory stress " + std::to_string(i) + "\"");
 
                 if (i % 10 == 0) {
@@ -990,7 +1047,9 @@ void testStress(Tests& tf) {
 
     tf.test("Concurrent Access Test", []() {
         try {
-            auto engine = havel::engine::CreateProductionEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             // Test multiple rapid executions
             for (int i = 0; i < 50; i++) {
@@ -1054,7 +1113,9 @@ void testBenchmarks(Tests& tf) {
     tf.test("Memory Usage Benchmark", []() {
         try {
             // Test memory usage with large scripts
-            auto engine = havel::engine::CreateProductionEngine();
+            havel::IO io;
+            havel::WindowManager wm;
+            auto engine = std::make_unique<havel::engine::Engine>(io, wm);
 
             std::stringstream largeScript;
             for (int i = 0; i < 500; i++) {

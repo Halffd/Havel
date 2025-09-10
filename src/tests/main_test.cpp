@@ -154,11 +154,60 @@ void test(havel::IO& io) {
 }
 
 int main(int argc, char* argv[]) {
+    havel::BrightnessManager mgr;
+    
+    // === BASIC RGB GAMMA ===
+    mgr.setGammaRGB(1.0, 0.8, 0.6);              // Warm all monitors
+    mgr.setGammaRGB("DP-1", 1.2, 1.0, 0.8);     // Cool specific monitor
+    
+    // === KELVIN TEMPERATURE (MUCH EASIER) ===
+    mgr.setTemperature(3000);          // Warm 3000K all monitors
+    mgr.setTemperature("HDMI-1", 6500); // Daylight 6500K specific monitor
+    
+    // === COMBINED OPERATIONS ===
+    mgr.setBrightnessAndTemperature(0.7, 4000);           // Dim + warm all
+    mgr.setBrightnessAndTemperature("DP-2", 0.9, 5500);  // Bright + neutral specific
+    
+    // === TEMPERATURE INCREMENTS ===
+    mgr.increaseTemperature();           // +200K default, all monitors
+    mgr.decreaseTemperature("DP-1");     // -200K default, specific monitor
+    mgr.increaseTemperature(500);        // +500K custom, all monitors
+    mgr.decreaseTemperature("HDMI-1", 100); // -100K custom, specific monitor
+    
+    // === DAY/NIGHT AUTOMATION - THE KILLER FEATURE ===
+    BrightnessManager::DayNightSettings dayNight;
+    dayNight.dayBrightness = 1.0;
+    dayNight.nightBrightness = 0.3;
+    dayNight.dayTemperature = 6500;    // Cool daylight
+    dayNight.nightTemperature = 2700;  // Warm candlelight
+    dayNight.dayStartHour = 7;         // 7 AM
+    dayNight.nightStartHour = 20;      // 8 PM
+    dayNight.checkInterval = std::chrono::minutes(10); // Check every 10 mins
+    
+    mgr.enableDayNightMode(dayNight);   // SET AND FORGET! 🚀
+    
+    // Manual overrides
+    mgr.switchToNight();           // Force night mode all monitors
+    mgr.switchToDay("DP-1");       // Force day mode specific monitor
+    
+    // Configuration on the fly
+    mgr.setDaySettings(0.95, 6200);    // Slightly dimmer day
+    mgr.setNightSettings(0.2, 2400);   // Very dim, very warm night
+    mgr.setDayNightTiming(6, 21);      // 6 AM to 9 PM day cycle
+    
+    // Check current state
+    if (mgr.isDay()) {
+        info("Currently in day mode");
+    } else {
+        info("Currently in night mode");
+    }
+    
+    // Disable when done
+    mgr.disableDayNightMode();
     havel::IO io;
     std::cout << "Test main function initialized\n";
     
     havel::WindowManager wm;
-    
     setupAHKHotkeys(io);
     test(io);
     

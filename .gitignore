@@ -13,6 +13,8 @@ config
 build
 build-debug
 build-release
+build*
+*.h
 # Precompiled headers
 *.gch
 *.pch# Log files

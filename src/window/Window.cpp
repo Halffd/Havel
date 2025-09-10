@@ -1,5 +1,6 @@
 #include "Window.hpp"
 #include "WindowManager.hpp"
+#include "core/DisplayManager.hpp"
 #include "types.hpp"
 #include <iostream>
 #include <sstream>
@@ -396,6 +397,7 @@ void Window::Activate(wID win) {
         std::cout << "Activated: " << win << std::endl;
     }
 #elif defined(__linux__)
+if(WindowManager::get().IsX11()) {
     // X11 implementation
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
@@ -413,25 +415,25 @@ void Window::Activate(wID win) {
         XSendEvent(localDisplay, DefaultRootWindow(localDisplay), x11::XFalse, SubstructureRedirectMask | SubstructureNotifyMask, &event);
         XFlush(localDisplay);
     } else {
-        std::cerr << "Failed to find _NET_ACTIVE_WINDOW atom." << std::endl;
+        error("Failed to find _NET_ACTIVE_WINDOW atom.");
     }
     XCloseDisplay(localDisplay);
-#elif defined(__linux__) && defined(__WAYLAND__)
+} else if(WindowManager::get().IsWayland()) {
     // Wayland implementation using `wmctrl`
     if (win) {
         std::ostringstream command;
         command << "wmctrl -i -a " << std::hex << reinterpret_cast<uintptr_t>(win);
-        int ret = system(command.str().c_str());
-        if (ret == -1) {
-            std::cerr << "Failed to execute wmctrl command to activate window." << std::endl;
+        auto ret = Launcher::runShell(command.str());
+        if (!ret.success) {
+            error("Command failed to activate window: " + ret.error);
         } else {
-            std::cout << "Activated window via wmctrl: " << win << std::endl;
+            debug("Activated window via wmctrl: " + win);
         }
     } else {
-        std::cerr << "Invalid window ID for Wayland activation." << std::endl;
+        error("Invalid window ID for Wayland activation.");
     }
 #else
-    std::cerr << "Platform not supported for Activate function." << std::endl;
+    error("Platform not supported for Activate function.");
 #endif
 }
 
@@ -462,7 +464,7 @@ void Window::Close(wID win) {
     XCloseDisplay(localDisplay);
 #elif defined(__linux__) && defined(__WAYLAND__)
     // Wayland does not provide a universal API for closing windows.
-    std::cerr << "Window closing in Wayland is not implemented." << std::endl;
+    error("Window closing in Wayland is not implemented.");
 #endif
 }
 

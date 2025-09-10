@@ -40,9 +40,10 @@ void HavelCore::initializeHotkeys() {
 }
 
 void HavelCore::initializeCompiler() {
+#ifdef HAVEL_LANG
     compilerEngine = std::make_unique<engine::Engine>(*io, *windowManager);
     interpreter = std::make_unique<Interpreter>(*io, *windowManager);
-    
+#endif
     info("Compiler and interpreter initialized");
 }
 
@@ -57,14 +58,14 @@ void HavelCore::shutdown() {
     if (windowManager) {
         windowManager.reset();
     }
-    
+    #ifdef HAVEL_LANG
     if (compilerEngine) {
         compilerEngine.reset();
     }
-    
     if (interpreter) {
         interpreter.reset();
     }
+#endif
     
     
     

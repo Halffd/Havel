@@ -124,7 +124,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/process/*.cpp" 
     "src/fs/*.cpp"
     "src/core/util/*.cpp"
-)
+    )
 
 # GUI sources (always included now)
 file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
@@ -140,13 +140,13 @@ endif()
 # Test sources (only if tests enabled)
 set(TEST_SOURCES "")
 if(ENABLE_TESTS)
-    file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
+file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
 endif()
 
 # Common libraries (Qt6 always included)
 set(COMMON_LIBS
-    ${X11_LIBRARIES}
-    ${XTEST_LIB}
+${X11_LIBRARIES}
+${XTEST_LIB}
     ${XRANDR_LIB}
     ${XINERAMA_LIB}
     Threads::Threads
@@ -161,9 +161,9 @@ set(COMMON_LIBS
     ssl
     pthread
     m
-)
-
-# Include directories
+    )
+    
+    # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
@@ -173,9 +173,9 @@ include_directories(
     ${Qt6Core_INCLUDE_DIRS}
     ${Qt6Widgets_INCLUDE_DIRS}
     ${Qt6Charts_INCLUDE_DIRS}
-)
-
-if(NOT DISABLE_HAVEL_LANG)
+    )
+    
+    if(NOT DISABLE_HAVEL_LANG)
     include_directories(${CMAKE_SOURCE_DIR}/src/havel-lang)
 endif()
 
@@ -326,5 +326,57 @@ if(ENABLE_TESTS)
 else()
     message(STATUS "Tests: DISABLED")
 endif()
+
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(WAYLAND REQUIRED wayland-client wayland-protocols)
+
+find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+
+set(PROTOCOLS_DIR /usr/share/wayland-protocols)
+message(STATUS "Wayland protocols directory: ${PROTOCOLS_DIR}")
+set(GENERATED_PROTO_DIR ${CMAKE_BINARY_DIR}/generated/wayland)
+message(STATUS "Generated protocol directory: ${GENERATED_PROTO_DIR}")
+file(MAKE_DIRECTORY ${GENERATED_PROTO_DIR})
+
+# Gamma control
+set(GAMMA_XML ${CMAKE_SOURCE_DIR}/protocols/wlr/wlr-gamma-control-unstable-v1.xml)
+
+set(GAMMA_HEADERS
+    ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
+    ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
+)
+
+add_custom_command(
+    OUTPUT ${GAMMA_HEADERS}
+    COMMAND ${WAYLAND_SCANNER} client-header ${GAMMA_XML} ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-client-protocol.h
+    COMMAND ${WAYLAND_SCANNER} private-code ${GAMMA_XML} ${GENERATED_PROTO_DIR}/wlr-gamma-control-unstable-v1-protocol.c
+    DEPENDS ${GAMMA_XML}
+)
+
+# XDG output
+set(XDG_XML ${PROTOCOLS_DIR}/unstable/xdg-output/xdg-output-unstable-v1.xml)
+set(XDG_HEADERS
+    ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
+    ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
+)
+
+add_custom_command(
+    OUTPUT ${XDG_HEADERS}
+    COMMAND ${WAYLAND_SCANNER} client-header ${XDG_XML} ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-client-protocol.h
+    COMMAND ${WAYLAND_SCANNER} private-code ${XDG_XML} ${GENERATED_PROTO_DIR}/xdg-output-unstable-v1-protocol.c
+    DEPENDS ${XDG_XML}
+)
+
+add_library(wayland-protos STATIC
+    ${GAMMA_HEADERS}
+    ${XDG_HEADERS}
+)
+target_include_directories(wayland-protos PUBLIC ${GENERATED_PROTO_DIR})
+target_link_libraries(havel
+    PRIVATE
+        wayland-protos
+        ${WAYLAND_LIBRARIES}
+)
+target_include_directories(havel PRIVATE ${WAYLAND_INCLUDE_DIRS})
 
 message(STATUS "Qt6 version: ${Qt6_VERSION}")

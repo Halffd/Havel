@@ -41,6 +41,10 @@ class WindowManager {
 public:
     WindowManager();
     ~WindowManager() = default;
+    static WindowManager& get() {
+        static WindowManager instance;
+        return instance;
+    }
     static str defaultTerminal;
     static WindowStats activeWindow;
     // Static window methods

@@ -1,6 +1,7 @@
 #include "HotkeyManager.hpp"
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
+#include "core/BrightnessManager.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
@@ -147,8 +148,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Auto-start applications if enabled
     // Temporarily commenting out auto-start until ScriptEngine config is fixed
     /*if (scriptEngine.GetConfig().Get<bool>("System.AutoStart", false)) {
-        system("discord &");
-        system("spotify &");
+        Launcher::runShell("discord &");
+        Launcher::runShell("spotify &");
     }*/
 
     // Mode toggles
@@ -174,23 +175,23 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // Media Controls
     io.Hotkey("#f1", []() {
-        system("playerctl previous");
+        Launcher::runShell("playerctl previous");
     });
 
     io.Hotkey("#f2", []() {
-        system("playerctl play-pause");
+        Launcher::runShell("playerctl play-pause");
     });
 
     io.Hotkey("#f3", []() {
-        system("playerctl next");
+        Launcher::runShell("playerctl next");
     });
 
     io.Hotkey("NumpadAdd", []() {
-        system("pactl set-sink-volume @DEFAULT_SINK@ -5%");
+        Launcher::runShell("pactl set-sink-volume @DEFAULT_SINK@ -5%");
     });
 
     io.Hotkey("NumpadSub", []() {
-        system("pactl set-sink-volume @DEFAULT_SINK@ +5%");
+        Launcher::runShell("pactl set-sink-volume @DEFAULT_SINK@ +5%");
     });
 
     io.Hotkey("f6", [this]() {
@@ -282,7 +283,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     AddContextualHotkey("!x", "!Window.Active('name:Emacs')",
         []() {
-            system("alacritty");
+            Launcher::runAsync("/bin/alacritty");
         },
         nullptr, // falseAction parameter
         0       // ID parameter
@@ -354,32 +355,53 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Brightness and gamma control
     io.Hotkey("f3", [this]() {
         info("Setting default brightness");
-        brightnessManager.setDefaultBrightness();
-        info("Brightness set to: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        brightnessManager.setBrightness(Configs::Get().Get<double>("Brightness.Default", 1.0));
+        info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
     });
 
     io.Hotkey("f7", [this]() {
         info("Decreasing brightness");
         brightnessManager.decreaseBrightness(0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness()));
+    });
+
+    io.Hotkey("^f7", [this]() {
+        info("Decreasing brightness");
+        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(1),0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
     });
 
     io.Hotkey("f8", [this]() {
         info("Increasing brightness");
         brightnessManager.increaseBrightness(0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getCurrentBrightnessValue()));
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness()));
+    });
+    io.Hotkey("^f8", [this]() {
+        info("Increasing brightness");
+        brightnessManager.increaseBrightness(brightnessManager.getMonitor(1),0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
     });
 
     io.Hotkey("+f7", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(500);
-        info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
+        info("Current gamma: " + std::to_string(brightnessManager.getTemperature()));
+    });
+    io.Hotkey("^+f7", [this]() {
+        info("Decreasing gamma");
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),500);
+        info("Current gamma: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
     });
 
     io.Hotkey("+f8", [this]() {
         info("Increasing gamma");
         brightnessManager.increaseGamma(500);
-        info("Current gamma: " + std::to_string(brightnessManager.getCurrentGamma()));
+        info("Current gamma: " + std::to_string(brightnessManager.getTemperature()));
+    });
+    io.Hotkey("^+f8", [this]() {
+        info("Increasing gamma");
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),500);
+        info("Current gamma: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
     });
 
     // Mouse wheel + click combinations
@@ -576,10 +598,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey("'", "currentMode == 'gaming'",
         [this]() {
             info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
-            // Move mouse to coordinates
-            std::string moveCmd = "xdotool mousemove 1600 700";
-            system(moveCmd.c_str());
-
+            io.MouseMove(1600, 700);
             // Start autoclicking
             startAutoclicker("Button1");
         },
@@ -588,13 +607,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
 
     // autoclick in gaming mode
-    AddContextualHotkey("#Enter", "currentMode == 'gaming'",
+    AddHotkey("#Enter", 
         [this]() {
-            info("Gaming hotkey: Starting autoclicker with Enter key");
+            info("Starting autoclicker with Enter key");
             startAutoclicker("Button1");
-        },
-        nullptr, // No action when not in gaming mode
-        0 // ID parameter
+        }
     );
 
     // Add a variable to track and allow stopping Genshin automation
@@ -697,7 +714,7 @@ void HotkeyManager::PlayPause() {
         mpv.SendCommand({"cycle", "pause"});
     } else {
         // Send playerctl
-        system("playerctl play-pause");
+        Launcher::runShell("playerctl play-pause");
     }
 }
 void HotkeyManager::RegisterMediaHotkeys() {
@@ -830,12 +847,12 @@ void HotkeyManager::RegisterSystemHotkeys() {
     // System commands
     io.Hotkey("#l", []() {
         // Lock screen
-        system("xdg-screensaver lock");
+        Launcher::runShell("xdg-screensaver lock");
     });
 
     io.Hotkey("+!Esc", []() {
         // Show system monitor
-        system("gnome-system-monitor &");
+        Launcher::runShell("gnome-system-monitor &");
     });
     // Toggle zooming mode
     AddHotkey("!+z", [this]() {
@@ -880,7 +897,7 @@ bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()
 
 bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, const std::string& action) {
     return io.Hotkey(hotkeyStr, [action]() {
-        system(action.c_str());
+        Launcher::runShell(action.c_str());
     });
 }
 
@@ -1197,7 +1214,7 @@ void HotkeyManager::ungrabGamingHotkeys() {
 
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
     std::string cmd = "notify-send \"" + title + "\" \"" + message + "\"";
-    system(cmd.c_str());
+    Launcher::runShell(cmd.c_str());
 }
 
 bool HotkeyManager::isGamingWindow() {
@@ -1250,6 +1267,11 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
         return;
     }
 
+    // If a thread is somehow still joinable here, clean it up before starting a new one.
+    if (autoclickerThread.joinable()) {
+        autoclickerThread.join();
+    }
+
     // Not a gaming window? Abort!
     if (!isGamingWindow()) {
         debug("Autoclicker not activated - not in gaming window");
@@ -1286,6 +1308,8 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
             error("Invalid mouse button: " + button);
         }
     };
+
+
 
     // ONE thread that handles everything
     autoclickerThread = std::thread([this, button, clickButton]() {
@@ -1576,13 +1600,13 @@ void HotkeyManager::handleMediaCommand(const std::vector<std::string>& mpvComman
 
         // Map MPV commands to media key actions
         if (mpvCommand[0] == "cycle" && mpvCommand[1] == "pause") {
-            system("playerctl play-pause");
+            Launcher::runShell("playerctl play-pause");
         }
         else if (mpvCommand[0] == "seek") {
             if (mpvCommand[1] == "-3") {
-                system("playerctl position 3-");
+                Launcher::runShell("playerctl position 3-");
             } else if (mpvCommand[1] == "3") {
-                system("playerctl position 3+");
+                Launcher::runShell("playerctl position 3+");
             }
         }
     } else {

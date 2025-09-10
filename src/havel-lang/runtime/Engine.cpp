@@ -189,7 +189,7 @@ bool Engine::CompileToExecutable(const std::string& inputFile, const std::string
             std::cout << "🔗 Linking: " << linkCommand << std::endl;
         }
 
-        int result = system(linkCommand.c_str());
+        int result = Launcher::runShell(linkCommand);
 
         // Clean up object file
         remove(objectPath.c_str());

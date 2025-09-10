@@ -8,9 +8,10 @@
 #include "utils/Logger.hpp"
 #include "core/HotkeyManager.hpp"
 #include "gui/AutomationSuite.hpp"
+#ifdef HAVEL_LANG
 #include "runtime/Engine.h"
 #include "runtime/Interpreter.hpp"
-
+#endif
 namespace havel {
 // src/core/HavelCore.hpp
 class HavelCore {
@@ -38,7 +39,9 @@ class HavelCore {
         
         // Optional components
         std::unique_ptr<havel::HotkeyManager> hotkeyManager;
+#ifdef HAVEL_LANG
         std::unique_ptr<havel::engine::Engine> compilerEngine;
         std::unique_ptr<havel::Interpreter> interpreter;
+#endif
     };
 }

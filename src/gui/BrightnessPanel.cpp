@@ -43,10 +43,7 @@ void havel::BrightnessPanel::setupUI() {
 
 void havel::BrightnessPanel::setBrightness(int value) {
     double brightness = value / 100.0;
-    brightnessManager.setBrightnessAndTemperature(
-        std::to_string(brightness),
-        std::to_string(brightnessManager.getCurrentGamma())
-    );
+    brightnessManager.setBrightness(brightness);
     percentageLabel->setText(QString("%1%").arg(value));
     trayIcon->setToolTip(QString("Brightness: %1%").arg(value));
     brightnessSlider->setValue(value);

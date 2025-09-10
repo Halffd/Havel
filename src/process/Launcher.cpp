@@ -116,7 +116,7 @@ ProcessResult Launcher::terminal(const std::string& command, const std::string& 
         };
         
         for (const auto& t : terminals) {
-            if (system(("which " + t + " > /dev/null 2>&1").c_str()) == 0) {
+            if (Launcher::runShell(("which " + t + " > /dev/null 2>&1")).exitCode == 0) {
                 term = t;
                 break;
             }

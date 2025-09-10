@@ -340,10 +340,13 @@ public:
         Set<std::string>("General.GamingApps", oss.str());
     }
     
-    // Helpers for debug and brightness settings
+    // Debug settings
+    bool debug() const { return Get<bool>("Debug.Debug", true); }
     bool GetVerboseKeyLogging() const { return Get<bool>("Debug.VerboseKeyLogging", false); }
     bool GetVerboseWindowLogging() const { return Get<bool>("Debug.VerboseWindowLogging", false); }
     bool GetVerboseConditionLogging() const { return Get<bool>("Debug.VerboseConditionLogging", false); }
+    
+    // Brightness settings
     double GetDefaultBrightness() const { return Get<double>("General.DefaultBrightness", DEFAULT_BRIGHTNESS); }
     double GetStartupBrightness() const { return Get<double>("General.StartupBrightness", STARTUP_BRIGHTNESS); }
     int GetStartupGamma() const { return Get<int>("General.StartupGamma", STARTUP_GAMMA); }

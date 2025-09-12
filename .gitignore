@@ -14,6 +14,9 @@ build
 build-debug
 build-release
 build*
+*-protocol.o
+*-client-protocol.o
+*-server-protocol.o
 *-protocol.h
 *-client-protocol.h
 *-server-protocol.h

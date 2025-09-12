@@ -28,7 +28,7 @@ namespace ConfigPaths {
     static const std::string CONFIG_DIR = "config/";
     
     // Config file paths
-    static const std::string MAIN_CONFIG = CONFIG_DIR + "main.cfg";
+    static const std::string MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
     // Default config values (now in Configs class)
 
     static const std::string INPUT_CONFIG = CONFIG_DIR + "input.cfg";
@@ -143,7 +143,7 @@ public:
         return instance;
     }
 
-    void EnsureConfigFile(const std::string& filename = "main.cfg") {
+    void EnsureConfigFile(const std::string& filename = "havel.cfg") {
         std::string configPath = ConfigPaths::GetConfigPath(filename);
         ConfigPaths::EnsureConfigDir();
         namespace fs = std::filesystem;
@@ -175,7 +175,7 @@ public:
         }
     }
 
-    void Load(const std::string& filename = "main.cfg") {
+    void Load(const std::string& filename = "havel.cfg") {
         std::string configPath = ConfigPaths::GetConfigPath(filename);
         std::ifstream file(configPath);
         if (!file.is_open()) {
@@ -201,7 +201,7 @@ public:
         }
     }
 
-    void Save(const std::string& filename = "main.cfg") {
+    void Save(const std::string& filename = "havel.cfg") {
         std::string configPath = ConfigPaths::GetConfigPath(filename);
         std::string tempPath = configPath + ".tmp";
         ConfigPaths::EnsureConfigDir();
@@ -545,7 +545,7 @@ private:
 };
 
 // Make these functions inline to avoid multiple definition errors
-inline void BackupConfig(const std::string& path = "main.cfg") {
+inline void BackupConfig(const std::string& path = "havel.cfg") {
     std::string configPath = ConfigPaths::GetConfigPath(path);
     namespace fs = std::filesystem;
     try {
@@ -558,7 +558,7 @@ inline void BackupConfig(const std::string& path = "main.cfg") {
     }
 }
 
-inline void RestoreConfig(const std::string& path = "main.cfg") {
+inline void RestoreConfig(const std::string& path = "havel.cfg") {
     std::string configPath = ConfigPaths::GetConfigPath(path);
     namespace fs = std::filesystem;
     try {

@@ -14,7 +14,9 @@ build
 build-debug
 build-release
 build*
-*.h
+*-protocol.h
+*-client-protocol.h
+*-server-protocol.h
 # Precompiled headers
 *.gch
 *.pch# Log files

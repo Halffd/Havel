@@ -65,7 +65,7 @@ cmake --build .
 
 HvC uses several configuration files located in the `config` directory:
 
-- `main.cfg` - Main configuration file
+- `havel.cfg` - Main configuration file
 - `hotkeys/*.lua` - Lua scripts for hotkey configurations
 
 See the [configuration guide](config/README.md) for more details.

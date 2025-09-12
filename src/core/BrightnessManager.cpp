@@ -238,9 +238,7 @@ BrightnessManager::RGBColor BrightnessManager::kelvinToRGB(int kelvin) const {
 // === X11 BACKEND IMPLEMENTATION
 // ===
 std::vector<std::string> BrightnessManager::getConnectedMonitors() {
-  if(!monitors.empty()) {
-      return monitors;
-  }
+//  if(!monitors.empty()) return monitors;
   if (!x11_display)
     return {};
 

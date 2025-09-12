@@ -2,8 +2,6 @@
 #include "utils/Logger.hpp"  
 #include "window/WindowManager.hpp"
 #include "core/HotkeyManager.hpp"
-#include "runtime/Engine.h"
-#include "runtime/Interpreter.hpp"
 #include "media/MPVController.hpp"
 #include "core/ScriptEngine.hpp"
 namespace havel {

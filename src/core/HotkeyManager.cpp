@@ -598,7 +598,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey("'", "currentMode == 'gaming'",
         [this]() {
             info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
-            io.MouseMove(1600, 700);
+            io.MouseMove(1600, 700, 10, 1.0f); // Using default speed (10) and acceleration (1.0f)
             // Start autoclicking
             startAutoclicker("Button1");
         },

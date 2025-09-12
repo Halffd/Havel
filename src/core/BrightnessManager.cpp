@@ -46,29 +46,103 @@ struct WaylandOutput {
 // Wayland globals for output tracking
 static std::vector<WaylandOutput> wayland_outputs;
 static std::mutex wayland_mutex;
+
+
 #endif
 
 namespace havel {
 
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
-  x11_display = DisplayManager::GetDisplay();
-  x11_root = DisplayManager::GetRootWindow();
-  vector<string> monitors = getConnectedMonitors();
-  primaryMonitor = monitors[0];
-  for (string monitor : monitors) {
-    brightness[monitor] = getBrightness(monitor);
-    debug("Brightness for " + monitor + ": " + std::to_string(brightness[monitor]));
-    temperature[monitor] = getTemperature(monitor);
-    debug("Temperature for " + monitor + ": " + std::to_string(temperature[monitor]));
+  // Check if we're running under Wayland
+  const char* wayland_display = getenv("WAYLAND_DISPLAY");
+  const char* xdg_session_type = getenv("XDG_SESSION_TYPE");
+  
+  if (WindowManagerDetector::IsWayland()) {
+    // Running under Wayland
+    try {
+      #ifdef __WAYLAND__
+      initializeWayland();
+      displayMethod = "wayland";
+      debug("Initialized Wayland backend");
+      #else
+      error("Wayland support not compiled in!");
+      #endif
+    } catch (const std::exception& e) {
+      error("Failed to initialize Wayland backend: " + std::string(e.what()));
+      // Fall back to X11
+      x11_display = DisplayManager::GetDisplay();
+      x11_root = DisplayManager::GetRootWindow();
+      displayMethod = "x11";
+    }
+  } else {
+    // Default to X11
+    x11_display = DisplayManager::GetDisplay();
+    x11_root = DisplayManager::GetRootWindow();
+    displayMethod = "x11";
   }
-  // Apply initial settings if auto-adjust is enabled
-  if (dayNightSettings.autoAdjust) {
-    applyCurrentTimeSettings();
+
+  vector<string> monitors = getConnectedMonitors();
+  if (!monitors.empty()) {
+    primaryMonitor = monitors[0];
+    for (string monitor : monitors) {
+      brightness[monitor] = getBrightness(monitor);
+      debug("Brightness for " + monitor + ": " + std::to_string(brightness[monitor]));
+      temperature[monitor] = getTemperature(monitor);
+      debug("Temperature for " + monitor + ": " + std::to_string(temperature[monitor]));
+    }
+    // Apply initial settings if auto-adjust is enabled
+    if (dayNightSettings.autoAdjust) {
+      applyCurrentTimeSettings();
+    }
+  } else {
+    error("No monitors detected!");
   }
 }
 
-BrightnessManager::~BrightnessManager() { disableDayNightMode(); }
+BrightnessManager::~BrightnessManager() {
+    disableDayNightMode();
+    
+#ifdef __WAYLAND__
+    if (wl_display) {
+        // Clean up Wayland resources
+        if (wl_registry) {
+            wl_registry_destroy(wl_registry);
+            wl_registry = nullptr;
+        }
+        
+        // Clean up gamma control manager if it exists
+        if (gamma_control_manager) {
+            // Note: The protocol doesn't provide a destroy function for the manager
+            // as it's a global object managed by the compositor
+            gamma_control_manager = nullptr;
+        }
+        
+        // Clean up XDG output manager if it exists
+        if (xdg_output_manager) {
+            // Note: The protocol doesn't provide a destroy function for the manager
+            xdg_output_manager = nullptr;
+        }
+        
+        // Clean up outputs
+        for (auto& output : wayland_outputs) {
+            if (output.xdg_output) {
+                zxdg_output_v1_destroy(output.xdg_output);
+                output.xdg_output = nullptr;
+            }
+            if (output.wl_output) {
+                wl_output_destroy(output.wl_output);
+                output.wl_output = nullptr;
+            }
+        }
+        wayland_outputs.clear();
+        
+        // Disconnect from the display
+        wl_display_disconnect(wl_display);
+        wl_display = nullptr;
+    }
+#endif
+}
 string BrightnessManager::getMonitor(int index){
   return getConnectedMonitors()[index];
 }
@@ -154,43 +228,76 @@ static const struct zxdg_output_v1_listener xdg_output_listener = {
     .description = nullptr};
 
 void BrightnessManager::initializeWayland() {
+  debug("Initializing Wayland backend...");
+  
+  // Connect to the Wayland display
   wl_display = wl_display_connect(nullptr);
   if (!wl_display) {
-    throw std::runtime_error("Failed to connect to "
-                             "Wayland display");
+    error("Failed to connect to Wayland display");
+    throw std::runtime_error("Failed to connect to Wayland display");
   }
 
+  debug("Connected to Wayland display");
+  
+  // Get the registry and add listener
   wl_registry = wl_display_get_registry(wl_display);
-  wl_registry_add_listener(wl_registry, &registry_listener, nullptr);
-
-  // Wait for the initial registry
-  // events
-  wl_display_roundtrip(wl_display);
-
-  if (!gamma_control_manager) {
+  if (!wl_registry) {
     wl_display_disconnect(wl_display);
     wl_display = nullptr;
-    throw std::runtime_error("Compositor doesn't "
-                             "support wlr-gamma-control "
-                             "protocol");
+    error("Failed to get Wayland registry");
+    throw std::runtime_error("Failed to get Wayland registry");
+  }
+  
+  debug("Got Wayland registry, adding listener...");
+  wl_registry_add_listener(wl_registry, &registry_listener, nullptr);
+
+  // Process initial registry events
+  debug("Processing initial registry events...");
+  if (wl_display_roundtrip(wl_display) == -1) {
+    wl_registry_destroy(wl_registry);
+    wl_display_disconnect(wl_display);
+    wl_display = nullptr;
+    error("Failed to process initial registry events");
+    throw std::runtime_error("Failed to process initial registry events");
   }
 
-  // Set up XDG output for each
-  // output
-  for (auto &output : wayland_outputs) {
-    if (xdg_output_manager) {
-      output.xdg_output = zxdg_output_manager_v1_get_xdg_output(
-          xdg_output_manager, output.wl_output);
-      zxdg_output_v1_add_listener(output.xdg_output, &xdg_output_listener,
-                                  &output);
+  // Check if we have the required protocols
+  if (!gamma_control_manager) {
+    error("Compositor doesn't support wlr-gamma-control protocol");
+    if (wl_registry) wl_registry_destroy(wl_registry);
+    if (wl_display) wl_display_disconnect(wl_display);
+    wl_display = nullptr;
+    throw std::runtime_error("Compositor doesn't support wlr-gamma-control protocol");
+  }
+
+  debug("Found required Wayland protocols");
+
+  // Set up XDG output for each output if available
+  if (!wayland_outputs.empty()) {
+    debug("Setting up XDG outputs...");
+    for (auto &output : wayland_outputs) {
+      if (xdg_output_manager && output.wl_output) {
+        output.xdg_output = zxdg_output_manager_v1_get_xdg_output(
+            xdg_output_manager, output.wl_output);
+        if (output.xdg_output) {
+          zxdg_output_v1_add_listener(output.xdg_output, &xdg_output_listener, &output);
+          debug("Added XDG output listener");
+        }
+      }
     }
-  }
 
-  // Wait for all outputs to be
-  // configured
-  wl_display_roundtrip(wl_display);
+    // Wait for all outputs to be configured
+    debug("Waiting for output configuration...");
+    if (wl_display_roundtrip(wl_display) == -1) {
+      error("Failed to configure outputs");
+      // Don't fail here, we might still be able to work without XDG output
+    }
+  } else {
+    debug("No Wayland outputs found");
+  }
 
   displayMethod = "wayland";
+  debug("Wayland backend initialized successfully");
 }
 #endif
 
@@ -238,27 +345,61 @@ BrightnessManager::RGBColor BrightnessManager::kelvinToRGB(int kelvin) const {
 // === X11 BACKEND IMPLEMENTATION
 // ===
 std::vector<std::string> BrightnessManager::getConnectedMonitors() {
-//  if(!monitors.empty()) return monitors;
-  if (!x11_display)
-    return {};
-
-  XRRScreenResources *screen_res =
-      XRRGetScreenResourcesCurrent(x11_display, x11_root);
-  if (!screen_res)
-    return {};
-
-  for (int i = 0; i < screen_res->noutput; ++i) {
-    XRROutputInfo *output_info =
-        XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
-    if (output_info && output_info->connection == RR_Connected) {
-      monitors.emplace_back(output_info->name);
-    }
-    if (output_info)
-      XRRFreeOutputInfo(output_info);
+  // If we already have cached monitors and we're not forcing a refresh, return them
+  if (!monitors.empty()) {
+    return monitors;
   }
 
-  XRRFreeScreenResources(screen_res);
-  return monitors;
+  if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
+    // Lock the mutex to safely access wayland_outputs
+    std::lock_guard<std::mutex> lock(wayland_mutex);
+    
+    // Clear any existing monitors
+    monitors.clear();
+    
+    // Add all connected Wayland outputs to our monitors list
+    for (const auto& output : wayland_outputs) {
+      if (!output.name.empty()) {
+        monitors.push_back(output.name);
+        debug("Found Wayland monitor: " + output.name);
+      }
+    }
+    
+    return monitors;
+#else
+    error("Wayland support not compiled in!");
+    return {};
+#endif
+  } else {
+    // Default to X11
+    if (!x11_display) {
+      error("X11 display not initialized!");
+      return {};
+    }
+
+    XRRScreenResources *screen_res =
+        XRRGetScreenResourcesCurrent(x11_display, x11_root);
+    if (!screen_res) {
+      error("Failed to get X11 screen resources");
+      return {};
+    }
+
+    monitors.clear();
+    for (int i = 0; i < screen_res->noutput; ++i) {
+      XRROutputInfo *output_info =
+          XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
+      if (output_info && output_info->connection == RR_Connected) {
+        monitors.emplace_back(output_info->name);
+        debug("Found X11 monitor: " + std::string(output_info->name));
+      }
+      if (output_info)
+        XRRFreeOutputInfo(output_info);
+    }
+
+    XRRFreeScreenResources(screen_res);
+    return monitors;
+  }
 }
 
 bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
@@ -553,15 +694,30 @@ bool BrightnessManager::setBrightnessAndTemperature(const std::string &monitor,
 
 // === RGB GAMMA METHODS ===
 bool BrightnessManager::setGammaRGB(double red, double green, double blue) {
-  return displayMethod == "randr" ? setGammaXrandrRGB(red, green, blue)
-                                  : setGammaWaylandRGB(red, green, blue);
+  if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
+    return setGammaWaylandRGB(red, green, blue);
+#else
+    error("Wayland support not compiled in!");
+    return false;
+#endif
+  } else {
+    return setGammaXrandrRGB(red, green, blue);
+  }
 }
 
 bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
                                     double green, double blue) {
-  return displayMethod == "randr"
-             ? setGammaXrandrRGB(monitor, red, green, blue)
-             : setGammaWaylandRGB(monitor, red, green, blue);
+  if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
+    return setGammaWaylandRGB(monitor, red, green, blue);
+#else
+    error("Wayland support not compiled in!");
+    return false;
+#endif
+  } else {
+    return setGammaXrandrRGB(monitor, red, green, blue);
+  }
 }
 
 // === TEMPERATURE INCREMENT METHODS ===
@@ -579,32 +735,19 @@ bool BrightnessManager::increaseTemperature(const std::string &monitor,
 }
 
 // === BRIGHTNESS CONTROL METHODS ===
-bool BrightnessManager::setBrightness(double brightness) {
+bool BrightnessManager::setBrightness(const std::string &monitor, double brightness) {
   brightness = std::clamp(brightness, 0.0, 1.0);
   bool success = false;
 
-  if (WindowManagerDetector::IsX11()) {
-    success = setBrightnessXrandr(brightness);
-  } else {
-    success = setBrightnessWayland(brightness);
-  }
-
-  if (success) {
-    this->brightness[primaryMonitor] = brightness;
-  }
-
-  return success;
-}
-
-bool BrightnessManager::setBrightness(const std::string &monitor,
-                                      double brightness) {
-  brightness = std::clamp(brightness, 0.0, 1.0);
-  bool success = false;
-
-  if (WindowManagerDetector::IsX11()) {
-    success = setBrightnessXrandr(monitor, brightness);
-  } else {
+  if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
     success = setBrightnessWayland(monitor, brightness);
+#else
+    error("Wayland support not compiled in!");
+    return false;
+#endif
+  } else {
+    success = setBrightnessXrandr(monitor, brightness);
   }
 
   if (success) {
@@ -613,6 +756,33 @@ bool BrightnessManager::setBrightness(const std::string &monitor,
 
   return success;
 }
+
+bool BrightnessManager::setBrightness(double brightness) {
+  brightness = std::clamp(brightness, 0.0, 1.0);
+  bool success = false;
+
+  if (displayMethod == "wayland") {
+#ifdef __WAYLAND__
+    success = setBrightnessWayland(brightness);
+#else
+    error("Wayland support not compiled in!");
+    return false;
+#endif
+  } else {
+    success = setBrightnessXrandr(brightness);
+  }
+
+  if (success) {
+    // Update brightness for all monitors
+    auto monitors = getConnectedMonitors();
+    for (const auto& monitor : monitors) {
+      this->brightness[monitor] = brightness;
+    }
+  }
+
+  return success;
+}
+
 // === BRIGHTNESS GETTERS ===
 double BrightnessManager::getBrightness() {
   // Get brightness from primary/first monitor
@@ -657,12 +827,27 @@ int BrightnessManager::getTemperature(const std::string& monitor) {
   return temp;
 }
 void BrightnessManager::decreaseGamma(int amount) {
-    temperature[primaryMonitor] = std::max(MIN_TEMPERATURE, temperature[primaryMonitor] - amount);
-    setTemperature(temperature[primaryMonitor]);
+    for (const auto& monitor : getConnectedMonitors()) {
+        decreaseGamma(monitor, amount);
+    }
 }
+
+void BrightnessManager::decreaseGamma(string monitor, int amount) {
+    int currentTemp = getTemperature(monitor);
+    int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
+    setTemperature(monitor, newTemp);
+}
+
 void BrightnessManager::increaseGamma(int amount) {
-    temperature[primaryMonitor] = std::min(MAX_TEMPERATURE, temperature[primaryMonitor] + amount);
-    setTemperature(temperature[primaryMonitor]);
+    for (const auto& monitor : getConnectedMonitors()) {
+        increaseGamma(monitor, amount);
+    }
+}
+
+void BrightnessManager::increaseGamma(string monitor, int amount) {
+    int currentTemp = getTemperature(monitor);
+    int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
+    setTemperature(monitor, newTemp);
 }
 // === X11 BRIGHTNESS GETTER ===
 double BrightnessManager::getBrightnessXrandr(const std::string& monitor) {
@@ -912,7 +1097,14 @@ bool BrightnessManager::setBrightnessXrandr(double brightness) {
 }
 
 bool BrightnessManager::setBrightnessWayland(double brightness) {
-  return setBrightnessWayland("", brightness);
+  bool success = true;
+  for (const auto& monitor : getConnectedMonitors()) {
+    if (!setBrightnessWayland(monitor, brightness)) {
+      error("Failed to set brightness for monitor: " + monitor);
+      success = false;
+    }
+  }
+  return success;
 }
 
 bool BrightnessManager::setGammaXrandrRGB(double red, double green,
@@ -932,7 +1124,14 @@ bool BrightnessManager::setGammaXrandrRGB(double red, double green,
 
 bool BrightnessManager::setGammaWaylandRGB(double red, double green,
                                            double blue) {
-  return setGammaWaylandRGB("", red, green, blue);
+  bool success = true;
+  for (const auto& monitor : getConnectedMonitors()) {
+    if (!setGammaWaylandRGB(monitor, red, green, blue)) {
+      error("Failed to set gamma for monitor: " + monitor);
+      success = false;
+    }
+  }
+  return success;
 }
 
 // === DAY/NIGHT AUTOMATION ===

@@ -169,6 +169,7 @@ include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${X11_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
+    ${GENERATED_PROTO_DIR}  # Add generated protocol headers to include path
     ${LUA_INCLUDE_DIR}
     ${Qt6Core_INCLUDE_DIRS}
     ${Qt6Widgets_INCLUDE_DIRS}

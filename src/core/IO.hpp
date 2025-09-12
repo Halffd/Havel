@@ -132,7 +132,7 @@ public:
   bool Resume(int id);
 
   // Mouse methods
-  void MouseMove(int x, int y);
+  bool MouseMove(int dx, int dy, int speed, float accel);
 
   void MouseClick(int button);
 
@@ -228,8 +228,6 @@ public:
       return false;
     return Click(btnCode, MouseAction::Click);
   }
-
-  bool MouseMove(int dx, int dy, int speed, float accel);
   bool Scroll(int dy, int dx = 0);
 
   void EmergencyReleaseAllKeys();

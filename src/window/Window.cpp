@@ -427,11 +427,14 @@ if(WindowManager::get().IsX11()) {
         if (!ret.success) {
             error("Command failed to activate window: " + ret.error);
         } else {
-            debug("Activated window via wmctrl: " + win);
+            debug("Activated window via wmctrl: " + std::to_string(win));
         }
     } else {
         error("Invalid window ID for Wayland activation.");
     }
+} else {
+    error("Platform not supported for Activate function.");
+}
 #else
     error("Platform not supported for Activate function.");
 #endif

@@ -389,7 +389,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^+f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),500);
+         brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),500);
         info("Current gamma: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
     });
 

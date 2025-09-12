@@ -107,7 +107,6 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     if (isStartup) {
         info("Setting startup brightness and gamma values");
-        hotkeyManager->brightnessManager.setStartupValues();
     }
 
     // Register all hotkeys

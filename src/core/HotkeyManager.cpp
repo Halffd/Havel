@@ -1255,8 +1255,6 @@ bool HotkeyManager::isGamingWindow() {
     return false;
 }
 void HotkeyManager::startAutoclicker(const std::string& button) {
-    wID currentWindow = WindowManager::GetActiveWindow();
-
     // If already running, stop it (toggle behavior)
     if (autoclickerActive) {
         info("Stopping autoclicker - toggled off");
@@ -1278,11 +1276,23 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
         return;
     }
 
+    // Get the active window after we've confirmed we're in a gaming window
+    wID currentWindow = WindowManager::GetActiveWindow();
+    if (!currentWindow) {
+        error("Failed to get active window for autoclicker");
+        return;
+    }
+
     // Save the window we're starting in
     autoclickerWindowID = currentWindow;
     autoclickerActive = true;
 
-    info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
+    try {
+        info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
+    } catch (const std::exception& e) {
+        error("Failed to log autoclicker start: " + std::string(e.what()));
+        return;
+    }
 
     // Configuration for autoclicker timing (in milliseconds)
     struct AutoClickerConfig {

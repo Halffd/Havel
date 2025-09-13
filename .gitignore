@@ -26,3 +26,4 @@ build*
 log/*.log
 log/*.log.*
 *.log
+crash*

@@ -15,7 +15,7 @@
 #include <ctime>
 #include "qt.hpp"
 #include "media/AudioManager.hpp"
-
+#include "io/MouseController.hpp"
 namespace havel {
     struct HotkeyDefinition {
         std::string key;
@@ -30,7 +30,7 @@ namespace havel {
     public:
         HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager,
                       ScriptEngine &scriptEngine);
-
+        std::unique_ptr<MouseController> mouseController;
         virtual ~HotkeyManager() {
             cleanup();
         }

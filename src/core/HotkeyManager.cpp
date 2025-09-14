@@ -22,7 +22,6 @@
 #include "core/DisplayManager.hpp"
 #include "media/AutoRunner.h"
 #include "utils/Util.hpp"
-#include "io/MouseController.hpp"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
@@ -85,17 +84,35 @@ void HotkeyManager::printHotkeys() const {
                            "susp=" + (hotkey.suspend ? "Y" : "N");
         info(status);
     }
-    auto joined = chain(io.failedHotkeys)
-    .map([](const auto& s) { return s.alias; })
-    .join(" ");
-    info("Failed hotkeys: " + joined);
-    //reset color
-    std::cout << "\033[0m";
-    auto workingHotkeys = chain(io.hotkeys)
-    .filter([joined](const auto& s) { return !includes(joined, s.second.alias); })
-    .map([](const auto& s) { return s.second.alias; })
-    .join(" ");
-    info("Working hotkeys: " + workingHotkeys);
+    // Collect failed aliases into a set
+std::set<std::string> failedAliases;
+std::ostringstream failedStream;
+
+for (const auto& failed : io.failedHotkeys) {
+    failedAliases.insert(failed.alias);
+    std::cout << failed.alias;
+    if (failedStream.tellp() > 0) failedStream << " ";
+    failedStream << failed.alias;
+}
+std::cout << "\n";
+
+std::string joined = failedStream.str();
+info("Failed hotkeys: " + joined);
+
+// Filter working hotkeys
+std::ostringstream workingStream;
+for (const auto& [key, hotkey] : io.hotkeys) {
+    if (failedAliases.find(hotkey.alias) == failedAliases.end()) {
+        if (workingStream.tellp() > 0) workingStream << " ";
+        workingStream << hotkey.alias;
+    }
+}
+// Reset color
+std::cout << "\033[0m";
+
+std::string workingHotkeys = workingStream.str();
+info("Working hotkeys: " + workingHotkeys);
+
     info("=== End Hotkey Report ===");
 }
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, AudioManager& audioManager, ScriptEngine& scriptEngine)
@@ -105,6 +122,7 @@ HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController
       audioManager(audioManager),
       scriptEngine(scriptEngine){
     config = Configs::Get();
+    mouseController = std::make_unique<MouseController>(io);
     loadVideoSites();
     loadDebugSettings();
     applyDebugSettings();
@@ -234,11 +252,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::cout << "rwin" << std::endl;
         io.Send("@!{backspace}");
     });
-
     io.Hotkey("@ralt", []() {
         std::cout << "ralt" << std::endl;
         WindowManager::MoveWindowToNextMonitor();
-    });
+    }); 
     AddContextualHotkey("@lwin", "currentMode == 'gaming'", [this]() {
         PlayPause();
     }, nullptr, 0);
@@ -285,7 +302,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(2, io);
     });
 
-    io.Hotkey("!f1", []() {
+    io.Hotkey("^f1", []() {
         info("F1");
         Launcher::runShell("~/scripts/f1.sh -1");
     });
@@ -479,12 +496,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
     });
-    io.Hotkey("^!#+f8", [this]() {
-        info("Increasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift();
-        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
-        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
-    });
     io.Hotkey("#f7", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(50);
@@ -545,10 +556,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("!Button5", [this]() {
         std::cout << "alt+Button5" << std::endl;
         Zoom(1, io);
-    });
-    AddHotkey("!d", [this]() {
-        showBlackOverlay();
-        logWindowEvent("BLACK_OVERLAY", "Showing black overlay");
     });
 
     //Emergency exit
@@ -642,51 +649,49 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("numpaddec", [this]() { // Scroll up (numpad decimal/dot)
         io.Scroll(1, 0);
     });
-      // Global mouse controller
-      MouseController mouseController(io);
     
       // Setup hotkeys
       AddHotkey("numpad1", [&]() { // Bottom-left diagonal
-          mouseController.move(-1, 1);
+          mouseController->move(-1, 1);
       });
       
       AddHotkey("numpad2", [&]() { // Down
-          mouseController.move(0, 1);
+          mouseController->move(0, 1);
       });
       
       AddHotkey("numpad3", [&]() { // Bottom-right diagonal
-          mouseController.move(1, 1);
+          mouseController->move(1, 1);
       });
       
       AddHotkey("numpad4", [&]() { // Left
-          mouseController.move(-1, 0);
+          mouseController->move(-1, 0);
       });
       
       AddHotkey("numpad6", [&]() { // Right
-          mouseController.move(1, 0);
+          mouseController->move(1, 0);
       });
       
       AddHotkey("numpad7", [&]() { // Top-left diagonal
-          mouseController.move(-1, -1);
+          mouseController->move(-1, -1);
       });
       
       AddHotkey("numpad8", [&]() { // Up
-          mouseController.move(0, -1);
+          mouseController->move(0, -1);
       });
       
       AddHotkey("numpad9", [&]() { // Top-right diagonal
-          mouseController.move(1, -1);
+          mouseController->move(1, -1);
       });
       
       // Reset acceleration when keys are released
-      AddHotkey("numpad1:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad2:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad3:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad4:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad6:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad7:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad8:up", [&]() { mouseController.resetAcceleration(); });
-      AddHotkey("numpad9:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad1:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad2:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad3:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad4:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad6:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad7:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad8:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("numpad9:up", [&]() { mouseController->resetAcceleration(); });
     AddHotkey("!+d", [this]() {
         showBlackOverlay();
     });
@@ -844,7 +849,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+-", "currentMode == 'gaming'", [this]() { mpv.ToggleMute(); }, nullptr, mpvBaseId++ },
 
     // Playback
-    { "@RCtrl", "currentMode == 'gaming'", [this]() { PlayPause(); }, nullptr, mpvBaseId++ },
+    { "@rctrl", "currentMode == 'gaming'", [this]() { info("rctrl PlayPause"); PlayPause(); }, nullptr, mpvBaseId++ },
     { "+Esc", "currentMode == 'gaming'", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
     { "+PgUp", "currentMode == 'gaming'", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
     { "+PgDn", "currentMode == 'gaming'", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },

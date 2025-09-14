@@ -1,37 +1,37 @@
 #include "core/IO.hpp"
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <condition_variable>
-#include <functional>
-#include <memory>
-#include <mutex>
 #include <thread>
+
 namespace havel {
 
-// Mouse emulation with better acceleration handling
 class MouseController {
 private:
-  int baseSpeed = 5;
-  float acceleration = 1.2f;
-  int currentSpeed = baseSpeed;
-  std::chrono::steady_clock::time_point lastMoveTime;
-  std::chrono::steady_clock::time_point accelerationStartTime;
+  std::atomic<int> baseSpeed{5};
+  std::atomic<float> acceleration{1.2f};
+  std::atomic<int> currentSpeed{5};
   std::atomic<bool> accelerationActive{false};
-  IO &io;
-  std::mutex mutex;
 
-  // Background thread for acceleration reset
+  std::atomic<std::chrono::steady_clock::time_point::rep> lastMoveTicks{0};
+  std::atomic<std::chrono::steady_clock::time_point::rep> accelStartTicks{0};
+
+  IO &io;
+
   std::thread resetThread;
   std::atomic<bool> running{true};
-  std::condition_variable resetCV;
+  std::condition_variable_any resetCV; // condition_variable_any works with atomics
+  std::mutex cvMutex; // only for waiting
 
 public:
   explicit MouseController(IO &ioInstance) : io(ioInstance) {
-    // Start the reset thread
     resetThread = std::thread(&MouseController::resetThreadFunc, this);
   }
-
+  MouseController(const MouseController&) = delete;
+  MouseController& operator=(const MouseController&) = delete;
+  MouseController(MouseController&&) = delete;
+  MouseController& operator=(MouseController&&) = delete;
+  
   ~MouseController() {
     running = false;
     resetCV.notify_all();
@@ -42,72 +42,63 @@ public:
 
   void move(int dx, int dy) {
     auto now = std::chrono::steady_clock::now();
+    auto nowTicks = now.time_since_epoch().count();
 
-    // Start acceleration timer on first move
-    if (!accelerationActive) {
-      accelerationStartTime = now;
-      accelerationActive = true;
+    if (!accelerationActive.load(std::memory_order_relaxed)) {
+      accelStartTicks.store(nowTicks, std::memory_order_relaxed);
+      accelerationActive.store(true, std::memory_order_relaxed);
     }
 
-    // Apply acceleration based on time since acceleration started
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now - accelerationStartTime)
-                       .count();
+    long long elapsed = nowTicks - accelStartTicks.load(std::memory_order_relaxed);
+    elapsed /= 1'000'000; // ns → ms
 
+    int base = baseSpeed.load(std::memory_order_relaxed);
+    float accel = acceleration.load(std::memory_order_relaxed);
+
+    int newSpeed = base;
     if (elapsed < 1000) {
       float timeFactor = 1.0f + (elapsed / 1000.0f) * 2.0f;
-      currentSpeed =
-          std::min(baseSpeed * 10,
-                   static_cast<int>(baseSpeed * timeFactor * acceleration));
+      newSpeed = std::min(base * 10,
+                          static_cast<int>(base * timeFactor * accel));
     }
 
-    lastMoveTime = now;
-    io.MouseMove(dx, dy, currentSpeed, acceleration);
+    currentSpeed.store(newSpeed, std::memory_order_relaxed);
+    lastMoveTicks.store(nowTicks, std::memory_order_relaxed);
 
-    // Notify reset thread that we moved
+    io.MouseMove(dx, dy, newSpeed, accel);
     resetCV.notify_all();
   }
 
   void resetAcceleration() {
-    std::lock_guard<std::mutex> lock(mutex);
-    currentSpeed = baseSpeed;
-    accelerationActive = false;
+    currentSpeed.store(baseSpeed.load(), std::memory_order_relaxed);
+    accelerationActive.store(false, std::memory_order_relaxed);
   }
 
   void setBaseSpeed(int speed) {
-    std::lock_guard<std::mutex> lock(mutex);
-    baseSpeed = std::max(1, speed);
+    baseSpeed.store(std::max(1, speed));
   }
 
   void setAcceleration(float accel) {
-    std::lock_guard<std::mutex> lock(mutex);
-    acceleration = std::max(0.1f, accel);
+    acceleration.store(std::max(0.1f, accel));
   }
 
 private:
   void resetThreadFunc() {
-    std::unique_lock<std::mutex> lock(mutex);
+    std::unique_lock<std::mutex> lock(cvMutex);
+    while (running.load()) {
+      if (resetCV.wait_for(lock, std::chrono::milliseconds(300)) ==
+          std::cv_status::timeout) {
+        auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        auto last = lastMoveTicks.load(std::memory_order_relaxed);
 
-    while (running) {
-      // Wait for movement or shutdown
-      resetCV.wait_for(lock, std::chrono::milliseconds(300),
-                       [this] { return !running; });
-
-      if (!running)
-        break;
-
-      // Check if it's time to reset acceleration
-      auto now = std::chrono::steady_clock::now();
-      auto timeSinceLastMove =
-          std::chrono::duration_cast<std::chrono::milliseconds>(now -
-                                                                lastMoveTime)
-              .count();
-
-      if (accelerationActive && timeSinceLastMove > 300) {
-        currentSpeed = baseSpeed;
-        accelerationActive = false;
+        long long elapsed = (now - last) / 1'000'000; // ns → ms
+        if (accelerationActive.load() && elapsed > 300) {
+          currentSpeed.store(baseSpeed.load(), std::memory_order_relaxed);
+          accelerationActive.store(false, std::memory_order_relaxed);
+        }
       }
     }
   }
 };
+
 } // namespace havel

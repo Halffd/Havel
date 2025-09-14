@@ -12,6 +12,7 @@
 
 #include "AutomationSuite.hpp"
 #include "core/ConfigManager.hpp"
+#include "core/DisplayManager.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel {
@@ -167,7 +168,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     });
 
     // Initialize X11 display
-    display = XOpenDisplay(nullptr);
+    display = DisplayManager::GetDisplay();
     if (!display) {
         throw std::runtime_error("Failed to open X11 display");
     }

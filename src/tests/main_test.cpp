@@ -175,7 +175,7 @@ int main(int argc, char* argv[]) {
     mgr.decreaseTemperature("HDMI-1", 100); // -100K custom, specific monitor
     
     // === DAY/NIGHT AUTOMATION - THE KILLER FEATURE ===
-    BrightnessManager::DayNightSettings dayNight;
+    havel::BrightnessManager::DayNightSettings dayNight;
     dayNight.dayBrightness = 1.0;
     dayNight.nightBrightness = 0.3;
     dayNight.dayTemperature = 6500;    // Cool daylight
@@ -197,9 +197,9 @@ int main(int argc, char* argv[]) {
     
     // Check current state
     if (mgr.isDay()) {
-        info("Currently in day mode");
+        havel::info("Currently in day mode");
     } else {
-        info("Currently in night mode");
+        havel::info("Currently in night mode");
     }
     
     // Disable when done

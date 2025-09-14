@@ -97,6 +97,7 @@ public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
   bool globalEvdev = false;
+  std::vector<HotKey> failedHotkeys;
 
   IO();
 
@@ -246,7 +247,8 @@ private:
   void MonitorHotkeys();
 
   static Key EvdevNameToKeyCode(std::string keyName);
-  bool MatchModifiers(uint hotkeyMods, const std::map<int, bool> &keyState);
+
+  bool MatchEvdevModifiers(int expectedModifiers, const std::map<int, bool>& keyState);
   // Platform specific implementations
   Display *display;
   std::map<std::string, Key> keyMap;
@@ -258,6 +260,7 @@ private:
   bool timerRunning = false;
   int uinputFd = -1;
   std::set<int> blockedKeys;
+  std::mutex x11Mutex;
 
   // Static members
   static bool hotkeyEnabled;

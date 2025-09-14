@@ -1142,48 +1142,78 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
             }
             
             bool WindowManager::MoveResize(wID windowId, int x, int y, int width, int height) {
-            #if defined(__linux__)
-                if (!DisplayManager::GetDisplay()) return false;
-            
-                Window window = static_cast<Window>(windowId);
-                if (window == 0) return false;
-            
-                if(Configs::Get().GetVerboseKeyLogging()) {
-                    debug("Moving and resizing Wine window to " + std::to_string(x) + "," + 
-                          std::to_string(y) + " " + std::to_string(width) + "x" + std::to_string(height));
-                }
-            
-                // Nuclear option: Override redirect and force everything at once
-                XSetWindowAttributes setAttrs;
-                setAttrs.override_redirect = x11::XTrue;
-                setAttrs.backing_store = WhenMapped;
-                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect | CWBackingStore, &setAttrs);
-            
-                // Remove all constraints
-                XSizeHints* sizeHints = XAllocSizeHints();
-                if (sizeHints) {
-                    memset(sizeHints, 0, sizeof(XSizeHints));
-                    sizeHints->flags = USPosition | USSize;
-                    sizeHints->x = x;
-                    sizeHints->y = y;
-                    sizeHints->width = width;
-                    sizeHints->height = height;
-                    sizeHints->min_width = 1;
-                    sizeHints->min_height = 1;
-                    sizeHints->max_width = 65535;
-                    sizeHints->max_height = 65535;
-                    XSetWMNormalHints(DisplayManager::GetDisplay(), window, sizeHints);
-                    XFree(sizeHints);
-                }
-            
-                // Multiple attempts with different methods
-                for (int attempt = 0; attempt < 5; ++attempt) {
-                    XMoveResizeWindow(DisplayManager::GetDisplay(), window, x, y, width, height);
-                    
-                    // Send configure event
-                    XConfigureEvent configEvent = {};
+                #if defined(__linux__)
+                    if (!DisplayManager::GetDisplay()) return false;
+                
+                    Window window = static_cast<Window>(windowId);
+                    if (window == 0) return false;
+                
+                    Display* dpy = DisplayManager::GetDisplay();
+                
+                    if (Configs::Get().GetVerboseKeyLogging()) {
+                        debug("Moving and resizing Wine window to " + std::to_string(x) + "," +
+                              std::to_string(y) + " " + std::to_string(width) + "x" + std::to_string(height));
+                    }
+                
+                    // --- Method 1: EWMH polite request ---
+                    Atom moveresize = XInternAtom(dpy, "_NET_MOVERESIZE_WINDOW", x11::XFalse);
+                    if (moveresize != x11::XNone) {
+                        XEvent ev{};
+                        ev.xclient.type = x11::XClientMessage;
+                        ev.xclient.display = dpy;
+                        ev.xclient.window = window;
+                        ev.xclient.message_type = moveresize;
+                        ev.xclient.format = 32;
+                
+                        // bitmask: 1<<8 = X, 1<<9 = Y, 1<<10 = Width, 1<<11 = Height
+                        long flags = (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11);
+                
+                        ev.xclient.data.l[0] = flags;  // gravity + flags
+                        ev.xclient.data.l[1] = x;
+                        ev.xclient.data.l[2] = y;
+                        ev.xclient.data.l[3] = width;
+                        ev.xclient.data.l[4] = height;
+                
+                        x11::XStatus s = XSendEvent(dpy, DefaultRootWindow(dpy), x11::XFalse,
+                                              SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+                        XFlush(dpy);
+                
+                        if (s != 0) {
+                            return true; // WM accepted
+                        }
+                    }
+                
+                    // --- Method 2: Override-redirect fallback ---
+                    x11::XSetWindowAttributes setAttrs{};
+                    setAttrs.override_redirect = x11::XTrue;
+                    setAttrs.backing_store = WhenMapped;
+                    XChangeWindowAttributes(dpy, window,
+                                            CWOverrideRedirect | CWBackingStore,
+                                            &setAttrs);
+                
+                    // Remove constraints
+                    XSizeHints* sizeHints = XAllocSizeHints();
+                    if (sizeHints) {
+                        memset(sizeHints, 0, sizeof(XSizeHints));
+                        sizeHints->flags = USPosition | USSize;
+                        sizeHints->x = x;
+                        sizeHints->y = y;
+                        sizeHints->width = width;
+                        sizeHints->height = height;
+                        sizeHints->min_width = 1;
+                        sizeHints->min_height = 1;
+                        sizeHints->max_width = 65535;
+                        sizeHints->max_height = 65535;
+                        XSetWMNormalHints(dpy, window, sizeHints);
+                        XFree(sizeHints);
+                    }
+                
+                    XMoveResizeWindow(dpy, window, x, y, width, height);
+                
+                    // Send configure event manually
+                    XConfigureEvent configEvent{};
                     configEvent.type = x11::XConfigureNotify;
-                    configEvent.display = DisplayManager::GetDisplay();
+                    configEvent.display = dpy;
                     configEvent.event = window;
                     configEvent.window = window;
                     configEvent.x = x;
@@ -1193,29 +1223,29 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
                     configEvent.border_width = 0;
                     configEvent.above = x11::XNone;
                     configEvent.override_redirect = x11::XTrue;
-            
-                    XSendEvent(DisplayManager::GetDisplay(), window, x11::XTrue, StructureNotifyMask, (XEvent*)&configEvent);
-                    XFlush(DisplayManager::GetDisplay());
-                    
+                
+                    XSendEvent(dpy, window, x11::XTrue, StructureNotifyMask, (XEvent*)&configEvent);
+                    XFlush(dpy);
+                
                     std::this_thread::sleep_for(std::chrono::milliseconds(15));
+                
+                    // Reset override redirect
+                    setAttrs.override_redirect = x11::XFalse;
+                    XChangeWindowAttributes(dpy, window, CWOverrideRedirect, &setAttrs);
+                
+                    XSync(dpy, x11::XFalse);
+                    return true;
+                
+                #elif defined(WINDOWS)
+                    HWND hwnd = reinterpret_cast<HWND>(windowId);
+                    if (!IsWindow(hwnd)) return false;
+                
+                    return SetWindowPos(hwnd, HWND_TOP, x, y, width, height,
+                                        SWP_NOZORDER | SWP_NOACTIVATE) != 0;
+                #endif
+                    return false;
                 }
-            
-                // Reset override redirect
-                setAttrs.override_redirect = x11::XFalse;
-                XChangeWindowAttributes(DisplayManager::GetDisplay(), window, CWOverrideRedirect, &setAttrs);
-            
-                XSync(DisplayManager::GetDisplay(), x11::XFalse);
-                return true;
-            
-            #elif defined(WINDOWS)
-                HWND hwnd = reinterpret_cast<HWND>(windowId);
-                if (!IsWindow(hwnd)) return false;
-            
-                return SetWindowPos(hwnd, HWND_TOP, x, y, width, height, 
-                                   SWP_NOZORDER | SWP_NOACTIVATE) != 0;
-            #endif
-                return false;
-            }
+                
             
             // Convenience methods for common positioning scenarios
             bool WindowManager::Center(wID windowId) {

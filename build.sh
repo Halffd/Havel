@@ -19,19 +19,19 @@ LOG_DIR="logs"
 THREADS=3
 
 # Build mode configurations
-# Format: "BuildType,EnableTests,DisableHavelLang,EnableLLVM,BuildDir"
+# Format: "BuildType,EnableTests,EnableHavelLang,EnableLLVM,BuildDir"
 declare -A BUILD_CONFIGS=(
-    [0]="Debug,ON,OFF,ON,build-debug"              # 0: debug, tests, lang, llvm
-    [1]="Release,OFF,ON,ON,build-release"          # 1: release, no tests, no lang, llvm  
-    [2]="Debug,OFF,ON,ON,build-debug-minimal"      # 2: debug, no tests, no lang, llvm
-    [3]="Debug,ON,ON,ON,build-debug-noland"        # 3: debug, tests, no lang, llvm
-    [5]="Release,ON,OFF,ON,build-release-full"     # 5: release, tests, lang, llvm
+    [0]="Debug,ON,ON,ON,build-debug"              # 0: debug, tests, lang, llvm
+    [1]="Release,OFF,OFF,ON,build-release"        # 1: release, no tests, no lang, llvm  
+    [2]="Debug,OFF,OFF,ON,build-debug-minimal"    # 2: debug, no tests, no lang, llvm
+    [3]="Debug,OFF,OFF,OFF,build-debug-fast"      # 3: debug, tests, no lang, llvm
+    [5]="Release,ON,ON,ON,build-release-full"     # 5: release, tests, lang, llvm
     
     # LLVM-specific modes
-    [6]="Debug,ON,OFF,OFF,build-debug-nollvm"      # 6: debug, tests, lang, NO llvm
-    [7]="Release,OFF,ON,OFF,build-release-nollvm"  # 7: release, no tests, no lang, NO llvm
-    [8]="Debug,OFF,OFF,OFF,build-debug-pure"       # 8: debug, no tests, lang, NO llvm
-    [9]="Release,ON,OFF,OFF,build-release-pure"    # 9: release, tests, lang, NO llvm
+    [6]="Debug,ON,ON,OFF,build-debug-nollvm"      # 6: debug, tests, lang, NO llvm
+    [7]="Release,OFF,OFF,OFF,build-release-nollvm" # 7: release, no tests, no lang, NO llvm
+    [8]="Debug,OFF,ON,OFF,build-debug-pure"       # 8: debug, no tests, lang, NO llvm
+    [9]="Release,ON,ON,OFF,build-release-pure"    # 9: release, tests, lang, NO llvm
 )
 
 # Parse build mode from environment or first arg
@@ -40,13 +40,19 @@ if [[ "$1" =~ ^[012356789]$ ]]; then
     shift
     
     # Parse configuration
-    IFS=',' read -r BUILD_TYPE ENABLE_TESTS DISABLE_HAVEL_LANG ENABLE_LLVM BUILD_DIR <<< "${BUILD_CONFIGS[$BUILD_MODE]}"
+    IFS=',' read -r BUILD_TYPE ENABLE_TESTS ENABLE_HAVEL_LANG ENABLE_LLVM BUILD_DIR <<< "${BUILD_CONFIGS[$BUILD_MODE]}"
     
     # Handle missing mode
     if [[ -z "$BUILD_TYPE" ]]; then
         echo -e "${RED}[ERROR] Invalid build mode: $BUILD_MODE${NC}"
         echo "Valid modes: 0, 1, 2, 3, 5, 6, 7, 8, 9"
         exit 1
+    fi
+    
+    # Fix logical inconsistency: If LLVM is enabled, Havel Lang must also be enabled
+    if [[ "$ENABLE_LLVM" == "ON" && "$ENABLE_HAVEL_LANG" == "OFF" ]]; then
+        log "WARNING" "LLVM requires Havel Lang - enabling Havel Lang automatically" "${YELLOW}"
+        ENABLE_HAVEL_LANG="ON"
     fi
 fi
 
@@ -80,7 +86,7 @@ show_config() {
     log "INFO" "Mode: ${BUILD_MODE}" "${BLUE}"
     log "INFO" "Type: ${BUILD_TYPE}" "${BLUE}"
     log "INFO" "Tests: $([ "$ENABLE_TESTS" = "ON" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
-    log "INFO" "Havel Lang: $([ "$DISABLE_HAVEL_LANG" = "OFF" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
+    log "INFO" "Havel Lang: $([ "$ENABLE_HAVEL_LANG" = "ON" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
     log "INFO" "LLVM JIT: $([ "$ENABLE_LLVM" = "ON" ] && echo "ENABLED" || echo "DISABLED")" "${BLUE}"
     log "INFO" "Build Dir: ${BUILD_DIR}" "${BLUE}"
     
@@ -133,7 +139,7 @@ build() {
     cmake_cmd+=" -DUSE_CLANG=ON"
     cmake_cmd+=" -DENABLE_LLVM=${ENABLE_LLVM}"
     cmake_cmd+=" -DENABLE_TESTS=${ENABLE_TESTS}"
-    cmake_cmd+=" -DDISABLE_HAVEL_LANG=${DISABLE_HAVEL_LANG}"
+    cmake_cmd+=" -DENABLE_HAVEL_LANG=${ENABLE_HAVEL_LANG}"
     cmake_cmd+=" .."
     
     log "INFO" "CMake command: ${cmake_cmd}" "${YELLOW}"
@@ -161,7 +167,7 @@ build() {
         done
     fi
     
-    if [[ "$DISABLE_HAVEL_LANG" = "OFF" ]]; then
+    if [[ "$ENABLE_HAVEL_LANG" = "ON" ]]; then
         if [[ -f "${BUILD_DIR}/libhavel_lang.a" ]]; then
             local size=$(du -h "${BUILD_DIR}/libhavel_lang.a" | cut -f1)
             local llvm_status=$([ "$ENABLE_LLVM" = "ON" ] && echo "with LLVM JIT" || echo "interpreter only")
@@ -224,7 +230,6 @@ test() {
     
     log "SUCCESS" "Ran ${test_count} test suite(s)${llvm_note}" "${GREEN}"
 }
-
 # Show usage
 usage() {
     echo "Usage: $0 [mode] [command] [args...]"
@@ -261,10 +266,10 @@ usage() {
     echo "  - Testing interpreter-only functionality"
     echo "  - CI/CD environments"
     echo ""
+    echo "Note: LLVM mode automatically enables Havel Lang (required dependency)"
     echo "Logs are saved to: ${LOG_DIR}/build-mode[X]-[type].log"
     exit 1
 }
-
 # Process multiple commands
 process_commands() {
     while [[ $# -gt 0 ]]; do

@@ -189,12 +189,12 @@ bool Engine::CompileToExecutable(const std::string& inputFile, const std::string
             std::cout << "🔗 Linking: " << linkCommand << std::endl;
         }
 
-        int result = Launcher::runShell(linkCommand);
+        auto result = Launcher::runShell(linkCommand);
 
         // Clean up object file
         remove(objectPath.c_str());
 
-        if (result == 0) {
+        if (result.exitCode == 0) {
             std::cout << "✅ Successfully compiled to: " << outputPath << std::endl;
             return true;
         } else {

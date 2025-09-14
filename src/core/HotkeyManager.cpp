@@ -2,6 +2,7 @@
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
 #include "core/BrightnessManager.hpp"
+#include "utils/Chain.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
@@ -65,7 +66,30 @@ void HotkeyManager::printHotkeys() const {
                            "susp=" + (hotkey.suspend ? "Y" : "N");
         info(status);
     }
-    
+    info("-------------------------------------");
+    //red color
+    std::cout << "\033[31m";
+    info("==== FAILED HOTKEYS ====");
+    int i = 0;
+    for (const auto& hotkey : io.failedHotkeys) {
+        std::string status = "Hotkey[" + std::to_string(i++) + "] " +
+                           "key=" + std::to_string(hotkey.key) + " " +
+                           "mod=" + std::to_string(hotkey.modifiers) + " " +
+                           "action='" + hotkey.action + "' " +
+                           "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
+                           "block=" + (hotkey.blockInput ? "Y" : "N") + " " +
+                           "excl=" + (hotkey.exclusive ? "Y" : "N") + " " +
+                           "succ=" + (hotkey.success ? "Y" : "N") + " " +
+                           "susp=" + (hotkey.suspend ? "Y" : "N");
+        info(status);
+    }
+    auto joined = chain(io.failedHotkeys)
+    .map([](const auto& s) { return s.key; })
+    .distinct()
+    .join(" ");
+    info("Failed hotkeys: " + joined);
+    //reset color
+    std::cout << "\033[0m";
     info("=== End Hotkey Report ===");
 }
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
@@ -251,7 +275,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(2, io);
     });
 
-    io.Hotkey("^f1", []() {
+    io.Hotkey("!f1", []() {
         Launcher::runShell("~/scripts/f1.sh -1");
     });
 
@@ -262,7 +286,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^!l", []() {
         Launcher::runShell("livelink screen toggle 1");
     });
-    io.Hotkey("f10", []() {
+    io.Hotkey("!f10", []() {
         Launcher::runShell("~/scripts/str");
     });
     io.Hotkey("^!k", []() {
@@ -381,7 +405,18 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.increaseBrightness(brightnessManager.getMonitor(1),0.05);
         info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
     });
-
+    io.Hotkey("!f7", [this]() {
+        info("Decreasing shhdow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(shadowLift - 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
+    });
+    io.Hotkey("!f8", [this]() {
+        info("Increasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
+    });
     io.Hotkey("+f7", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(500);
@@ -418,7 +453,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("@^!+#Esc", [this]() {
         info("Emergency exit");
         io.EmergencyReleaseAllKeys();
-        exit(0);
+        App::quit();
     });
     AddHotkey("@+#Esc", [this]() {
         info("Emergency release all keys");
@@ -435,36 +470,38 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     
     // Window movement hotkeys
     // Meta+Numpad: Move window (5=down, 6=up, 7=left, 8=right)
-    AddHotkey("@!numpad5", [this, WinMove]() {
-        WinMove(0, winOffset, 0, 0); // Move down
+    AddHotkey("!numpad5", [this, WinMove]() {
+        info("NP5 Move down");
+        WinMove(0,-winOffset, 0, 0); // Move down
     });
     
-    AddHotkey("@!numpad6", [this, WinMove]() {
-        WinMove(0, -winOffset, 0, 0); // Move up
+    AddHotkey("!numpad8", [this, WinMove]() {
+        info("NP6 Move up");
+        WinMove(0, winOffset, 0, 0); // Move up
     });
     
-    AddHotkey("@!numpad7", [this, WinMove]() {
+    AddHotkey("!numpad4", [this, WinMove]() {
         WinMove(-winOffset, 0, 0, 0); // Move left
     });
     
-    AddHotkey("@!numpad8", [this, WinMove]() {
+    AddHotkey("!numpad6", [this, WinMove]() {
         WinMove(winOffset, 0, 0, 0); // Move right
     });
     
     // Meta+Shift+Numpad: Resize window (width/height adjustment)
-    AddHotkey("@!+numpad5", [this, WinMove]() {
+    AddHotkey("!+numpad8", [this, WinMove]() {
         WinMove(0, 0, 0, winOffset); // Increase height
     });
     
-    AddHotkey("@!+numpad6", [this, WinMove]() {
+    AddHotkey("!+numpad5", [this, WinMove]() {
         WinMove(0, 0, 0, -winOffset); // Decrease height
     });
     
-    AddHotkey("@!+numpad7", [this, WinMove]() {
+    AddHotkey("!+numpad4", [this, WinMove]() {
         WinMove(0, 0, -winOffset, 0); // Decrease width
     });
     
-    AddHotkey("@!+numpad8", [this, WinMove]() {
+    AddHotkey("!+numpad6", [this, WinMove]() {
         WinMove(0, 0, winOffset, 0); // Increase width
     });
     
@@ -472,6 +509,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // Numpad mouse movement with acceleration
     AddHotkey("numpad1", [this]() { // Bottom-left diagonal
         static int currentSpeed = speed;
+        info("Bottom-left diagonal");
         io.MouseMove(-currentSpeed, currentSpeed, 1, acc);
         currentSpeed += static_cast<int>(acc);
     });
@@ -520,6 +558,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     
     // Mouse clicking
     AddHotkey("numpad5", [this]() { // Left click hold
+        info("NP5 Click");
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
     
@@ -1749,18 +1788,6 @@ void HotkeyManager::showBlackOverlay() {
                 info("Black overlay auto-closed after timeout");
                 running = false;
                 break;
-            }
-
-            // Check for events
-            while (XPending(display) > 0) {
-                XNextEvent(display, &event);
-
-                // Close on any key press or mouse click
-                if (event.type == x11::XKeyPress || event.type == x11::XButtonPress) {
-                    running = false;
-                    info("Black overlay closed by user input");
-                    break;
-                }
             }
 
             // Sleep to reduce CPU usage

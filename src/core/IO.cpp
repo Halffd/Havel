@@ -322,11 +322,11 @@ void IO::MonitorHotkeys() {
                   
                   try {
                       // Process event without lock (no X11 calls here)
-                      if (event.type != KeyPress && event.type != KeyRelease) {
+                      if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
                           continue;
                       }
                       
-                      const bool isDown = (event.type == KeyPress);
+                      const bool isDown = (event.type == x11::XKeyPress);
                       const XKeyEvent* keyEvent = &event.xkey;
                       
                       KeySym keysym;
@@ -1140,8 +1140,6 @@ done_parsing:
 
   // Determine keycode
   KeyCode keycode = 0;
-  bool isEvdev = false;
-
   if (!hotkeyStr.empty() && (hotkeyStr[0] == '@' || globalEvdev)) {
     // evdev mode
     std::string evdevKey;

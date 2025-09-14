@@ -10,6 +10,10 @@
 #include <QVBoxLayout>
 #include <QShortcut>
 #include <QIcon>
+#include <QSettings>
+#include <QAction>
+#include <QSize>
+#include "core/IO.hpp"
 
 namespace havel {
 
@@ -17,8 +21,11 @@ class ClipboardManager : public QMainWindow {
     Q_OBJECT
 
 public:
-    explicit ClipboardManager(QWidget* parent = nullptr);
-    ~ClipboardManager() = default;
+    explicit ClipboardManager(IO* io, QWidget* parent = nullptr);
+    ~ClipboardManager();
+
+    void initializeHotkeys();
+    void toggleVisibility();
 
     // Non-copyable
     ClipboardManager(const ClipboardManager&) = delete;
@@ -38,24 +45,28 @@ private slots:
     void onItemDoubleClicked(QListWidgetItem* item);
     void onSearchTextChanged(const QString& text);
     void onItemSelectionChanged();
+    void onItemClicked(QListWidgetItem *item);
+    void onClearAll();
+    void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
+    void showContextMenu(const QPoint &pos);
 
 private:
     void setupUI();
     void setupShortcuts();
     void addToHistory(const QString& text);
-    void showTrayMessage(const QString& message);
     void filterHistory(const QString& filter);
+    void showTrayMessage(const QString& message);
     void copySelectedItem();
     void removeSelectedItem();
+    void pasteHistoryItem(int index);
+    void onHotkeyPressed();
 
-    // UI components
+    // UI Components
     QWidget* centralWidget;
     QLineEdit* searchBox;
-    QListWidget* historyList;  // Changed from QListView to QListWidget
+    QListWidget* historyList;
     QTextEdit* previewPane;
     QSplitter* splitter;
-    
-    // System components
     QClipboard* clipboard;
     QSystemTrayIcon* trayIcon;
     
@@ -63,6 +74,11 @@ private:
     QShortcut* showShortcut;
     QShortcut* deleteShortcut;
     QShortcut* escapeShortcut;
+    
+    // Configuration
+    IO* io;
+    int fontSize = 14;
+    QSize windowSize = QSize(700, 800);
     
     // State
     QString lastClipboard;

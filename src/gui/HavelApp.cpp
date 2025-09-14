@@ -116,8 +116,45 @@ void HavelApp::initializeComponents(bool isStartup) {
     hotkeyManager->RegisterSystemHotkeys();
     hotkeyManager->LoadHotkeyConfigurations();
 
+    // Initialize AutomationSuite with IO instance
+    AutomationSuite::Instance(io.get());
+
     // Print initial hotkey state
     hotkeyManager->printHotkeys();
+
+    // Initialize ClipboardManager after IO is ready
+    try {
+        if (!io) {
+            throw std::runtime_error("IO system not available");
+        }
+        
+        info("Initializing ClipboardManager...");
+        clipboardManager = std::make_unique<ClipboardManager>(io.get());
+        
+        // Verify clipboard manager was created successfully
+        if (!clipboardManager) {
+            throw std::runtime_error("Failed to create ClipboardManager instance");
+        }
+        
+        // Initialize hotkeys
+        clipboardManager->initializeHotkeys();
+        
+        info("ClipboardManager initialized successfully");
+    } catch (const std::exception& e) {
+        std::string errorMsg = std::string("Failed to initialize ClipboardManager: ") + e.what();
+        error(errorMsg);
+        
+        // Don't crash the whole app if clipboard manager fails to initialize
+        // Just log the error and continue without clipboard functionality
+        if (trayIcon) {
+            trayIcon->showMessage("Havel", 
+                                QString::fromStdString("Clipboard features disabled: " + errorMsg),
+                                QSystemTrayIcon::Warning);
+        }
+        
+        // Clear any partially initialized clipboard manager
+        clipboardManager.reset();
+    }
 
     // Set up config watching
     havel::Configs::Get().Watch<std::string>("UI.Theme", [](const auto& oldVal, const auto& newVal) {
@@ -228,42 +265,19 @@ void HavelApp::cleanup() noexcept {
         return; // Already cleaning up
     }
     
-    info("Starting cleanup...");
-    shutdownRequested = true;
-
-    try {
-        if (periodicTimer) {
-            periodicTimer->stop();
-            periodicTimer.reset();
-        }
-
-        if (trayIcon) {
-            trayIcon->hide();
-            trayIcon.reset();
-        }
-
-        if (mpv) {
-            mpv->Shutdown();
-            mpv.reset();
-        }
-
-        // Reset in reverse dependency order
-        hotkeyManager.reset();
-        scriptEngine.reset();
-        windowManager.reset();
-        io.reset();
-
-        if (display) {
-            XCloseDisplay(display);
-            display = nullptr;
-        }
-
-        signalWatcher.stop();
-        
-        info("Cleanup completed successfully");
-    } catch (...) {
-        // Silent cleanup - don't throw from destructor
-    }
+    // Clean up components in reverse order of initialization
+    clipboardManager.reset();
+    hotkeyManager.reset();
+    scriptEngine.reset();
+    mpv.reset();
+    windowManager.reset();
+    io.reset();
+    
+    // Clean up Qt components
+    trayMenu.reset();
+    trayIcon.reset();
+    
+    info("HavelApp cleanup complete");
 }
 
 } // namespace havel

@@ -17,6 +17,7 @@
 #include "core/HotkeyManager.hpp"
 #include "media/MPVController.hpp"
 #include "x11.h"
+#include "gui/ClipboardManager.hpp"
 namespace havel {
 
 class HavelApp : public QObject {
@@ -53,6 +54,7 @@ private:
     std::unique_ptr<MPVController> mpv;
     std::unique_ptr<ScriptEngine> scriptEngine;
     std::unique_ptr<HotkeyManager> hotkeyManager;
+    std::unique_ptr<ClipboardManager> clipboardManager;
     
     // Qt components
     std::unique_ptr<QSystemTrayIcon> trayIcon;

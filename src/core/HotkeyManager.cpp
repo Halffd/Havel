@@ -21,6 +21,7 @@
 #include <atomic>
 #include "core/DisplayManager.hpp"
 #include "media/AutoRunner.h"
+#include "utils/Util.hpp"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
@@ -84,12 +85,17 @@ void HotkeyManager::printHotkeys() const {
         info(status);
     }
     auto joined = chain(io.failedHotkeys)
-    .map([](const auto& s) { return s.key; })
+    .map([](const auto& s) { return s.alias; })
     .distinct()
     .join(" ");
     info("Failed hotkeys: " + joined);
     //reset color
     std::cout << "\033[0m";
+    auto workingHotkeys = chain(io.hotkeys)
+    .filter([joined](const auto& s) { return !includes(joined, s.second.alias); })
+    .map([](const auto& s) { return s.second.alias; })
+    .join(" ");
+    info("Working hotkeys: " + workingHotkeys);
     info("=== End Hotkey Report ===");
 }
 HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
@@ -376,10 +382,20 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         });
     }
 
-    // Brightness and gamma control
+    // Brightness and temperature control
     io.Hotkey("f3", [this]() {
         info("Setting default brightness");
         brightnessManager.setBrightness(Configs::Get().Get<double>("Brightness.Default", 1.0));
+        info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
+    });
+    io.Hotkey("+f3", [this]() {
+        info("Setting default temperature");
+        brightnessManager.setTemperature(Configs::Get().Get<double>("Temperature.Default", 6500));
+        info("Temperature set to: " + std::to_string(Configs::Get().Get<double>("Temperature.Default", 6500)));
+    });
+    io.Hotkey("^f3", [this]() {
+        info("Setting default brightness");
+        brightnessManager.setBrightness(brightnessManager.getMonitor(1),Configs::Get().Get<double>("Brightness.Default", 1.0));
         info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
     });
 
@@ -391,8 +407,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     io.Hotkey("^f7", [this]() {
         info("Decreasing brightness");
-        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(1),0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
+        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(0),0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(0))));
     });
 
     io.Hotkey("f8", [this]() {
@@ -402,7 +418,18 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^f8", [this]() {
         info("Increasing brightness");
+        brightnessManager.increaseBrightness(brightnessManager.getMonitor(0),0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(0))));
+    });
+
+    io.Hotkey("^!f8", [this]() {
+        info("Increasing brightness");
         brightnessManager.increaseBrightness(brightnessManager.getMonitor(1),0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
+    });
+    io.Hotkey("^!f7", [this]() {
+        info("Decreasing brightness");
+        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(1),0.05);
         info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
     });
     io.Hotkey("!f7", [this]() {
@@ -417,26 +444,90 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.setShadowLift(shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
     });
-    io.Hotkey("+f7", [this]() {
+    io.Hotkey("^#!f7", [this]() {
+        info("Decreasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift - 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
+    });
+    io.Hotkey("^#!f8", [this]() {
+        info("Increasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
+    });
+    io.Hotkey("^!#+f7", [this]() {
+        info("Decreasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift - 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
+    });
+    io.Hotkey("^!#+f8", [this]() {
+        info("Increasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
+    });
+    io.Hotkey("^!#+f8", [this]() {
+        info("Increasing shadow lift");
+        auto shadowLift = brightnessManager.getShadowLift();
+        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
+    });
+    io.Hotkey("#f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(500);
-        info("Current gamma: " + std::to_string(brightnessManager.getTemperature()));
+        brightnessManager.decreaseGamma(0.05);
+    });
+    io.Hotkey("#f8", [this]() {
+        info("Increasing gamma");
+        brightnessManager.increaseGamma(0.05);
+    });
+    io.Hotkey("#!f7", [this]() {
+        info("Decreasing gamma");
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),0.05);
+    });
+    io.Hotkey("#!f8", [this]() {
+        info("Increasing gamma");
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),0.05);
+    });
+    io.Hotkey("#^f8", [this]() {
+        info("Increasing gamma");
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),0.05);
+    });
+    io.Hotkey("#!f7", [this]() {
+        info("Decreasing gamma");
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),0.05);
+    });
+    io.Hotkey("+f7", [this]() {
+        info("Decreasing temperature");
+        brightnessManager.decreaseTemperature(500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature()));
     });
     io.Hotkey("^+f7", [this]() {
-        info("Decreasing gamma");
-         brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),500);
-        info("Current gamma: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
+        info("Decreasing temperature");
+        brightnessManager.decreaseTemperature(brightnessManager.getMonitor(0),500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(0))));
+    });
+    io.Hotkey("^!+f7", [this]() {
+        info("Decreasing temperature");
+        brightnessManager.decreaseTemperature(brightnessManager.getMonitor(1),500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
     });
 
     io.Hotkey("+f8", [this]() {
-        info("Increasing gamma");
-        brightnessManager.increaseGamma(500);
-        info("Current gamma: " + std::to_string(brightnessManager.getTemperature()));
+        info("Increasing temperature");
+        brightnessManager.increaseTemperature(500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature()));
     });
     io.Hotkey("^+f8", [this]() {
-        info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),500);
-        info("Current gamma: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
+        info("Increasing temperature");
+        brightnessManager.increaseTemperature(brightnessManager.getMonitor(0),500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(0))));
+    });
+    io.Hotkey("^!+f8", [this]() {
+        info("Increasing temperature");
+        brightnessManager.increaseTemperature(brightnessManager.getMonitor(1),500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
     });
 
     // Mouse wheel + click combinations

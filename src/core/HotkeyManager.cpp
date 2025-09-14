@@ -22,6 +22,7 @@
 #include "core/DisplayManager.hpp"
 #include "media/AutoRunner.h"
 #include "utils/Util.hpp"
+#include "io/MouseController.hpp"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
@@ -86,7 +87,6 @@ void HotkeyManager::printHotkeys() const {
     }
     auto joined = chain(io.failedHotkeys)
     .map([](const auto& s) { return s.alias; })
-    .distinct()
     .join(" ");
     info("Failed hotkeys: " + joined);
     //reset color
@@ -98,10 +98,11 @@ void HotkeyManager::printHotkeys() const {
     info("Working hotkeys: " + workingHotkeys);
     info("=== End Hotkey Report ===");
 }
-HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, ScriptEngine& scriptEngine)
+HotkeyManager::HotkeyManager(IO& io, WindowManager& windowManager, MPVController& mpv, AudioManager& audioManager, ScriptEngine& scriptEngine)
     : io(io),
       windowManager(windowManager),
       mpv(mpv),
+      audioManager(audioManager),
       scriptEngine(scriptEngine){
     config = Configs::Get();
     loadVideoSites();
@@ -216,12 +217,12 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Launcher::runShell("playerctl next");
     });
 
-    io.Hotkey("NumpadAdd", []() {
-        Launcher::runShell("pactl set-sink-volume @DEFAULT_SINK@ -5%");
+    io.Hotkey("NumpadAdd", [this]() {
+        audioManager.increaseVolume(3);
     });
 
-    io.Hotkey("NumpadSub", []() {
-        Launcher::runShell("pactl set-sink-volume @DEFAULT_SINK@ +5%");
+    io.Hotkey("NumpadSub", [this]() {
+        audioManager.decreaseVolume(3);
     });
 
     io.Hotkey("f6", [this]() {
@@ -269,33 +270,41 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         mouse2Pressed = true;
     });
 
-    io.Hotkey("KP_7", [this]() {
+    io.Hotkey("+numpad7", [this]() {
+        info("Zoom 1");
         Zoom(1, io);
     });
 
-    io.Hotkey("KP_1", [this]() {
+    io.Hotkey("+numpad1", [this]() {
+        info("Zoom 0");
         Zoom(0, io);
     });
 
-    io.Hotkey("KP_5", [this]() {
+    io.Hotkey("+!numpad5", [this]() {
+        info("Zoom 2");
         Zoom(2, io);
     });
 
     io.Hotkey("!f1", []() {
+        info("F1");
         Launcher::runShell("~/scripts/f1.sh -1");
     });
 
     io.Hotkey("+!l", []() {
+        info("Livelink");
         Launcher::runShell("~/scripts/livelink.sh");
     });
 
     io.Hotkey("^!l", []() {
+        info("Livelink toggle screen 1");
         Launcher::runShell("livelink screen toggle 1");
     });
     io.Hotkey("!f10", []() {
+        info("Stream");
         Launcher::runShell("~/scripts/str");
     });
     io.Hotkey("^!k", []() {
+        info("Livelink toggle screen 2");
         Launcher::runShell("livelink screen toggle 2");
     });
 
@@ -384,9 +393,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // Brightness and temperature control
     io.Hotkey("f3", [this]() {
-        info("Setting default brightness");
+        info("Setting defaults");
         brightnessManager.setBrightness(Configs::Get().Get<double>("Brightness.Default", 1.0));
+        brightnessManager.setTemperature(Configs::Get().Get<double>("Temperature.Default", 6500));
         info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
+        info("Temperature set to: " + std::to_string(Configs::Get().Get<double>("Temperature.Default", 6500)));
     });
     io.Hotkey("+f3", [this]() {
         info("Setting default temperature");
@@ -476,27 +487,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("#f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(0.05);
+        brightnessManager.decreaseGamma(50);
     });
     io.Hotkey("#f8", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(0.05);
+        brightnessManager.increaseGamma(50);
     });
     io.Hotkey("#!f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),0.05);
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),50);
     });
     io.Hotkey("#!f8", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),0.05);
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),50);
     });
     io.Hotkey("#^f8", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),0.05);
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),50);
     });
-    io.Hotkey("#!f7", [this]() {
+    io.Hotkey("#^f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),0.05);
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),50);
     });
     io.Hotkey("+f7", [this]() {
         info("Decreasing temperature");
@@ -597,56 +608,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     
     // Mouse emulation
-    // Numpad mouse movement with acceleration
-    AddHotkey("numpad1", [this]() { // Bottom-left diagonal
-        static int currentSpeed = speed;
-        info("Bottom-left diagonal");
-        io.MouseMove(-currentSpeed, currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad2", [this]() { // Down
-        static int currentSpeed = speed;
-        io.MouseMove(0, currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad3", [this]() { // Bottom-right diagonal
-        static int currentSpeed = speed;
-        io.MouseMove(currentSpeed, currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad4", [this]() { // Left
-        static int currentSpeed = speed;
-        io.MouseMove(-currentSpeed, 0, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad6", [this]() { // Right
-        static int currentSpeed = speed;
-        io.MouseMove(currentSpeed, 0, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad7", [this]() { // Top-left diagonal
-        static int currentSpeed = speed;
-        io.MouseMove(-currentSpeed, -currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad8", [this]() { // Up
-        static int currentSpeed = speed;
-        io.MouseMove(0, -currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
-    AddHotkey("numpad9", [this]() { // Top-right diagonal
-        static int currentSpeed = speed;
-        io.MouseMove(currentSpeed, -currentSpeed, 1, acc);
-        currentSpeed += static_cast<int>(acc);
-    });
-    
     // Mouse clicking
     AddHotkey("numpad5", [this]() { // Left click hold
         info("NP5 Click");
@@ -681,27 +642,54 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("numpaddec", [this]() { // Scroll up (numpad decimal/dot)
         io.Scroll(1, 0);
     });
+      // Global mouse controller
+      MouseController mouseController(io);
     
-    // Reset speed when any key is released
-    AddHotkey("numpad1:up", []() { /* Reset speed for numpad1 */ });
-    AddHotkey("numpad2:up", []() { /* Reset speed for numpad2 */ });
-    AddHotkey("numpad3:up", []() { /* Reset speed for numpad3 */ });
-    AddHotkey("numpad4:up", []() { /* Reset speed for numpad4 */ });
-    AddHotkey("numpad6:up", []() { /* Reset speed for numpad6 */ });
-    AddHotkey("numpad7:up", []() { /* Reset speed for numpad7 */ });
-    AddHotkey("numpad8:up", []() { /* Reset speed for numpad8 */ });
-    AddHotkey("numpad9:up", []() { /* Reset speed for numpad9 */ });
-    // Also add a title-based hotkey for Koikatu window title (as a fallback)
-    AddContextualHotkey("~d", "Window.Active('name:Koikatu')",
-        [this]() {
-            // Show black overlay when D is pressed in Koikatu window
-            info("Koikatu window title detected - D key pressed - showing black overlay");
-            showBlackOverlay();
-            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
-        },
-        nullptr, // No action when condition is false
-        0 // ID parameter
-    );
+      // Setup hotkeys
+      AddHotkey("numpad1", [&]() { // Bottom-left diagonal
+          mouseController.move(-1, 1);
+      });
+      
+      AddHotkey("numpad2", [&]() { // Down
+          mouseController.move(0, 1);
+      });
+      
+      AddHotkey("numpad3", [&]() { // Bottom-right diagonal
+          mouseController.move(1, 1);
+      });
+      
+      AddHotkey("numpad4", [&]() { // Left
+          mouseController.move(-1, 0);
+      });
+      
+      AddHotkey("numpad6", [&]() { // Right
+          mouseController.move(1, 0);
+      });
+      
+      AddHotkey("numpad7", [&]() { // Top-left diagonal
+          mouseController.move(-1, -1);
+      });
+      
+      AddHotkey("numpad8", [&]() { // Up
+          mouseController.move(0, -1);
+      });
+      
+      AddHotkey("numpad9", [&]() { // Top-right diagonal
+          mouseController.move(1, -1);
+      });
+      
+      // Reset acceleration when keys are released
+      AddHotkey("numpad1:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad2:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad3:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad4:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad6:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad7:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad8:up", [&]() { mouseController.resetAcceleration(); });
+      AddHotkey("numpad9:up", [&]() { mouseController.resetAcceleration(); });
+    AddHotkey("!+d", [this]() {
+        showBlackOverlay();
+    });
 
     // '/' key to hold 'w' down in gaming mode
     AddContextualHotkey("@y", "currentMode == 'gaming'",
@@ -737,9 +725,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     );
 
     // autoclick in gaming mode
-    AddHotkey("#Enter", 
+    AddHotkey("!delete", 
         [this]() {
-            info("Starting autoclicker with Enter key");
+            info("Starting autoclicker");
             startAutoclicker("Button1");
         }
     );
@@ -940,37 +928,6 @@ void HotkeyManager::RegisterWindowHotkeys() {
     io.Hotkey("!a", []() {
         WindowManager::ToggleAlwaysOnTop();
     });
-    /*io.Hotkey("a", [this]() {
-        io.Send("w");
-    });
-
-    io.Hotkey("left", [this]() {
-        io.Send("a");
-    });*/
-    // Add contextual hotkey for D key in Koikatu using both class and title detection
-    // First check by window class
-    /*AddContextualHotkey("d", "Window.Active('class:Koikatu')",
-        [this]() {
-            // Show black overlay when D is pressed in Koikatu
-            info("Koikatu window detected - D key pressed - showing black overlay");
-            showBlackOverlay();
-            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (class match)");
-        },
-        nullptr, // No action when condition is false
-        0 // ID parameter
-    );
-
-    // Also add a title-based hotkey for Koikatu window title (as a fallback)
-    AddContextualHotkey("d", "Window.Active('name:Koikatu')",
-        [this]() {
-            // Show black overlay when D is pressed in Koikatu window
-            info("Koikatu window title detected - D key pressed - showing black overlay");
-            showBlackOverlay();
-            logWindowEvent("KOIKATU_BLACK_OVERLAY", "Showing black overlay from Koikatu window (title match)");
-        },
-        nullptr, // No action when condition is false
-        0 // ID parameter
-    );*/
 }
 
 void HotkeyManager::RegisterSystemHotkeys() {
@@ -1782,116 +1739,14 @@ void HotkeyManager::setMode(const std::string& mode) {
 void HotkeyManager::showBlackOverlay() {
     // Log that we're showing the black overlay
     info("Showing black overlay window on all monitors");
-
-    Display* display = DisplayManager::GetDisplay();
-    if (!display) {
-        error("Failed to get display for black overlay");
-        return;
-    }
-
-    // Get the root window - use X11's Window type here, not our Window class
-    ::Window rootWindow = DefaultRootWindow(display);
-
-    // Get screen dimensions (this will get the primary monitor dimensions)
-    Screen* screen = DefaultScreenOfDisplay(display);
-    int screenWidth = WidthOfScreen(screen);
-    int screenHeight = HeightOfScreen(screen);
-
-    #ifdef HAVE_XRANDR
-    // Use XRandR to get multi-monitor information
-    XRRScreenResources* resources = XRRGetScreenResources(display, rootWindow);
-    if (resources) {
-        numMonitors = resources->noutput;
-        multiMonitorSupport = true;
-
-        // Get total dimensions encompassing all monitors
-        int minX = 0, minY = 0, maxX = 0, maxY = 0;
-
-        for (int i = 0; i < resources->noutput; i++) {
-            XRROutputInfo* outputInfo = XRRGetOutputInfo(display, resources, resources->outputs[i]);
-            if (outputInfo && outputInfo->connection == RR_Connected) {
-                // Find the CRTC for this output
-                XRRCrtcInfo* crtcInfo = XRRGetCrtcInfo(display, resources, outputInfo->crtc);
-                if (crtcInfo) {
-                    // Update bounds
-                    minX = std::min(minX, crtcInfo->x);
-                    minY = std::min(minY, crtcInfo->y);
-                    maxX = std::max(maxX, crtcInfo->x + (int)crtcInfo->width);
-                    maxY = std::max(maxY, crtcInfo->y + (int)crtcInfo->height);
-
-                    XRRFreeCrtcInfo(crtcInfo);
-                }
-            }
-            if (outputInfo) {
-                XRRFreeOutputInfo(outputInfo);
-            }
-        }
-
-        // If we got valid dimensions
-        if (maxX > minX && maxY > minY) {
-            screenWidth = maxX - minX;
-            screenHeight = maxY - minY;
-        }
-
-        XRRFreeScreenResources(resources);
-    }
-    #endif
-
-    // Create black window attributes
-    XSetWindowAttributes attrs;
-    attrs.override_redirect = x11::XTrue;  // Bypass window manager
-    attrs.background_pixel = BlackPixel(display, DefaultScreen(display));
-    attrs.border_pixel = BlackPixel(display, DefaultScreen(display));
-    attrs.event_mask = ButtonPressMask | x11::XKeyPressMask;  // Capture events to close it
-
-    // Create the black window - save as X11's Window type, not our Window class
-    ::Window blackWindow = XCreateWindow(display,
-                                      rootWindow,
-                                      0, 0,                            // x, y
-                                      screenWidth, screenHeight,       // width, height
-                                      0,                               // border width
-                                      CopyFromParent,                  // depth
-                                      x11::XInputOutput,                     // class
-                                      CopyFromParent,                  // visual
-                                      CWOverrideRedirect | CWBackPixel | CWBorderPixel | CWEventMask,
-                                      &attrs);
-
-    // Make it topmost
-    XSetTransientForHint(display, blackWindow, rootWindow);
-
-    // Map the window
-    XMapRaised(display, blackWindow);
-    XFlush(display);
-
-    // Create a thread to handle events (to close the window)
-    std::thread eventThread([display, blackWindow]() {
-        XEvent event;
-        bool running = true;
-
-        // Set up timeout for auto-closing (5 minutes)
-        auto startTime = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::minutes(5);
-
-        while (running) {
-            // Check for timeout
-            auto now = std::chrono::steady_clock::now();
-            if (now - startTime > timeout) {
-                info("Black overlay auto-closed after timeout");
-                running = false;
-                break;
-            }
-
-            // Sleep to reduce CPU usage
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        }
-
-        // Destroy the window
-        XDestroyWindow(display, blackWindow);
-        XFlush(display);
-    });
-
-    // Detach the thread to let it run independently
-    eventThread.detach();
+    // qt window
+    QWidget* blackOverlay = new QWidget;
+    blackOverlay->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    blackOverlay->setStyleSheet("background-color: black;");
+    blackOverlay->showFullScreen();
+    blackOverlay->raise();
+    blackOverlay->activateWindow();
+    blackOverlay->show();
 }
 
 void HotkeyManager::printActiveWindowInfo() {

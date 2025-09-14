@@ -5,9 +5,9 @@
 havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QWindow(parent) {
     setupUI();
 
-    scheduleTimer = new QTimer(this);
-    connect(scheduleTimer, &QTimer::timeout, this, &BrightnessPanel::scheduleAdjustment);
-    scheduleTimer->start(60000); // Check every minute
+    //scheduleTimer = new QTimer(this);
+    //connect(scheduleTimer, &QTimer::timeout, this, &BrightnessPanel::scheduleAdjustment);
+    //scheduleTimer->start(60000); // Check every minute
 
     trayIcon = new QSystemTrayIcon(this);
     trayIcon->setIcon(QIcon::fromTheme("display-brightness"));

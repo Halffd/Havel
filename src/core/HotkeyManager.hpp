@@ -14,6 +14,7 @@
 #include <vector>
 #include <ctime>
 #include "qt.hpp"
+#include "media/AudioManager.hpp"
 
 namespace havel {
     struct HotkeyDefinition {
@@ -27,7 +28,7 @@ namespace havel {
     class MPVController; // Forward declaration
     class HotkeyManager {
     public:
-        HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
+        HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager,
                       ScriptEngine &scriptEngine);
 
         virtual ~HotkeyManager() {
@@ -142,6 +143,7 @@ namespace havel {
         std::thread genshinThread;
         WindowManager &windowManager;
         MPVController &mpv;
+        AudioManager &audioManager;
         ScriptEngine &scriptEngine;
         Configs config;
 
@@ -151,7 +153,11 @@ namespace havel {
         time_t lastVideoCheck{0};
         const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
         bool holdClick = false;
-
+        enum class ControlMode { BRIGHTNESS, GAMMA, TEMPERATURE, SHADOW_LIFT };
+        enum class TargetMonitor { ALL, MONITOR_0, MONITOR_1 };
+        
+        ControlMode currentBrightnessMode = ControlMode::BRIGHTNESS;
+        TargetMonitor targetBrightnessMonitor = TargetMonitor::ALL;
         // Hotkey state management
         bool mpvHotkeysGrabbed{false};
         std::map<std::string, bool> windowConditionStates;

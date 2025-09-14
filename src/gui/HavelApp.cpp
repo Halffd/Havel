@@ -6,6 +6,7 @@
 #include <QMenu>
 #include <QIcon>
 #include <QColor>
+#include <cstdlib>
 #include <stdexcept>
 #include <iostream>
 
@@ -36,6 +37,7 @@ HavelApp::HavelApp(bool isStartup, QObject* parent)
 
 HavelApp::~HavelApp() {
     cleanup();
+    exit(0);
 }
 
 void HavelApp::setupTrayIcon() {
@@ -95,8 +97,11 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!scriptEngine) {
         throw std::runtime_error("Failed to create ScriptEngine");
     }
-    
-    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
+    audioManager = std::make_unique<AudioManager>(AudioBackend::AUTO);
+    if (!audioManager) {
+        throw std::runtime_error("Failed to create AudioManager");
+    }
+    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine);
     if (!hotkeyManager) {
         throw std::runtime_error("Failed to create HotkeyManager");
     }

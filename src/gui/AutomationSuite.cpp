@@ -11,15 +11,26 @@ namespace havel {
 
 AutomationSuite* AutomationSuite::s_instance = nullptr;
 
-AutomationSuite* AutomationSuite::Instance() {
+AutomationSuite* AutomationSuite::Instance(IO* io) {
     if (!s_instance) {
-        s_instance = new AutomationSuite();
+        if (!io) {
+            qWarning() << "Warning: AutomationSuite::Instance called with null IO";
+        }
+        s_instance = new AutomationSuite(io);
+    } else if (io && !s_instance->io) {
+        s_instance->io = io;
+        // Reinitialize clipboard manager with the new IO instance
+        if (s_instance->clipboardMgr) {
+            delete s_instance->clipboardMgr;
+            s_instance->clipboardMgr = new ClipboardManager(io);
+        }
     }
     return s_instance;
 }
 
-AutomationSuite::AutomationSuite(QObject *parent) : QObject(parent) {
-    clipboardMgr = new ClipboardManager();
+AutomationSuite::AutomationSuite(IO* io, QObject *parent) 
+    : QObject(parent), io(io) {
+    clipboardMgr = new ClipboardManager(io);
     screenshotMgr = new ScreenshotManager();
     brightnessMgr = new BrightnessPanel();
 

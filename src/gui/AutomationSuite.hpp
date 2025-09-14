@@ -14,7 +14,7 @@ class AutomationSuite : public QObject {
     Q_OBJECT
 
 public:
-    static AutomationSuite* Instance();
+    static AutomationSuite* Instance(IO* io = nullptr);
     AutomationSuite(const AutomationSuite&) = delete;
     AutomationSuite& operator=(const AutomationSuite&) = delete;
 
@@ -22,12 +22,15 @@ public:
     ScreenshotManager* getScreenshotManager() const { return screenshotMgr; }
     BrightnessPanel* getBrightnessManager() const { return brightnessMgr; }
     
+    void setIO(IO* io) { this->io = io; }
+    
     // Show settings window
     void showSettings();
     void hideSettings();
 
 private:
-    explicit AutomationSuite(QObject *parent = nullptr);
+    explicit AutomationSuite(IO* io, QObject *parent = nullptr);
+    IO* io = nullptr;
     static AutomationSuite* s_instance;
 
     ClipboardManager* clipboardMgr;

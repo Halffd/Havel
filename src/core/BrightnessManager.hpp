@@ -90,10 +90,10 @@ public:
     bool setTemperature(const string& monitor, int kelvin);
     int getTemperature();
     int getTemperature(const string& monitor);
-    void decreaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
-    void increaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
-    void decreaseGamma(string monitor, int amount = DEFAULT_TEMP_AMOUNT);
-    void increaseGamma(string monitor, int amount = DEFAULT_TEMP_AMOUNT);
+    bool decreaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
+    bool increaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
+    bool decreaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
+    bool increaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
     bool setBrightnessBacklight(const std::string& monitor_name, double brightness);
     double getCurrentBrightnessX11(const std::string& monitor_name);
     double extractBrightnessFromGammaRamp(XRRCrtcGamma* gamma, const std::string& monitor_name) const;
@@ -226,7 +226,7 @@ public:
     // === DAY/NIGHT AUTOMATION ===
     void dayNightWorkerThread();
     void applyCurrentTimeSettings();
-    
+    bool applyAllSettings(const string &monitor);
     // === STATE ===
     DayNightSettings dayNightSettings;
     
@@ -242,6 +242,7 @@ public:
     map<string, double> brightness;
     map<string, int> temperature;
     vector<string> monitors;
+    map<string, RGBColor> gammaRGB;
 };
 
 } // namespace havel

@@ -448,6 +448,13 @@ bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
   // Set the modified gamma
   return setGammaRGB(monitor, liftedGamma.red, liftedGamma.green, liftedGamma.blue);
 }
+bool BrightnessManager::setShadowLift(double lift) {
+  bool success = true;
+  for (const auto& monitor : getConnectedMonitors()) {
+      success = setShadowLift(monitor, lift) && success;
+  }
+  return success;
+}
 double BrightnessManager::getShadowLift(const string& monitor) {
   // Get current gamma values
   RGBColor currentGamma = getGammaRGB(monitor);
@@ -524,46 +531,6 @@ double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
   return brightness;
 }
 
-bool BrightnessManager::setBrightnessGamma(const std::string &monitor,
-                                           double brightness) {
-  if (!x11_display)
-    return false;
-
-  brightness = std::clamp(brightness, 0.0, 2.0);
-
-  XRRScreenResources *screen_res =
-      XRRGetScreenResourcesCurrent(x11_display, x11_root);
-  if (!screen_res)
-    return false;
-
-  bool success = false;
-
-  for (int i = 0; i < screen_res->ncrtc; ++i) {
-    RRCrtc crtc = screen_res->crtcs[i];
-    int size = XRRGetCrtcGammaSize(x11_display, crtc);
-    if (size <= 0)
-      continue;
-
-    XRRCrtcGamma *gamma = XRRAllocGamma(size);
-    if (!gamma)
-      continue;
-
-    for (int j = 0; j < size; ++j) {
-      double g = (double)j / (size - 1);
-      uint16_t value =
-          (uint16_t)std::clamp(g * brightness * 65535.0, 0.0, 65535.0);
-      gamma->red[j] = gamma->green[j] = gamma->blue[j] = value;
-    }
-
-    XRRSetCrtcGamma(x11_display, crtc, gamma);
-    XRRFreeGamma(gamma);
-    success = true;
-  }
-
-  XRRFreeScreenResources(screen_res);
-  XFlush(x11_display);
-  return success;
-}
 /**
  * Safely extracts brightness value from gamma ramp using proper bounds checking
  * and error handling. Uses the middle value of the red channel as brightness
@@ -784,64 +751,95 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
   XRRFreeScreenResources(screen_res);
   return success;
 }
-bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor,
-                                          double red, double green,
-                                          double blue) {
+bool BrightnessManager::setBrightnessGamma(const std::string &monitor, double brightness) {
   if (!x11_display)
-    return false;
+      return false;
+
+  brightness = std::clamp(brightness, 0.0, 2.0);
+  
+  // Store brightness for this monitor
+  this->brightness[monitor] = brightness;
+  
+  return applyAllSettings(monitor);
+}
+
+bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor, double red, double green, double blue) {
+  if (!x11_display)
+      return false;
 
   red = std::clamp(red, 0.1, 10.0);
   green = std::clamp(green, 0.1, 10.0);
   blue = std::clamp(blue, 0.1, 10.0);
+  
+  // Store gamma values for this monitor (you'll need to add this map)
+  gammaRGB[monitor] = {red, green, blue};
+  
+  return applyAllSettings(monitor);
+}
 
-  XRRScreenResources *screen_res =
-      XRRGetScreenResourcesCurrent(x11_display, x11_root);
+// New helper function that combines all settings
+bool BrightnessManager::applyAllSettings(const std::string &monitor) {
+  if (!x11_display)
+      return false;
+
+  XRRScreenResources *screen_res = XRRGetScreenResourcesCurrent(x11_display, x11_root);
   if (!screen_res)
-    return false;
+      return false;
 
   bool success = false;
 
+  // Get current settings for this monitor
+  double currentBrightness = brightness.count(monitor) ? brightness[monitor] : 1.0;
+  RGBColor currentGamma = gammaRGB.count(monitor) ? gammaRGB[monitor] : RGBColor{1.0, 1.0, 1.0};
+  RGBColor tempColor = {1.0, 1.0, 1.0};
+  
+  // Apply temperature if set
+  if (temperature.count(monitor)) {
+      tempColor = kelvinToRGB(temperature[monitor]);
+  }
+
   // Find the CRTC for this output
   for (int i = 0; i < screen_res->noutput; ++i) {
-    XRROutputInfo *output_info =
-        XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
+      XRROutputInfo *output_info = XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
 
-    if (output_info && output_info->connection == RR_Connected &&
-        monitor == output_info->name && output_info->crtc != x11::XNone) {
+      if (output_info && output_info->connection == RR_Connected &&
+          monitor == output_info->name && output_info->crtc != x11::XNone) {
 
-      XRRCrtcInfo *crtc_info =
-          XRRGetCrtcInfo(x11_display, screen_res, output_info->crtc);
-      if (crtc_info) {
-        int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
-        if (gamma_size > 0) {
-          XRRCrtcGamma *gamma = XRRAllocGamma(gamma_size);
-          if (gamma) {
-            // Generate gamma ramps
-            for (int j = 0; j < gamma_size; ++j) {
-              double normalized = (double)j / (gamma_size - 1);
-              gamma->red[j] =
-                  (unsigned short)(65535 * std::pow(normalized, 1.0 / red));
-              gamma->green[j] =
-                  (unsigned short)(65535 * std::pow(normalized, 1.0 / green));
-              gamma->blue[j] =
-                  (unsigned short)(65535 * std::pow(normalized, 1.0 / blue));
-            }
+          XRRCrtcInfo *crtc_info = XRRGetCrtcInfo(x11_display, screen_res, output_info->crtc);
+          if (crtc_info) {
+              int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
+              if (gamma_size > 0) {
+                  XRRCrtcGamma *gamma = XRRAllocGamma(gamma_size);
+                  if (gamma) {
+                      // Generate combined gamma ramps
+                      for (int j = 0; j < gamma_size; ++j) {
+                          double normalized = (double)j / (gamma_size - 1);
+                          
+                          // Apply gamma curve, then temperature tint, then brightness
+                          double redValue = std::pow(normalized, 1.0 / currentGamma.red) * tempColor.red * currentBrightness;
+                          double greenValue = std::pow(normalized, 1.0 / currentGamma.green) * tempColor.green * currentBrightness;
+                          double blueValue = std::pow(normalized, 1.0 / currentGamma.blue) * tempColor.blue * currentBrightness;
+                          
+                          gamma->red[j] = (unsigned short)std::clamp(redValue * 65535.0, 0.0, 65535.0);
+                          gamma->green[j] = (unsigned short)std::clamp(greenValue * 65535.0, 0.0, 65535.0);
+                          gamma->blue[j] = (unsigned short)std::clamp(blueValue * 65535.0, 0.0, 65535.0);
+                      }
 
-            XRRSetCrtcGamma(x11_display, output_info->crtc, gamma);
-            XFlush(x11_display);
-            success = true;
+                      XRRSetCrtcGamma(x11_display, output_info->crtc, gamma);
+                      XFlush(x11_display);
+                      success = true;
 
-            XRRFreeGamma(gamma);
+                      XRRFreeGamma(gamma);
+                  }
+              }
+              XRRFreeCrtcInfo(crtc_info);
           }
-        }
-        XRRFreeCrtcInfo(crtc_info);
       }
-    }
 
-    if (output_info)
-      XRRFreeOutputInfo(output_info);
-    if (success)
-      break;
+      if (output_info)
+          XRRFreeOutputInfo(output_info);
+      if (success)
+          break;
   }
 
   XRRFreeScreenResources(screen_res);
@@ -961,13 +959,12 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
 // === KELVIN TEMPERATURE METHODS ===
 bool BrightnessManager::setTemperature(int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
-  RGBColor rgb = kelvinToRGB(kelvin);
-
-  bool success = setGammaRGB(rgb.red, rgb.green, rgb.blue);
-  if (success) {
-    temperature[primaryMonitor] = kelvin;
+  
+  bool success = true;
+  for(const auto& monitor : getConnectedMonitors()){
+      temperature[monitor] = kelvin;
+      success &= applyAllSettings(monitor);
   }
-
   return success;
 }
 
@@ -1154,29 +1151,57 @@ int BrightnessManager::getTemperature(const std::string &monitor) {
   temperature[monitor] = temp;
   return temp;
 }
-void BrightnessManager::decreaseGamma(int amount) {
-  for (const auto &monitor : getConnectedMonitors()) {
-    decreaseGamma(monitor, amount);
-  }
+bool BrightnessManager::decreaseGamma(int amount) {
+    bool success = true;
+    for (const auto &monitor : getConnectedMonitors()) {
+        success = decreaseGamma(monitor, amount) && success;
+    }
+    return success;
+}
+bool BrightnessManager::decreaseGamma(const string& monitor, int amount) {
+  RGBColor currentGamma = getGammaRGB(monitor);
+  double reduction = amount / 1000.0;  // Convert to 0.0-1.0 range
+  
+  double newRed = std::max(0.1, currentGamma.red - reduction);   // Subtract, don't multiply
+  double newGreen = std::max(0.1, currentGamma.green - reduction);
+  double newBlue = std::max(0.1, currentGamma.blue - reduction);
+  
+  return setGammaRGB(monitor, newRed, newGreen, newBlue);
 }
 
-void BrightnessManager::decreaseGamma(string monitor, int amount) {
-  int currentTemp = getTemperature(monitor);
-  int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
-  setTemperature(monitor, newTemp);
+bool BrightnessManager::increaseGamma(int amount) {
+    bool success = true;
+    for (const auto &monitor : getConnectedMonitors()) {
+        success = increaseGamma(monitor, amount) && success;
+    }
+    return success;
 }
 
-void BrightnessManager::increaseGamma(int amount) {
-  for (const auto &monitor : getConnectedMonitors()) {
-    increaseGamma(monitor, amount);
-  }
+bool BrightnessManager::increaseGamma(const string& monitor, int amount) {
+    try {
+        // Increase gamma = higher gamma values = darker image
+        RGBColor currentGamma = getGammaRGB(monitor);
+        double factor = 1.0 + (amount / 1000.0); // Smaller steps
+        
+        double newRed = std::min(3.0, currentGamma.red * factor);   // Cap at 3.0
+        double newGreen = std::min(3.0, currentGamma.green * factor);
+        double newBlue = std::min(3.0, currentGamma.blue * factor);
+        
+        bool result = setGammaRGB(monitor, newRed, newGreen, newBlue);
+        
+        if (result) {
+            debug("Increased gamma for {}: {:.3f}, {:.3f}, {:.3f}", 
+                 monitor, newRed, newGreen, newBlue);
+        } else {
+            error("Failed to increase gamma for {}", monitor);
+        }
+        return result;
+    } catch (const std::exception& e) {
+        error("Error in increaseGamma: {}", e.what());
+        return false;
+    }
 }
 
-void BrightnessManager::increaseGamma(string monitor, int amount) {
-  int currentTemp = getTemperature(monitor);
-  int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
-  setTemperature(monitor, newTemp);
-}
 // === SYSFS BRIGHTNESS FALLBACK ===
     double
     BrightnessManager::getBrightnessSysfs(const std::string &monitor) {

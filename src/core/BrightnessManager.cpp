@@ -47,7 +47,6 @@ struct WaylandOutput {
 static std::vector<WaylandOutput> wayland_outputs;
 static std::mutex wayland_mutex;
 
-
 #endif
 
 namespace havel {
@@ -55,20 +54,20 @@ namespace havel {
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
   // Check if we're running under Wayland
-  const char* wayland_display = getenv("WAYLAND_DISPLAY");
-  const char* xdg_session_type = getenv("XDG_SESSION_TYPE");
-  
+  const char *wayland_display = getenv("WAYLAND_DISPLAY");
+  const char *xdg_session_type = getenv("XDG_SESSION_TYPE");
+
   if (WindowManagerDetector::IsWayland()) {
     // Running under Wayland
     try {
-      #ifdef __WAYLAND__
+#ifdef __WAYLAND__
       initializeWayland();
       displayMethod = "wayland";
       debug("Initialized Wayland backend");
-      #else
+#else
       error("Wayland support not compiled in!");
-      #endif
-    } catch (const std::exception& e) {
+#endif
+    } catch (const std::exception &e) {
       error("Failed to initialize Wayland backend: " + std::string(e.what()));
       // Fall back to X11
       x11_display = DisplayManager::GetDisplay();
@@ -87,9 +86,11 @@ BrightnessManager::BrightnessManager() {
     primaryMonitor = monitors[0];
     for (string monitor : monitors) {
       brightness[monitor] = getBrightness(monitor);
-      debug("Brightness for " + monitor + ": " + std::to_string(brightness[monitor]));
+      info("Brightness for " + monitor + ": " +
+           std::to_string(brightness[monitor]));
       temperature[monitor] = getTemperature(monitor);
-      debug("Temperature for " + monitor + ": " + std::to_string(temperature[monitor]));
+      info("Temperature for " + monitor + ": " +
+           std::to_string(temperature[monitor]));
     }
     // Apply initial settings if auto-adjust is enabled
     if (dayNightSettings.autoAdjust) {
@@ -101,49 +102,49 @@ BrightnessManager::BrightnessManager() {
 }
 
 BrightnessManager::~BrightnessManager() {
-    disableDayNightMode();
-    
+  disableDayNightMode();
+
 #ifdef __WAYLAND__
-    if (wl_display) {
-        // Clean up Wayland resources
-        if (wl_registry) {
-            wl_registry_destroy(wl_registry);
-            wl_registry = nullptr;
-        }
-        
-        // Clean up gamma control manager if it exists
-        if (gamma_control_manager) {
-            // Note: The protocol doesn't provide a destroy function for the manager
-            // as it's a global object managed by the compositor
-            gamma_control_manager = nullptr;
-        }
-        
-        // Clean up XDG output manager if it exists
-        if (xdg_output_manager) {
-            // Note: The protocol doesn't provide a destroy function for the manager
-            xdg_output_manager = nullptr;
-        }
-        
-        // Clean up outputs
-        for (auto& output : wayland_outputs) {
-            if (output.xdg_output) {
-                zxdg_output_v1_destroy(output.xdg_output);
-                output.xdg_output = nullptr;
-            }
-            if (output.wl_output) {
-                wl_output_destroy(output.wl_output);
-                output.wl_output = nullptr;
-            }
-        }
-        wayland_outputs.clear();
-        
-        // Disconnect from the display
-        wl_display_disconnect(wl_display);
-        wl_display = nullptr;
+  if (wl_display) {
+    // Clean up Wayland resources
+    if (wl_registry) {
+      wl_registry_destroy(wl_registry);
+      wl_registry = nullptr;
     }
+
+    // Clean up gamma control manager if it exists
+    if (gamma_control_manager) {
+      // Note: The protocol doesn't provide a destroy function for the manager
+      // as it's a global object managed by the compositor
+      gamma_control_manager = nullptr;
+    }
+
+    // Clean up XDG output manager if it exists
+    if (xdg_output_manager) {
+      // Note: The protocol doesn't provide a destroy function for the manager
+      xdg_output_manager = nullptr;
+    }
+
+    // Clean up outputs
+    for (auto &output : wayland_outputs) {
+      if (output.xdg_output) {
+        zxdg_output_v1_destroy(output.xdg_output);
+        output.xdg_output = nullptr;
+      }
+      if (output.wl_output) {
+        wl_output_destroy(output.wl_output);
+        output.wl_output = nullptr;
+      }
+    }
+    wayland_outputs.clear();
+
+    // Disconnect from the display
+    wl_display_disconnect(wl_display);
+    wl_display = nullptr;
+  }
 #endif
 }
-string BrightnessManager::getMonitor(int index){
+string BrightnessManager::getMonitor(int index) {
   return getConnectedMonitors()[index];
 }
 
@@ -229,7 +230,7 @@ static const struct zxdg_output_v1_listener xdg_output_listener = {
 
 void BrightnessManager::initializeWayland() {
   debug("Initializing Wayland backend...");
-  
+
   // Connect to the Wayland display
   wl_display = wl_display_connect(nullptr);
   if (!wl_display) {
@@ -238,7 +239,7 @@ void BrightnessManager::initializeWayland() {
   }
 
   debug("Connected to Wayland display");
-  
+
   // Get the registry and add listener
   wl_registry = wl_display_get_registry(wl_display);
   if (!wl_registry) {
@@ -247,7 +248,7 @@ void BrightnessManager::initializeWayland() {
     error("Failed to get Wayland registry");
     throw std::runtime_error("Failed to get Wayland registry");
   }
-  
+
   debug("Got Wayland registry, adding listener...");
   wl_registry_add_listener(wl_registry, &registry_listener, nullptr);
 
@@ -264,10 +265,13 @@ void BrightnessManager::initializeWayland() {
   // Check if we have the required protocols
   if (!gamma_control_manager) {
     error("Compositor doesn't support wlr-gamma-control protocol");
-    if (wl_registry) wl_registry_destroy(wl_registry);
-    if (wl_display) wl_display_disconnect(wl_display);
+    if (wl_registry)
+      wl_registry_destroy(wl_registry);
+    if (wl_display)
+      wl_display_disconnect(wl_display);
     wl_display = nullptr;
-    throw std::runtime_error("Compositor doesn't support wlr-gamma-control protocol");
+    throw std::runtime_error(
+        "Compositor doesn't support wlr-gamma-control protocol");
   }
 
   debug("Found required Wayland protocols");
@@ -280,7 +284,8 @@ void BrightnessManager::initializeWayland() {
         output.xdg_output = zxdg_output_manager_v1_get_xdg_output(
             xdg_output_manager, output.wl_output);
         if (output.xdg_output) {
-          zxdg_output_v1_add_listener(output.xdg_output, &xdg_output_listener, &output);
+          zxdg_output_v1_add_listener(output.xdg_output, &xdg_output_listener,
+                                      &output);
           debug("Added XDG output listener");
         }
       }
@@ -345,7 +350,8 @@ BrightnessManager::RGBColor BrightnessManager::kelvinToRGB(int kelvin) const {
 // === X11 BACKEND IMPLEMENTATION
 // ===
 std::vector<std::string> BrightnessManager::getConnectedMonitors() {
-  // If we already have cached monitors and we're not forcing a refresh, return them
+  // If we already have cached monitors and we're not forcing a refresh, return
+  // them
   if (!monitors.empty()) {
     return monitors;
   }
@@ -354,18 +360,18 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() {
 #ifdef __WAYLAND__
     // Lock the mutex to safely access wayland_outputs
     std::lock_guard<std::mutex> lock(wayland_mutex);
-    
+
     // Clear any existing monitors
     monitors.clear();
-    
+
     // Add all connected Wayland outputs to our monitors list
-    for (const auto& output : wayland_outputs) {
+    for (const auto &output : wayland_outputs) {
       if (!output.name.empty()) {
         monitors.push_back(output.name);
         debug("Found Wayland monitor: " + output.name);
       }
     }
-    
+
     return monitors;
 #else
     error("Wayland support not compiled in!");
@@ -401,7 +407,308 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() {
     return monitors;
   }
 }
+// Shadow lift using a modified gamma curve
+BrightnessManager::RGBColor applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
+  BrightnessManager::RGBColor result;
+  
+  // Shadow lift formula: output = input^(1/(1+lift)) + (lift * (1-input))
+  // This lifts shadows while preserving highlights
+  double gamma_adjust = 1.0 / (1.0 + lift);
+  
+  result.red = pow(input.red, gamma_adjust) + lift * (1.0 - input.red);
+  result.green = pow(input.green, gamma_adjust) + lift * (1.0 - input.green);  
+  result.blue = pow(input.blue, gamma_adjust) + lift * (1.0 - input.blue);
+  
+  // Clamp to valid range
+  result.red = min(1.0, max(0.0, result.red));
+  result.green = min(1.0, max(0.0, result.green));
+  result.blue = min(1.0, max(0.0, result.blue));
+  
+  return result;
+}
+bool BrightnessManager::setBrightnessAndShadowLift(double brightness, double shadowLift) {
+  return setBrightness(brightness) && setShadowLift(shadowLift);
+}
+bool BrightnessManager::setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift){
+  return setBrightness(monitor, brightness) && setShadowLift(monitor, shadowLift);
+}
 
+bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
+  if (lift < 0.0 || lift > 1.0) {
+      error("Shadow lift must be between 0.0 and 1.0, got: {:.3f}", lift);
+      return false;
+  }
+  
+  // Get current gamma values
+  RGBColor currentGamma = getGammaRGB(monitor);
+  
+  // Apply shadow lift
+  RGBColor liftedGamma = applyShadowLift(currentGamma, lift);
+  
+  // Set the modified gamma
+  return setGammaRGB(monitor, liftedGamma.red, liftedGamma.green, liftedGamma.blue);
+}
+double BrightnessManager::getShadowLift(const string& monitor) {
+  // Get current gamma values
+  RGBColor currentGamma = getGammaRGB(monitor);
+  
+  // Extract shadow lift from gamma curve
+  // This reverses the applyShadowLift calculation
+  
+  // Average the RGB channels (assuming they're similar)
+  double avgGamma = (currentGamma.red + currentGamma.green + currentGamma.blue) / 3.0;
+  
+  // If using the simple approach: shadowGamma = 0.8 - (lift * 0.3)
+  // Then: lift = (0.8 - shadowGamma) / 0.3
+  if (avgGamma <= 0.8) {
+      double lift = (0.8 - avgGamma) / 0.3;
+      return max(0.0, min(1.0, lift)); // Clamp to valid range
+  }
+  
+  return 0.0; // No shadow lift detected
+}
+
+// All monitors version
+double BrightnessManager::getShadowLift() {
+  if (primaryMonitor.empty()) {
+      vector<string> monitors = getConnectedMonitors();
+      if (monitors.empty()) {
+          error("No monitors found");
+          return 0.0;
+      }
+      return getShadowLift(monitors[0]);
+  }
+  return getShadowLift(primaryMonitor);
+}
+double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
+  if (!x11_display)
+    return 1.0;
+
+  XRRScreenResources *screen_res =
+      XRRGetScreenResourcesCurrent(x11_display, x11_root);
+  if (!screen_res)
+    return 1.0;
+
+  double brightness = 1.0;
+
+  for (int i = 0; i < screen_res->noutput; ++i) {
+    XRROutputInfo *output_info =
+        XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
+
+    if (output_info && output_info->connection == RR_Connected &&
+        monitor == output_info->name && output_info->crtc != x11::XNone) {
+
+      int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
+      if (gamma_size > 0) {
+        XRRCrtcGamma *crtc_gamma =
+            XRRGetCrtcGamma(x11_display, output_info->crtc);
+        if (crtc_gamma) {
+          // Calculate average of all gamma values for a more accurate brightness
+          unsigned long long total = 0;
+          for (int j = 0; j < gamma_size; j++) {
+            total += crtc_gamma->red[j] + crtc_gamma->green[j] + crtc_gamma->blue[j];
+          }
+          brightness = (double)total / (gamma_size * 3 * 65535.0);
+          XRRFreeGamma(crtc_gamma);
+        }
+      }
+    }
+
+    if (output_info)
+      XRRFreeOutputInfo(output_info);
+    if (brightness != 1.0)
+      break;
+  }
+
+  XRRFreeScreenResources(screen_res);
+  return brightness;
+}
+
+bool BrightnessManager::setBrightnessGamma(const std::string &monitor,
+                                           double brightness) {
+  if (!x11_display)
+    return false;
+
+  brightness = std::clamp(brightness, 0.0, 2.0);
+
+  XRRScreenResources *screen_res =
+      XRRGetScreenResourcesCurrent(x11_display, x11_root);
+  if (!screen_res)
+    return false;
+
+  bool success = false;
+
+  for (int i = 0; i < screen_res->ncrtc; ++i) {
+    RRCrtc crtc = screen_res->crtcs[i];
+    int size = XRRGetCrtcGammaSize(x11_display, crtc);
+    if (size <= 0)
+      continue;
+
+    XRRCrtcGamma *gamma = XRRAllocGamma(size);
+    if (!gamma)
+      continue;
+
+    for (int j = 0; j < size; ++j) {
+      double g = (double)j / (size - 1);
+      uint16_t value =
+          (uint16_t)std::clamp(g * brightness * 65535.0, 0.0, 65535.0);
+      gamma->red[j] = gamma->green[j] = gamma->blue[j] = value;
+    }
+
+    XRRSetCrtcGamma(x11_display, crtc, gamma);
+    XRRFreeGamma(gamma);
+    success = true;
+  }
+
+  XRRFreeScreenResources(screen_res);
+  XFlush(x11_display);
+  return success;
+}
+/**
+ * Safely extracts brightness value from gamma ramp using proper bounds checking
+ * and error handling. Uses the middle value of the red channel as brightness
+ * estimate.
+ *
+ * @param gamma - XRandR gamma ramp structure (must not be null)
+ * @param monitor_name - Monitor identifier for logging purposes
+ * @return brightness value [0.0, 1.0] or -1.0 on error
+ */
+double BrightnessManager::extractBrightnessFromGammaRamp(
+    XRRCrtcGamma *gamma, const std::string &monitor_name) const {
+  // Validate input parameters
+  if (!gamma) {
+    error("Gamma ramp is null for monitor: {}", monitor_name);
+    return -1.0;
+  }
+
+  if (!gamma->red) {
+    error("Gamma red channel is null for monitor: {}", monitor_name);
+    return -1.0;
+  }
+
+  if (gamma->size <= 0) {
+    error("Invalid gamma ramp size ({}) for monitor: {}", gamma->size,
+                  monitor_name);
+    return -1.0;
+  }
+
+  // Use middle index of gamma ramp for brightness estimation
+  const int middle_index = gamma->size / 2;
+  const uint16_t raw_gamma_value = gamma->red[middle_index];
+
+  // Convert from 16-bit gamma value to normalized brightness [0.0, 1.0]
+  // Max gamma value is 65535 (2^16 - 1)
+  constexpr double MAX_GAMMA_VALUE = 65535.0;
+  const double normalized_brightness =
+      static_cast<double>(raw_gamma_value) / MAX_GAMMA_VALUE;
+
+  // Clamp to valid range (paranoid safety check)
+  const double clamped_brightness = std::clamp(normalized_brightness, 0.0, 1.0);
+
+  debug("Monitor {}: gamma_size={}, middle_index={}, raw_value={}, "
+                "brightness={:.3f}",
+                monitor_name, gamma->size, middle_index, raw_gamma_value,
+                clamped_brightness);
+
+  return clamped_brightness;
+}
+
+/**
+ * Gets current brightness for specified monitor using X11/XRandR
+ * Handles all resource cleanup automatically via RAII wrapper
+ */
+double
+BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
+  if (!x11_display) {
+    error("X11 display not initialized");
+    return -1.0;
+  }
+
+  // RAII wrapper for automatic resource cleanup
+  struct XRRResourceGuard {
+    XRRScreenResources *screen_res = nullptr;
+    XRROutputInfo *output_info = nullptr;
+    XRRCrtcInfo *crtc_info = nullptr;
+    XRRCrtcGamma *gamma = nullptr;
+    Display *display;
+
+    explicit XRRResourceGuard(Display *disp) : display(disp) {}
+
+    ~XRRResourceGuard() {
+      if (gamma)
+        XRRFreeGamma(gamma);
+      if (crtc_info)
+        XRRFreeCrtcInfo(crtc_info);
+      if (output_info)
+        XRRFreeOutputInfo(output_info);
+      if (screen_res)
+        XRRFreeScreenResources(screen_res);
+    }
+  } guard(x11_display);
+
+  // Get screen resources
+  guard.screen_res = XRRGetScreenResourcesCurrent(x11_display, x11_root);
+  if (!guard.screen_res) {
+    error("Failed to get screen resources");
+    return -1.0;
+  }
+
+  // Find the target output
+  RROutput target_output = x11::XNone;
+  for (int i = 0; i < guard.screen_res->noutput; ++i) {
+    guard.output_info = XRRGetOutputInfo(x11_display, guard.screen_res,
+                                         guard.screen_res->outputs[i]);
+
+    if (!guard.output_info)
+      continue;
+
+    if (guard.output_info->connection == RR_Connected &&
+        monitor_name == guard.output_info->name) {
+      target_output = guard.screen_res->outputs[i];
+      break;
+    }
+
+    // Clean up for next iteration
+    XRRFreeOutputInfo(guard.output_info);
+    guard.output_info = nullptr;
+  }
+
+  if (target_output == x11::XNone) {
+    error("Monitor '{}' not found or not connected", monitor_name);
+    return -1.0;
+  }
+
+  // Get CRTC for this output
+  if (!guard.output_info->crtc) {
+    error("Monitor '{}' has no active CRTC", monitor_name);
+    return -1.0;
+  }
+
+  guard.crtc_info =
+      XRRGetCrtcInfo(x11_display, guard.screen_res, guard.output_info->crtc);
+  if (!guard.crtc_info) {
+    error("Failed to get CRTC info for monitor '{}'", monitor_name);
+    return -1.0;
+  }
+
+  // Get gamma ramp
+  guard.gamma = XRRGetCrtcGamma(x11_display, guard.output_info->crtc);
+  if (!guard.gamma) {
+    error("Failed to get gamma ramp for monitor '{}'", monitor_name);
+    return -1.0;
+  }
+
+  // Extract brightness from gamma ramp
+  const double brightness =
+      extractBrightnessFromGammaRamp(guard.gamma, monitor_name);
+
+  if (brightness >= 0.0) {
+    info("Successfully retrieved brightness {:.3f} for monitor '{}'",
+                 brightness, monitor_name);
+  }
+
+  return brightness;
+}
 bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
                                             double brightness) {
   if (!x11_display)
@@ -416,7 +723,6 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
 
   bool success = false;
 
-  // Find the output
   for (int i = 0; i < screen_res->noutput; ++i) {
     XRROutputInfo *output_info =
         XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
@@ -424,30 +730,47 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
     if (output_info && output_info->connection == RR_Connected &&
         monitor == output_info->name) {
 
-      // Get brightness property
-      Atom brightness_atom = XInternAtom(x11_display, "Backlight", x11::XFalse);
-      if (brightness_atom == x11::XNone) {
-        brightness_atom = XInternAtom(x11_display, "BACKLIGHT", x11::XFalse);
-      }
+      // Try different brightness property names
+      const char *property_names[] = {"Brightness", "brightness", "Backlight",
+                                      "BACKLIGHT", nullptr};
 
-      if (brightness_atom != x11::XNone) {
-        XRRPropertyInfo *prop_info = XRRQueryOutputProperty(
-            x11_display, screen_res->outputs[i], brightness_atom);
-        if (prop_info) {
-          // Calculate brightness
-          // value in the property's
-          // range
-          int32_t brightness_value = static_cast<int32_t>(
-            brightness * (prop_info->values[1] - prop_info->values[0]) + prop_info->values[0]);
-        
-          XRRChangeOutputProperty(
-              x11_display, screen_res->outputs[i], brightness_atom, XA_INTEGER,
-              32, PropModeReplace, (unsigned char *)&brightness_value, 1);
+      for (int prop_idx = 0; property_names[prop_idx] != nullptr; prop_idx++) {
+        Atom brightness_atom =
+            XInternAtom(x11_display, property_names[prop_idx], x11::XFalse);
 
-          XFlush(x11_display);
-          success = true;
+        if (brightness_atom != x11::XNone) {
+          XRRPropertyInfo *prop_info = XRRQueryOutputProperty(
+              x11_display, screen_res->outputs[i], brightness_atom);
 
-          XFree(prop_info);
+          if (prop_info) {
+            if (prop_info->num_values >= 2) {
+              // Has min/max range
+              int32_t brightness_value = static_cast<int32_t>(
+                  brightness * (prop_info->values[1] - prop_info->values[0]) +
+                  prop_info->values[0]);
+
+              XRRChangeOutputProperty(x11_display, screen_res->outputs[i],
+                                      brightness_atom, XA_INTEGER, 32,
+                                      PropModeReplace,
+                                      (unsigned char *)&brightness_value, 1);
+            } else {
+              // No range - assume it's a float value
+              if (strcmp(property_names[prop_idx], "Brightness") == 0) {
+                // Store float as int bits
+                float float_brightness = (float)brightness;
+                int32_t int_bits = *((int32_t *)&float_brightness);
+                XRRChangeOutputProperty(x11_display, screen_res->outputs[i],
+                                        brightness_atom, XA_INTEGER, 32,
+                                        PropModeReplace,
+                                        (unsigned char *)&int_bits, 1);
+              }
+            }
+
+            XFlush(x11_display);
+            success = true;
+            XFree(prop_info);
+            break;
+          }
         }
       }
     }
@@ -461,7 +784,6 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
   XRRFreeScreenResources(screen_res);
   return success;
 }
-
 bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor,
                                           double red, double green,
                                           double blue) {
@@ -722,20 +1044,21 @@ bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
 
 // === TEMPERATURE INCREMENT METHODS ===
 bool BrightnessManager::increaseTemperature(int amount) {
-  int newTemp =
-      std::min(MAX_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) + amount);
+  int newTemp = std::min(
+      MAX_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) + amount);
   return setTemperature(newTemp);
 }
 
 bool BrightnessManager::increaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp =
-      std::min(MAX_TEMPERATURE, static_cast<int>(temperature[monitor]) + amount);
+  int newTemp = std::min(MAX_TEMPERATURE,
+                         static_cast<int>(temperature[monitor]) + amount);
   return setTemperature(monitor, newTemp);
 }
 
 // === BRIGHTNESS CONTROL METHODS ===
-bool BrightnessManager::setBrightness(const std::string &monitor, double brightness) {
+bool BrightnessManager::setBrightness(const std::string &monitor,
+                                      double brightness) {
   brightness = std::clamp(brightness, 0.0, 1.0);
   bool success = false;
 
@@ -747,7 +1070,7 @@ bool BrightnessManager::setBrightness(const std::string &monitor, double brightn
     return false;
 #endif
   } else {
-    success = setBrightnessXrandr(monitor, brightness);
+    success = setBrightnessGamma(monitor, brightness);
   }
 
   if (success) {
@@ -769,13 +1092,15 @@ bool BrightnessManager::setBrightness(double brightness) {
     return false;
 #endif
   } else {
-    success = setBrightnessXrandr(brightness);
+    for (const auto &monitor : getConnectedMonitors()) {
+      success = setBrightnessGamma(monitor, brightness);
+    }
   }
 
   if (success) {
     // Update brightness for all monitors
     auto monitors = getConnectedMonitors();
-    for (const auto& monitor : monitors) {
+    for (const auto &monitor : monitors) {
       this->brightness[monitor] = brightness;
     }
   }
@@ -787,19 +1112,20 @@ bool BrightnessManager::setBrightness(double brightness) {
 double BrightnessManager::getBrightness() {
   // Get brightness from primary/first monitor
   auto monitors = getConnectedMonitors();
-  if (monitors.empty()) return 0.0;
+  if (monitors.empty())
+    return 0.0;
   return getBrightness(monitors[0]);
 }
 
-double BrightnessManager::getBrightness(const std::string& monitor) {
+double BrightnessManager::getBrightness(const std::string &monitor) {
   if (WindowManagerDetector::IsX11()) {
-      return getBrightnessXrandr(monitor);
+    return getBrightnessGamma(monitor);
   }
 #ifdef __WAYLAND__
   else if (WindowManagerDetector::IsWayland()) {
-      // Wayland doesn't have a direct brightness query API
-      // We'd need to track our last-set values or use sysfs
-      return getBrightnessWayland(monitor);
+    // Wayland doesn't have a direct brightness query API
+    // We'd need to track our last-set values or use sysfs
+    return getBrightnessWayland(monitor);
   }
 #endif
   return 0.0;
@@ -808,18 +1134,20 @@ double BrightnessManager::getBrightness(const std::string& monitor) {
 // === GAMMA GETTERS ===
 BrightnessManager::RGBColor BrightnessManager::getGammaRGB() {
   auto monitors = getConnectedMonitors();
-  if (monitors.empty()) return {1.0, 1.0, 1.0};
+  if (monitors.empty())
+    return {1.0, 1.0, 1.0};
   return getGammaRGB(monitors[0]);
 }
 
 // === TEMPERATURE GETTERS ===
 int BrightnessManager::getTemperature() {
   auto monitors = getConnectedMonitors();
-  if (monitors.empty()) return 6500;
+  if (monitors.empty())
+    return 6500;
   return getTemperature(monitors[0]);
 }
 
-int BrightnessManager::getTemperature(const std::string& monitor) {
+int BrightnessManager::getTemperature(const std::string &monitor) {
   // Get current RGB gamma values and reverse-engineer the temperature
   RGBColor currentGamma = getGammaRGB(monitor);
   int temp = rgbToKelvin(currentGamma);
@@ -827,147 +1155,107 @@ int BrightnessManager::getTemperature(const std::string& monitor) {
   return temp;
 }
 void BrightnessManager::decreaseGamma(int amount) {
-    for (const auto& monitor : getConnectedMonitors()) {
-        decreaseGamma(monitor, amount);
-    }
+  for (const auto &monitor : getConnectedMonitors()) {
+    decreaseGamma(monitor, amount);
+  }
 }
 
 void BrightnessManager::decreaseGamma(string monitor, int amount) {
-    int currentTemp = getTemperature(monitor);
-    int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
-    setTemperature(monitor, newTemp);
+  int currentTemp = getTemperature(monitor);
+  int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
+  setTemperature(monitor, newTemp);
 }
 
 void BrightnessManager::increaseGamma(int amount) {
-    for (const auto& monitor : getConnectedMonitors()) {
-        increaseGamma(monitor, amount);
-    }
+  for (const auto &monitor : getConnectedMonitors()) {
+    increaseGamma(monitor, amount);
+  }
 }
 
 void BrightnessManager::increaseGamma(string monitor, int amount) {
-    int currentTemp = getTemperature(monitor);
-    int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
-    setTemperature(monitor, newTemp);
+  int currentTemp = getTemperature(monitor);
+  int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
+  setTemperature(monitor, newTemp);
 }
-// === X11 BRIGHTNESS GETTER ===
-double BrightnessManager::getBrightnessXrandr(const std::string& monitor) {
-  if (!x11_display) return 0.0;
-
-  XRRScreenResources* screen_res = XRRGetScreenResourcesCurrent(x11_display, x11_root);
-  if (!screen_res) return 0.0;
-
-  double brightness = 0.0;
-
-  for (int i = 0; i < screen_res->noutput; ++i) {
-      XRROutputInfo* output_info = XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
-      
-      if (output_info && output_info->connection == RR_Connected && 
-          monitor == output_info->name) {
-          
-          // Try Backlight property first
-          Atom brightness_atom = XInternAtom(x11_display, "Backlight", x11::XFalse);
-          if (brightness_atom == x11::XNone) {
-              brightness_atom = XInternAtom(x11_display, "BACKLIGHT", x11::XFalse);
-          }
-          
-          if (brightness_atom != x11::XNone) {
-              Atom actual_type;
-              int actual_format;
-              unsigned long nitems, bytes_after;
-              unsigned char* prop = nullptr;
-              
-              if (XRRGetOutputProperty(x11_display, screen_res->outputs[i], brightness_atom,
-                                     0, 4, x11::XFalse, x11::XFalse, x11::XNone,
-                                     &actual_type, &actual_format, &nitems, &bytes_after, &prop) == x11::XSuccess) {
-                  
-                  if (prop && nitems == 1 && actual_format == 32) {
-                      long current_value = *((long*)prop);
-                      
-                      // Get the property range
-                      XRRPropertyInfo* prop_info = XRRQueryOutputProperty(x11_display, screen_res->outputs[i], brightness_atom);
-                      if (prop_info) {
-                          long min_val = prop_info->values[0];
-                          long max_val = prop_info->values[1];
-                          brightness = (double)(current_value - min_val) / (max_val - min_val);
-                          XFree(prop_info);
-                      }
-                  }
-                  if (prop) XFree(prop);
-              }
-          }
-      }
-      
-      if (output_info) XRRFreeOutputInfo(output_info);
-      if (brightness > 0.0) break; // Found it
-  }
-
-  XRRFreeScreenResources(screen_res);
-  return brightness;
-}
-
 // === SYSFS BRIGHTNESS FALLBACK ===
-double BrightnessManager::getBrightnessSysfs(const std::string& monitor) {
+    double
+    BrightnessManager::getBrightnessSysfs(const std::string &monitor) {
   // Try common backlight paths
   std::vector<std::string> backlight_paths = {
       "/sys/class/backlight/intel_backlight/brightness",
       "/sys/class/backlight/acpi_video0/brightness",
-      "/sys/class/backlight/amdgpu_bl0/brightness"
-  };
-  
-  for (const auto& brightness_path : backlight_paths) {
-      std::ifstream brightness_file(brightness_path);
-      std::ifstream max_brightness_file(brightness_path.substr(0, brightness_path.rfind('/')) + "/max_brightness");
-      
-      if (brightness_file.is_open() && max_brightness_file.is_open()) {
-          int current, max;
-          brightness_file >> current;
-          max_brightness_file >> max;
-          
-          return (double)current / max;
-      }
+      "/sys/class/backlight/amdgpu_bl0/brightness"};
+
+  for (const auto &brightness_path : backlight_paths) {
+    std::ifstream brightness_file(brightness_path);
+    std::ifstream max_brightness_file(
+        brightness_path.substr(0, brightness_path.rfind('/')) +
+        "/max_brightness");
+
+    if (brightness_file.is_open() && max_brightness_file.is_open()) {
+      int current, max;
+      brightness_file >> current;
+      max_brightness_file >> max;
+
+      return (double)current / max;
+    }
   }
-  
+
   return 0.0; // Couldn't read
 }
 
 // === X11 GAMMA GETTER ===
-double BrightnessManager::getGammaXrandr(const std::string& monitor) {
-  if (!x11_display) return 1.0;
+double BrightnessManager::getGammaXrandr(const std::string &monitor) {
+  if (!x11_display)
+    return 1.0;
 
-  XRRScreenResources* screen_res = XRRGetScreenResourcesCurrent(x11_display, x11_root);
-  if (!screen_res) return 1.0;
+  XRRScreenResources *screen_res =
+      XRRGetScreenResourcesCurrent(x11_display, x11_root);
+  if (!screen_res)
+    return 1.0;
 
   double gamma = 1.0;
 
   for (int i = 0; i < screen_res->noutput; ++i) {
-      XRROutputInfo* output_info = XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
-      
-      if (output_info && output_info->connection == RR_Connected && 
-          monitor == output_info->name && output_info->crtc != x11::XNone) {
-          
-          XRRCrtcInfo* crtc_info = XRRGetCrtcInfo(x11_display, screen_res, output_info->crtc);
-          if (crtc_info) {
-              int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
-              if (gamma_size > 0) {
-                  XRRCrtcGamma* crtc_gamma = XRRGetCrtcGamma(x11_display, output_info->crtc);
-                  if (crtc_gamma) {
-                      // Calculate average gamma from the ramp (simplified)
-                      // In reality, you'd want to analyze the curve more carefully
-                      double red_gamma = (double)crtc_gamma->red[static_cast<int>(gamma_size/2)] / 65535.0;
-                      double green_gamma = (double)crtc_gamma->green[static_cast<int>(gamma_size/2)] / 65535.0;
-                      double blue_gamma = (double)crtc_gamma->blue[static_cast<int>(gamma_size/2)] / 65535.0;
-                      
-                      gamma = (red_gamma + green_gamma + blue_gamma) / 3.0;
-                      
-                      XRRFreeGamma(crtc_gamma);
-                  }
-              }
-              XRRFreeCrtcInfo(crtc_info);
+    XRROutputInfo *output_info =
+        XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
+
+    if (output_info && output_info->connection == RR_Connected &&
+        monitor == output_info->name && output_info->crtc != x11::XNone) {
+
+      XRRCrtcInfo *crtc_info =
+          XRRGetCrtcInfo(x11_display, screen_res, output_info->crtc);
+      if (crtc_info) {
+        int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
+        if (gamma_size > 0) {
+          XRRCrtcGamma *crtc_gamma =
+              XRRGetCrtcGamma(x11_display, output_info->crtc);
+          if (crtc_gamma) {
+            // Calculate average gamma from the ramp (simplified)
+            // In reality, you'd want to analyze the curve more carefully
+            double red_gamma =
+                (double)crtc_gamma->red[static_cast<int>(gamma_size / 2)] /
+                65535.0;
+            double green_gamma =
+                (double)crtc_gamma->green[static_cast<int>(gamma_size / 2)] /
+                65535.0;
+            double blue_gamma =
+                (double)crtc_gamma->blue[static_cast<int>(gamma_size / 2)] /
+                65535.0;
+
+            gamma = (red_gamma + green_gamma + blue_gamma) / 3.0;
+
+            XRRFreeGamma(crtc_gamma);
           }
+        }
+        XRRFreeCrtcInfo(crtc_info);
       }
-      
-      if (output_info) XRRFreeOutputInfo(output_info);
-      if (gamma != 1.0) break;
+    }
+
+    if (output_info)
+      XRRFreeOutputInfo(output_info);
+    if (gamma != 1.0)
+      break;
   }
 
   XRRFreeScreenResources(screen_res);
@@ -975,71 +1263,86 @@ double BrightnessManager::getGammaXrandr(const std::string& monitor) {
 }
 
 // === RGB TO KELVIN CONVERSION ===
-int BrightnessManager::rgbToKelvin(const RGBColor& rgb) const {
-  // This is the reverse of your kelvinToRGB function
-  // It's an approximation - exact conversion is mathematically complex
-  
-  // Simple heuristic based on red/blue ratio
-  double ratio = rgb.blue / rgb.red;
-  
-  if (ratio > 1.0) {
-      // Cool temperature (high blue)
-      return (int)(6500 + (ratio - 1.0) * 3500);
-  } else {
-      // Warm temperature (low blue)
-      return (int)(6500 - (1.0 - ratio) * 4500);
-  }
+int BrightnessManager::rgbToKelvin(const RGBColor &rgb) const {
+  // Convert RGB to XYZ color space
+  double r = (rgb.red > 0.04045) ? pow((rgb.red + 0.055) / 1.055, 2.4) : rgb.red / 12.92;
+  double g = (rgb.green > 0.04045) ? pow((rgb.green + 0.055) / 1.055, 2.4) : rgb.green / 12.92;
+  double b = (rgb.blue > 0.04045) ? pow((rgb.blue + 0.055) / 1.055, 2.4) : rgb.blue / 12.92;
+
+  // Convert to XYZ
+  double X = r * 0.4124 + g * 0.3576 + b * 0.1805;
+  double Y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+  double Z = r * 0.0193 + g * 0.1192 + b * 0.9505;
+
+  // Calculate chromaticity coordinates
+  double x = X / (X + Y + Z);
+  double y = Y / (X + Y + Z);
+
+  // Calculate CCT using McCamy's approximation
+  double n = (x - 0.3320) / (0.1858 - y);
+  double cct = 437 * pow(n, 3) + 3601 * pow(n, 2) + 6861 * n + 5517;
+
+  return static_cast<int>(cct);
 }
 
 // === GET CURRENT RGB GAMMA VALUES ===
-BrightnessManager::RGBColor BrightnessManager::getGammaRGB(const std::string& monitor) {
+BrightnessManager::RGBColor
+BrightnessManager::getGammaRGB(const std::string &monitor) {
   if (WindowManagerDetector::IsX11()) {
-      return getGammaXrandrRGB(monitor);
+    return getGammaXrandrRGB(monitor);
   }
 #ifdef __WAYLAND__
   else if (WindowManagerDetector::IsWayland()) {
-      // Wayland: we'd need to track our last-set values
-      // or implement gamma reading from compositor
-      std::scoped_lock lock(wayland_mutex);
-      // Return last known values or neutral
-      return {1.0, 1.0, 1.0};
+    // Wayland: we'd need to track our last-set values
+    // or implement gamma reading from compositor
+    std::scoped_lock lock(wayland_mutex);
+    // Return last known values or neutral
+    return {1.0, 1.0, 1.0};
   }
 #endif
   return {1.0, 1.0, 1.0}; // neutral
 }
 
-BrightnessManager::RGBColor BrightnessManager::getGammaXrandrRGB(const std::string& monitor) {
+BrightnessManager::RGBColor
+BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
   // Similar to getGammaX11 but returns RGB components separately
-  if (!x11_display) return {1.0, 1.0, 1.0};
+  if (!x11_display)
+    return {1.0, 1.0, 1.0};
 
-  XRRScreenResources* screen_res = XRRGetScreenResourcesCurrent(x11_display, x11_root);
-  if (!screen_res) return {1.0, 1.0, 1.0};
+  XRRScreenResources *screen_res =
+      XRRGetScreenResourcesCurrent(x11_display, x11_root);
+  if (!screen_res)
+    return {1.0, 1.0, 1.0};
 
   RGBColor rgb = {1.0, 1.0, 1.0};
 
   for (int i = 0; i < screen_res->noutput; ++i) {
-      XRROutputInfo* output_info = XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
-      
-      if (output_info && output_info->connection == RR_Connected && 
-          monitor == output_info->name && output_info->crtc != x11::XNone) {
-          
-          int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
-          if (gamma_size > 0) {
-              XRRCrtcGamma* crtc_gamma = XRRGetCrtcGamma(x11_display, output_info->crtc);
-              if (crtc_gamma) {
-                  // Get RGB values from middle of gamma ramp
-                  int mid = gamma_size / 2;
-                  rgb.red = (double)crtc_gamma->red[mid] / 65535.0;
-                  rgb.green = (double)crtc_gamma->green[mid] / 65535.0;
-                  rgb.blue = (double)crtc_gamma->blue[mid] / 65535.0;
-                  
-                  XRRFreeGamma(crtc_gamma);
-              }
-          }
+    XRROutputInfo *output_info =
+        XRRGetOutputInfo(x11_display, screen_res, screen_res->outputs[i]);
+
+    if (output_info && output_info->connection == RR_Connected &&
+        monitor == output_info->name && output_info->crtc != x11::XNone) {
+
+      int gamma_size = XRRGetCrtcGammaSize(x11_display, output_info->crtc);
+      if (gamma_size > 0) {
+        XRRCrtcGamma *crtc_gamma =
+            XRRGetCrtcGamma(x11_display, output_info->crtc);
+        if (crtc_gamma) {
+          // Get RGB values from middle of gamma ramp
+          int mid = gamma_size / 2;
+          rgb.red = (double)crtc_gamma->red[mid] / 65535.0;
+          rgb.green = (double)crtc_gamma->green[mid] / 65535.0;
+          rgb.blue = (double)crtc_gamma->blue[mid] / 65535.0;
+
+          XRRFreeGamma(crtc_gamma);
+        }
       }
-      
-      if (output_info) XRRFreeOutputInfo(output_info);
-      if (rgb.red != 1.0 || rgb.green != 1.0 || rgb.blue != 1.0) break;
+    }
+
+    if (output_info)
+      XRRFreeOutputInfo(output_info);
+    if (rgb.red != 1.0 || rgb.green != 1.0 || rgb.blue != 1.0)
+      break;
   }
 
   XRRFreeScreenResources(screen_res);
@@ -1069,15 +1372,15 @@ bool BrightnessManager::decreaseBrightness(const std::string &monitor,
 
 // === TEMPERATURE INCREMENT METHODS (CONTINUED) ===
 bool BrightnessManager::decreaseTemperature(int amount) {
-  int newTemp =
-      std::max(MIN_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) - amount);
+  int newTemp = std::max(
+      MIN_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) - amount);
   return setTemperature(newTemp);
 }
 
 bool BrightnessManager::decreaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp =
-      std::max(MIN_TEMPERATURE, static_cast<int>(temperature[monitor]) - amount);
+  int newTemp = std::max(MIN_TEMPERATURE,
+                         static_cast<int>(temperature[monitor]) - amount);
   return setTemperature(monitor, newTemp);
 }
 
@@ -1098,7 +1401,7 @@ bool BrightnessManager::setBrightnessXrandr(double brightness) {
 
 bool BrightnessManager::setBrightnessWayland(double brightness) {
   bool success = true;
-  for (const auto& monitor : getConnectedMonitors()) {
+  for (const auto &monitor : getConnectedMonitors()) {
     if (!setBrightnessWayland(monitor, brightness)) {
       error("Failed to set brightness for monitor: " + monitor);
       success = false;
@@ -1125,7 +1428,7 @@ bool BrightnessManager::setGammaXrandrRGB(double red, double green,
 bool BrightnessManager::setGammaWaylandRGB(double red, double green,
                                            double blue) {
   bool success = true;
-  for (const auto& monitor : getConnectedMonitors()) {
+  for (const auto &monitor : getConnectedMonitors()) {
     if (!setGammaWaylandRGB(monitor, red, green, blue)) {
       error("Failed to set gamma for monitor: " + monitor);
       success = false;

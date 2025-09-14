@@ -31,7 +31,26 @@ namespace havel {
             auto filtered = std::views::filter(range, std::forward<Predicate>(p));
             return Chain<decltype(filtered)>(std::move(filtered));
         }
-    
+        auto unique() const {
+            auto vec = to_vector();
+            std::sort(vec.begin(), vec.end());
+            auto last = std::unique(vec.begin(), vec.end());
+            vec.erase(last, vec.end());
+            
+            return Chain(std::views::all(vec));
+        }
+        template<typename Func>
+        auto then(Func f) const {
+            return f(*this);
+        }
+        
+        auto distinct() const {
+            auto vec = to_vector();
+            std::sort(vec.begin(), vec.end());
+            auto last = std::unique(vec.begin(), vec.end());
+            vec.erase(last, vec.end());
+            return Chain<decltype(vec)>(vec);
+        }
         auto take(size_t n) {  // Remove const here
             auto taken = std::views::take(range, n);
             return Chain<decltype(taken)>(std::move(taken));

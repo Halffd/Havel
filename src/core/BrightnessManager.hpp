@@ -94,7 +94,10 @@ public:
     void increaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
     void decreaseGamma(string monitor, int amount = DEFAULT_TEMP_AMOUNT);
     void increaseGamma(string monitor, int amount = DEFAULT_TEMP_AMOUNT);
-    
+    bool setBrightnessBacklight(const std::string& monitor_name, double brightness);
+    double getCurrentBrightnessX11(const std::string& monitor_name);
+    double extractBrightnessFromGammaRamp(XRRCrtcGamma* gamma, const std::string& monitor_name) const;
+
     // === COMBINED OPERATIONS ===
     bool setBrightnessAndRGB(double brightness, double red, double green, double blue);
     bool setBrightnessAndRGB(const string& monitor, double brightness, double red, double green, double blue);
@@ -113,6 +116,14 @@ public:
     bool decreaseTemperature(int amount = DEFAULT_TEMP_AMOUNT);
     bool decreaseTemperature(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
 
+    bool setShadowLift(double lift);  // All monitors, 0.0-1.0
+    bool setShadowLift(const string& monitor, double lift);
+    double getShadowLift();
+    double getShadowLift(const string& monitor);
+
+    // Optional: combined operations
+    bool setBrightnessAndShadowLift(double brightness, double shadowLift);
+    bool setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift);
     // === DAY/NIGHT AUTOMATION ===
     void enableDayNightMode(const DayNightSettings& settings);
     void disableDayNightMode();
@@ -137,8 +148,7 @@ public:
     static constexpr int DEFAULT_TEMP_AMOUNT = 200;
     static constexpr int MIN_TEMPERATURE = 0;
     static constexpr int MAX_TEMPERATURE = 25000;
-
-private:
+    private:
     Display* x11_display;
     Window x11_root;
     
@@ -153,6 +163,8 @@ private:
     void initializeWayland();
     #endif
     
+    double getBrightnessGamma(const std::string &monitor);
+    bool setBrightnessGamma(const std::string &monitor, double brightness);
     // Debug logging helpers
     static void debug(const std::string& message) {
         havel::Logger::getInstance().debug("[BrightnessManager] " + message);
@@ -161,7 +173,34 @@ private:
     static void error(const std::string& message) {
         havel::Logger::getInstance().error("[BrightnessManager] " + message);
     }
+       /**
+     * Debug logging with automatic [BrightnessManager] prefix
+     * Usage: debug("Monitor {} brightness: {:.3f}", monitor_name, brightness);
+     */
+    template<typename... Args>
+    static void debug(const std::string& format, Args&&... args) {
+        havel::Logger::getInstance().debug("[BrightnessManager] " + format, std::forward<Args>(args)...);
+    }
     
+    template<typename... Args>
+    static void info(const std::string& format, Args&&... args) {
+        havel::Logger::getInstance().info("[BrightnessManager] " + format, std::forward<Args>(args)...);
+    }
+    
+    template<typename... Args>
+    static void warning(const std::string& format, Args&&... args) {
+        havel::Logger::getInstance().warning("[BrightnessManager] " + format, std::forward<Args>(args)...);
+    }
+    
+    template<typename... Args>
+    static void error(const std::string& format, Args&&... args) {
+        havel::Logger::getInstance().error("[BrightnessManager] " + format, std::forward<Args>(args)...);
+    }
+    
+    template<typename... Args>
+    static void fatal(const std::string& format, Args&&... args) {
+        havel::Logger::getInstance().fatal("[BrightnessManager] " + format, std::forward<Args>(args)...);
+    }
     // === KELVIN TO RGB CONVERSION ===
 
     RGBColor kelvinToRGB(int kelvin) const;

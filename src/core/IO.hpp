@@ -279,7 +279,7 @@ private:
   std::vector<IoEvent> ParseKeysString(const std::string &keys);
 
   // Helper methods for X11 key grabbing
-  void Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
+  bool Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
             bool isMouse = false);
 
   void Ungrab(Key input, unsigned int modifiers, Window root);

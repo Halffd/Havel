@@ -16,7 +16,11 @@ int main(int argc, char* argv[]) {
         std::cerr << "Critical: Failed to initialize config: " << e.what() << std::endl;
         return 1;
     }
-
+    XSetIOErrorHandler([](Display*) -> int {
+        error("X11 connection lost - exiting gracefully");
+        exit(1);
+        return 0;
+    });
     QApplication app(argc, argv);
     app.setApplicationName("Havel");
     app.setApplicationVersion("1.0");

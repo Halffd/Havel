@@ -161,11 +161,11 @@ error:
   return false;
 }
 
-void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
+bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
               bool isMouse) {
   if (!display)
-    return;
-
+    return false;
+  bool success = true;
   bool isButton = isMouse ? isMouse : (input >= Button1 && input <= 7);
   // simple check
 
@@ -194,18 +194,8 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
         x11::XStatus status = XGrabKey(display, input, finalMods, root, x11::XTrue,
                                  GrabModeAsync, GrabModeAsync);
         if (status != x11::XSuccess) {
+          success = false;
           error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
-          failedHotkeys.push_back({
-            .key = input,
-            .modifiers = static_cast<int>(finalMods),
-            .enabled = false,
-            .blockInput = exclusive,
-            .suspend = false,
-            .exclusive = exclusive,
-            .success = false,
-            .evdev = false,
-            .eventType = HotkeyEventType::Down,
-          });
         }
       } else {
         XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
@@ -214,6 +204,7 @@ void IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
   }
 
   XSync(display, x11::XFalse);
+  return success;
 }
 
 void crash() {
@@ -1200,6 +1191,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 
   if (!hk.success) {
     std::cerr << "Failed to register hotkey: " << rawInput << "\n";
+    failedHotkeys.push_back(hk);
     return false;
   }
 
@@ -1213,7 +1205,10 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
             << "\n";
 
   if (!hk.evdev && display) {
-    Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.exclusive);
+    if (!Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.exclusive)) {
+      failedHotkeys.push_back(hk);
+      return false;
+    }
   }
 
   return true;
@@ -2185,9 +2180,23 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             continue;
           if (hotkey.eventType == HotkeyEventType::Up && down)
             continue;
-          // Exact modifier matching
-          if (!MatchEvdevModifiers(hotkey.modifiers, evdevKeyState))
-            continue;
+         // Special case: if the hotkey IS a modifier key itself, don't check modifier state
+        bool isModifierKey = (code == KEY_LEFTALT || code == KEY_RIGHTALT || 
+          code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
+          code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
+          code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
+
+        bool modifierMatch;
+        if (isModifierKey && hotkey.modifiers == 0) {
+        // For standalone modifier keys (like @ralt), always match if no modifiers required
+        modifierMatch = true;
+        } else {
+        // For regular keys, do normal modifier matching
+        modifierMatch = MatchEvdevModifiers(hotkey.modifiers, evdevKeyState);
+        }
+
+        if (!modifierMatch)
+        continue;
           // Context checks
           if (!hotkey.contexts.empty()) {
             if (!std::all_of(hotkey.contexts.begin(), hotkey.contexts.end(),

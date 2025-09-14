@@ -16,6 +16,7 @@
 #include "core/ScriptEngine.hpp"
 #include "core/HotkeyManager.hpp"
 #include "media/MPVController.hpp"
+#include "media/AudioManager.hpp"
 #include "x11.h"
 #include "gui/ClipboardManager.hpp"
 namespace havel {
@@ -55,6 +56,7 @@ private:
     std::unique_ptr<ScriptEngine> scriptEngine;
     std::unique_ptr<HotkeyManager> hotkeyManager;
     std::unique_ptr<ClipboardManager> clipboardManager;
+    std::unique_ptr<AudioManager> audioManager;
     
     // Qt components
     std::unique_ptr<QSystemTrayIcon> trayIcon;

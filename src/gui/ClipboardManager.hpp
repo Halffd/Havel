@@ -25,7 +25,8 @@ public:
     ~ClipboardManager();
 
     void initializeHotkeys();
-    void toggleVisibility();
+    Q_INVOKABLE void toggleVisibility();
+    Q_INVOKABLE void pasteHistoryItem(int index);
 
     // Non-copyable
     ClipboardManager(const ClipboardManager&) = delete;
@@ -58,7 +59,6 @@ private:
     void showTrayMessage(const QString& message);
     void copySelectedItem();
     void removeSelectedItem();
-    void pasteHistoryItem(int index);
     void onHotkeyPressed();
 
     // UI Components

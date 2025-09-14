@@ -30,8 +30,9 @@ void HavelCore::initializeHotkeys() {
     // These need to be created before HotkeyManager
     auto mpv = std::make_unique<MPVController>();
     auto scriptEngine = std::make_unique<ScriptEngine>(*io, *windowManager);
+    auto audioManager = std::make_unique<AudioManager>(AudioBackend::AUTO);
 
-    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *scriptEngine);
+    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine);
     hotkeyManager->RegisterDefaultHotkeys();
     
     info("Hotkey system initialized");

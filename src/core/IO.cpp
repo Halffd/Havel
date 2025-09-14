@@ -676,44 +676,46 @@ bool IO::EmitClick(int btnCode, int action) {
 
   return true;
 }
-
 bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
-    static std::mutex uinputMutex;
-    std::lock_guard<std::mutex> lock(uinputMutex);
-  if (speed <= 0)
-    speed = 1;
-  if (accel <= 0.0f)
-    accel = 1.0f;
+  static std::mutex uinputMutex;
+  std::lock_guard<std::mutex> lock(uinputMutex);
+  
+  if (speed <= 0) speed = 1;
+  if (accel <= 0.0f) accel = 1.0f;
 
-  int steps = std::max(abs(dx), abs(dy)) / speed;
-  steps = std::max(steps, 1);
+  // Apply acceleration curve (exponential for more natural feeling)
+  float acceleratedSpeed = speed * std::pow(accel, 1.5f);
+  
+  // Calculate movement with sub-pixel precision but integer output
+  int actualDx = static_cast<int>(dx * acceleratedSpeed);
+  int actualDy = static_cast<int>(dy * acceleratedSpeed);
+  
+  // For very small movements, ensure at least 1 pixel movement
+  if (actualDx == 0 && dx != 0) actualDx = (dx > 0) ? 1 : -1;
+  if (actualDy == 0 && dy != 0) actualDy = (dy > 0) ? 1 : -1;
 
-  float stepx = dx / static_cast<float>(steps);
-  float stepy = dy / static_cast<float>(steps);
-
-  for (int i = 0; i < steps; ++i) {
-    input_event ev = {};
-    ev.type = EV_REL;
-
-    ev.code = REL_X;
-    ev.value = static_cast<int>(roundf(stepx));
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    ev.code = REL_Y;
-    ev.value = static_cast<int>(roundf(stepy));
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    std::this_thread::sleep_for(
-        std::chrono::microseconds(static_cast<int>(1000 * accel)));
+  // Send the events
+  input_event ev = {};
+  
+  if (actualDx != 0) {
+      ev.type = EV_REL;
+      ev.code = REL_X;
+      ev.value = actualDx;
+      if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
   }
+  
+  if (actualDy != 0) {
+      ev.type = EV_REL;
+      ev.code = REL_Y;
+      ev.value = actualDy;
+      if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
+  }
+  
+  // Sync event
+  ev.type = EV_SYN;
+  ev.code = SYN_REPORT;
+  ev.value = 0;
+  if (write(uinputFd, &ev, sizeof(ev)) < 0) return false;
 
   return true;
 }
@@ -1140,19 +1142,13 @@ done_parsing:
 
   // Determine keycode
   KeyCode keycode = 0;
-  if (!hotkeyStr.empty() && (hotkeyStr[0] == '@' || globalEvdev)) {
+  if (!hotkeyStr.empty() && (isEvdev || globalEvdev)) {
     // evdev mode
-    std::string evdevKey;
-    if(hotkeyStr[0] == '@')
-      evdevKey = hotkeyStr.substr(1);
-    else
-      evdevKey = hotkeyStr;
-    keycode = EvdevNameToKeyCode(evdevKey);
+    keycode = EvdevNameToKeyCode(hotkeyStr);
     if (keycode == 0) {
-      std::cerr << "Invalid evdev key name: " << evdevKey << "\n";
+      std::cerr << "Invalid evdev key name: " << hotkeyStr << "\n";
       return {};
     }
-    isEvdev = true;
   } else if (hotkeyStr.substr(0, 2) == "kc") {
     // raw keycode like kc123
     int kc = std::stoi(hotkeyStr.substr(2));

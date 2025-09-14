@@ -234,9 +234,10 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/*.cpp"
     "src/window/*.cpp" 
     "src/utils/*.cpp"
-    "src/media/*.cpp"
-    "src/process/*.cpp"
     "src/fs/*.cpp"
+    "src/process/*.cpp"
+    "src/media/*.cpp"
+    "src/io/*.cpp"
 )
 
 # GUI sources (always included)
@@ -258,12 +259,19 @@ endif()
 # ==============================================================================
 # LIBRARY CONFIGURATION
 # ==============================================================================
+# PulseAudio
+pkg_check_modules(PULSEAUDIO libpulse)
+
+# ALSA
+pkg_check_modules(ALSA alsa)
 set(COMMON_LIBS
     # System libraries
     ${X11_LIBRARIES}
     ${XTEST_LIB}
     ${XRANDR_LIB} 
     ${XINERAMA_LIB}
+    ${PULSEAUDIO_LIBRARIES}
+    ${ALSA_LIBRARIES}
     Threads::Threads
     ${DBUS_LIBRARIES}
     ${LUA_LIBRARIES}
@@ -301,6 +309,8 @@ target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/include
     ${X11_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
+    ${PULSEAUDIO_INCLUDE_DIRS}
+    ${ALSA_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}
     ${WAYLAND_INCLUDE_DIRS}
     ${GENERATED_PROTO_DIR}
@@ -502,3 +512,10 @@ add_custom_target(regen-protocols
     DEPENDS ${GAMMA_HEADERS} ${XDG_HEADERS}
     COMMENT "Regenerating Wayland protocol files"
 )
+if(PULSEAUDIO_FOUND)
+    target_compile_definitions(havel PRIVATE HAVE_PULSEAUDIO)
+endif()
+if(ALSA_FOUND)
+    target_compile_definitions(havel PRIVATE HAVE_ALSA)
+endif()
+    

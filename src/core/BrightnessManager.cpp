@@ -407,37 +407,63 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() {
     return monitors;
   }
 }
-// Shadow lift using a modified gamma curve
+// Enhanced shadow lift with highlight protection and midtone bias
 BrightnessManager::RGBColor applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
-  BrightnessManager::RGBColor result;
-  
-  // Shadow lift formula: output = input^(1/(1+lift)) + (lift * (1-input))
-  // This lifts shadows while preserving highlights
-  double gamma_adjust = 1.0 / (1.0 + lift);
-  
-  result.red = pow(input.red, gamma_adjust) + lift * (1.0 - input.red);
-  result.green = pow(input.green, gamma_adjust) + lift * (1.0 - input.green);  
-  result.blue = pow(input.blue, gamma_adjust) + lift * (1.0 - input.blue);
-  
-  // Clamp to valid range
-  result.red = min(1.0, max(0.0, result.red));
-  result.green = min(1.0, max(0.0, result.green));
-  result.blue = min(1.0, max(0.0, result.blue));
-  
-  return result;
+    if (lift <= 0.0001) {
+        return input;  // No lift applied
+    }
+
+    BrightnessManager::RGBColor result;
+    const double highlight_protect = 0.9; // Reduce lift effect above this threshold
+    
+    auto processChannel = [&](double channel) -> double {
+        double normalized = max(0.0, min(1.0, channel));
+        
+        // Apply highlight protection
+        double effective_lift = lift;
+        if (normalized > highlight_protect) {
+            effective_lift *= (1.0 - normalized) / (1.0 - highlight_protect);
+        }
+        
+        // Apply midtone bias
+        double midtone_bias = pow(normalized, 0.5);
+        effective_lift *= midtone_bias;
+        
+        // Apply lift with gamma adjustment
+        double gamma_adjust = 1.0 / (1.0 + effective_lift);
+        double lifted = pow(normalized, gamma_adjust) + 
+                       (effective_lift * (1.0 - normalized));
+        
+        return min(1.0, max(0.0, lifted));
+    };
+    
+    result.red = processChannel(input.red);
+    result.green = processChannel(input.green);
+    result.blue = processChannel(input.blue);
+    
+    return result;
 }
+
 bool BrightnessManager::setBrightnessAndShadowLift(double brightness, double shadowLift) {
   return setBrightness(brightness) && setShadowLift(shadowLift);
 }
+
 bool BrightnessManager::setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift){
   return setBrightness(monitor, brightness) && setShadowLift(monitor, shadowLift);
 }
 
-bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
-  if (lift < 0.0 || lift > 1.0) {
-      error("Shadow lift must be between 0.0 and 1.0, got: {:.3f}", lift);
+// Initialize static member
+std::unordered_map<std::string, double> BrightnessManager::monitorShadowLifts;
+
+// === SHADOW LIFT METHODS ===
+bool BrightnessManager::setShadowLift(const std::string& monitor, double lift) {
+  if (lift < 0.0 || lift > 4.0) {
+      error("Shadow lift must be between 0.0 and 4.0, got: {:.3f}", lift);
       return false;
   }
+  
+  // Store the shadow lift value for this monitor
+  monitorShadowLifts[monitor] = lift;
   
   // Get current gamma values
   RGBColor currentGamma = getGammaRGB(monitor);
@@ -448,6 +474,7 @@ bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
   // Set the modified gamma
   return setGammaRGB(monitor, liftedGamma.red, liftedGamma.green, liftedGamma.blue);
 }
+
 bool BrightnessManager::setShadowLift(double lift) {
   bool success = true;
   for (const auto& monitor : getConnectedMonitors()) {
@@ -455,24 +482,16 @@ bool BrightnessManager::setShadowLift(double lift) {
   }
   return success;
 }
+
 double BrightnessManager::getShadowLift(const string& monitor) {
-  // Get current gamma values
-  RGBColor currentGamma = getGammaRGB(monitor);
-  
-  // Extract shadow lift from gamma curve
-  // This reverses the applyShadowLift calculation
-  
-  // Average the RGB channels (assuming they're similar)
-  double avgGamma = (currentGamma.red + currentGamma.green + currentGamma.blue) / 3.0;
-  
-  // If using the simple approach: shadowGamma = 0.8 - (lift * 0.3)
-  // Then: lift = (0.8 - shadowGamma) / 0.3
-  if (avgGamma <= 0.8) {
-      double lift = (0.8 - avgGamma) / 0.3;
-      return max(0.0, min(1.0, lift)); // Clamp to valid range
+  // Return the stored shadow lift value, or 0.0 if not set
+  auto it = monitorShadowLifts.find(monitor);
+  if (it != monitorShadowLifts.end()) {
+      return it->second;
   }
-  
-  return 0.0; // No shadow lift detected
+  // Initialize to 0.0 if not set
+  monitorShadowLifts[monitor] = 0.0;
+  return 0.0;
 }
 
 // All monitors version

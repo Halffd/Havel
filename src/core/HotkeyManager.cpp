@@ -472,25 +472,25 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.setShadowLift(shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
     });
-    io.Hotkey("^#!f7", [this]() {
+    io.Hotkey("^f9", [this]() {
         info("Decreasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift - 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
     });
-    io.Hotkey("^#!f8", [this]() {
+    io.Hotkey("^f10", [this]() {
         info("Increasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
     });
-    io.Hotkey("^!#+f7", [this]() {
+    io.Hotkey("^+f9", [this]() {
         info("Decreasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift - 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
     });
-    io.Hotkey("^!#+f8", [this]() {
+    io.Hotkey("^+f10", [this]() {
         info("Increasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
@@ -504,19 +504,19 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         info("Increasing gamma");
         brightnessManager.increaseGamma(50);
     });
-    io.Hotkey("#!f7", [this]() {
+    io.Hotkey("+f9", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),50);
     });
-    io.Hotkey("#!f8", [this]() {
+    io.Hotkey("+f10", [this]() {
         info("Increasing gamma");
         brightnessManager.increaseGamma(brightnessManager.getMonitor(0),50);
     });
-    io.Hotkey("#^f8", [this]() {
+    io.Hotkey("!+f10", [this]() {
         info("Increasing gamma");
         brightnessManager.increaseGamma(brightnessManager.getMonitor(1),50);
     });
-    io.Hotkey("#^f7", [this]() {
+    io.Hotkey("!+f9", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),50);
     });

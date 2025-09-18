@@ -1,3 +1,4 @@
+
 #pragma once
 #include "types.hpp"
 #include <string>
@@ -49,6 +50,7 @@ public:
     static WindowStats activeWindow;
     // Static window methods
     static XWindow GetActiveWindow();
+    static pID GetActiveWindowPID();
     static XWindow GetwIDByPID(pID pid);
     static XWindow GetwIDByProcessName(cstr processName);
     static XWindow FindByClass(cstr className);

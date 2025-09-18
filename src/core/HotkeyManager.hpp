@@ -6,6 +6,7 @@
 #include "BrightnessManager.hpp"
 #include "../utils/Utils.hpp"
 #include "ConfigManager.hpp"
+#include "ConditionSystem.hpp"
 #include <functional>
 #include <filesystem>
 #include <string>
@@ -16,6 +17,9 @@
 #include "qt.hpp"
 #include "media/AudioManager.hpp"
 #include "io/MouseController.hpp"
+#include "automation/AutomationManager.hpp"
+#include <memory>
+
 namespace havel {
     struct HotkeyDefinition {
         std::string key;
@@ -45,7 +49,10 @@ namespace havel {
     
         int speed = 5;
         float acc = 1.0f;
+        std::unique_ptr<ConditionEngine> conditionEngine;
         
+        void setupConditionEngine();
+        void updateWindowProperties();
         void setVerboseKeyLogging(bool value) { verboseKeyLogging = value; }
 
         void setVerboseWindowLogging(bool value) {
@@ -84,7 +91,23 @@ namespace havel {
         // Mode management
         void setMode(const std::string &mode);
 
-        std::string getMode() const { return currentMode; }
+        std::string getMode() const;
+        
+        // Automation
+        std::shared_ptr<automation::AutomationManager> automationManager_;
+        std::unordered_map<std::string, automation::TaskPtr> automationTasks_;
+        std::mutex automationMutex_;
+        
+        void registerAutomationHotkeys();
+        void startAutoClicker(const std::string& button = "left");
+        void startAutoRunner(const std::string& direction = "w");
+        void startAutoKeyPresser(const std::string& key = "space");
+        void stopAutomationTask(const std::string& taskType);
+        void toggleAutomationTask(const std::string& taskType, const std::string& param = "");
+        
+    private:
+        static std::mutex modeMutex;
+        static std::string currentMode;
         bool isZooming() const { return m_isZooming; }
         void setZooming(bool zooming) { m_isZooming = zooming; }
 
@@ -97,21 +120,18 @@ namespace havel {
         void showBlackOverlay();
 
         // Contextual hotkey support
-        bool AddContextualHotkey(const std::string &key,
-                                 const std::string &condition,
-                                 std::function<void()> trueAction,
-                                 std::function<void()> falseAction = nullptr);
-
-        // Overload that accepts an ID parameter
-        int AddContextualHotkey(const std::string &key,
-                                const std::string &condition,
+        int AddContextualHotkey(const std::string& key, const std::string& condition,
                                 std::function<void()> trueAction,
                                 std::function<void()> falseAction = nullptr,
                                 int id = 0);
+                                
+        int AddGamingHotkey(const std::string& key, const std::string& condition,
+                            std::function<void()> trueAction,
+                            std::function<void()> falseAction = nullptr,
+                            int id = 0);
 
         void checkHotkeyStates();
 
-        // Make this public so main.cpp can call it for window checks
         bool evaluateCondition(const std::string &condition);
 
         // Window management
@@ -134,7 +154,6 @@ namespace havel {
         
         // Clean up resources and release all keys
         void cleanup();
-            static std::string currentMode;
         BrightnessManager brightnessManager;
     private:
         void PlayPause();
@@ -168,9 +187,8 @@ namespace havel {
         bool mouse1Pressed{false};
         bool mouse2Pressed{false};
 
-        bool autoclickerActive = false;
+        std::unique_ptr<AutoClicker> autoClicker;
         wID autoclickerWindowID = 0;
-        std::thread autoclickerThread;
         // Key name conversion maps
         const std::map<std::string, std::string> keyNameAliases = {
             // Mouse buttons
@@ -300,8 +318,6 @@ namespace havel {
         std::vector<int> conditionalHotkeyIds;
 
         // Window condition helper methods
-        bool checkWindowCondition(const std::string &condition);
-
         void updateHotkeyStateForCondition(const std::string &condition,
                                            bool conditionMet);
 

@@ -12,6 +12,8 @@
 
 #ifdef __linux__
 #include "x11.h"
+#include <X11/Xatom.h>
+#include <X11/extensions/Xinerama.h>
 #endif
 
 namespace havel {
@@ -52,6 +54,37 @@ static str defaultTerminal = "Cmd";
     return false;
 #endif
     }
+    
+    pID WindowManager::GetActiveWindowPID() {
+    #ifdef __linux__
+        wID active_win = GetActiveWindow();
+        if (active_win == 0) return 0;
+
+        Display* display = DisplayManager::GetDisplay();
+        if (!display) return 0;
+
+        Atom pidAtom = XInternAtom(display, "_NET_WM_PID", x11::XTrue);
+        if (pidAtom == x11::XNone) return 0;
+
+        Atom actualType;
+        int actualFormat;
+        unsigned long nItems, bytesAfter;
+        unsigned char* propPID = nullptr;
+        pID pid = 0;
+
+        if (XGetWindowProperty(display, active_win, pidAtom, 0, 1, x11::XFalse, XA_CARDINAL,
+                               &actualType, &actualFormat, &nItems, &bytesAfter, &propPID) == x11::XSuccess) {
+            if (nItems > 0) {
+                pid = *reinterpret_cast<pID*>(propPID);
+            }
+            if (propPID) XFree(propPID);
+        }
+        return pid;
+    #else
+        return 0;
+    #endif
+    }
+
 
     // Function to add a group
     void WindowManager::AddGroup(cstr groupName, cstr identifier) {
@@ -1780,90 +1813,37 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 
         // Get monitor info
-        XRRScreenResources *screenRes = XRRGetScreenResources(display, root);
-        if (!screenRes) {
-            std::cerr << "Failed to get screen resources.\n";
+        int numMonitors = 0;
+        XineramaScreenInfo* monitors = XineramaQueryScreens(display, &numMonitors);
+        if (!monitors || numMonitors < 1) {
+            if(monitors) XFree(monitors);
+            std::cerr << "Failed to get monitor info.\n";
             return;
         }
 
-        struct Monitor {
-            unsigned int x;
-            unsigned int y;
-            unsigned int width;
-            unsigned int height;
-        };
-
-        std::vector<Monitor> monitors;
-
-        // Validate screen resources
-        if (!screenRes || screenRes->ncrtc == 0) {
-            std::cerr << "No CRTCs available or invalid screen resources\n";
-            if (screenRes) XRRFreeScreenResources(screenRes);
-            return;
-        }
-
-        // Enumerate all CRTCs
-        for (int i = 0; i < screenRes->ncrtc; ++i) {
-            XRRCrtcInfo *crtc = XRRGetCrtcInfo(display, screenRes,
-                                               screenRes->crtcs[i]);
-            if (!crtc) {
-                std::cerr << "Failed to get CRTC info for CRTC " << i << "\n";
-                continue;
-            }
-
-            // Only consider active monitors (with valid mode)
-            if (crtc->mode != x11::XNone) {
-                monitors.emplace_back(Monitor{
-                    static_cast<unsigned int>(crtc->x),
-                    static_cast<unsigned int>(crtc->y),
-                    static_cast<unsigned int>(crtc->width),
-                    static_cast<unsigned int>(crtc->height)
-                });
-
-                std::cout << "Monitor " << i << ": "
-                        << crtc->x << "," << crtc->y << " "
-                        << crtc->width << "x" << crtc->height << "\n";
-            }
-
-            XRRFreeCrtcInfo(crtc);
-        }
-
-        XRRFreeScreenResources(screenRes);
-
-        // Validate we have enough monitors
-        if (monitors.size() < 2) {
-            std::cerr << "Error: Need at least 2 active monitors (found "
-                    << monitors.size() << ")\n";
-            return;
-        }
-        // SIMPLIFIED MONITOR DETECTION FOR COMPIZ
-        // Just check which monitor contains the center point of the window
+        std::vector<XineramaScreenInfo> monitorVec(monitors, monitors + numMonitors);
+        XFree(monitors);
+        
+        // Find current monitor
         int winCenterX = winX + (winW / 2);
         int winCenterY = winY + (winH / 2);
 
         int currentMonitor = 0; // Default to first monitor
-        for (size_t i = 0; i < monitors.size(); ++i) {
-            const auto &m = monitors[i];
-            if (static_cast<unsigned int>(winCenterX) >= m.x && static_cast<unsigned int>(winCenterX) < m.x + m.width &&
-                static_cast<unsigned int>(winCenterY) >= m.y && static_cast<unsigned int>(winCenterY) < m.y + m.height) {
+        for (size_t i = 0; i < monitorVec.size(); ++i) {
+            const auto &m = monitorVec[i];
+            if (winCenterX >= m.x_org && winCenterX < m.x_org + m.width &&
+                winCenterY >= m.y_org && winCenterY < m.y_org + m.height) {
                 currentMonitor = i;
                 break;
             }
         }
 
-        std::cout << "Window center: " << winCenterX << "," << winCenterY
-                << " is on monitor " << currentMonitor << "\n";
-
-        int nextMonitor = (currentMonitor + 1) % monitors.size();
-        const auto &target = monitors[nextMonitor];
+        int nextMonitor = (currentMonitor + 1) % monitorVec.size();
+        const auto &target = monitorVec[nextMonitor];
 
         // Center the window on target monitor
-        int targetX = target.x + (target.width - winW) / 2;
-        int targetY = target.y + (target.height - winH) / 2;
-
-        std::cout << "Moving window to monitor " << nextMonitor
-                << " at (" << targetX << "," << targetY << ") "
-                << winW << "x" << winH << "\n";
+        int targetX = target.x_org + (target.width - winW) / 2;
+        int targetY = target.y_org + (target.height - winH) / 2;
 
         XMoveResizeWindow(display, activeWin, targetX, targetY, winW, winH);
         XRaiseWindow(display, activeWin);
@@ -1873,9 +1853,6 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         if (isFullscreen) {
             ToggleFullscreen(display, activeWin, stateAtom, fsAtom, true);
         }
-
-        std::cout << "Moved window from monitor " << currentMonitor << " to " <<
-                nextMonitor << "\n";
     }
 
     void WindowManager::ToggleFullscreen(Display *display, Window win,

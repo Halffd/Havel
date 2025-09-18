@@ -13,6 +13,7 @@
 #else
 #include <climits>
 #include <glob.h>
+#include <wordexp.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -685,16 +686,19 @@ std::string Env::expandVariables(const std::string &text) {
   std::string result = text;
   std::regex varRegex(R"(\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*))");
   std::smatch match;
+  std::string temp_result = result;
 
-  while (std::regex_search(result, match, varRegex)) {
+  while (std::regex_search(temp_result, match, varRegex)) {
     std::string varName = match[1].matched ? match[1].str() : match[2].str();
     std::string varValue = get(varName);
 
-    result.replace(match.position(), match.length(), varValue);
+    result.replace(match.position(0) + (result.length() - temp_result.length()), match.length(0), varValue);
+    temp_result = match.suffix().str();
   }
 
   return result;
 }
+
 
 std::string Env::getSpecialFolder(int csidl) {
 #ifdef _WIN32

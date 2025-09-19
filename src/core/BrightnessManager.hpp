@@ -48,6 +48,7 @@ struct zxdg_output_v1;
 #include <chrono>
 #include <mutex>
 #include <functional>
+#include <unordered_map>
 
 using namespace std;
 namespace havel {
@@ -148,6 +149,9 @@ public:
     static constexpr int DEFAULT_TEMP_AMOUNT = 200;
     static constexpr int MIN_TEMPERATURE = 0;
     static constexpr int MAX_TEMPERATURE = 25000;
+    
+    // Per-monitor shadow lift storage
+    static std::unordered_map<std::string, double> monitorShadowLifts;
     private:
     Display* x11_display;
     Window x11_root;
@@ -226,6 +230,7 @@ public:
     // === DAY/NIGHT AUTOMATION ===
     void dayNightWorkerThread();
     void applyCurrentTimeSettings();
+    RGBColor applyShadowLift(const RGBColor& input, double lift);
     bool applyAllSettings(const string &monitor);
     // === STATE ===
     DayNightSettings dayNightSettings;

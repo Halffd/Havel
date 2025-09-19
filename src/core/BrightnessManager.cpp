@@ -407,37 +407,72 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() {
     return monitors;
   }
 }
-// Shadow lift using a modified gamma curve
-BrightnessManager::RGBColor applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
-  BrightnessManager::RGBColor result;
-  
-  // Shadow lift formula: output = input^(1/(1+lift)) + (lift * (1-input))
-  // This lifts shadows while preserving highlights
-  double gamma_adjust = 1.0 / (1.0 + lift);
-  
-  result.red = pow(input.red, gamma_adjust) + lift * (1.0 - input.red);
-  result.green = pow(input.green, gamma_adjust) + lift * (1.0 - input.green);  
-  result.blue = pow(input.blue, gamma_adjust) + lift * (1.0 - input.blue);
-  
-  // Clamp to valid range
-  result.red = min(1.0, max(0.0, result.red));
-  result.green = min(1.0, max(0.0, result.green));
-  result.blue = min(1.0, max(0.0, result.blue));
-  
-  return result;
+// Shadow lift with highlight protection and midtone bias
+BrightnessManager::RGBColor BrightnessManager::applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
+  // Early return for no lift
+  if (lift <= 0.0001) {
+      return input;
+  }
+
+  // Get config values with sensible defaults
+  const bool doHighlightProtect = Configs::Get().Get<bool>("Brightness.DoHighlightProtect", true);
+  const double highlightThreshold = Configs::Get().Get<double>("Brightness.HighlightProtect", 0.9);
+  const bool useMidtoneBias = Configs::Get().Get<bool>("Brightness.MidtoneBias", true);
+  const double midtoneBiasAmount = Configs::Get().Get<double>("Brightness.MidtoneBiasAmount", 0.5);
+
+  auto processChannel = [&](double channel) -> double {
+      const double normalized = std::clamp(channel, 0.0, 1.0);
+      double effectiveLift = lift;
+
+      // Apply highlight protection if enabled
+      if (doHighlightProtect && normalized > highlightThreshold) {
+          const double protectionFactor = (1.0 - normalized) / (1.0 - highlightThreshold);
+          effectiveLift *= protectionFactor;
+      }
+
+      // Apply midtone bias if enabled
+      if (useMidtoneBias) {
+          const double bias = std::pow(normalized, midtoneBiasAmount);
+          effectiveLift *= bias;
+      }
+
+      // Apply shadow lift with gamma adjustment
+      const double gammaAdjust = 1.0 / (1.0 + effectiveLift);
+      const double gammaLifted = std::pow(normalized, gammaAdjust);
+      const double additiveLifted = effectiveLift * (1.0 - normalized);
+      
+      return std::clamp(gammaLifted + additiveLifted, 0.0, 1.0);
+  };
+
+  return {
+      processChannel(input.red),
+      processChannel(input.green),
+      processChannel(input.blue)
+  };
 }
+
 bool BrightnessManager::setBrightnessAndShadowLift(double brightness, double shadowLift) {
   return setBrightness(brightness) && setShadowLift(shadowLift);
 }
+
 bool BrightnessManager::setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift){
   return setBrightness(monitor, brightness) && setShadowLift(monitor, shadowLift);
 }
 
-bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
-  if (lift < 0.0 || lift > 1.0) {
-      error("Shadow lift must be between 0.0 and 1.0, got: {:.3f}", lift);
+// Initialize static member
+std::unordered_map<std::string, double> BrightnessManager::monitorShadowLifts;
+
+// === SHADOW LIFT METHODS ===
+bool BrightnessManager::setShadowLift(const std::string& monitor, double lift) {
+  if (lift < 0.001) lift = 0.0;
+  if (lift > 4.0) lift = 4.0;
+  if (lift < 0.0 || lift > 4.0) {
+      error("Shadow lift must be between 0.0 and 4.0, got: {:.3f}", lift);
       return false;
   }
+  
+  // Store the shadow lift value for this monitor
+  monitorShadowLifts[monitor] = lift;
   
   // Get current gamma values
   RGBColor currentGamma = getGammaRGB(monitor);
@@ -448,6 +483,7 @@ bool BrightnessManager::setShadowLift(const string& monitor, double lift) {
   // Set the modified gamma
   return setGammaRGB(monitor, liftedGamma.red, liftedGamma.green, liftedGamma.blue);
 }
+
 bool BrightnessManager::setShadowLift(double lift) {
   bool success = true;
   for (const auto& monitor : getConnectedMonitors()) {
@@ -455,24 +491,16 @@ bool BrightnessManager::setShadowLift(double lift) {
   }
   return success;
 }
+
 double BrightnessManager::getShadowLift(const string& monitor) {
-  // Get current gamma values
-  RGBColor currentGamma = getGammaRGB(monitor);
-  
-  // Extract shadow lift from gamma curve
-  // This reverses the applyShadowLift calculation
-  
-  // Average the RGB channels (assuming they're similar)
-  double avgGamma = (currentGamma.red + currentGamma.green + currentGamma.blue) / 3.0;
-  
-  // If using the simple approach: shadowGamma = 0.8 - (lift * 0.3)
-  // Then: lift = (0.8 - shadowGamma) / 0.3
-  if (avgGamma <= 0.8) {
-      double lift = (0.8 - avgGamma) / 0.3;
-      return max(0.0, min(1.0, lift)); // Clamp to valid range
+  // Return the stored shadow lift value, or 0.0 if not set
+  auto it = monitorShadowLifts.find(monitor);
+  if (it != monitorShadowLifts.end()) {
+      return it->second;
   }
-  
-  return 0.0; // No shadow lift detected
+  // Initialize to 0.0 if not set
+  monitorShadowLifts[monitor] = 0.0;
+  return 0.0;
 }
 
 // All monitors version

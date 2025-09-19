@@ -19,6 +19,7 @@ public:
     ~AutoClicker() override = default;
 
     void setClickType(ClickType type);
+    void setButton(const std::string& button);
     void setClickFunction(std::function<void()> clickFunc);
     void setIntervalMs(int intervalMs);
 

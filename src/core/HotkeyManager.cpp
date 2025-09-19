@@ -25,7 +25,6 @@
 #include <chrono>
 #include <atomic>
 #include "core/DisplayManager.hpp"
-#include "media/AutoRunner.h"
 #include "utils/Util.hpp"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
@@ -271,7 +270,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::cout << "ralt" << std::endl;
         WindowManager::MoveWindowToNextMonitor();
     }); 
-    AddGamingHotkey("@lwin", "mode == 'gaming'", [this]() {
+    AddGamingHotkey("@lwin", [this]() {
         PlayPause();
     }, nullptr, 0);
 
@@ -283,7 +282,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         nullptr,
         0);
 
-    AddGamingHotkey("u", "mode == 'gaming'", 
+    AddGamingHotkey("u", 
         [this]() {
             if (!holdClick) {
                 io.Click(MouseButton::Left, MouseAction::Hold);
@@ -699,7 +698,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         showBlackOverlay();
     });
 
-    AddGamingHotkey("@y", "mode == 'gaming'",
+    AddGamingHotkey("@y",
         [this]() {
             info("Gaming hotkey: Holding 'w' key down");
             io.Send("{w down}");
@@ -718,7 +717,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         0
     );
 
-    AddGamingHotkey("'", "mode == 'gaming'",
+    AddGamingHotkey("'",
         [this]() {
             info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
             io.MouseMove(1600, 700, 10, 1.0f);
@@ -735,8 +734,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }
     );
     
-    static AutoRunner genshinAutoRunner(io);
-    AddGamingHotkey("/", "mode == 'gaming'",
+    static automation::AutoRunner genshinAutoRunner(std::make_shared<IO>(io));
+    AddGamingHotkey("/",
         []() {
             info("Genshin Impact detected - Starting specialized auto actions");
             genshinAutoRunner.toggle();
@@ -745,7 +744,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         0
     );
 
-    AddGamingHotkey("enter", "gaming.active", [this]() {
+    AddContextualHotkey("enter", "window.title ~ 'Genshin'", [this]() {
         if (genshinAutomationActive) {
             warning("Genshin automation is already active");
             return;
@@ -784,7 +783,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }).detach();
     }, nullptr, 0);
 
-    AddGamingHotkey("+s", "gaming.active", [this]() {
+    AddContextualHotkey("+s", "window.title ~ 'Genshin'", [this]() {
         info("Genshin Impact detected - Skipping cutscene");
         io.SetTimer(100, [this]() {
             Rect pos = {1600, 700};
@@ -819,37 +818,37 @@ void HotkeyManager::RegisterMediaHotkeys() {
     int mpvBaseId = 10000;
 std::vector<HotkeyDefinition> mpvHotkeys = {
     // Volume
-    { "+0", "mode == 'gaming'", [this]() { mpv.VolumeUp(); }, nullptr, mpvBaseId++ },
-    { "+9", "mode == 'gaming'", [this]() { mpv.VolumeDown(); }, nullptr, mpvBaseId++ },
-    { "+-", "mode == 'gaming'", [this]() { mpv.ToggleMute(); }, nullptr, mpvBaseId++ },
+    { "+0", [this]() { mpv.VolumeUp(); }, nullptr, mpvBaseId++ },
+    { "+9", [this]() { mpv.VolumeDown(); }, nullptr, mpvBaseId++ },
+    { "+-", [this]() { mpv.ToggleMute(); }, nullptr, mpvBaseId++ },
 
     // Playback
-    { "@rctrl", "mode == 'gaming'", [this]() { info("rctrl PlayPause"); PlayPause(); }, nullptr, mpvBaseId++ },
-    { "+Esc", "mode == 'gaming'", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
-    { "+PgUp", "mode == 'gaming'", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
-    { "+PgDn", "mode == 'gaming'", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },
+    { "@rctrl", [this]() { info("rctrl PlayPause"); PlayPause(); }, nullptr, mpvBaseId++ },
+    { "+Esc", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
+    { "+PgUp", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
+    { "+PgDn", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },
     // Seek
-    { "o", "mode == 'gaming'", [this]() { mpv.SendCommand({"seek", "-3"}); }, nullptr, mpvBaseId++ },
-    { "p", "mode == 'gaming'", [this]() { mpv.SendCommand({"seek", "3"}); }, nullptr, mpvBaseId++ },
+    { "o", [this]() { mpv.SendCommand({"seek", "-3"}); }, nullptr, mpvBaseId++ },
+    { "p", [this]() { mpv.SendCommand({"seek", "3"}); }, nullptr, mpvBaseId++ },
 
     // Speed
-    { "+o", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "speed", "-0.1"}); }, nullptr, mpvBaseId++ },
-    { "+p", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "speed", "0.1"}); }, nullptr, mpvBaseId++ },
+    { "+o", [this]() { mpv.SendCommand({"add", "speed", "-0.1"}); }, nullptr, mpvBaseId++ },
+    { "+p", [this]() { mpv.SendCommand({"add", "speed", "0.1"}); }, nullptr, mpvBaseId++ },
 
     // Subtitles
-    { "n", "mode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
-    { "+n", "mode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
-    { "7", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-scale", "-0.1"}); }, nullptr, mpvBaseId++ },
-    { "8", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-scale", "0.1"}); }, nullptr, mpvBaseId++ },
-    { "+z", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "-0.1"}); }, nullptr, mpvBaseId++ },
-    { "+x", "mode == 'gaming'", [this]() { mpv.SendCommand({"add", "sub-delay", "0.1"}); }, nullptr, mpvBaseId++ },
-    { "9", "mode == 'gaming'", [this]() { mpv.SendCommand({"cycle", "sub"}); }, nullptr, mpvBaseId++ },
-    { "0", "mode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "0"}); }, nullptr, mpvBaseId++ },
-    { "+c", "mode == 'gaming'", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
-    { "minus", "mode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "-1"}); }, nullptr, mpvBaseId++ },
-    { "equal", "mode == 'gaming'", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
+    { "n", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "+n", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "7", [this]() { mpv.SendCommand({"add", "sub-scale", "-0.1"}); }, nullptr, mpvBaseId++ },
+    { "8", [this]() { mpv.SendCommand({"add", "sub-scale", "0.1"}); }, nullptr, mpvBaseId++ },
+    { "+z", [this]() { mpv.SendCommand({"add", "sub-delay", "-0.1"}); }, nullptr, mpvBaseId++ },
+    { "+x", [this]() { mpv.SendCommand({"add", "sub-delay", "0.1"}); }, nullptr, mpvBaseId++ },
+    { "9", [this]() { mpv.SendCommand({"cycle", "sub"}); }, nullptr, mpvBaseId++ },
+    { "0", [this]() { mpv.SendCommand({"sub-seek", "0"}); }, nullptr, mpvBaseId++ },
+    { "+c", [this]() { mpv.SendCommand({"script-binding", "copy_current_subtitle"}); }, nullptr, mpvBaseId++ },
+    { "minus", [this]() { mpv.SendCommand({"sub-seek", "-1"}); }, nullptr, mpvBaseId++ },
+    { "equal", [this]() { mpv.SendCommand({"sub-seek", "1"}); }, nullptr, mpvBaseId++ },
     
-    { "<", "mode == 'gaming'",
+    { "<",
         [this]() {
             logHotkeyEvent("KEYPRESS", COLOR_YELLOW + "Keycode 94" + COLOR_RESET);
             PlayPause();
@@ -857,7 +856,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     }
 };
     for (const auto& hk : mpvHotkeys) {
-        AddGamingHotkey(hk.key, hk.condition, hk.trueAction, hk.falseAction, hk.id);
+        AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
         conditionalHotkeyIds.push_back(hk.id);
     }
 
@@ -1110,11 +1109,10 @@ void HotkeyManager::ReloadConfigurations() {
     LoadHotkeyConfigurations();
     loadVideoSites();
 }
-int HotkeyManager::AddGamingHotkey(const std::string& key, const std::string& condition,
+int HotkeyManager::AddGamingHotkey(const std::string& key,
                                            std::function<void()> trueAction,
-                                           std::function<void()> falseAction,
-                                           int id) {
-    return AddContextualHotkey(key, condition, trueAction, falseAction, id);
+                                           std::function<void()> falseAction, int id) {
+    return AddContextualHotkey(key, "mode == 'gaming'", trueAction, falseAction, id);
 }   
 int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string& condition,
                                            std::function<void()> trueAction,

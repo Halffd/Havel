@@ -1,6 +1,5 @@
 #pragma once
 #include "x11.h"
-#include <iostream>
 
 namespace havel {
 

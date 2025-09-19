@@ -22,8 +22,13 @@ public:
 
     // Task management
     TaskPtr createAutoClicker();
+    TaskPtr createAutoClicker(const std::string& button, int intervalMs = 100);
+    
     TaskPtr createAutoRunner();
+    TaskPtr createAutoRunner(const std::string& direction, int intervalMs = 50);
+    
     TaskPtr createAutoKeyPresser();
+    TaskPtr createAutoKeyPresser(const std::string& key, int intervalMs = 100);
     
     // Chained actions
     using Action = std::function<void()>;
@@ -50,6 +55,7 @@ public:
 private:
     std::shared_ptr<havel::IO> io_;
     std::unordered_map<std::string, TaskPtr> tasks_;
+    mutable std::mutex tasksMutex_;
     
     std::string generateUniqueName(const std::string& base) const;
 };

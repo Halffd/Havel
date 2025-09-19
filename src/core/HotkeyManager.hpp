@@ -18,12 +18,14 @@
 #include "media/AudioManager.hpp"
 #include "io/MouseController.hpp"
 #include "automation/AutomationManager.hpp"
+#include "automation/AutoClicker.hpp"
+#include "automation/AutoKeyPresser.hpp"
+#include "automation/AutoRunner.hpp"
 #include <memory>
 
 namespace havel {
     struct HotkeyDefinition {
         std::string key;
-        std::string condition;
         std::function<void()> trueAction;
         std::function<void()> falseAction; // Optional
         int id;
@@ -125,7 +127,7 @@ namespace havel {
                                 std::function<void()> falseAction = nullptr,
                                 int id = 0);
                                 
-        int AddGamingHotkey(const std::string& key, const std::string& condition,
+        int AddGamingHotkey(const std::string& key,
                             std::function<void()> trueAction,
                             std::function<void()> falseAction = nullptr,
                             int id = 0);
@@ -187,7 +189,7 @@ namespace havel {
         bool mouse1Pressed{false};
         bool mouse2Pressed{false};
 
-        std::unique_ptr<AutoClicker> autoClicker;
+        std::unique_ptr<automation::AutoClicker> autoClicker;
         wID autoclickerWindowID = 0;
         // Key name conversion maps
         const std::map<std::string, std::string> keyNameAliases = {

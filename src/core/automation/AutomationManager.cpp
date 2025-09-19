@@ -18,24 +18,42 @@ AutomationManager::AutomationManager(std::shared_ptr<havel::IO> io)
 }
 
 TaskPtr AutomationManager::createAutoClicker() {
-    auto name = generateUniqueName("AutoClicker");
+    return createAutoClicker("left", 100); // Default to left button with 100ms interval
+}
+
+TaskPtr AutomationManager::createAutoClicker(const std::string& button, int intervalMs) {
+    auto name = generateUniqueName("AutoClicker_" + button);
     auto clicker = std::shared_ptr<AutoClicker>(new AutoClicker(io_));
+    clicker->setButton(button);
+    clicker->setIntervalMs(intervalMs);
     std::lock_guard<std::mutex> lock(tasksMutex_);
     tasks_[name] = clicker;
     return clicker;
 }
 
 TaskPtr AutomationManager::createAutoRunner() {
-    auto name = generateUniqueName("AutoRunner");
+    return createAutoRunner("w", 50); // Default to 'w' key with 50ms interval
+}
+
+TaskPtr AutomationManager::createAutoRunner(const std::string& direction, int intervalMs) {
+    auto name = generateUniqueName("AutoRunner_" + direction);
     auto runner = std::shared_ptr<AutoRunner>(new AutoRunner(io_));
+    runner->setDirection(direction);
+    runner->setIntervalMs(intervalMs);
     std::lock_guard<std::mutex> lock(tasksMutex_);
     tasks_[name] = runner;
     return runner;
 }
 
 TaskPtr AutomationManager::createAutoKeyPresser() {
-    auto name = generateUniqueName("AutoKeyPresser");
+    return createAutoKeyPresser("space", 100); // Default to space key with 100ms interval
+}
+
+TaskPtr AutomationManager::createAutoKeyPresser(const std::string& key, int intervalMs) {
+    auto name = generateUniqueName("AutoKeyPresser_" + key);
     auto keyPresser = std::shared_ptr<AutoKeyPresser>(new AutoKeyPresser(io_));
+    keyPresser->setKey(key);
+    keyPresser->setIntervalMs(intervalMs);
     std::lock_guard<std::mutex> lock(tasksMutex_);
     tasks_[name] = keyPresser;
     return keyPresser;

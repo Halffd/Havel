@@ -18,7 +18,7 @@ public:
 
     void setKeySequence(const KeySequence& sequence);
     void setKey(const std::string& key);
-    void setIntervalMs(int intervalMs) override;
+    void setIntervalMs(int intervalMs);
 
 private:
     void onStart() override;

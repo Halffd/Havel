@@ -61,12 +61,6 @@ void AutoPresser::setReleaseAction(Action action) {
     releaseAction_ = std::move(action);
 }
 
-void AutoPresser::setInterval(Duration interval) {
-    interval_ = interval;
-}
-
-void AutoPresser::onStart() {}
-void AutoPresser::onStop() {}
 void AutoPresser::onPress() {
     std::lock_guard<std::mutex> lock(actionMutex_);
     if (pressAction_) pressAction_();

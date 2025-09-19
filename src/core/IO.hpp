@@ -20,7 +20,6 @@
 #include <cerrno>
 #include "x11.h"
 
-
 namespace havel {
 
 enum class MouseButton {

@@ -230,23 +230,17 @@ endif()
 # SOURCE FILE COLLECTION
 # ==============================================================================
 # Core sources (always required)
-set(CORE_SOURCES
-    src/core/IO.cpp
-    src/core/HotkeyManager.cpp
-    src/core/ConfigManager.cpp
-    src/core/ScriptEngine.cpp
-    src/core/DisplayManager.cpp
-    src/core/BrightnessManager.cpp
-    src/core/ConditionSystem.cpp
-    src/core/SocketServer.cpp
+file(GLOB_RECURSE CORE_SOURCES 
+    "src/core/*.cpp"
+    "src/window/*.cpp" 
+    "src/utils/*.cpp"
+    "src/fs/*.cpp"
+    "src/process/*.cpp"
+    "src/media/*.cpp"
+    "src/io/*.cpp"
 )
 
-# Add automation module
-add_subdirectory(src/core/automation)
-
-# Add automation sources to core library
-set(CORE_SOURCES ${CORE_SOURCES} ${AUTOMATION_SOURCES})
-
+# GUI sources (always included)
 file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
 list(FILTER GUI_SOURCES EXCLUDE REGEX "main\\.cpp$")
 
@@ -327,9 +321,7 @@ target_include_directories(havel PRIVATE
 # Link libraries
 target_link_libraries(havel PRIVATE 
     ${COMMON_LIBS}
-    automation
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
-    Threads::Threads
 )
 
 # Compile definitions

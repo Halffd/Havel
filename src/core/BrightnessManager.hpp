@@ -230,6 +230,7 @@ public:
     // === DAY/NIGHT AUTOMATION ===
     void dayNightWorkerThread();
     void applyCurrentTimeSettings();
+    RGBColor applyShadowLift(const RGBColor& input, double lift);
     bool applyAllSettings(const string &monitor);
     // === STATE ===
     DayNightSettings dayNightSettings;

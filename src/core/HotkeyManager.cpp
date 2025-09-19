@@ -485,53 +485,53 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.setShadowLift(shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
     });
-    io.Hotkey("^#!f7", [this]() {
+    io.Hotkey("^f9", [this]() {
         info("Decreasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift - 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
     });
-    io.Hotkey("^#!f8", [this]() {
+    io.Hotkey("^f10", [this]() {
         info("Increasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift();
+        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(0));
         brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
     });
-    io.Hotkey("^!#+f7", [this]() {
+    io.Hotkey("^+f9", [this]() {
         info("Decreasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift();
+        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(1));
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift - 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
     });
-    io.Hotkey("^!#+f8", [this]() {
+    io.Hotkey("^+f10", [this]() {
         info("Increasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift();
+        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(1));
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
     });
     io.Hotkey("#f7", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(50);
+        brightnessManager.decreaseGamma(200);
     });
     io.Hotkey("#f8", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(50);
+        brightnessManager.increaseGamma(200);
     });
-    io.Hotkey("#!f7", [this]() {
+    io.Hotkey("+f9", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),50);
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),200);
     });
-    io.Hotkey("#!f8", [this]() {
+    io.Hotkey("+f10", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),50);
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),200);
     });
-    io.Hotkey("#^f8", [this]() {
+    io.Hotkey("!+f10", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),50);
+        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),200);
     });
-    io.Hotkey("#^f7", [this]() {
+    io.Hotkey("!+f9", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),50);
+        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),200);
     });
     io.Hotkey("+f7", [this]() {
         info("Decreasing temperature");

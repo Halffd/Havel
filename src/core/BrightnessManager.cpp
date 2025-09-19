@@ -407,41 +407,48 @@ std::vector<std::string> BrightnessManager::getConnectedMonitors() {
     return monitors;
   }
 }
-// Enhanced shadow lift with highlight protection and midtone bias
-BrightnessManager::RGBColor applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
-    if (lift <= 0.0001) {
-        return input;  // No lift applied
-    }
+// Shadow lift with highlight protection and midtone bias
+BrightnessManager::RGBColor BrightnessManager::applyShadowLift(const BrightnessManager::RGBColor& input, double lift) {
+  // Early return for no lift
+  if (lift <= 0.0001) {
+      return input;
+  }
 
-    BrightnessManager::RGBColor result;
-    const double highlight_protect = 0.9; // Reduce lift effect above this threshold
-    
-    auto processChannel = [&](double channel) -> double {
-        double normalized = max(0.0, min(1.0, channel));
-        
-        // Apply highlight protection
-        double effective_lift = lift;
-        if (normalized > highlight_protect) {
-            effective_lift *= (1.0 - normalized) / (1.0 - highlight_protect);
-        }
-        
-        // Apply midtone bias
-        double midtone_bias = pow(normalized, 0.5);
-        effective_lift *= midtone_bias;
-        
-        // Apply lift with gamma adjustment
-        double gamma_adjust = 1.0 / (1.0 + effective_lift);
-        double lifted = pow(normalized, gamma_adjust) + 
-                       (effective_lift * (1.0 - normalized));
-        
-        return min(1.0, max(0.0, lifted));
-    };
-    
-    result.red = processChannel(input.red);
-    result.green = processChannel(input.green);
-    result.blue = processChannel(input.blue);
-    
-    return result;
+  // Get config values with sensible defaults
+  const bool doHighlightProtect = Configs::Get().Get<bool>("Brightness.DoHighlightProtect", true);
+  const double highlightThreshold = Configs::Get().Get<double>("Brightness.HighlightProtect", 0.9);
+  const bool useMidtoneBias = Configs::Get().Get<bool>("Brightness.MidtoneBias", true);
+  const double midtoneBiasAmount = Configs::Get().Get<double>("Brightness.MidtoneBiasAmount", 0.5);
+
+  auto processChannel = [&](double channel) -> double {
+      const double normalized = std::clamp(channel, 0.0, 1.0);
+      double effectiveLift = lift;
+
+      // Apply highlight protection if enabled
+      if (doHighlightProtect && normalized > highlightThreshold) {
+          const double protectionFactor = (1.0 - normalized) / (1.0 - highlightThreshold);
+          effectiveLift *= protectionFactor;
+      }
+
+      // Apply midtone bias if enabled
+      if (useMidtoneBias) {
+          const double bias = std::pow(normalized, midtoneBiasAmount);
+          effectiveLift *= bias;
+      }
+
+      // Apply shadow lift with gamma adjustment
+      const double gammaAdjust = 1.0 / (1.0 + effectiveLift);
+      const double gammaLifted = std::pow(normalized, gammaAdjust);
+      const double additiveLifted = effectiveLift * (1.0 - normalized);
+      
+      return std::clamp(gammaLifted + additiveLifted, 0.0, 1.0);
+  };
+
+  return {
+      processChannel(input.red),
+      processChannel(input.green),
+      processChannel(input.blue)
+  };
 }
 
 bool BrightnessManager::setBrightnessAndShadowLift(double brightness, double shadowLift) {
@@ -457,6 +464,8 @@ std::unordered_map<std::string, double> BrightnessManager::monitorShadowLifts;
 
 // === SHADOW LIFT METHODS ===
 bool BrightnessManager::setShadowLift(const std::string& monitor, double lift) {
+  if (lift < 0.001) lift = 0.0;
+  if (lift > 4.0) lift = 4.0;
   if (lift < 0.0 || lift > 4.0) {
       error("Shadow lift must be between 0.0 and 4.0, got: {:.3f}", lift);
       return false;

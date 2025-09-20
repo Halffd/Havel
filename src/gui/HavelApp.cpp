@@ -120,7 +120,9 @@ void HavelApp::initializeComponents(bool isStartup) {
     hotkeyManager->RegisterMediaHotkeys();
     hotkeyManager->RegisterWindowHotkeys();
     hotkeyManager->RegisterSystemHotkeys();
+    hotkeyManager->registerAutomationHotkeys();
     hotkeyManager->LoadHotkeyConfigurations();
+    
 
     // Initialize AutomationSuite with IO instance
     AutomationSuite::Instance(io.get());

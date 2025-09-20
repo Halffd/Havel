@@ -275,9 +275,8 @@ void IO::MonitorHotkeys() {
                 if (!hotkey.enabled) continue;
                 
                 if (hotkey.key == keyEvent->keycode &&
-                    (hotkey.modifiers == (cleanedState & ~Mod2Mask & ~LockMask) || // Match without num/caps lock
-                     hotkey.modifiers == cleanedState)) { // Exact match
-
+                  (static_cast<unsigned int>(hotkey.modifiers) == (cleanedState & ~Mod2Mask & ~LockMask) || 
+                  static_cast<unsigned int>(hotkey.modifiers) == cleanedState)) {
                     if ((hotkey.eventType == HotkeyEventType::Down && !isDown) ||
                         (hotkey.eventType == HotkeyEventType::Up && isDown)) {
                         continue;
@@ -782,10 +781,10 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
       if (useUinput) {
         int code = EvdevNameToKeyCode(keyName);
         if (code != -1) {
-          SendUInput(code, down); // Now includes state tracking
+          SendUInput(code, down);
         }
       } else {
-        SendX11Key(keyName, down); // Now includes state tracking
+        SendX11Key(keyName, down);
       }
     };
   
@@ -823,7 +822,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
         // Special emergency commands
         if (seq == "emergency_release" || seq == "panic") {
           EmergencyReleaseAllKeys();
-        } else if (seq.ends_with(" down")) {
+        } else if (seq.ends_with(" down") || seq.ends_with(":down")) {
           std::string mod = seq.substr(0, seq.size() - 5);
           if (modifierKeys.count(mod)) {
             SendKey(modifierKeys[mod], true);
@@ -831,7 +830,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
           } else {
             SendKey(mod, true);
           }
-        } else if (seq.ends_with(" up")) {
+        } else if (seq.ends_with(" up") || seq.ends_with(":up")) {
           std::string mod = seq.substr(0, seq.size() - 3);
           if (modifierKeys.count(mod)) {
             SendKey(modifierKeys[mod], false);

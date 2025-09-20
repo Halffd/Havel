@@ -413,6 +413,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("f3", [this]() {
         info("Setting defaults");
         brightnessManager.setBrightness(Configs::Get().Get<double>("Brightness.Default", 1.0));
+        brightnessManager.setShadowLift(Configs::Get().Get<double>("ShadowLift.Default", 0.0));
+        brightnessManager.setGammaRGB(Configs::Get().Get<double>("Gamma.Default", 1.0),Configs::Get().Get<double>("Gamma.Default", 1.0),Configs::Get().Get<double>("Gamma.Default", 1.0));
         brightnessManager.setTemperature(Configs::Get().Get<double>("Temperature.Default", 6500));
         info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
         info("Temperature set to: " + std::to_string(Configs::Get().Get<double>("Temperature.Default", 6500)));

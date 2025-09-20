@@ -1,6 +1,7 @@
 #pragma once
 #include "ConfigManager.hpp"
 #include "../utils/Logger.hpp"
+#include <X11/Xlib.h>
 #include <cstdlib>
 #include <iostream>
 
@@ -150,8 +151,6 @@ public:
     static constexpr int MIN_TEMPERATURE = 0;
     static constexpr int MAX_TEMPERATURE = 25000;
     
-    // Per-monitor shadow lift storage
-    static std::unordered_map<std::string, double> monitorShadowLifts;
     private:
     Display* x11_display;
     Window x11_root;
@@ -248,6 +247,7 @@ public:
     map<string, int> temperature;
     vector<string> monitors;
     map<string, RGBColor> gammaRGB;
+    map<string, double> shadowLift;
 };
 
 } // namespace havel

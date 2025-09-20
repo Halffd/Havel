@@ -46,11 +46,18 @@ namespace havel {
         bool verboseKeyLogging = false;
         bool verboseWindowLogging = false;
         bool verboseConditionLogging = false;
-
         int winOffset = 10;
     
         int speed = 5;
         float acc = 1.0f;
+
+        void checkHotkeyStates();
+
+        bool evaluateCondition(const std::string &condition);
+
+        void grabGamingHotkeys();
+
+        void ungrabGamingHotkeys();
         std::unique_ptr<ConditionEngine> conditionEngine;
         
         void setupConditionEngine();
@@ -113,11 +120,6 @@ namespace havel {
         bool isZooming() const { return m_isZooming; }
         void setZooming(bool zooming) { m_isZooming = zooming; }
 
-        // MPV hotkey management
-        void grabGamingHotkeys();
-
-        void ungrabGamingHotkeys();
-
         // Black overlay functionality
         void showBlackOverlay();
 
@@ -131,11 +133,6 @@ namespace havel {
                             std::function<void()> trueAction,
                             std::function<void()> falseAction = nullptr,
                             int id = 0);
-
-        void checkHotkeyStates();
-
-        bool evaluateCondition(const std::string &condition);
-
         // Window management
         void minimizeActiveWindow();
 
@@ -190,6 +187,8 @@ namespace havel {
         bool mouse2Pressed{false};
 
         std::unique_ptr<automation::AutoClicker> autoClicker;
+        std::unique_ptr<havel::automation::AutoRunner> autoRunner;
+        std::unique_ptr<havel::automation::AutoKeyPresser> autoKeyPresser;
         wID autoclickerWindowID = 0;
         // Key name conversion maps
         const std::map<std::string, std::string> keyNameAliases = {

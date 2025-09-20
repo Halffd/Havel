@@ -3,10 +3,7 @@
 #include "IO.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
-#include "core/automation/AutoClicker.hpp"
-#include "core/automation/AutoRunner.hpp"
-#include "core/automation/AutoKeyPresser.hpp"
-#include "core/HotkeyManager.hpp"
+#include "automation/AutoRunner.hpp"
 #include "utils/Chain.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
@@ -137,10 +134,9 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController
     applyDebugSettings();
     
     // Initialize auto clicker with IO reference
-    autoClicker = std::make_unique<AutoClicker>(std::make_shared<IO>(io));
-    
+    autoClicker = std::make_unique<havel::automation::AutoClicker>(std::shared_ptr<IO>(&io, [](IO*){}));
     // Initialize automation manager
-    automationManager_ = std::make_shared<automation::AutomationManager>(io);
+    automationManager_ = std::make_shared<havel::automation::AutomationManager>(std::shared_ptr<IO>(&io, [](IO*){}));
     
     // Register automation hotkeys
     registerAutomationHotkeys();
@@ -734,7 +730,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }
     );
     
-    static automation::AutoRunner genshinAutoRunner(std::make_shared<IO>(io));
+    static automation::AutoRunner genshinAutoRunner(std::shared_ptr<IO>(&io, [](IO*){}));
     AddGamingHotkey("/",
         []() {
             info("Genshin Impact detected - Starting specialized auto actions");
@@ -1166,13 +1162,13 @@ void HotkeyManager::setupConditionEngine() {
         });
     
     conditionEngine->registerProperty("mode", PropertyType::STRING,
-        [this]() -> std::string {
+        []() -> std::string {
             std::lock_guard<std::mutex> lock(modeMutex);
             return currentMode;
         });
     
     conditionEngine->registerBoolProperty("gaming.active",
-        [this]() -> bool {
+        []() -> bool {
             return isGamingWindow();
         });
     
@@ -1295,9 +1291,9 @@ bool HotkeyManager::isGamingWindow() {
 }
 void HotkeyManager::startAutoclicker(const std::string& button) {
     // Stop if already running
-    if (autoClicker && autoClicker->IsRunning()) {
+    if (autoClicker && autoClicker->isRunning()) {
         info("Stopping autoclicker - toggled off");
-        autoClicker->Stop();
+        autoClicker->stop();
         autoClicker.reset();
         return;
     }
@@ -1318,19 +1314,18 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
     try {
         info("Starting autoclicker (" + button + ") in window: " + std::to_string(autoclickerWindowID));
         
-        // Create and configure the auto clicker
-        autoClicker = std::make_unique<AutoClicker>(std::make_shared<IO>(io));
+        autoClicker = std::make_unique<havel::automation::AutoClicker>(std::shared_ptr<IO>(&io, [](IO*){}));
         
         // Set the appropriate click type based on button
         if (button == "Button1" || button == "Left") {
-            autoClicker->SetClickType(AutoClicker::ClickType::Left);
+            autoClicker->setClickType(havel::automation::AutoClicker::ClickType::Left);
         } else if (button == "Button2" || button == "Right") {
-            autoClicker->SetClickType(AutoClicker::ClickType::Right);
+            autoClicker->setClickType(havel::automation::AutoClicker::ClickType::Right);
         } else if (button == "Button3" || button == "Middle") {
-            autoClicker->SetClickType(AutoClicker::ClickType::Middle);
+            autoClicker->setClickType(havel::automation::AutoClicker::ClickType::Middle);
         } else if (button == "Side1" || button == "Side2") {
             // For side buttons, use a custom click function
-            autoClicker->SetClickFunction([this, button]() {
+            autoClicker->setClickFunction([this, button]() {
                 if (button == "Side1") {
                     io.Click(MouseButton::Side1, MouseAction::Click);
                 } else {
@@ -1343,7 +1338,8 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
         }
         
         // Start the autoclicker with default interval
-        autoClicker->Start(50); // 50ms interval by default
+        autoClicker->setIntervalMs(50);
+        autoClicker->start(); 
         
     } catch (const std::exception& e) {
         error("Failed to start autoclicker: " + std::string(e.what()));
@@ -1352,9 +1348,9 @@ void HotkeyManager::startAutoclicker(const std::string& button) {
 }
 
 void HotkeyManager::stopAllAutoclickers() {
-    if (autoClicker && autoClicker->IsRunning()) {
+    if (autoClicker && autoClicker->isRunning()) {
         info("Force stopping all autoclickers");
-        autoClicker->Stop();
+        autoClicker->stop();
         autoClicker.reset();
     }
     autoclickerWindowID = 0;
@@ -1669,7 +1665,7 @@ void HotkeyManager::printActiveWindowInfo() {
         windowTitle = window.Title();
         
         // Get window geometry
-        Window root;
+        ::Window root;
         unsigned int border_width, depth;
         Display* display = XOpenDisplay(nullptr);
         if (display) {
@@ -1680,12 +1676,12 @@ void HotkeyManager::printActiveWindowInfo() {
         }
     } catch (const std::exception& e) {
         windowTitle = "<error>";
-        error("Failed to get window information: {}", e.what());
+        error("Failed to get window information: " + std::string(e.what()));
     } catch (...) {
         windowTitle = "<unknown error>";
         error("Unknown error getting window information");
     }
-    std::string geometry = fmt::format("{}x{}+{}+{}", width, height, x, y);
+    std::string geometry = std::to_string(width) + "x" + std::to_string(height) + "+" + std::to_string(x) + "+" + std::to_string(y);
     bool isGaming = isGamingWindow();
 
     auto formatLine = [](const std::string& label, const std::string& value) -> std::string {
@@ -1742,15 +1738,15 @@ void HotkeyManager::cleanup() {
     
     // Clean up old automation objects if they exist
     if (autoClicker) {
-        autoClicker->Stop();
+        autoClicker->stop();
         autoClicker.reset();
     }
     if (autoRunner) {
-        autoRunner->Stop();
+        autoRunner->stop();
         autoRunner.reset();
     }
     if (autoKeyPresser) {
-        autoKeyPresser->Stop();
+        autoKeyPresser->stop();
         autoKeyPresser.reset();
     }
     

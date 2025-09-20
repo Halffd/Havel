@@ -168,5 +168,25 @@ inline void error(const std::string& message) {
 inline void fatal(const std::string& message) {
     Logger::getInstance().fatal(message);
 }
+template<typename... Args>
+inline void debug(const std::string& format, Args&&... args) {
+    Logger::getInstance().debug(format, std::forward<Args>(args)...);
+}
+template<typename... Args>
+inline void info(const std::string& format, Args&&... args) {
+    Logger::getInstance().info(format, std::forward<Args>(args)...);
+}
+template<typename... Args>
+inline void warning(const std::string& format, Args&&... args) {
+    Logger::getInstance().warning(format, std::forward<Args>(args)...);
+}
+template<typename... Args>
+inline void error(const std::string& format, Args&&... args) {
+    Logger::getInstance().error(format, std::forward<Args>(args)...);
+}
+template<typename... Args>
+inline void fatal(const std::string& format, Args&&... args) {
+    Logger::getInstance().fatal(format, std::forward<Args>(args)...);
+}
 
 } // namespace havel

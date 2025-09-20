@@ -47,7 +47,7 @@ void AutoKeyPresser::onStop() {
     // Release any held keys when stopping
     if (!currentKey_.empty()) {
         try {
-            io_->Send(io_->StringToVirtualKey(currentKey_), false);
+            io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
             std::cerr << "Error releasing key: " << e.what() << std::endl;
         }
@@ -61,8 +61,8 @@ void AutoKeyPresser::executeKeyPress() {
             const auto& [key, _] = keySequence_[currentKeyIndex_];
             
             // Press and release the key
-            io_->Send(io_->StringToVirtualKey(key), true);
-            io_->Send(io_->StringToVirtualKey(key), false);
+            io_->Send("{" + key + "}");
+            io_->Send("{" + key + ":up}");
             
             // Move to next key in sequence
             currentKeyIndex_ = (currentKeyIndex_ + 1) % keySequence_.size();
@@ -77,8 +77,8 @@ void AutoKeyPresser::executeKeyPress() {
     } else if (!currentKey_.empty()) {
         try {
             // Simple key press
-            io_->Send(io_->StringToVirtualKey(currentKey_), true);
-            io_->Send(io_->StringToVirtualKey(currentKey_), false);
+            io_->Send("{" + currentKey_ + "}");
+            io_->Send("{" + currentKey_ + ":up}");
         } catch (const std::exception& e) {
             std::cerr << "Error sending key: " << e.what() << std::endl;
             stop();

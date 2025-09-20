@@ -137,12 +137,6 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController
     autoClicker = std::make_unique<havel::automation::AutoClicker>(std::shared_ptr<IO>(&io, [](IO*){}));
     // Initialize automation manager
     automationManager_ = std::make_shared<havel::automation::AutomationManager>(std::shared_ptr<IO>(&io, [](IO*){}));
-    
-    // Register automation hotkeys
-    registerAutomationHotkeys();
-    
-    // Register default hotkeys
-    RegisterDefaultHotkeys();
 }
 
 void HotkeyManager::loadVideoSites() {
@@ -266,17 +260,16 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::cout << "ralt" << std::endl;
         WindowManager::MoveWindowToNextMonitor();
     }); 
-    AddGamingHotkey("@lwin", [this]() {
-        PlayPause();
-    }, nullptr, 0);
 
     // If not gaming mode: open whisker menu on keyup
     AddContextualHotkey("@lwin:up", "mode != 'gaming'", 
         []() {
             Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
-        },
-        nullptr,
-        0);
+        });
+    AddGamingHotkey("@lwin", 
+        [this]() {
+            PlayPause();
+        });
 
     AddGamingHotkey("u", 
         [this]() {
@@ -504,11 +497,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
     });
-    io.Hotkey("#f7", [this]() {
+    io.Hotkey("@#f7", [this]() {
         info("Decreasing gamma");
         brightnessManager.decreaseGamma(200);
     });
-    io.Hotkey("#f8", [this]() {
+    io.Hotkey("@#f8", [this]() {
         info("Increasing gamma");
         brightnessManager.increaseGamma(200);
     });
@@ -905,11 +898,9 @@ void HotkeyManager::RegisterWindowHotkeys() {
 
 void HotkeyManager::registerAutomationHotkeys() {
     // Register hotkeys for automation tasks
-    AddHotkey("F6", [this]() { toggleAutomationTask("autoclicker", "left"); });
-    AddHotkey("F7", [this]() { toggleAutomationTask("autorunner", "w"); });
-    AddHotkey("F8", [this]() { toggleAutomationTask("autokeypresser", "space"); });
-    
-    // Add more automation hotkeys as needed
+    AddHotkey("!delete", [this]() { toggleAutomationTask("autoclicker", "left"); });
+    AddGamingHotkey("slash", [this]() { toggleAutomationTask("autorunner", "w"); });
+    AddGamingHotkey("rshift", [this]() { toggleAutomationTask("autokeypresser", "space"); });
 }
 
 void HotkeyManager::startAutoClicker(const std::string& button) {

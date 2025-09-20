@@ -88,6 +88,8 @@ BrightnessManager::BrightnessManager() {
       brightness[monitor] = getBrightness(monitor);
       info("Brightness for " + monitor + ": " +
            std::to_string(brightness[monitor]));
+      shadowLift[monitor] = 0.0;
+      gammaRGB[monitor] = {1.0, 1.0, 1.0};
       temperature[monitor] = getTemperature(monitor);
       info("Temperature for " + monitor + ": " +
            std::to_string(temperature[monitor]));
@@ -458,10 +460,6 @@ bool BrightnessManager::setBrightnessAndShadowLift(double brightness, double sha
 bool BrightnessManager::setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift){
   return setBrightness(monitor, brightness) && setShadowLift(monitor, shadowLift);
 }
-
-// Initialize static member
-std::unordered_map<std::string, double> BrightnessManager::monitorShadowLifts;
-
 // === SHADOW LIFT METHODS ===
 bool BrightnessManager::setShadowLift(const std::string& monitor, double lift) {
   if (lift < 0.001) lift = 0.0;
@@ -472,7 +470,7 @@ bool BrightnessManager::setShadowLift(const std::string& monitor, double lift) {
   }
   
   // Store the shadow lift value for this monitor
-  monitorShadowLifts[monitor] = lift;
+  shadowLift[monitor] = lift;
   
   // Get current gamma values
   RGBColor currentGamma = getGammaRGB(monitor);
@@ -494,12 +492,12 @@ bool BrightnessManager::setShadowLift(double lift) {
 
 double BrightnessManager::getShadowLift(const string& monitor) {
   // Return the stored shadow lift value, or 0.0 if not set
-  auto it = monitorShadowLifts.find(monitor);
-  if (it != monitorShadowLifts.end()) {
+  auto it = shadowLift.find(monitor);
+  if (it != shadowLift.end()) {
       return it->second;
   }
   // Initialize to 0.0 if not set
-  monitorShadowLifts[monitor] = 0.0;
+  shadowLift[monitor] = 0.0;
   return 0.0;
 }
 
@@ -805,7 +803,6 @@ bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor, double red
   return applyAllSettings(monitor);
 }
 
-// New helper function that combines all settings
 bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   if (!x11_display)
       return false;
@@ -818,6 +815,7 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
 
   // Get current settings for this monitor
   double currentBrightness = brightness.count(monitor) ? brightness[monitor] : 1.0;
+  double currentShadowLift = shadowLift.count(monitor) ? shadowLift[monitor] : 0.0;
   RGBColor currentGamma = gammaRGB.count(monitor) ? gammaRGB[monitor] : RGBColor{1.0, 1.0, 1.0};
   RGBColor tempColor = {1.0, 1.0, 1.0};
   
@@ -843,11 +841,26 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
                       for (int j = 0; j < gamma_size; ++j) {
                           double normalized = (double)j / (gamma_size - 1);
                           
-                          // Apply gamma curve, then temperature tint, then brightness
-                          double redValue = std::pow(normalized, 1.0 / currentGamma.red) * tempColor.red * currentBrightness;
-                          double greenValue = std::pow(normalized, 1.0 / currentGamma.green) * tempColor.green * currentBrightness;
-                          double blueValue = std::pow(normalized, 1.0 / currentGamma.blue) * tempColor.blue * currentBrightness;
+                          // Apply gamma curve first
+                          RGBColor gammaValue = {
+                              std::pow(normalized, 1.0 / currentGamma.red),
+                              std::pow(normalized, 1.0 / currentGamma.green), 
+                              std::pow(normalized, 1.0 / currentGamma.blue)
+                          };
                           
+                          // Apply shadow lift (lifts dark areas, preserves highlights)
+                          RGBColor liftedValue = {
+                              gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
+                              gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
+                              gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)
+                          };
+                          
+                          // Apply temperature tint and brightness
+                          double redValue = liftedValue.red * tempColor.red * currentBrightness;
+                          double greenValue = liftedValue.green * tempColor.green * currentBrightness;
+                          double blueValue = liftedValue.blue * tempColor.blue * currentBrightness;
+                          
+                          // Convert to 16-bit values and clamp
                           gamma->red[j] = (unsigned short)std::clamp(redValue * 65535.0, 0.0, 65535.0);
                           gamma->green[j] = (unsigned short)std::clamp(greenValue * 65535.0, 0.0, 65535.0);
                           gamma->blue[j] = (unsigned short)std::clamp(blueValue * 65535.0, 0.0, 65535.0);
@@ -873,7 +886,6 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   XRRFreeScreenResources(screen_res);
   return success;
 }
-
 // === WAYLAND BACKEND IMPLEMENTATION ===
 #ifdef __WAYLAND__
 std::vector<std::string> BrightnessManager::getConnectedMonitorsWayland() {
@@ -1341,6 +1353,9 @@ int BrightnessManager::rgbToKelvin(const RGBColor &rgb) const {
 // === GET CURRENT RGB GAMMA VALUES ===
 BrightnessManager::RGBColor
 BrightnessManager::getGammaRGB(const std::string &monitor) {
+  if(gammaRGB.count(monitor))   { 
+    return gammaRGB[monitor];
+  }
   if (WindowManagerDetector::IsX11()) {
     return getGammaXrandrRGB(monitor);
   }

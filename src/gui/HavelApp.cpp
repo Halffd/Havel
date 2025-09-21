@@ -126,6 +126,7 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Initialize AutomationSuite with IO instance
     AutomationSuite::Instance(io.get());
+    hotkeyManager->ungrabGamingHotkeys();
 
     // Print initial hotkey state
     hotkeyManager->printHotkeys();
@@ -210,21 +211,7 @@ void HavelApp::onPeriodicCheck() {
 
         auto now = std::chrono::steady_clock::now();
 
-        // Window state checks
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= WINDOW_CHECK_INTERVAL_MS) {
-            if (hotkeyManager) {
-                hotkeyManager->checkHotkeyStates();
-                
-                bool isGamingWindow = hotkeyManager->evaluateCondition("currentMode == 'gaming'");
-                if (isGamingWindow) {
-                    hotkeyManager->grabGamingHotkeys();
-                } else {
-                    hotkeyManager->ungrabGamingHotkeys();
-                }
-            }
-            lastWindowCheck = now;
-        }
-
+        
         // Config checks
         if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >= CONFIG_CHECK_INTERVAL_S) {
             // Periodic config refresh logic here if needed

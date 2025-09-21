@@ -1,13 +1,16 @@
 #include "IO.hpp"
 #include "../utils/Logger.hpp"
 #include "../utils/Utils.hpp"
-#include "../window/WindowManager.hpp"
 #include "./ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "utils/Util.hpp"
 #include "x11.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <cstring>
+#include <cstdio>
+#include <string>
 #include <thread>
 
 namespace havel {
@@ -49,11 +52,90 @@ IO::IO() {
     // Set up X11 error handler
     XSetErrorHandler([](Display *, XErrorEvent *) -> int { return 0; });
 
-    // Start hotkey monitoring in a separate thread
+    // Start with default device
+    std::string device = Configs::Get().Get<std::string>("Device.EVDEV", "/dev/input/event");
+    
+    // Start hotkey monitoring in a separate thread if we have a valid device
     timerRunning = true;
-    timerThread = std::thread([this]() { this->MonitorHotkeys(); });
-  }
-  StartEvdevHotkeyListener("/dev/input/event7"); // your keyboard device
+    if (strcmp(device.c_str(), "/dev/input/event") != 0) {
+        try {
+            timerThread = std::thread([this]() { this->MonitorHotkeys(); });
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to start hotkey monitoring thread: " << e.what() << std::endl;
+            timerRunning = false;
+        }
+    }
+    
+    if(strcmp(device.c_str(), "/dev/input/event") == 0) {
+        // Get the configured guesses, or use default if not set
+        const char* defaultGuesses = "keyboard,usb,bluetooth,bt,hid,logitech,razer,corsair,steelseries,apple,microsoft,dell,hp,asus,wireless,gaming,mechanical,membrane,translated,boot,protocol,magic,system,consumer,control,media";
+        std::string configGuesses = Configs::Get().Get<std::string>("Device.Guesses", defaultGuesses);
+        
+        havel::info("Using device guesses from config: %s", configGuesses.c_str());
+        
+        std::vector<std::string> guesses;
+        std::string current;
+        bool inQuotes = false;
+        
+        // Parse comma-separated values, handling quoted strings with spaces
+        for (char c : configGuesses) {
+            if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                if (!current.empty()) {
+                    guesses.push_back(current);
+                    current.clear();
+                }
+            } else {
+                current += c;
+            }
+        }
+        if (!current.empty()) {
+            guesses.push_back(current);
+        }
+        
+        info("Device guesses: ");
+        // Get all input devices
+        std::vector<InputDevice> devices = getInputDevices();
+        
+        // Debug: Log all found devices
+        for (const auto& dev : devices) {
+            debug("Found input device: " + dev.name + " (type: " + dev.type + ")");
+        }
+        
+        for (const auto& guess : guesses) {
+            try {
+                std::regex pattern(guess, std::regex_constants::icase);
+                
+                for (const auto& inputDevice : devices) {
+                    bool nameMatches = std::regex_search(inputDevice.name, pattern);
+                    bool typeMatches = std::regex_search(inputDevice.type, 
+                        std::regex("keyboard", std::regex_constants::icase));
+                    
+                    std::string lowerName = toLower(inputDevice.name);
+                    std::string lowerGuess = toLower(guess);
+                    if (in(lowerName, lowerGuess) && in(toLower(inputDevice.type), "keyboard")) {
+                        device = "/dev/input/event" + std::to_string(inputDevice.id);
+                        havel::info("Matched device: %s with pattern: %s", inputDevice.name.c_str(), guess.c_str());
+                        break;
+                    }
+                }
+                
+                if (device != "/dev/input/event") {
+                    break;
+                }
+            } catch (const std::regex_error& e) {
+                havel::error("Invalid regex pattern '%s': %s", guess.c_str(), e.what());
+            }
+        }
+    }
+    if(!device.empty() && strcmp(device.c_str(), "/dev/input/event") != 0) {
+        std::cout << "Using device: " << device << std::endl;
+        StartEvdevHotkeyListener(device);
+    } else {
+        std::cerr << "Failed to find a keyboard device" << std::endl;
+    }
+}
 #endif
 }
 
@@ -2246,5 +2328,76 @@ void IO::CleanupUinputDevice() {
     close(uinputFd);
     uinputFd = -1;
   }
+}
+std::vector<InputDevice> IO::getInputDevices() {
+    std::vector<InputDevice> devices;
+    
+    Display* display = XOpenDisplay(NULL);
+    if (!display) {
+        std::cerr << "Cannot open display" << std::endl;
+        return devices;
+    }
+
+    int xi_opcode, event, error;
+    if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event, &error)) {
+        std::cerr << "X Input extension not available" << std::endl;
+        XCloseDisplay(display);
+        return devices;
+    }
+
+    // Check XInput2 version
+    int major = 2, minor = 0;
+    if (XIQueryVersion(display, &major, &minor) == x11::XBadRequest) {
+        std::cerr << "XInput2 not available" << std::endl;
+        XCloseDisplay(display);
+        return devices;
+    }
+
+    int ndevices;
+    XIDeviceInfo* info = XIQueryDevice(display, XIAllDevices, &ndevices);
+    
+    for (int i = 0; i < ndevices; i++) {
+        InputDevice device;
+        device.id = info[i].deviceid;
+        device.name = info[i].name;
+        device.enabled = info[i].enabled;
+        
+        // Determine device type
+        if (info[i].use == XIMasterPointer) {
+            device.type = "master pointer";
+        } else if (info[i].use == XIMasterKeyboard) {
+            device.type = "master keyboard";
+        } else if (info[i].use == XISlavePointer) {
+            device.type = "slave pointer";
+        } else if (info[i].use == XISlaveKeyboard) {
+            device.type = "slave keyboard";
+        } else if (info[i].use == XIFloatingSlave) {
+            device.type = "floating slave";
+        }
+        
+        devices.push_back(device);
+    }
+    
+    XIFreeDeviceInfo(info);
+    XCloseDisplay(display);
+    return devices;
+}
+void IO::listInputDevices() {
+    auto devices = getInputDevices();
+    
+    std::cout << "⎡ Virtual core pointer                    id=" << std::endl;
+    std::cout << "⎜   ↳ Virtual core XTEST pointer          id=" << std::endl;
+    
+    for (const auto& device : devices) {
+        std::string prefix = "⎜   ↳ ";
+        if (device.type == "master pointer" || device.type == "master keyboard") {
+            prefix = "⎡ ";
+        }
+        
+        std::cout << prefix << device.name 
+                  << "    id=" << device.id
+                  << "    [" << device.type << " (" << (device.enabled ? "enabled" : "disabled") << ")]"
+                  << std::endl;
+    }
 }
 } // namespace havel

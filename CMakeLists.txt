@@ -259,6 +259,8 @@ endif()
 # ==============================================================================
 # LIBRARY CONFIGURATION
 # ==============================================================================
+pkg_check_modules(XI REQUIRED xi)
+
 # PulseAudio
 pkg_check_modules(PULSEAUDIO libpulse)
 
@@ -267,6 +269,7 @@ pkg_check_modules(ALSA alsa)
 set(COMMON_LIBS
     # System libraries
     ${X11_LIBRARIES}
+    ${XI_LIBRARIES}
     ${XTEST_LIB}
     ${XRANDR_LIB} 
     ${XINERAMA_LIB}
@@ -308,6 +311,7 @@ target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${X11_INCLUDE_DIR}
+    ${XI_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
     ${PULSEAUDIO_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}

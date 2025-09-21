@@ -110,7 +110,6 @@ namespace x11 {
 #include <X11/XF86keysym.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
-// IMMEDIATELY kill ALL X11 macros
 #undef None
 #undef True
 #undef False

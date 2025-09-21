@@ -136,7 +136,9 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController
     // Initialize auto clicker with IO reference
     autoClicker = std::make_unique<havel::automation::AutoClicker>(std::shared_ptr<IO>(&io, [](IO*){}));
     // Initialize automation manager
-    automationManager_ = std::make_shared<havel::automation::AutomationManager>(std::shared_ptr<IO>(&io, [](IO*){}));
+    automationManager_ = std::make_shared<havel::automation::AutomationManager>(std::shared_ptr<IO>(&io, [](IO*){}));   
+    windowConditionStates["mode == 'gaming'"] = false;
+    currentMode = "default";
 }
 
 void HotkeyManager::loadVideoSites() {
@@ -847,8 +849,8 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     }
 };
     for (const auto& hk : mpvHotkeys) {
-        AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
-        conditionalHotkeyIds.push_back(hk.id);
+        int id = AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
+        conditionalHotkeyIds.push_back(id);
     }
 
     if (currentMode != "gaming") {
@@ -1177,14 +1179,19 @@ void HotkeyManager::setupConditionEngine() {
             return Configs::Get().GetGamingApps();
         });
 }
-
 void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, bool conditionMet) {
     if (condition.find("mode") == std::string::npos) {
-        return; // Only handle mode changes for now
+        return;
     }
 
     auto it = windowConditionStates.find(condition);
-    bool stateChanged = (it == windowConditionStates.end() || it->second != conditionMet);
+    if (it == windowConditionStates.end()) {
+        windowConditionStates[condition] = conditionMet;
+        return;
+    }
+    
+    // Fix the logic:
+    bool stateChanged = (it->second != conditionMet);  // Remove the redundant check!
     windowConditionStates[condition] = conditionMet;
 
     if (stateChanged) {
@@ -1226,31 +1233,31 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
     return result;
 }
 
-void HotkeyManager::grabGamingHotkeys() {
-    if (mpvHotkeysGrabbed) {
-        return;
+    void HotkeyManager::grabGamingHotkeys() {
+        if (mpvHotkeysGrabbed) {
+            return;
+        }
+
+        for (int id : conditionalHotkeyIds) {
+            io.GrabHotkey(id);
+        }
+
+        mpvHotkeysGrabbed = true;
+        info("Grabbed all MPV hotkeys for gaming mode");
     }
 
-    for (int id : conditionalHotkeyIds) {
-        io.GrabHotkey(id);
+    void HotkeyManager::ungrabGamingHotkeys() {
+        if (!mpvHotkeysGrabbed) {
+            return;
+        }
+
+        for (int id : conditionalHotkeyIds) {
+            io.UngrabHotkey(id);
+        }
+
+        mpvHotkeysGrabbed = false;
+        info("Released all MPV hotkeys for normal mode");
     }
-
-    mpvHotkeysGrabbed = true;
-    info("Grabbed all MPV hotkeys for gaming mode");
-}
-
-void HotkeyManager::ungrabGamingHotkeys() {
-    if (!mpvHotkeysGrabbed) {
-        return;
-    }
-
-    for (int id : conditionalHotkeyIds) {
-        io.UngrabHotkey(id);
-    }
-
-    mpvHotkeysGrabbed = false;
-    info("Released all MPV hotkeys for normal mode");
-}
 
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
     std::string cmd = "notify-send \"" + title + "\" \"" + message + "\"";

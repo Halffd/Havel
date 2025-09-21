@@ -177,7 +177,7 @@ namespace havel {
         ControlMode currentBrightnessMode = ControlMode::BRIGHTNESS;
         TargetMonitor targetBrightnessMonitor = TargetMonitor::ALL;
         // Hotkey state management
-        bool mpvHotkeysGrabbed{false};
+        bool mpvHotkeysGrabbed{true};
         std::map<std::string, bool> windowConditionStates;
         // Tracks if particular window conditions were met
 

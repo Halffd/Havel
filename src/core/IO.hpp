@@ -50,6 +50,12 @@ struct HotKey {
   HotkeyEventType eventType = HotkeyEventType::Both;
 };
 
+struct InputDevice {
+  int id;
+  std::string name;
+  std::string type;
+  bool enabled;
+};
 // Helper for parsing event type from string
 inline HotkeyEventType ParseHotkeyEventType(const std::string &str) {
   if (str == "down")
@@ -282,5 +288,7 @@ private:
             bool isMouse = false);
 
   void Ungrab(Key input, unsigned int modifiers, Window root);
+  std::vector<InputDevice> getInputDevices();
+  void listInputDevices();
 };
 } // namespace havel

@@ -195,6 +195,9 @@ bool contains(const std::unordered_map<K, V, H, E>& map, const K& key) {
     return map.find(key) != map.end();
 }
 
+inline bool in(const std::string& input, const std::string& substring) {
+    return input.find(substring) != std::string::npos;
+}
 // includes - checks if ALL elements of second container are in first
 template<Iterable T1, Iterable T2>
 bool includes(const T1& input, const T2& elements) {
@@ -211,7 +214,7 @@ bool includes(const T& input, const typename T::value_type& value) {
 }
 
 // String-specific includes (case-insensitive contains)
-inline bool includes(const std::string& input, const std::string& substring) {
+inline bool insens(const std::string& input, const std::string& substring) {
     std::string input_lower = input;
     std::string sub_lower = substring;
     std::transform(input_lower.begin(), input_lower.end(), input_lower.begin(), ::tolower);

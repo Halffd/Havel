@@ -185,6 +185,10 @@ public:
         
         std::string line, currentSection;
         while (std::getline(file, line)) {
+            // Trim whitespace
+            line.erase(0, line.find_first_not_of(" \t"));
+            line.erase(line.find_last_not_of(" \t") + 1);
+            
             if (line.empty() || line[0] == '#') continue;
             
             if (line[0] == '[') {
@@ -194,7 +198,24 @@ public:
                 size_t delim = line.find('=');
                 if (delim != std::string::npos) {
                     std::string key = currentSection + "." + line.substr(0, delim);
+                    // Trim key
+                    key.erase(0, key.find_last_not_of(" \t") + 1);
+                    key.erase(0, key.find_first_not_of(" \t"));
+                    
                     std::string value = line.substr(delim+1);
+                    // Trim value and handle quoted strings
+                    value.erase(0, value.find_first_not_of(" \t"));
+                    if (!value.empty() && (value[0] == '"' || value[0] == '\'')) {
+                        char quote = value[0];
+                        value = value.substr(1);
+                        size_t end_quote = value.find(quote);
+                        if (end_quote != std::string::npos) {
+                            value = value.substr(0, end_quote);
+                        }
+                    } else {
+                        value.erase(value.find_last_not_of(" \t") + 1);
+                    }
+                    
                     settings[key] = value;
                 }
             }

@@ -230,121 +230,236 @@ bool AudioManager::playNotificationSound() {
 
 // === BACKEND IMPLEMENTATIONS ===
 #ifdef __linux__
+
+void AudioManager::cleanup() {
+    // Clean up PulseAudio resources
+    if (pa_context) {
+        // Only try to disconnect if we have a valid context state
+        pa_context_state_t state = pa_context_get_state(pa_context);
+        if (state != PA_CONTEXT_UNCONNECTED && state != PA_CONTEXT_TERMINATED) {
+            pa_context_disconnect(pa_context);
+            // Give some time for the disconnect to complete
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        // Remove any callbacks to prevent callbacks during cleanup
+        pa_context_set_state_callback(pa_context, nullptr, nullptr);
+        
+        // Unref the context
+        pa_context_unref(pa_context);
+        pa_context = nullptr;
+    }
+    
+    // Clean up the mainloop if it exists
+    if (pa_mainloop) {
+        // Stop the mainloop if it's running
+        if (pa_threaded_mainloop_in_thread(pa_mainloop)) {
+            pa_threaded_mainloop_stop(pa_mainloop);
+        }
+        
+        // Free the mainloop
+        pa_threaded_mainloop_free(pa_mainloop);
+        pa_mainloop = nullptr;
+    }
+    
+    // Clean up ALSA resources
+    if (alsa_mixer) {
+        if (alsa_elem) {
+            // No need to free alsa_elem as it's owned by alsa_mixer
+            alsa_elem = nullptr;
+        }
+        
+        if (snd_mixer_close(alsa_mixer) < 0) {
+            error("Failed to close ALSA mixer");
+        }
+        alsa_mixer = nullptr;
+    }
+}
+
 bool AudioManager::initializePulse() {
+    // Initialize mainloop
     pa_mainloop = pa_threaded_mainloop_new();
     if (!pa_mainloop) {
         error("Failed to create PulseAudio mainloop");
         return false;
     }
     
-    pa_threaded_mainloop_start(pa_mainloop);
+    // Lock the mainloop before starting it
+    pa_threaded_mainloop_lock(pa_mainloop);
     
+    // Start the mainloop
+    if (pa_threaded_mainloop_start(pa_mainloop) < 0) {
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        pa_threaded_mainloop_free(pa_mainloop);
+        pa_mainloop = nullptr;
+        error("Failed to start PulseAudio mainloop");
+        return false;
+    }
+    
+    // Create context
     pa_context = pa_context_new(pa_threaded_mainloop_get_api(pa_mainloop), "Havel");
     if (!pa_context) {
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        pa_threaded_mainloop_stop(pa_mainloop);
+        pa_threaded_mainloop_free(pa_mainloop);
+        pa_mainloop = nullptr;
         error("Failed to create PulseAudio context");
         return false;
     }
     
+    // Set up state callback
+    pa_context_set_state_callback(pa_context, [](struct pa_context* c, void* userdata) {
+        pa_threaded_mainloop* m = static_cast<pa_threaded_mainloop*>(userdata);
+        pa_threaded_mainloop_signal(m, 0);
+    }, pa_mainloop);
+    
+    // Connect to the server
     if (pa_context_connect(pa_context, nullptr, PA_CONTEXT_NOFLAGS, nullptr) < 0) {
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        cleanup();
         error("Failed to connect to PulseAudio: {}", pa_strerror(pa_context_errno(pa_context)));
         return false;
     }
     
-    // Wait for connection
+    // Wait for connection with timeout (5 seconds)
+    auto start = std::chrono::steady_clock::now();
     pa_context_state_t state;
-    while ((state = pa_context_get_state(pa_context)) != PA_CONTEXT_READY) {
+    while (true) {
+        state = pa_context_get_state(pa_context);
+        if (state == PA_CONTEXT_READY) {
+            break;
+        }
         if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
-            error("PulseAudio connection failed");
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            cleanup();
+            error("PulseAudio connection failed or was terminated");
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - start).count();
+        if (elapsed >= 5) {  // 5 second timeout
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            cleanup();
+            error("PulseAudio connection timed out");
+            return false;
+        }
+        
+        // Wait for state change with a small delay
+        pa_threaded_mainloop_wait(pa_mainloop);
+    }
+    
+    pa_threaded_mainloop_unlock(pa_mainloop);
+    debug("Successfully connected to PulseAudio");
+    return true;
+}
+
+bool AudioManager::initializeAlsa() {
+    int err;
+    
+    // 1. Open the mixer
+    err = snd_mixer_open(&alsa_mixer, 0);
+    if (err < 0) {
+        error("Failed to open ALSA mixer: {}", snd_strerror(err));
+        return false;
+    }
+    
+    // 2. Attach to the default sound card
+    const char* card = "default";
+    err = snd_mixer_attach(alsa_mixer, card);
+    if (err < 0) {
+        error("Failed to attach to ALSA card '{}': {}", card, snd_strerror(err));
+        snd_mixer_close(alsa_mixer);
+        alsa_mixer = nullptr;
+        return false;
+    }
+    
+    // 3. Register the mixer
+    err = snd_mixer_selem_register(alsa_mixer, nullptr, nullptr);
+    if (err < 0) {
+        error("Failed to register ALSA mixer: {}", snd_strerror(err));
+        snd_mixer_close(alsa_mixer);
+        alsa_mixer = nullptr;
+        return false;
+    }
+    
+    // 4. Load the mixer elements
+    err = snd_mixer_load(alsa_mixer);
+    if (err < 0) {
+        error("Failed to load ALSA mixer elements: {}", snd_strerror(err));
+        snd_mixer_close(alsa_mixer);
+        alsa_mixer = nullptr;
+        return false;
+    }
+    
+    // 5. Find a suitable playback element
+    snd_mixer_selem_id_t* sid = nullptr;
+    snd_mixer_selem_id_alloca(&sid);
+    if (!sid) {
+        error("Failed to allocate ALSA mixer element ID");
+        snd_mixer_close(alsa_mixer);
+        alsa_mixer = nullptr;
+        return false;
+    }
+    
+    // Try common element names in order of preference
+    const char* elem_names[] = {"Master", "PCM", "Headphone", "Speaker", "Line Out", nullptr};
+    bool found = false;
+    
+    for (int i = 0; elem_names[i] != nullptr; i++) {
+        snd_mixer_selem_id_set_index(sid, 0);
+        snd_mixer_selem_id_set_name(sid, elem_names[i]);
+        
+        alsa_elem = snd_mixer_find_selem(alsa_mixer, sid);
+        if (alsa_elem) {
+            // Verify this element has volume control
+            if (snd_mixer_selem_has_playback_volume(alsa_elem)) {
+                debug("Using ALSA element: {}", elem_names[i]);
+                found = true;
+                break;
+            }
+            alsa_elem = nullptr; // Keep looking if no volume control
+        }
+    }
+    
+    if (!found) {
+        // If no named element found, try the first one with volume control
+        snd_mixer_elem_t* elem = nullptr;
+        for (elem = snd_mixer_first_elem(alsa_mixer); elem; elem = snd_mixer_elem_next(elem)) {
+            if (snd_mixer_selem_has_playback_volume(elem)) {
+                alsa_elem = elem;
+                debug("Using first available ALSA element with volume control");
+                found = true;
+                break;
+            }
+        }
+    }
+    
+    if (!found) {
+        error("No suitable ALSA mixer element with volume control found");
+        snd_mixer_close(alsa_mixer);
+        alsa_mixer = nullptr;
+        return false;
+    }
+    
+    // 6. Set volume range (0-100)
+    long min, max;
+    if (snd_mixer_selem_get_playback_volume_range(alsa_elem, &min, &max) < 0) {
+        warning("Could not get ALSA volume range, using defaults");
+    } else {
+        debug("ALSA volume range: {} to {}", min, max);
     }
     
     return true;
 }
 
-bool AudioManager::initializeAlsa() {
-        int err = snd_mixer_open(&alsa_mixer, 0);
-        if (err < 0) {
-            error("Failed to open ALSA mixer: {}", snd_strerror(err));
-            return false;
-        }
-        
-        err = snd_mixer_attach(alsa_mixer, "default");
-        if (err < 0) {
-            error("Failed to attach ALSA mixer: {}", snd_strerror(err));
-            snd_mixer_close(alsa_mixer);
-            alsa_mixer = nullptr;
-            return false;
-        }
-        
-        err = snd_mixer_selem_register(alsa_mixer, nullptr, nullptr);
-        if (err < 0) {
-            error("Failed to register ALSA mixer: {}", snd_strerror(err));
-            snd_mixer_close(alsa_mixer);
-            alsa_mixer = nullptr;
-            return false;
-        }
-        
-        err = snd_mixer_load(alsa_mixer);
-        if (err < 0) {
-            error("Failed to load ALSA mixer: {}", snd_strerror(err));
-            snd_mixer_close(alsa_mixer);
-            alsa_mixer = nullptr;
-            return false;
-        }
-        
-        // Find Master or PCM element
-        snd_mixer_selem_id_t *sid;
-        snd_mixer_selem_id_alloca(&sid);
-        
-        const char* elem_names[] = {"Master", "PCM", "Speaker", "Headphone"};
-        for (const char* name : elem_names) {
-            snd_mixer_selem_id_set_index(sid, 0);
-            snd_mixer_selem_id_set_name(sid, name);
-            alsa_elem = snd_mixer_find_selem(alsa_mixer, sid);
-            if (alsa_elem) {
-                debug("Using ALSA element: {}", name);
-                break;
-            }
-        }
-        
-        if (!alsa_elem) {
-            error("No suitable ALSA mixer element found");
-            snd_mixer_close(alsa_mixer);
-            alsa_mixer = nullptr;
-            return false;
-        }
-        
-        return true;
-    }
+// === PULSEAUDIO IMPLEMENTATIONS ===
+bool AudioManager::setPulseVolume(const std::string& device, double volume) {
+    if (!pa_context) return false;
     
-    void AudioManager::cleanup() {
-        if (pa_context) {
-            pa_context_disconnect(pa_context);
-            pa_context_unref(pa_context);
-            pa_context = nullptr;
-        }
-        
-        if (pa_mainloop) {
-            pa_threaded_mainloop_stop(pa_mainloop);
-            pa_threaded_mainloop_free(pa_mainloop);
-            pa_mainloop = nullptr;
-        }
-        
-        if (alsa_mixer) {
-            snd_mixer_close(alsa_mixer);
-            alsa_mixer = nullptr;
-        }
-    }
-    
-    // === PULSEAUDIO IMPLEMENTATIONS ===
-    bool AudioManager::setPulseVolume(const std::string& device, double volume) {
-        if (!pa_context) return false;
-        
-        pa_volume_t pa_volume = pa_sw_volume_from_linear(volume);
-        pa_cvolume cv;
-        pa_cvolume_set(&cv, 2, pa_volume); // Stereo
+    pa_volume_t pa_volume = pa_sw_volume_from_linear(volume);
+    pa_cvolume cv;
+    pa_cvolume_set(&cv, 2, pa_volume); // Stereo
         
         pa_threaded_mainloop_lock(pa_mainloop);
         

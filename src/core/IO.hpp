@@ -55,6 +55,7 @@ struct InputDevice {
   std::string name;
   std::string type;
   bool enabled;
+  std::string evdevPath;
 };
 // Helper for parsing event type from string
 inline HotkeyEventType ParseHotkeyEventType(const std::string &str) {
@@ -288,6 +289,8 @@ private:
             bool isMouse = false);
 
   void Ungrab(Key input, unsigned int modifiers, Window root);
+  
+  std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();
 };

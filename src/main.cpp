@@ -12,8 +12,9 @@ int main(int argc, char* argv[]) {
         auto& config = Configs::Get();
         config.EnsureConfigFile();
         config.Load();
+        info("Config path: {}", config.getPath());
     } catch (const std::exception& e) {
-        std::cerr << "Critical: Failed to initialize config: " << e.what() << std::endl;
+        error("Critical: Failed to initialize config: {}", e.what());
         return 1;
     }
     XSetIOErrorHandler([](Display*) -> int {

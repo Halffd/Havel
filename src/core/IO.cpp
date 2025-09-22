@@ -6,12 +6,14 @@
 #include "utils/Util.hpp"
 #include "x11.h"
 #include <algorithm>
-#include <cmath>
-#include <iostream>
 #include <cstring>
 #include <cstdio>
+#include <iostream>
 #include <string>
 #include <thread>
+#include <vector>
+#include <sstream>
+#include <regex>
 
 namespace havel {
 #if defined(WINDOWS)
@@ -33,112 +35,178 @@ int xerrorHandler(Display *display, XErrorEvent *error) {
 
   return 0; // Must return a value
 }
-
 IO::IO() {
-  std::cout << "IO constructor called" << std::endl;
+  info("IO constructor called");
 
   // Set the error handler before making your XGrabKey call
   XSetErrorHandler(xerrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
   if (!display) {
-    std::cerr << "Failed to get X11 display" << std::endl;
+      error("Failed to get X11 display");
   }
   InitKeyMap();
 
   // Start hotkey monitoring thread for X11
 #ifdef __linux__
   if (display) {
-    // Set up X11 error handler
-    XSetErrorHandler([](Display *, XErrorEvent *) -> int { return 0; });
+      // Set up X11 error handler
+      XSetErrorHandler([](Display *, XErrorEvent *) -> int { return 0; });
 
-    // Start with default device
-    std::string device = Configs::Get().Get<std::string>("Device.EVDEV", "/dev/input/event");
-    
-    // Start hotkey monitoring in a separate thread if we have a valid device
-    timerRunning = true;
-    if (strcmp(device.c_str(), "/dev/input/event") != 0) {
-        try {
-            timerThread = std::thread([this]() { this->MonitorHotkeys(); });
-        } catch (const std::exception& e) {
-            std::cerr << "Failed to start hotkey monitoring thread: " << e.what() << std::endl;
-            timerRunning = false;
-        }
-    }
-    
-    if(strcmp(device.c_str(), "/dev/input/event") == 0) {
-        // Get the configured guesses, or use default if not set
-        const char* defaultGuesses = "keyboard,usb,bluetooth,bt,hid,logitech,razer,corsair,steelseries,apple,microsoft,dell,hp,asus,wireless,gaming,mechanical,membrane,translated,boot,protocol,magic,system,consumer,control,media";
-        std::string configGuesses = Configs::Get().Get<std::string>("Device.Guesses", defaultGuesses);
-        
-        havel::info("Using device guesses from config: %s", configGuesses.c_str());
-        
-        std::vector<std::string> guesses;
-        std::string current;
-        bool inQuotes = false;
-        
-        // Parse comma-separated values, handling quoted strings with spaces
-        for (char c : configGuesses) {
-            if (c == '"') {
-                inQuotes = !inQuotes;
-            } else if (c == ',' && !inQuotes) {
-                if (!current.empty()) {
-                    guesses.push_back(current);
-                    current.clear();
-                }
-            } else {
-                current += c;
-            }
-        }
-        if (!current.empty()) {
-            guesses.push_back(current);
-        }
-        
-        info("Device guesses: ");
-        // Get all input devices
-        std::vector<InputDevice> devices = getInputDevices();
-        
-        // Debug: Log all found devices
-        for (const auto& dev : devices) {
-            debug("Found input device: " + dev.name + " (type: " + dev.type + ")");
-        }
-        
-        for (const auto& guess : guesses) {
-            try {
-                std::regex pattern(guess, std::regex_constants::icase);
+      // Start with default device
+      std::string device;
+      try {
+          device = Configs::Get().Get<std::string>("Device.EVDEV", "/dev/input/event");
+      } catch (const std::exception& e) {
+          error("Error getting device config: {}", e.what());
+          device = "/dev/input/event";
+      }
+      
+      // Start hotkey monitoring in a separate thread if we have a valid device
+      timerRunning = true;
+      if (device != "/dev/input/event") {
+          try {
+              timerThread = std::thread(&IO::MonitorHotkeys, this);
+              info("Started hotkey monitoring thread");
+          } catch (const std::exception& e) {
+              error("Failed to start hotkey monitoring thread: {}", e.what());
+              timerRunning = false;
+          }
+      }
+      
+      if (device == "/dev/input/event") {
+          try {
+              // Get the configured guesses, or use default if not set
+              const char* defaultGuesses = "keyboard,usb,bluetooth,bt,hid,logitech,razer,corsair,steelseries,apple,microsoft,dell,hp,asus,wireless,gaming,mechanical,membrane,translated,boot,protocol,magic,system,consumer,control,media";
+              std::string configGuesses = Configs::Get().Get<std::string>("Device.Guesses", defaultGuesses);
+              
+              info("Using device guesses from config: {}", configGuesses);
+              
+              std::vector<std::string> guesses;
+              std::string current;
+              bool inQuotes = false;
+              
+              // Parse comma-separated values, handling quoted strings with spaces
+              for (char c : configGuesses) {
+                  if (c == '"') {
+                      inQuotes = !inQuotes;
+                  } else if (c == ',' && !inQuotes) {
+                      if (!current.empty()) {
+                          guesses.push_back(current);
+                          current.clear();
+                      }
+                  } else {
+                      current += c;
+                  }
+              }
+              if (!current.empty()) {
+                  guesses.push_back(current);
+              }
+              
+              // Helper function to match device names (supports both regex and simple matching)
+              auto matchDevice = [](const std::string& deviceName, const std::string& pattern) -> bool {
+                  // Check if pattern looks like regex
+                  if (pattern.find('^') != std::string::npos || 
+                      pattern.find('$') != std::string::npos ||
+                      pattern.find("\\s") != std::string::npos ||
+                      pattern.find("\\w") != std::string::npos ||
+                      pattern.find("[") != std::string::npos) {
+                      
+                      try {
+                          // Convert \s to actual regex space pattern
+                          std::string regexPattern = std::regex_replace(pattern, std::regex("\\\\s"), "\\s");
+                          std::regex r(regexPattern, std::regex_constants::icase);
+                          return std::regex_match(deviceName, r);
+                      } catch (const std::regex_error& e) {
+                          // Fallback to substring if regex fails
+                          warning("Invalid regex pattern '{}': {}. Using substring matching.", pattern, e.what());
+                          std::string lowerDevice = deviceName;
+                          std::string lowerPattern = pattern;
+                          std::transform(lowerDevice.begin(), lowerDevice.end(), lowerDevice.begin(), ::tolower);
+                          std::transform(lowerPattern.begin(), lowerPattern.end(), lowerPattern.begin(), ::tolower);
+                          return lowerDevice.find(lowerPattern) != std::string::npos;
+                      }
+                  } else {
+                      // Simple case-insensitive substring matching
+                      std::string lowerDevice = deviceName;
+                      std::string lowerPattern = pattern;
+                      std::transform(lowerDevice.begin(), lowerDevice.end(), lowerDevice.begin(), ::tolower);
+                      std::transform(lowerPattern.begin(), lowerPattern.end(), lowerPattern.begin(), ::tolower);
+                      return lowerDevice.find(lowerPattern) != std::string::npos;
+                  }
+              };
+              
+              // Helper function to check if device type is keyboard
+              auto isKeyboardType = [](const std::string& type) -> bool {
+                  std::string lowerType = type;
+                  std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), ::tolower);
+                  return lowerType.find("keyboard") != std::string::npos;
+              };
+              
+              debug("Starting device detection with {} patterns", guesses.size());
+              
+              // Get all input devices
+              std::vector<InputDevice> devices = getInputDevices();
+              
+              // Debug: Log all found devices
+              info("Found {} input devices:", devices.size());
+              for (const auto& dev : devices) {
+                  debug("  Device: {} (type: {}, id: {})", dev.name, dev.type, dev.id);
+              }
+              
+              // Try to match devices in order of preference
+              bool foundDevice = false;
+              for (const auto& guess : guesses) {
+                debug("Trying pattern: '{}'", guess);
                 
                 for (const auto& inputDevice : devices) {
-                    bool nameMatches = std::regex_search(inputDevice.name, pattern);
-                    bool typeMatches = std::regex_search(inputDevice.type, 
-                        std::regex("keyboard", std::regex_constants::icase));
-                    
-                    std::string lowerName = toLower(inputDevice.name);
-                    std::string lowerGuess = toLower(guess);
-                    if (in(lowerName, lowerGuess) && in(toLower(inputDevice.type), "keyboard")) {
-                        device = "/dev/input/event" + std::to_string(inputDevice.id);
-                        havel::info("Matched device: %s with pattern: %s", inputDevice.name.c_str(), guess.c_str());
-                        break;
+                    // Check if pattern matches device name and type is keyboard
+                    if (matchDevice(inputDevice.name, guess) && isKeyboardType(inputDevice.type)) {
+                        
+                        // Use the real evdev path instead of XInput ID
+                        if (!inputDevice.evdevPath.empty()) {
+                            device = inputDevice.evdevPath;  // Use real path like /dev/input/event7
+                            info("Matched device: '{}' (XInput ID: {}, evdev: {}) with pattern: '{}'", 
+                                 inputDevice.name, inputDevice.id, device, guess);
+                            foundDevice = true;
+                            break;
+                        } else {
+                            warning("Device '{}' has no evdev mapping", inputDevice.name);
+                        }
                     }
                 }
                 
-                if (device != "/dev/input/event") {
-                    break;
-                }
-            } catch (const std::regex_error& e) {
-                havel::error("Invalid regex pattern '%s': %s", guess.c_str(), e.what());
+                if (foundDevice) break;
             }
-        }
-    }
-    if(!device.empty() && strcmp(device.c_str(), "/dev/input/event") != 0) {
-        std::cout << "Using device: " << device << std::endl;
-        StartEvdevHotkeyListener(device);
-    } else {
-        std::cerr << "Failed to find a keyboard device" << std::endl;
-    }
-}
+              
+              if (!foundDevice) {
+                  warning("No keyboard device matched any pattern. Available keyboard devices:");
+                  for (const auto& dev : devices) {
+                      if (isKeyboardType(dev.type)) {
+                          warning("  - {} (id: {})", dev.name, dev.id);
+                      }
+                  }
+              }
+              
+          } catch (const std::exception& e) {
+              error("Error during device matching: {}", e.what());
+          }
+      }
+      
+      if (device != "/dev/input/event") {
+          info("Using device: {}", device);
+          try {
+              StartEvdevHotkeyListener(device);
+              info("Successfully started evdev hotkey listener");
+          } catch (const std::exception& e) {
+              error("Failed to start evdev listener: {}", e.what());
+          }
+      } else {
+          error("Failed to find a suitable keyboard device");
+      }
+  }
 #endif
 }
-
 IO::~IO() {
     std::cout << "IO destructor called" << std::endl;
     
@@ -2329,58 +2397,104 @@ void IO::CleanupUinputDevice() {
     uinputFd = -1;
   }
 }
+std::string IO::findEvdevDevice(const std::string& deviceName) {
+  std::ifstream proc("/proc/bus/input/devices");
+  std::string line;
+  std::string currentName;
+  
+  while (std::getline(proc, line)) {
+      if (line.starts_with("N: Name=")) {
+          // Extract device name: N: Name="INSTANT USB Keyboard"
+          currentName = line.substr(8);
+          if (!currentName.empty() && currentName[0] == '"') {
+              currentName = currentName.substr(1, currentName.length() - 2);
+          }
+      }
+      else if (line.starts_with("H: Handlers=") && currentName == deviceName) {
+          // Look for "kbd" handler to ensure it's a real keyboard
+          if (line.find("kbd") != std::string::npos) {
+              // Extract event number: H: Handlers=sysrq kbd leds event7
+              size_t eventPos = line.find("event");
+              if (eventPos != std::string::npos) {
+                  std::string eventStr = line.substr(eventPos + 5);
+                  size_t spacePos = eventStr.find(' ');
+                  if (spacePos != std::string::npos) {
+                      eventStr = eventStr.substr(0, spacePos);
+                  }
+                  return "/dev/input/event" + eventStr;
+              }
+          }
+      }
+  }
+  return "";
+}
+
 std::vector<InputDevice> IO::getInputDevices() {
-    std::vector<InputDevice> devices;
-    
-    Display* display = XOpenDisplay(NULL);
-    if (!display) {
-        std::cerr << "Cannot open display" << std::endl;
-        return devices;
-    }
+  std::vector<InputDevice> devices;
+  
+  Display* display = DisplayManager::GetDisplay();
+  if (!display) {
+      error("Cannot open display for device enumeration");
+      return devices;
+  }
 
-    int xi_opcode, event, error;
-    if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event, &error)) {
-        std::cerr << "X Input extension not available" << std::endl;
-        XCloseDisplay(display);
-        return devices;
-    }
+  int xi_opcode, event, error_code;
+  if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event, &error_code)) {
+      error("X Input extension not available");
+      return devices;
+  }
 
-    // Check XInput2 version
-    int major = 2, minor = 0;
-    if (XIQueryVersion(display, &major, &minor) == x11::XBadRequest) {
-        std::cerr << "XInput2 not available" << std::endl;
-        XCloseDisplay(display);
-        return devices;
-    }
+  // Check XInput2 version
+  int major = 2, minor = 0;
+  if (XIQueryVersion(display, &major, &minor) == x11::XBadRequest) {
+      error("XInput2 not available");
+      return devices;
+  }
 
-    int ndevices;
-    XIDeviceInfo* info = XIQueryDevice(display, XIAllDevices, &ndevices);
-    
-    for (int i = 0; i < ndevices; i++) {
-        InputDevice device;
-        device.id = info[i].deviceid;
-        device.name = info[i].name;
-        device.enabled = info[i].enabled;
-        
-        // Determine device type
-        if (info[i].use == XIMasterPointer) {
-            device.type = "master pointer";
-        } else if (info[i].use == XIMasterKeyboard) {
-            device.type = "master keyboard";
-        } else if (info[i].use == XISlavePointer) {
-            device.type = "slave pointer";
-        } else if (info[i].use == XISlaveKeyboard) {
-            device.type = "slave keyboard";
-        } else if (info[i].use == XIFloatingSlave) {
-            device.type = "floating slave";
-        }
-        
-        devices.push_back(device);
-    }
-    
-    XIFreeDeviceInfo(info);
-    XCloseDisplay(display);
-    return devices;
+  int ndevices;
+  XIDeviceInfo* info = XIQueryDevice(display, XIAllDevices, &ndevices);
+  
+  for (int i = 0; i < ndevices; i++) {
+      InputDevice device;
+      device.id = info[i].deviceid;
+      device.name = info[i].name;
+      device.enabled = info[i].enabled;
+      
+      // Determine device type
+      switch(info[i].use) {
+          case XIMasterPointer:
+              device.type = "master pointer";
+              break;
+          case XIMasterKeyboard:
+              device.type = "master keyboard";
+              break;
+          case XISlavePointer:
+              device.type = "slave pointer";
+              break;
+          case XISlaveKeyboard:
+              device.type = "slave keyboard";
+              break;
+          case XIFloatingSlave:
+              device.type = "floating slave";
+              break;
+          default:
+              device.type = "unknown";
+      }
+      
+      // Find the real evdev path for keyboards
+      if (device.type == "slave keyboard" || device.type == "master keyboard") {
+          std::string evdevPath = findEvdevDevice(device.name);
+          if (!evdevPath.empty()) {
+              device.evdevPath = evdevPath;
+              debug("Device '{}' (XInput ID: {}) maps to {}", device.name, device.id, evdevPath);
+          }
+      }
+      
+      devices.push_back(device);
+  }
+  
+  XIFreeDeviceInfo(info);
+  return devices;
 }
 void IO::listInputDevices() {
     auto devices = getInputDevices();

@@ -142,15 +142,16 @@ public:
         static Configs instance;
         return instance;
     }
+    std::string path = "";
 
     void EnsureConfigFile(const std::string& filename = "havel.cfg") {
-        std::string configPath = ConfigPaths::GetConfigPath(filename);
+        path = ConfigPaths::GetConfigPath(filename);
         ConfigPaths::EnsureConfigDir();
         namespace fs = std::filesystem;
-        if (!fs::exists(configPath)) {
+        if (!fs::exists(path)) {
             try {
-                std::ofstream file(configPath);
-                if (!file.is_open()) throw std::runtime_error("Could not create config file: " + configPath);
+                std::ofstream file(path);
+                if (!file.is_open()) throw std::runtime_error("Could not create config file: " + path);
                 // Write sensible defaults
                 file << "[Debug]" << std::endl;
                 file << "VerboseKeyLogging=false" << std::endl;
@@ -174,57 +175,122 @@ public:
             }
         }
     }
-
+    std::string getPath() {
+        return path;
+    }
     void Load(const std::string& filename = "havel.cfg") {
-        std::string configPath = ConfigPaths::GetConfigPath(filename);
-        std::ifstream file(configPath);
+        path = ConfigPaths::GetConfigPath(filename);
+        
+        // Debug: Show where we're trying to load from
+        std::cout << "Loading config from: " << path << std::endl;
+        
+        std::ifstream file(path);
         if (!file.is_open()) {
-            std::cerr << "Warning: Could not open config file: " << configPath << std::endl;
-            return;
+            std::cerr << "Warning: Could not open config file: " << path << std::endl;
+            // Also try current directory as fallback
+            std::ifstream fallback(filename);
+            if (fallback.is_open()) {
+                std::cout << "Using fallback config: " << filename << std::endl;
+                file = std::move(fallback);
+                path = filename;
+            } else {
+                return;
+            }
         }
         
         std::string line, currentSection;
+        int lineNumber = 0;
+        
         while (std::getline(file, line)) {
-            // Trim whitespace
-            line.erase(0, line.find_first_not_of(" \t"));
-            line.erase(line.find_last_not_of(" \t") + 1);
+            lineNumber++;
             
-            if (line.empty() || line[0] == '#') continue;
+            // Trim leading and trailing whitespace
+            line.erase(0, line.find_first_not_of(" \t\r"));
+            line.erase(line.find_last_not_of(" \t\r") + 1);
             
-            if (line[0] == '[') {
-                currentSection = line.substr(1, line.find(']')-1);
+            // Skip empty lines and comments
+            if (line.empty() || line[0] == '#' || line[0] == ';') {
+                continue;
             }
-            else {
-                size_t delim = line.find('=');
-                if (delim != std::string::npos) {
-                    std::string key = currentSection + "." + line.substr(0, delim);
-                    // Trim key
-                    key.erase(0, key.find_last_not_of(" \t") + 1);
-                    key.erase(0, key.find_first_not_of(" \t"));
+            
+            // Handle section headers [SectionName]
+            if (line[0] == '[') {
+                size_t closeBracket = line.find(']');
+                if (closeBracket != std::string::npos) {
+                    currentSection = line.substr(1, closeBracket - 1);
+                    // Trim section name
+                    currentSection.erase(0, currentSection.find_first_not_of(" \t"));
+                    currentSection.erase(currentSection.find_last_not_of(" \t") + 1);
                     
-                    std::string value = line.substr(delim+1);
-                    // Trim value and handle quoted strings
-                    value.erase(0, value.find_first_not_of(" \t"));
-                    if (!value.empty() && (value[0] == '"' || value[0] == '\'')) {
-                        char quote = value[0];
-                        value = value.substr(1);
-                        size_t end_quote = value.find(quote);
-                        if (end_quote != std::string::npos) {
-                            value = value.substr(0, end_quote);
-                        }
-                    } else {
-                        value.erase(value.find_last_not_of(" \t") + 1);
-                    }
-                    
-                    settings[key] = value;
+                    std::cout << "Found section: [" << currentSection << "]" << std::endl;
+                } else {
+                    std::cerr << "Warning: Malformed section header at line " << lineNumber 
+                             << ": " << line << std::endl;
                 }
+                continue;
+            }
+            
+            // Handle key=value pairs
+            size_t delim = line.find('=');
+            if (delim != std::string::npos) {
+                // Extract key and value
+                std::string keyName = line.substr(0, delim);
+                std::string value = line.substr(delim + 1);
+                
+                // Trim key name
+                keyName.erase(0, keyName.find_first_not_of(" \t"));
+                keyName.erase(keyName.find_last_not_of(" \t") + 1);
+                
+                // Build full key with section
+                std::string fullKey = currentSection.empty() ? keyName : currentSection + "." + keyName;
+                
+                // Trim value and handle quoted strings
+                value.erase(0, value.find_first_not_of(" \t"));
+                value.erase(value.find_last_not_of(" \t") + 1);
+                
+                // Handle quoted values (remove surrounding quotes)
+                if (!value.empty() && (value[0] == '"' || value[0] == '\'')) {
+                    char quote = value[0];
+                    value = value.substr(1);  // Remove opening quote
+                    
+                    size_t endQuote = value.find(quote);
+                    if (endQuote != std::string::npos) {
+                        value = value.substr(0, endQuote);  // Remove closing quote
+                    } else {
+                        std::cerr << "Warning: Unmatched quote at line " << lineNumber << std::endl;
+                    }
+                }
+                
+                // Store the setting
+                settings[fullKey] = value;
+                
+                // Debug output
+                std::cout << "Loaded: " << fullKey << " = \"" << value << "\"" << std::endl;
+                
+            } else {
+                std::cerr << "Warning: Invalid line format at line " << lineNumber 
+                         << ": " << line << std::endl;
+            }
+        }
+        
+        file.close();
+        
+        // Summary
+        std::cout << "Config loading complete. Loaded " << settings.size() 
+                  << " settings from " << path << std::endl;
+        
+        // Debug: Show all loaded keys
+        if (!settings.empty()) {
+            std::cout << "All loaded keys:" << std::endl;
+            for (const auto& [key, value] : settings) {
+                std::cout << "  " << key << " = \"" << value << "\"" << std::endl;
             }
         }
     }
 
     void Save(const std::string& filename = "havel.cfg") {
-        std::string configPath = ConfigPaths::GetConfigPath(filename);
-        std::string tempPath = configPath + ".tmp";
+        path = ConfigPaths::GetConfigPath(filename);
+        std::string tempPath = path + ".tmp";
         ConfigPaths::EnsureConfigDir();
         
         std::ofstream file(tempPath);
@@ -258,12 +324,12 @@ public:
 
         // Atomically replace the old config with the new one
         try {
-            std::filesystem::rename(tempPath, configPath);
+            std::filesystem::rename(tempPath, path);
         } catch (const std::filesystem::filesystem_error& e) {
             std::cerr << "Error renaming temporary config file: " << e.what() << std::endl;
             // As a fallback, try to copy and delete
             try {
-                std::filesystem::copy_file(tempPath, configPath, std::filesystem::copy_options::overwrite_existing);
+                std::filesystem::copy_file(tempPath, path, std::filesystem::copy_options::overwrite_existing);
                 std::filesystem::remove(tempPath);
             } catch (const std::filesystem::filesystem_error& e2) {
                 std::cerr << "Error copying temporary config file: " << e2.what() << std::endl;

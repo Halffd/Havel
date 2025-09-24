@@ -1,4 +1,3 @@
-
 #pragma once
 #include "types.hpp"
 #include <string>
@@ -10,6 +9,7 @@
 #include "../utils/Logger.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/ConfigManager.hpp"
+#include <optional>
 
 #ifdef __linux__
 #include "x11.h"
@@ -93,7 +93,7 @@ public:
     static void ResizeToCorner(int direction, int distance = 10);
     static void ToggleAlwaysOnTop();
     static void SendToMonitor(int monitorIndex);
-    static void SnapWindow(int position);
+    static void SnapWindow(wID windowId, int position);
     static void RotateWindow();
     static void ManageVirtualDesktops(int action);
     static void WindowSpy();
@@ -113,12 +113,21 @@ public:
     // New method
     static std::string GetActiveWindowClass();
     static void MoveWindowToNextMonitor();
-    static void ToggleFullscreen(Display* display, Window win, Atom stateAtom, Atom fsAtom, bool enable);
+    static void ToggleFullscreen(wID windowId);
 
 private:
     static bool InitializeX11();
     std::string DetectWindowManager() const;
     bool CheckWMProtocols() const;
+
+    // Private helper for getting X11 context
+    struct ActiveWindowContext {
+        Display* display;
+        ::Window root;
+        wID activeWindowId;
+    };
+    static std::optional<ActiveWindowContext> GetActiveWindowContext();
+
     // Private members
     std::string wmName;
     bool wmSupported{false};

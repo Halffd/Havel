@@ -80,18 +80,6 @@ void HotkeyManager::printHotkeys() const {
     std::cout << "\033[31m";
     info("==== FAILED HOTKEYS ====");
     int i = 0;
-    for (const auto& hotkey : io.failedHotkeys) {
-        std::string status = "Hotkey[" + std::to_string(i++) + "] " +
-                           "key=" + std::to_string(hotkey.key) + " " +
-                           "mod=" + std::to_string(hotkey.modifiers) + " " +
-                           "action='" + hotkey.action + "' " +
-                           "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
-                           "block=" + (hotkey.blockInput ? "Y" : "N") + " " +
-                           "excl=" + (hotkey.exclusive ? "Y" : "N") + " " +
-                           "succ=" + (hotkey.success ? "Y" : "N") + " " +
-                           "susp=" + (hotkey.suspend ? "Y" : "N");
-        info(status);
-    }
     // Collect failed aliases into a set
 std::set<std::string> failedAliases;
 std::ostringstream failedStream;
@@ -241,11 +229,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Launcher::runShell("playerctl next");
     });
 
-    io.Hotkey("NumpadAdd", [this]() {
+    io.Hotkey("@numpadAdd", [this]() {
         audioManager.increaseVolume(3);
     });
 
-    io.Hotkey("NumpadSub", [this]() {
+    io.Hotkey("@numpadSub", [this]() {
         audioManager.decreaseVolume(3);
     });
 
@@ -295,17 +283,17 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         mouse2Pressed = true;
     });
 
-    io.Hotkey("+numpad7", [this]() {
+    io.Hotkey("+@numpad7", [this]() {
         info("Zoom 1");
         Zoom(1, io);
     });
 
-    io.Hotkey("+numpad1", [this]() {
+    io.Hotkey("+@numpad1", [this]() {
         info("Zoom 0");
         Zoom(0, io);
     });
 
-    io.Hotkey("+!numpad5", [this]() {
+    io.Hotkey("+!@numpad5", [this]() {
         info("Zoom 2");
         Zoom(2, io);
     });
@@ -428,7 +416,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^f3", [this]() {
         info("Setting default brightness");
-        brightnessManager.setBrightness(brightnessManager.getMonitor(1),Configs::Get().Get<double>("Brightness.Default", 1.0));
+        brightnessManager.setBrightness(1,Configs::Get().Get<double>("Brightness.Default", 1.0));
         info("Brightness set to: " + std::to_string(Configs::Get().Get<double>("Brightness.Default", 1.0)));
     });
 
@@ -440,8 +428,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     io.Hotkey("^f7", [this]() {
         info("Decreasing brightness");
-        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(0),0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(0))));
+        brightnessManager.decreaseBrightness(0,0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(0)));
     });
 
     io.Hotkey("f8", [this]() {
@@ -451,19 +439,19 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^f8", [this]() {
         info("Increasing brightness");
-        brightnessManager.increaseBrightness(brightnessManager.getMonitor(0),0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(0))));
+        brightnessManager.increaseBrightness(0,0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(0)));
     });
 
     io.Hotkey("^!f8", [this]() {
         info("Increasing brightness");
-        brightnessManager.increaseBrightness(brightnessManager.getMonitor(1),0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
+        brightnessManager.increaseBrightness(1,0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(1)));
     });
     io.Hotkey("^!f7", [this]() {
         info("Decreasing brightness");
-        brightnessManager.decreaseBrightness(brightnessManager.getMonitor(1),0.05);
-        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(brightnessManager.getMonitor(1))));
+        brightnessManager.decreaseBrightness(1,0.05);
+        info("Current brightness: " + std::to_string(brightnessManager.getBrightness(1)));
     });
     io.Hotkey("!f7", [this]() {
         info("Decreasing shhdow lift");
@@ -480,26 +468,26 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^f9", [this]() {
         info("Decreasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
-        brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift - 0.05);
-        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
+        brightnessManager.setShadowLift(0,shadowLift - 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(0)));
     });
     io.Hotkey("^f10", [this]() {
         info("Increasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(0));
-        brightnessManager.setShadowLift(brightnessManager.getMonitor(0),shadowLift + 0.05);
-        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(0))));
+        auto shadowLift = brightnessManager.getShadowLift(0);
+        brightnessManager.setShadowLift(0,shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(0)));
     });
     io.Hotkey("^+f9", [this]() {
         info("Decreasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(1));
-        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift - 0.05);
-        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
+        auto shadowLift = brightnessManager.getShadowLift(1);
+        brightnessManager.setShadowLift(1,shadowLift - 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(1)));
     });
     io.Hotkey("^+f10", [this]() {
         info("Increasing shadow lift");
-        auto shadowLift = brightnessManager.getShadowLift(brightnessManager.getMonitor(1));
-        brightnessManager.setShadowLift(brightnessManager.getMonitor(1),shadowLift + 0.05);
-        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(brightnessManager.getMonitor(1))));
+        auto shadowLift = brightnessManager.getShadowLift(1);
+        brightnessManager.setShadowLift(1,shadowLift + 0.05);
+        info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift(1)));
     });
     io.Hotkey("@#f7", [this]() {
         info("Decreasing gamma");
@@ -511,19 +499,19 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("+f9", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(0),200);
+        brightnessManager.decreaseGamma(0,200);
     });
     io.Hotkey("+f10", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(0),200);
+        brightnessManager.increaseGamma(0,200);
     });
     io.Hotkey("!+f10", [this]() {
         info("Increasing gamma");
-        brightnessManager.increaseGamma(brightnessManager.getMonitor(1),200);
+        brightnessManager.increaseGamma(1,200);
     });
     io.Hotkey("!+f9", [this]() {
         info("Decreasing gamma");
-        brightnessManager.decreaseGamma(brightnessManager.getMonitor(1),200);
+        brightnessManager.decreaseGamma(1,200);
     });
     io.Hotkey("+f7", [this]() {
         info("Decreasing temperature");
@@ -532,13 +520,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^+f7", [this]() {
         info("Decreasing temperature");
-        brightnessManager.decreaseTemperature(brightnessManager.getMonitor(0),500);
-        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(0))));
+        brightnessManager.decreaseTemperature(0,500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(0)));
     });
     io.Hotkey("^!+f7", [this]() {
         info("Decreasing temperature");
-        brightnessManager.decreaseTemperature(brightnessManager.getMonitor(1),500);
-        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
+        brightnessManager.decreaseTemperature(1,500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
 
     io.Hotkey("+f8", [this]() {
@@ -548,13 +536,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^+f8", [this]() {
         info("Increasing temperature");
-        brightnessManager.increaseTemperature(brightnessManager.getMonitor(0),500);
-        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(0))));
+        brightnessManager.increaseTemperature(0,500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(0)));
     });
     io.Hotkey("^!+f8", [this]() {
         info("Increasing temperature");
-        brightnessManager.increaseTemperature(brightnessManager.getMonitor(1),500);
-        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(brightnessManager.getMonitor(1))));
+        brightnessManager.increaseTemperature(1,500);
+        info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
 
     // Mouse wheel + click combinations
@@ -580,113 +568,120 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w, pos.h + h);
     };
     
-    AddHotkey("!numpad5", [this, WinMove]() {
+    AddHotkey("!Home", [this, WinMove]() {
+        info("Home Move full screen");
+        auto win = Window(WindowManager::GetActiveWindow());
+        auto rect = win.Pos();
+        auto monitor = DisplayManager::GetMonitorAt(rect.x, rect.y);
+        WinMove(monitor.x, monitor.y, monitor.width, monitor.height); 
+    });
+    AddHotkey("!@numpad5", [this, WinMove]() {
         info("NP5 Move down");
         WinMove(0, winOffset, 0, 0); 
     });
     
-    AddHotkey("!numpad8", [this, WinMove]() {
+    AddHotkey("!@numpad8", [this, WinMove]() {
         info("NP8 Move up");
         WinMove(0, -winOffset, 0, 0); 
     });
     
-    AddHotkey("!numpad4", [this, WinMove]() {
+    AddHotkey("!@numpad4", [this, WinMove]() {
         WinMove(-winOffset, 0, 0, 0); 
     });
     
-    AddHotkey("!numpad6", [this, WinMove]() {
+    AddHotkey("!@numpad6", [this, WinMove]() {
         WinMove(winOffset, 0, 0, 0); 
     });
     
-    AddHotkey("!+numpad8", [this, WinMove]() {
+    AddHotkey("!+@numpad8", [this, WinMove]() {
         WinMove(0, 0, 0, -winOffset); 
     });
     
-    AddHotkey("!+numpad5", [this, WinMove]() {
+    AddHotkey("!+@numpad5", [this, WinMove]() {
         WinMove(0, 0, 0, winOffset); 
     });
     
-    AddHotkey("!+numpad4", [this, WinMove]() {
+    AddHotkey("!+@numpad4", [this, WinMove]() {
         WinMove(0, 0, -winOffset, 0);
     });
     
-    AddHotkey("!+numpad6", [this, WinMove]() {
+    AddHotkey("!+@numpad6", [this, WinMove]() {
         WinMove(0, 0, winOffset, 0); 
     });
     
-    AddHotkey("numpad5", [this]() { 
+    AddHotkey("@numpad5", [this]() { 
         info("NP5 Click");
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
     
-    AddHotkey("numpad5:up", [this]() { 
+    AddHotkey("@numpad5:up", [this]() { 
         io.Click(MouseButton::Left, MouseAction::Release);
     });
     
-    AddHotkey("numpadmult", [this]() { 
+    AddHotkey("@numpadmult", [this]() { 
         io.Click(MouseButton::Right, MouseAction::Hold);
     });
     
-    AddHotkey("numpadmult:up", [this]() { 
+    AddHotkey("@numpadmult:up", [this]() { 
         io.Click(MouseButton::Right, MouseAction::Release);
     });
     
-    AddHotkey("numpaddiv", [this]() { 
+    AddHotkey("@numpaddiv", [this]() { 
         io.Click(MouseButton::Middle, MouseAction::Hold);
     });
 
-    AddHotkey("numpaddiv:up", [this]() { 
+    AddHotkey("@numpaddiv:up", [this]() { 
         io.Click(MouseButton::Middle, MouseAction::Release);
     });
     
-    AddHotkey("numpad0", [this]() { 
+    AddHotkey("@numpad0", [this]() { 
         io.Scroll(-1, 0);
     });
     
-    AddHotkey("numpaddec", [this]() { 
+    AddHotkey("@numpaddec", [this]() { 
         io.Scroll(1, 0);
     });
     
-      AddHotkey("numpad1", [&]() { 
+      AddHotkey("@numpad1", [&]() { 
           mouseController->move(-1, 1);
       });
       
-      AddHotkey("numpad2", [&]() { 
+      AddHotkey("@numpad2", [&]() { 
           mouseController->move(0, 1);
       });
       
-      AddHotkey("numpad3", [&]() { 
+      AddHotkey("@numpad3", [&]() { 
           mouseController->move(1, 1);
       });
       
-      AddHotkey("numpad4", [&]() { 
+      AddHotkey("@numpad4", [&]() { 
           mouseController->move(-1, 0);
       });
       
-      AddHotkey("numpad6", [&]() { 
+      AddHotkey("@numpad6", [&]() { 
           mouseController->move(1, 0);
       });
       
-      AddHotkey("numpad7", [&]() { 
+      AddHotkey("@numpad7", [&]() { 
           mouseController->move(-1, -1);
       });
       
-      AddHotkey("numpad8", [&]() { 
+      AddHotkey("@numpad8", [&]() { 
           mouseController->move(0, -1);
       });
       
-      AddHotkey("numpad9", [&]() { 
+      AddHotkey("@numpad9", [&]() { 
           mouseController->move(1, -1);
       });
       
-      AddHotkey("numpad1:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad2:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad3:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad4:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad6:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad7:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad8:up", [&]() { mouseController->resetAcceleration(); });
-      AddHotkey("numpad9:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad1:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad2:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad3:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad4:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad6:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad7:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
+      AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
     AddHotkey("!+d", [this]() {
         showBlackOverlay();
     });
@@ -904,7 +899,7 @@ void HotkeyManager::registerAutomationHotkeys() {
     // Register hotkeys for automation tasks
     AddHotkey("!delete", [this]() { toggleAutomationTask("autoclicker", "left"); });
     AddGamingHotkey("slash", [this]() { toggleAutomationTask("autorunner", "w"); });
-    AddGamingHotkey("rshift", [this]() { toggleAutomationTask("autokeypresser", "space"); });
+    AddGamingHotkey("@rshift", [this]() { toggleAutomationTask("autokeypresser", "space"); });
 }
 
 void HotkeyManager::startAutoClicker(const std::string& button) {

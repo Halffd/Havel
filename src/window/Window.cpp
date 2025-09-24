@@ -56,6 +56,7 @@ Window::Window(wID id) : m_id(id) {
     }
     #endif
     m_id = id;
+    m_title = Title(id); // Populate title
 }
 
 // Get the position of a window
@@ -274,6 +275,7 @@ wID Window::FindByClass(cstr className) {
 // Title retrieval
 std::string Window::Title(wID win) {
     if (!win) win = m_id;
+    if (!win) return "";
 
 #ifdef WINDOWS
     char title[256];
@@ -327,69 +329,41 @@ std::string Window::Title(wID win) {
 }
 
 // Check if a window is active
-bool Window::Active(wID win) {
-    if (!win) win = m_id;
+bool Window::Active() {
+    return Active(m_id);
+}
 
+bool Window::Active(wID win) {
 #if defined(WINDOWS)
     return GetForegroundWindow() == reinterpret_cast<HWND>(win);
 #elif defined(__linux__)
-    Display* localDisplay = XOpenDisplay(nullptr);
-    if (!localDisplay) return false;
-
-    wID active = 0;
-    Atom activeAtom = XInternAtom(localDisplay, "_NET_ACTIVE_WINDOW", x11::XTrue);
-    if (activeAtom == x11::XNone) {
-        XCloseDisplay(localDisplay);
-        return false;
-    }
-
-    Atom actualType;
-    int actualFormat;
-    unsigned long nitems, bytesAfter;
-    unsigned char* prop = nullptr;
-
-    if (XGetWindowProperty(localDisplay, DefaultRootWindow(localDisplay), activeAtom, 0, (~0L), x11::XFalse, AnyPropertyType,
-                           &actualType, &actualFormat, &nitems, &bytesAfter, &prop) == x11::XSuccess) {
-        if (prop) {
-            active = *reinterpret_cast<wID*>(prop);
-            XFree(prop);
-            XCloseDisplay(localDisplay);
-            return active == win;
-        }
-    }
-    XCloseDisplay(localDisplay);
-    return false;
+    return WindowManager::GetActiveWindow() == win;
 #else
     return false;
 #endif
 }
 
 // Function to check if a window exists
+bool Window::Exists() {
+    return Exists(m_id);
+}
 bool Window::Exists(wID win) {
-    if (!win) win = m_id;
-
 #ifdef WINDOWS
     return IsWindow(reinterpret_cast<HWND>(win)) != 0;
 #elif defined(__linux__)
-    Display* localDisplay = XOpenDisplay(nullptr);
-    if (!localDisplay) return false;
-
+    if (!display) return false;
     XWindowAttributes attr;
-    bool exists = XGetWindowAttributes(localDisplay, win, &attr) != 0;
-    XCloseDisplay(localDisplay);
-    return exists;
-#elif defined(__linux__) && defined(__WAYLAND__)
-    // Wayland does not provide a direct API to check window existence.
-    std::cerr << "Window existence check in Wayland is not implemented." << std::endl;
-    return false;
+    return XGetWindowAttributes(display.get(), win, &attr) != 0;
 #else
     return false;
 #endif
 }
 
-void Window::Activate(wID win) {
-    if (!win) win = m_id;
+void Window::Activate() {
+    Activate(m_id);
+}
 
+void Window::Activate(wID win) {
 #ifdef WINDOWS
     // Windows implementation
     if (win) {
@@ -398,6 +372,7 @@ void Window::Activate(wID win) {
     }
 #elif defined(__linux__)
 if(WindowManager::get().IsX11()) {
+    if (!win) return;
     // X11 implementation
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
@@ -441,15 +416,17 @@ if(WindowManager::get().IsX11()) {
 }
 
 // Close a window
+void Window::Close() {
+    Close(m_id);
+}
 void Window::Close(wID win) {
-    if (!win) win = m_id;
-
 #ifdef WINDOWS
     if (win) {
         SendMessage(reinterpret_cast<HWND>(win), WM_CLOSE, 0, 0);
         std::cout << "Closed: " << win << std::endl;
     }
 #elif defined(__linux__)
+    if (!win) return;
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
 
@@ -471,16 +448,17 @@ void Window::Close(wID win) {
 #endif
 }
 
+void Window::Min() {
+    Min(m_id);
+}
 void Window::Min(wID win) {
-    if (!win) win = m_id;
-    if (!win) return; // Early return if no valid window ID
-
 #ifdef WINDOWS
     if (win) {
         ShowWindow(reinterpret_cast<HWND>(win), SW_MINIMIZE);
         std::cout << "Minimized: " << win << std::endl;
     }
 #elif defined(__linux__) 
+    if (!win) return;
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) {
         std::cerr << "Failed to open X display" << std::endl;
@@ -496,15 +474,17 @@ void Window::Min(wID win) {
 }
 
 // Maximize a window
+void Window::Max() {
+    Max(m_id);
+}
 void Window::Max(wID win) {
-    if (!win) win = m_id;
-
 #ifdef WINDOWS
     if (win) {
         ShowWindow(reinterpret_cast<HWND>(win), SW_MAXIMIZE);
         std::cout << "Maximized: " << win << std::endl;
     }
 #elif defined(__linux__)
+    if (!win) return;
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
 
@@ -532,15 +512,17 @@ void Window::Max(wID win) {
 }
 
 // Set the transparency of a window
+void Window::Transparency(int alpha) {
+    Transparency(m_id, alpha);
+}
 void Window::Transparency(wID win, int alpha) {
-    if (!win) win = m_id;
-
 #ifdef WINDOWS
     if (win && alpha >= 0 && alpha <= 255) {
         SetWindowLong(reinterpret_cast<HWND>(win), GWL_EXSTYLE, GetWindowLong(reinterpret_cast<HWND>(win), GWL_EXSTYLE) | WS_EX_LAYERED);
         SetLayeredWindowAttributes(reinterpret_cast<HWND>(win), 0, alpha, LWA_ALPHA);
     }
 #elif defined(__linux__)
+    if (!win) return;
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
 
@@ -558,12 +540,14 @@ void Window::Transparency(wID win, int alpha) {
 }
 
 // Set a window to always be on top
+void Window::AlwaysOnTop(bool top) {
+    AlwaysOnTop(m_id, top);
+}
 void Window::AlwaysOnTop(wID win, bool top) {
-    if (!win) win = m_id;
-
 #ifdef WINDOWS
     SetWindowPos(reinterpret_cast<HWND>(win), top ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 #elif defined(__linux__)
+    if (!win) return;
     Display* localDisplay = XOpenDisplay(nullptr);
     if (!localDisplay) return;
 
@@ -652,4 +636,47 @@ wID Window::GetwIDByPID(pID pid) {
     
     return 0;
 }
+
+// === New Instance Methods for Window Manipulation ===
+
+bool Window::Move(int x, int y, bool centerOnScreen) {
+    if (!m_id) return false;
+    return WindowManager::Move(m_id, x, y, centerOnScreen);
+}
+
+bool Window::Resize(int width, int height, bool fullscreen) {
+    if (!m_id) return false;
+    return WindowManager::Resize(m_id, width, height, fullscreen);
+}
+
+bool Window::MoveResize(int x, int y, int width, int height) {
+    if (!m_id) return false;
+    return WindowManager::MoveResize(m_id, x, y, width, height);
+}
+
+bool Window::Center() {
+    if (!m_id) return false;
+    return WindowManager::Center(m_id);
+}
+
+bool Window::MoveToCorner(const std::string& corner) {
+    if (!m_id) return false;
+    return WindowManager::MoveToCorner(m_id, corner);
+}
+
+bool Window::MoveToMonitor(int monitorIndex) {
+    if (!m_id) return false;
+    return WindowManager::MoveToMonitor(m_id, monitorIndex);
+}
+
+void Window::Snap(int position) {
+    if (!m_id) return;
+    WindowManager::SnapWindow(m_id, position);
+}
+
+void Window::ToggleFullscreen() {
+    if (!m_id) return;
+    WindowManager::ToggleFullscreen(m_id);
+}
+
 }

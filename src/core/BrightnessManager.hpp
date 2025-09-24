@@ -78,54 +78,79 @@ public:
     // === BRIGHTNESS OVERLOADS ===
     bool setBrightness(double brightness);  // All monitors
     bool setBrightness(const string& monitor, double brightness);
+    bool setBrightness(int monitorIndex, double brightness);
     double getBrightness();
     double getBrightness(const string& monitor);
-    
+    double getBrightness(int monitorIndex);
     // === RGB GAMMA OVERLOADS ===
     bool setGammaRGB(double red, double green, double blue);  // All monitors
     bool setGammaRGB(const string& monitor, double red, double green, double blue);
+    bool setGammaRGB(int monitorIndex, double red, double green, double blue);
     RGBColor getGammaRGB();
     RGBColor getGammaRGB(const string& monitor);
 
     // === KELVIN TEMPERATURE OVERLOADS ===
     bool setTemperature(int kelvin);  // All monitors
     bool setTemperature(const string& monitor, int kelvin);
+    bool setTemperature(int monitorIndex, int kelvin);
     int getTemperature();
+    int getTemperature(int monitorIndex);
     int getTemperature(const string& monitor);
-    bool decreaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
-    bool increaseGamma(int amount = DEFAULT_TEMP_AMOUNT);
-    bool decreaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
-    bool increaseGamma(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
-    bool setBrightnessBacklight(const std::string& monitor_name, double brightness);
+
+    // === GAMMA ADJUSTMENT OVERLOADS ===
+    bool decreaseGamma(int amount);
+    bool increaseGamma(int amount);
+    bool decreaseGamma(const string& monitor, int amount);
+    bool increaseGamma(const string& monitor, int amount);
+    bool decreaseGamma(int monitorIndex, int amount);
+    bool increaseGamma(int monitorIndex, int amount);
+    bool increaseShadowLift(int amount);
+    bool increaseShadowLift(const string& monitor, int amount);
+    bool increaseShadowLift(int monitorIndex, int amount);
+    bool decreaseShadowLift(int amount);
+    bool decreaseShadowLift(const string& monitor, int amount);
+    bool decreaseShadowLift(int monitorIndex, int amount);
+    
+    // === SHADOW LIFT OVERLOADS ===
+    bool setShadowLift(double lift);  // All monitors, 0.0-4.0
+    bool setShadowLift(const string& monitor, double lift);
+    bool setShadowLift(int monitorIndex, double lift);
+    double getShadowLift();
+    double getShadowLift(const string& monitor);
+    double getShadowLift(int monitorIndex);
+
+    // === X11 SPECIFIC METHODS ===
     double getCurrentBrightnessX11(const std::string& monitor_name);
     double extractBrightnessFromGammaRamp(XRRCrtcGamma* gamma, const std::string& monitor_name) const;
 
     // === COMBINED OPERATIONS ===
     bool setBrightnessAndRGB(double brightness, double red, double green, double blue);
     bool setBrightnessAndRGB(const string& monitor, double brightness, double red, double green, double blue);
+    bool setBrightnessAndRGB(int monitorIndex, double brightness, double red, double green, double blue);
     
     bool setBrightnessAndTemperature(double brightness, int kelvin);
     bool setBrightnessAndTemperature(const string& monitor, double brightness, int kelvin);
+    bool setBrightnessAndTemperature(int monitorIndex, double brightness, int kelvin);
+
+    bool setBrightnessAndShadowLift(double brightness, double shadowLift);
+    bool setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift);
+    bool setBrightnessAndShadowLift(int monitorIndex, double brightness, double shadowLift);
 
     // === INCREMENT OPERATIONS ===
     bool increaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
     bool increaseBrightness(const string& monitor, double amount = DEFAULT_BRIGHTNESS_AMOUNT);
-    bool decreaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
-    bool decreaseBrightness(const string& monitor, double amount = DEFAULT_BRIGHTNESS_AMOUNT);
+    bool increaseBrightness(int monitorIndex, double amount);
+    bool decreaseBrightness(double amount);
+    bool decreaseBrightness(const string& monitor, double amount);
+    bool decreaseBrightness(int monitorIndex, double amount);
 
-    bool increaseTemperature(int amount = DEFAULT_TEMP_AMOUNT);
-    bool increaseTemperature(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
-    bool decreaseTemperature(int amount = DEFAULT_TEMP_AMOUNT);
-    bool decreaseTemperature(const string& monitor, int amount = DEFAULT_TEMP_AMOUNT);
+    bool increaseTemperature(int amount);
+    bool increaseTemperature(const string& monitor, int amount);
+    bool increaseTemperature(int monitorIndex, int amount);
+    bool decreaseTemperature(int amount);
+    bool decreaseTemperature(const string& monitor, int amount);
+    bool decreaseTemperature(int monitorIndex, int amount);
 
-    bool setShadowLift(double lift);  // All monitors, 0.0-1.0
-    bool setShadowLift(const string& monitor, double lift);
-    double getShadowLift();
-    double getShadowLift(const string& monitor);
-
-    // Optional: combined operations
-    bool setBrightnessAndShadowLift(double brightness, double shadowLift);
-    bool setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift);
     // === DAY/NIGHT AUTOMATION ===
     void enableDayNightMode(const DayNightSettings& settings);
     void disableDayNightMode();
@@ -140,6 +165,8 @@ public:
     bool switchToNight(); // All monitors
     bool switchToDay(const string& monitor);
     bool switchToNight(const string& monitor);
+    bool switchToDay(int monitorIndex);
+    bool switchToNight(int monitorIndex);
 
     // === UTILITY ===
     vector<string> getConnectedMonitors();
@@ -148,7 +175,7 @@ public:
     // Constants
     static constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.02;
     static constexpr int DEFAULT_TEMP_AMOUNT = 200;
-    static constexpr int MIN_TEMPERATURE = 0;
+    static constexpr int MIN_TEMPERATURE = 1000;
     static constexpr int MAX_TEMPERATURE = 25000;
     
     private:

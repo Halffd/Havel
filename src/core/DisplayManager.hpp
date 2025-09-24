@@ -1,45 +1,48 @@
 #pragma once
 #include "x11.h"
+#include "types.hpp"
 
 namespace havel {
-
+// In DisplayManager.hpp - Add monitor geometry methods:
 class DisplayManager {
-public:
-    static void Initialize();
-    static Display* GetDisplay();
-    static ::Window GetRootWindow();
-    static void Close();
-    static bool IsInitialized();
-
-    // X11 error handler
-    static int X11ErrorHandler(Display* display, XErrorEvent* event);
-
-private:
-    static Display* display;  // Declaration only - definition must be in a .cpp file
-    static ::Window root;
-    static bool initialized;
-
-    struct Cleanup {
-        ~Cleanup();
-    };
-
-    // RAII wrapper for X11 resources
-    template<typename T, auto Deleter>
-    class X11Resource {
     public:
-        X11Resource(T resource = nullptr) : resource(resource) {}
-        ~X11Resource() { if(resource) Deleter(resource); }
+        struct MonitorInfo {
+            std::string name;
+            int x, y;           // Position
+            int width, height;  // Resolution  
+            bool isPrimary;
+            wID id {0};            // For XRandR/Wayland output ID
+            wID crtc_id {0};       // For XRandR
+        };
+        static Display* display;
+        static ::Window root;
+        static bool initialized;
+        static void Initialize();
+        static Display* GetDisplay();
+        static ::Window GetRootWindow();
         
-        operator T() const { return resource; }
-        T* operator&() { return &resource; }
+        static std::vector<MonitorInfo> GetMonitors();
+        static MonitorInfo GetMonitorAt(int x, int y);  // Point-to-monitor
+        static MonitorInfo GetPrimaryMonitor();
+        static MonitorInfo GetMonitorByName(const std::string& name);
+        static MonitorInfo GetMonitorByID(wID id);
+        static MonitorInfo GetMonitorByIndex(int index);
+        static std::vector<std::string> GetMonitorNames();
         
+        // Utility methods
+        static bool IsPointOnMonitor(int x, int y, const MonitorInfo& monitor);
+        static std::string GetMonitorNameAt(int x, int y);
+    
     private:
-        T resource;
+        static std::vector<MonitorInfo> cached_monitors;
+        static void RefreshMonitorCache();
+        
+        // X11 implementation
+        static std::vector<MonitorInfo> GetMonitorsX11();
+        
+        #ifdef __WAYLAND__
+        // Wayland implementation  
+        static std::vector<MonitorInfo> GetMonitorsWayland();
+        #endif
     };
-
-    // Usage example
-    using XWindow = X11Resource<Window, XDestroyWindow>;
-    using XColormap = X11Resource<Colormap, XFreeColormap>;
-};
-
-} // namespace havel 
+} // namespace havel

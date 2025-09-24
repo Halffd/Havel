@@ -30,19 +30,29 @@ public:
     static Rect Pos(wID win);
     
     // Window operations
-    void Activate(wID win = 0);
-    void Close(wID win = 0);
-    void Min(wID win = 0);
-    void Max(wID win = 0);
-    void Hide(wID win = 0);
-    void Show(wID win = 0);
-    void Minimize(wID win = 0);
-    void Transparency(wID win = 0, int alpha = 255);
-    void AlwaysOnTop(wID win = 0, bool top = true);
-    
+    void Activate();
+    void Close();
+    void Min();
+    void Max();
+    void Hide();
+    void Show();
+    void Minimize();
+    void Transparency(int alpha = 255);
+    void AlwaysOnTop(bool top = true);
+    void ToggleFullscreen();
+
+    // Movement and Resizing
+    bool Move(int x, int y, bool centerOnScreen = false);
+    bool Resize(int width, int height, bool fullscreen = false);
+    bool MoveResize(int x, int y, int width, int height);
+    bool Center();
+    bool MoveToCorner(const std::string& corner);
+    bool MoveToMonitor(int monitorIndex);
+    void Snap(int position);
+
     // Window info
-    bool Active(wID win = 0);
-    bool Exists(wID win = 0);
+    bool Active();
+    bool Exists();
 
     // Window finding methods
     static wID Find(cstr identifier);
@@ -81,7 +91,7 @@ private:
     static void SetAlwaysOnTopX11(wID win, bool top);
 
     std::string m_title;
-    wID m_id;
+    wID m_id {0};
 };
 
 } // namespace havel

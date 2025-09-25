@@ -20,6 +20,8 @@ class DisplayManager {
         static void Initialize();
         static Display* GetDisplay();
         static ::Window GetRootWindow();
+        static void Close();
+        static bool IsInitialized();
         
         static std::vector<MonitorInfo> GetMonitors();
         static MonitorInfo GetMonitorAt(int x, int y);  // Point-to-monitor
@@ -34,11 +36,16 @@ class DisplayManager {
         static std::string GetMonitorNameAt(int x, int y);
     
     private:
+        struct Cleanup {
+            ~Cleanup();
+        };
+
         static std::vector<MonitorInfo> cached_monitors;
         static void RefreshMonitorCache();
         
         // X11 implementation
         static std::vector<MonitorInfo> GetMonitorsX11();
+        static int X11ErrorHandler(Display* display, XErrorEvent* event);
         
         #ifdef __WAYLAND__
         // Wayland implementation  

@@ -4,6 +4,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include <cstring>
+#include <cstdlib>
 #include <X11/extensions/Xrandr.h>
 
 #ifdef __WAYLAND__
@@ -219,7 +221,7 @@ namespace havel {
         XRRFreeScreenResources(screen_res);
         
         // If no primary was found, mark first monitor as primary
-        if (!monitors.empty() && primary_output == None) {
+        if (!monitors.empty() && primary_output == 0) {
             monitors[0].isPrimary = true;
         }
         

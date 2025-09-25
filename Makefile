@@ -1,6 +1,7 @@
 CXX = g++
 CXXFLAGS = -std=c++20 -Wall -Wextra -O2
-LDFLAGS = -lm -lpthread -llua5.4 -lX11 -lXtst -lxkbcommon
+INCLUDES = -Iinclude -Isrc
+LDFLAGS = -lm -lpthread -llua5.4 -lX11 -lXtst -lxkbcommon -lXrandr
 
 # Project structure
 SRCDIR = src
@@ -52,13 +53,13 @@ $(TARGET): $(OBJECTS) $(C_OBJECTS)
 $(BUILDDIR)/%.o: $(SRCDIR)/%.cpp
 	@echo "Compiling $<..."
 	@mkdir -p $(dir $@)
-	@$(CXX) $(CXXFLAGS) -MMD -MP -c $< -o $@
+	@$(CXX) $(CXXFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 # Compile C source files into object files
 $(BUILDDIR)/%.o: $(SRCDIR)/%.c
 	@echo "Compiling $< (C)..."
 	@mkdir -p $(dir $@)
-	@gcc -Wall -Wextra -O2 -MMD -MP -c $< -o $@
+	@gcc -Wall -Wextra -O2 $(INCLUDES) -MMD -MP -c $< -o $@
 
 # Clean build artifacts
 clean:

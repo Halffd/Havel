@@ -31,14 +31,20 @@ public:
     
     // Window operations
     void Activate();
+    void Activate(wID win);
     void Close();
+    void Close(wID win);
     void Min();
+    void Min(wID win);
     void Max();
+    void Max(wID win);
     void Hide();
     void Show();
     void Minimize();
     void Transparency(int alpha = 255);
+    void Transparency(wID win, int alpha);
     void AlwaysOnTop(bool top = true);
+    void AlwaysOnTop(wID win, bool top);
     void ToggleFullscreen();
 
     // Movement and Resizing
@@ -52,7 +58,9 @@ public:
 
     // Window info
     bool Active();
+    bool Active(wID win);
     bool Exists();
+    bool Exists(wID win);
 
     // Window finding methods
     static wID Find(cstr identifier);

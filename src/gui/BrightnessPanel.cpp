@@ -17,11 +17,11 @@ havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QWindow(parent) {
     auto brightnessDown = new QShortcut(QKeySequence("Ctrl+Alt+Down"), this);
 
     connect(brightnessUp, &QShortcut::activated, [this]() {
-        brightnessManager.increaseBrightness();
+        brightnessManager.increaseBrightness(1);
     });
 
     connect(brightnessDown, &QShortcut::activated, [this]() {
-        brightnessManager.decreaseBrightness();
+        brightnessManager.decreaseBrightness(1);
     });
 }
 

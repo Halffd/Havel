@@ -213,8 +213,6 @@ void HavelApp::onPeriodicCheck() {
 
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= WINDOW_CHECK_INTERVAL_MS) {
             if (hotkeyManager) {
-                hotkeyManager->checkHotkeyStates();
-
                 hotkeyManager->updateAllConditionalHotkeys();
             }
             lastWindowCheck = now;

@@ -247,7 +247,8 @@ private:
   std::mutex keyStateMutex;
   template <typename T> static constexpr bool always_false = false;
   unsigned int numlockmask = 0;
-    
+  static int XErrorHandler(Display *dpy, XErrorEvent *ee);
+  
   void UpdateNumLockMask();
   bool ModifierMatch(unsigned int expected, unsigned int actual);
   bool EmitClick(int btnCode, int action);

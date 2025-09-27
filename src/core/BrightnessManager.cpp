@@ -154,7 +154,7 @@ vector<string> BrightnessManager::getConnectedMonitors() {
 
 string BrightnessManager::getMonitor(int index) {
   auto monitors = getConnectedMonitors();
-  if (index >= 0 && index < monitors.size()) {
+  if (index >= 0 && index < static_cast<int>(monitors.size())) {
       return monitors[index];
   }
   error("Invalid monitor index requested: {}", index);

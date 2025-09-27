@@ -1115,15 +1115,46 @@ void HotkeyManager::ReloadConfigurations() {
     LoadHotkeyConfigurations();
     loadVideoSites();
 }
-int HotkeyManager::AddGamingHotkey(const std::string& key, std::function<void()> trueAction, std::function<void()> falseAction, int id) {
-    int hotkeyId = AddContextualHotkey(key, "mode == 'gaming'", trueAction, falseAction, id);
-    gamingHotkeyIds.push_back(hotkeyId);  // Track as gaming hotkey
-    return hotkeyId;
-}   
+
+
+void HotkeyManager::updateAllConditionalHotkeys() {
+    for (auto& hotkey : conditionalHotkeys) {
+        updateConditionalHotkey(hotkey);
+    }
+}
+void HotkeyManager::updateConditionalHotkey(ConditionalHotkey& hotkey) {
+    if (hotkey.condition.find("mode") != std::string::npos) {
+        return;
+    }
+
+    bool conditionMet = evaluateCondition(hotkey.condition);
+    
+    // Only grab if condition is true, ungrab if condition is false
+    if (conditionMet && !hotkey.currentlyGrabbed) {
+        io.GrabHotkey(hotkey.id);
+        hotkey.currentlyGrabbed = true;
+        debug("Grabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+    } else if (!conditionMet && hotkey.currentlyGrabbed) {
+        io.UngrabHotkey(hotkey.id);
+        hotkey.currentlyGrabbed = false;
+        debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+    }
+    
+    hotkey.lastConditionResult = conditionMet;
+}
+int HotkeyManager::AddGamingHotkey(const std::string& key,
+                                   std::function<void()> trueAction,
+                                   std::function<void()> falseAction, int id) {
+    int gamingHotkeyId = AddContextualHotkey(key, "mode == 'gaming'",
+        [this]() { setMode("gaming"); },
+        [this]() { setMode("default"); }, id);
+    gamingHotkeyIds.push_back(gamingHotkeyId);
+    return gamingHotkeyId;
+}
 int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string& condition,
-                                           std::function<void()> trueAction,
-                                           std::function<void()> falseAction,
-                                           int id) {
+                       std::function<void()> trueAction,
+                       std::function<void()> falseAction,
+                       int id) {
     if (id == 0) {
         static int nextId = 1000;
         id = nextId++;
@@ -1137,14 +1168,23 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         }
     };
 
+    // Store the conditional hotkey for dynamic management
+    ConditionalHotkey ch;
+    ch.id = id;
+    ch.key = key;
+    ch.condition = condition;
+    ch.trueAction = trueAction;
+    ch.falseAction = falseAction;
+    ch.currentlyGrabbed = true;
+    
+    conditionalHotkeys.push_back(ch);
+
+    // Register but don't grab yet
     io.Hotkey(key, action, id);
+    
+    // Initial evaluation and grab if needed
+    updateConditionalHotkey(conditionalHotkeys.back());
 
-    // Initial state check for conditions that require grabbing/ungrabbing
-    if (condition.find("mode") != std::string::npos) {
-        updateHotkeyStateForCondition(condition, evaluateCondition(condition));
-    }
-
-    conditionalHotkeyIds.push_back(id);
     return id;
 }
 

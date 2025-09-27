@@ -103,7 +103,7 @@ class IO {
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
-  bool globalEvdev = false;
+  bool globalEvdev = true;
   std::vector<HotKey> failedHotkeys;
 
   IO();
@@ -256,6 +256,11 @@ private:
   std::mutex keyStateMutex;
   template <typename T> static constexpr bool always_false = false;
   unsigned int numlockmask = 0;
+
+
+  std::set<int> grabbedKeys;  // Keys that should be blocked
+  std::mutex grabbedKeysMutex;
+  bool blockAllInput = false;  // Emergency block all input
   static int XErrorHandler(Display *dpy, XErrorEvent *ee);
   
   void UpdateNumLockMask();

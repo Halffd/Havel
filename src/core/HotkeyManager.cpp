@@ -199,6 +199,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^!g", [this]() {
         std::string oldMode = currentMode;
         currentMode = (currentMode == "gaming") ? "default" : "gaming";
+        setMode(currentMode);
         logModeSwitch(oldMode, currentMode);
         showNotification("Mode Changed", "Active mode: " + currentMode);
     });
@@ -283,17 +284,17 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         mouse2Pressed = true;
     });
 
-    io.Hotkey("+@numpad7", [this]() {
+    io.Hotkey("@+numpad7", [this]() {
         info("Zoom 1");
         Zoom(1, io);
     });
 
-    io.Hotkey("+@numpad1", [this]() {
+    io.Hotkey("@+numpad1", [this]() {
         info("Zoom 0");
         Zoom(0, io);
     });
 
-    io.Hotkey("+!@numpad5", [this]() {
+    io.Hotkey("@+numpad5", [this]() {
         info("Zoom 2");
         Zoom(2, io);
     });
@@ -1123,12 +1124,8 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     }
 }
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey& hotkey) {
-    if (hotkey.condition.find("mode") != std::string::npos) {
-        return;
-    }
-
     bool conditionMet = evaluateCondition(hotkey.condition);
-    
+    currentMode = isGamingWindow() ? "gaming" : "default";
     // Only grab if condition is true, ungrab if condition is false
     if (conditionMet && !hotkey.currentlyGrabbed) {
         io.GrabHotkey(hotkey.id);
@@ -1210,18 +1207,17 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         []() -> std::string {
             return std::to_string(WindowManager::GetActiveWindowPID());
         });
-    
-    conditionEngine->registerProperty("mode", PropertyType::STRING,
-        []() -> std::string {
-            std::lock_guard<std::mutex> lock(modeMutex);
-            return currentMode;
-        });
-    
-    conditionEngine->registerBoolProperty("gaming.active",
-        []() -> bool {
-            return isGamingWindow();
-        });
-    
+
+        conditionEngine->registerProperty("mode", PropertyType::STRING,
+            [this]() -> std::string {
+                std::lock_guard<std::mutex> lock(modeMutex);
+                return currentMode;
+            });
+        
+        conditionEngine->registerBoolProperty("gaming.active",
+            [this]() -> bool {
+                return isGamingWindow();
+            });
     conditionEngine->registerProperty("time.hour", PropertyType::INTEGER,
         []() -> std::string {
             auto now = std::time(nullptr);
@@ -1246,7 +1242,7 @@ void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, 
     }
     
     // Fix the logic:
-    bool stateChanged = (it->second != conditionMet);  // Remove the redundant check!
+    bool stateChanged = (it->second == conditionMet); 
     windowConditionStates[condition] = conditionMet;
 
     if (stateChanged) {

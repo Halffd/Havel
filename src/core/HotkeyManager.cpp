@@ -125,7 +125,6 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController
     autoClicker = std::make_unique<havel::automation::AutoClicker>(std::shared_ptr<IO>(&io, [](IO*){}));
     // Initialize automation manager
     automationManager_ = std::make_shared<havel::automation::AutomationManager>(std::shared_ptr<IO>(&io, [](IO*){}));   
-    windowConditionStates["mode == 'gaming'"] = false;
     currentMode = "default";
 }
 
@@ -868,11 +867,6 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
         int id = AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
         conditionalHotkeyIds.push_back(id);
     }
-
-    if (currentMode != "gaming") {
-        info("Starting in normal mode - unregistering MPV hotkeys");
-        ungrabGamingHotkeys();
-    }
 }
 
 void HotkeyManager::RegisterWindowHotkeys() {
@@ -1124,8 +1118,13 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     }
 }
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey& hotkey) {
+    if(isGamingWindow()) {
+        setMode("gaming");
+    } else {
+        setMode("default");
+    }
     bool conditionMet = evaluateCondition(hotkey.condition);
-    currentMode = isGamingWindow() ? "gaming" : "default";
+    info("Condition met: " + std::to_string(conditionMet) + " for " + hotkey.condition + " (" + hotkey.key + ")" + " (Currently Grabbed: " + std::to_string(hotkey.currentlyGrabbed) + ")");
     // Only grab if condition is true, ungrab if condition is false
     if (conditionMet && !hotkey.currentlyGrabbed) {
         io.GrabHotkey(hotkey.id);
@@ -1209,13 +1208,13 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
         });
 
         conditionEngine->registerProperty("mode", PropertyType::STRING,
-            [this]() -> std::string {
+            []() -> std::string {
                 std::lock_guard<std::mutex> lock(modeMutex);
                 return currentMode;
             });
         
         conditionEngine->registerBoolProperty("gaming.active",
-            [this]() -> bool {
+            []() -> bool {
                 return isGamingWindow();
             });
     conditionEngine->registerProperty("time.hour", PropertyType::INTEGER,
@@ -1230,45 +1229,6 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
             return Configs::Get().GetGamingApps();
         });
 }
-void HotkeyManager::updateHotkeyStateForCondition(const std::string& condition, bool conditionMet) {
-    if (condition.find("mode") == std::string::npos) {
-        return;
-    }
-
-    auto it = windowConditionStates.find(condition);
-    if (it == windowConditionStates.end()) {
-        windowConditionStates[condition] = conditionMet;
-        return;
-    }
-    
-    // Fix the logic:
-    bool stateChanged = (it->second == conditionMet); 
-    windowConditionStates[condition] = conditionMet;
-
-    if (stateChanged) {
-        if (verboseWindowLogging) {
-            logWindowEvent("CONDITION_STATE", "Condition '" + condition + "' changed to " + (conditionMet ? "TRUE" : "FALSE"));
-        }
-        if (conditionMet) {
-            grabGamingHotkeys();
-        } else {
-            ungrabGamingHotkeys();
-        }
-    }
-}
-void HotkeyManager::checkHotkeyStates() {
-    bool isGaming = isGamingWindow();
-    
-    if (isGaming && currentMode != "gaming") {
-        setMode("gaming");
-    } else if (!isGaming && currentMode == "gaming") {
-        setMode("default");
-    }
-
-    for (auto const& [condition, lastState] : windowConditionStates) {
-        evaluateCondition(condition);
-    }
-}
 
 bool HotkeyManager::evaluateCondition(const std::string& condition) {
     conditionEngine->invalidateCache();
@@ -1277,39 +1237,8 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
     if (verboseConditionLogging) {
         logWindowEvent("CONDITION_EVAL", condition + " -> " + (result ? "TRUE" : "FALSE"));
     }
-    
-    // This is for the special case of grabbing/ungrabbing gaming hotkeys
-    updateHotkeyStateForCondition(condition, result);
-
     return result;
 }
-
-    void HotkeyManager::grabGamingHotkeys() {
-        if (mpvHotkeysGrabbed) {
-            return;
-        }
-
-        for (int id : gamingHotkeyIds) {
-            io.GrabHotkey(id);
-        }
-
-        mpvHotkeysGrabbed = true;
-        info("Grabbed all MPV hotkeys for gaming mode");
-    }
-
-    void HotkeyManager::ungrabGamingHotkeys() {
-        if (!mpvHotkeysGrabbed) {
-            return;
-        }
-
-        for (int id : gamingHotkeyIds) {
-            io.UngrabHotkey(id);
-        }
-
-        mpvHotkeysGrabbed = false;
-        info("Released all MPV hotkeys for normal mode");
-    }
-
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
     std::string cmd = "notify-send \"" + title + "\" \"" + message + "\"";
     Launcher::runShell(cmd.c_str());
@@ -1678,13 +1607,6 @@ void HotkeyManager::setMode(const std::string& mode) {
     currentMode = mode;
     
     logModeSwitch(oldMode, currentMode);
-    updateHotkeyStateForCondition("mode == 'gaming'", currentMode == "gaming");
-
-if (verboseWindowLogging) {
-    logWindowEvent("MODE_CHANGE",
-        oldMode + " → " + currentMode +
-        (currentMode == "gaming" ? " (MPV hotkeys active)" : " (MPV hotkeys inactive)"));
-}
 }
 
 void HotkeyManager::showBlackOverlay() {
@@ -1769,7 +1691,6 @@ void HotkeyManager::printActiveWindowInfo() {
 
 void HotkeyManager::cleanup() {
     stopAllAutoclickers();
-    ungrabGamingHotkeys();
     setMode("default");
     io.Send("{LAlt up}{RAlt up}{LShift up}{RShift up}{LCtrl up}{RCtrl up}{LWin up}{RWin up}");
     

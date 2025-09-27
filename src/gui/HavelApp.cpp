@@ -126,10 +126,10 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Initialize AutomationSuite with IO instance
     AutomationSuite::Instance(io.get());
-    hotkeyManager->ungrabGamingHotkeys();
-
+    
     // Print initial hotkey state
     hotkeyManager->printHotkeys();
+    hotkeyManager->updateAllConditionalHotkeys();
 
     // Initialize ClipboardManager after IO is ready
     try {

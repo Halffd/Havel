@@ -317,7 +317,7 @@ namespace havel {
 
         // Store IDs of MPV hotkeys for grab/ungrab
         std::vector<int> conditionalHotkeyIds;
-
+        std::vector<int> gamingHotkeyIds;
         // Window condition helper methods
         void updateHotkeyStateForCondition(const std::string &condition,
                                            bool conditionMet);

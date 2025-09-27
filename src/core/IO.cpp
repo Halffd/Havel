@@ -57,14 +57,12 @@ IO::IO() {
       
       // Start hotkey monitoring in a separate thread if we have a valid device
       timerRunning = true;
-      if (device != "/dev/input/event") {
-          try {
-              timerThread = std::thread(&IO::MonitorHotkeys, this);
-              info("Started hotkey monitoring thread");
-          } catch (const std::exception& e) {
-              error("Failed to start hotkey monitoring thread: {}", e.what());
-              timerRunning = false;
-          }
+      try {
+          timerThread = std::thread(&IO::MonitorHotkeys, this);
+          info("Started hotkey monitoring thread");
+      } catch (const std::exception& e) {
+          error("Failed to start hotkey monitoring thread: {}", e.what());
+          timerRunning = false;
       }
       
       if (device == "/dev/input/event") {
@@ -535,6 +533,7 @@ void IO::MonitorHotkeys() {
                       if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
                           continue;
                       }
+                      info("X11 event: " + std::to_string(event.type));
                       
                       const bool isDown = (event.type == x11::XKeyPress);
                       const XKeyEvent* keyEvent = &event.xkey;
@@ -2213,6 +2212,7 @@ bool IO::GrabHotkey(int hotkeyId) {
   if (!hotkey.evdev) {
     Grab(keycode, hotkey.modifiers, root, hotkey.exclusive);
   }
+  hotkeys[hotkeyId].enabled = true;
 
   std::cout << "Successfully grabbed hotkey: " << hotkey.alias << std::endl;
   return true;
@@ -2220,36 +2220,60 @@ bool IO::GrabHotkey(int hotkeyId) {
   return false;
 #endif
 }
-
 bool IO::UngrabHotkey(int hotkeyId) {
-#ifdef __linux__
-  if (!display)
-    return false;
+  #ifdef __linux__
+    if (!display)
+        return false;
 
-  auto it = hotkeys.find(hotkeyId);
-  if (it == hotkeys.end()) {
-    std::cerr << "Hotkey ID not found: " << hotkeyId << std::endl;
-    return false;
-  }
-  const HotKey &hotkey = it->second;
-  info("Ungrabbing hotkey: " + hotkey.alias);
-  Window root = DefaultRootWindow(display);
-  KeyCode keycode = hotkey.key;
+    auto it = hotkeys.find(hotkeyId);
+    if (it == hotkeys.end()) {
+        error("Hotkey ID not found: {}", hotkeyId);
+        return false;
+    }
 
-  if (keycode == 0) {
-    std::cerr << "Invalid keycode for hotkey: " << hotkey.alias << std::endl;
-    return false;
-  }
+    const HotKey &hotkey = it->second;
+    info("Ungrabbing hotkey: {}", hotkey.alias);
 
-  // Use our improved method to ungrab with all modifier variants
-  if (!hotkey.evdev) {
-    Ungrab(keycode, hotkey.modifiers, root);
-  }
+    if (hotkey.key == 0) {
+        error("Invalid keycode for hotkey: {}", hotkey.alias);
+        return false;
+    }
 
-  std::cout << "Successfully ungrabbed hotkey: " << hotkey.alias << std::endl;
-  return true;
+    // Only ungrab X11 hotkeys (evdev hotkeys don't need ungrabbing)
+    if (!hotkey.evdev && display) {
+        Window root = DefaultRootWindow(display);
+        
+        // Check if any OTHER hotkeys are using the same key+modifiers
+        bool hasOtherSameHotkey = false;
+        for (const auto &[id, hk] : hotkeys) {
+            if (id != hotkeyId && 
+                hk.enabled && 
+                !hk.evdev && 
+                hk.key == hotkey.key && 
+                hk.modifiers == hotkey.modifiers) {
+                hasOtherSameHotkey = true;
+                break;
+            }
+        }
+        
+        // Only ungrab if no other enabled hotkeys use this key+modifier combo
+        if (!hasOtherSameHotkey) {
+            Ungrab(hotkey.key, hotkey.modifiers, root, false);
+            info("Physically ungrabbed key {} with modifiers 0x{:x}", 
+                  hotkey.key, hotkey.modifiers);
+        } else {
+            info("Not ungrabbing - other hotkeys still using key {} with modifiers 0x{:x}", 
+                  hotkey.key, hotkey.modifiers);
+        }
+    }
+
+    // Always disable the hotkey entry
+    hotkeys[hotkeyId].enabled = false;
+    
+    info("Successfully ungrabbed hotkey: {}", hotkey.alias);
+    return true;
 #else
-  return false;
+    return false;
 #endif
 }
 
@@ -2386,27 +2410,45 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 
         for (auto &[id, hotkey] : hotkeys) {
           if (!hotkey.enabled || !hotkey.evdev ||
-              hotkey.key != static_cast<Key>(code))
-            continue;
+              hotkey.key != static_cast<Key>(code)){
+              continue;
+          }
           // Event type check
           if (hotkey.eventType == HotkeyEventType::Down && !down)
             continue;
           if (hotkey.eventType == HotkeyEventType::Up && down)
             continue;
-         // Special case: if the hotkey IS a modifier key itself, don't check modifier state
-        bool isModifierKey = (code == KEY_LEFTALT || code == KEY_RIGHTALT || 
-          code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
-          code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
-          code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
-
-bool modifierMatch = 
-    ((hotkey.modifiers & (1 << 0)) != 0) == modState[ControlMask] &&  // bit 0 for ctrl
-    ((hotkey.modifiers & (1 << 1)) != 0) == modState[ShiftMask] &&    // bit 1 for shift
-    ((hotkey.modifiers & (1 << 2)) != 0) == modState[Mod1Mask] &&     // bit 2 for alt
-    ((hotkey.modifiers & (1 << 3)) != 0) == modState[Mod4Mask];       // bit 3 for meta
-
-        if (!modifierMatch)
-        continue;
+          // Special case: if the hotkey IS a modifier key itself, don't check modifier state
+          bool isModifierKey = (code == KEY_LEFTALT || code == KEY_RIGHTALT || 
+            code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
+            code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
+            code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
+            bool modifierMatch;
+            if (isModifierKey && hotkey.modifiers == 0) {
+                // For standalone modifier keys (like @ralt), always match if no modifiers required
+                modifierMatch = true;
+            } else {
+                // For regular keys or modified keys, check exact modifier matching
+                bool ctrlRequired = (hotkey.modifiers & (1 << 0)) != 0;
+                bool shiftRequired = (hotkey.modifiers & (1 << 1)) != 0;
+                bool altRequired = (hotkey.modifiers & (1 << 2)) != 0;
+                bool metaRequired = (hotkey.modifiers & (1 << 3)) != 0;
+                
+                bool ctrlPressed = modState[ControlMask];
+                bool shiftPressed = modState[ShiftMask];
+                bool altPressed = modState[Mod1Mask];
+                bool metaPressed = modState[Mod4Mask];
+                
+                // Exact match: required modifiers must match pressed modifiers
+                modifierMatch = (ctrlRequired == ctrlPressed) && 
+                               (shiftRequired == shiftPressed) && 
+                               (altRequired == altPressed) && 
+                               (metaRequired == metaPressed);
+            }
+          if (!modifierMatch){
+            continue;
+          }
+          
           // Context checks
           if (!hotkey.contexts.empty()) {
             if (!std::all_of(hotkey.contexts.begin(), hotkey.contexts.end(),

@@ -52,7 +52,7 @@ IO::IO() {
   if (display) {
       // Set up X11 error handler
       XSetErrorHandler([](Display *, XErrorEvent *) -> int { return 0; });
-
+      UpdateNumLockMask();
       // Start with default device
       std::string device;
       try {
@@ -310,73 +310,141 @@ error:
   uinputFd = -1;
   return false;
 }
-
-bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
-              bool isMouse) {
-  if (!display)
-    return false;
+bool IO::GrabKeyboard() {
+  if (!display) return false;
+  
+  struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 }; // 1ms
+  
+  // Try to grab keyboard, may need to wait for other processes to ungrab
+  for (int i = 0; i < 1000; i++) {
+      int result = XGrabKeyboard(display, DefaultRootWindow(display), x11::XTrue, 
+                               GrabModeAsync, GrabModeAsync, CurrentTime);
+      if (result == x11::XSuccess) {
+          info("Successfully grabbed entire keyboard after {} attempts", i + 1);
+          return true;
+      }
+      
+      nanosleep(&ts, nullptr);
+  }
+  
+  error("Cannot grab keyboard after 1000 attempts");
+  return false;
+}
+bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bool isMouse) {
+  if (!display) return false;
+        
+  UpdateNumLockMask();
+  
   bool success = true;
-  bool isButton = isMouse ? isMouse : (input >= Button1 && input <= 7);
-  // simple check
+  bool isButton = isMouse || (input >= Button1 && input <= 7);
+  
+  // dwm's exact modifier variants
+  unsigned int modVariants[] = { 
+      0, 
+      LockMask, 
+      numlockmask, 
+      numlockmask | LockMask 
+  };
 
-  // Modifier variants (add NumLock/CapsLock later if needed)
-  unsigned int modVariants[] = {0 /*, LockMask, numlockMask, etc. */};
+  struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 }; // 1ms delay
 
   for (unsigned int variant : modVariants) {
-    unsigned int finalMods = modifiers | variant;
-
-    if (isButton) {
-      // Mouse button grab
-      XUngrabButton(display, input, finalMods, root);
-
+      unsigned int finalMods = modifiers | variant;
+      
       if (exclusive) {
-        XGrabButton(display, input, finalMods, root, x11::XTrue,
-                    ButtonPressMask | ButtonReleaseMask, GrabModeAsync,
-                    GrabModeAsync, x11::XNone, x11::XNone);
-      } else {
-        XSelectInput(display, root, ButtonPressMask | ButtonReleaseMask);
+          bool grabbed = false;
+          
+          // Retry loop for each modifier variant
+          for (int attempt = 0; attempt < 100 && !grabbed; attempt++) {
+              int result;
+              
+              if (isButton) {
+                  result = XGrabButton(display, input, finalMods, root, x11::XTrue,
+                                     ButtonPressMask | ButtonReleaseMask, 
+                                     GrabModeAsync, GrabModeAsync, x11::XNone, x11::XNone);
+              } else {
+                  result = XGrabKey(display, input, finalMods, root, x11::XTrue, 
+                                  GrabModeAsync, GrabModeAsync);
+              }
+              
+              if (result == x11::XSuccess) {
+                  grabbed = true;
+                  if (attempt > 0) {
+                      debug("Grabbed {} {} with modifiers {} after {} attempts", 
+                            isButton ? "button" : "key", input, finalMods, attempt + 1);
+                  }
+                  break;
+              }
+              
+              if (result != x11::XBadAccess) {
+                  // Permanent error (BadValue, BadWindow, etc.) - don't retry
+                  error("Failed to grab {} {} with modifiers {}: error {}", 
+                        isButton ? "button" : "key", input, finalMods, result);
+                  success = false;
+                  break;
+              }
+              
+              // BadAccess means someone else has it - wait and retry
+              nanosleep(&ts, nullptr);
+          }
+          
+          if (!grabbed) {
+              error("Could not grab {} {} with modifiers {} after 100 attempts - permanent conflict", 
+                    isButton ? "button" : "key", input, finalMods);
+              success = false;
+          }
       }
-    } else {
-      // Keyboard key grab
-      XUngrabKey(display, input, finalMods, root);
-
-      if (exclusive) {
-        x11::XStatus status = XGrabKey(display, input, finalMods, root, x11::XTrue,
-                                 GrabModeAsync, GrabModeAsync);
-        if (status != x11::XSuccess) {
-          success = false;
-          error(std::string("Failed to grab key (code: ") + std::to_string((int)input) + ") with modifiers: " + std::to_string(finalMods));
-        }
-      } else {
-        XSelectInput(display, root, x11::XKeyPressMask | x11::XKeyReleaseMask);
-      }
-    }
   }
-
+  
+  // For non-exclusive, just set up event monitoring
+  if (!exclusive) {
+      XSelectInput(display, root, KeyPressMask | KeyReleaseMask | 
+                                 ButtonPressMask | ButtonReleaseMask);
+  }
+  
   XSync(display, x11::XFalse);
   return success;
 }
-
-void crash() {
-  int *ptr = nullptr;
-  *ptr = 0;
-}
-
-void IO::Ungrab(Key input, unsigned int modifiers, Window root) {
-  if (!display)
-    return;
-
-  bool isButton = (input >= Button1 && input <= 7);
-
-  XUngrabKey(display, input, modifiers, root);
-  XUngrabKey(display, input, modifiers | LockMask, root);
-
-  if (isButton) {
-    XUngrabButton(display, input, modifiers, root);
-    XUngrabButton(display, input, modifiers | LockMask, root);
+void IO::Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse) {
+  if (!display) return;
+        
+  UpdateNumLockMask();
+  
+  bool isButton = isMouse || (input >= Button1 && input <= 7);
+  
+  // Same modifier variants as Grab - must match exactly!
+  unsigned int modVariants[] = { 
+      0, 
+      LockMask, 
+      numlockmask, 
+      numlockmask | LockMask 
+  };
+  
+  // Ungrab all variants we potentially grabbed
+  for (unsigned int variant : modVariants) {
+      unsigned int finalMods = modifiers | variant;
+      
+      if (isButton) {
+          XUngrabButton(display, input, finalMods, root);
+      } else {
+          XUngrabKey(display, input, finalMods, root);
+      }
   }
-
+  
   XSync(display, x11::XFalse);
+  debug("Ungrabbed {} {} with base modifiers {}", 
+        isButton ? "button" : "key", input, modifiers);
+}
+void IO::UngrabAll() {
+  if (!display) return;
+  
+  XUngrabKey(display, AnyKey, AnyModifier, DefaultRootWindow(display));
+  XUngrabButton(display, AnyButton, AnyModifier, DefaultRootWindow(display));
+  XSync(display, x11::XFalse);
+  info("Ungrabbed all keys and buttons");
+}
+bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
+  return CLEANMASK(expected) == CLEANMASK(actual);
 }
 void IO::MonitorHotkeys() {
   #ifdef __linux__
@@ -1254,27 +1322,28 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 
   while (i < hotkeyStr.size()) {
       switch (hotkeyStr[i]) {
-      case '!':
-          modifiers |= isEvdev ? KEY_LEFTALT : Mod1Mask;
-          break; // Alt
-      case '^':
-          modifiers |= isEvdev ? KEY_LEFTCTRL : ControlMask;
-          break; // Ctrl
-      case '+':
-          modifiers |= isEvdev ? KEY_LEFTSHIFT : ShiftMask;
-          break; // Shift
-      case '#':
-          modifiers |= isEvdev ? KEY_LEFTMETA : Mod4Mask;
-          break; // Win/Super
-      case '*':
-      case '~':
-          exclusive = false;
-          break;
-      case '$':
-          suspendKey = true;
-          break;
-      default:
-          goto done_parsing;
+      // In AddHotkey(), replace the evdev modifier logic:
+case '^':
+    modifiers |= isEvdev ? (1 << 0) : ControlMask;  // Use bit 0 for ctrl
+    break;
+case '+':
+    modifiers |= isEvdev ? (1 << 1) : ShiftMask;    // Use bit 1 for shift 
+    break; 
+case '!':
+    modifiers |= isEvdev ? (1 << 2) : Mod1Mask;     // Use bit 2 for alt
+    break;
+case '#':
+    modifiers |= isEvdev ? (1 << 3) : Mod4Mask;     // Use bit 3 for meta
+    break;
+case '*':
+case '~':
+    exclusive = false;
+    break;
+case '$':
+    suspendKey = true;
+    break;
+default:
+    goto done_parsing;
       }
       ++i;
   }
@@ -1362,7 +1431,20 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
 
   return true;
 }
-
+void IO::UpdateNumLockMask() {
+  XModifierKeymap* modmap = XGetModifierMapping(display);
+  for (int i = 0; i < 8; i++) {
+      for (int j = 0; j < modmap->max_keypermod; j++) {
+          if (modmap->modifiermap[i * modmap->max_keypermod + j] == 
+              XKeysymToKeycode(display, XK_Num_Lock)) {
+              numlockmask = (1 << i);
+              XFreeModifiermap(modmap);
+              return;
+          }
+      }
+  }
+  XFreeModifiermap(modmap);
+}
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {
   std::cout << "Control send: " << control << " keys: " << keys << std::endl;
@@ -2222,51 +2304,28 @@ void IO::Remap(const std::string& key1, const std::string& key2) {
     }
 }
 bool IO::MatchEvdevModifiers(int expectedModifiers, const std::map<int, bool>& keyState) {
-  // Check each modifier bit
-  if ((expectedModifiers & KEY_LEFTCTRL) && 
-      !(keyState.at(KEY_LEFTCTRL) || keyState.at(KEY_RIGHTCTRL))) {
-      return false;
-  }
+  auto isPressed = [&](int key) -> bool {
+      auto it = keyState.find(key);
+      return it != keyState.end() && it->second;
+  };
   
-  if ((expectedModifiers & KEY_LEFTSHIFT) && 
-      !(keyState.at(KEY_LEFTSHIFT) || keyState.at(KEY_RIGHTSHIFT))) {
-      return false;
-  }
+  // Check each modifier type
+  std::vector<std::pair<int, std::pair<int, int>>> modifiers = {
+      {KEY_LEFTCTRL, {KEY_LEFTCTRL, KEY_RIGHTCTRL}},
+      {KEY_LEFTSHIFT, {KEY_LEFTSHIFT, KEY_RIGHTSHIFT}},
+      {KEY_LEFTALT, {KEY_LEFTALT, KEY_RIGHTALT}},
+      {KEY_LEFTMETA, {KEY_LEFTMETA, KEY_RIGHTMETA}}
+  };
   
-  if ((expectedModifiers & KEY_LEFTALT) && 
-      !(keyState.at(KEY_LEFTALT) || keyState.at(KEY_RIGHTALT))) {
-      return false;
-  }
-  
-  if ((expectedModifiers & KEY_LEFTMETA) && 
-      !(keyState.at(KEY_LEFTMETA) || keyState.at(KEY_RIGHTMETA))) {
-      return false;
-  }
-  
-  // Check that no unexpected modifiers are pressed
-  if ((expectedModifiers & KEY_LEFTCTRL) == 0 && 
-      (keyState.at(KEY_LEFTCTRL) || keyState.at(KEY_RIGHTCTRL))) {
-      return false;
-  }
-  
-  if ((expectedModifiers & KEY_LEFTSHIFT) == 0 && 
-      (keyState.at(KEY_LEFTSHIFT) || keyState.at(KEY_RIGHTSHIFT))) {
-      return false;
-  }
-  
-  if ((expectedModifiers & KEY_LEFTALT) == 0 && 
-      (keyState.at(KEY_LEFTALT) || keyState.at(KEY_RIGHTALT))) {
-      return false;
-  }
-  
-  if ((expectedModifiers & KEY_LEFTMETA) == 0 && 
-      (keyState.at(KEY_LEFTMETA) || keyState.at(KEY_RIGHTMETA))) {
-      return false;
+  for (auto& [flag, keys] : modifiers) {
+      bool expected = (expectedModifiers & flag) != 0;
+      bool pressed = isPressed(keys.first) || isPressed(keys.second);
+      
+      if (expected != pressed) return false;
   }
   
   return true;
 }
-
 bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   if (evdevRunning)
     return false;
@@ -2320,6 +2379,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       std::vector<std::function<void()>> callbacks;
       {
         std::scoped_lock hotkeyLock(hotkeyMutex);
+
         for (auto &[id, hotkey] : hotkeys) {
           if (!hotkey.enabled || !hotkey.evdev ||
               hotkey.key != static_cast<Key>(code))
@@ -2335,14 +2395,11 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
           code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
           code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
 
-        bool modifierMatch;
-        if (isModifierKey && hotkey.modifiers == 0) {
-        // For standalone modifier keys (like @ralt), always match if no modifiers required
-        modifierMatch = true;
-        } else {
-        // For regular keys, do normal modifier matching
-        modifierMatch = MatchEvdevModifiers(hotkey.modifiers, evdevKeyState);
-        }
+bool modifierMatch = 
+    ((hotkey.modifiers & (1 << 0)) != 0) == modState[ControlMask] &&  // bit 0 for ctrl
+    ((hotkey.modifiers & (1 << 1)) != 0) == modState[ShiftMask] &&    // bit 1 for shift
+    ((hotkey.modifiers & (1 << 2)) != 0) == modState[Mod1Mask] &&     // bit 2 for alt
+    ((hotkey.modifiers & (1 << 3)) != 0) == modState[Mod4Mask];       // bit 3 for meta
 
         if (!modifierMatch)
         continue;

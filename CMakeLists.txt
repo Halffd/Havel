@@ -341,7 +341,17 @@ if(ENABLE_HAVEL_LANG)
     add_library(havel_lang STATIC ${HAVEL_LANG_SOURCES})
     
     target_include_directories(havel_lang PRIVATE
-        ${CMAKE_SOURCE_DIR}/src/havel-lang
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${X11_INCLUDE_DIR}
+        ${XI_INCLUDE_DIR}
+        ${DBUS_INCLUDE_DIRS}
+        ${PULSEAUDIO_INCLUDE_DIRS}
+        ${ALSA_INCLUDE_DIRS}
+        ${LUA_INCLUDE_DIR}
+        ${WAYLAND_INCLUDE_DIRS}
+        ${GENERATED_PROTO_DIR}
+        $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
     )
     

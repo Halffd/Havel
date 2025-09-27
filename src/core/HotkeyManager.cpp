@@ -454,7 +454,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         info("Current brightness: " + std::to_string(brightnessManager.getBrightness(1)));
     });
     io.Hotkey("@!f7", [this]() {
-        info("Decreasing shhdow lift");
+        info("Decreasing shadow lift");
         auto shadowLift = brightnessManager.getShadowLift();
         brightnessManager.setShadowLift(shadowLift - 0.05);
         info("Current shadow lift: " + std::to_string(brightnessManager.getShadowLift()));
@@ -544,6 +544,26 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.increaseTemperature(1,500);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
+    float* gamma = new float(1.0f);
+    io.Hotkey("@!q", [this, gamma]() {
+        info("Decreasing gamma");
+        *gamma -= 0.05f;
+        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
+    });
+    io.Hotkey("@!w", [this, gamma]() {
+        info("Increasing gamma");
+        *gamma += 0.05f;
+        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
+    });
+    io.Hotkey("@!g", [this, gamma]() {
+        info("Reset gamma");
+        if(*gamma != 1.0f){
+            *gamma = 1.0f;
+        } else {
+            *gamma = 1.42f;
+        }
+        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
+    });
 
     // Mouse wheel + click combinations
     io.Hotkey("!Button5", [this]() {
@@ -568,7 +588,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w, pos.h + h);
     };
     
-    AddHotkey("!Home", [this, WinMove]() {
+    AddHotkey("!Home", [WinMove]() {
         info("Home Move full screen");
         auto win = Window(WindowManager::GetActiveWindow());
         auto rect = win.Pos();

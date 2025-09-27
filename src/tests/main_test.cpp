@@ -169,9 +169,9 @@ int main(int argc, char* argv[]) {
     mgr.setBrightnessAndTemperature("DP-2", 0.9, 5500);  // Bright + neutral specific
     
     // === TEMPERATURE INCREMENTS ===
-    mgr.increaseTemperature();           // +200K default, all monitors
-    mgr.decreaseTemperature("DP-1");     // -200K default, specific monitor
-    mgr.increaseTemperature(500);        // +500K custom, all monitors
+    mgr.increaseTemperature(200);           // +200K default, all monitors
+    mgr.decreaseTemperature("DP-1", 200);     // -200K default, specific monitor
+    mgr.increaseTemperature("DP-2", 500);        // +500K custom, all monitors
     mgr.decreaseTemperature("HDMI-1", 100); // -100K custom, specific monitor
     
     // === DAY/NIGHT AUTOMATION - THE KILLER FEATURE ===

@@ -533,7 +533,6 @@ void IO::MonitorHotkeys() {
                       if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
                           continue;
                       }
-                      info("X11 event: " + std::to_string(event.type));
                       
                       const bool isDown = (event.type == x11::XKeyPress);
                       const XKeyEvent* keyEvent = &event.xkey;

@@ -60,6 +60,7 @@ namespace havel {
         int speed = 5;
         float acc = 1.0f;
 
+        void updateAllConditionalHotkeys();
         void checkHotkeyStates();
 
         bool evaluateCondition(const std::string &condition);
@@ -328,6 +329,7 @@ namespace havel {
         std::vector<int> conditionalHotkeyIds;
         std::vector<int> gamingHotkeyIds;
         std::vector<ConditionalHotkey> conditionalHotkeys;
+        void updateConditionalHotkey(ConditionalHotkey& hotkey);
         // Window condition helper methods
         void updateHotkeyStateForCondition(const std::string &condition,
                                            bool conditionMet);

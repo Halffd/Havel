@@ -210,26 +210,15 @@ void HavelApp::onPeriodicCheck() {
 
         auto now = std::chrono::steady_clock::now();
 
+
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= WINDOW_CHECK_INTERVAL_MS) {
             if (hotkeyManager) {
                 hotkeyManager->checkHotkeyStates();
-                
-                bool isGamingMode = hotkeyManager->evaluateCondition("mode == 'gaming'");
-                
-                static bool lastGamingState = false;
-                if (isGamingMode != lastGamingState) {
-                    info("Gaming mode state changed: {} -> {}", lastGamingState, isGamingMode);
-                    lastGamingState = isGamingMode;
-                }
-                
-                if (isGamingMode) {
-                    hotkeyManager->grabGamingHotkeys();
-                } else {
-                    hotkeyManager->ungrabGamingHotkeys();
-                }
+
+                hotkeyManager->updateAllConditionalHotkeys();
             }
             lastWindowCheck = now;
-        }        
+        }
         
         // Config checks
         if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >= CONFIG_CHECK_INTERVAL_S) {

@@ -19,6 +19,7 @@
 #include <cstring>
 #include <cerrno>
 #include "x11.h"
+#define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
 namespace havel {
 
@@ -245,6 +246,10 @@ private:
   std::set<int> pressedKeys;
   std::mutex keyStateMutex;
   template <typename T> static constexpr bool always_false = false;
+  unsigned int numlockmask = 0;
+    
+  void UpdateNumLockMask();
+  bool ModifierMatch(unsigned int expected, unsigned int actual);
   bool EmitClick(int btnCode, int action);
 
   void CleanupUinputDevice();
@@ -288,8 +293,9 @@ private:
   bool Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
             bool isMouse = false);
 
-  void Ungrab(Key input, unsigned int modifiers, Window root);
-  
+  void Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse = false);
+  bool GrabKeyboard();
+  void UngrabAll();
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();

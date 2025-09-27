@@ -60,14 +60,8 @@ namespace havel {
         int speed = 5;
         float acc = 1.0f;
 
-        void updateAllConditionalHotkeys();
-        void checkHotkeyStates();
-
         bool evaluateCondition(const std::string &condition);
 
-        void grabGamingHotkeys();
-
-        void ungrabGamingHotkeys();
         std::unique_ptr<ConditionEngine> conditionEngine;
         
         void setupConditionEngine();
@@ -102,6 +96,7 @@ namespace havel {
         bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
 
         bool RemoveHotkey(const std::string &hotkeyStr);
+        void updateAllConditionalHotkeys();
 
         void LoadHotkeyConfigurations();
 
@@ -186,10 +181,6 @@ namespace havel {
         
         ControlMode currentBrightnessMode = ControlMode::BRIGHTNESS;
         TargetMonitor targetBrightnessMonitor = TargetMonitor::ALL;
-        // Hotkey state management
-        bool mpvHotkeysGrabbed{true};
-        std::map<std::string, bool> windowConditionStates;
-        // Tracks if particular window conditions were met
 
         // Window groups
         std::vector<std::string> videoSites; // Will be loaded from config
@@ -330,10 +321,6 @@ namespace havel {
         std::vector<int> gamingHotkeyIds;
         std::vector<ConditionalHotkey> conditionalHotkeys;
         void updateConditionalHotkey(ConditionalHotkey& hotkey);
-        // Window condition helper methods
-        void updateHotkeyStateForCondition(const std::string &condition,
-                                           bool conditionMet);
-
         // Window focus tracking
         bool trackWindowFocus;
         wID lastActiveWindowId;

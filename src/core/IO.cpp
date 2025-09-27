@@ -25,7 +25,7 @@ int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   if (ee->error_code == x11::XBadWindow
   || (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess)
   || (ee->request_code == X_GrabKey && ee->error_code == x11::XBadAccess)) {
-      return 0; // Ignore these errors like dwm does
+      return 0;
   }
   error("X11 error: request_code={}, error_code={}", ee->request_code, ee->error_code);
   return 0; // Don't crash
@@ -326,12 +326,9 @@ bool IO::GrabKeyboard() {
 bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bool isMouse) {
   if (!display) return false;
   
-  UpdateNumLockMask(); // Call this every time like dwm does
-  
   bool success = true;
   bool isButton = isMouse || (input >= Button1 && input <= 7);
   
-  // dwm's exact modifier variants
   unsigned int modVariants[] = { 
       0, 
       LockMask, 
@@ -339,42 +336,55 @@ bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bo
       numlockmask | LockMask 
   };
 
-  struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 };
-
+  // Single loop - just grab the 4 variants of THIS key
   for (unsigned int variant : modVariants) {
       unsigned int finalMods = modifiers | variant;
+      int result;
       
-      if (exclusive) {
-          bool grabbed = false;
+      if (isButton) {
+          result = XGrabButton(display, input, finalMods, root, x11::XTrue,
+                             ButtonPressMask | ButtonReleaseMask, 
+                             GrabModeAsync, GrabModeAsync, x11::XNone, x11::XNone);
+      } else {
+          result = XGrabKey(display, input, finalMods, root, x11::XTrue, 
+                          GrabModeAsync, GrabModeAsync);
+      }
+      
+      if (result != x11::XSuccess) {
+          success = false;
+      }
+  }
+  
+  XSync(display, x11::XFalse);
+  return success;
+}
+
+bool IO::GrabAllHotkeys() {
+  if (!display) return false;
+  
+  UpdateNumLockMask(); // Once at start
+  
+  unsigned int modVariants[] = { 
+      0, 
+      LockMask, 
+      numlockmask, 
+      numlockmask | LockMask 
+  };
+  
+  bool success = true;
+  
+  // Single pass through your configured hotkeys
+  for (const auto& [id, hotkey] : hotkeys) {
+      if (hotkey.evdev || !hotkey.exclusive) continue; // Skip evdev hotkeys
+      
+      // Grab 4 variants of each configured hotkey
+      for (unsigned int variant : modVariants) {
+          unsigned int finalMods = hotkey.modifiers | variant;
           
-          for (int attempt = 0; attempt < 100 && !grabbed; attempt++) {
-              int result;
-              
-              if (isButton) {
-                  result = XGrabButton(display, input, finalMods, root, x11::XTrue,
-                                     ButtonPressMask | ButtonReleaseMask, 
-                                     GrabModeAsync, GrabModeAsync, x11::XNone, x11::XNone);
-              } else {
-                  result = XGrabKey(display, input, finalMods, root, x11::XTrue, 
-                                  GrabModeAsync, GrabModeAsync);
-              }
-              
-              if (result == x11::XSuccess) {
-                  grabbed = true;
-                  if (attempt > 0) {
-                      debug("Grabbed {} {} with modifiers {} after {} attempts", 
-                            isButton ? "button" : "key", input, finalMods, attempt + 1);
-                  }
-                  break;
-              }
-              
-              // Don't check for BadAccess - error handler will ignore it
-              nanosleep(&ts, nullptr);
-          }
-          
-          if (!grabbed) {
-              debug("Could not grab {} {} with modifiers {} after 100 attempts", 
-                    isButton ? "button" : "key", input, finalMods);
+          int result = XGrabKey(display, hotkey.key, finalMods, 
+                              DefaultRootWindow(display), x11::XTrue, 
+                              GrabModeAsync, GrabModeAsync);
+          if (result != x11::XSuccess) {
               success = false;
           }
       }
@@ -414,6 +424,25 @@ void IO::UngrabAll() {
   XUngrabKey(display, AnyKey, AnyModifier, DefaultRootWindow(display));
   XUngrabButton(display, AnyButton, AnyModifier, DefaultRootWindow(display));
   XSync(display, x11::XFalse);
+}
+
+// Fast version - no retries
+bool IO::FastGrab(Key input, unsigned int modifiers, Window root) {
+  if (!display) return false;
+  
+  unsigned int variants[] = { 
+      modifiers,
+      modifiers | LockMask,
+      modifiers | numlockmask,
+      modifiers | numlockmask | LockMask
+  };
+  
+  // Just try once, no retries
+  for (unsigned int mods : variants) {
+      XGrabKey(display, input, mods, root, x11::XTrue, GrabModeAsync, GrabModeAsync);
+  }
+  
+  return true;
 }
 bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
   return CLEANMASK(expected) == CLEANMASK(actual);

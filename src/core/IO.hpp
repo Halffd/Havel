@@ -296,6 +296,8 @@ private:
 
   void Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse = false);
   bool GrabKeyboard();
+  bool FastGrab(Key input, unsigned int modifiers, Window root);
+  bool GrabAllHotkeys();
   void UngrabAll();
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();

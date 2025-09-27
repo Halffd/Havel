@@ -1115,10 +1115,10 @@ void HotkeyManager::ReloadConfigurations() {
     LoadHotkeyConfigurations();
     loadVideoSites();
 }
-int HotkeyManager::AddGamingHotkey(const std::string& key,
-                                           std::function<void()> trueAction,
-                                           std::function<void()> falseAction, int id) {
-    return AddContextualHotkey(key, "mode == 'gaming'", trueAction, falseAction, id);
+int HotkeyManager::AddGamingHotkey(const std::string& key, std::function<void()> trueAction, std::function<void()> falseAction, int id) {
+    int hotkeyId = AddContextualHotkey(key, "mode == 'gaming'", trueAction, falseAction, id);
+    gamingHotkeyIds.push_back(hotkeyId);  // Track as gaming hotkey
+    return hotkeyId;
 }   
 int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string& condition,
                                            std::function<void()> trueAction,
@@ -1148,7 +1148,7 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     return id;
 }
 
-void HotkeyManager::setupConditionEngine() {
+    void HotkeyManager::setupConditionEngine() {
     conditionEngine->registerProperty("window.title", PropertyType::STRING, 
         []() -> std::string {
             wID activeWindow = WindowManager::GetActiveWindow();
@@ -1253,7 +1253,7 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
             return;
         }
 
-        for (int id : conditionalHotkeyIds) {
+        for (int id : gamingHotkeyIds) {
             io.GrabHotkey(id);
         }
 
@@ -1266,7 +1266,7 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
             return;
         }
 
-        for (int id : conditionalHotkeyIds) {
+        for (int id : gamingHotkeyIds) {
             io.UngrabHotkey(id);
         }
 

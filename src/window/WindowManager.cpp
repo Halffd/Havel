@@ -1237,46 +1237,96 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         XFlush(display);
         #endif
     }
-
+    bool WindowManager::IsWindowFullscreen(Window windowId) {
+        Display* display = DisplayManager::GetDisplay();
+        if (!display) return false;
+        
+        Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
+        Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
+        
+        if (stateAtom == x11::XNone || fsAtom == x11::XNone) {
+            return false;
+        }
+        
+        Atom actualType;
+        int actualFormat;
+        unsigned long nItems, bytesAfter;
+        unsigned char* prop = nullptr;
+        
+        if (XGetWindowProperty(display, windowId, stateAtom, 0, (~0L), x11::XFalse,
+                              AnyPropertyType, &actualType, &actualFormat, 
+                              &nItems, &bytesAfter, &prop) != x11::XSuccess || !prop) {
+            return false;
+        }
+        
+        bool isFullscreen = false;
+        Atom* states = (Atom*)prop;
+        for (unsigned long i = 0; i < nItems; ++i) {
+            if (states[i] == fsAtom) {
+                isFullscreen = true;
+                break;
+            }
+        }
+        
+        XFree(prop);
+        return isFullscreen;
+    }
     void WindowManager::MoveWindowToNextMonitor() {
         auto contextOpt = GetActiveWindowContext();
         if (!contextOpt) return;
         auto& context = *contextOpt;
-
+    
         XWindowAttributes winAttr;
         if (!XGetWindowAttributes(context.display, context.activeWindowId, &winAttr)) {
             error("Failed to get window attributes for MoveWindowToNextMonitor.");
             return;
         }
-
+    
         int winX, winY;
         Window child;
         XTranslateCoordinates(context.display, context.activeWindowId, context.root, 0, 0, &winX, &winY, &child);
-
+    
+        // Check if window is fullscreen (like old code did)
+        bool isFullscreen = IsWindowFullscreen(context.activeWindowId);
+        
+        if (isFullscreen) {
+            // Exit fullscreen first
+            ToggleFullscreen(context.activeWindowId);
+        }
+    
         auto monitors = DisplayManager::GetMonitors();
         if (monitors.size() < 2) return;
-
-        int winCenterX = winX + (winAttr.width / 2);
-        int winCenterY = winY + (winAttr.height / 2);
-
+    
+        // Find current monitor
         int currentMonitor = 0;
         for (size_t i = 0; i < monitors.size(); ++i) {
-            const auto &m = monitors[i];
-            if (winCenterX >= m.x && winCenterX < m.x + m.width &&
-                winCenterY >= m.y && winCenterY < m.y + m.height) {
+            if (winX >= monitors[i].x && winX < monitors[i].x + monitors[i].width &&
+                winY >= monitors[i].y && winY < monitors[i].y + monitors[i].height) {
                 currentMonitor = i;
                 break;
             }
         }
-
+    
         int nextMonitor = (currentMonitor + 1) % monitors.size();
         const auto &target = monitors[nextMonitor];
         
+        // Center the window on target monitor with original size
         int targetX = target.x + (target.width - winAttr.width) / 2;
         int targetY = target.y + (target.height - winAttr.height) / 2;
-
-        XMoveWindow(context.display, context.activeWindowId, targetX, targetY);
+        
+        // Move window - keep original dimensions
+        XMoveResizeWindow(context.display, context.activeWindowId, 
+                          targetX, targetY, 
+                          winAttr.width, winAttr.height);
+        
+        XRaiseWindow(context.display, context.activeWindowId);
+        XSetInputFocus(context.display, context.activeWindowId, RevertToPointerRoot, CurrentTime);
         XFlush(context.display);
+        
+        if (isFullscreen) {
+            // Restore fullscreen on new monitor
+            ToggleFullscreen(context.activeWindowId);
+        }
     }
     
 #ifdef WINDOWS

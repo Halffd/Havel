@@ -151,7 +151,15 @@ public:
   void MouseWheel(int amount);
 
   // State methods
-  int GetState(const std::string &keyName, const std::string &mode = "");
+  bool GetKeyState(const std::string& keyName);
+  bool GetKeyState(int keycode); // For raw keycodes
+  bool IsKeyPressed(const std::string& keyName) { return GetKeyState(keyName); }
+  
+  // Modifier state helpers
+  bool IsShiftPressed();
+  bool IsCtrlPressed(); 
+  bool IsAltPressed();
+  bool IsWinPressed();
 
   static void PressKey(const std::string &keyName, bool press);
 
@@ -241,6 +249,7 @@ public:
   void EmergencyReleaseAllKeys();
   bool TryPressKey(int keycode);
   bool TryReleaseKey(int keycode);
+  static Key GetKeyCode(cstr keyName);
 private:
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;

@@ -114,7 +114,7 @@ public:
     static std::string GetActiveWindowClass();
     static void MoveWindowToNextMonitor();
     static void ToggleFullscreen(wID windowId);
-
+    static bool IsWindowFullscreen(wID windowId);
 private:
     static bool InitializeX11();
     std::string DetectWindowManager() const;

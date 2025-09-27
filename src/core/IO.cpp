@@ -967,17 +967,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
       return;
     }
   
-    Key keysym = StringToVirtualKey(keyName);
-    if (keysym == NoSymbol) {
-      std::cerr << "Invalid key: " << keyName << std::endl;
-      return;
-    }
-  
-    KeyCode keycode = XKeysymToKeycode(display, keysym);
-    if (keycode == 0) {
-      std::cerr << "Cannot find keycode for " << keyName << std::endl;
-      return;
-    }
+    Key keycode = GetKeyCode(keyName);
     
     // Add state tracking to X11 as well
     if (press) {
@@ -1371,14 +1361,8 @@ done_parsing:
     std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
                    ::tolower);
     // Convert string to keysym first
-    KeySym keysym = StringToVirtualKey(keyLower);
-    if (keysym == 0) {
-      std::cerr << "Invalid key name: " << keyLower << "\n";
-      return {};
-    }
-
-    // Convert keysym to keycode
-    keycode = XKeysymToKeycode(display, keysym);
+    
+    keycode = GetKeyCode(keyLower);
     if (keycode == 0) {
       std::cerr << "Key '" << keyLower << "' not available on this keyboard layout\n";
       return {};
@@ -2139,7 +2123,75 @@ int IO::ParseModifiers(str str) {
 #endif
   return modifiers;
 }
+bool IO::GetKeyState(const std::string& keyName) {
+  // Try evdev first if available
+  if (evdevRunning && !evdevKeyState.empty()) {
+      int keycode = StringToVirtualKey(keyName);
+      if (keycode != -1) {
+          return evdevKeyState[keycode];
+      }
+  }
+  
+  // Fallback to X11 if evdev not available
+  #ifdef __linux__
+  if (display) {
+      Key keycode = GetKeyCode(keyName);
+      return GetKeyState(keycode);
+  }
+  #endif
+  
+  return false;
+}
 
+bool IO::GetKeyState(int keycode) {
+  // Direct keycode lookup - faster for known codes
+  if (evdevRunning) {
+      auto it = evdevKeyState.find(keycode);
+      return (it != evdevKeyState.end()) ? it->second : false;
+  }
+    
+  #ifdef __linux__
+  if (display) {
+    char keymap[32];
+    XQueryKeymap(display, keymap);
+    
+    return (keymap[keycode / 8] & (1 << (keycode % 8))) != 0;      
+  }
+  #endif
+  
+  return false;
+}
+bool IO::IsShiftPressed() {
+  return GetKeyState("lshift") || GetKeyState("rshift");
+}
+
+bool IO::IsCtrlPressed() {
+  return GetKeyState("lctrl") || GetKeyState("rctrl");
+}
+
+bool IO::IsAltPressed() {
+  return GetKeyState("lalt") || GetKeyState("ralt");
+}
+
+bool IO::IsWinPressed() {
+  return GetKeyState("lwin") || GetKeyState("rwin");
+}
+Key IO::GetKeyCode(cstr keyName) {
+    // Convert string to keysym
+  KeySym keysym = StringToVirtualKey(keyName);  
+  if (keysym == NoSymbol) {
+    std::cerr << "Unknown keysym for: " << keyName << "\n";
+    return 0;
+  }
+
+  // Convert keysym to keycode
+  KeyCode keycode = XKeysymToKeycode(DisplayManager::GetDisplay(), keysym);
+  if (keycode == 0) {
+    std::cerr << "Invalid keycode for keysym: " << keyName << "\n";
+    return 0;
+  }
+  return keycode;
+}
 void IO::PressKey(const std::string &keyName, bool press) {
   std::cout << "Pressing key: " << keyName << " (press: " << press << ")"
             << std::endl;
@@ -2150,20 +2202,7 @@ void IO::PressKey(const std::string &keyName, bool press) {
     std::cerr << "No X11 display available for key press\n";
     return;
   }
-
-  // Convert string to keysym
-  KeySym keysym = StringToVirtualKey(keyName);  
-  if (keysym == NoSymbol) {
-    std::cerr << "Unknown keysym for: " << keyName << "\n";
-    return;
-  }
-
-  // Convert keysym to keycode
-  KeyCode keycode = XKeysymToKeycode(display, keysym);
-  if (keycode == 0) {
-    std::cerr << "Invalid keycode for keysym: " << keyName << "\n";
-    return;
-  }
+  Key keycode = GetKeyCode(keyName);
 
   // Send fake key event
   XTestFakeKeyEvent(display, keycode, press ? x11::XTrue : x11::XFalse, CurrentTime);

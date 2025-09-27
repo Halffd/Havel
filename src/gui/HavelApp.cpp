@@ -195,7 +195,6 @@ void HavelApp::setupSignalHandling() {
         throw std::runtime_error("Failed to set up signal handling: " + std::string(e.what()));
     }
 }
-
 void HavelApp::onPeriodicCheck() {
     if (shutdownRequested) {
         return;
@@ -211,6 +210,26 @@ void HavelApp::onPeriodicCheck() {
 
         auto now = std::chrono::steady_clock::now();
 
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastWindowCheck).count() >= WINDOW_CHECK_INTERVAL_MS) {
+            if (hotkeyManager) {
+                hotkeyManager->checkHotkeyStates();
+                
+                bool isGamingMode = hotkeyManager->evaluateCondition("mode == 'gaming'");
+                
+                static bool lastGamingState = false;
+                if (isGamingMode != lastGamingState) {
+                    info("Gaming mode state changed: {} -> {}", lastGamingState, isGamingMode);
+                    lastGamingState = isGamingMode;
+                }
+                
+                if (isGamingMode) {
+                    hotkeyManager->grabGamingHotkeys();
+                } else {
+                    hotkeyManager->ungrabGamingHotkeys();
+                }
+            }
+            lastWindowCheck = now;
+        }        
         
         // Config checks
         if (std::chrono::duration_cast<std::chrono::seconds>(now - lastCheck).count() >= CONFIG_CHECK_INTERVAL_S) {
@@ -219,7 +238,7 @@ void HavelApp::onPeriodicCheck() {
         }
 
     } catch (const std::exception& e) {
-        error("Error in periodic check: " + std::string(e.what()));
+        error("Error in periodic check: {}", e.what());
     }
 }
 

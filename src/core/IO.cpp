@@ -12,7 +12,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include <sstream>
 #include <regex>
 
 namespace havel {
@@ -22,24 +21,20 @@ HHOOK IO::keyboardHook = NULL;
 std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
-
-int xerrorHandler(Display *display, XErrorEvent *error) {
-  char errorText[256];
-  XGetErrorText(display, error->error_code, errorText, sizeof(errorText));
-
-  std::cerr << "X Error: " << errorText << " (" << (int)error->error_code << ")"
-            << std::endl;
-  std::cerr << "  Request code: " << (int)error->request_code << std::endl;
-  std::cerr << "  Minor code: " << (int)error->minor_code << std::endl;
-  std::cerr << "  Resource ID: " << error->resourceid << std::endl;
-
-  return 0; // Must return a value
+int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
+  if (ee->error_code == x11::XBadWindow
+  || (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess)
+  || (ee->request_code == X_GrabKey && ee->error_code == x11::XBadAccess)) {
+      return 0; // Ignore these errors like dwm does
+  }
+  error("X11 error: request_code={}, error_code={}", ee->request_code, ee->error_code);
+  return 0; // Don't crash
 }
 IO::IO() {
   info("IO constructor called");
 
   // Set the error handler before making your XGrabKey call
-  XSetErrorHandler(xerrorHandler);
+  XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
   if (!display) {
@@ -50,8 +45,6 @@ IO::IO() {
   // Start hotkey monitoring thread for X11
 #ifdef __linux__
   if (display) {
-      // Set up X11 error handler
-      XSetErrorHandler([](Display *, XErrorEvent *) -> int { return 0; });
       UpdateNumLockMask();
       // Start with default device
       std::string device;
@@ -332,8 +325,8 @@ bool IO::GrabKeyboard() {
 }
 bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bool isMouse) {
   if (!display) return false;
-        
-  UpdateNumLockMask();
+  
+  UpdateNumLockMask(); // Call this every time like dwm does
   
   bool success = true;
   bool isButton = isMouse || (input >= Button1 && input <= 7);
@@ -346,7 +339,7 @@ bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bo
       numlockmask | LockMask 
   };
 
-  struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 }; // 1ms delay
+  struct timespec ts = { .tv_sec = 0, .tv_nsec = 1000000 };
 
   for (unsigned int variant : modVariants) {
       unsigned int finalMods = modifiers | variant;
@@ -354,7 +347,6 @@ bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bo
       if (exclusive) {
           bool grabbed = false;
           
-          // Retry loop for each modifier variant
           for (int attempt = 0; attempt < 100 && !grabbed; attempt++) {
               int result;
               
@@ -376,43 +368,27 @@ bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive, bo
                   break;
               }
               
-              if (result != x11::XBadAccess) {
-                  // Permanent error (BadValue, BadWindow, etc.) - don't retry
-                  error("Failed to grab {} {} with modifiers {}: error {}", 
-                        isButton ? "button" : "key", input, finalMods, result);
-                  success = false;
-                  break;
-              }
-              
-              // BadAccess means someone else has it - wait and retry
+              // Don't check for BadAccess - error handler will ignore it
               nanosleep(&ts, nullptr);
           }
           
           if (!grabbed) {
-              error("Could not grab {} {} with modifiers {} after 100 attempts - permanent conflict", 
+              debug("Could not grab {} {} with modifiers {} after 100 attempts", 
                     isButton ? "button" : "key", input, finalMods);
               success = false;
           }
       }
   }
   
-  // For non-exclusive, just set up event monitoring
-  if (!exclusive) {
-      XSelectInput(display, root, KeyPressMask | KeyReleaseMask | 
-                                 ButtonPressMask | ButtonReleaseMask);
-  }
-  
   XSync(display, x11::XFalse);
   return success;
 }
+
 void IO::Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse) {
   if (!display) return;
-        
-  UpdateNumLockMask();
   
   bool isButton = isMouse || (input >= Button1 && input <= 7);
   
-  // Same modifier variants as Grab - must match exactly!
   unsigned int modVariants[] = { 
       0, 
       LockMask, 
@@ -420,7 +396,6 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse) {
       numlockmask | LockMask 
   };
   
-  // Ungrab all variants we potentially grabbed
   for (unsigned int variant : modVariants) {
       unsigned int finalMods = modifiers | variant;
       
@@ -432,16 +407,13 @@ void IO::Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse) {
   }
   
   XSync(display, x11::XFalse);
-  debug("Ungrabbed {} {} with base modifiers {}", 
-        isButton ? "button" : "key", input, modifiers);
 }
+
 void IO::UngrabAll() {
   if (!display) return;
-  
   XUngrabKey(display, AnyKey, AnyModifier, DefaultRootWindow(display));
   XUngrabButton(display, AnyButton, AnyModifier, DefaultRootWindow(display));
   XSync(display, x11::XFalse);
-  info("Ungrabbed all keys and buttons");
 }
 bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
   return CLEANMASK(expected) == CLEANMASK(actual);
@@ -1432,18 +1404,21 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
   return true;
 }
 void IO::UpdateNumLockMask() {
-  XModifierKeymap* modmap = XGetModifierMapping(display);
-  for (int i = 0; i < 8; i++) {
-      for (int j = 0; j < modmap->max_keypermod; j++) {
+  unsigned int i, j;
+  XModifierKeymap *modmap;
+
+  numlockmask = 0;
+  modmap = XGetModifierMapping(display);
+  for (i = 0; i < 8; i++) {
+      for (j = 0; j < static_cast<unsigned int>(modmap->max_keypermod); j++) {
           if (modmap->modifiermap[i * modmap->max_keypermod + j] == 
               XKeysymToKeycode(display, XK_Num_Lock)) {
               numlockmask = (1 << i);
-              XFreeModifiermap(modmap);
-              return;
           }
       }
   }
   XFreeModifiermap(modmap);
+  debug("NumLock mask: 0x{:x}", numlockmask);
 }
 // Method to control send
 void IO::ControlSend(const std::string &control, const std::string &keys) {

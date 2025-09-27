@@ -30,7 +30,16 @@ namespace havel {
         std::function<void()> falseAction; // Optional
         int id;
     };
-
+    
+    struct ConditionalHotkey {
+        int id;
+        std::string key;
+        std::string condition;
+        std::function<void()> trueAction;
+        std::function<void()> falseAction;
+        bool currentlyGrabbed = false;
+        bool lastConditionResult = false;
+    };
     class MPVController; // Forward declaration
     class HotkeyManager {
     public:
@@ -318,6 +327,7 @@ namespace havel {
         // Store IDs of MPV hotkeys for grab/ungrab
         std::vector<int> conditionalHotkeyIds;
         std::vector<int> gamingHotkeyIds;
+        std::vector<ConditionalHotkey> conditionalHotkeys;
         // Window condition helper methods
         void updateHotkeyStateForCondition(const std::string &condition,
                                            bool conditionMet);

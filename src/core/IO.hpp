@@ -36,21 +36,38 @@ enum class MouseAction { Hold = 1, Release = 0, Click = 2 };
 
 enum class HotkeyEventType { Both, Down, Up };
 
+enum class HotkeyType {
+    Keyboard,
+    MouseButton,
+    MouseWheel,
+    MouseMove,
+    Combo
+};
+
 struct HotKey {
-  std::string alias;
-  Key key;
-  int modifiers;
-  std::function<void()> callback;
-  std::string action;
-  std::vector<std::function<bool()>> contexts;
-  bool enabled = true;
-  bool blockInput = false;
-  bool suspend = false;
-  bool exclusive = false;
-  bool success = false;
-  bool evdev = false;
-  bool x11 = false;
-  HotkeyEventType eventType = HotkeyEventType::Both;
+    std::string alias;
+    Key key;
+    int modifiers;
+    std::function<void()> callback;
+    std::string action;
+    std::vector<std::function<bool()>> contexts;
+    bool enabled = true;
+    bool grab = false;
+    bool suspend = false;
+    bool success = false;
+    bool evdev = false;
+    bool x11 = false;
+    HotkeyType type = HotkeyType::Keyboard;
+    HotkeyEventType eventType = HotkeyEventType::Both;
+    
+    // For mouse buttons
+    int mouseButton = 0;
+    // For wheel events: 1 = up, -1 = down
+    int wheelDirection = 0;
+    // For combos
+    std::vector<HotKey> comboSequence;
+    // Time window for combo in milliseconds
+    int comboTimeWindow = 500;
 };
 
 struct InputDevice {
@@ -100,7 +117,14 @@ public:
 class IO {
   std::thread evdevThread;
   std::atomic<bool> evdevRunning{false};
+  std::atomic<bool> mouseEvdevRunning{false};
   std::string evdevDevicePath;
+  std::string mouseEvdevDevicePath;
+  std::thread mouseEvdevThread;
+  int mouseUinputFd = -1;
+  std::atomic<bool> globalAltPressed{false};
+  std::chrono::steady_clock::time_point lastLeftPress;
+  std::chrono::steady_clock::time_point lastRightPress;
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
@@ -131,9 +155,10 @@ public:
 
   bool AddHotkey(const std::string &alias, Key key, int modifiers,
                  std::function<void()> callback);
+  HotKey AddMouseHotkey(const std::string &hotkeyStr,
+  std::function<void()> action, int id = 0, bool grab = false);
 
-  HotKey AddHotkey(const std::string &rawInput, std::function<void()> action,
-                   int id) const;
+  HotKey AddHotkey(const std::string &rawInput, std::function<void()> action, int id = 0);
 
   bool Hotkey(const std::string &hotkeyStr, std::function<void()> action,
               int id = 0);
@@ -148,6 +173,18 @@ public:
   // XInput2 hardware mouse control
   bool InitializeXInput2();
   bool SetHardwareMouseSensitivity(double sensitivity);
+  
+  // Mouse event handling
+  bool StartEvdevMouseListener(const std::string &mouseDevicePath);
+  void StopEvdevMouseListener();
+  bool handleMouseButton(const input_event& ev, bool& leftPressed, bool& rightPressed, bool altPressed);
+  bool handleMouseRelative(const input_event& ev, bool altPressed);
+  bool handleMouseAbsolute(const input_event& ev, bool altPressed);
+  bool SetupMouseUinputDevice();
+  void SendMouseUInput(const input_event& ev);
+  void setGlobalAltState(bool pressed);
+  bool getGlobalAltState();
+  void executeComboAction(const std::string& action);
   
   // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)
   void SetMouseSensitivity(double sensitivity);
@@ -189,6 +226,7 @@ public:
   int GetKeyboard();
 
   int ParseModifiers(std::string str);
+  static int ParseMouseButton(const std::string& str);
 
   void AssignHotkey(HotKey hotkey, int id);
 
@@ -329,7 +367,7 @@ private:
   std::vector<IoEvent> ParseKeysString(const std::string &keys);
 
   // Helper methods for X11 key grabbing
-  bool Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
+  bool Grab(Key input, unsigned int modifiers, Window root, bool grab,
             bool isMouse = false);
 
   void Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse = false);
@@ -340,5 +378,11 @@ private:
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();
+  
+  // Device detection helpers
+  std::string detectEvdevDevice(const std::vector<std::string>& patterns, 
+                               const std::function<bool(const std::string&)>& typeFilter);
+  std::string getKeyboardDevice();
+  std::string getMouseDevice();
 };
 } // namespace havel

@@ -1,18 +1,23 @@
 #include "core/IO.hpp"
+#include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "utils/Logger.hpp"
-#include "utils/Utils.hpp"
-#include "core/ConfigManager.hpp"
 #include "utils/Util.hpp"
-#include "utils/Logger.hpp"
+#include "utils/Utils.hpp"
 #include "x11.h"
+#include <chrono>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/input.h>
+#include <linux/uinput.h>
+#include <unistd.h>
 
 // X11 includes
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
-#include <X11/extensions/XInput2.h>
-#include <X11/extensions/XInput.h>
 #include <X11/extensions/XI2proto.h>
+#include <X11/extensions/XInput.h>
+#include <X11/extensions/XInput2.h>
 #include <X11/extensions/XTest.h>
 #include <algorithm>
 #include <cstdio>
@@ -47,187 +52,64 @@ IO::IO() {
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
-  
+
   // Initialize XInput2 if available
   xinput2Available = InitializeXInput2();
   if (xinput2Available) {
     info("XInput2 initialized successfully");
   } else {
-    warning("XInput2 initialization failed, falling back to software sensitivity");
+    warning(
+        "XInput2 initialization failed, falling back to software sensitivity");
   }
+
+  // Initialize mouse event timestamps
+  lastLeftPress = std::chrono::steady_clock::now();
+  lastRightPress = std::chrono::steady_clock::now();
   InitKeyMap();
 
   // Start hotkey monitoring thread for X11
 #ifdef __linux__
   if (display) {
     UpdateNumLockMask();
-    // Start with default device
-    std::string device;
-    try {
-      device =
-          Configs::Get().Get<std::string>("Device.EVDEV", "/dev/input/event");
-    } catch (const std::exception &e) {
-      error("Error getting device config: {}", e.what());
-      device = "/dev/input/event";
-    }
 
-    if (device == "/dev/input/event") {
+    // Initialize keyboard device
+    std::string keyboardDevice = getKeyboardDevice();
+    if (!keyboardDevice.empty()) {
       try {
-        // Get the configured guesses, or use default if not set
-        const char *defaultGuesses =
-            "keyboard,usb,bluetooth,bt,hid,logitech,razer,corsair,steelseries,"
-            "apple,microsoft,dell,hp,asus,wireless,gaming,mechanical,membrane,"
-            "translated,boot,protocol,magic,system,consumer,control,media";
-        std::string configGuesses =
-            Configs::Get().Get<std::string>("Device.Guesses", defaultGuesses);
-
-        info("Using device guesses from config: {}", configGuesses);
-
-        std::vector<std::string> guesses;
-        std::string current;
-        bool inQuotes = false;
-
-        // Parse comma-separated values, handling quoted strings with spaces
-        for (char c : configGuesses) {
-          if (c == '"') {
-            inQuotes = !inQuotes;
-          } else if (c == ',' && !inQuotes) {
-            if (!current.empty()) {
-              guesses.push_back(current);
-              current.clear();
-            }
-          } else {
-            current += c;
-          }
-        }
-        if (!current.empty()) {
-          guesses.push_back(current);
-        }
-
-        // Helper function to match device names (supports both regex and simple
-        // matching)
-        auto matchDevice = [](const std::string &deviceName,
-                              const std::string &pattern) -> bool {
-          // Check if pattern looks like regex
-          if (pattern.find('^') != std::string::npos ||
-              pattern.find('$') != std::string::npos ||
-              pattern.find("\\s") != std::string::npos ||
-              pattern.find("\\w") != std::string::npos ||
-              pattern.find("[") != std::string::npos) {
-
-            try {
-              // Convert \s to actual regex space pattern
-              std::string regexPattern =
-                  std::regex_replace(pattern, std::regex("\\\\s"), "\\s");
-              std::regex r(regexPattern, std::regex_constants::icase);
-              return std::regex_match(deviceName, r);
-            } catch (const std::regex_error &e) {
-              // Fallback to substring if regex fails
-              warning(
-                  "Invalid regex pattern '{}': {}. Using substring matching.",
-                  pattern, e.what());
-              std::string lowerDevice = deviceName;
-              std::string lowerPattern = pattern;
-              std::transform(lowerDevice.begin(), lowerDevice.end(),
-                             lowerDevice.begin(), ::tolower);
-              std::transform(lowerPattern.begin(), lowerPattern.end(),
-                             lowerPattern.begin(), ::tolower);
-              return lowerDevice.find(lowerPattern) != std::string::npos;
-            }
-          } else {
-            // Simple case-insensitive substring matching
-            std::string lowerDevice = deviceName;
-            std::string lowerPattern = pattern;
-            std::transform(lowerDevice.begin(), lowerDevice.end(),
-                           lowerDevice.begin(), ::tolower);
-            std::transform(lowerPattern.begin(), lowerPattern.end(),
-                           lowerPattern.begin(), ::tolower);
-            return lowerDevice.find(lowerPattern) != std::string::npos;
-          }
-        };
-
-        // Helper function to check if device type is keyboard
-        auto isKeyboardType = [](const std::string &type) -> bool {
-          std::string lowerType = type;
-          std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
-                         ::tolower);
-          return lowerType.find("keyboard") != std::string::npos;
-        };
-
-        debug("Starting device detection with {} patterns", guesses.size());
-
-        // Get all input devices
-        std::vector<InputDevice> devices = getInputDevices();
-
-        // Debug: Log all found devices
-        info("Found {} input devices:", devices.size());
-        for (const auto &dev : devices) {
-          debug("  Device: {} (type: {}, id: {})", dev.name, dev.type, dev.id);
-        }
-
-        // Try to match devices in order of preference
-        bool foundDevice = false;
-        for (const auto &guess : guesses) {
-          debug("Trying pattern: '{}'", guess);
-
-          for (const auto &inputDevice : devices) {
-            // Check if pattern matches device name and type is keyboard
-            if (matchDevice(inputDevice.name, guess) &&
-                isKeyboardType(inputDevice.type)) {
-
-              // Use the real evdev path instead of XInput ID
-              if (!inputDevice.evdevPath.empty()) {
-                device = inputDevice
-                             .evdevPath; // Use real path like /dev/input/event7
-                info("Matched device: '{}' (XInput ID: {}, evdev: {}) with "
-                     "pattern: '{}'",
-                     inputDevice.name, inputDevice.id, device, guess);
-                foundDevice = true;
-                break;
-              } else {
-                warning("Device '{}' has no evdev mapping", inputDevice.name);
-              }
-            }
-          }
-
-          if (foundDevice)
-            break;
-        }
-
-        if (!foundDevice) {
-          warning("No keyboard device matched any pattern. Available keyboard "
-                  "devices:");
-          for (const auto &dev : devices) {
-            if (isKeyboardType(dev.type)) {
-              warning("  - {} (id: {})", dev.name, dev.id);
-            }
-          }
-        }
-
+        info("Using keyboard device: {}", keyboardDevice);
+        StartEvdevHotkeyListener(keyboardDevice);
+        info("Successfully started evdev hotkey listener for keyboard");
       } catch (const std::exception &e) {
-        error("Error during device matching: {}", e.what());
-      }
-    }
-
-    if (device != "/dev/input/event") {
-      info("Using device: {}", device);
-      try {
-        StartEvdevHotkeyListener(device);
-        info("Successfully started evdev hotkey listener");
-      } catch (const std::exception &e) {
-        error("Failed to start evdev listener: {}", e.what());
+        error("Failed to start evdev keyboard listener: {}", e.what());
+        globalEvdev = false;
       }
     } else {
       globalEvdev = false;
       error("Failed to find a suitable keyboard device");
     }
-    if(!globalEvdev || !x11Hotkeys.empty()){
+
+    // Initialize mouse device if needed
+    std::string mouseDevice = getMouseDevice();
+    if (!mouseDevice.empty() && mouseDevice != keyboardDevice) {
+      try {
+        info("Using mouse device: {}", mouseDevice);
+        StartEvdevMouseListener(mouseDevice);
+        info("Successfully started evdev mouse listener");
+      } catch (const std::exception &e) {
+        error("Failed to start evdev mouse listener: {}", e.what());
+      }
+    } else if (mouseDevice.empty()) {
+      warning("No suitable mouse device found");
+    }
+
+    // Fall back to X11 hotkeys if evdev initialization failed
+    if (!globalEvdev || !x11Hotkeys.empty()) {
       timerRunning = true;
       try {
         timerThread = std::thread(&IO::MonitorHotkeys, this);
-        info("Started hotkey monitoring thread");
+        info("Started X11 hotkey monitoring thread");
       } catch (const std::exception &e) {
-        error("Failed to start hotkey monitoring thread: {}", e.what());
+        error("Failed to start X11 hotkey monitoring thread: {}", e.what());
         timerRunning = false;
       }
     }
@@ -236,7 +118,7 @@ IO::IO() {
 }
 IO::~IO() {
   std::cout << "IO destructor called" << std::endl;
-  
+
   // Stop the hotkey monitoring thread
   if (timerRunning && timerThread.joinable()) {
     timerRunning = false;
@@ -358,7 +240,7 @@ bool IO::GrabKeyboard() {
   error("Cannot grab keyboard after 1000 attempts");
   return false;
 }
-bool IO::Grab(Key input, unsigned int modifiers, Window root, bool exclusive,
+bool IO::Grab(Key input, unsigned int modifiers, Window root, bool grab,
               bool isMouse) {
   if (!display)
     return false;
@@ -405,7 +287,7 @@ bool IO::GrabAllHotkeys() {
 
   // Single pass through your configured hotkeys
   for (const auto &[id, hotkey] : hotkeys) {
-    if (hotkey.evdev || !hotkey.exclusive)
+    if (hotkey.evdev || !hotkey.grab)
       continue; // Skip evdev hotkeys
 
     // Grab 4 variants of each configured hotkey
@@ -932,10 +814,10 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     adjustedDx = dx * mouseSensitivity;
     adjustedDy = dy * mouseSensitivity;
   }
-  
+
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> ioLock(uinputMutex);
-  
+
   dx = static_cast<int>(adjustedDx);
   dy = static_cast<int>(adjustedDy);
 
@@ -987,160 +869,159 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
 }
 // Set mouse sensitivity (0.1 - 10.0)
 void IO::SetMouseSensitivity(double sensitivity) {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    // Clamp sensitivity between 0.1 and 10.0
-    sensitivity = std::max(0.1, std::min(10.0, sensitivity));
-    
-    // Try to set hardware sensitivity first
-    bool hardwareSuccess = false;
-    if (xinput2Available) {
-        hardwareSuccess = SetHardwareMouseSensitivity(sensitivity);
-    }
-    
-    // Fall back to software sensitivity if hardware control fails
-    if (!hardwareSuccess) {
-        mouseSensitivity = sensitivity;
-        info("Using software mouse sensitivity: {}", mouseSensitivity);
-    } else {
-        // Keep them in sync in case we need to fall back later
-        mouseSensitivity = sensitivity;
-    }
+  std::lock_guard<std::mutex> lock(mouseMutex);
+  // Clamp sensitivity between 0.1 and 10.0
+  sensitivity = std::max(0.1, std::min(10.0, sensitivity));
+
+  // Try to set hardware sensitivity first
+  bool hardwareSuccess = false;
+  if (xinput2Available) {
+    hardwareSuccess = SetHardwareMouseSensitivity(sensitivity);
+  }
+
+  // Fall back to software sensitivity if hardware control fails
+  if (!hardwareSuccess) {
+    mouseSensitivity = sensitivity;
+    info("Using software mouse sensitivity: {}", mouseSensitivity);
+  } else {
+    // Keep them in sync in case we need to fall back later
+    mouseSensitivity = sensitivity;
+  }
 }
 
 bool IO::InitializeXInput2() {
-    if (!display) {
-        error("Cannot initialize XInput2: No display");
-        return false;
+  if (!display) {
+    error("Cannot initialize XInput2: No display");
+    return false;
+  }
+
+  int xi_opcode, event, xi_error;
+  if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event,
+                       &xi_error)) {
+    error("X Input extension not available");
+    return false;
+  }
+
+  // Check XInput2 version
+  int major = 2, minor = 0;
+  if (XIQueryVersion(display, &major, &minor) != x11::XSuccess) {
+    error("XInput2 not supported by server");
+    return false;
+  }
+
+  // Find the first pointer device that supports XInput2
+  XIDeviceInfo *devices;
+  int ndevices;
+  devices = XIQueryDevice(display, XIAllDevices, &ndevices);
+
+  for (int i = 0; i < ndevices; i++) {
+    XIDeviceInfo *dev = &devices[i];
+    if (dev->use == XISlavePointer || dev->use == XIFloatingSlave) {
+      xinput2DeviceId = dev->deviceid;
+      break;
     }
-    
-    int xi_opcode, event, xi_error;
-    if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event, &xi_error)) {
-        error("X Input extension not available");
-        return false;
-    }
-    
-    // Check XInput2 version
-    int major = 2, minor = 0;
-    if (XIQueryVersion(display, &major, &minor) != x11::XSuccess) {
-        error("XInput2 not supported by server");
-        return false;
-    }
-    
-    // Find the first pointer device that supports XInput2
-    XIDeviceInfo* devices;
-    int ndevices;
-    devices = XIQueryDevice(display, XIAllDevices, &ndevices);
-    
-    for (int i = 0; i < ndevices; i++) {
-        XIDeviceInfo* dev = &devices[i];
-        if (dev->use == XISlavePointer || dev->use == XIFloatingSlave) {
-            xinput2DeviceId = dev->deviceid;
-            break;
-        }
-    }
-    
-    XIFreeDeviceInfo(devices);
-    
-    if (xinput2DeviceId == -1) {
-        error("No suitable XInput2 pointer device found");
-        return false;
-    }
-    
-    return true;
+  }
+
+  XIFreeDeviceInfo(devices);
+
+  if (xinput2DeviceId == -1) {
+    error("No suitable XInput2 pointer device found");
+    return false;
+  }
+
+  return true;
 }
 
 bool IO::SetHardwareMouseSensitivity(double sensitivity) {
-    if (!display || xinput2DeviceId == -1) {
-        return false;
-    }
-    
-    // Clamp sensitivity to a reasonable range for hardware
-    sensitivity = std::max(0.1, std::min(10.0, sensitivity));
-    
-    // Convert sensitivity to X's acceleration (sensitivity^2 for better curve)
-    double accel_numerator = sensitivity * sensitivity * 10.0;
-    double accel_denominator = 10.0;
-    double threshold = 0.0;  // No threshold for continuous acceleration
-    
-    // Set the device's acceleration
-    XDevice* dev = XOpenDevice(display, xinput2DeviceId);
-    if (!dev) {
-        error("Failed to open XInput2 device");
-        return false;
-    }
-    
-    XDeviceControl* control = (XDeviceControl*)XGetDeviceControl(display, dev, DEVICE_RESOLUTION);
-    if (!control) {
-        XCloseDevice(display, dev);
-        return false;
-    }
-    
-    XChangePointerControl(display, x11::XTrue, x11::XTrue, 
-                         (int)(accel_numerator * 10), 
-                         (int)(accel_denominator * 10), 
-                         (int)threshold);
-    
-    XFree(control);
+  if (!display || xinput2DeviceId == -1) {
+    return false;
+  }
+
+  // Clamp sensitivity to a reasonable range for hardware
+  sensitivity = std::max(0.1, std::min(10.0, sensitivity));
+
+  // Convert sensitivity to X's acceleration (sensitivity^2 for better curve)
+  double accel_numerator = sensitivity * sensitivity * 10.0;
+  double accel_denominator = 10.0;
+  double threshold = 0.0; // No threshold for continuous acceleration
+
+  // Set the device's acceleration
+  XDevice *dev = XOpenDevice(display, xinput2DeviceId);
+  if (!dev) {
+    error("Failed to open XInput2 device");
+    return false;
+  }
+
+  XDeviceControl *control =
+      (XDeviceControl *)XGetDeviceControl(display, dev, DEVICE_RESOLUTION);
+  if (!control) {
     XCloseDevice(display, dev);
-    
-    info("Set hardware mouse sensitivity to: {}", sensitivity);
-    return true;
+    return false;
+  }
+
+  XChangePointerControl(display, x11::XTrue, x11::XTrue,
+                        (int)(accel_numerator * 10),
+                        (int)(accel_denominator * 10), (int)threshold);
+
+  XFree(control);
+  XCloseDevice(display, dev);
+
+  info("Set hardware mouse sensitivity to: {}", sensitivity);
+  return true;
 }
 
 // Get current mouse sensitivity
 double IO::GetMouseSensitivity() const {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    return mouseSensitivity;
+  std::lock_guard<std::mutex> lock(mouseMutex);
+  return mouseSensitivity;
 }
 
 // Set scroll speed (0.1 - 10.0)
 void IO::SetScrollSpeed(double speed) {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    // Clamp scroll speed between 0.1 and 10.0
-    scrollSpeed = std::max(0.1, std::min(10.0, speed));
-    info("Scroll speed set to: {}", scrollSpeed);
+  std::lock_guard<std::mutex> lock(mouseMutex);
+  // Clamp scroll speed between 0.1 and 10.0
+  scrollSpeed = std::max(0.1, std::min(10.0, speed));
+  info("Scroll speed set to: {}", scrollSpeed);
 }
 
 // Get current scroll speed
 double IO::GetScrollSpeed() const {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    return scrollSpeed;
+  std::lock_guard<std::mutex> lock(mouseMutex);
+  return scrollSpeed;
 }
 
 // Enhanced mouse movement with custom sensitivity
 bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    
-    // Apply sensitivity and acceleration
-    double adjustedDx = dx * mouseSensitivity;
-    double adjustedDy = dy * mouseSensitivity;
-    
-    // Apply acceleration if enabled (accel > 1.0)
-    if (accel > 1.0f) {
-        double distance = std::sqrt(dx * dx + dy * dy);
-        if (distance > 1.0) {
-            double factor = 1.0 + (accel - 1.0) * (distance / 100.0);
-            adjustedDx *= factor;
-            adjustedDy *= factor;
-        }
+  std::lock_guard<std::mutex> lock(mouseMutex);
+
+  // Apply sensitivity and acceleration
+  double adjustedDx = dx * mouseSensitivity;
+  double adjustedDy = dy * mouseSensitivity;
+
+  // Apply acceleration if enabled (accel > 1.0)
+  if (accel > 1.0f) {
+    double distance = std::sqrt(dx * dx + dy * dy);
+    if (distance > 1.0) {
+      double factor = 1.0 + (accel - 1.0) * (distance / 100.0);
+      adjustedDx *= factor;
+      adjustedDy *= factor;
     }
-    
-    // Call the original MouseMove with adjusted values
-    return MouseMove(static_cast<int>(adjustedDx), static_cast<int>(adjustedDy), baseSpeed, 1.0f);
+  }
+
+  // Call the original MouseMove with adjusted values
+  return MouseMove(static_cast<int>(adjustedDx), static_cast<int>(adjustedDy),
+                   baseSpeed, 1.0f);
 }
 
 bool IO::Scroll(int dy, int dx) {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    
-    // Apply scroll speed
-    if (dy != 0) dy = static_cast<int>(dy * scrollSpeed);
-    if (dx != 0) dx = static_cast<int>(dx * scrollSpeed);
-    
-    // Ensure minimum scroll amount of 1
-    if (dy > 0 && dy < 1) dy = 1;
-    if (dy < 0 && dy > -1) dy = -1;
-    if (dx > 0 && dx < 1) dx = 1;
-    if (dx < 0 && dx > -1) dx = -1;
+  std::lock_guard<std::mutex> lock(mouseMutex);
+
+  // Apply scroll speed
+  if (dy != 0)
+    dy = static_cast<int>(dy * scrollSpeed);
+  if (dx != 0)
+    dx = static_cast<int>(dx * scrollSpeed);
+
   if (uinputFd < 0)
     return false;
 
@@ -1200,18 +1081,18 @@ void IO::SendUInput(int keycode, bool down) {
 
   // State tracking check
   if (down) {
-      if (!TryPressKey(keycode))
-          return; // Already pressed
+    if (!TryPressKey(keycode))
+      return; // Already pressed
   } else {
-      if (!TryReleaseKey(keycode))
-          return; // Not pressed
+    if (!TryReleaseKey(keycode))
+      return; // Not pressed
   }
 
   if (uinputFd < 0) {
-      if (!SetupUinputDevice()) {
-          error("Failed to initialize uinput device");
-          return;
-      }
+    if (!SetupUinputDevice()) {
+      error("Failed to initialize uinput device");
+      return;
+    }
   }
 
   struct input_event ev{};
@@ -1222,11 +1103,11 @@ void IO::SendUInput(int keycode, bool down) {
   ev.value = down ? 1 : 0;
 
   if (Configs::Get().GetVerboseKeyLogging())
-      debug("Sending uinput key: {} ({})", keycode, down);
+    debug("Sending uinput key: {} ({})", keycode, down);
 
   if (write(uinputFd, &ev, sizeof(ev)) < 0) {
-      error("Failed to write key event");
-      return;
+    error("Failed to write key event");
+    return;
   }
 
   ev.type = EV_SYN;
@@ -1234,7 +1115,7 @@ void IO::SendUInput(int keycode, bool down) {
   ev.value = 0;
 
   if (write(uinputFd, &ev, sizeof(ev)) < 0) {
-      error("Failed to write sync event");
+    error("Failed to write sync event");
   }
 }
 // State tracking implementation
@@ -1445,7 +1326,7 @@ bool IO::Suspend() {
         if (!hotkey.suspend) {
           if (!hotkey.evdev) {
             Grab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow(),
-                 hotkey.exclusive);
+                 hotkey.grab);
           }
           hotkey.enabled = true;
         }
@@ -1489,28 +1370,63 @@ bool IO::Resume(int id) {
   }
   return false;
 }
+// Helper function to parse mouse button from string
+int IO::ParseMouseButton(const std::string &str) {
+  if (str == "LButton" || str == "Button1" || str == "Left")
+    return BTN_LEFT;
+  if (str == "RButton" || str == "Button2" || str == "Right")
+    return BTN_RIGHT;
+  if (str == "MButton" || str == "Button3" || str == "Middle")
+    return BTN_MIDDLE;
+  if (str == "XButton1" || str == "Button6" || str == "Side1")
+    return BTN_SIDE;
+  if (str == "XButton2" || str == "Button7" || str == "Side2")
+    return BTN_EXTRA;
+  if (str == "WheelUp" || str == "Button4")
+    return 1; // Special value for wheel up
+  if (str == "WheelDown" || str == "Button5")
+    return -1; // Special value for wheel down
+  return 0;
+}
+
+bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
+                   std::function<void()> callback) {
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
+  std::cout << "Adding hotkey: " << alias << std::endl;
+  HotKey hotkey;
+  hotkey.alias = alias;
+  hotkey.key = key;
+  hotkey.modifiers = modifiers;
+  hotkey.callback = callback;
+  hotkey.enabled = true;
+  hotkey.grab = false;
+  hotkey.suspend = false;
+  hotkey.success = true;
+  hotkey.type = HotkeyType::Keyboard;
+  hotkey.eventType = HotkeyEventType::Both;
+  ++hotkeyCount;
+  hotkeys[hotkeyCount] = hotkey;
+  return true;
+}
+
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
-                     int id) const {
+                     int id) {
   std::string hotkeyStr = rawInput;
   auto wrapped_action = [action, hotkeyStr]() {
     if (Configs::Get().GetVerboseKeyLogging())
       info("Hotkey pressed: " + hotkeyStr);
     action();
   };
-  // Parse event type from ":up"/":down"
-  HotkeyEventType eventType = HotkeyEventType::Down;
+  bool hasAction = static_cast<bool>(action);
+  // Parse event type
+  HotkeyEventType eventType = HotkeyEventType::Both;
   size_t colonPos = hotkeyStr.rfind(':');
   if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
     std::string suffix = hotkeyStr.substr(colonPos + 1);
-    if (suffix == "up")
-      eventType = HotkeyEventType::Up;
+    eventType = ParseHotkeyEventType(suffix);
     hotkeyStr = hotkeyStr.substr(0, colonPos);
   }
-
-  // Generate ID if not provided
-  if (id == 0)
-    id = ++hotkeyCount;
-  // Check for evdev prefix first
+  // Check for evdev prefix
   std::regex evdevRegex(R"(@(.*))");
   std::smatch matches;
   bool isEvdev = false;
@@ -1518,38 +1434,40 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     isEvdev = true;
     hotkeyStr = matches[1].str();
   }
-  if(globalEvdev)
+  if (globalEvdev)
     isEvdev = true;
-
-  // Now parse modifiers
-  bool exclusive = true;
+  // Parse modifiers and flags
+  bool grab = true;
   bool suspendKey = false;
   int modifiers = 0;
+  bool isX11 = false;
   size_t i = 0;
-
   while (i < hotkeyStr.size()) {
     switch (hotkeyStr[i]) {
+    case '@':
+      isEvdev = true;
+      break;
+    case '%':
+      isX11 = true;
+      break;
     case '^':
-      modifiers |= isEvdev ? (1 << 0) : ControlMask; // Use bit 0 for ctrl
+      modifiers |= isEvdev ? (1 << 0) : ControlMask;
       break;
     case '+':
-      modifiers |= isEvdev ? (1 << 1) : ShiftMask; // Use bit 1 for shift
+      modifiers |= isEvdev ? (1 << 1) : ShiftMask;
       break;
     case '!':
-      modifiers |= isEvdev ? (1 << 2) : Mod1Mask; // Use bit 2 for alt
+      modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
       break;
     case '#':
-      modifiers |= isEvdev ? (1 << 3) : Mod4Mask; // Use bit 3 for meta
+      modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
       break;
     case '*':
     case '~':
-      exclusive = false;
+      grab = false;
       break;
     case '$':
       suspendKey = true;
-      break;
-    case '@':
-      isEvdev = true;
       break;
     default:
       goto done_parsing;
@@ -1557,84 +1475,209 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     ++i;
   }
 done_parsing:
-  hotkeyStr = hotkeyStr.substr(i); // Remove modifiers
-
-  // Determine keycode
-  KeyCode keycode = 0;
-  if (!hotkeyStr.empty() && (isEvdev || globalEvdev)) {
-    // evdev mode
-    keycode = EvdevNameToKeyCode(hotkeyStr);
-    if (keycode == 0) {
-      std::cerr << "Invalid evdev key name: " << hotkeyStr << "\n";
-      return {};
-    }
-  } else if (hotkeyStr.substr(0, 2) == "kc") {
-    // raw keycode like kc123
-    int kc = std::stoi(hotkeyStr.substr(2));
-    if (kc <= 0 || kc > 255) {
-      std::cerr << "Invalid raw keycode: " << kc << "\n";
-      return {};
-    }
-    keycode = kc;
+  hotkeyStr = hotkeyStr.substr(i);
+  // Build base hotkey
+  HotKey hotkey;
+  hotkey.modifiers = modifiers;
+  hotkey.eventType = eventType;
+  hotkey.evdev = isEvdev;
+  hotkey.x11 = isX11;
+  hotkey.callback = wrapped_action;
+  hotkey.alias = rawInput;
+  hotkey.action = "";
+  hotkey.enabled = true;
+  hotkey.grab = grab;
+  hotkey.suspend = suspendKey;
+  hotkey.success = false;
+  // Check for mouse button or wheel
+  int mouseButton = ParseMouseButton(hotkeyStr);
+  if (mouseButton != 0) {
+    hotkey.type = (mouseButton == 1 || mouseButton == -1)
+                      ? HotkeyType::MouseWheel
+                      : HotkeyType::MouseButton;
+    hotkey.wheelDirection =
+        (mouseButton == 1 || mouseButton == -1) ? mouseButton : 0;
+    hotkey.mouseButton =
+        (mouseButton == 1 || mouseButton == -1) ? 0 : mouseButton;
+    hotkey.key = static_cast<Key>(mouseButton);
+    hotkey.success = true;
   } else {
-    std::string keyLower = hotkeyStr;
-    std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
-                   ::tolower);
-    // Convert string to keysym first
-
-    keycode = GetKeyCode(keyLower);
-    if (keycode == 0) {
-      std::cerr << "Key '" << keyLower
-                << "' not available on this keyboard layout\n";
-      return {};
+    // Check for combo
+    size_t ampPos = hotkeyStr.find('&');
+    if (ampPos != std::string::npos) {
+      std::vector<std::string> parts;
+      size_t start = 0;
+      while (ampPos != std::string::npos) {
+        parts.push_back(hotkeyStr.substr(start, ampPos - start));
+        start = ampPos + 1;
+        ampPos = hotkeyStr.find('&', start);
+      }
+      parts.push_back(hotkeyStr.substr(start));
+      hotkey.type = HotkeyType::Combo;
+      for (const auto &part : parts) {
+        auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
+        hotkey.comboSequence.push_back(subHotkey);
+      }
+      hotkey.success = !hotkey.comboSequence.empty();
+    } else {
+      // Regular keyboard hotkey
+      KeyCode keycode = 0;
+      if (isEvdev) {
+        keycode = EvdevNameToKeyCode(hotkeyStr);
+        if (keycode == 0) {
+          std::cerr << "Invalid evdev key name: " << hotkeyStr << "\n";
+          return {};
+        }
+      } else if (hotkeyStr.substr(0, 2) == "kc") {
+        int kc = std::stoi(hotkeyStr.substr(2));
+        if (kc <= 0 || kc > 255) {
+          std::cerr << "Invalid raw keycode: " << kc << "\n";
+          return {};
+        }
+        keycode = kc;
+      } else {
+        std::string keyLower = hotkeyStr;
+        std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
+                       ::tolower);
+        keycode = GetKeyCode(keyLower);
+        if (keycode == 0) {
+          std::cerr << "Key '" << keyLower
+                    << "' not available on this keyboard layout\n";
+          return {};
+        }
+      }
+      hotkey.type = HotkeyType::Keyboard;
+      hotkey.key = static_cast<Key>(keycode);
+      hotkey.success = (keycode > 0);
     }
   }
-
-  // Build hotkey
-  HotKey hk;
-  hk.alias = rawInput;
-  hk.key = static_cast<Key>(keycode);
-  hk.modifiers = modifiers;
-  hk.callback = std::move(wrapped_action);
-  hk.action = "";
-  hk.enabled = true;
-  hk.blockInput = exclusive;
-  hk.suspend = suspendKey;
-  hk.exclusive = exclusive;
-  hk.success = (display && keycode > 0);
-  hk.evdev = isEvdev;
-  hk.eventType = eventType;
-
-  hotkeys[id] = hk;
-  return hotkeys.at(id);
+  // Add to maps if has action (skip for combo subs)
+  if (hasAction) {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    if (id == 0)
+      id = ++hotkeyCount;
+    hotkeys[id] = hotkey;
+    if (hotkey.x11)
+      x11Hotkeys.insert(id);
+    if (hotkey.evdev)
+      evdevHotkeys.insert(id);
+  }
+  return hotkey;
 }
+
+HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
+                          std::function<void()> action, int id, bool grab) {
+  auto wrapped_action = [action, hotkeyStr]() {
+    if (Configs::Get().GetVerboseKeyLogging())
+      info("Hotkey pressed: " + hotkeyStr);
+    action();
+  };
+  bool hasAction = static_cast<bool>(action);
+  // Parse modifiers (always X11 style)
+  int modifiers = 0;
+  size_t i = 0;
+  while (i < hotkeyStr.size()) {
+    switch (hotkeyStr[i]) {
+    case '^':
+      modifiers |= ControlMask;
+      break;
+    case '+':
+      modifiers |= ShiftMask;
+      break;
+    case '!':
+      modifiers |= Mod1Mask;
+      break;
+    case '#':
+      modifiers |= Mod4Mask;
+      break;
+    default:
+      goto done_parsing_modifiers;
+    }
+    i++;
+  }
+done_parsing_modifiers:
+  std::string rest = hotkeyStr.substr(i);
+  // Build base hotkey
+  HotKey hotkey;
+  hotkey.alias = hotkeyStr;
+  hotkey.modifiers = modifiers;
+  hotkey.callback = wrapped_action;
+  hotkey.action = "";
+  hotkey.enabled = true;
+  hotkey.grab = grab;
+  hotkey.suspend = false;
+  hotkey.success = false;
+  hotkey.evdev = false;
+  hotkey.x11 = true;
+  hotkey.eventType = HotkeyEventType::Both;
+  // Check for mouse button or wheel
+  int button = ParseMouseButton(rest);
+  if (button != 0) {
+    hotkey.type = (button == 1 || button == -1) ? HotkeyType::MouseWheel
+                                                : HotkeyType::MouseButton;
+    hotkey.wheelDirection = (button == 1 || button == -1) ? button : 0;
+    hotkey.mouseButton = (button == 1 || button == -1) ? 0 : button;
+    hotkey.key = static_cast<Key>(button);
+    hotkey.success = true;
+  }
+  // Check for combo
+  size_t ampPos = rest.find('&');
+  if (ampPos != std::string::npos) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (ampPos != std::string::npos) {
+      parts.push_back(rest.substr(start, ampPos - start));
+      start = ampPos + 1;
+      ampPos = rest.find('&', start);
+    }
+    parts.push_back(rest.substr(start));
+    hotkey.type = HotkeyType::Combo;
+    for (const auto &part : parts) {
+      auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0, false);
+      hotkey.comboSequence.push_back(subHotkey);
+    }
+    hotkey.success = !hotkey.comboSequence.empty();
+  }
+  // Add to maps if has action (skip for combo subs)
+  if (hasAction) {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    if (id == 0)
+      id = ++hotkeyCount;
+    hotkeys[id] = hotkey;
+    if (hotkey.x11)
+      x11Hotkeys.insert(id);
+    if (hotkey.evdev)
+      evdevHotkeys.insert(id);
+  }
+  return hotkey;
+}
+
 bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
                 int id) {
-  HotKey hk = AddHotkey(rawInput, std::move(action), id);
-
+  bool isMouseHotkey = (rawInput.find("Button") != std::string::npos ||
+                        rawInput.find("Wheel") != std::string::npos);
+  HotKey hk;
+  if (isMouseHotkey) {
+    hk = AddMouseHotkey(rawInput, std::move(action), id, true);
+  } else {
+    hk = AddHotkey(rawInput, std::move(action), id);
+  }
   if (!hk.success) {
     std::cerr << "Failed to register hotkey: " << rawInput << "\n";
     failedHotkeys.push_back(hk);
     return false;
   }
-
-  std::cout << "Registered hotkey: " << rawInput
-            << (hk.suspend ? " (suspend key)" : "") << "\n  Key: " << hk.key
-            << ", Modifiers: " << hk.modifiers
-            << ", Exclusive: " << hk.exclusive << ", EventType: "
-            << (hk.eventType == HotkeyEventType::Down ? "Down"
-                : hk.eventType == HotkeyEventType::Up ? "Up"
-                                                      : "Both")
-            << "\n";
-
   if (!hk.evdev && display) {
-    if (!Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.exclusive)) {
+    bool isMouse = (hk.type == HotkeyType::MouseButton ||
+                    hk.type == HotkeyType::MouseWheel);
+    if (!Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.grab,
+              isMouse)) {
       failedHotkeys.push_back(hk);
     }
   }
-
   return true;
 }
+
 void IO::UpdateNumLockMask() {
   unsigned int i, j;
   XModifierKeymap *modmap;
@@ -2248,7 +2291,7 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     bool winPressed = (GetKeyState(VK_LWIN) & 0x8000) != 0 ||
                       (GetKeyState(VK_RWIN) & 0x8000) != 0;
     for (const auto &[id, hotkey] : hotkeys) {
-      if (!hotkey.blockInput && hotkey.enabled) {
+      if (!hotkey.grab && hotkey.enabled) {
         // Check if the virtual key matches and modifiers are valid
         if (pKeyboard->vkCode == static_cast<DWORD>(hotkey.key.virtualKey)) {
           // Check if the required modifiers are pressed
@@ -2430,21 +2473,6 @@ void IO::PressKey(const std::string &keyName, bool press) {
 #endif
 }
 
-bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
-                   std::function<void()> callback) {
-  // Stub implementation for AddHotkey
-  std::cout << "Adding hotkey: " << alias << std::endl;
-  HotKey hotkey;
-  hotkey.alias = alias;
-  hotkey.key = key;
-  hotkey.modifiers = modifiers;
-  hotkey.callback = callback;
-
-  hotkeyCount++;
-  hotkeys[hotkeyCount] = hotkey;
-  return true;
-}
-
 // New methods for dynamic hotkey grabbing/ungrabbing
 bool IO::GrabHotkey(int hotkeyId) {
 #ifdef __linux__
@@ -2468,7 +2496,7 @@ bool IO::GrabHotkey(int hotkeyId) {
 
   // Use our improved method to grab with all modifier variants
   if (!hotkey.evdev) {
-    Grab(keycode, hotkey.modifiers, root, hotkey.exclusive);
+    Grab(keycode, hotkey.modifiers, root, hotkey.grab);
   }
   hotkeys[hotkeyId].enabled = true;
 
@@ -2642,106 +2670,113 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
     std::map<int, bool> modState;
 
     while (evdevRunning) {
-  ssize_t n = read(fd, &ev, sizeof(ev));
-  if (n != sizeof(ev)) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-      continue;
-  }
+      ssize_t n = read(fd, &ev, sizeof(ev));
+      if (n != sizeof(ev)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        continue;
+      }
 
-  if (ev.type != EV_KEY)
-      continue;
+      if (ev.type != EV_KEY)
+        continue;
 
-  bool down = (ev.value == 1 || ev.value == 2);
-  int code = ev.code;
-  evdevKeyState[code] = down;
+      bool down = (ev.value == 1 || ev.value == 2);
+      int code = ev.code;
+      evdevKeyState[code] = down;
 
-  // Update modifier state
-  modState[ControlMask] = evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
-  modState[ShiftMask] = evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
-  modState[Mod1Mask] = evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
-  modState[Mod4Mask] = evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
+      // Update modifier state
+      modState[ControlMask] =
+          evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
+      modState[ShiftMask] =
+          evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
+      modState[Mod1Mask] =
+          evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
+      modState[Mod4Mask] =
+          evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
 
-  keyDownState[code] = down;
+      keyDownState[code] = down;
 
-  // Process hotkeys
-  std::vector<std::function<void()>> callbacks;
-  bool shouldBlockKey = false;
-  
-  {
-      std::scoped_lock hotkeyLock(hotkeyMutex);
-      for (auto &[id, hotkey] : hotkeys) {
-          if (!hotkey.enabled || !hotkey.evdev || hotkey.key != static_cast<Key>(code))
-              continue;
-          
+      // Process hotkeys
+      std::vector<std::function<void()>> callbacks;
+      bool shouldBlockKey = false;
+
+      {
+        std::scoped_lock hotkeyLock(hotkeyMutex);
+        for (auto &[id, hotkey] : hotkeys) {
+          if (!hotkey.enabled || !hotkey.evdev ||
+              hotkey.key != static_cast<Key>(code))
+            continue;
+
           // Event type check
           if (hotkey.eventType == HotkeyEventType::Down && !down)
-              continue;
+            continue;
           if (hotkey.eventType == HotkeyEventType::Up && down)
-              continue;
-          
+            continue;
+
           // Modifier matching
-          bool isModifierKey = (code == KEY_LEFTALT || code == KEY_RIGHTALT || 
-              code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
-              code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
-              code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
-              
+          bool isModifierKey =
+              (code == KEY_LEFTALT || code == KEY_RIGHTALT ||
+               code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
+               code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
+               code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
+
           bool modifierMatch;
           if (isModifierKey && hotkey.modifiers == 0) {
-              modifierMatch = true;
+            modifierMatch = true;
           } else {
-              bool ctrlRequired = (hotkey.modifiers & (1 << 0)) != 0;
-              bool shiftRequired = (hotkey.modifiers & (1 << 1)) != 0;
-              bool altRequired = (hotkey.modifiers & (1 << 2)) != 0;
-              bool metaRequired = (hotkey.modifiers & (1 << 3)) != 0;
-              
-              bool ctrlPressed = modState[ControlMask];
-              bool shiftPressed = modState[ShiftMask];
-              bool altPressed = modState[Mod1Mask];
-              bool metaPressed = modState[Mod4Mask];
-              
-              modifierMatch = (ctrlRequired == ctrlPressed) && 
-                             (shiftRequired == shiftPressed) && 
-                             (altRequired == altPressed) && 
-                             (metaRequired == metaPressed);
+            bool ctrlRequired = (hotkey.modifiers & (1 << 0)) != 0;
+            bool shiftRequired = (hotkey.modifiers & (1 << 1)) != 0;
+            bool altRequired = (hotkey.modifiers & (1 << 2)) != 0;
+            bool metaRequired = (hotkey.modifiers & (1 << 3)) != 0;
+
+            bool ctrlPressed = modState[ControlMask];
+            bool shiftPressed = modState[ShiftMask];
+            bool altPressed = modState[Mod1Mask];
+            bool metaPressed = modState[Mod4Mask];
+
+            modifierMatch = (ctrlRequired == ctrlPressed) &&
+                            (shiftRequired == shiftPressed) &&
+                            (altRequired == altPressed) &&
+                            (metaRequired == metaPressed);
           }
-          
+
           if (!modifierMatch)
-              continue;
-          
+            continue;
+
           // Context checks
           if (!hotkey.contexts.empty()) {
-              if (!std::all_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                              [](auto &ctx) { return ctx(); })) {
-                  continue;
-              }
+            if (!std::all_of(hotkey.contexts.begin(), hotkey.contexts.end(),
+                             [](auto &ctx) { return ctx(); })) {
+              continue;
+            }
           }
           hotkey.success = true;
-          
+
           // Add callback if it exists
           if (hotkey.callback) {
-              callbacks.push_back(hotkey.callback);
+            callbacks.push_back(hotkey.callback);
           }
-          if (hotkey.blockInput) {
-              shouldBlockKey = true;
+          if (hotkey.grab) {
+            shouldBlockKey = true;
           }
+        }
       }
-  }
 
-  // Execute callbacks
-  for (auto &callback : callbacks) {
-      try {
+      // Execute callbacks
+      for (auto &callback : callbacks) {
+        try {
           callback();
-      } catch (const std::exception &e) {
+        } catch (const std::exception &e) {
           error("Error in hotkey callback: {}", e.what());
+        }
       }
-  }
-  if (shouldBlockKey) {
-      debug("Blocking key {} ({}) - hotkey requested blocking", code, down ? "down" : "up");
-  } else {
-      // Pass key through to system
-      SendUInput(code, down);
-  }
-}
+      if (shouldBlockKey) {
+        debug("Blocking key {} ({}) - hotkey requested blocking", code,
+              down ? "down" : "up");
+      } else {
+        // Pass key through to system
+        SendUInput(code, down);
+      }
+    }
 
     close(fd);
   });
@@ -2764,6 +2799,13 @@ void IO::StopEvdevHotkeyListener() {
 }
 
 void IO::CleanupUinputDevice() {
+  StopEvdevMouseListener();
+
+  if (mouseUinputFd >= 0) {
+    ioctl(mouseUinputFd, UI_DEV_DESTROY);
+    close(mouseUinputFd);
+    mouseUinputFd = -1;
+  }
   if (uinputFd >= 0) {
     ioctl(uinputFd, UI_DEV_DESTROY);
     close(uinputFd);
@@ -2797,8 +2839,74 @@ std::string IO::findEvdevDevice(const std::string &deviceName) {
         }
       }
     }
+
+    return "";
   }
+}
+
+std::string IO::detectEvdevDevice(
+    const std::vector<std::string> &patterns,
+    const std::function<bool(const std::string &)> &typeFilter) {
+  // Get all input devices
+  std::vector<InputDevice> devices = getInputDevices();
+
+  // Debug: Log all found devices
+  info("Scanning {} input devices for matches...", devices.size());
+  for (const auto &dev : devices) {
+    debug("  Device: {} (type: {}, id: {})", dev.name, dev.type, dev.id);
+  }
+
+  // Try to match devices in order of preference
+  for (const auto &pattern : patterns) {
+    debug("Trying pattern: '{}'", pattern);
+
+    for (const auto &inputDevice : devices) {
+      // Check if pattern matches device name and type matches filter
+      if (inputDevice.name.find(pattern) != std::string::npos &&
+          typeFilter(inputDevice.type) && !inputDevice.evdevPath.empty()) {
+
+        info("Matched device: '{}' (type: {}, evdev: {}) with pattern: '{}'",
+             inputDevice.name, inputDevice.type, inputDevice.evdevPath,
+             pattern);
+        return inputDevice.evdevPath;
+      }
+    }
+  }
+
   return "";
+}
+
+std::string IO::getKeyboardDevice() {
+  // Common keyboard device name patterns (in order of preference)
+  std::vector<std::string> keyboardPatterns = {
+      "keyboard",  "usb",        "bluetooth", "bt",          "hid",
+      "logitech",  "razer",      "corsair",   "steelseries", "apple",
+      "microsoft", "dell",       "hp",        "asus",        "wireless",
+      "gaming",    "mechanical", "membrane",  "translated",  "boot"};
+
+  auto isKeyboard = [](const std::string &type) {
+    return type.find("keyboard") != std::string::npos ||
+           type.find("key") != std::string::npos;
+  };
+
+  return detectEvdevDevice(keyboardPatterns, isKeyboard);
+}
+
+std::string IO::getMouseDevice() {
+  // Common mouse device name patterns (in order of preference)
+  std::vector<std::string> mousePatterns = {
+      "mouse",     "trackpad", "trackball", "touchpad",    "usb",
+      "bluetooth", "logitech", "razer",     "steelseries", "microsoft",
+      "dell",      "hp",       "asus",      "wireless",    "gaming"};
+
+  auto isMouse = [](const std::string &type) {
+    return type.find("mouse") != std::string::npos ||
+           type.find("pointer") != std::string::npos ||
+           type.find("touchpad") != std::string::npos ||
+           type.find("trackpad") != std::string::npos;
+  };
+
+  return detectEvdevDevice(mousePatterns, isMouse);
 }
 
 std::vector<InputDevice> IO::getInputDevices() {
@@ -2885,6 +2993,479 @@ void IO::listInputDevices() {
     std::cout << prefix << device.name << "    id=" << device.id << "    ["
               << device.type << " ("
               << (device.enabled ? "enabled" : "disabled") << ")]" << std::endl;
+  }
+}
+
+// Mouse event handling methods
+bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
+  if (mouseEvdevRunning)
+    return false;
+
+  mouseEvdevDevicePath = mouseDevicePath;
+  mouseEvdevRunning = true;
+
+  mouseEvdevThread = std::thread([this]() {
+    int fd = open(mouseEvdevDevicePath.c_str(), O_RDONLY | O_NONBLOCK);
+    if (fd < 0) {
+      error("mouse evdev: cannot open {}: {}", mouseEvdevDevicePath,
+            strerror(errno));
+      mouseEvdevRunning = false;
+      return;
+    }
+
+    // Grab mouse exclusively
+    if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+      warning("mouse evdev: failed to grab exclusively: {}", strerror(errno));
+      // Continue anyway - we can still monitor
+    } else {
+      info("mouse evdev: grabbed mouse exclusively");
+    }
+
+    if (!SetupMouseUinputDevice()) {
+      close(fd);
+      mouseEvdevRunning = false;
+      error("mouse evdev: failed to setup uinput device");
+      return;
+    }
+
+    struct input_event ev{};
+    bool leftPressed = false;
+    bool rightPressed = false;
+    bool altPressed = getGlobalAltState();
+
+    while (mouseEvdevRunning) {
+      ssize_t n = read(fd, &ev, sizeof(ev));
+      if (n != sizeof(ev)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        continue;
+      }
+
+      bool shouldBlock = false;
+
+      // Handle different mouse events
+      switch (ev.type) {
+      case EV_KEY: // Mouse buttons
+        shouldBlock =
+            handleMouseButton(ev, leftPressed, rightPressed, altPressed);
+        break;
+
+      case EV_REL: // Mouse movement and scroll
+        shouldBlock = handleMouseRelative(ev, altPressed);
+        break;
+
+      case EV_ABS: // Absolute positioning (touchpads)
+        shouldBlock = handleMouseAbsolute(ev, altPressed);
+        break;
+      }
+
+      // Only pass through if not blocked
+      if (!shouldBlock) {
+        SendMouseUInput(ev);
+      }
+    }
+
+    close(fd);
+  });
+
+  return true;
+}
+
+void IO::StopEvdevMouseListener() {
+  if (!mouseEvdevRunning)
+    return;
+
+  mouseEvdevRunning = false;
+
+  if (mouseEvdevThread.joinable()) {
+    mouseEvdevThread.join();
+  }
+}
+
+bool IO::handleMouseButton(const input_event &ev, bool &leftPressed,
+                           bool &rightPressed, bool altPressed) {
+  bool shouldBlock = false;
+  auto now = std::chrono::steady_clock::now();
+
+  // Get current modifier state
+  int currentModifiers = 0;
+  if (IsCtrlPressed())
+    currentModifiers |= ControlMask;
+  if (IsShiftPressed())
+    currentModifiers |= ShiftMask;
+  if (altPressed)
+    currentModifiers |= Mod1Mask;
+  if (IsWinPressed())
+    currentModifiers |= Mod4Mask;
+
+  // Check for registered hotkeys
+  for (auto &[id, hotkey] : hotkeys) {
+    if (!hotkey.enabled || hotkey.type != HotkeyType::MouseButton)
+      continue;
+
+    // Check if this is the right button and event type
+    bool isButtonMatch = false;
+    switch (ev.code) {
+    case BTN_LEFT:
+      isButtonMatch = (hotkey.mouseButton == BTN_LEFT);
+      break;
+    case BTN_RIGHT:
+      isButtonMatch = (hotkey.mouseButton == BTN_RIGHT);
+      break;
+    case BTN_MIDDLE:
+      isButtonMatch = (hotkey.mouseButton == BTN_MIDDLE);
+      break;
+    case BTN_SIDE:
+      isButtonMatch = (hotkey.mouseButton == BTN_SIDE);
+      break;
+    case BTN_EXTRA:
+      isButtonMatch = (hotkey.mouseButton == BTN_EXTRA);
+      break;
+    }
+
+    if (isButtonMatch &&
+        (hotkey.eventType == HotkeyEventType::Both ||
+         (hotkey.eventType == HotkeyEventType::Down && ev.value == 1) ||
+         (hotkey.eventType == HotkeyEventType::Up && ev.value == 0))) {
+
+      // Check modifiers match
+      if ((hotkey.modifiers & currentModifiers) == hotkey.modifiers) {
+        // Execute the hotkey callback
+        if (hotkey.callback) {
+          hotkey.callback();
+        }
+        shouldBlock = hotkey.grab;
+
+        // If this is a blocking hotkey, we're done
+        if (shouldBlock) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Legacy combo detection (keep for backward compatibility)
+  switch (ev.code) {
+  case BTN_LEFT:
+    leftPressed = (ev.value == 1);
+    if (leftPressed) {
+      lastLeftPress = now;
+    }
+    if (leftPressed && rightPressed) {
+      auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          now - lastRightPress)
+                          .count();
+      if (timeDiff < 500) {
+        info("🎯 LEFT+RIGHT COMBO DETECTED! ({}ms)", timeDiff);
+        executeComboAction("left_right_combo");
+        shouldBlock = true;
+      }
+    }
+    break;
+  case BTN_RIGHT:
+    rightPressed = (ev.value == 1);
+    if (rightPressed) {
+      lastRightPress = now;
+      if (leftPressed) {
+        auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            now - lastLeftPress)
+                            .count();
+        if (timeDiff < 500) {
+          info("🎯 RIGHT+LEFT COMBO DETECTED! ({}ms)", timeDiff);
+          executeComboAction("right_left_combo");
+          shouldBlock = true;
+        }
+      }
+    }
+    break;
+  case BTN_MIDDLE:
+    if (ev.value == 1 && altPressed) {
+      info("🎯 ALT+MIDDLE CLICK!");
+      executeComboAction("alt_middle_click");
+      shouldBlock = true;
+    }
+    break;
+  }
+  return shouldBlock;
+}
+
+bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
+  bool shouldBlock = false;
+
+  // Get current modifier state
+  int currentModifiers = 0;
+  if (IsCtrlPressed())
+    currentModifiers |= ControlMask;
+  if (IsShiftPressed())
+    currentModifiers |= ShiftMask;
+  if (altPressed)
+    currentModifiers |= Mod1Mask;
+  if (IsWinPressed())
+    currentModifiers |= Mod4Mask;
+
+  // Check for wheel events first
+  if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
+    // Check for registered wheel hotkeys
+    for (auto &[id, hotkey] : hotkeys) {
+      if (!hotkey.enabled || hotkey.type != HotkeyType::MouseWheel)
+        continue;
+
+      // Check if this is the right wheel direction
+      bool isWheelMatch = false;
+      if (ev.code == REL_WHEEL) { // Vertical wheel
+        isWheelMatch = (hotkey.wheelDirection == (ev.value > 0 ? 1 : -1));
+      } else if (ev.code == REL_HWHEEL) { // Horizontal wheel
+        isWheelMatch = (hotkey.wheelDirection == (ev.value > 0 ? 1 : -1));
+      }
+
+      if (isWheelMatch) {
+        // Check if modifiers match (exact match required)
+        if (hotkey.modifiers == currentModifiers) {
+          // Execute the hotkey callback
+          if (hotkey.callback) {
+            hotkey.callback();
+          }
+          shouldBlock = hotkey.grab;
+
+          // If this is a blocking hotkey, we're done
+          if (shouldBlock) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+
+  // Legacy behavior
+  switch (ev.code) {
+  case REL_WHEEL: // Vertical scroll
+    if (altPressed) {
+      info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
+
+      if (ev.value > 0) {
+        executeComboAction("alt_scroll_up");
+      } else {
+        executeComboAction("alt_scroll_down");
+      }
+
+      shouldBlock = true; // Block the scroll from reaching system
+    }
+    break;
+
+  case REL_HWHEEL: // Horizontal scroll
+    if (altPressed) {
+      info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
+      executeComboAction("alt_hscroll");
+      shouldBlock = true;
+    }
+    break;
+
+  case REL_X: // Mouse movement X
+  case REL_Y: // Mouse movement Y
+    // You could detect alt+drag here
+    if (altPressed && (abs(ev.value) > 5)) { // Significant movement
+      // executeComboAction("alt_drag");
+      // shouldBlock = true; // Uncomment to block mouse movement with alt
+    }
+    break;
+  }
+
+  return shouldBlock;
+}
+
+bool IO::handleMouseAbsolute(const input_event &ev, bool altPressed) {
+  // Get current modifier state
+  int currentModifiers = 0;
+  if (IsCtrlPressed())
+    currentModifiers |= ControlMask;
+  if (IsShiftPressed())
+    currentModifiers |= ShiftMask;
+  if (altPressed)
+    currentModifiers |= Mod1Mask;
+  if (IsWinPressed())
+    currentModifiers |= Mod4Mask;
+
+  // Check for registered hotkeys that might be interested in absolute events
+  for (auto &[id, hotkey] : hotkeys) {
+    if (!hotkey.enabled || hotkey.type != HotkeyType::MouseMove)
+      continue;
+
+    // Check if this hotkey is interested in this specific absolute axis
+    bool isAxisMatch = false;
+    switch (ev.code) {
+    case ABS_X:
+    case ABS_Y:                                // Position
+      isAxisMatch = (hotkey.mouseButton == 0); // 0 means any position
+      break;
+    case ABS_PRESSURE:                          // Pressure
+      isAxisMatch = (hotkey.mouseButton == -2); // -2 means pressure
+      break;
+    case ABS_DISTANCE:                          // Distance
+      isAxisMatch = (hotkey.mouseButton == -3); // -3 means distance
+      break;
+    }
+
+    if (isAxisMatch) {
+      // Check if modifiers match (exact match required)
+      if ((hotkey.modifiers & currentModifiers) == hotkey.modifiers) {
+        // Execute the hotkey callback with the current value
+        if (hotkey.callback) {
+          hotkey.callback();
+        }
+
+        // If this is a blocking hotkey, we're done
+        if (hotkey.grab) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // Currently not blocking any absolute events by default
+  return false;
+}
+
+bool IO::SetupMouseUinputDevice() {
+  mouseUinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
+  if (mouseUinputFd < 0) {
+    error("mouse uinput: failed to open /dev/uinput: {}", strerror(errno));
+    return false;
+  }
+
+  struct uinput_setup usetup = {};
+  usetup.id.bustype = BUS_USB;
+  usetup.id.vendor = 0x1234;
+  usetup.id.product = 0x5679;
+  strcpy(usetup.name, "havel-uinput-mouse");
+
+  // Enable mouse events
+  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_KEY);
+  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_REL);
+  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_ABS);
+  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_SYN);
+
+  // Enable mouse buttons
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_LEFT);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_RIGHT);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_MIDDLE);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_SIDE);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_EXTRA);
+
+  // Enable mouse movement and scroll
+  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_X);
+  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_Y);
+  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_WHEEL);
+  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_HWHEEL);
+
+  // Enable absolute positioning (for touchpads)
+  ioctl(mouseUinputFd, UI_SET_ABSBIT, ABS_X);
+  ioctl(mouseUinputFd, UI_SET_ABSBIT, ABS_Y);
+
+  if (ioctl(mouseUinputFd, UI_DEV_SETUP, &usetup) < 0) {
+    error("mouse uinput: device setup failed: {}", strerror(errno));
+    close(mouseUinputFd);
+    mouseUinputFd = -1;
+    return false;
+  }
+
+  if (ioctl(mouseUinputFd, UI_DEV_CREATE) < 0) {
+    error("mouse uinput: device creation failed: {}", strerror(errno));
+    close(mouseUinputFd);
+    mouseUinputFd = -1;
+    return false;
+  }
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  return true;
+}
+
+void IO::SendMouseUInput(const input_event &ev) {
+  if (mouseUinputFd < 0)
+    return;
+
+  struct input_event uievent = ev;
+  write(mouseUinputFd, &uievent, sizeof(uievent));
+
+  // Sync after each event
+  struct input_event syn = {};
+  syn.type = EV_SYN;
+  syn.code = SYN_REPORT;
+  syn.value = 0;
+  write(mouseUinputFd, &syn, sizeof(syn));
+}
+
+void IO::setGlobalAltState(bool pressed) { globalAltPressed.store(pressed); }
+
+bool IO::getGlobalAltState() { return globalAltPressed.load(); }
+
+void IO::executeComboAction(const std::string &action) {
+  // Find and execute the matching hotkey
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.action == action && hotkey.callback) {
+      hotkey.callback();
+      return;
+    }
+  }
+  info("No handler registered for combo action: {}", action);
+}
+
+// Mouse button click methods
+void IO::MouseClick(int button) {
+  MouseDown(button);
+  std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Small delay
+  MouseUp(button);
+}
+
+void IO::MouseDown(int button) {
+  struct input_event ev = {};
+  ev.type = EV_KEY;
+  ev.code = button;
+  ev.value = 1; // Press
+
+  if (mouseUinputFd >= 0) {
+    write(mouseUinputFd, &ev, sizeof(ev));
+
+    // Sync
+    struct input_event syn = {};
+    syn.type = EV_SYN;
+    syn.code = SYN_REPORT;
+    syn.value = 0;
+    write(mouseUinputFd, &syn, sizeof(syn));
+  }
+}
+
+void IO::MouseUp(int button) {
+  struct input_event ev = {};
+  ev.type = EV_KEY;
+  ev.code = button;
+  ev.value = 0; // Release
+
+  if (mouseUinputFd >= 0) {
+    write(mouseUinputFd, &ev, sizeof(ev));
+
+    // Sync
+    struct input_event syn = {};
+    syn.type = EV_SYN;
+    syn.code = SYN_REPORT;
+    syn.value = 0;
+    write(mouseUinputFd, &syn, sizeof(syn));
+  }
+}
+
+void IO::MouseWheel(int amount) {
+  struct input_event ev = {};
+  ev.type = EV_REL;
+  ev.code = REL_WHEEL;
+  ev.value = amount > 0 ? 1 : -1;
+
+  if (mouseUinputFd >= 0) {
+    write(mouseUinputFd, &ev, sizeof(ev));
+
+    // Sync
+    struct input_event syn = {};
+    syn.type = EV_SYN;
+    syn.code = SYN_REPORT;
+    syn.value = 0;
+    write(mouseUinputFd, &syn, sizeof(syn));
   }
 }
 } // namespace havel

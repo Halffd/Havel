@@ -58,7 +58,7 @@ struct HotKey {
     bool evdev = false;
     bool x11 = false;
     HotkeyType type = HotkeyType::Keyboard;
-    HotkeyEventType eventType = HotkeyEventType::Both;
+    HotkeyEventType eventType = HotkeyEventType::Down;
     
     // For mouse buttons
     int mouseButton = 0;
@@ -361,6 +361,10 @@ private:
   void InitKeyMap();
   std::unordered_map<KeySym, KeySym> keyMapInternal;
   std::unordered_map<KeySym, KeySym> remappedKeys;
+  
+  // Evdev key mapping
+  std::unordered_map<int, int> evdevKeyMap;        // Maps from scancode to scancode
+  std::unordered_map<int, int> evdevRemappedKeys;  // Bidirectional remapping
 
   void SendKeyEvent(Key key, bool down);
 

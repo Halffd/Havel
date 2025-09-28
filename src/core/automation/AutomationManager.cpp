@@ -68,7 +68,7 @@ TaskPtr AutomationManager::createChainedTask(
         throw std::invalid_argument("Actions list cannot be empty");
     }
 
-    auto name = generateUniqueName(baseName + "_Chained");
+    auto name = baseName;
     
     // Create a task that will manage the chained actions
     auto task = std::make_shared<ChainedTask>(

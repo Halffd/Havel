@@ -1,160 +1,84 @@
 #pragma once
-
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <string>
 #include <vector>
-#include <cstdint>
 #include <optional>
 #include <chrono>
+#include <cstdint>
+#include <unordered_map>
 
 namespace havel {
 
-/**
- * @brief Class for managing system processes
- */
 class ProcessManager {
 public:
-    /**
-     * @brief Process information structure
-     */
-    struct ProcessInfo {
-        int32_t pid;                    // Process ID
-        int32_t ppid;                   // Parent Process ID
-        std::string name;               // Process name
-        std::string command;            // Full command line
-        std::string user;               // Username of process owner
-        double cpu_usage;               // CPU usage percentage
-        uint64_t memory_usage;          // Memory usage in KB
-        std::chrono::system_clock::time_point start_time;  // Process start time
+    enum class ProcessState {
+        RUNNING,
+        SLEEPING,
+        ZOMBIE,
+        STOPPED,
+        NOT_FOUND,
+        NO_PERMISSION
     };
 
-    /**
-     * @brief Get information about all running processes
-     * @return Vector of ProcessInfo objects
-     */
-    static std::vector<ProcessInfo> listProcesses();
-
-    /**
-     * @brief Find processes by name
-     * @param name Process name or part of the name to search for
-     * @return Vector of matching ProcessInfo objects
-     */
-    static std::vector<ProcessInfo> findProcesses(const std::string& name);
-
-    /**
-     * @brief Get process information by PID
-     * @param pid Process ID
-     * @return ProcessInfo if found, std::nullopt otherwise
-     */
-    static std::optional<ProcessInfo> getProcessInfo(int32_t pid);
-
-    /**
-     * @brief Kill a process by PID
-     * @param pid Process ID
-     * @param force Use SIGKILL if true, SIGTERM otherwise
-     * @return true if successful, false otherwise
-     */
-    static bool killProcess(int32_t pid, bool force = false);
-
-    /**
-     * @brief Send a signal to a process
-     * @param pid Process ID
-     * @param signal Signal number (e.g., SIGTERM, SIGKILL)
-     * @return true if successful, false otherwise
-     */
-    static bool sendSignal(int32_t pid, int signal);
-
-    /**
-     * @brief Get process CPU usage percentage
-     * @param pid Process ID
-     * @return CPU usage percentage or -1 on error
-     */
-    static double getCpuUsage(int32_t pid);
-
-    /**
-     * @brief Get process memory usage
-     * @param pid Process ID
-     * @return Memory usage in KB or 0 on error
-     */
-    static uint64_t getMemoryUsage(int32_t pid);
-
-    /**
-     * @brief Check if a process is running
-     * @param pid Process ID
-     * @return true if process exists and is running, false otherwise
-     */
-    static bool isProcessRunning(int32_t pid);
-
-    /**
-     * @brief Get the current process ID
-     * @return Current process ID
-     */
-    static int32_t getCurrentPid();
-
-    /**
-     * @brief Get the parent process ID of the current process
-     * @return Parent process ID
-     */
-    static int32_t getParentPid();
-
-    /**
-     * @brief Get the process name by PID
-     * @param pid Process ID
-     * @return Process name or empty string if not found
-     */
-    static std::string getProcessName(int32_t pid);
-
-    /**
-     * @brief Get the username of the process owner
-     * @param pid Process ID
-     * @return Username or empty string if not found
-     */
-    static std::string getProcessUser(int32_t pid);
-
-    /**
-     * @brief Get the command line of a process
-     * @param pid Process ID
-     * @return Command line or empty string if not found
-     */
-    static std::string getProcessCommand(int32_t pid);
-
-    /**
-     * @brief Get the start time of a process
-     * @param pid Process ID
-     * @return Start time or time_point::min() if not found
-     */
-    static std::chrono::system_clock::time_point getProcessStartTime(int32_t pid);
-
-    /**
-     * @brief Get the number of threads in a process
-     * @param pid Process ID
-     * @return Number of threads or -1 on error
-     */
-    static int32_t getThreadCount(int32_t pid);
-
-    /**
-     * @brief Get the working directory of a process
-     * @param pid Process ID
-     * @return Working directory path or empty string if not found
-     */
-    static std::string getProcessWorkingDirectory(int32_t pid);
-
-    /**
-     * @brief Get the executable path of a process
-     * @param pid Process ID
-     * @return Executable path or empty string if not found
-     */
-    static std::string getProcessExecutablePath(int32_t pid);
+    struct ProcessInfo {
+        int32_t pid = 0;
+        int32_t ppid = 0;
+        std::string name;
+        std::string command;
+        std::string user;
+        double cpu_usage = 0.0;
+        uint64_t memory_usage = 0;
+        std::chrono::system_clock::time_point start_time;
+    };
 
 private:
-    // Private constructor to prevent instantiation
-    ProcessManager() = delete;
-    ~ProcessManager() = delete;
+    struct CpuSample {
+        uint64_t total_time = 0;
+        std::chrono::steady_clock::time_point timestamp;
+    };
+    static std::unordered_map<int32_t, CpuSample> cpu_samples_;
 
-    // Disable copy and move
-    ProcessManager(const ProcessManager&) = delete;
-    ProcessManager& operator=(const ProcessManager&) = delete;
-    ProcessManager(ProcessManager&&) = delete;
-    ProcessManager& operator=(ProcessManager&&) = delete;
+    // Helper methods
+    static uint64_t readProcessCpuTime(int32_t pid);
+    static std::vector<std::string> splitStatLine(const std::string& line);
+    static std::string readFile(const std::string& path);
+    static std::string readFirstLine(const std::string& path);
+    static std::string getUserName(uid_t uid);
+    static bool parseProcStat(int32_t pid, ProcessInfo& info);
+
+public:
+    // Core functionality
+    static bool isProcessAlive(pid_t pid);
+    static bool sendSignal(pid_t pid, int signal);
+    static ProcessState getProcessState(pid_t pid);
+    static bool terminateProcess(pid_t pid, int timeout_ms = 5000);
+    static bool isZombie(pid_t pid);
+    static bool getExitStatus(pid_t pid, int& exit_status);
+
+    // Process enumeration
+    static std::vector<ProcessInfo> listProcesses();
+    static std::vector<ProcessInfo> findProcesses(const std::string& name);
+    static std::optional<ProcessInfo> getProcessInfo(int32_t pid);
+
+    // Process metrics
+    static double getCpuUsage(int32_t pid);
+    static uint64_t getMemoryUsage(int32_t pid);
+    static int32_t getThreadCount(int32_t pid);
+
+    // Process properties
+    static std::string getProcessName(int32_t pid);
+    static std::string getProcessUser(int32_t pid);
+    static std::string getProcessCommand(int32_t pid);
+    static std::string getProcessWorkingDirectory(int32_t pid);
+    static std::string getProcessExecutablePath(int32_t pid);
+    static std::chrono::system_clock::time_point getProcessStartTime(int32_t pid);
+
+    // Utility
+    static int32_t getCurrentPid() { return getpid(); }
+    static int32_t getParentPid() { return getppid(); }
+    static bool isProcessRunning(int32_t pid) { return isProcessAlive(pid); }
 };
 
 } // namespace havel

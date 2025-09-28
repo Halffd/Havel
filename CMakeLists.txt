@@ -238,6 +238,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/process/*.cpp"
     "src/media/*.cpp"
     "src/io/*.cpp"
+    "src/utils/*.cpp"
 )
 
 # GUI sources (always included)

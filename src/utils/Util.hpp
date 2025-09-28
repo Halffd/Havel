@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <execinfo.h>
 #include <functional>
 #include <initializer_list>
 #include <iostream>
@@ -560,5 +561,5 @@ auto map_values(const std::map<K, V>& m, F f) {
     for (const auto& [k, v] : m) out[k] = f(v);
     return out;
 }
+void printStackTrace(int len = 256);
 } // namespace havel
-

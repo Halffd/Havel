@@ -309,7 +309,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("!f", []{
         auto activePid = WindowManager::GetActiveWindowPID();
         //freeze process
-        ProcessManager::sendSignal(activePid, SIGSTOP);
+        auto state = ProcessManager::getProcessState(static_cast<pid_t>(activePid));
+        int sig = state == ProcessManager::ProcessState::RUNNING ? SIGSTOP : SIGCONT;
+        ProcessManager::sendSignal(static_cast<pid_t>(activePid), sig);
+    });
+    AddHotkey("!^k", []{
+        auto activePid = WindowManager::GetActiveWindowPID();
+        ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
     });
 
     // Context-sensitive hotkeys
@@ -746,6 +752,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {
         if (genshinAutomationActive) {
             warning("Genshin automation is already active");
+            automationManager_->removeTask("genshinClicker");
+            genshinAutomationActive = !genshinAutomationActive;
             return;
         }
 
@@ -753,27 +761,20 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         showNotification("Genshin Automation", "Starting automation sequence");
         genshinAutomationActive = true;
 
-        startAutoclicker("Button1");
-
+        std::vector<automation::AutomationManager::TimedAction> task = {
+            { [this]() { io.Send("e"); }, std::chrono::milliseconds(1000) },
+            { [this]() { io.Send("q"); }, std::chrono::milliseconds(2000) },
+            { [this]() { io.Click(MouseButton::Left, MouseAction::Click); }, std::chrono::milliseconds(10) },
+        };
+        automationManager_->createChainedTask("genshinClicker", task);
         std::thread([this]() {
-            const int maxIterations = 300;
             int counter = 0;
 
-            while (counter < maxIterations && genshinAutomationActive && currentMode == "gaming") {
+            while (genshinAutomationActive && currentMode == "gaming") {
                 if (!evaluateCondition("window.title ~ 'Genshin Impact'")) {
                     info("Genshin automation: Window no longer active");
-                    break;
+                    automationManager_->removeTask("genshinClicker");
                 }
-
-                io.Send("e");
-                debug("Genshin automation: Pressed E (" + std::to_string(counter + 1) + "/" + std::to_string(maxIterations) + ")");
-
-                if (counter % 5 == 0) {
-                    io.Send("q");
-                    debug("Genshin automation: Pressed Q");
-                }
-
-                counter++;
                 std::this_thread::sleep_for(std::chrono::seconds(2));
             }
 

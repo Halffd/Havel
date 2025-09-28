@@ -77,6 +77,8 @@ IO::IO() {
     if (!keyboardDevice.empty()) {
       try {
         info("Using keyboard device: {}", keyboardDevice);
+        SetupUinputDevice();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
         StartEvdevHotkeyListener(keyboardDevice);
         info("Successfully started evdev hotkey listener for keyboard");
       } catch (const std::exception &e) {
@@ -90,7 +92,7 @@ IO::IO() {
 
     // Initialize mouse device if needed
     std::string mouseDevice = getMouseDevice();
-    if (!mouseDevice.empty() && mouseDevice != keyboardDevice) {
+    if (!mouseDevice.empty() && mouseDevice != keyboardDevice && !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
       try {
         info("Using mouse device: {}", mouseDevice);
         StartEvdevMouseListener(mouseDevice);
@@ -103,7 +105,7 @@ IO::IO() {
     }
 
     // Fall back to X11 hotkeys if evdev initialization failed
-    if (!globalEvdev || !x11Hotkeys.empty()) {
+    if (!globalEvdev){ // || !x11Hotkeys.empty()) {
       timerRunning = true;
       try {
         timerThread = std::thread(&IO::MonitorHotkeys, this);
@@ -211,6 +213,7 @@ bool IO::SetupUinputDevice() {
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   // Allow it to init
+  
   return true;
 
 error:
@@ -446,115 +449,12 @@ void IO::MonitorHotkeys() {
 
           const bool isDown = (event.type == x11::XKeyPress);
           const XKeyEvent *keyEvent = &event.xkey;
-
-          KeySym keysym;
-          {
-            std::lock_guard<std::mutex> lock(x11Mutex);
-            if (!display)
-              break;
-            keysym = XLookupKeysym(const_cast<XKeyEvent *>(keyEvent), 0);
-          }
-
-          if (keysym == NoSymbol) {
-            continue;
-          }
-
-          // Handle remapped keys
-          if (const auto remappedIt = remappedKeys.find(keysym);
-              remappedIt != remappedKeys.end() &&
-              remappedIt->second != NoSymbol) {
-
-            const char *keySymStr;
-            {
-              std::lock_guard<std::mutex> lock(x11Mutex);
-              if (!display)
-                break;
-              keySymStr = XKeysymToString(remappedIt->second);
-            }
-
-            if (keySymStr) {
-              if (const int keycode = EvdevNameToKeyCode(keySymStr);
-                  keycode != -1) {
-                SendUInput(keycode, isDown);
-              }
-            }
-            continue; // Suppress original event
-          }
-
-          // Handle mapped keys
-          if (const auto mappedIt = keyMapInternal.find(keysym);
-              mappedIt != keyMapInternal.end()) {
-
-            const char *keySymStr;
-            {
-              std::lock_guard<std::mutex> lock(x11Mutex);
-              if (!display)
-                break;
-              keySymStr = XKeysymToString(mappedIt->second);
-            }
-
-            if (keySymStr) {
-              if (const int keycode = EvdevNameToKeyCode(keySymStr);
-                  keycode != -1) {
-                SendUInput(keycode, isDown);
-              }
-            }
-            continue; // Suppress original event
-          }
-
-          // Skip modifier keys
-          if (IsModifierKey(keysym)) {
-            continue;
-          }
-
-// Optional debug logging
-#ifdef DEBUG_HOTKEYS
-          {
-            std::lock_guard<std::mutex> lock(x11Mutex);
-            if (display) {
-              if (const char *keysym_str = XKeysymToString(keysym)) {
-                debug(std::string(isDown ? "KeyPress" : "KeyRelease") +
-                      " event: " + keysym_str +
-                      " (keycode: " + std::to_string(keyEvent->keycode) +
-                      ", state: " + std::to_string(keyEvent->state) + ")");
-              }
-            }
-          }
-#endif
-
-          const unsigned int cleanedState = keyEvent->state & relevantModifiers;
-          callbacks.clear(); // Clear previous callbacks (no deallocation)
-
-          // Find matching hotkeys
-          {
-            std::scoped_lock<std::mutex> lock(hotkeyMutex);
-            for (const auto &[id, hotkey] : hotkeys) {
-              if (!hotkey.enabled)
-                continue;
-
-              if (hotkey.key == keyEvent->keycode &&
-                  static_cast<int>(cleanedState) == hotkey.modifiers) {
-
-                // Check event type
-                if ((hotkey.eventType == HotkeyEventType::Down && !isDown) ||
-                    (hotkey.eventType == HotkeyEventType::Up && isDown)) {
-                  continue;
-                }
-
-#ifdef DEBUG_HOTKEYS
-                debug("Hotkey matched: " + hotkey.alias +
-                      " (state: " + std::to_string(cleanedState) +
-                      " vs expected: " + std::to_string(hotkey.modifiers) +
-                      ")");
-#endif
-
-                if (hotkey.callback) {
-                  callbacks.emplace_back(hotkey.callback);
-                }
-                break; // Only one hotkey should match per event
-              }
-            }
-          }
+          
+          // Forward the key event directly - all mapping is now handled by evdev
+          SendUInput(keyEvent->keycode, isDown);
+          
+          // Skip further processing for this event
+          continue;
 
           // Execute callbacks outside all locks
           for (const auto &callback : callbacks) {
@@ -1403,7 +1303,7 @@ bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
   hotkey.suspend = false;
   hotkey.success = true;
   hotkey.type = HotkeyType::Keyboard;
-  hotkey.eventType = HotkeyEventType::Both;
+  hotkey.eventType = HotkeyEventType::Down;
   ++hotkeyCount;
   hotkeys[hotkeyCount] = hotkey;
   return true;
@@ -1419,7 +1319,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   };
   bool hasAction = static_cast<bool>(action);
   // Parse event type
-  HotkeyEventType eventType = HotkeyEventType::Both;
+  HotkeyEventType eventType = HotkeyEventType::Down;
   size_t colonPos = hotkeyStr.rfind(':');
   if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
     std::string suffix = hotkeyStr.substr(colonPos + 1);
@@ -1522,19 +1422,19 @@ done_parsing:
     } else {
       // Regular keyboard hotkey
       KeyCode keycode = 0;
-      if (isEvdev) {
+      if (hotkeyStr.substr(0, 2) == "kc") {
+        int kc = std::stoi(hotkeyStr.substr(2));
+        if (kc <= 0 || kc > 767) {
+          std::cerr << "Invalid raw keycode: " << kc << "\n";
+          return {};
+        }
+        keycode = kc;
+      } else if (isEvdev) {
         keycode = EvdevNameToKeyCode(hotkeyStr);
         if (keycode == 0) {
           std::cerr << "Invalid evdev key name: " << hotkeyStr << "\n";
           return {};
         }
-      } else if (hotkeyStr.substr(0, 2) == "kc") {
-        int kc = std::stoi(hotkeyStr.substr(2));
-        if (kc <= 0 || kc > 255) {
-          std::cerr << "Invalid raw keycode: " << kc << "\n";
-          return {};
-        }
-        keycode = kc;
       } else {
         std::string keyLower = hotkeyStr;
         std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
@@ -1609,7 +1509,7 @@ done_parsing_modifiers:
   hotkey.success = false;
   hotkey.evdev = false;
   hotkey.x11 = true;
-  hotkey.eventType = HotkeyEventType::Both;
+  hotkey.eventType = HotkeyEventType::Down;
   // Check for mouse button or wheel
   int button = ParseMouseButton(rest);
   if (button != 0) {
@@ -1667,7 +1567,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
     failedHotkeys.push_back(hk);
     return false;
   }
-  if (!hk.evdev && display) {
+  if (!hk.evdev && hk.x11 && !globalEvdev && display) {
     bool isMouse = (hk.type == HotkeyType::MouseButton ||
                     hk.type == HotkeyType::MouseWheel);
     if (!Grab(hk.key, hk.modifiers, DefaultRootWindow(display), hk.grab,
@@ -2600,19 +2500,42 @@ bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
 }
 
 void IO::Map(const std::string &from, const std::string &to) {
+  // X11 mapping for backward compatibility
   KeySym fromKey = StringToVirtualKey(from);
   KeySym toKey = StringToVirtualKey(to);
   if (fromKey != NoSymbol && toKey != NoSymbol) {
     keyMapInternal[fromKey] = toKey;
   }
+  
+  // Evdev mapping
+  int fromCode = EvdevNameToKeyCode(from);
+  int toCode = EvdevNameToKeyCode(to);
+  if (fromCode > 0 && toCode > 0) {
+    evdevKeyMap[fromCode] = toCode;
+    debug("Mapped evdev key {} ({}) to {} ({})", from, fromCode, to, toCode);
+  } else {
+    warn("Failed to map keys: {} -> {} (from:{} to:{})", from, to, fromCode, toCode);
+  }
 }
 
 void IO::Remap(const std::string &key1, const std::string &key2) {
+  // X11 remapping for backward compatibility
   KeySym k1 = StringToVirtualKey(key1);
   KeySym k2 = StringToVirtualKey(key2);
   if (k1 != NoSymbol && k2 != NoSymbol) {
     remappedKeys[k1] = k2;
     remappedKeys[k2] = k1;
+  }
+  
+  // Evdev remapping
+  int code1 = EvdevNameToKeyCode(key1);
+  int code2 = EvdevNameToKeyCode(key2);
+  if (code1 > 0 && code2 > 0) {
+    evdevRemappedKeys[code1] = code2;
+    evdevRemappedKeys[code2] = code1;
+    debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2, code2);
+  } else {
+    warn("Failed to remap keys: {} <-> {} ({} <-> {})", key1, key2, code1, code2);
   }
 }
 bool IO::MatchEvdevModifiers(int expectedModifiers,
@@ -2644,6 +2567,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
     return false;
   evdevDevicePath = devicePath;
   evdevRunning = true;
+  SendUInput(KEY_RESERVED, false);  // no-op
 
   evdevThread = std::thread([this]() {
     int fd = open(evdevDevicePath.c_str(), O_RDONLY | O_NONBLOCK);
@@ -2681,6 +2605,25 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 
       bool down = (ev.value == 1 || ev.value == 2);
       int code = ev.code;
+      
+      // Apply key mapping and remapping
+      if (down) {
+        // Check for remapped keys first (bidirectional mapping)
+        auto remapIt = evdevRemappedKeys.find(code);
+        if (remapIt != evdevRemappedKeys.end()) {
+          code = remapIt->second;
+          debug("Remapped key {} -> {}", ev.code, code);
+        } 
+        // Then check for regular key mapping
+        else {
+          auto mapIt = evdevKeyMap.find(code);
+          if (mapIt != evdevKeyMap.end()) {
+            code = mapIt->second;
+            debug("Mapped key {} -> {}", ev.code, code);
+          }
+        }
+      }
+      
       evdevKeyState[code] = down;
 
       // Update modifier state
@@ -2770,11 +2713,14 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         }
       }
       if (shouldBlockKey) {
-        debug("Blocking key {} ({}) - hotkey requested blocking", code,
-              down ? "down" : "up");
+        if (!down) {
+            // Always release keys so modifiers don’t stick
+            SendUInput(code, false);
+        } else {
+              debug("Blocking key {} down", code);
+          }
       } else {
-        // Pass key through to system
-        SendUInput(code, down);
+          SendUInput(code, down);
       }
     }
 
@@ -3213,7 +3159,8 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
         break;
       }
 
-      // Only pass through if not blocked
+      // Always forward the event to maintain proper device state
+      // Only block if explicitly told to do so
       if (!shouldBlock) {
         SendMouseUInput(ev);
       }
@@ -3390,8 +3337,13 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
     }
   }
 
-  // Legacy behavior
+  // Handle mouse movement
   switch (ev.code) {
+  case REL_X: // Mouse X movement
+  case REL_Y: // Mouse Y movement
+    // Always forward movement events
+    return false;
+    
   case REL_WHEEL: // Vertical scroll
     if (altPressed) {
       info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
@@ -3411,15 +3363,6 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
       info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
       executeComboAction("alt_hscroll");
       shouldBlock = true;
-    }
-    break;
-
-  case REL_X: // Mouse movement X
-  case REL_Y: // Mouse movement Y
-    // You could detect alt+drag here
-    if (altPressed && (abs(ev.value) > 5)) { // Significant movement
-      // executeComboAction("alt_drag");
-      // shouldBlock = true; // Uncomment to block mouse movement with alt
     }
     break;
   }

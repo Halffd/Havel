@@ -11,6 +11,7 @@
 #include <iostream>
 
 #include "AutomationSuite.hpp"
+#include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "utils/Logger.hpp"
@@ -113,6 +114,9 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     if (isStartup) {
         info("Setting startup brightness and gamma values");
+        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<int>("Display.StartupBrightness", 100));
+        hotkeyManager->brightnessManager.setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 100));
+        io->SetHardwareMouseSensitivity(Configs::Get().Get<int>("Mouse.Sensitivity", 1.0));
     }
 
     // Register all hotkeys

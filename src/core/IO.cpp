@@ -2813,21 +2813,39 @@ void IO::CleanupUinputDevice() {
   }
 }
 std::string IO::findEvdevDevice(const std::string &deviceName) {
+  debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
+  
   std::ifstream proc("/proc/bus/input/devices");
+  if (!proc.is_open()) {
+    error("Cannot open /proc/bus/input/devices");
+    return "";
+  }
+  
   std::string line;
   std::string currentName;
-
+  int deviceCount = 0;
+  
   while (std::getline(proc, line)) {
+    debug("Line: {}", line);
+    
     if (line.starts_with("N: Name=")) {
-      // Extract device name: N: Name="INSTANT USB Keyboard"
+      deviceCount++;
       currentName = line.substr(8);
       if (!currentName.empty() && currentName[0] == '"') {
         currentName = currentName.substr(1, currentName.length() - 2);
       }
-    } else if (line.starts_with("H: Handlers=") && currentName == deviceName) {
-      // Look for "kbd" handler to ensure it's a real keyboard
-      if (line.find("kbd") != std::string::npos) {
-        // Extract event number: H: Handlers=sysrq kbd leds event7
+      debug("  Device #{}: '{}'", deviceCount, currentName);
+      
+      if (currentName == deviceName) {
+        debug("  🎯 EXACT MATCH FOUND!");
+      }
+    } 
+    else if (line.starts_with("H: Handlers=")) {
+      debug("  Handlers: {}", line);
+      
+      if (currentName == deviceName) {
+        debug("  🔥 This is our target device!");
+        
         size_t eventPos = line.find("event");
         if (eventPos != std::string::npos) {
           std::string eventStr = line.substr(eventPos + 5);
@@ -2835,78 +2853,214 @@ std::string IO::findEvdevDevice(const std::string &deviceName) {
           if (spacePos != std::string::npos) {
             eventStr = eventStr.substr(0, spacePos);
           }
-          return "/dev/input/event" + eventStr;
+          std::string result = "/dev/input/event" + eventStr;
+          debug("  ✅ SUCCESS: {}", result);
+          return result;
         }
       }
     }
-
-    return "";
   }
+  
+  debug("=== END DEBUG - Device not found ===");
+  return "";
 }
-
 std::string IO::detectEvdevDevice(
     const std::vector<std::string> &patterns,
-    const std::function<bool(const std::string &)> &typeFilter) {
-  // Get all input devices
+    const std::function<bool(const std::string &, int)> &deviceFilter) {
+
   std::vector<InputDevice> devices = getInputDevices();
 
-  // Debug: Log all found devices
   info("Scanning {} input devices for matches...", devices.size());
   for (const auto &dev : devices) {
-    debug("  Device: {} (type: {}, id: {})", dev.name, dev.type, dev.id);
+    debug("  Device: '{}' (type: {}, id: {}, evdev: {})", dev.name, dev.type,
+          dev.id, dev.evdevPath.empty() ? "none" : dev.evdevPath);
   }
 
-  // Try to match devices in order of preference
+  // Try each pattern in order of preference
   for (const auto &pattern : patterns) {
     debug("Trying pattern: '{}'", pattern);
 
-    for (const auto &inputDevice : devices) {
-      // Check if pattern matches device name and type matches filter
-      if (inputDevice.name.find(pattern) != std::string::npos &&
-          typeFilter(inputDevice.type) && !inputDevice.evdevPath.empty()) {
+    // PHASE 1: Try regex matching
+    try {
+      std::regex pattern_regex(pattern, std::regex_constants::icase);
 
-        info("Matched device: '{}' (type: {}, evdev: {}) with pattern: '{}'",
-             inputDevice.name, inputDevice.type, inputDevice.evdevPath,
-             pattern);
-        return inputDevice.evdevPath;
+      for (const auto &device : devices) {
+        debug("    [REGEX] Checking device '{}' against pattern '{}'",
+              device.name, pattern);
+
+        if (std::regex_search(device.name, pattern_regex) &&
+            deviceFilter(device.type, device.id)) {
+
+          debug("    [REGEX] Device type '{}' and ID {} passed filter",
+                device.type, device.id);
+
+          // Try to get evdev path
+          std::string evdevPath = device.evdevPath;
+          if (evdevPath.empty()) {
+            debug("    [REGEX] No cached evdev path, searching with "
+                  "findEvdevDevice()");
+            evdevPath = findEvdevDevice(device.name);
+          }
+
+          if (!evdevPath.empty()) {
+            info("[REGEX] Matched device: '{}' (type: {}, id: {}) -> {} with "
+                 "pattern: '{}'",
+                 device.name, device.type, device.id, evdevPath, pattern);
+            return evdevPath;
+          } else {
+            debug("    [REGEX] Device matched but no evdev path found");
+          }
+        }
+      }
+
+    } catch (const std::regex_error &e) {
+      debug("[REGEX] Invalid regex pattern '{}': {}", pattern, e.what());
+    }
+
+    // PHASE 2: Fallback to case-insensitive substring search
+    debug(
+        "    [FALLBACK] Regex didn't match, trying substring search for: '{}'",
+        pattern);
+
+    for (const auto &device : devices) {
+      debug("    [FALLBACK] Checking device '{}' against pattern '{}'",
+            device.name, pattern);
+
+      // Case-insensitive substring matching
+      std::string lowerName = device.name;
+      std::string lowerPattern = pattern;
+      std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                     ::tolower);
+      std::transform(lowerPattern.begin(), lowerPattern.end(),
+                     lowerPattern.begin(), ::tolower);
+
+      if (lowerName.find(lowerPattern) != std::string::npos &&
+          deviceFilter(device.type, device.id)) {
+
+        debug("    [FALLBACK] Device type '{}' and ID {} passed filter",
+              device.type, device.id);
+
+        // Try to get evdev path
+        std::string evdevPath = device.evdevPath;
+        if (evdevPath.empty()) {
+          debug("    [FALLBACK] No cached evdev path, searching with "
+                "findEvdevDevice()");
+          evdevPath = findEvdevDevice(device.name);
+        }
+
+        if (!evdevPath.empty()) {
+          info("✅ [FALLBACK] Matched device: '{}' (type: {}, id: {}) -> {} "
+               "with pattern: '{}' (substring)",
+               device.name, device.type, device.id, evdevPath, pattern);
+          return evdevPath;
+        } else {
+          debug("    [FALLBACK] Device matched but no evdev path found");
+        }
       }
     }
   }
 
+  debug("No devices matched any patterns");
   return "";
 }
-
 std::string IO::getKeyboardDevice() {
   // Common keyboard device name patterns (in order of preference)
+  std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
+  if (!id.empty()) {
+    debug("Using keyboard device ID from config: '{}'", id);
+    return findEvdevDevice(id);
+  }
   std::vector<std::string> keyboardPatterns = {
       "keyboard",  "usb",        "bluetooth", "bt",          "hid",
       "logitech",  "razer",      "corsair",   "steelseries", "apple",
       "microsoft", "dell",       "hp",        "asus",        "wireless",
-      "gaming",    "mechanical", "membrane",  "translated",  "boot"};
+      "gaming",    "mechanical", "membrane",  "translated",  "boot",
+      "instant",   "generic",    "standard",  "pc",          "desktop"};
+  std::string configPatterns =
+      Configs::Get().Get<std::string>("Device.Keyboard", "");
+  if (!configPatterns.empty()) {
+    debug("Using keyboard patterns from config: '{}'", configPatterns);
+    keyboardPatterns = split(configPatterns, ',');
+  } else {
+    debug("Using default keyboard patterns");
+  }
+  auto isKeyboardDevice = [](const std::string &type, int deviceId) -> bool {
+    std::string lowerType = type;
+    std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
+                   ::tolower);
 
-  auto isKeyboard = [](const std::string &type) {
-    return type.find("keyboard") != std::string::npos ||
-           type.find("key") != std::string::npos;
+    // Check device type
+    bool typeMatch = lowerType.find("keyboard") != std::string::npos ||
+                     lowerType.find("key") != std::string::npos;
+
+    // Check known device IDs for your INSTANT keyboards
+    bool idMatch =
+        (deviceId == 11 || deviceId == 12 || deviceId == 13 || deviceId == 16);
+
+    debug("      Device filter: type='{}' typeMatch={} deviceId={} idMatch={}",
+          type, typeMatch, deviceId, idMatch);
+
+    return typeMatch || idMatch;
   };
 
-  return detectEvdevDevice(keyboardPatterns, isKeyboard);
+  std::string result = detectEvdevDevice(keyboardPatterns, isKeyboardDevice);
+  if (result.empty()) {
+    debug("No keyboard found with specific patterns, trying fallback");
+    // Fallback: try to find any keyboard device
+    std::vector<std::string> fallbackPatterns = {"keyboard"};
+    result = detectEvdevDevice(fallbackPatterns, isKeyboardDevice);
+  }
+  return result;
 }
 
 std::string IO::getMouseDevice() {
   // Common mouse device name patterns (in order of preference)
+  std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
+  if (!id.empty()) {
+    debug("Using mouse device ID from config: '{}'", id);
+    return findEvdevDevice(id);
+  }
   std::vector<std::string> mousePatterns = {
-      "mouse",     "trackpad", "trackball", "touchpad",    "usb",
-      "bluetooth", "logitech", "razer",     "steelseries", "microsoft",
-      "dell",      "hp",       "asus",      "wireless",    "gaming"};
+      "mouse",     "trackpad", "trackball",  "touchpad",    "usb",
+      "bluetooth", "logitech", "razer",      "steelseries", "microsoft",
+      "dell",      "hp",       "asus",       "wireless",    "gaming",
+      "optical",   "laser",    "trackpoint", "touch",       "generic"};
+  std::string configPatterns =
+      Configs::Get().Get<std::string>("Device.Mouse", "");
+  if (!configPatterns.empty()) {
+    debug("Using mouse patterns from config: '{}'", configPatterns);
+    mousePatterns = split(configPatterns, ',');
+  } else {
+    debug("Using default mouse patterns");
+  }
+  // Device filter function
+  auto isMouseDevice = [](const std::string &type, int deviceId) -> bool {
+    std::string lowerType = type;
+    std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
+                   ::tolower);
 
-  auto isMouse = [](const std::string &type) {
-    return type.find("mouse") != std::string::npos ||
-           type.find("pointer") != std::string::npos ||
-           type.find("touchpad") != std::string::npos ||
-           type.find("trackpad") != std::string::npos;
+    // Check device type
+    bool typeMatch = lowerType.find("mouse") != std::string::npos ||
+                     lowerType.find("pointer") != std::string::npos ||
+                     lowerType.find("touchpad") != std::string::npos;
+
+    // Check known device IDs for your mouse
+    bool idMatch = (deviceId == 10 || deviceId == 14);
+
+    debug("      Device filter: type='{}' typeMatch={} deviceId={} idMatch={}",
+          type, typeMatch, deviceId, idMatch);
+
+    return typeMatch || idMatch;
   };
 
-  return detectEvdevDevice(mousePatterns, isMouse);
+  std::string result = detectEvdevDevice(mousePatterns, isMouseDevice);
+  if (result.empty()) {
+    debug("No mouse found with specific patterns, trying fallback");
+    // Fallback: try to find any mouse device
+    std::vector<std::string> fallbackPatterns = {"mouse", "pointer"};
+    result = detectEvdevDevice(fallbackPatterns, isMouseDevice);
+  }
+  return result;
 }
 
 std::vector<InputDevice> IO::getInputDevices() {
@@ -2962,8 +3116,9 @@ std::vector<InputDevice> IO::getInputDevices() {
       device.type = "unknown";
     }
 
-    // Find the real evdev path for keyboards
-    if (device.type == "slave keyboard" || device.type == "master keyboard") {
+    // Find the real evdev path for keyboards and mice
+    if (device.type == "slave keyboard" || device.type == "master keyboard" ||
+        device.type == "slave pointer" || device.type == "master pointer") {
       std::string evdevPath = findEvdevDevice(device.name);
       if (!evdevPath.empty()) {
         device.evdevPath = evdevPath;

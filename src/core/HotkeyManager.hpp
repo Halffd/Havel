@@ -60,6 +60,8 @@ namespace havel {
         int speed = 5;
         float acc = 1.0f;
 
+        BrightnessManager brightnessManager;
+
         bool evaluateCondition(const std::string &condition);
 
         std::unique_ptr<ConditionEngine> conditionEngine;
@@ -172,8 +174,7 @@ namespace havel {
         static bool isGamingWindow();
         
         // Clean up resources and release all keys
-        void cleanup();
-        BrightnessManager brightnessManager;
+        void cleanup();;
     private:
         void PlayPause();
         IO &io;

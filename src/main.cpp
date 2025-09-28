@@ -35,6 +35,10 @@ int main(int argc, char* argv[]) {
             isStartup = true;
             break;
         }
+        if (std::string(argv[i]) == "--debug" || std::string(argv[i]) == "-d") {
+            Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+            break;
+        }
     }
 
     try {

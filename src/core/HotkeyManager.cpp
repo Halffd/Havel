@@ -298,28 +298,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(2, io);
     });
 
-    io.Hotkey("^f1", []() {
-        info("F1");
-        Launcher::runShell("~/scripts/f1.sh -1");
-    });
+    AddHotkey("^f1", "~/scripts/f1.sh -1");
+    AddHotkey("+f1", "~/scripts/f1.sh 0");
 
-    io.Hotkey("+!l", []() {
-        info("Livelink");
-        Launcher::runShell("~/scripts/livelink.sh");
-    });
-
-    io.Hotkey("^!l", []() {
-        info("Livelink toggle screen 1");
-        Launcher::runShell("livelink screen toggle 1");
-    });
-    io.Hotkey("!f10", []() {
-        info("Stream");
-        Launcher::runShell("~/scripts/str");
-    });
-    io.Hotkey("^!k", []() {
-        info("Livelink toggle screen 2");
-        Launcher::runShell("livelink screen toggle 2");
-    });
+    AddHotkey("+!l", "~/scripts/livelink.sh");
+    AddHotkey("^!l", "livelink screen toggle 1");
+    AddHotkey("!f10", "~/scripts/str");
+    AddHotkey("^!k", "livelink screen toggle 2");
+    AddHotkey("^f10", "~/scripts/mpvv");
 
     // Context-sensitive hotkeys
     AddContextualHotkey(" @nosymbol", "IsZooming",
@@ -864,8 +850,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     }
 };
     for (const auto& hk : mpvHotkeys) {
-        int id = AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
-        conditionalHotkeyIds.push_back(id);
+        AddGamingHotkey(hk.key, hk.trueAction, hk.falseAction, hk.id);
     }
 }
 
@@ -1113,27 +1098,74 @@ void HotkeyManager::ReloadConfigurations() {
 
 
 void HotkeyManager::updateAllConditionalHotkeys() {
-    for (auto& hotkey : conditionalHotkeys) {
-        updateConditionalHotkey(hotkey);
+    auto now = std::chrono::steady_clock::now();
+    
+    // Only check conditions at the specified interval to reduce spam
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - lastConditionCheck).count() < CONDITION_CHECK_INTERVAL_MS) {
+        return;
     }
-}
-void HotkeyManager::updateConditionalHotkey(ConditionalHotkey& hotkey) {
-    if(isGamingWindow()) {
+    lastConditionCheck = now;
+    
+    // Update mode once per batch of hotkey updates
+    if (isGamingWindow()) {
         setMode("gaming");
     } else {
         setMode("default");
     }
-    bool conditionMet = evaluateCondition(hotkey.condition);
-    info("Condition met: " + std::to_string(conditionMet) + " for " + hotkey.condition + " (" + hotkey.key + ")" + " (Currently Grabbed: " + std::to_string(hotkey.currentlyGrabbed) + ")");
-    // Only grab if condition is true, ungrab if condition is false
+    
+    // Process all conditional hotkeys
+    for (auto& hotkey : conditionalHotkeys) {
+        updateConditionalHotkey(hotkey);
+    }
+}
+
+void HotkeyManager::updateConditionalHotkey(ConditionalHotkey& hotkey) {
+    if (verboseConditionLogging) {
+        debug("Updating conditional hotkey - Key: '{}', Condition: '{}', CurrentlyGrabbed: {}", 
+              hotkey.key, hotkey.condition, hotkey.currentlyGrabbed);
+    }
+    // Check cache first
+    auto now = std::chrono::steady_clock::now();
+    bool conditionMet;
+    
+    auto cacheIt = conditionCache.find(hotkey.condition);
+    if (cacheIt != conditionCache.end()) {
+        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - cacheIt->second.timestamp).count();
+        if (age < CACHE_DURATION_MS) {
+            conditionMet = cacheIt->second.result;
+        } else {
+            // Cache expired, re-evaluate
+            conditionMet = evaluateCondition(hotkey.condition);
+            conditionCache[hotkey.condition] = {conditionMet, now};
+        }
+    } else {
+        // Not in cache, evaluate and store
+        conditionMet = evaluateCondition(hotkey.condition);
+        conditionCache[hotkey.condition] = {conditionMet, now};
+    }
+    
+    // Only log when condition changes
+    if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
+        info("Condition changed: {} for {} ({}) - was:{} now:{}", 
+             conditionMet ? 1 : 0, hotkey.condition, hotkey.key, 
+             hotkey.lastConditionResult, conditionMet);
+    }
+    
+    // Only update hotkey state if needed
     if (conditionMet && !hotkey.currentlyGrabbed) {
         io.GrabHotkey(hotkey.id);
         hotkey.currentlyGrabbed = true;
-        debug("Grabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+        if (verboseConditionLogging) {
+            debug("Grabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+        }
     } else if (!conditionMet && hotkey.currentlyGrabbed) {
         io.UngrabHotkey(hotkey.id);
         hotkey.currentlyGrabbed = false;
-        debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+        if (verboseConditionLogging) {
+            debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+        }
     }
     
     hotkey.lastConditionResult = conditionMet;
@@ -1151,6 +1183,7 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
                        std::function<void()> trueAction,
                        std::function<void()> falseAction,
                        int id) {
+    debug("Registering contextual hotkey - Key: '{}', Condition: '{}', ID: {}", key, condition, id);
     if (id == 0) {
         static int nextId = 1000;
         id = nextId++;
@@ -1174,6 +1207,7 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     ch.currentlyGrabbed = true;
     
     conditionalHotkeys.push_back(ch);
+    conditionalHotkeyIds.push_back(id);
 
     // Register but don't grab yet
     io.Hotkey(key, action, id);
@@ -1234,11 +1268,11 @@ bool HotkeyManager::evaluateCondition(const std::string& condition) {
     conditionEngine->invalidateCache();
     bool result = conditionEngine->evaluateCondition(condition);
 
-    if (verboseConditionLogging) {
+        if (verboseConditionLogging) {
         logWindowEvent("CONDITION_EVAL", condition + " -> " + (result ? "TRUE" : "FALSE"));
+        }
+        return result;
     }
-    return result;
-}
 void HotkeyManager::showNotification(const std::string& title, const std::string& message) {
     std::string cmd = "notify-send \"" + title + "\" \"" + message + "\"";
     Launcher::runShell(cmd.c_str());
@@ -1599,14 +1633,63 @@ void HotkeyManager::handleMediaCommand(const std::vector<std::string>& mpvComman
     }
 }
 
-void HotkeyManager::setMode(const std::string& mode) {
-    std::lock_guard<std::mutex> lock(modeMutex);
-    if (mode == currentMode) return;
+void HotkeyManager::setMode(const std::string& newMode) {
+    std::string oldMode;
+    bool modeChanged = false;
     
-    std::string oldMode = currentMode;
-    currentMode = mode;
+    {
+        std::lock_guard<std::mutex> lock(modeMutex);
+        if (currentMode != newMode) {
+            oldMode = currentMode;
+            currentMode = newMode;
+            modeChanged = true;
+        } else {
+            return; // No change needed
+        }
+    }
     
-    logModeSwitch(oldMode, currentMode);
+    if (modeChanged) {
+        logModeSwitch(oldMode, newMode);
+        
+        // Clear condition cache when mode changes
+        conditionCache.clear();
+        if (verboseConditionLogging) {
+            debug("Cleared condition cache due to mode change: {} → {}", oldMode, newMode);
+        }
+    }
+}
+
+void HotkeyManager::printCacheStats() {
+    info("Condition cache: {} entries", conditionCache.size());
+    
+    if (conditionCache.empty()) {
+        return;
+    }
+    
+    auto now = std::chrono::steady_clock::now();
+    int expired = 0;
+    
+    for (const auto& [condition, cache] : conditionCache) {
+        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - cache.timestamp).count();
+        if (age >= CACHE_DURATION_MS) {
+            expired++;
+        }
+        
+        if (verboseConditionLogging) {
+            debug("  - '{}': {} ({}ms old)", 
+                 condition, 
+                 cache.result ? "true" : "false",
+                 age);
+        }
+    }
+    
+    info("Cache stats: {} fresh, {} expired ({}% hit rate)", 
+         conditionCache.size() - expired, 
+         expired,
+         conditionCache.size() > 0 ? 
+             (100 * (conditionCache.size() - expired) / conditionCache.size()) : 
+             0);
 }
 
 void HotkeyManager::showBlackOverlay() {

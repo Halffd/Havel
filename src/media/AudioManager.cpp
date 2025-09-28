@@ -146,51 +146,198 @@ bool AudioManager::isMuted(const std::string& device) {
 }
 
 // === DEVICE MANAGEMENT ===
-std::vector<AudioDevice> AudioManager::getOutputDevices() {
+void AudioManager::updateDeviceCache() const {
+    std::lock_guard<std::mutex> lock(deviceMutex);
+    
+    // Clear existing cache
+    cachedDevices.clear();
+    
+    // Get devices based on backend
+    std::vector<AudioDevice> devices;
     if (currentBackend == AudioBackend::PULSE) {
-        return getPulseDevices(false);
+        auto outputs = getPulseDevices(false);
+        auto inputs = getPulseDevices(true);
+        devices.reserve(outputs.size() + inputs.size());
+        devices.insert(devices.end(), outputs.begin(), outputs.end());
+        devices.insert(devices.end(), inputs.begin(), inputs.end());
+    } else if (currentBackend == AudioBackend::ALSA) {
+        // ALSA implementation would go here
     }
-    return {}; // ALSA device enumeration is more complex
+    
+    // Update cache
+    cachedDevices = std::move(devices);
 }
 
-std::vector<AudioDevice> AudioManager::getInputDevices() {
-    if (currentBackend == AudioBackend::PULSE) {
-        return getPulseDevices(true);
+const std::vector<AudioDevice>& AudioManager::getDevices() const {
+    if (cachedDevices.empty()) {
+        updateDeviceCache();
     }
-    return {};
+    return cachedDevices;
 }
 
-std::string AudioManager::getDefaultOutput() {
-    if (defaultOutputDevice.empty()) {
-        // Try to detect default device
-        auto devices = getOutputDevices();
-        for (const auto& device : devices) {
-            if (device.isDefault) {
-                defaultOutputDevice = device.name;
-                break;
+std::vector<AudioDevice> AudioManager::getOutputDevices() const {
+    std::vector<AudioDevice> result;
+    const auto& devices = getDevices();
+    
+    // Filter for output devices (non-input)
+    std::copy_if(devices.begin(), devices.end(), std::back_inserter(result),
+        [](const AudioDevice& dev) { 
+            return dev.name.find("input") == std::string::npos; 
+        });
+    
+    return result;
+}
+
+std::vector<AudioDevice> AudioManager::getInputDevices() const {
+    std::vector<AudioDevice> result;
+    const auto& devices = getDevices();
+    
+    // Filter for input devices
+    std::copy_if(devices.begin(), devices.end(), std::back_inserter(result),
+        [](const AudioDevice& dev) { 
+            return dev.name.find("input") != std::string::npos; 
+        });
+    
+    return result;
+}
+
+AudioDevice* AudioManager::findDeviceByName(const std::string& name) {
+    updateDeviceCache();
+    auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
+        [&name](const AudioDevice& dev) { return dev.name == name; });
+    return it != cachedDevices.end() ? &(*it) : nullptr;
+}
+
+const AudioDevice* AudioManager::findDeviceByName(const std::string& name) const {
+    const auto& devices = getDevices();
+    auto it = std::find_if(devices.begin(), devices.end(),
+        [&name](const AudioDevice& dev) { 
+            return dev.name == name || dev.description == name; 
+        });
+    return it != devices.end() ? &(*it) : nullptr;
+}
+
+AudioDevice* AudioManager::findDeviceByIndex(uint32_t index) {
+    updateDeviceCache();
+    if (index < cachedDevices.size()) {
+        return &cachedDevices[index];
+    }
+    return nullptr;
+}
+
+const AudioDevice* AudioManager::findDeviceByIndex(uint32_t index) const {
+    const auto& devices = getDevices();
+    if (index < devices.size()) {
+        return &devices[index];
+    }
+    return nullptr;
+}
+
+void AudioManager::printDeviceInfo(const AudioDevice& device) const {
+    info("Device: {}", device.name);
+    info("  Description: {}", device.description);
+    info("  Index: {}", device.index);
+    info("  Default: {}", device.isDefault ? "Yes" : "No");
+    info("  Muted: {}", device.isMuted ? "Yes" : "No");
+    info("  Volume: {:.0f}%", device.volume * 100.0);
+    info("  Channels: {}", device.channels);
+}
+
+void AudioManager::printDevices() const {
+    const auto& devices = getDevices();
+    if (devices.empty()) {
+        info("No audio devices found");
+        return;
+    }
+    
+    info("=== Audio Devices ({} found) ===", devices.size());
+    for (size_t i = 0; i < devices.size(); ++i) {
+        const auto& device = devices[i];
+        info("[{}] {} ({})", i, device.name, 
+             device.isDefault ? "Default" : "");
+    }
+}
+
+std::string AudioManager::getDefaultOutput() const {
+    if (currentBackend == AudioBackend::PULSE) {
+        // For PulseAudio, we can get the default sink
+        if (!pa_context) return "";
+        
+        std::string defaultSink;
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        pa_operation* op = pa_context_get_server_info(ctx, 
+            [](struct pa_context* c, const pa_server_info* i, void* userdata) {
+                if (!i) return;
+                std::string* defSink = static_cast<std::string*>(userdata);
+                *defSink = i->default_sink_name;
+            }, &defaultSink);
+            
+        if (op) {
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
+            pa_operation_unref(op);
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        
+        // If we couldn't get the default sink, try to get the first output device
+        if (defaultSink.empty()) {
+            auto outputs = getOutputDevices();
+            if (!outputs.empty()) {
+                defaultSink = outputs[0].name;
             }
         }
-        if (defaultOutputDevice.empty() && !devices.empty()) {
-            defaultOutputDevice = devices[0].name;
-        }
+        
+        return defaultSink;
     }
-    return defaultOutputDevice;
+    
+    // ALSA implementation would go here
+    return "";
 }
 
-std::string AudioManager::getDefaultInput() {
-    if (defaultInputDevice.empty()) {
-        auto devices = getInputDevices();
-        for (const auto& device : devices) {
-            if (device.isDefault) {
-                defaultInputDevice = device.name;
-                break;
+std::string AudioManager::getDefaultInput() const {
+    // For PulseAudio, get the default source
+    if (currentBackend == AudioBackend::PULSE) {
+        if (!pa_context) return "";
+        
+        std::string defaultSource;
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        pa_operation* op = pa_context_get_server_info(ctx, 
+            [](struct pa_context* c, const pa_server_info* i, void* userdata) {
+                if (!i) return;
+                std::string* defSource = static_cast<std::string*>(userdata);
+                *defSource = i->default_source_name;
+            }, &defaultSource);
+            
+        if (op) {
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
+            pa_operation_unref(op);
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        
+        // If we couldn't get the default source, try to get the first input device
+        if (defaultSource.empty()) {
+            auto inputs = getInputDevices();
+            if (!inputs.empty()) {
+                defaultSource = inputs[0].name;
             }
         }
-        if (defaultInputDevice.empty() && !devices.empty()) {
-            defaultInputDevice = devices[0].name;
-        }
+        
+        return defaultSource;
     }
-    return defaultInputDevice;
+    
+    // ALSA implementation would go here
+    return "";
 }
 
 // === PLAYBACK CONTROL ===
@@ -477,22 +624,25 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
     
     // Callback for getting volume
-    static void pulse_volume_callback(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    static void pulse_volume_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
         if (eol || !i) return;
         
         double* volume_ptr = static_cast<double*>(userdata);
         *volume_ptr = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
     }
     
-    double AudioManager::getPulseVolume(const std::string& device) {
+    double AudioManager::getPulseVolume(const std::string& device) const {
         if (!pa_context) return 0.0;
         
         double volume = 0.0;
         
+        // Cast away const for C API compatibility
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        
         pa_threaded_mainloop_lock(pa_mainloop);
         
         pa_operation* op = pa_context_get_sink_info_by_name(
-            pa_context, device.c_str(), pulse_volume_callback, &volume);
+            ctx, device.c_str(), pulse_volume_callback, &volume);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
@@ -524,22 +674,25 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
     
     // Callback for getting mute status
-    static void pulse_mute_callback(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    static void pulse_mute_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
         if (eol || !i) return;
         
         bool* mute_ptr = static_cast<bool*>(userdata);
         *mute_ptr = i->mute;
     }
     
-    bool AudioManager::isPulseMuted(const std::string& device) {
+    bool AudioManager::isPulseMuted(const std::string& device) const {
         if (!pa_context) return false;
         
         bool muted = false;
         
+        // Cast away const for C API compatibility
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        
         pa_threaded_mainloop_lock(pa_mainloop);
         
         pa_operation* op = pa_context_get_sink_info_by_name(
-            pa_context, device.c_str(), pulse_mute_callback, &muted);
+            ctx, device.c_str(), pulse_mute_callback, &muted);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
@@ -553,7 +706,7 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
     
     // Callback for device enumeration
-    static void pulse_device_callback(pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+    static void pulse_device_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
         if (eol) return;
         
         auto* devices = static_cast<std::vector<AudioDevice>*>(userdata);
@@ -569,18 +722,21 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         devices->push_back(device);
     }
     
-    std::vector<AudioDevice> AudioManager::getPulseDevices(bool input) {
+    std::vector<AudioDevice> AudioManager::getPulseDevices(bool input) const {
         std::vector<AudioDevice> devices;
-        if (!pa_context) return devices;
+        
+        // Use a const_cast to work around the PulseAudio API's lack of const-correctness
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        if (!ctx) return devices;
         
         pa_threaded_mainloop_lock(pa_mainloop);
         
         pa_operation* op;
         if (input) {
-            op = pa_context_get_source_info_list(pa_context, 
+            op = pa_context_get_source_info_list(ctx, 
                 reinterpret_cast<pa_source_info_cb_t>(pulse_device_callback), &devices);
         } else {
-            op = pa_context_get_sink_info_list(pa_context, pulse_device_callback, &devices);
+            op = pa_context_get_sink_info_list(ctx, pulse_device_callback, &devices);
         }
         
         if (op) {

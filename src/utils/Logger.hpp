@@ -188,5 +188,11 @@ template<typename... Args>
 inline void fatal(const std::string& format, Args&&... args) {
     Logger::getInstance().fatal(format, std::forward<Args>(args)...);
 }
-
+template<typename... Args>
+inline void warn(const std::string& format, Args&&... args) {
+    Logger::getInstance().warning(format, std::forward<Args>(args)...);
+}
+inline void warn(const std::string& message) {
+    Logger::getInstance().warning(message);
+}
 } // namespace havel

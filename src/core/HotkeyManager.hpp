@@ -81,6 +81,9 @@ namespace havel {
 
         // Apply current debug settings
         void applyDebugSettings();
+        
+        // Cache statistics
+        void printCacheStats();
 
         void RegisterDefaultHotkeys();
 
@@ -120,6 +123,18 @@ namespace havel {
         void toggleAutomationTask(const std::string& taskType, const std::string& param = "");
         
     private:
+        // Condition evaluation state
+        std::chrono::steady_clock::time_point lastConditionCheck = std::chrono::steady_clock::now();
+        static constexpr int CONDITION_CHECK_INTERVAL_MS = 100; // Check every 100ms instead of constantly
+        
+        // Cached condition results
+        struct CachedCondition {
+            bool result;
+            std::chrono::steady_clock::time_point timestamp;
+        };
+        std::unordered_map<std::string, CachedCondition> conditionCache;
+        static constexpr int CACHE_DURATION_MS = 50; // Cache results for 50ms
+        
         static std::mutex modeMutex;
         static std::string currentMode;
         bool isZooming() const { return m_isZooming; }

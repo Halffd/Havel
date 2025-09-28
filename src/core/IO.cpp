@@ -1,10 +1,19 @@
-#include "IO.hpp"
-#include "../utils/Logger.hpp"
-#include "../utils/Utils.hpp"
-#include "./ConfigManager.hpp"
+#include "core/IO.hpp"
 #include "core/DisplayManager.hpp"
+#include "utils/Logger.hpp"
+#include "utils/Utils.hpp"
+#include "core/ConfigManager.hpp"
 #include "utils/Util.hpp"
+#include "utils/Logger.hpp"
 #include "x11.h"
+
+// X11 includes
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/extensions/XInput2.h>
+#include <X11/extensions/XInput.h>
+#include <X11/extensions/XI2proto.h>
+#include <X11/extensions/XTest.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -38,8 +47,13 @@ IO::IO() {
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("Failed to get X11 display");
+  
+  // Initialize XInput2 if available
+  xinput2Available = InitializeXInput2();
+  if (xinput2Available) {
+    info("XInput2 initialized successfully");
+  } else {
+    warning("XInput2 initialization failed, falling back to software sensitivity");
   }
   InitKeyMap();
 
@@ -221,7 +235,7 @@ IO::IO() {
 }
 IO::~IO() {
   std::cout << "IO destructor called" << std::endl;
-
+  
   // Stop the hotkey monitoring thread
   if (timerRunning && timerThread.joinable()) {
     timerRunning = false;
@@ -288,7 +302,7 @@ bool IO::SetupUinputDevice() {
   usetup.id.bustype = BUS_USB;
   usetup.id.vendor = 0x1234;
   usetup.id.product = 0x5678;
-  strcpy(usetup.name, "wusper-uinput-kb");
+  strcpy(usetup.name, "havel-uinput-kb");
   // Enable key event support
   if (ioctl(uinputFd, UI_SET_EVBIT, EV_KEY) < 0)
     goto error;
@@ -909,9 +923,20 @@ bool IO::EmitClick(int btnCode, int action) {
 
   return true;
 }
-bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
+bool IO::MouseMove(int dx, int dy, int speed, float accel) {
+  // Apply mouse sensitivity
+  double adjustedDx, adjustedDy;
+  {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    adjustedDx = dx * mouseSensitivity;
+    adjustedDy = dy * mouseSensitivity;
+  }
+  
   static std::mutex uinputMutex;
-  std::lock_guard<std::mutex> lock(uinputMutex);
+  std::lock_guard<std::mutex> ioLock(uinputMutex);
+  
+  dx = static_cast<int>(adjustedDx);
+  dy = static_cast<int>(adjustedDy);
 
   if (speed <= 0)
     speed = 1;
@@ -959,9 +984,162 @@ bool IO::MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f) {
 
   return true;
 }
+// Set mouse sensitivity (0.1 - 10.0)
+void IO::SetMouseSensitivity(double sensitivity) {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    // Clamp sensitivity between 0.1 and 10.0
+    sensitivity = std::max(0.1, std::min(10.0, sensitivity));
+    
+    // Try to set hardware sensitivity first
+    bool hardwareSuccess = false;
+    if (xinput2Available) {
+        hardwareSuccess = SetHardwareMouseSensitivity(sensitivity);
+    }
+    
+    // Fall back to software sensitivity if hardware control fails
+    if (!hardwareSuccess) {
+        mouseSensitivity = sensitivity;
+        info("Using software mouse sensitivity: {}", mouseSensitivity);
+    } else {
+        // Keep them in sync in case we need to fall back later
+        mouseSensitivity = sensitivity;
+    }
+}
+
+bool IO::InitializeXInput2() {
+    if (!display) {
+        error("Cannot initialize XInput2: No display");
+        return false;
+    }
+    
+    int xi_opcode, event, xi_error;
+    if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event, &xi_error)) {
+        error("X Input extension not available");
+        return false;
+    }
+    
+    // Check XInput2 version
+    int major = 2, minor = 0;
+    if (XIQueryVersion(display, &major, &minor) != x11::XSuccess) {
+        error("XInput2 not supported by server");
+        return false;
+    }
+    
+    // Find the first pointer device that supports XInput2
+    XIDeviceInfo* devices;
+    int ndevices;
+    devices = XIQueryDevice(display, XIAllDevices, &ndevices);
+    
+    for (int i = 0; i < ndevices; i++) {
+        XIDeviceInfo* dev = &devices[i];
+        if (dev->use == XISlavePointer || dev->use == XIFloatingSlave) {
+            xinput2DeviceId = dev->deviceid;
+            break;
+        }
+    }
+    
+    XIFreeDeviceInfo(devices);
+    
+    if (xinput2DeviceId == -1) {
+        error("No suitable XInput2 pointer device found");
+        return false;
+    }
+    
+    return true;
+}
+
+bool IO::SetHardwareMouseSensitivity(double sensitivity) {
+    if (!display || xinput2DeviceId == -1) {
+        return false;
+    }
+    
+    // Clamp sensitivity to a reasonable range for hardware
+    sensitivity = std::max(0.1, std::min(10.0, sensitivity));
+    
+    // Convert sensitivity to X's acceleration (sensitivity^2 for better curve)
+    double accel_numerator = sensitivity * sensitivity * 10.0;
+    double accel_denominator = 10.0;
+    double threshold = 0.0;  // No threshold for continuous acceleration
+    
+    // Set the device's acceleration
+    XDevice* dev = XOpenDevice(display, xinput2DeviceId);
+    if (!dev) {
+        error("Failed to open XInput2 device");
+        return false;
+    }
+    
+    XDeviceControl* control = (XDeviceControl*)XGetDeviceControl(display, dev, DEVICE_RESOLUTION);
+    if (!control) {
+        XCloseDevice(display, dev);
+        return false;
+    }
+    
+    XChangePointerControl(display, x11::XTrue, x11::XTrue, 
+                         (int)(accel_numerator * 10), 
+                         (int)(accel_denominator * 10), 
+                         (int)threshold);
+    
+    XFree(control);
+    XCloseDevice(display, dev);
+    
+    info("Set hardware mouse sensitivity to: {}", sensitivity);
+    return true;
+}
+
+// Get current mouse sensitivity
+double IO::GetMouseSensitivity() const {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    return mouseSensitivity;
+}
+
+// Set scroll speed (0.1 - 10.0)
+void IO::SetScrollSpeed(double speed) {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    // Clamp scroll speed between 0.1 and 10.0
+    scrollSpeed = std::max(0.1, std::min(10.0, speed));
+    info("Scroll speed set to: {}", scrollSpeed);
+}
+
+// Get current scroll speed
+double IO::GetScrollSpeed() const {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    return scrollSpeed;
+}
+
+// Enhanced mouse movement with custom sensitivity
+bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    
+    // Apply sensitivity and acceleration
+    double adjustedDx = dx * mouseSensitivity;
+    double adjustedDy = dy * mouseSensitivity;
+    
+    // Apply acceleration if enabled (accel > 1.0)
+    if (accel > 1.0f) {
+        double distance = std::sqrt(dx * dx + dy * dy);
+        if (distance > 1.0) {
+            double factor = 1.0 + (accel - 1.0) * (distance / 100.0);
+            adjustedDx *= factor;
+            adjustedDy *= factor;
+        }
+    }
+    
+    // Call the original MouseMove with adjusted values
+    return MouseMove(static_cast<int>(adjustedDx), static_cast<int>(adjustedDy), baseSpeed, 1.0f);
+}
+
 bool IO::Scroll(int dy, int dx) {
-  static std::mutex uinputMutex;
-  std::lock_guard<std::mutex> lock(uinputMutex);
+    std::lock_guard<std::mutex> lock(mouseMutex);
+    
+    // Apply scroll speed
+    if (dy != 0) dy = static_cast<int>(dy * scrollSpeed);
+    if (dx != 0) dx = static_cast<int>(dx * scrollSpeed);
+    
+    // Ensure minimum scroll amount of 1
+    if (dy > 0 && dy < 1) dy = 1;
+    if (dy < 0 && dy > -1) dy = -1;
+    if (dx > 0 && dx < 1) dx = 1;
+    if (dx < 0 && dx > -1) dx = -1;
   if (uinputFd < 0)
     return false;
 
@@ -2467,6 +2645,12 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             std::string(strerror(errno)) + "\n");
       evdevRunning = false;
       return;
+    }
+    if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+      error("evdev: failed to grab device exclusively: {}", strerror(errno));
+      // Continue without exclusive grab - still works for monitoring
+    } else {
+      info("evdev: grabbed device exclusively");
     }
     if (!SetupUinputDevice()) {
       close(fd);

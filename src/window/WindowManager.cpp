@@ -997,7 +997,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
             if (!display || windowId == 0) return false;
 
             auto monitors = DisplayManager::GetMonitors();
-            if (monitorIndex < 0 || monitorIndex >= monitors.size()) {
+            if (monitorIndex < 0 || static_cast<size_t>(monitorIndex) >= monitors.size()) {
                 error("Invalid monitor index: {}", monitorIndex);
                 return false;
             }

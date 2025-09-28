@@ -380,8 +380,9 @@ private:
   void listInputDevices();
   
   // Device detection helpers
-  std::string detectEvdevDevice(const std::vector<std::string>& patterns, 
-                               const std::function<bool(const std::string&)>& typeFilter);
+  std::string detectEvdevDevice(
+    const std::vector<std::string> &patterns,
+    const std::function<bool(const std::string &, int)> &deviceFilter);
   std::string getKeyboardDevice();
   std::string getMouseDevice();
 };

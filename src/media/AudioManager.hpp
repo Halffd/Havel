@@ -3,6 +3,26 @@
 #include "../utils/Logger.hpp"
 #include <cstdlib>
 #include <iostream>
+
+// PulseAudio headers
+#ifdef __linux__
+#include <pulse/pulseaudio.h>
+#include <pulse/thread-mainloop.h>
+#include <pulse/context.h>
+#include <pulse/introspect.h>
+#include <pulse/volume.h>
+#include <pulse/error.h>
+#include <pulse/stream.h>
+#include <pulse/subscribe.h>
+#include <pulse/version.h>
+
+// ALSA headers
+#include <alsa/asoundlib.h>
+#include <alsa/mixer.h>
+#include <alsa/control.h>
+#include <alsa/error.h>
+#include <alsa/version.h>
+#endif
 #include <string>
 #include <vector>
 #include <map>
@@ -60,10 +80,26 @@ public:
     bool isMuted(const std::string& device);
 
     // === DEVICE MANAGEMENT ===
-    std::vector<AudioDevice> getOutputDevices();
-    std::vector<AudioDevice> getInputDevices();
-    std::string getDefaultOutput();
-    std::string getDefaultInput();
+    // Get all devices
+    const std::vector<AudioDevice>& getDevices() const;
+    
+    // Get devices by type
+    std::vector<AudioDevice> getOutputDevices() const;
+    std::vector<AudioDevice> getInputDevices() const;
+    
+    // Device lookup
+    AudioDevice* findDeviceByName(const std::string& name);
+    const AudioDevice* findDeviceByName(const std::string& name) const;
+    AudioDevice* findDeviceByIndex(uint32_t index);
+    const AudioDevice* findDeviceByIndex(uint32_t index) const;
+    
+    // Device information
+    std::string getDefaultOutput() const;
+    std::string getDefaultInput() const;
+    
+    // Print device information
+    void printDevices() const;
+    void printDeviceInfo(const AudioDevice& device) const;
     bool setDefaultOutput(const std::string& device);
     bool setDefaultInput(const std::string& device);
 
@@ -93,13 +129,22 @@ public:
 
 private:
     AudioBackend currentBackend;
+    void* backendData = nullptr;  // Backend-specific data
+    
+    // Device cache
+    mutable std::vector<AudioDevice> cachedDevices;
+    mutable std::mutex deviceMutex;
+    
+    // Update device cache
+    void updateDeviceCache() const;
+    
     std::string defaultOutputDevice;
     std::string defaultInputDevice;
     
     // PulseAudio specific
 #ifdef __linux__
     pa_threaded_mainloop* pa_mainloop = nullptr;
-    pa_context* pa_context = nullptr;
+    struct pa_context* pa_context = nullptr;
     pa_context_state_t pa_state;
     
     // ALSA specific  
@@ -115,7 +160,6 @@ private:
     // Threading
     std::atomic<bool> monitoring{false};
     std::unique_ptr<std::thread> monitorThread;
-    std::mutex deviceMutex;
     
     // Backend implementations
     bool initializePulse();
@@ -124,10 +168,10 @@ private:
     
     // PulseAudio methods
     bool setPulseVolume(const std::string& device, double volume);
-    double getPulseVolume(const std::string& device);
+    double getPulseVolume(const std::string& device) const;
     bool setPulseMute(const std::string& device, bool muted);
-    bool isPulseMuted(const std::string& device);
-    std::vector<AudioDevice> getPulseDevices(bool input = false);
+    bool isPulseMuted(const std::string& device) const;
+    std::vector<AudioDevice> getPulseDevices(bool input = false) const;
     
     // ALSA methods  
     bool setAlsaVolume(double volume);

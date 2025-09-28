@@ -6,6 +6,7 @@
 #include <iostream>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <X11/extensions/XInput2.h>
 #include <map>
 #include <memory>
 #include <set>
@@ -140,14 +141,26 @@ public:
   bool Resume(int id);
 
   // Mouse methods
-  bool MouseMove(int dx, int dy, int speed, float accel);
+  bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
+  
+  // XInput2 hardware mouse control
+  bool InitializeXInput2();
+  bool SetHardwareMouseSensitivity(double sensitivity);
+  
+  // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)
+  void SetMouseSensitivity(double sensitivity);
+  double GetMouseSensitivity() const;
+  
+  // Mouse scroll speed control (1.0 is default, lower values decrease speed, higher values increase it)
+  void SetScrollSpeed(double speed);
+  double GetScrollSpeed() const;
+  
+  // Enhanced mouse movement with custom sensitivity
+  bool MouseMoveSensitive(int dx, int dy, int baseSpeed = 5, float accel = 1.5f);
 
   void MouseClick(int button);
-
   void MouseDown(int button);
-
   void MouseUp(int button);
-
   void MouseWheel(int amount);
 
   // State methods
@@ -251,6 +264,8 @@ public:
   bool TryReleaseKey(int keycode);
   static Key GetKeyCode(cstr keyName);
 private:
+  Display* display;
+  int uinputFd;
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;
   std::mutex keyStateMutex;
@@ -276,7 +291,6 @@ private:
 
   bool MatchEvdevModifiers(int expectedModifiers, const std::map<int, bool>& keyState);
   // Platform specific implementations
-  Display *display;
   std::map<std::string, Key> keyMap;
   std::map<int, bool> evdevKeyState;
   std::map<std::string, HotKey> instanceHotkeys;
@@ -284,7 +298,6 @@ private:
   std::map<std::string, bool> hotkeyStates;
   std::thread timerThread;
   bool timerRunning = false;
-  int uinputFd = -1;
   std::set<int> blockedKeys;
   std::mutex x11Mutex;
 
@@ -294,6 +307,15 @@ private:
   std::mutex hotkeyMutex;
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
+  
+  // Mouse control members
+  mutable std::mutex mouseMutex;
+  double mouseSensitivity = 1.0;  // Default sensitivity (1.0 = 100%)
+  double scrollSpeed = 1.0;       // Default scroll speed (1.0 = 100%)
+  
+  // XInput2 device ID for the pointer device
+  int xinput2DeviceId = -1;
+  bool xinput2Available = false;
 
   // Key mapping and sending utilities
   void InitKeyMap();

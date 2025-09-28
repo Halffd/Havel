@@ -71,16 +71,6 @@ IO::IO() {
       device = "/dev/input/event";
     }
 
-    // Start hotkey monitoring in a separate thread if we have a valid device
-    timerRunning = true;
-    try {
-      timerThread = std::thread(&IO::MonitorHotkeys, this);
-      info("Started hotkey monitoring thread");
-    } catch (const std::exception &e) {
-      error("Failed to start hotkey monitoring thread: {}", e.what());
-      timerRunning = false;
-    }
-
     if (device == "/dev/input/event") {
       try {
         // Get the configured guesses, or use default if not set
@@ -228,7 +218,18 @@ IO::IO() {
         error("Failed to start evdev listener: {}", e.what());
       }
     } else {
+      globalEvdev = false;
       error("Failed to find a suitable keyboard device");
+    }
+    if(!globalEvdev || !x11Hotkeys.empty()){
+      timerRunning = true;
+      try {
+        timerThread = std::thread(&IO::MonitorHotkeys, this);
+        info("Started hotkey monitoring thread");
+      } catch (const std::exception &e) {
+        error("Failed to start hotkey monitoring thread: {}", e.what());
+        timerRunning = false;
+      }
     }
   }
 #endif

@@ -1114,9 +1114,17 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     lastConditionCheck = now;
     
     // Update mode once per batch of hotkey updates
-    if (isGamingWindow()) {
+    if (isGamingWindow() && currentMode != "gaming") {
+        io.Map("Left","a");
+        io.Map("Right","s");
+        io.Map("Up","w");
+        io.Map("Down","s");
         setMode("gaming");
-    } else {
+    } else if (currentMode != "default") {
+        io.Map("Left","Left");
+        io.Map("Right","Right");
+        io.Map("Up","Up");
+        io.Map("Down","Down");
         setMode("default");
     }
     

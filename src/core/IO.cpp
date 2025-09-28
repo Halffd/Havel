@@ -450,12 +450,38 @@ void IO::MonitorHotkeys() {
           const bool isDown = (event.type == x11::XKeyPress);
           const XKeyEvent *keyEvent = &event.xkey;
           
-          // Forward the key event directly - all mapping is now handled by evdev
-          SendUInput(keyEvent->keycode, isDown);
+          // Process hotkeys first
+          bool shouldForwardKey = true;
+          const unsigned int cleanedState = keyEvent->state & relevantModifiers;
+          callbacks.clear();
           
-          // Skip further processing for this event
-          continue;
-
+          // Find matching hotkeys
+          {
+            std::scoped_lock<std::mutex> lock(hotkeyMutex);
+            for (const auto &[id, hotkey] : hotkeys) {
+              if (!hotkey.enabled || hotkey.evdev) // Skip evdev hotkeys in X11
+                continue;
+                  
+              if (hotkey.key == static_cast<Key>(keyEvent->keycode) &&
+                  static_cast<int>(cleanedState) == hotkey.modifiers) {
+                
+                // Check event type
+                if ((hotkey.eventType == HotkeyEventType::Down && !isDown) ||
+                    (hotkey.eventType == HotkeyEventType::Up && isDown)) {
+                  continue;
+                }
+                
+                if (hotkey.callback) {
+                  callbacks.emplace_back(hotkey.callback);
+                }
+                
+                if (hotkey.grab) {
+                  shouldForwardKey = false;
+                }
+              }
+            }
+          }
+          
           // Execute callbacks outside all locks
           for (const auto &callback : callbacks) {
             try {
@@ -465,6 +491,11 @@ void IO::MonitorHotkeys() {
             } catch (...) {
               error("Unknown error in hotkey callback");
             }
+          }
+          
+          // Forward the key event if no hotkey grabbed it
+          if (shouldForwardKey) {
+            SendUInput(keyEvent->keycode, isDown);
           }
 
         } catch (const std::exception &e) {
@@ -1123,7 +1154,7 @@ void IO::Send(cstr keys) {
   };
 
   auto SendKeyImpl = [&](const std::string &keyName, bool down) {
-    if (useUinput) {
+    if (useUinput || globalEvdev) {
       int code = EvdevNameToKeyCode(keyName);
       if (code != -1) {
         SendUInput(code, down); // Now includes state tracking
@@ -1272,19 +1303,19 @@ bool IO::Resume(int id) {
 }
 // Helper function to parse mouse button from string
 int IO::ParseMouseButton(const std::string &str) {
-  if (str == "LButton" || str == "Button1" || str == "Left")
+  if (str == "LButton" || str == "Button1")
     return BTN_LEFT;
-  if (str == "RButton" || str == "Button2" || str == "Right")
+  if (str == "RButton" || str == "Button2")
     return BTN_RIGHT;
-  if (str == "MButton" || str == "Button3" || str == "Middle")
+  if (str == "MButton" || str == "Button3")
     return BTN_MIDDLE;
   if (str == "XButton1" || str == "Button6" || str == "Side1")
     return BTN_SIDE;
   if (str == "XButton2" || str == "Button7" || str == "Side2")
     return BTN_EXTRA;
-  if (str == "WheelUp" || str == "Button4")
+  if (str == "WheelUp" || str == "ScrollUp" || str == "Button4")
     return 1; // Special value for wheel up
-  if (str == "WheelDown" || str == "Button5")
+  if (str == "WheelDown" || str == "ScrollDown" || str == "Button5")
     return -1; // Special value for wheel down
   return 0;
 }
@@ -2590,41 +2621,55 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       return;
     }
 
-    struct input_event ev{};
+    struct input_event evs[64];
     std::map<int, bool> modState;
 
     while (evdevRunning) {
-      ssize_t n = read(fd, &ev, sizeof(ev));
-      if (n != sizeof(ev)) {
+      // Read multiple events at once
+      ssize_t n = read(fd, evs, sizeof(evs));
+      if (n < (ssize_t)sizeof(struct input_event)) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+          error("Error reading from evdev: {}", strerror(errno));
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
 
-      if (ev.type != EV_KEY)
-        continue;
+      // Process all complete events in the buffer
+      int num_events = n / sizeof(struct input_event);
+      for (int i = 0; i < num_events; i++) {
+        auto& ev = evs[i];
+        
+        if (ev.type != EV_KEY)
+          continue;
 
-      bool down = (ev.value == 1 || ev.value == 2);
-      int code = ev.code;
-      
-      // Apply key mapping and remapping
-      if (down) {
-        // Check for remapped keys first (bidirectional mapping)
-        auto remapIt = evdevRemappedKeys.find(code);
-        if (remapIt != evdevRemappedKeys.end()) {
-          code = remapIt->second;
-          debug("Remapped key {} -> {}", ev.code, code);
-        } 
-        // Then check for regular key mapping
-        else {
-          auto mapIt = evdevKeyMap.find(code);
-          if (mapIt != evdevKeyMap.end()) {
-            code = mapIt->second;
-            debug("Mapped key {} -> {}", ev.code, code);
+        bool down = (ev.value == 1 || ev.value == 2);
+        int originalCode = ev.code;
+        int mappedCode = originalCode;
+        
+        // Apply key mapping and remapping for output, but track both states
+        if (down) {
+          // Check for remapped keys first (bidirectional mapping)
+          auto remapIt = evdevRemappedKeys.find(originalCode);
+          if (remapIt != evdevRemappedKeys.end()) {
+            mappedCode = remapIt->second;
+            debug("Remapped key {} -> {}", originalCode, mappedCode);
+          } 
+          // Then check for regular key mapping
+          else {
+            auto mapIt = evdevKeyMap.find(originalCode);
+            if (mapIt != evdevKeyMap.end()) {
+              mappedCode = mapIt->second;
+              debug("Mapped key {} -> {}", originalCode, mappedCode);
+            }
           }
         }
-      }
       
-      evdevKeyState[code] = down;
+      // Update both original and mapped key states
+      evdevKeyState[originalCode] = down;
+      if (mappedCode != originalCode) {
+        evdevKeyState[mappedCode] = down;
+      }
 
       // Update modifier state
       modState[ControlMask] =
@@ -2636,17 +2681,29 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       modState[Mod4Mask] =
           evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
 
-      keyDownState[code] = down;
+      keyDownState[originalCode] = down;
+      if (mappedCode != originalCode) {
+        keyDownState[mappedCode] = down;
+      }
 
-      // Process hotkeys
+      // Process hotkeys using ORIGINAL code
       std::vector<std::function<void()>> callbacks;
       bool shouldBlockKey = false;
 
       {
         std::scoped_lock hotkeyLock(hotkeyMutex);
         for (auto &[id, hotkey] : hotkeys) {
-          if (!hotkey.enabled || !hotkey.evdev ||
-              hotkey.key != static_cast<Key>(code))
+          if (!hotkey.enabled || !hotkey.evdev)
+            continue;
+            
+          // Debug output to help diagnose hotkey matching
+          #ifdef DEBUG_HOTKEYS
+          debug("Hotkey check - Original: {}, Mapped: {}, Hotkey: {}", 
+                originalCode, mappedCode, static_cast<int>(hotkey.key));
+          #endif
+            
+          // Match against ORIGINAL key code
+          if (hotkey.key != static_cast<Key>(originalCode))
             continue;
 
           // Event type check
@@ -2657,10 +2714,10 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 
           // Modifier matching
           bool isModifierKey =
-              (code == KEY_LEFTALT || code == KEY_RIGHTALT ||
-               code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
-               code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
-               code == KEY_LEFTMETA || code == KEY_RIGHTMETA);
+              (originalCode == KEY_LEFTALT || originalCode == KEY_RIGHTALT ||
+               originalCode == KEY_LEFTCTRL || originalCode == KEY_RIGHTCTRL ||
+               originalCode == KEY_LEFTSHIFT || originalCode == KEY_RIGHTSHIFT ||
+               originalCode == KEY_LEFTMETA || originalCode == KEY_RIGHTMETA);
 
           bool modifierMatch;
           if (isModifierKey && hotkey.modifiers == 0) {
@@ -2712,17 +2769,19 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
           error("Error in hotkey callback: {}", e.what());
         }
       }
+      // Send the MAPPED key code to the system
       if (shouldBlockKey) {
         if (!down) {
-            // Always release keys so modifiers don’t stick
-            SendUInput(code, false);
+          // Always release keys so modifiers don't stick
+          SendUInput(mappedCode, false);
         } else {
-              debug("Blocking key {} down", code);
-          }
+          debug("Blocking key {} down (mapped from {})", mappedCode, originalCode);
+        }
       } else {
-          SendUInput(code, down);
+        SendUInput(mappedCode, down);
       }
     }
+  }
 
     close(fd);
   });

@@ -49,6 +49,7 @@ struct HotKey {
   bool exclusive = false;
   bool success = false;
   bool evdev = false;
+  bool x11 = false;
   HotkeyEventType eventType = HotkeyEventType::Both;
 };
 
@@ -106,7 +107,8 @@ public:
   bool isSuspended = false;
   bool globalEvdev = true;
   std::vector<HotKey> failedHotkeys;
-
+  std::set<int> x11Hotkeys;
+  std::set<int> evdevHotkeys;
   IO();
 
   ~IO();

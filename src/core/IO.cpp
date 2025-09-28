@@ -1213,28 +1213,6 @@ void IO::SendUInput(int keycode, bool down) {
       }
   }
 
-  // Check if this key should be blocked/grabbed
-  bool shouldBlock = false;
-  {
-      std::scoped_lock lock(grabbedKeysMutex);
-      if (!shouldBlock) {
-          for (const auto& [id, hotkey] : hotkeys) {
-              if (hotkey.evdev && hotkey.enabled && 
-                  static_cast<int>(hotkey.key) == keycode && 
-                  hotkey.blockInput) {
-                  shouldBlock = true;
-                        break;
-              }
-          }
-      }
-  }
-
-  // If key is grabbed, don't send it to the system
-  if (shouldBlock) {
-      debug("Blocked key {} ({})", keycode, down ? "down" : "up");
-      return;
-  }
-
   struct input_event ev{};
   gettimeofday(&ev.time, nullptr);
 
@@ -2662,8 +2640,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
     struct input_event ev{};
     std::map<int, bool> modState;
 
-    // In your evdev thread loop, modify this part:
-while (evdevRunning) {
+    while (evdevRunning) {
   ssize_t n = read(fd, &ev, sizeof(ev));
   if (n != sizeof(ev)) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -2677,7 +2654,7 @@ while (evdevRunning) {
   int code = ev.code;
   evdevKeyState[code] = down;
 
-  // Update modifier state (your existing code)
+  // Update modifier state
   modState[ControlMask] = evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
   modState[ShiftMask] = evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
   modState[Mod1Mask] = evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
@@ -2685,9 +2662,9 @@ while (evdevRunning) {
 
   keyDownState[code] = down;
 
-  // Process hotkeys and check if any matched
+  // Process hotkeys
   std::vector<std::function<void()>> callbacks;
-  bool anyHotkeyMatched = false;  // ← Add this flag
+  bool shouldBlockKey = false;
   
   {
       std::scoped_lock hotkeyLock(hotkeyMutex);
@@ -2701,7 +2678,7 @@ while (evdevRunning) {
           if (hotkey.eventType == HotkeyEventType::Up && down)
               continue;
           
-          // Modifier matching (your existing logic)
+          // Modifier matching
           bool isModifierKey = (code == KEY_LEFTALT || code == KEY_RIGHTALT || 
               code == KEY_LEFTCTRL || code == KEY_RIGHTCTRL ||
               code == KEY_LEFTSHIFT || code == KEY_RIGHTSHIFT ||
@@ -2737,17 +2714,14 @@ while (evdevRunning) {
                   continue;
               }
           }
-          
           hotkey.success = true;
-          anyHotkeyMatched = true;  // ← Set the flag
           
-          // Check if this hotkey should block input
-          if (hotkey.blockInput) {
-              anyHotkeyMatched = true;  // Ensure blocking even if no callback
-          }
-          
+          // Add callback if it exists
           if (hotkey.callback) {
               callbacks.push_back(hotkey.callback);
+          }
+          if (hotkey.blockInput) {
+              shouldBlockKey = true;
           }
       }
   }
@@ -2760,10 +2734,11 @@ while (evdevRunning) {
           error("Error in hotkey callback: {}", e.what());
       }
   }
-  if (!anyHotkeyMatched) {
-      SendUInput(code, down);
+  if (shouldBlockKey) {
+      debug("Blocking key {} ({}) - hotkey requested blocking", code, down ? "down" : "up");
   } else {
-      debug("Blocked key {} ({}) - hotkey matched with blocking", code, down ? "down" : "up");
+      // Pass key through to system
+      SendUInput(code, down);
   }
 }
 

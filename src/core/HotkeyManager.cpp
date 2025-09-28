@@ -4,6 +4,7 @@
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
 #include "automation/AutoRunner.hpp"
+#include "core/process/ProcessManager.hpp"
 #include "utils/Chain.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
@@ -306,6 +307,12 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("!f10", "~/scripts/str");
     AddHotkey("^!k", "livelink screen toggle 2");
     AddHotkey("^f10", "~/scripts/mpvv");
+    AddHotkey("!^f", "~/scripts/    freeze.sh thorium");
+    AddHotkey("!f", []{
+        auto activePid = WindowManager::GetActiveWindowPID();
+        //freeze process
+        ProcessManager::sendSignal(activePid, SIGSTOP);
+    });
 
     // Context-sensitive hotkeys
     AddContextualHotkey(" @nosymbol", "IsZooming",

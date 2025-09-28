@@ -86,6 +86,57 @@ static str defaultTerminal = "Cmd";
     #endif
     }
 
+    std::string WindowManager::GetActiveWindowTitle() {
+    #ifdef __linux__
+        wID active_win = GetActiveWindow();
+        if (active_win == 0) return "";
+
+        Display* display = DisplayManager::GetDisplay();
+        if (!display) return "";
+
+        // Try _NET_WM_NAME first (UTF-8)
+        Atom utf8Atom = XInternAtom(display, "UTF8_STRING", x11::XFalse);
+        Atom nameAtom = XInternAtom(display, "_NET_WM_NAME", x11::XFalse);
+        
+        char* windowName = nullptr;
+        Atom actualType;
+        int actualFormat;
+        unsigned long nItems, bytesAfter;
+        unsigned char* prop = nullptr;
+        std::string title;
+
+        // Try _NET_WM_NAME (UTF-8)
+        if (XGetWindowProperty(display, active_win, nameAtom, 0, 1024, x11::XFalse,
+                             utf8Atom, &actualType, &actualFormat, &nItems, &bytesAfter, &prop) == x11::XSuccess) {
+            if (prop) {
+                title = std::string(reinterpret_cast<char*>(prop));
+                XFree(prop);
+                return title;
+            }
+        }
+
+        // Fall back to WM_NAME (legacy)
+        XTextProperty textProp;
+        if (XGetWMName(display, active_win, &textProp) && textProp.value && textProp.nitems > 0) {
+            if (textProp.encoding == XA_STRING) {
+                title = std::string(reinterpret_cast<char*>(textProp.value));
+            } else {
+                char** list = nullptr;
+                int count = 0;
+                if (XmbTextPropertyToTextList(display, &textProp, &list, &count) >= 0 && count > 0 && *list) {
+                    title = std::string(*list);
+                    XFreeStringList(list);
+                }
+            }
+            XFree(textProp.value);
+        }
+
+        XFlush(display);
+        return title;
+    #else
+        return "";
+    #endif
+    }
 
     // Function to add a group
     void WindowManager::AddGroup(cstr groupName, cstr identifier) {

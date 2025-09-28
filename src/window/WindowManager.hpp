@@ -51,6 +51,7 @@ public:
     // Static window methods
     static XWindow GetActiveWindow();
     static pID GetActiveWindowPID();
+    static std::string GetActiveWindowTitle();
     static XWindow GetwIDByPID(pID pid);
     static XWindow GetwIDByProcessName(cstr processName);
     static XWindow FindByClass(cstr className);

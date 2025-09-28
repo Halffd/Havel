@@ -5,7 +5,6 @@
 #include "core/ConditionSystem.hpp"
 #include "automation/AutoRunner.hpp"
 #include "core/process/ProcessManager.hpp"
-#include "utils/Chain.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
@@ -70,8 +69,7 @@ void HotkeyManager::printHotkeys() const {
                            "mod=" + std::to_string(hotkey.modifiers) + " " +
                            "action='" + hotkey.action + "' " +
                            "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
-                           "block=" + (hotkey.blockInput ? "Y" : "N") + " " +
-                           "excl=" + (hotkey.exclusive ? "Y" : "N") + " " +
+                           "grab=" + (hotkey.grab ? "Y" : "N") + " " +
                            "succ=" + (hotkey.success ? "Y" : "N") + " " +
                            "susp=" + (hotkey.suspend ? "Y" : "N");
         info(status);
@@ -307,7 +305,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("!f10", "~/scripts/str");
     AddHotkey("^!k", "livelink screen toggle 2");
     AddHotkey("^f10", "~/scripts/mpvv");
-    AddHotkey("!^f", "~/scripts/    freeze.sh thorium");
+    AddHotkey("!^f", "~/scripts/freeze.sh thorium");
     AddHotkey("!f", []{
         auto activePid = WindowManager::GetActiveWindowPID();
         //freeze process
@@ -745,7 +743,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         0
     );
 
-    AddContextualHotkey("enter", "window.title ~ 'Genshin'", [this]() {
+    AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {
         if (genshinAutomationActive) {
             warning("Genshin automation is already active");
             return;
@@ -762,7 +760,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
             int counter = 0;
 
             while (counter < maxIterations && genshinAutomationActive && currentMode == "gaming") {
-                if (!evaluateCondition("window.title ~ 'Genshin'")) {
+                if (!evaluateCondition("window.title ~ 'Genshin Impact'")) {
                     info("Genshin automation: Window no longer active");
                     break;
                 }
@@ -784,7 +782,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         }).detach();
     }, nullptr, 0);
 
-    AddContextualHotkey("+s", "window.title ~ 'Genshin'", [this]() {
+    AddContextualHotkey("+s", "window.title ~ 'Genshin Impact'", [this]() {
         info("Genshin Impact detected - Skipping cutscene");
         io.SetTimer(100, [this]() {
             Rect pos = {1600, 700};
@@ -1181,8 +1179,9 @@ int HotkeyManager::AddGamingHotkey(const std::string& key,
                                    std::function<void()> trueAction,
                                    std::function<void()> falseAction, int id) {
     int gamingHotkeyId = AddContextualHotkey(key, "mode == 'gaming'",
-        [this]() { setMode("gaming"); },
-        [this]() { setMode("default"); }, id);
+        trueAction,
+        falseAction,
+        id);
     gamingHotkeyIds.push_back(gamingHotkeyId);
     return gamingHotkeyId;
 }
@@ -1228,14 +1227,7 @@ int HotkeyManager::AddContextualHotkey(const std::string& key, const std::string
     void HotkeyManager::setupConditionEngine() {
     conditionEngine->registerProperty("window.title", PropertyType::STRING, 
         []() -> std::string {
-            wID activeWindow = WindowManager::GetActiveWindow();
-            if (activeWindow == 0) return "";
-            try {
-                Window window(std::to_string(activeWindow), activeWindow);
-                return window.Title();
-            } catch (...) {
-                return "";
-            }
+            return WindowManager::GetActiveWindowTitle();
         });
     
     conditionEngine->registerProperty("window.class", PropertyType::STRING,

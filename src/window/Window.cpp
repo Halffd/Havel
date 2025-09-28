@@ -291,7 +291,10 @@ std::string Window::Title(wID win) {
 
     Atom wmName = XInternAtom(display.get(), "_NET_WM_NAME", x11::XTrue);
     if (wmName == x11::XNone) {
-        return "";
+        wmName = XInternAtom(display.get(), "WM_NAME", x11::XTrue);
+        if (wmName == x11::XNone) {
+            return "";
+        }
     }
 
     Atom actualType;

@@ -52,6 +52,7 @@ struct LaunchParams {
     std::vector<std::string> environment = {};
     bool inheritHandles = false;
     uint32_t timeoutMs = 0;
+    bool detachFromParent = false;  // If true, child will survive parent process death
 };
 
 struct ProcessResult {
@@ -77,6 +78,7 @@ public:
     static ProcessResult runAsync(const std::string& cmd);
     static ProcessResult runHidden(const std::string& cmd);
     static ProcessResult runShell(const std::string& cmd);
+    static ProcessResult runDetached(const std::string& cmd);
     
     // Terminal operations
     static ProcessResult terminal(const std::string& command,

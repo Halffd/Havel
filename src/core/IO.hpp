@@ -10,15 +10,12 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <sstream>
 #include <string>
 #include <sys/ioctl.h>
 #include <thread>
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
-#include <cstring>
-#include <cerrno>
 #include <condition_variable>
 #include <mutex>
 #include "x11.h"
@@ -122,6 +119,7 @@ class IO {
   std::atomic<bool> mouseEvdevRunning{false};
   std::string evdevDevicePath;
   std::string mouseEvdevDevicePath;
+  int mouseDeviceFd = -1;  // Track the mouse device file descriptor
   std::thread mouseEvdevThread;
   int mouseUinputFd = -1;
   std::atomic<bool> globalAltPressed{false};
@@ -181,6 +179,7 @@ public:
 
   // Mouse methods
   bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
+  bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
   
   // XInput2 hardware mouse control
   bool InitializeXInput2();
@@ -197,6 +196,7 @@ public:
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
   void executeComboAction(const std::string& action);
+  void CleanupUinputDevice();
   
   // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)
   void SetMouseSensitivity(double sensitivity);
@@ -334,7 +334,6 @@ private:
   bool ModifierMatch(unsigned int expected, unsigned int actual);
   bool EmitClick(int btnCode, int action);
 
-  void CleanupUinputDevice();
   bool SetupUinputDevice();
   // X11 hotkey monitoring
   void MonitorHotkeys();

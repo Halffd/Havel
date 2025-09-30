@@ -95,6 +95,15 @@ ProcessResult Launcher::runShell(const std::string& cmd) {
     return run(cmd, {Method::Shell});
 }
 
+ProcessResult Launcher::runDetached(const std::string& cmd) {
+    LaunchParams params;
+    params.method = Method::Async;
+    params.windowState = WindowState::Normal;
+    params.priority = Priority::Normal;
+    params.detachFromParent = true;
+    return run(cmd, params);
+}
+
 ProcessResult Launcher::terminal(const std::string& command, const std::string& terminalType) {
 #ifdef _WIN32
     std::string term = terminalType.empty() ? "cmd" : terminalType;
@@ -236,6 +245,11 @@ DWORD Launcher::getWindowsCreationFlags(const LaunchParams& params) {
         flags |= CREATE_NEW_CONSOLE;
     }
     
+    // Add process group and detach flags if requested
+    if (params.detachFromParent) {
+        flags |= CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS;
+    }
+    
     return flags;
 }
 
@@ -270,6 +284,29 @@ ProcessResult Launcher::executeUnix(const std::string& executable,
     
     if (pid == 0) {
         // Child process
+        if (params.detachFromParent) {
+            // Create a new session and process group
+            if (setsid() < 0) {
+                _exit(127);
+            }
+            
+            // Close all inherited file descriptors to prevent leaks
+            for (int fd = 3; fd < 256; ++fd) {
+                close(fd);
+            }
+            
+            // Redirect standard I/O to /dev/null if window is hidden
+            if (params.windowState == WindowState::Hidden) {
+                int devnull = open("/dev/null", O_RDWR);
+                if (devnull >= 0) {
+                    dup2(devnull, STDIN_FILENO);
+                    dup2(devnull, STDOUT_FILENO);
+                    dup2(devnull, STDERR_FILENO);
+                    if (devnull > 2) close(devnull);
+                }
+            }
+        }
+        
         setupUnixEnvironment(params);
         
         // Set priority
@@ -406,6 +443,11 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
             creationFlags |= CREATE_NO_WINDOW;
         }
         
+        // Add process group and detach flags if requested
+        if (params.detachFromParent) {
+            creationFlags |= CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS;
+        }
+        
         // Create the process
         if (!CreateProcessA(
             NULL,                   // No module name (use command line)
@@ -457,47 +499,78 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
         CloseHandle(pi.hThread);
         
     #else
-        // Unix implementation
+        // Unix implementation with detach support
         int pipe_stdin[2] = {-1, -1};
         int pipe_stdout[2] = {-1, -1};
         int pipe_stderr[2] = {-1, -1};
         
-        // Create pipes for IPC
-        if (pipe(pipe_stdin) == -1 || pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
-            result.error = "Failed to create pipes: " + std::string(strerror(errno));
-            result.success = false;
-            return result;
+        // Create pipes for IPC (skip if detached)
+        if (!params.detachFromParent) {
+            if (pipe(pipe_stdin) == -1 || pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
+                result.error = "Failed to create pipes: " + std::string(strerror(errno));
+                result.success = false;
+                return result;
+            }
         }
         
         pid_t pid = fork();
         
         if (pid < 0) {
             result.error = "fork() failed: " + std::string(strerror(errno));
-            close(pipe_stdin[0]);
-            close(pipe_stdin[1]);
-            close(pipe_stdout[0]);
-            close(pipe_stdout[1]);
-            close(pipe_stderr[0]);
-            close(pipe_stderr[1]);
+            if (!params.detachFromParent) {
+                close(pipe_stdin[0]); close(pipe_stdin[1]);
+                close(pipe_stdout[0]); close(pipe_stdout[1]);
+                close(pipe_stderr[0]); close(pipe_stderr[1]);
+            }
             result.success = false;
             return result;
         }
         
         if (pid == 0) {
             // Child process
-            close(pipe_stdin[1]);
-            close(pipe_stdout[0]);
-            close(pipe_stderr[0]);
             
-            // Redirect standard file descriptors
-            dup2(pipe_stdin[0], STDIN_FILENO);
-            dup2(pipe_stdout[1], STDOUT_FILENO);
-            dup2(pipe_stderr[1], STDERR_FILENO);
+            if (params.detachFromParent) {
+                // Create new session and process group
+                if (setsid() < 0) {
+                    _exit(127);
+                }
+                
+                // Close all inherited file descriptors
+                for (int fd = 3; fd < 256; ++fd) {
+                    close(fd);
+                }
+                
+                // Redirect standard I/O to /dev/null if window is hidden
+                if (params.windowState == WindowState::Hidden) {
+                    int devnull = open("/dev/null", O_RDWR);
+                    if (devnull >= 0) {
+                        dup2(devnull, STDIN_FILENO);
+                        dup2(devnull, STDOUT_FILENO);
+                        dup2(devnull, STDERR_FILENO);
+                        if (devnull > 2) close(devnull);
+                    }
+                }
+            } else {
+                // Regular child with pipes
+                close(pipe_stdin[1]);
+                close(pipe_stdout[0]);
+                close(pipe_stderr[0]);
+                
+                dup2(pipe_stdin[0], STDIN_FILENO);
+                dup2(pipe_stdout[1], STDOUT_FILENO);
+                dup2(pipe_stderr[1], STDERR_FILENO);
+                
+                close(pipe_stdin[0]);
+                close(pipe_stdout[1]);
+                close(pipe_stderr[1]);
+            }
             
-            // Close the original file descriptors
-            close(pipe_stdin[0]);
-            close(pipe_stdout[1]);
-            close(pipe_stderr[1]);
+            // Set up environment and working directory
+            setupUnixEnvironment(params);
+            
+            if (!params.workingDir.empty()) {
+                chdir(params.workingDir.c_str());
+            }
             
             // Execute the command
             execl("/bin/sh", "sh", "-c", command.c_str(), (char*)NULL);
@@ -506,18 +579,22 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
             _exit(127);
         } else {
             // Parent process
-            close(pipe_stdin[0]);
-            close(pipe_stdout[1]);
-            close(pipe_stderr[1]);
+            if (!params.detachFromParent) {
+                close(pipe_stdin[0]);
+                close(pipe_stdout[1]);
+                close(pipe_stderr[1]);
+            }
             
             result.pid = static_cast<int64_t>(pid);
+            result.success = true;
             
-            if (params.method == Method::Async) {
-                // For async, we don't wait for the process
-                close(pipe_stdin[1]);
-                close(pipe_stdout[0]);
-                close(pipe_stderr[0]);
-                result.success = true;
+            if (params.method == Method::Async || params.detachFromParent) {
+                // For async or detached, we don't wait for the process
+                if (!params.detachFromParent) {
+                    close(pipe_stdin[1]);
+                    close(pipe_stdout[0]);
+                    close(pipe_stderr[0]);
+                }
                 return result;
             }
             

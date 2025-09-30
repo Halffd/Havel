@@ -1,6 +1,7 @@
 #include "core/IO.hpp"
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <thread>
 
@@ -45,8 +46,8 @@ public:
     auto nowTicks = now.time_since_epoch().count();
 
     if (!accelerationActive.load(std::memory_order_relaxed)) {
-      accelStartTicks.store(nowTicks, std::memory_order_relaxed);
-      accelerationActive.store(true, std::memory_order_relaxed);
+        accelStartTicks.store(nowTicks, std::memory_order_relaxed);
+        accelerationActive.store(true, std::memory_order_relaxed);
     }
 
     long long elapsed = nowTicks - accelStartTicks.load(std::memory_order_relaxed);
@@ -56,10 +57,21 @@ public:
     float accel = acceleration.load(std::memory_order_relaxed);
 
     int newSpeed = base;
-    if (elapsed < 1000) {
-      float timeFactor = 1.0f + (elapsed / 1000.0f) * 2.0f;
-      newSpeed = std::min(base * 10,
-                          static_cast<int>(base * timeFactor * accel));
+    
+    // Fixed acceleration curve that doesn't cap at 1000ms
+    if (elapsed > 0) {
+        // Logarithmic curve that plateaus instead of dropping
+        float timeFactor = std::log(1.0f + elapsed / 200.0f) + 1.0f;  // Smoother ramp-up
+        int maxSpeed = base * 10;  // Your speed ceiling
+        
+        // Apply acceleration with plateau
+        newSpeed = std::min(maxSpeed, static_cast<int>(base * timeFactor * accel));
+        
+        // Ensure we never go below a certain accelerated minimum
+        int minAccelSpeed = static_cast<int>(base * 1.5f);
+        if (elapsed > 300) {  // After 300ms, maintain at least 1.5x speed
+            newSpeed = std::max(newSpeed, minAccelSpeed);
+        }
     }
 
     currentSpeed.store(newSpeed, std::memory_order_relaxed);
@@ -67,12 +79,12 @@ public:
 
     io.MouseMove(dx, dy, newSpeed, accel);
     resetCV.notify_all();
-  }
+}
 
-  void resetAcceleration() {
-    currentSpeed.store(baseSpeed.load(), std::memory_order_relaxed);
-    accelerationActive.store(false, std::memory_order_relaxed);
-  }
+void resetAcceleration() {
+  currentSpeed.store(baseSpeed.load(), std::memory_order_relaxed);
+  accelerationActive.store(false, std::memory_order_relaxed);
+}
 
   void setBaseSpeed(int speed) {
     baseSpeed.store(std::max(1, speed));

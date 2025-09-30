@@ -803,14 +803,14 @@ AddHotkey("@^!Home", [WinMove]() {
             showNotification("Genshin Automation", "No active automation to stop");
         }
     });
-}
-void HotkeyManager::PlayPause() {
-    if (mpv.IsSocketAlive()) {
-        mpv.SendCommand({"cycle", "pause"});
-    } else {
-        Launcher::runShell("playerctl play-pause");
-    }
-}
+                                                        }
+                                                        void HotkeyManager::PlayPause() {
+                                                            if (mpv.IsSocketAlive()) {
+                                                                mpv.SendCommand({"cycle", "pause"});
+                                                            } else {
+                                                                Launcher::runShell("playerctl play-pause");
+                                                            }
+                                                        }
 void HotkeyManager::RegisterMediaHotkeys() {
     int mpvBaseId = 10000;
 std::vector<HotkeyDefinition> mpvHotkeys = {
@@ -1117,7 +1117,7 @@ void HotkeyManager::updateAllConditionalHotkeys() {
         io.Map("Up","w");
         io.Map("Down","s");
         setMode("gaming");
-    } else if (currentMode != "default") {
+    } else if (!isGamingWindow() && currentMode != "default") {
         io.Map("Left","Left");
         io.Map("Right","Right");
         io.Map("Up","Up");
@@ -1285,21 +1285,13 @@ void HotkeyManager::showNotification(const std::string& title, const std::string
 
 bool HotkeyManager::isGamingWindow() {
     std::string windowClass = WindowManager::GetActiveWindowClass();
-    std::string windowTitle = "";
-    
-    wID activeWin = WindowManager::GetActiveWindow();
-    if (activeWin != 0) {
-        try {
-            Window w(activeWin);
-            windowTitle = w.Title();
-        } catch (...) { /* ignore */ }
-    }
+    std::string windowTitle = WindowManager::GetActiveWindowTitle();
     
     std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(), ::tolower);
     std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(), ::tolower);
 
     const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
-    
+    info("class: " + windowClass + " title: " + windowTitle);
     for (const auto& app : gamingApps) {
         if (windowClass.find(app) != std::string::npos || windowTitle.find(app) != std::string::npos) {
             return true;

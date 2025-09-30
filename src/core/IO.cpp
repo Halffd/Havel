@@ -740,6 +740,72 @@ bool IO::EmitClick(int btnCode, int action) {
 
   return true;
 }
+bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
+  if (mouseUinputFd < 0) return false;
+  
+  // Get screen dimensions for absolute coordinates
+  auto monitors = DisplayManager::GetMonitors();
+  if (monitors.empty()) return false;
+  
+  // Assume primary monitor for coordinate system
+  int screenWidth = monitors[0].width;
+  int screenHeight = monitors[0].height;
+  
+  // Get current position
+  Display* display = DisplayManager::GetDisplay();
+  int currentX = 0, currentY = 0;
+  if (display) {
+      ::Window root, child;
+      int rootX, rootY;
+      unsigned int mask;
+      XQueryPointer(display, DefaultRootWindow(display), &root, &child,
+                   &rootX, &rootY, &currentX, &currentY, &mask);
+  }
+  
+  // Animate to target with steps
+  int steps = std::max(10, static_cast<int>(std::abs(targetX - currentX) + std::abs(targetY - currentY)) / speed);
+  
+  for (int i = 0; i <= steps; i++) {
+      double progress = static_cast<double>(i) / steps;
+      
+      // Ease in-out curve
+      double easedProgress;
+      if (progress < 0.5) {
+          easedProgress = 2 * progress * progress;
+      } else {
+          easedProgress = -1 + (4 - 2 * progress) * progress;
+      }
+      
+      int currentTargetX = currentX + static_cast<int>((targetX - currentX) * easedProgress);
+      int currentTargetY = currentY + static_cast<int>((targetY - currentY) * easedProgress);
+      
+      // Send absolute position events
+      input_event ev = {};
+      
+      ev.type = EV_ABS;
+      ev.code = ABS_X;
+      ev.value = (currentTargetX * 65535) / screenWidth; // Scale to device range
+      write(mouseUinputFd, &ev, sizeof(ev));
+      
+      ev.type = EV_ABS;
+      ev.code = ABS_Y;
+      ev.value = (currentTargetY * 65535) / screenHeight; // Scale to device range
+      write(mouseUinputFd, &ev, sizeof(ev));
+      
+      // Sync
+      ev.type = EV_SYN;
+      ev.code = SYN_REPORT;
+      ev.value = 0;
+      write(mouseUinputFd, &ev, sizeof(ev));
+      
+      // Sleep based on acceleration
+      double currentSpeed = speed * (1.0 + (accel - 1.0) * std::min(progress * 2.0, 1.0));
+      int sleepMs = std::max(1, static_cast<int>(20 / currentSpeed));
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+  }
+  
+  return true;
+}
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   // Apply mouse sensitivity
   double adjustedDx, adjustedDy;
@@ -772,7 +838,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     actualDx = (dx > 0) ? 1 : -1;
   if (actualDy == 0 && dy != 0)
     actualDy = (dy > 0) ? 1 : -1;
-
+  
   // Send the events
   input_event ev = {};
 
@@ -780,7 +846,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     ev.type = EV_REL;
     ev.code = REL_X;
     ev.value = actualDx;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
   }
 
@@ -788,7 +854,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     ev.type = EV_REL;
     ev.code = REL_Y;
     ev.value = actualDy;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
   }
 
@@ -796,7 +862,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   ev.type = EV_SYN;
   ev.code = SYN_REPORT;
   ev.value = 0;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
+  if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
     return false;
 
   return true;
@@ -3317,88 +3383,265 @@ void IO::listInputDevices() {
 
 // Mouse event handling methods
 bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
-  if (mouseEvdevRunning)
+  if (mouseEvdevRunning) {
+    info("Mouse listener already running");
     return false;
+  }
 
+  if (mouseDevicePath.empty()) {
+    error("No mouse device path provided");
+    return false;
+  }
+
+  info("Starting mouse listener on device: {}", mouseDevicePath);
   mouseEvdevDevicePath = mouseDevicePath;
+  
+  // Verify device exists and is accessible
+  if (access(mouseDevicePath.c_str(), R_OK) != 0) {
+    error("Cannot access mouse device {}: {}", mouseDevicePath, strerror(errno));
+    return false;
+  }
+
   mouseEvdevRunning = true;
-
   mouseEvdevThread = std::thread([this]() {
-    int fd = open(mouseEvdevDevicePath.c_str(), O_RDONLY | O_NONBLOCK);
-    if (fd < 0) {
-      error("mouse evdev: cannot open {}: {}", mouseEvdevDevicePath,
-            strerror(errno));
-      mouseEvdevRunning = false;
-      return;
-    }
-
-    // Grab mouse exclusively
-    if (ioctl(fd, EVIOCGRAB, 1) < 0) {
-      warning("mouse evdev: failed to grab exclusively: {}", strerror(errno));
-      // Continue anyway - we can still monitor
-    } else {
-      info("mouse evdev: grabbed mouse exclusively");
-    }
-
-    if (!SetupMouseUinputDevice()) {
-      close(fd);
-      mouseEvdevRunning = false;
-      error("mouse evdev: failed to setup uinput device");
-      return;
-    }
-
-    struct input_event ev{};
-    bool leftPressed = false;
-    bool rightPressed = false;
-    bool altPressed = getGlobalAltState();
-
-    while (mouseEvdevRunning) {
-      ssize_t n = read(fd, &ev, sizeof(ev));
-      if (n != sizeof(ev)) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        continue;
+    int mouseDeviceFd = -1;  // Local variable, not member
+    
+    try {
+      info("Opening mouse device: {}", mouseEvdevDevicePath);
+      mouseDeviceFd = open(mouseEvdevDevicePath.c_str(), O_RDONLY | O_NONBLOCK);
+      if (mouseDeviceFd < 0) {
+        throw std::runtime_error("Failed to open device: " + std::string(strerror(errno)));
       }
 
-      bool shouldBlock = false;
-
-      // Handle different mouse events
-      switch (ev.type) {
-      case EV_KEY: // Mouse buttons
-        shouldBlock =
-            handleMouseButton(ev, leftPressed, rightPressed, altPressed);
-        break;
-
-      case EV_REL: // Mouse movement and scroll
-        shouldBlock = handleMouseRelative(ev, altPressed);
-        break;
-
-      case EV_ABS: // Absolute positioning (touchpads)
-        shouldBlock = handleMouseAbsolute(ev, altPressed);
-        break;
+      // Get device capabilities
+      unsigned long evbit = 0;
+      if (ioctl(mouseDeviceFd, EVIOCGBIT(0, sizeof(evbit) * 8), &evbit) < 0) {
+        error("Failed to get device capabilities: {}", strerror(errno));
+        close(mouseDeviceFd);
+        mouseEvdevRunning = false;
+        return;
       }
 
-      // Always forward the event to maintain proper device state
-      // Only block if explicitly told to do so
-      if (!shouldBlock) {
-        SendMouseUInput(ev);
+      // Check if device has mouse/pointer capabilities
+      if (!(evbit & (1 << EV_REL)) || !(evbit & (1 << EV_KEY))) {
+        error("Device does not appear to be a mouse (missing EV_REL or EV_KEY capability)");
+        close(mouseDeviceFd);
+        mouseEvdevRunning = false;
+        return;
       }
+
+      // Get device name
+      char name[256] = "Unknown";
+      if (ioctl(mouseDeviceFd, EVIOCGNAME(sizeof(name)), name) < 0) {
+        warning("Failed to get device name: {}", strerror(errno));
+      } else {
+        info("Mouse device name: {}", name);
+      }
+
+      // Try to grab mouse exclusively (non-blocking)
+      if (ioctl(mouseDeviceFd, EVIOCGRAB, 1) < 0) {
+        warning("Failed to grab mouse exclusively (another process may have it): {}", 
+                strerror(errno));
+        // Continue in non-exclusive mode
+      } else {
+        info("Successfully grabbed mouse exclusively");
+      }
+
+      if (!SetupMouseUinputDevice()) {
+        close(mouseDeviceFd);
+        mouseEvdevRunning = false;
+        error("mouse evdev: failed to setup uinput device");
+        return;
+      }
+
+      struct input_event ev{};
+      bool leftPressed = false;
+      bool rightPressed = false;
+      bool altPressed = getGlobalAltState();
+      fd_set fds;
+      struct timeval tv;
+      int retval;
+      
+      info("Starting mouse event loop");
+      
+      while (mouseEvdevRunning) {
+        FD_ZERO(&fds);
+        FD_SET(mouseDeviceFd, &fds);
+        
+        // Set timeout to 100ms
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+        
+        // Wait for input to become available
+        retval = select(mouseDeviceFd + 1, &fds, NULL, NULL, &tv);
+        
+        if (retval == -1) {
+          // Error occurred
+          if (errno == EINTR) continue;  // Interrupted by signal
+          error("select() error: {}", strerror(errno));
+          break;
+        } else if (retval == 0) {
+          // Timeout occurred, check if we should still be running
+          continue;
+        }
+        
+        // Data is available, read the event
+        ssize_t n = read(mouseDeviceFd, &ev, sizeof(ev));
+        if (n < 0) {
+          if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            continue;
+          }
+          error("mouse evdev: read error: {}", strerror(errno));
+          break;
+        } else if (n != sizeof(ev)) {
+          warning("Incomplete read: {} bytes (expected {})", n, sizeof(ev));
+          continue;
+        }
+
+        bool shouldBlock = false;
+
+        // Handle different mouse events
+        switch (ev.type) {
+        case EV_KEY: // Mouse buttons
+          debug("Mouse button event: code={}, value={}", ev.code, ev.value);
+          shouldBlock = handleMouseButton(ev, leftPressed, rightPressed, altPressed);
+          if (shouldBlock) {
+            debug("Blocking mouse button event: code={}", ev.code);
+          }
+          break;
+          
+        case EV_REL: // Mouse movement
+          {
+            // Only log movement events occasionally to avoid log spam
+            static int moveCounter = 0;
+            if (++moveCounter % 100 == 0) {
+              debug("Mouse movement: code={}, value={}", ev.code, ev.value);
+            }
+            shouldBlock = handleMouseRelative(ev, altPressed);
+            if (shouldBlock) {
+              if (moveCounter > 0) {
+                debug("Blocking mouse movement: code={}, value={}", ev.code, ev.value);
+                moveCounter = 0;
+              }
+            }
+          }
+          break;
+          
+        case EV_SYN:
+          break;
+          
+        default:
+          // Forward other events when not blocking
+          if (!shouldBlock && mouseUinputFd >= 0) {
+            if (write(mouseUinputFd, &ev, sizeof(ev)) != sizeof(ev)) {
+              error("Failed to forward event (type={}, code={}): {}", 
+                    ev.type, ev.code, strerror(errno));
+            }
+          } else {
+            debug("Unhandled event type: {}, code: {}, value: {}", 
+                  ev.type, ev.code, ev.value);
+          }
+          break;
+        }
+
+        // Forward non-blocked events to uinput
+        if (!shouldBlock) {
+          SendMouseUInput(ev);
+        }
+      }
+
+    } catch (const std::exception &e) {
+      error("Exception in mouse event loop: {}", e.what());
     }
 
-    close(fd);
+    // Cleanup section - always executed
+    info("Shutting down mouse event loop");
+    
+    if (mouseDeviceFd >= 0) {
+      // Release exclusive grab if we had one
+      if (ioctl(mouseDeviceFd, EVIOCGRAB, 0) < 0) {
+        warning("Failed to release exclusive grab: {}", strerror(errno));
+      }
+      close(mouseDeviceFd);
+    }
+    
+    if (mouseUinputFd >= 0) {
+      try {
+        // Send a sync event to ensure all pending events are processed
+        struct input_event syn = {};
+        syn.type = EV_SYN;
+        syn.code = SYN_REPORT;
+        syn.value = 0;
+        if (write(mouseUinputFd, &syn, sizeof(syn)) != sizeof(syn)) {
+          error("Failed to send final sync event: {}", strerror(errno));
+        }
+        
+        if (ioctl(mouseUinputFd, UI_DEV_DESTROY) < 0) {
+          error("Failed to destroy uinput device: {}", strerror(errno));
+        }
+        
+        close(mouseUinputFd);
+        mouseUinputFd = -1;
+        info("Successfully cleaned up uinput device");
+      } catch (const std::exception &e) {
+        error("Exception during uinput cleanup: {}", e.what());
+      }
+    }
+    
+    mouseEvdevRunning = false;
+    info("Mouse event loop stopped");
   });
-
+  
+  // Set thread name for debugging
+  std::string threadName = "mouse-evt-" + std::to_string(std::hash<std::thread::id>{}(mouseEvdevThread.get_id()));
+  pthread_setname_np(mouseEvdevThread.native_handle(), threadName.c_str());
+  
+  info("Mouse event listener started successfully");
   return true;
 }
 
 void IO::StopEvdevMouseListener() {
-  if (!mouseEvdevRunning)
+  if (!mouseEvdevRunning) {
+    debug("Mouse listener not running");
     return;
-
-  mouseEvdevRunning = false;
-
-  if (mouseEvdevThread.joinable()) {
-    mouseEvdevThread.join();
   }
+  
+  info("Stopping mouse event listener...");
+  mouseEvdevRunning = false;
+  
+  // Wait for the thread to finish with timeout
+  if (mouseEvdevThread.joinable()) {
+    // Give the thread time to notice mouseEvdevRunning = false
+    auto start = std::chrono::steady_clock::now();
+    const int TIMEOUT_MS = 3000;
+    
+    while (mouseEvdevThread.joinable()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start
+      ).count();
+      
+      if (elapsed > TIMEOUT_MS) {
+        warning("Mouse thread didn't stop within timeout, detaching");
+        mouseEvdevThread.detach();
+        break;
+      }
+      
+      // Try to join
+      if (mouseEvdevThread.joinable()) {
+        try {
+          mouseEvdevThread.join();
+          break;
+        } catch (...) {
+          // Join failed, continue waiting
+        }
+      }
+    }
+  }
+  
+  info("Mouse event listener stopped");
 }
 
 bool IO::handleMouseButton(const input_event &ev, bool &leftPressed,
@@ -3656,7 +3899,7 @@ bool IO::SetupMouseUinputDevice() {
   // Enable mouse events
   ioctl(mouseUinputFd, UI_SET_EVBIT, EV_KEY);
   ioctl(mouseUinputFd, UI_SET_EVBIT, EV_REL);
-  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_ABS);
+
   ioctl(mouseUinputFd, UI_SET_EVBIT, EV_SYN);
 
   // Enable mouse buttons
@@ -3671,10 +3914,6 @@ bool IO::SetupMouseUinputDevice() {
   ioctl(mouseUinputFd, UI_SET_RELBIT, REL_Y);
   ioctl(mouseUinputFd, UI_SET_RELBIT, REL_WHEEL);
   ioctl(mouseUinputFd, UI_SET_RELBIT, REL_HWHEEL);
-
-  // Enable absolute positioning (for touchpads)
-  ioctl(mouseUinputFd, UI_SET_ABSBIT, ABS_X);
-  ioctl(mouseUinputFd, UI_SET_ABSBIT, ABS_Y);
 
   if (ioctl(mouseUinputFd, UI_DEV_SETUP, &usetup) < 0) {
     error("mouse uinput: device setup failed: {}", strerror(errno));
@@ -3697,7 +3936,6 @@ bool IO::SetupMouseUinputDevice() {
 void IO::SendMouseUInput(const input_event &ev) {
   if (mouseUinputFd < 0)
     return;
-
   struct input_event uievent = ev;
   write(mouseUinputFd, &uievent, sizeof(uievent));
 

@@ -2,6 +2,7 @@
 #include "WindowManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "types.hpp"
+#include <X11/Xlib.h>
 #include <iostream>
 #include <sstream>
 #include <memory>
@@ -99,10 +100,20 @@ Rect Window::GetPositionX11(wID win) {
     if (!display) return {};
     
     XWindowAttributes attrs;
-    if(XGetWindowAttributes(display.get(), win, &attrs)) {
+    if (!XGetWindowAttributes(display.get(), win, &attrs)) {
+        return {};
+    }
+    
+    // Get ACTUAL screen coordinates
+    int screenX, screenY;
+    ::Window child;
+    if (!XTranslateCoordinates(display.get(), win, DefaultRootWindow(display.get()), 
+                              0, 0, &screenX, &screenY, &child)) {
+        // Fallback to parent-relative if translation fails
         return {attrs.x, attrs.y, attrs.width, attrs.height};
     }
-    return {};
+    
+    return {screenX, screenY, attrs.width, attrs.height};
 }
 
 // Wayland implementation of GetPosition

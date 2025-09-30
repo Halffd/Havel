@@ -541,27 +541,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         brightnessManager.increaseTemperature(1,500);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
-    float* gamma = new float(1.0f);
-    io.Hotkey("@!q", [this, gamma]() {
-        info("Decreasing gamma");
-        *gamma -= 0.05f;
-        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
-    });
-    io.Hotkey("@!w", [this, gamma]() {
-        info("Increasing gamma");
-        *gamma += 0.05f;
-        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
-    });
-    io.Hotkey("@!g", [this, gamma]() {
-        info("Reset gamma");
-        if(*gamma != 1.0f){
-            *gamma = 1.0f;
-        } else {
-            *gamma = 1.42f;
-        }
-        Launcher::runShell(std::string("~/scripts/gamma-toggle.sh " + std::to_string(*gamma) + " " + std::to_string(brightnessManager.getBrightness())));
-    });
-
     // Mouse wheel + click combinations
     io.Hotkey("!Button5", [this]() {
         std::cout << "alt+Button5" << std::endl;
@@ -585,47 +564,65 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w, pos.h + h);
     };
     
-    AddHotkey("!Home", [WinMove]() {
-        info("Home Move full screen");
-        auto win = Window(WindowManager::GetActiveWindow());
-        auto rect = win.Pos();
-        auto monitor = DisplayManager::GetMonitorAt(rect.x, rect.y);
-        WinMove(monitor.x, monitor.y, monitor.width, monitor.height); 
-    });
-    AddHotkey("!@numpad5", [this, WinMove]() {
+
+
+AddHotkey("@!Home", [this]() {
+    info("Toggle fullscreen");
+    WindowManager::ToggleFullscreen(WindowManager::GetActiveWindow());
+});
+
+AddHotkey("@^!Home", [WinMove]() {
+    info("Move to fullscreen on current monitor");
+    auto win = Window(WindowManager::GetActiveWindow());
+    auto rect = win.Pos();
+    auto monitor = DisplayManager::GetMonitorAt(rect.x, rect.y);
+    // Move to monitor position, not relative
+    WindowManager::MoveResize(win.ID(), monitor.x, monitor.y, monitor.width, monitor.height);
+});
+    AddHotkey("!5", [this, WinMove]() {
         info("NP5 Move down");
         WinMove(0, winOffset, 0, 0); 
     });
     
-    AddHotkey("!@numpad8", [this, WinMove]() {
+    AddHotkey("!6", [this, WinMove]() {
         info("NP8 Move up");
         WinMove(0, -winOffset, 0, 0); 
     });
     
-    AddHotkey("!@numpad4", [this, WinMove]() {
+    AddHotkey("!7", [this, WinMove]() {
         WinMove(-winOffset, 0, 0, 0); 
     });
     
-    AddHotkey("!@numpad6", [this, WinMove]() {
+    AddHotkey("!8", [this, WinMove]() {
         WinMove(winOffset, 0, 0, 0); 
     });
     
-    AddHotkey("!+@numpad8", [this, WinMove]() {
+    AddHotkey("!+5", [this, WinMove]() {
         WinMove(0, 0, 0, -winOffset); 
     });
     
-    AddHotkey("!+@numpad5", [this, WinMove]() {
+    AddHotkey("!+6", [this, WinMove]() {
         WinMove(0, 0, 0, winOffset); 
     });
     
-    AddHotkey("!+@numpad4", [this, WinMove]() {
+    AddHotkey("!+7", [this, WinMove]() {
         WinMove(0, 0, -winOffset, 0);
     });
     
-    AddHotkey("!+@numpad6", [this, WinMove]() {
+    AddHotkey("!+8", [this, WinMove]() {
         WinMove(0, 0, winOffset, 0); 
     });
     
+    // Center on monitor (Alt+NumPad5)
+    AddHotkey("!9", [this]() {  // NumPad5
+        info("Center window on current monitor");
+        auto win = Window(WindowManager::GetActiveWindow());
+        auto rect = win.Pos();
+        auto monitor = DisplayManager::GetMonitorAt(rect.x, rect.y);
+        int centerX = monitor.x + (monitor.width - rect.w) / 2;
+        int centerY = monitor.y + (monitor.height - rect.h) / 2;
+        WindowManager::MoveResize(win.ID(), centerX, centerY, rect.w, rect.h);
+    });
     AddHotkey("@numpad5", [this]() { 
         info("NP5 Click");
         io.Click(MouseButton::Left, MouseAction::Hold);

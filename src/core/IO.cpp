@@ -11,6 +11,9 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <unistd.h>
+#include <sys/eventfd.h>
+#include <sys/select.h>
+#include <future>
 
 // X11 includes
 #include <X11/Xlib.h>
@@ -457,7 +460,7 @@ void IO::MonitorHotkeys() {
           
           // Find matching hotkeys
           {
-            std::scoped_lock<std::mutex> lock(hotkeyMutex);
+            std::scoped_lock<std::timed_mutex> lock(hotkeyMutex);
             for (const auto &[id, hotkey] : hotkeys) {
               if (!hotkey.enabled || hotkey.evdev) // Skip evdev hotkeys in X11
                 continue;
@@ -1322,7 +1325,7 @@ int IO::ParseMouseButton(const std::string &str) {
 
 bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
                    std::function<void()> callback) {
-  std::lock_guard<std::mutex> lock(hotkeyMutex);
+  std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
   std::cout << "Adding hotkey: " << alias << std::endl;
   HotKey hotkey;
   hotkey.alias = alias;
@@ -1484,7 +1487,7 @@ done_parsing:
   }
   // Add to maps if has action (skip for combo subs)
   if (hasAction) {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
     hotkeys[id] = hotkey;
@@ -1571,7 +1574,7 @@ done_parsing_modifiers:
   }
   // Add to maps if has action (skip for combo subs)
   if (hasAction) {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
     hotkeys[id] = hotkey;
@@ -2597,6 +2600,13 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   if (evdevRunning)
     return false;
   evdevDevicePath = devicePath;
+  // Create eventfd for clean shutdown signaling
+  evdevShutdownFd = eventfd(0, EFD_NONBLOCK);
+  if (evdevShutdownFd < 0) {
+    error("Failed to create shutdown eventfd: {}", strerror(errno));
+    return false;
+  }
+
   evdevRunning = true;
   SendUInput(KEY_RESERVED, false);  // no-op
 
@@ -2625,19 +2635,70 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
     std::map<int, bool> modState;
 
     while (evdevRunning) {
+      // Use select() to monitor both evdev fd and shutdown fd
+      fd_set readfds;
+      FD_ZERO(&readfds);
+      FD_SET(fd, &readfds);
+      FD_SET(evdevShutdownFd, &readfds);
+      
+      int maxfd = std::max(fd, evdevShutdownFd);
+      struct timeval tv;
+      tv.tv_sec = 0;
+      tv.tv_usec = 10000;  // 10ms timeout
+      
+      int ret = select(maxfd + 1, &readfds, nullptr, nullptr, &tv);
+      
+      if (ret < 0) {
+        if (errno != EINTR) {
+          error("select() error: {}", strerror(errno));
+        }
+        continue;
+      }
+      
+      // Check if shutdown was signaled
+      if (FD_ISSET(evdevShutdownFd, &readfds)) {
+        info("Shutdown signal received, stopping evdev listener");
+        break;
+      }
+      
+      // No events ready
+      if (!FD_ISSET(fd, &readfds)) {
+        continue;
+      }
+      
       // Read multiple events at once
       ssize_t n = read(fd, evs, sizeof(evs));
       if (n < (ssize_t)sizeof(struct input_event)) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
           error("Error reading from evdev: {}", strerror(errno));
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
 
-      // Process all complete events in the buffer
+      // DEADLOCK FIX #3: Process all complete events with safety limits
       int num_events = n / sizeof(struct input_event);
+      
+      // Sanity check: prevent processing absurdly large number of events
+      if (num_events > 64 || num_events < 0) {
+        error("Invalid number of events: {} - possible memory corruption", num_events);
+        continue;
+      }
+      
+      auto batch_start = std::chrono::steady_clock::now();
+      constexpr int MAX_BATCH_PROCESSING_MS = 100;  // Max time to process a batch
+      
       for (int i = 0; i < num_events; i++) {
+        // Check if we've been processing this batch for too long
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - batch_start
+        ).count();
+        
+        if (elapsed > MAX_BATCH_PROCESSING_MS) {
+          error("Batch processing timeout after {}ms at event {}/{} - breaking to prevent hang", 
+                elapsed, i, num_events);
+          break;
+        }
+        
         auto& ev = evs[i];
         
         if (ev.type != EV_KEY)
@@ -2691,7 +2752,17 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       bool shouldBlockKey = false;
 
       {
-        std::scoped_lock hotkeyLock(hotkeyMutex);
+        // DEADLOCK FIX #2: Use try_lock with timeout to prevent indefinite blocking
+        std::unique_lock<std::timed_mutex> hotkeyLock(hotkeyMutex, std::defer_lock);
+        
+        // Try to acquire lock with timeout
+        if (!hotkeyLock.try_lock_for(std::chrono::milliseconds(100))) {
+          error("Failed to acquire hotkey mutex within timeout - possible deadlock detected");
+          // Skip this event rather than blocking forever
+          continue;
+        }
+        
+        // Now we have the lock, quickly collect callbacks and release
         for (auto &[id, hotkey] : hotkeys) {
           if (!hotkey.enabled || !hotkey.evdev)
             continue;
@@ -2759,15 +2830,44 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             shouldBlockKey = true;
           }
         }
+        // Mutex automatically released here when hotkeyLock goes out of scope
       }
 
-      // Execute callbacks
+      // Execute callbacks asynchronously with timeout protection
       for (auto &callback : callbacks) {
-        try {
-          callback();
-        } catch (const std::exception &e) {
-          error("Error in hotkey callback: {}", e.what());
-        }
+        pendingCallbacks++;
+        
+        // Launch callback in detached thread with timeout monitoring
+        std::thread([this, callback]() {
+          auto startTime = std::chrono::steady_clock::now();
+          
+          try {
+            // Set flag that callback is in progress
+            callbackInProgress = true;
+            lastCallbackStart = startTime;
+            
+            // Execute callback with timeout protection
+            auto future = std::async(std::launch::async, callback);
+            
+            // Wait for callback with timeout
+            auto status = future.wait_for(std::chrono::milliseconds(CALLBACK_TIMEOUT_MS));
+            
+            if (status == std::future_status::timeout) {
+              error("Hotkey callback timed out after {}ms - callback may be blocked", CALLBACK_TIMEOUT_MS);
+              // Note: We can't safely kill the callback thread, but we've logged it
+              // and won't wait for it anymore
+            }
+            
+          } catch (const std::exception &e) {
+            error("Error in hotkey callback: {}", e.what());
+          } catch (...) {
+            error("Unknown error in hotkey callback");
+          }
+          
+          callbackInProgress = false;
+          pendingCallbacks--;
+          callbackCv.notify_all();
+        }).detach();
       }
       // Send the MAPPED key code to the system
       if (shouldBlockKey) {
@@ -2792,15 +2892,74 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 void IO::StopEvdevHotkeyListener() {
   if (!evdevRunning)
     return;
+    
+  info("Stopping evdev hotkey listener...");
   evdevRunning = false;
-  if (evdevThread.joinable())
-    evdevThread.join();
+  
+  // Signal the shutdown eventfd to interrupt the select() call
+  if (evdevShutdownFd >= 0) {
+    uint64_t val = 1;
+    if (write(evdevShutdownFd, &val, sizeof(val)) < 0) {
+      error("Failed to write to shutdown eventfd: {}", strerror(errno));
+    }
+  }
+  
+  // Wait for the thread to finish with timeout
+  if (evdevThread.joinable()) {
+    auto start = std::chrono::steady_clock::now();
+    constexpr int JOIN_TIMEOUT_MS = 5000;
+    
+    // Try to join with timeout by checking periodically
+    while (evdevThread.joinable()) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start
+      ).count();
+      
+      if (elapsed > JOIN_TIMEOUT_MS) {
+        error("Evdev thread failed to stop within {}ms - detaching", JOIN_TIMEOUT_MS);
+        evdevThread.detach();
+        break;
+      }
+      
+      // Check if thread has finished
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      if (evdevThread.joinable()) {
+        // Thread still running, try again
+        continue;
+      }
+    }
+    
+    // Final join if still joinable
+    if (evdevThread.joinable()) {
+      evdevThread.join();
+    }
+  }
+  
+  // Wait for any pending callbacks to complete (with timeout)
+  if (pendingCallbacks > 0) {
+    info("Waiting for {} pending callbacks to complete...", pendingCallbacks.load());
+    std::unique_lock<std::mutex> lock(callbackMutex);
+    auto status = callbackCv.wait_for(lock, std::chrono::milliseconds(3000), 
+      [this] { return pendingCallbacks == 0; });
+    
+    if (!status) {
+      error("Timeout waiting for callbacks - {} still pending", pendingCallbacks.load());
+    }
+  }
+  
+  // Close shutdown eventfd
+  if (evdevShutdownFd >= 0) {
+    close(evdevShutdownFd);
+    evdevShutdownFd = -1;
+  }
+  
   {
     std::scoped_lock lock(blockedKeysMutex);
     blockedKeys.clear();
   }
 
   CleanupUinputDevice();
+  info("Evdev hotkey listener stopped");
 }
 
 void IO::CleanupUinputDevice() {

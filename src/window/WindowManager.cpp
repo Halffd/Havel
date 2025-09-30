@@ -915,35 +915,141 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
     bool WindowManager::Move(wID windowId, int x, int y, bool centerOnScreen) {
         return MoveResize(windowId, x, y, -1, -1); // Use -1 to indicate no resize
     }
-            
     bool WindowManager::MoveResize(wID windowId, int x, int y, int width, int height) {
         #if defined(__linux__)
             Display *display = DisplayManager::GetDisplay();
             if (!display || windowId == 0) return false;
-            
+        
             XWindowAttributes attrs;
             if (!XGetWindowAttributes(display, windowId, &attrs)) {
                 error("Failed to get attributes for MoveResize");
                 return false;
             }
-
-            // If a dimension is -1, use the current value.
+        
             int finalX = (x == -1) ? attrs.x : x;
             int finalY = (y == -1) ? attrs.y : y;
             int finalWidth = (width == -1) ? attrs.width : (width > 0 ? width : 1);
             int finalHeight = (height == -1) ? attrs.height : (height > 0 ? height : 1);
-
+        
+            // Handle fullscreen/maximized windows
+            bool wasFullscreen = IsWindowFullscreen(windowId);
+            
+            if (wasFullscreen) {
+                ToggleFullscreen(windowId);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            } 
+        
+            // Method 1: EWMH (works with 90% of normal apps)
+            Atom moveresize = XInternAtom(display, "_NET_MOVERESIZE_WINDOW", x11::XTrue);
+            if (moveresize != x11::XNone) {
+                XEvent ev = {};
+                ev.xclient.type = x11::XClientMessage;
+                ev.xclient.window = windowId;
+                ev.xclient.message_type = moveresize;
+                ev.xclient.format = 32;
+                ev.xclient.data.l[0] = (1<<8) | (1<<9) | (1<<10) | (1<<11);
+                ev.xclient.data.l[1] = finalX;
+                ev.xclient.data.l[2] = finalY;
+                ev.xclient.data.l[3] = finalWidth;
+                ev.xclient.data.l[4] = finalHeight;
+                
+                if (XSendEvent(display, DefaultRootWindow(display), x11::XFalse,
+                              SubstructureRedirectMask | SubstructureNotifyMask, &ev)) {
+                    XFlush(display);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    
+                    // Verify it worked
+                    int actualX, actualY;
+                    Window child;
+                    XTranslateCoordinates(display, windowId, DefaultRootWindow(display), 0, 0, &actualX, &actualY, &child);
+                    if (abs(actualX - finalX) < 50 && abs(actualY - finalY) < 50) {
+                        debug("EWMH move succeeded");
+                        return true;
+                    }
+                }
+            }
+        
+            // Method 2: Check for Wine/Game windows and try parent
+            XClassHint classHint;
+            if (XGetClassHint(display, windowId, &classHint)) {
+                if (classHint.res_class) {
+                    std::string className = classHint.res_class;
+                    std::transform(className.begin(), className.end(), className.begin(), ::tolower);
+                    
+                    if (className.find("wine") != std::string::npos || 
+                        className.find("steam") != std::string::npos ||
+                        className.find("game") != std::string::npos) {
+                        
+                        Window root, parent;
+                        Window* children;
+                        unsigned int nchildren;
+                        
+                        if (XQueryTree(display, windowId, &root, &parent, &children, &nchildren)) {
+                            if (children) XFree(children);
+                            if (parent != root) {
+                                debug("Wine/Game detected, trying parent window");
+                                XMoveResizeWindow(display, parent, finalX, finalY, finalWidth, finalHeight);
+                                XFlush(display);
+                                if (classHint.res_name) XFree(classHint.res_name);
+                                if (classHint.res_class) XFree(classHint.res_class);
+                                return true;
+                            }
+                        }
+                    }
+                    XFree(classHint.res_class);
+                }
+                if (classHint.res_name) XFree(classHint.res_name);
+            }
+        
+            // Method 3: Direct XMoveResizeWindow (works for most remaining cases)
             XMoveResizeWindow(display, windowId, finalX, finalY, finalWidth, finalHeight);
             XFlush(display);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            // Verify direct approach worked
+            int actualX, actualY;
+            Window child;
+            XTranslateCoordinates(display, windowId, DefaultRootWindow(display), 0, 0, &actualX, &actualY, &child);
+            if (abs(actualX - finalX) < 50 && abs(actualY - finalY) < 50) {
+                debug("Direct XMoveResizeWindow succeeded");
+                return true;
+            }
+        
+            // Method 4: Nuclear option - XConfigureWindow with synthetic event
+            debug("Stubborn window detected, using nuclear approach");
+            
+            XWindowChanges changes;
+            changes.x = finalX;
+            changes.y = finalY;
+            changes.width = finalWidth;
+            changes.height = finalHeight;
+            changes.stack_mode = Above;
+            XConfigureWindow(display, windowId, CWX | CWY | CWWidth | CWHeight | CWStackMode, &changes);
+            
+            // Send synthetic ConfigureNotify to make app think it moved
+            XEvent configureEvent = {};
+            configureEvent.xconfigure.type = x11::XConfigureNotify;
+            configureEvent.xconfigure.event = windowId;
+            configureEvent.xconfigure.window = windowId;
+            configureEvent.xconfigure.x = finalX;
+            configureEvent.xconfigure.y = finalY;
+            configureEvent.xconfigure.width = finalWidth;
+            configureEvent.xconfigure.height = finalHeight;
+            configureEvent.xconfigure.border_width = attrs.border_width;
+            configureEvent.xconfigure.above = x11::XNone;
+            configureEvent.xconfigure.override_redirect = attrs.override_redirect;
+            XSendEvent(display, windowId, x11::XFalse,
+                       StructureNotifyMask, &configureEvent);
+            
+            XFlush(display);
+            
+            debug("Applied nuclear move/resize to window {}", windowId);
             return true;
-        #elif defined(WINDOWS)
-            // Windows implementation...
-            return false;
+        
         #else
             return false;
         #endif
-    }
-            
+        }       
     bool WindowManager::Center(wID windowId) {
         #ifdef __linux__
             Display* display = DisplayManager::GetDisplay();
@@ -1266,28 +1372,71 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         }
 #endif
     }
-    
     void WindowManager::ToggleFullscreen(wID windowId) {
         #ifdef __linux__
-        Display* display = DisplayManager::GetDisplay();
-        if (!display || windowId == 0) return;
-
-        Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
-        Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
+            Display* display = DisplayManager::GetDisplay();
+            if (!display || windowId == 0) return;
         
-        XEvent ev{};
-        ev.xclient.type = x11::XClientMessage;
-        ev.xclient.window = windowId;
-        ev.xclient.message_type = stateAtom;
-        ev.xclient.format = 32;
-        ev.xclient.data.l[0] = 2; // _NET_WM_STATE_TOGGLE
-        ev.xclient.data.l[1] = fsAtom;
-        
-        XSendEvent(display, DefaultRootWindow(display), x11::XFalse,
-                   SubstructureRedirectMask | SubstructureNotifyMask, &ev);
-        XFlush(display);
+            debug("Nuclear fullscreen toggle for stubborn game: {}", windowId);
+            
+            // Step 1: Try to break the game's exclusive fullscreen first
+            XGrabServer(display); // Block other X11 operations temporarily
+            
+            // Force the window to be windowed by removing fullscreen properties
+            Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
+            Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);
+            
+            if (stateAtom != x11::XNone && fsAtom != x11::XNone) {
+                // Force REMOVE fullscreen state first
+                XEvent ev{};
+                ev.xclient.type = x11::XClientMessage;
+                ev.xclient.window = windowId;
+                ev.xclient.message_type = stateAtom;
+                ev.xclient.format = 32;
+                ev.xclient.data.l[0] = 0; // _NET_WM_STATE_REMOVE
+                ev.xclient.data.l[1] = fsAtom;
+                ev.xclient.data.l[2] = 0;
+                ev.xclient.data.l[3] = 1;
+                ev.xclient.data.l[4] = 0;
+                
+                XSendEvent(display, DefaultRootWindow(display), x11::XFalse,
+                           SubstructureRedirectMask | SubstructureNotifyMask, &ev);
+            }
+            
+            XUngrabServer(display);
+            XFlush(display);
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            
+            // Step 2: Brute force window properties
+            XSetWindowAttributes attrs;
+            attrs.override_redirect = x11::XFalse;  // Let WM control it
+            attrs.backing_store = NotUseful;
+            XChangeWindowAttributes(display, windowId, 
+                                   CWBorderPixel | CWBackingStore, &attrs);
+            
+            // Step 3: Force resize to break exclusive mode
+            auto monitors = DisplayManager::GetMonitors();
+            if (!monitors.empty()) {
+                auto& monitor = monitors[0];
+                
+                // First resize to something NOT fullscreen
+                XMoveResizeWindow(display, windowId, 100, 100, 
+                                 monitor.width - 200, monitor.height - 200);
+                XFlush(display);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                
+                // Then resize to fullscreen
+                XMoveResizeWindow(display, windowId, monitor.x, monitor.y, 
+                                 monitor.width, monitor.height);
+                XFlush(display);
+            }
+            
+            XRaiseWindow(display, windowId);
+            XSetInputFocus(display, windowId, RevertToPointerRoot, CurrentTime);
+            XFlush(display);
         #endif
-    }
+        }
+        
     bool WindowManager::IsWindowFullscreen(Window windowId) {
         Display* display = DisplayManager::GetDisplay();
         if (!display) return false;

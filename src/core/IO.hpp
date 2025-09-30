@@ -19,6 +19,8 @@
 #include <vector>
 #include <cstring>
 #include <cerrno>
+#include <condition_variable>
+#include <mutex>
 #include "x11.h"
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
@@ -125,6 +127,16 @@ class IO {
   std::atomic<bool> globalAltPressed{false};
   std::chrono::steady_clock::time_point lastLeftPress;
   std::chrono::steady_clock::time_point lastRightPress;
+  
+  // Deadlock protection
+  int evdevShutdownFd = -1;  // eventfd for clean shutdown
+  std::atomic<bool> callbackInProgress{false};
+  std::chrono::steady_clock::time_point lastCallbackStart;
+  std::mutex callbackMutex;
+  std::condition_variable callbackCv;
+  std::atomic<int> pendingCallbacks{0};
+  static constexpr int CALLBACK_TIMEOUT_MS = 5000;  // 5 second timeout for callbacks
+  static constexpr int WATCHDOG_INTERVAL_MS = 1000;  // Check every second
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
@@ -344,7 +356,7 @@ private:
   // Static members
   static bool hotkeyEnabled;
   static int hotkeyCount;
-  std::mutex hotkeyMutex;
+  std::timed_mutex hotkeyMutex;  // Use timed_mutex for try_lock_for() support
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
   

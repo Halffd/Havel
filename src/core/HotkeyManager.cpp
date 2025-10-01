@@ -36,19 +36,17 @@ std::string HotkeyManager::getMode() const {
     return currentMode;
 }
 
-void HotkeyManager::Zoom(int zoom, IO& io) {
+void HotkeyManager::Zoom(int zoom) {
     if (zoom < 0) zoom = 0;
-    else if (zoom > 2) zoom = 2;
+    else if (zoom > 3) zoom = 3;
     if (zoom == 1) {
-        io.Send("^{up}");
+        io.Send("@^{Up}");
     } else if (zoom == 0) {
-        io.Send("^{down}");
+        io.Send("@^{Down}");
     } else if (zoom == 2) {
-        io.Send("^/");
+        io.Send("@^/");
     } else if (zoom == 3) {
-        io.Send("^+/");
-    } else {
-        std::cout << "Invalid zoom level: " << zoom << std::endl;
+        io.Send("@^+/");
     }
 }
 void HotkeyManager::printHotkeys() const {
@@ -284,17 +282,17 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     io.Hotkey("@+numpad7", [this]() {
         info("Zoom 1");
-        Zoom(1, io);
+        Zoom(1);
     });
 
     io.Hotkey("@+numpad1", [this]() {
         info("Zoom 0");
-        Zoom(0, io);
+        Zoom(0);
     });
 
     io.Hotkey("@+numpad5", [this]() {
         info("Zoom 2");
-        Zoom(2, io);
+        Zoom(2);
     });
 
     AddHotkey("^f1", "~/scripts/f1.sh -1");
@@ -319,18 +317,18 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Context-sensitive hotkeys
-    AddContextualHotkey(" @nosymbol", "IsZooming",
+    AddHotkey("@kc89", 
         [this]() { // When zooming
-            std::cout << "kc0 t" << std::endl;
-            Zoom(2, io);
-        },
-        [this]() { // When not zooming
-            Zoom(3, io);
-        },
-        0
+            setZooming(!isZooming());
+            if (isZooming()) {
+                Zoom(3);
+            } else {
+                Zoom(2);
+            }
+        }
     );
-
-    AddContextualHotkey("!x", "!(window.class ~ 'emacs')",
+    std::string terminal = Configs::Get().Get<std::string>("General.Terminal", "st");
+    AddContextualHotkey("!x", "!(window.title ~ 'emacs' || window.title ~ 'alacritty')",
         []() {
             Launcher::runAsync("/bin/alacritty");
         },
@@ -542,11 +540,38 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
     // Mouse wheel + click combinations
-    io.Hotkey("!Button5", [this]() {
-        std::cout << "alt+Button5" << std::endl;
-        Zoom(1, io);
+    io.Hotkey("@!WheelUp", [this]() {
+        info("Alt + Wheel up");
+        Zoom(1);
     });
-
+    io.Hotkey("@!WheelDown", [this]() {
+        info("Alt + Wheel down");
+        Zoom(0);
+    });
+    io.Hotkey("@LButton & RButton", [this]() {
+        info("Left click + right click");
+        Zoom(2);
+    });
+    io.Hotkey("@RButton & LButton", [this]() {
+        info("Right click + left click");
+        Zoom(1);
+    });
+    io.Hotkey("@RButton & WheelUp", [this]() {
+        info("Right click + wheel up");
+        Zoom(1);
+    });
+    io.Hotkey("@RButton & WheelDown", [this]() {
+        info("Right click + wheel down");
+        Zoom(0);
+    });
+    io.Hotkey("@!-", [this]() {
+        io.mouseSensitivity -= std::max(0.0, io.mouseSensitivity - Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
+        info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
+    });
+    io.Hotkey("@!=", [this]() {
+        io.mouseSensitivity += std::min(1.0, io.mouseSensitivity + Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
+        info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
+    });
     //Emergency exit
     AddHotkey("@^!+#Esc", [this]() {
         info("Emergency exit");
@@ -722,7 +747,7 @@ AddHotkey("@^!Home", [WinMove]() {
     AddGamingHotkey("'",
         [this]() {
             info("Gaming hotkey: Moving mouse to 1600,700 and autoclicking");
-            io.MouseMove(1600, 700, 10, 1.0f);
+            io.MouseMoveTo(1600, 700, 10, 1.0f);
             startAutoclicker("Button1");
         },
         nullptr, 
@@ -1041,11 +1066,6 @@ void HotkeyManager::RegisterSystemHotkeys() {
     io.Hotkey("+!Esc", []() {
         Launcher::runShell("gnome-system-monitor &");
     });
-    // Toggle zooming mode
-    AddHotkey("!+z", [this]() {
-        setZooming(!isZooming());
-        logWindowEvent("ZOOM_MODE", (isZooming() ? "Enabled" : "Disabled"));
-    });
 
     AddHotkey("!d", [this]() {
         showBlackOverlay();
@@ -1291,7 +1311,6 @@ bool HotkeyManager::isGamingWindow() {
     std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(), ::tolower);
 
     const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
-    info("class: " + windowClass + " title: " + windowTitle);
     for (const auto& app : gamingApps) {
         if (windowClass.find(app) != std::string::npos || windowTitle.find(app) != std::string::npos) {
             return true;
@@ -1443,12 +1462,6 @@ if (keyName.substr(0, 2) == "sc") {
 
 if (keyName == "Menu") {
     result = "kc135";
-    logKeyConversion(keyName, result);
-    return result;
-}
-
-if (keyName == "NoSymbol") {
-    result = "kc0";
     logKeyConversion(keyName, result);
     return result;
 }

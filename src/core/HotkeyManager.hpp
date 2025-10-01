@@ -49,7 +49,7 @@ namespace havel {
         virtual ~HotkeyManager() {
             cleanup();
         }
-        void Zoom(int zoom, IO& io);
+        void Zoom(int zoom);
         void printHotkeys() const;
         // Debug flags
         bool verboseKeyLogging = false;

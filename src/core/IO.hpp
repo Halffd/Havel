@@ -315,6 +315,8 @@ public:
   bool TryPressKey(int keycode);
   bool TryReleaseKey(int keycode);
   static Key GetKeyCode(cstr keyName);
+  double mouseSensitivity = 1.0;  // Default sensitivity (1.0 = 100%)
+  double scrollSpeed = 1.0;       // Default scroll speed (1.0 = 100%)
 private:
   Display* display;
   int uinputFd;
@@ -361,8 +363,6 @@ private:
   
   // Mouse control members
   mutable std::mutex mouseMutex;
-  double mouseSensitivity = 1.0;  // Default sensitivity (1.0 = 100%)
-  double scrollSpeed = 1.0;       // Default scroll speed (1.0 = 100%)
   
   // XInput2 device ID for the pointer device
   int xinput2DeviceId = -1;

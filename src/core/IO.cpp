@@ -69,6 +69,7 @@ IO::IO() {
   lastLeftPress = std::chrono::steady_clock::now();
   lastRightPress = std::chrono::steady_clock::now();
   InitKeyMap();
+  mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
 
   // Start hotkey monitoring thread for X11
 #ifdef __linux__
@@ -1210,21 +1211,23 @@ void IO::Send(cstr keys) {
 #else
   // Linux implementation with state tracking
   bool useUinput = true;
+  bool useX11 = false;
   std::vector<std::string> activeModifiers;
   std::unordered_map<std::string, std::string> modifierKeys = {
-      {"ctrl", "LControl"}, {"rctrl", "RControl"}, {"shift", "LShift"},
-      {"rshift", "RShift"}, {"alt", "LAlt"},       {"ralt", "RAlt"},
+      {"ctrl", "LCtrl"}, {"rctrl", "RCtrl"}, {"shift", "LShift"},
+      {"rshift", "RShift"}, {"alt", "LAlt"}, {"ralt", "RAlt"},
       {"meta", "LMeta"},    {"rmeta", "RMeta"},
   };
 
   std::unordered_map<char, std::string> shorthandModifiers = {
       {'^', "ctrl"}, {'!', "alt"},           {'+', "shift"},
-      {'#', "meta"}, {'@', "toggle_uinput"}, {'~', "emergency_release"},
+      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}
   };
 
   auto SendKeyImpl = [&](const std::string &keyName, bool down) {
-    if (useUinput || globalEvdev) {
-      int code = EvdevNameToKeyCode(keyName);
+    if (useUinput || (!useX11 && globalEvdev)) {
+      int code = EvdevNameToKeyCode(toLower(keyName));
+      info("Sending key: " + keyName + " (" + std::to_string(down) + ") code: " + std::to_string(code));
       if (code != -1) {
         SendUInput(code, down); // Now includes state tracking
       }
@@ -1236,6 +1239,10 @@ void IO::Send(cstr keys) {
   auto SendKey = [&](const std::string &keyName, bool down) {
     SendKeyImpl(keyName, down);
   };
+  //release all modifiers
+  for (const auto &mod : modifierKeys) {
+    SendKey(mod.second, false);
+  }
 
   size_t i = 0;
   while (i < keys.length()) {
@@ -1245,8 +1252,10 @@ void IO::Send(cstr keys) {
         useUinput = !useUinput;
         if (Configs::Get().GetVerboseKeyLogging())
           debug(useUinput ? "Switched to uinput" : "Switched to X11");
-      } else if (mod == "emergency_release") {
-        EmergencyReleaseAllKeys();
+      } else if (mod == "toggle_x11") {
+        useX11 = !useX11;
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug(useX11 ? "Switched to X11" : "Switched to uinput");
       } else if (modifierKeys.count(mod)) {
         SendKey(modifierKeys[mod], true);
         activeModifiers.push_back(mod);
@@ -1576,6 +1585,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
   // Parse modifiers (always X11 style)
   int modifiers = 0;
   size_t i = 0;
+  bool useX11 = false;
   while (i < hotkeyStr.size()) {
     switch (hotkeyStr[i]) {
     case '^':
@@ -1589,6 +1599,9 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       break;
     case '#':
       modifiers |= Mod4Mask;
+      break;
+    case '%':
+      useX11 = true;
       break;
     default:
       goto done_parsing_modifiers;
@@ -1607,8 +1620,8 @@ done_parsing_modifiers:
   hotkey.grab = grab;
   hotkey.suspend = false;
   hotkey.success = false;
-  hotkey.evdev = false;
-  hotkey.x11 = true;
+  hotkey.evdev = !useX11;
+  hotkey.x11 = useX11;
   hotkey.eventType = HotkeyEventType::Down;
   // Check for mouse button or wheel
   int button = ParseMouseButton(rest);
@@ -1654,8 +1667,8 @@ done_parsing_modifiers:
 
 bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
                 int id) {
-  bool isMouseHotkey = (rawInput.find("Button") != std::string::npos ||
-                        rawInput.find("Wheel") != std::string::npos);
+  bool isMouseHotkey = (toLower(rawInput).find("button") != std::string::npos ||
+                        toLower(rawInput).find("wheel") != std::string::npos || toLower(rawInput).find("scroll") != std::string::npos);
   HotKey hk;
   if (isMouseHotkey) {
     hk = AddMouseHotkey(rawInput, std::move(action), id, true);
@@ -2098,7 +2111,9 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"9", KEY_9},
       {"0", KEY_0},
       {"minus", KEY_MINUS},
+      {"-", KEY_MINUS},
       {"equal", KEY_EQUAL},
+      {"=", KEY_EQUAL},
       {"backspace", KEY_BACKSPACE},
       {"tab", KEY_TAB},
       {"q", KEY_Q},
@@ -2127,12 +2142,16 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"k", KEY_K},
       {"l", KEY_L},
       {"semicolon", KEY_SEMICOLON},
+      {";", KEY_SEMICOLON},
       {"apostrophe", KEY_APOSTROPHE},
+      {"'", KEY_APOSTROPHE},
       {"grave", KEY_GRAVE},
+      {"`", KEY_GRAVE},
       {"shift", KEY_LEFTSHIFT},
       {"lshift", KEY_LEFTSHIFT},
       {"rshift", KEY_RIGHTSHIFT},
       {"backslash", KEY_BACKSLASH},
+      {"\\", KEY_BACKSLASH},
       {"z", KEY_Z},
       {"x", KEY_X},
       {"c", KEY_C},
@@ -2141,8 +2160,14 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"n", KEY_N},
       {"m", KEY_M},
       {"comma", KEY_COMMA},
+      {",", KEY_COMMA},
       {"dot", KEY_DOT},
+      {"period", KEY_DOT},
+      {".", KEY_DOT},
       {"slash", KEY_SLASH},
+      {"/", KEY_SLASH},
+      {"less", KEY_102ND},
+      {"<", KEY_102ND},
       {"alt", KEY_LEFTALT},
       {"lalt", KEY_LEFTALT},
       {"ralt", KEY_RIGHTALT},
@@ -2160,6 +2185,18 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"f10", KEY_F10},
       {"f11", KEY_F11},
       {"f12", KEY_F12},
+      {"f13", KEY_F13},
+      {"f14", KEY_F14},
+      {"f15", KEY_F15},
+      {"f16", KEY_F16},
+      {"f17", KEY_F17},
+      {"f18", KEY_F18},
+      {"f19", KEY_F19},
+      {"f20", KEY_F20},
+      {"f21", KEY_F21},
+      {"f22", KEY_F22},
+      {"f23", KEY_F23},
+      {"f24", KEY_F24},
       {"insert", KEY_INSERT},
       {"delete", KEY_DELETE},
       {"home", KEY_HOME},
@@ -2193,13 +2230,19 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"numpadadd", KEY_KPPLUS},
       {"numpadsub", KEY_KPMINUS},
       {"numpadmul", KEY_KPASTERISK},
+      {"*", KEY_KPASTERISK},
       {"numpaddiv", KEY_KPSLASH},
       {"numpaddec", KEY_KPDOT},
+      {"numpaddot", KEY_KPDOT},
+      {"numpaddel", KEY_KPDOT},
       {"numpadenter", KEY_KPENTER},
       {"menu", KEY_MENU},
       {"win", KEY_LEFTMETA},
+      {"meta", KEY_LEFTMETA},
       {"lwin", KEY_LEFTMETA},
+      {"lmeta", KEY_LEFTMETA},
       {"rwin", KEY_RIGHTMETA},
+      {"rmeta", KEY_RIGHTMETA},
       {"nosymbol", KEY_RO}};
 
   auto it = keyMap.find(keyName);
@@ -2807,7 +2850,9 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
           evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
       modState[Mod4Mask] =
           evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
-
+      if(modState[Mod1Mask]){
+        setGlobalAltState(down);
+      }
       keyDownState[originalCode] = down;
       if (mappedCode != originalCode) {
         keyDownState[mappedCode] = down;
@@ -3801,9 +3846,23 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
   // Handle mouse movement
   switch (ev.code) {
   case REL_X: // Mouse X movement
-  case REL_Y: // Mouse Y movement
-    // Always forward movement events
-    return false;
+  case REL_Y: { // Mouse Y movement
+    // Scale the movement value based on sensitivity
+    struct input_event scaledEvent = ev;
+    
+    if (ev.code == REL_X || ev.code == REL_Y) {
+        // Apply sensitivity scaling
+        double scaledValue = ev.value * mouseSensitivity;
+        scaledEvent.value = static_cast<int32_t>(std::round(scaledValue));
+        
+        debug("Scaling mouse movement: original={}, sensitivity={}x, scaled={}", 
+              ev.value, mouseSensitivity, scaledEvent.value);
+        
+        // Forward the scaled event
+        SendMouseUInput(scaledEvent);
+        return true;
+        }
+      }
     
   case REL_WHEEL: // Vertical scroll
     if (altPressed) {
@@ -3950,15 +4009,32 @@ void IO::SendMouseUInput(const input_event &ev) {
 void IO::setGlobalAltState(bool pressed) { globalAltPressed.store(pressed); }
 
 bool IO::getGlobalAltState() { return globalAltPressed.load(); }
-
 void IO::executeComboAction(const std::string &action) {
-  // Find and execute the matching hotkey
-  for (auto &[id, hotkey] : hotkeys) {
-    if (hotkey.action == action && hotkey.callback) {
-      hotkey.callback();
-      return;
-    }
+  // Map combo action names to hotkey aliases
+  std::unordered_map<std::string, std::string> comboToAlias = {
+      {"left_right_combo", "@LButton & RButton"},
+      {"right_left_combo", "@RButton & LButton"}, 
+      {"alt_middle_click", "@!MButton"},
+      {"alt_scroll_up", "@!WheelUp"},
+      {"alt_scroll_down", "@!WheelDown"},
+      {"alt_hscroll", "@!HWheelLeft"}
+  };
+  
+  // Find the matching alias
+  auto it = comboToAlias.find(action);
+  if (it != comboToAlias.end()) {
+      std::string targetAlias = it->second;
+      
+      // Look for hotkey with matching alias
+      for (auto &[id, hotkey] : hotkeys) {
+          if (hotkey.alias == targetAlias && hotkey.callback) {
+              info("Executing combo action '{}' via hotkey '{}'", action, targetAlias);
+              hotkey.callback();
+              return;
+          }
+      }
   }
+  
   info("No handler registered for combo action: {}", action);
 }
 

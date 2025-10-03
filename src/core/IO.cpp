@@ -2180,7 +2180,7 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
       {"f5", KEY_F5},
       {"f6", KEY_F6},
       {"f7", KEY_F7},
-      {"f8", KEY_F8},
+      {"f8", KEY_F8}, 
       {"f9", KEY_F9},
       {"f10", KEY_F10},
       {"f11", KEY_F11},
@@ -2841,16 +2841,40 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         evdevKeyState[mappedCode] = down;
       }
 
-      // Update modifier state
-      modState[ControlMask] =
-          evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
-      modState[ShiftMask] =
-          evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
-      modState[Mod1Mask] =
-          evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
-      modState[Mod4Mask] =
-          evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
-      if(modState[Mod1Mask]){
+      // Track active inputs for combos
+      {
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        if (down) activeInputs[mappedCode] = std::chrono::steady_clock::now();
+        else activeInputs.erase(mappedCode);
+      }
+
+      // Update modifier state from evdev
+      bool ctrl = evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
+      bool shift = evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
+      bool alt = evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
+      bool meta = evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
+      modState[ControlMask] = ctrl;
+      modState[ShiftMask] = shift;
+      modState[Mod1Mask] = alt;
+      modState[Mod4Mask] = meta;
+      // Update exported atomic mask
+      int mask = 0;
+      if (ctrl) mask |= ControlMask;
+      if (shift) mask |= ShiftMask;
+      if (alt) mask |= Mod1Mask;
+      if (meta) mask |= Mod4Mask;
+      currentEvdevModifiers.store(mask);
+      // Update detailed state
+      currentModifierState.leftCtrl = evdevKeyState[KEY_LEFTCTRL];
+      currentModifierState.rightCtrl = evdevKeyState[KEY_RIGHTCTRL];
+      currentModifierState.leftShift = evdevKeyState[KEY_LEFTSHIFT];
+      currentModifierState.rightShift = evdevKeyState[KEY_RIGHTSHIFT];
+      currentModifierState.leftAlt = evdevKeyState[KEY_LEFTALT];
+      currentModifierState.rightAlt = evdevKeyState[KEY_RIGHTALT];
+      currentModifierState.leftMeta = evdevKeyState[KEY_LEFTMETA];
+      currentModifierState.rightMeta = evdevKeyState[KEY_RIGHTMETA];
+      // Legacy global alt
+      if (modState[Mod1Mask]){
         setGlobalAltState(down);
       }
       keyDownState[originalCode] = down;
@@ -2948,25 +2972,57 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       for (auto &callback : callbacks) {
         pendingCallbacks++;
         
-        // Launch callback in detached thread with timeout monitoring
-        std::thread([this, callback]() {
+        // Store thread handle to allow proper cleanup
+        auto thread = std::make_shared<std::thread>([this, callback]() {
           auto startTime = std::chrono::steady_clock::now();
           
           try {
             // Set flag that callback is in progress
-            callbackInProgress = true;
-            lastCallbackStart = startTime;
+            {
+              std::lock_guard<std::mutex> lock(callbackMutex);
+              callbackInProgress = true;
+              lastCallbackStart = startTime;
+            }
             
             // Execute callback with timeout protection
-            auto future = std::async(std::launch::async, callback);
+            std::atomic<bool> callbackCompleted{false};
+            std::exception_ptr callbackException;
             
-            // Wait for callback with timeout
-            auto status = future.wait_for(std::chrono::milliseconds(CALLBACK_TIMEOUT_MS));
+            // Run the callback in a separate thread so we can time it out
+            std::thread worker([&]() {
+              try {
+                callback();
+              } catch (...) {
+                callbackException = std::current_exception();
+              }
+              callbackCompleted = true;
+            });
             
-            if (status == std::future_status::timeout) {
-              error("Hotkey callback timed out after {}ms - callback may be blocked", CALLBACK_TIMEOUT_MS);
-              // Note: We can't safely kill the callback thread, but we've logged it
-              // and won't wait for it anymore
+            // Wait for the worker thread with timeout
+            auto start = std::chrono::steady_clock::now();
+            while (!callbackCompleted) {
+              if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(CALLBACK_TIMEOUT_MS)) {
+                error("Hotkey callback timed out after {}ms - forcing termination", CALLBACK_TIMEOUT_MS);
+                
+                // Try to gracefully terminate the worker thread
+                if (worker.joinable()) {
+                  pthread_cancel(worker.native_handle());
+                  if (worker.joinable()) {
+                    worker.detach();
+                  }
+                }
+                break;
+              }
+              std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            
+            if (worker.joinable()) {
+              if (worker.joinable()) worker.join();
+            }
+            
+            // Re-throw any exceptions from the callback
+            if (callbackException) {
+              std::rethrow_exception(callbackException);
             }
             
           } catch (const std::exception &e) {
@@ -2975,10 +3031,19 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             error("Unknown error in hotkey callback");
           }
           
-          callbackInProgress = false;
-          pendingCallbacks--;
-          callbackCv.notify_all();
-        }).detach();
+          {
+            std::lock_guard<std::mutex> lock(callbackMutex);
+            callbackInProgress = false;
+            pendingCallbacks--;
+            callbackCv.notify_all();
+          }
+        });
+        
+        // Store the thread handle for potential cleanup
+        {
+          std::lock_guard<std::mutex> lock(callbackMutex);
+          activeCallbackThreads.push_back(std::move(thread));
+        }
       }
       // Send the MAPPED key code to the system
       if (shouldBlockKey) {
@@ -3046,15 +3111,42 @@ void IO::StopEvdevHotkeyListener() {
     }
   }
   
-  // Wait for any pending callbacks to complete (with timeout)
+  // First, try to gracefully stop pending callbacks
   if (pendingCallbacks > 0) {
     info("Waiting for {} pending callbacks to complete...", pendingCallbacks.load());
-    std::unique_lock<std::mutex> lock(callbackMutex);
-    auto status = callbackCv.wait_for(lock, std::chrono::milliseconds(3000), 
-      [this] { return pendingCallbacks == 0; });
     
-    if (!status) {
-      error("Timeout waiting for callbacks - {} still pending", pendingCallbacks.load());
+    // Wait for callbacks with a timeout
+    auto start = std::chrono::steady_clock::now();
+    constexpr int CALLBACK_TIMEOUT_MS = 3000;
+    
+    while (pendingCallbacks > 0) {
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start
+      ).count();
+      
+      if (elapsed > CALLBACK_TIMEOUT_MS) {
+        error("Timeout waiting for callbacks - {} still pending, forcing cleanup", 
+              pendingCallbacks.load());
+        
+        // Forcefully terminate any remaining callback threads
+        std::lock_guard<std::mutex> lock(callbackMutex);
+        for (auto& thread : activeCallbackThreads) {
+          if (thread && thread->joinable()) {
+            // Try to cancel the thread
+            pthread_cancel(thread->native_handle());
+            // Give it a moment to terminate
+            if (thread->joinable()) {
+              thread->detach();
+            }
+          }
+        }
+        activeCallbackThreads.clear();
+        pendingCallbacks = 0;
+        break;
+      }
+      
+      // Wait with a small delay to avoid busy-waiting
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
   }
   
@@ -3500,9 +3592,6 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
       }
 
       struct input_event ev{};
-      bool leftPressed = false;
-      bool rightPressed = false;
-      bool altPressed = getGlobalAltState();
       fd_set fds;
       struct timeval tv;
       int retval;
@@ -3548,14 +3637,16 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
 
         // Handle different mouse events
         switch (ev.type) {
-        case EV_KEY: // Mouse buttons
-          debug("Mouse button event: code={}, value={}", ev.code, ev.value);
-          shouldBlock = handleMouseButton(ev, leftPressed, rightPressed, altPressed);
-          if (shouldBlock) {
-            debug("Blocking mouse button event: code={}", ev.code);
+        case EV_KEY: {
+            if (ev.code == BTN_LEFT || ev.code == BTN_RIGHT || ev.code == BTN_MIDDLE ||
+                ev.code == BTN_SIDE || ev.code == BTN_EXTRA) {
+              shouldBlock = handleMouseButton(ev);
+            } else {
+              // Non-mouse key events on mouse device (e.g., extra buttons)
+              shouldBlock = handleMouseButton(ev);
+            }
+            break;
           }
-          break;
-          
         case EV_REL: // Mouse movement
           {
             // Only log movement events occasionally to avoid log spam
@@ -3563,7 +3654,7 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
             if (++moveCounter % 100 == 0) {
               debug("Mouse movement: code={}, value={}", ev.code, ev.value);
             }
-            shouldBlock = handleMouseRelative(ev, altPressed);
+            shouldBlock = handleMouseRelative(ev);
             if (shouldBlock) {
               if (moveCounter > 0) {
                 debug("Blocking mouse movement: code={}, value={}", ev.code, ev.value);
@@ -3689,21 +3780,12 @@ void IO::StopEvdevMouseListener() {
   info("Mouse event listener stopped");
 }
 
-bool IO::handleMouseButton(const input_event &ev, bool &leftPressed,
-                           bool &rightPressed, bool altPressed) {
+bool IO::handleMouseButton(const input_event &ev) {
   bool shouldBlock = false;
   auto now = std::chrono::steady_clock::now();
 
   // Get current modifier state
-  int currentModifiers = 0;
-  if (IsCtrlPressed())
-    currentModifiers |= ControlMask;
-  if (IsShiftPressed())
-    currentModifiers |= ShiftMask;
-  if (altPressed)
-    currentModifiers |= Mod1Mask;
-  if (IsWinPressed())
-    currentModifiers |= Mod4Mask;
+  int currentModifiers = GetCurrentModifiers();
 
   // Check for registered hotkeys
   for (auto &[id, hotkey] : hotkeys) {
@@ -3751,64 +3833,87 @@ bool IO::handleMouseButton(const input_event &ev, bool &leftPressed,
     }
   }
 
-  // Legacy combo detection (keep for backward compatibility)
+  // Note: additional mouse combo logic handled above in per-button branches
+  // Maintain button states and activeInputs for all buttons
   switch (ev.code) {
-  case BTN_LEFT:
-    leftPressed = (ev.value == 1);
-    if (leftPressed) {
-      lastLeftPress = now;
-    }
-    if (leftPressed && rightPressed) {
-      auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          now - lastRightPress)
-                          .count();
-      if (timeDiff < 500) {
-        info("🎯 LEFT+RIGHT COMBO DETECTED! ({}ms)", timeDiff);
-        executeComboAction("left_right_combo");
-        shouldBlock = true;
+    case BTN_LEFT:
+      if (ev.value == 1) {
+        evdevMouseButtonState[BTN_LEFT] = true;
+        leftButtonDown.store(true);
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs[BTN_LEFT] = now;
+      } else if (ev.value == 0) {
+        evdevMouseButtonState[BTN_LEFT] = false;
+        leftButtonDown.store(false);
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs.erase(BTN_LEFT);
       }
-    }
-    break;
-  case BTN_RIGHT:
-    rightPressed = (ev.value == 1);
-    if (rightPressed) {
-      lastRightPress = now;
-      if (leftPressed) {
-        auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            now - lastLeftPress)
-                            .count();
-        if (timeDiff < 500) {
-          info("🎯 RIGHT+LEFT COMBO DETECTED! ({}ms)", timeDiff);
-          executeComboAction("right_left_combo");
-          shouldBlock = true;
-        }
+      break;
+    case BTN_RIGHT:
+      if (ev.value == 1) {
+        evdevMouseButtonState[BTN_RIGHT] = true;
+        rightButtonDown.store(true);
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs[BTN_RIGHT] = now;
+      } else if (ev.value == 0) {
+        evdevMouseButtonState[BTN_RIGHT] = false;
+        rightButtonDown.store(false);
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs.erase(BTN_RIGHT);
       }
+      break;
+    case BTN_MIDDLE:
+      if (ev.value == 1) {
+        evdevMouseButtonState[BTN_MIDDLE] = true;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs[BTN_MIDDLE] = now;
+      } else if (ev.value == 0) {
+        evdevMouseButtonState[BTN_MIDDLE] = false;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs.erase(BTN_MIDDLE);
+      }
+      break;
+    case BTN_SIDE:
+      if (ev.value == 1) {
+        evdevMouseButtonState[BTN_SIDE] = true;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs[BTN_SIDE] = now;
+      } else if (ev.value == 0) {
+        evdevMouseButtonState[BTN_SIDE] = false;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs.erase(BTN_SIDE);
+      }
+      break;
+    case BTN_EXTRA:
+      if (ev.value == 1) {
+        evdevMouseButtonState[BTN_EXTRA] = true;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs[BTN_EXTRA] = now;
+      } else if (ev.value == 0) {
+        evdevMouseButtonState[BTN_EXTRA] = false;
+        std::lock_guard<std::mutex> lk(activeInputsMutex);
+        activeInputs.erase(BTN_EXTRA);
+      }
+      break;
+  }
+  // Evaluate any registered combo hotkeys (mouse + modifiers)
+  for (auto &[id, hotkey] : hotkeys) {
+    if (!hotkey.enabled || hotkey.type != HotkeyType::Combo)
+      continue;
+    if ((hotkey.modifiers & GetCurrentModifiers()) != hotkey.modifiers)
+      continue;
+    if (EvaluateCombo(hotkey)) {
+      if (hotkey.callback) hotkey.callback();
+      if (hotkey.grab) return true;
+      shouldBlock = shouldBlock || hotkey.grab;
     }
-    break;
-  case BTN_MIDDLE:
-    if (ev.value == 1 && altPressed) {
-      info("🎯 ALT+MIDDLE CLICK!");
-      executeComboAction("alt_middle_click");
-      shouldBlock = true;
-    }
-    break;
   }
   return shouldBlock;
 }
 
-bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
+bool IO::handleMouseRelative(const input_event &ev) {
   bool shouldBlock = false;
-
-  // Get current modifier state
-  int currentModifiers = 0;
-  if (IsCtrlPressed())
-    currentModifiers |= ControlMask;
-  if (IsShiftPressed())
-    currentModifiers |= ShiftMask;
-  if (altPressed)
-    currentModifiers |= Mod1Mask;
-  if (IsWinPressed())
-    currentModifiers |= Mod4Mask;
+  int currentModifiers = GetCurrentModifiers();
 
   // Check for wheel events first
   if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
@@ -3865,7 +3970,7 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
       }
     
   case REL_WHEEL: // Vertical scroll
-    if (altPressed) {
+    if (currentModifiers & Mod1Mask) {
       info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
 
       if (ev.value > 0) {
@@ -3879,7 +3984,7 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
     break;
 
   case REL_HWHEEL: // Horizontal scroll
-    if (altPressed) {
+    if ((currentModifiers & Mod1Mask)) {
       info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
       executeComboAction("alt_hscroll");
       shouldBlock = true;
@@ -3887,20 +3992,58 @@ bool IO::handleMouseRelative(const input_event &ev, bool altPressed) {
     break;
   }
 
+  // Evaluate combo hotkeys as well (e.g., wheel + button combos)
+  for (auto &[id, hotkey] : hotkeys) {
+    if (!hotkey.enabled || hotkey.type != HotkeyType::Combo)
+      continue;
+    if ((hotkey.modifiers & currentModifiers) != hotkey.modifiers)
+      continue;
+    if (EvaluateCombo(hotkey)) {
+      if (hotkey.callback) hotkey.callback();
+      if (hotkey.grab) return true;
+      shouldBlock = shouldBlock || hotkey.grab;
+    }
+  }
+
   return shouldBlock;
 }
 
-bool IO::handleMouseAbsolute(const input_event &ev, bool altPressed) {
+bool IO::EvaluateCombo(const HotKey &combo) {
+  // Require all parts to be currently active (pressed) within comboTimeWindow
+  if (combo.comboSequence.empty()) return false;
+  auto now = std::chrono::steady_clock::now();
+  std::lock_guard<std::mutex> lk(activeInputsMutex);
+  for (const auto &part : combo.comboSequence) {
+    int code = -1;
+    if (part.type == HotkeyType::MouseButton) {
+      code = part.mouseButton;
+    } else if (part.type == HotkeyType::MouseWheel) {
+      // Map wheel up/down to their evdev codes
+      if (part.mouseButton == 8) {  // Wheel up
+          code = REL_WHEEL;
+      } else if (part.mouseButton == 9) {  // Wheel down
+          code = REL_WHEEL_HI_RES;
+      }
+    } else if (part.type == HotkeyType::Keyboard) {
+      // Map keyboard key to evdev code
+      code = part.key;
+      if (code <= 0) {
+          // If keyCode not set, try to get it from the key name
+          code = EvdevNameToKeyCode(part.alias);
+      }     
+    }
+    if (code < 0) return false;
+    auto it = activeInputs.find(code);
+    if (it == activeInputs.end()) return false;
+    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(now - it->second).count();
+    if (age > combo.comboTimeWindow) return false;
+  }
+  return true;
+}
+
+bool IO::handleMouseAbsolute(const input_event &ev) {
   // Get current modifier state
-  int currentModifiers = 0;
-  if (IsCtrlPressed())
-    currentModifiers |= ControlMask;
-  if (IsShiftPressed())
-    currentModifiers |= ShiftMask;
-  if (altPressed)
-    currentModifiers |= Mod1Mask;
-  if (IsWinPressed())
-    currentModifiers |= Mod4Mask;
+  int currentModifiers = GetCurrentModifiers();
 
   // Check for registered hotkeys that might be interested in absolute events
   for (auto &[id, hotkey] : hotkeys) {

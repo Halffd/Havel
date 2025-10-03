@@ -125,6 +125,15 @@ class IO {
   std::atomic<bool> globalAltPressed{false};
   std::chrono::steady_clock::time_point lastLeftPress;
   std::chrono::steady_clock::time_point lastRightPress;
+  // Unified modifier state (evdev-sourced)
+  std::atomic<int> currentEvdevModifiers{0};
+  ModifierState currentModifierState{};
+  // Active input tracking for combos (keycode or button code -> down time)
+  std::mutex activeInputsMutex;
+  std::unordered_map<int, std::chrono::steady_clock::time_point> activeInputs;
+  // Mouse button states
+  std::atomic<bool> leftButtonDown{false};
+  std::atomic<bool> rightButtonDown{false};
   
   // Deadlock protection
   int evdevShutdownFd = -1;  // eventfd for clean shutdown
@@ -135,6 +144,9 @@ class IO {
   std::atomic<int> pendingCallbacks{0};
   static constexpr int CALLBACK_TIMEOUT_MS = 5000;  // 5 second timeout for callbacks
   static constexpr int WATCHDOG_INTERVAL_MS = 1000;  // Check every second
+  
+  // Track active callback threads for proper cleanup
+  std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
@@ -188,15 +200,18 @@ public:
   // Mouse event handling
   bool StartEvdevMouseListener(const std::string &mouseDevicePath);
   void StopEvdevMouseListener();
-  bool handleMouseButton(const input_event& ev, bool& leftPressed, bool& rightPressed, bool altPressed);
-  bool handleMouseRelative(const input_event& ev, bool altPressed);
-  bool handleMouseAbsolute(const input_event& ev, bool altPressed);
+  bool handleMouseButton(const input_event& ev);
+  bool handleMouseRelative(const input_event& ev);
+  bool handleMouseAbsolute(const input_event& ev);
   bool SetupMouseUinputDevice();
   void SendMouseUInput(const input_event& ev);
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
   void executeComboAction(const std::string& action);
   void CleanupUinputDevice();
+  // Access current modifier bitmask (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
+  int GetCurrentModifiers() const { return currentEvdevModifiers.load(); }
+  const ModifierState& GetModifierState() const { return currentModifierState; }
   
   // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)
   void SetMouseSensitivity(double sensitivity);
@@ -224,6 +239,11 @@ public:
   bool IsCtrlPressed(); 
   bool IsAltPressed();
   bool IsWinPressed();
+
+  // Convenience overloads for MouseButton enum
+  void MouseClick(MouseButton button) { Click(button, MouseAction::Click); }
+  void MouseDown(MouseButton button) { Click(button, MouseAction::Hold); }
+  void MouseUp(MouseButton button) { Click(button, MouseAction::Release); }
 
   static void PressKey(const std::string &keyName, bool press);
 
@@ -346,6 +366,8 @@ private:
   // Platform specific implementations
   std::map<std::string, Key> keyMap;
   std::map<int, bool> evdevKeyState;
+  // Track mouse button state for combos
+  std::map<int, bool> evdevMouseButtonState;
   std::map<std::string, HotKey> instanceHotkeys;
   // Renamed to avoid conflict
   std::map<std::string, bool> hotkeyStates;
@@ -393,6 +415,8 @@ private:
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();
+  // Combo evaluation
+  bool EvaluateCombo(const HotKey& combo);
   
   // Device detection helpers
   std::string detectEvdevDevice(

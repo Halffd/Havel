@@ -588,10 +588,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Rect pos = win.Pos();
         WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w, pos.h + h);
     };
-    
-
-
-AddHotkey("@!Home", [this]() {
+    AddHotkey("@!Home", [this]() {
     info("Toggle fullscreen");
     WindowManager::ToggleFullscreen(WindowManager::GetActiveWindow());
 });

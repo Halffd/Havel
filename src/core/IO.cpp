@@ -4018,12 +4018,10 @@ bool IO::EvaluateCombo(const HotKey &combo) {
     if (part.type == HotkeyType::MouseButton) {
       code = part.mouseButton;
     } else if (part.type == HotkeyType::MouseWheel) {
-      // Map wheel up/down to their evdev codes
-      if (part.mouseButton == 8) {  // Wheel up
-          code = REL_WHEEL;
-      } else if (part.mouseButton == 9) {  // Wheel down
-          code = REL_WHEEL_HI_RES;
-      }
+      // For wheel events, we use the wheelDirection to determine up/down
+      // Wheel up is typically positive, wheel down is negative
+      // We'll use the absolute value since we just need to match the button state
+      code = (part.wheelDirection > 0) ? 9 : 8;
     } else if (part.type == HotkeyType::Keyboard) {
       // Map keyboard key to evdev code
       code = part.key;

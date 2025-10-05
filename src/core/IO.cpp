@@ -2470,6 +2470,89 @@ bool IO::GetKeyState(int keycode) {
 
   return false;
 }
+bool IO::IsAnyKeyPressed() {
+  if (evdevRunning && !evdevKeyState.empty()) {
+    for (const auto& [keycode, isDown] : evdevKeyState) {
+      if (isDown) return true;
+    }
+    return false;
+  }
+  
+#ifdef __linux__
+  if (display) {
+    char keymap[32];
+    XQueryKeymap(display, keymap);
+    
+    // Check if any bit is set in the entire keymap
+    for (int i = 0; i < 32; i++) {
+      if (keymap[i] != 0) return true;
+    }
+  }
+#endif
+  
+  return false;
+}
+
+bool IO::IsAnyKeyPressedExcept(const std::string& excludeKey) {
+  int excludeKeycode = EvdevNameToKeyCode(excludeKey);
+  
+  if (evdevRunning && !evdevKeyState.empty()) {
+    for (const auto& [keycode, isDown] : evdevKeyState) {
+      if (isDown && keycode != excludeKeycode) return true;
+    }
+    return false;
+  }
+  
+#ifdef __linux__
+  if (display) {
+    excludeKeycode = StringToVirtualKey(excludeKey);
+    char keymap[32];
+    XQueryKeymap(display, keymap);
+    
+    for (int keycode = 8; keycode < 256; keycode++) {
+      if (keycode != excludeKeycode && 
+          (keymap[keycode / 8] & (1 << (keycode % 8)))) {
+        return true;
+      }
+    }
+  }
+#endif
+  
+  return false;
+}
+
+// Bonus: exclude multiple keys
+bool IO::IsAnyKeyPressedExcept(const std::vector<std::string>& excludeKeys) {
+  std::set<int> excludeCodes;
+  for (const auto& key : excludeKeys) {
+    int code = EvdevNameToKeyCode(key);
+    if (code != -1) excludeCodes.insert(code);
+  }
+  
+  if (evdevRunning && !evdevKeyState.empty()) {
+    for (const auto& [keycode, isDown] : evdevKeyState) {
+      if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) {
+        return true;
+      }
+    }
+    return false;
+  }
+  
+  // X11 fallback
+  if (display) {
+    char keymap[32];
+    XQueryKeymap(display, keymap);
+    
+    for (int keycode = 8; keycode < 256; keycode++) {
+      if (excludeCodes.find(keycode) == excludeCodes.end() && 
+          (keymap[keycode / 8] & (1 << (keycode % 8)))) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
 bool IO::IsShiftPressed() {
   return GetKeyState("lshift") || GetKeyState("rshift");
 }
@@ -2705,6 +2788,13 @@ bool IO::MatchEvdevModifiers(int expectedModifiers,
 
   return true;
 }
+bool IO::IsKeyRemappedTo(int targetKey) {
+  for (const auto& [original, mapped] : activeRemaps) {
+      if (mapped == targetKey) return true;
+  }
+  return false;
+}
+
 bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   if (evdevRunning)
     return false;
@@ -2816,31 +2906,30 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         bool down = (ev.value == 1 || ev.value == 2);
         int originalCode = ev.code;
         int mappedCode = originalCode;
-        
-        // Apply key mapping and remapping for output, but track both states
-        if (down) {
-          // Check for remapped keys first (bidirectional mapping)
-          auto remapIt = evdevRemappedKeys.find(originalCode);
-          if (remapIt != evdevRemappedKeys.end()) {
+
+        // Always apply mapping both directions
+        auto remapIt = evdevRemappedKeys.find(originalCode);
+        if (remapIt != evdevRemappedKeys.end()) {
             mappedCode = remapIt->second;
-            debug("Remapped key {} -> {}", originalCode, mappedCode);
-          } 
-          // Then check for regular key mapping
-          else {
+        } else {
             auto mapIt = evdevKeyMap.find(originalCode);
             if (mapIt != evdevKeyMap.end()) {
-              mappedCode = mapIt->second;
-              debug("Mapped key {} -> {}", originalCode, mappedCode);
+                mappedCode = mapIt->second;
             }
-          }
         }
-      
-      // Update both original and mapped key states
-      evdevKeyState[originalCode] = down;
-      if (mappedCode != originalCode) {
-        evdevKeyState[mappedCode] = down;
-      }
 
+      evdevKeyState[originalCode] = down;
+      std::map<int, int> activeRemaps;
+      if (down)
+          activeRemaps[originalCode] = mappedCode;
+      else {
+          // On release: only clear the remap we actually made
+          auto it = activeRemaps.find(originalCode);
+          if (it != activeRemaps.end()) {
+              mappedCode = it->second;
+              activeRemaps.erase(it);
+          }
+      }
       // Track active inputs for combos
       {
         std::lock_guard<std::mutex> lk(activeInputsMutex);
@@ -2849,10 +2938,10 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       }
 
       // Update modifier state from evdev
-      bool ctrl = evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL];
-      bool shift = evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT];
-      bool alt = evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT];
-      bool meta = evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA];
+      bool ctrl = evdevKeyState[KEY_LEFTCTRL] || evdevKeyState[KEY_RIGHTCTRL] || IsKeyRemappedTo(KEY_LEFTCTRL) || IsKeyRemappedTo(KEY_RIGHTCTRL);
+      bool shift = evdevKeyState[KEY_LEFTSHIFT] || evdevKeyState[KEY_RIGHTSHIFT] || IsKeyRemappedTo(KEY_LEFTSHIFT) || IsKeyRemappedTo(KEY_RIGHTSHIFT);
+      bool alt = evdevKeyState[KEY_LEFTALT] || evdevKeyState[KEY_RIGHTALT] || IsKeyRemappedTo(KEY_LEFTALT) || IsKeyRemappedTo(KEY_RIGHTALT);
+      bool meta = evdevKeyState[KEY_LEFTMETA] || evdevKeyState[KEY_RIGHTMETA] || IsKeyRemappedTo(KEY_LEFTMETA) || IsKeyRemappedTo(KEY_RIGHTMETA);
       modState[ControlMask] = ctrl;
       modState[ShiftMask] = shift;
       modState[Mod1Mask] = alt;
@@ -2878,9 +2967,6 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         setGlobalAltState(down);
       }
       keyDownState[originalCode] = down;
-      if (mappedCode != originalCode) {
-        keyDownState[mappedCode] = down;
-      }
 
       // Process hotkeys using ORIGINAL code
       std::vector<std::function<void()>> callbacks;

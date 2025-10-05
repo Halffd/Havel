@@ -232,6 +232,9 @@ public:
   // State methods
   bool GetKeyState(const std::string& keyName);
   bool GetKeyState(int keycode); // For raw keycodes
+  bool IsAnyKeyPressed();
+  bool IsAnyKeyPressedExcept(const std::string& excludeKey);
+  bool IsAnyKeyPressedExcept(const std::vector<std::string>& excludeKeys);
   bool IsKeyPressed(const std::string& keyName) { return GetKeyState(keyName); }
   
   // Modifier state helpers
@@ -375,6 +378,7 @@ private:
   bool timerRunning = false;
   std::set<int> blockedKeys;
   std::mutex x11Mutex;
+  std::map<int, int> activeRemaps;
 
   // Static members
   static bool hotkeyEnabled;
@@ -394,7 +398,7 @@ private:
   void InitKeyMap();
   std::unordered_map<KeySym, KeySym> keyMapInternal;
   std::unordered_map<KeySym, KeySym> remappedKeys;
-  
+  bool IsKeyRemappedTo(int targetKey);
   // Evdev key mapping
   std::unordered_map<int, int> evdevKeyMap;        // Maps from scancode to scancode
   std::unordered_map<int, int> evdevRemappedKeys;  // Bidirectional remapping

@@ -1,4 +1,5 @@
 #include "core/IO.hpp"
+#include "utils/Logger.hpp"
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -42,6 +43,7 @@ public:
   }
 
   void move(int dx, int dy) {
+    info("Mouse move: {} {}", dx, dy);
     auto now = std::chrono::steady_clock::now();
     auto nowTicks = now.time_since_epoch().count();
 
@@ -59,6 +61,7 @@ public:
     int newSpeed = base;
     
     // Fixed acceleration curve that doesn't cap at 1000ms
+    info("Elapsed: {}", elapsed);
     if (elapsed > 0) {
         // Logarithmic curve that plateaus instead of dropping
         float timeFactor = std::log(1.0f + elapsed / 200.0f) + 1.0f;  // Smoother ramp-up
@@ -76,7 +79,7 @@ public:
 
     currentSpeed.store(newSpeed, std::memory_order_relaxed);
     lastMoveTicks.store(nowTicks, std::memory_order_relaxed);
-
+    info("New speed: {}", newSpeed);
     io.MouseMove(dx, dy, newSpeed, accel);
     resetCV.notify_all();
 }

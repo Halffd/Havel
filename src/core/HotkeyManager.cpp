@@ -25,6 +25,7 @@
 #include <atomic>
 #include "core/DisplayManager.hpp"
 #include "utils/Util.hpp"
+#include "core/io/KeyTap.hpp"
 // Include XRandR for multi-monitor support
 #ifdef __linux__
 #include <X11/extensions/Xrandr.h>
@@ -249,16 +250,34 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         std::cout << "ralt" << std::endl;
         WindowManager::MoveWindowToNextMonitor();
     }); 
-
-    // If not gaming mode: open whisker menu on keyup
+    // This should now work correctly
+    lwin = std::make_unique<KeyTap>(io, *this, "lwin",
+        []() { Launcher::runAsync("/bin/xfce4-popup-whiskermenu"); },  // Tap action
+        "mode != 'gaming'",                                            // Tap condition
+        [this]() { PlayPause(); },                                     // Combo action  
+        "mode == 'gaming'"                                             // Combo condition
+    );
+    lwin->setup();
+        
     AddContextualHotkey("@lwin:up", "mode != 'gaming'", 
-        []() {
-            Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
-        });
-    AddGamingHotkey("@lwin", 
         [this]() {
-            PlayPause();
+            auto now = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - winKeyPressTime).count();
+            
+            // Only open menu if:
+            // 1. No other keys were pressed during Win hold
+            // 2. Win key wasn't held too long (avoid accidental triggers)
+            if (!winKeyComboDetected && duration < 500) {
+                Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+            }
         });
+        
+    // Detect when other keys are pressed while Win is down
+    // Add this logic to your main key processing loop:
+    // if (winKeyPressed && keycode != KEY_LEFTMETA && keycode != KEY_RIGHTMETA) {
+    //     winKeyComboDetected = true;
+    // }
 
     AddGamingHotkey("u", 
         [this]() {
@@ -1148,7 +1167,7 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     // Update mode once per batch of hotkey updates
     if (isGamingWindow() && currentMode != "gaming") {
         io.Map("Left","a");
-        io.Map("Right","s");
+        io.Map("Right","d");
         io.Map("Up","w");
         io.Map("Down","s");
         setMode("gaming");

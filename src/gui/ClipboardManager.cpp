@@ -373,9 +373,7 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     : QMainWindow(parent)
     , io(io) {
     
-    // Enable high DPI scaling and high DPI pixmaps
-    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
-    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    // Enable style sheet propagation in widget styles
     QApplication::setAttribute(Qt::AA_UseStyleSheetPropagationInWidgetStyles, true);
     
     // Set a style that works well with the current theme
@@ -402,6 +400,22 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
         ContentType::FileList
     };
     
+    // Initialize clipboard first
+    clipboard = QGuiApplication::clipboard();
+    if (!clipboard) {
+        qWarning() << "Failed to get clipboard instance";
+    } else {
+        qDebug() << "Clipboard instance obtained";
+    }
+    
+    // Connect clipboard signal
+    if (clipboard) {
+        bool connected = connect(clipboard, &QClipboard::dataChanged, 
+                               this, &ClipboardManager::onClipboardChanged,
+                               Qt::QueuedConnection);
+        qDebug() << "Clipboard signal connection" << (connected ? "succeeded" : "failed");
+    }
+    
     // Load saved settings and history
     loadSettings();
     loadHistory();
@@ -411,13 +425,6 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     
     // Setup UI with custom font size and window size
     setupUI();
-    
-    // Initialize clipboard
-    clipboard = QApplication::clipboard();
-    if (clipboard) {
-        connect(clipboard, &QClipboard::dataChanged, 
-                this, &ClipboardManager::onClipboardChanged);
-    }
 
     // Setup system tray icon
     trayIcon = new QSystemTrayIcon(this);
@@ -1164,6 +1171,10 @@ void ClipboardManager::processClipboardContent() {
     const QMimeData* mimeData = clipboard->mimeData();
     if (!mimeData) return;
 
+    qDebug() << "=== Processing clipboard content ===";
+    qDebug() << "Has text:" << mimeData->hasText() << "Has HTML:" << mimeData->hasHtml() 
+             << "Has image:" << mimeData->hasImage() << "Has URLs:" << mimeData->hasUrls();
+
     ClipboardItem item;
     item.timestamp = QDateTime::currentDateTime();
 
@@ -1214,29 +1225,56 @@ void ClipboardManager::processClipboardContent() {
     // Check for HTML content
     if (enabledContentTypes.contains(ContentType::Html) && mimeData->hasHtml()) {
         QString html = mimeData->html();
+        qDebug() << "Processing HTML content, length:" << html.length();
+        
+        // Extract plain text from HTML for display
+        QTextDocument doc;
+        doc.setHtml(html);
+        QString plainText = doc.toPlainText().simplified();
+        
         item.type = ContentType::Html;
         item.data = html;
-        item.displayText = html.left(100).simplified() + (html.length() > 100 ? "..." : "");
-        item.preview = tr("🌐 HTML content");
+        item.displayText = plainText.left(100) + (plainText.length() > 100 ? "..." : "");
+        item.preview = tr("🌐 ") + plainText.left(50) + (plainText.length() > 50 ? "..." : "");
         
-        lastClipboardItem = item;
-        addToHistory(item);
+        // Only add if different from last item to prevent duplicates
+        if (lastClipboardItem.type != ContentType::Html || 
+            lastClipboardItem.data.toString() != html) {
+            qDebug() << "Adding new HTML content to history";
+            lastClipboardItem = item;
+            addToHistory(item);
+        } else {
+            qDebug() << "Skipping duplicate HTML content";
+        }
         return;
     }
     
     // Check for text content
     if (enabledContentTypes.contains(ContentType::Text) && mimeData->hasText()) {
-        QString text = mimeData->text();
+        QString text = mimeData->text().trimmed();
+        qDebug() << "Processing text content, length:" << text.length();
+        
+        if (text.isEmpty()) {
+            qDebug() << "Text is empty, skipping";
+            return;
+        }
+        
+        // Skip if this is the same as the last text we processed
+        if (lastClipboardItem.type == ContentType::Text && 
+            lastClipboardItem.data.toString() == text) {
+            qDebug() << "Skipping duplicate text content";
+            return;
+        }
         
         // Check if text is markdown
         if (enabledContentTypes.contains(ContentType::Markdown) && 
-            (text.contains("```") || 
-             text.contains("# ") || 
-             text.contains("## ") || 
-             text.contains("### ") ||
-             text.contains("**") ||
-             text.contains("__") ||
-             text.contains("[") && text.contains("](") && text.contains(")"))) {
+            (text.startsWith("#") || // Headers
+             text.contains("```") || // Code blocks
+             text.contains("**") ||  // Bold
+             text.contains("__") ||  // Bold/underline
+             text.contains("* ") ||  // List items
+             text.contains("- ") ||  // List items
+             (text.contains("[") && text.contains("](") && text.contains(")")))) { // Links
             
             item.type = ContentType::Markdown;
             item.data = text;
@@ -1275,22 +1313,35 @@ QString ClipboardManager::formatFileList(const QList<QUrl>& urls) const {
 
 // Core functionality from first version
 void ClipboardManager::onClipboardChanged() {
+    qDebug() << "Clipboard changed signal received";
+    
     // Skip if we're the ones who changed the clipboard
     if (m_isSettingClipboard) {
+        qDebug() << "Skipping - we set the clipboard";
         return;
     }
 
-    // Skip if already processing or no clipboard
-    if (!clipboard || m_isProcessingClipboardChange) {
+    // Skip if no clipboard
+    if (!clipboard) {
+        qWarning() << "No clipboard available";
         return;
     }
-
+    
+    // Skip if already processing
+    if (m_isProcessingClipboardChange) {
+        qDebug() << "Already processing clipboard change";
+        return;
+    }
     m_isProcessingClipboardChange = true;
 
     try {
+        qDebug() << "Processing clipboard content...";
         processClipboardContent();
+        qDebug() << "Finished processing clipboard content";
+    } catch (const std::exception& e) {
+        qWarning() << "Error processing clipboard content:" << e.what();
     } catch (...) {
-        qWarning() << "Error processing clipboard content";
+        qWarning() << "Unknown error processing clipboard content";
     }
     
     m_isProcessingClipboardChange = false;

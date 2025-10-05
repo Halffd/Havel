@@ -5,11 +5,13 @@
 #include "core/ConditionSystem.hpp"
 #include "automation/AutoRunner.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "gui/ClipboardManager.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
 #include <iostream>
 #include <map>
+#include <qclipboard.h>
 #include <vector>
 #include <unistd.h>
 #include <X11/keysym.h>
@@ -566,11 +568,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("@!-", [this]() {
         io.mouseSensitivity -= std::max(0.0, io.mouseSensitivity - Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
+        Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
         info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
+        Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     });
     io.Hotkey("@!=", [this]() {
         io.mouseSensitivity += std::min(1.0, io.mouseSensitivity + Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
         info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
+        Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     });
     //Emergency exit
     AddHotkey("@^!+#Esc", [this]() {
@@ -645,9 +650,22 @@ AddHotkey("@^!Home", [WinMove]() {
         int centerY = monitor.y + (monitor.height - rect.h) / 2;
         WindowManager::MoveResize(win.ID(), centerX, centerY, rect.w, rect.h);
     });
-    AddHotkey("@numpad5", [this]() { 
-        info("NP5 Click");
+    AddHotkey("@numpadenter", [this]() { 
+        info("NPEnter Click");
         io.Click(MouseButton::Left, MouseAction::Hold);
+    });
+    QClipboard *clipboard = QApplication::clipboard();
+    AddHotkey("@!3", [clipboard]() { 
+        auto clipboardText = clipboard->text();
+        // get first 20000 characters
+        clipboardText = clipboardText.left(20000);
+        clipboard->setText(clipboardText);
+    });
+    AddHotkey("@!4", [clipboard]() { 
+        auto clipboardText = clipboard->text();
+        // get last 20000 characters
+        clipboardText = clipboardText.right(20000);
+        clipboard->setText(clipboardText);
     });
     
     AddHotkey("@numpad5:up", [this]() { 

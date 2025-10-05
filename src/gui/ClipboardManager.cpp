@@ -26,6 +26,9 @@
 #include <QCursor>
 #include <QPainter>
 #include <QBuffer>
+#include <QFontDatabase>
+#include <QStyleFactory>
+#include <QPainterPath>
 
 namespace havel {
 
@@ -137,23 +140,56 @@ void ClipboardManager::removeHistoryFiles(int index) {
 }
 
 void ClipboardManager::saveHistory() {
+    if (historyItems.isEmpty()) {
+        return;  // Nothing to save
+    }
+    
     QString basePath = ensureDirectories();
     QString indexFilePath = basePath + "/index.json";
     
+    // Check if the history has been modified since last save
+    static QDateTime lastSaveTime = QDateTime::currentDateTime();
+    bool hasChanges = false;
+    
+    // Check if we have any items that were added or modified since last save
+    for (const auto& item : historyItems) {
+        if (item.timestamp >= lastSaveTime) {
+            hasChanges = true;
+            break;
+        }
+    }
+    
+    if (!hasChanges) {
+        qDebug() << "No changes detected, skipping save";
+        return;
+    }
+    
     QJsonArray indexArray;
     
-    // Save each item and create index entry
-    for (int i = 0; i < historyItems.size(); ++i) {
-        const ClipboardItem& item = historyItems[i];
+    // Save only the most recent items to prevent history from growing too large
+    int maxItems = getMaxHistorySize() > 0 ? getMaxHistorySize() : historyItems.size();
+    int startIdx = qMax(0, historyItems.size() - maxItems);
+    
+    // Create a temporary file first
+    QString tempPath = indexFilePath + ".tmp";
+    QFile tempFile(tempPath);
+    
+    if (!tempFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        qWarning() << "Failed to create temporary file:" << tempPath;
+        return;
+    }
+    
+    // Save to temporary file first
+    for (int i = startIdx; i < historyItems.size(); ++i) {
+        const auto& item = historyItems[i];
         QJsonObject indexEntry;
         
-        indexEntry["index"] = i;
-        indexEntry["type"] = static_cast<int>(item.type);
         indexEntry["timestamp"] = item.timestamp.toString(Qt::ISODate);
+        indexEntry["type"] = static_cast<int>(item.type);
         indexEntry["displayText"] = item.displayText;
         indexEntry["preview"] = item.preview;
         
-        // Save content based on type and store file path
+        // Save content to file and store the path
         switch (item.type) {
             case ContentType::Text:
             case ContentType::Markdown:
@@ -187,23 +223,32 @@ void ClipboardManager::saveHistory() {
                 break;
         }
         
-        indexArray.append(indexEntry);
+        if (!indexEntry.isEmpty()) {
+            indexArray.append(indexEntry);
+        }
     }
     
-    // Save index file
-    QFile indexFile(indexFilePath);
-    if (indexFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QJsonDocument doc(indexArray);
-        indexFile.write(doc.toJson());
-        indexFile.close();
-        qDebug() << "Saved" << historyItems.size() << "items to" << basePath;
-    } else {
-        qWarning() << "Failed to save index file:" << indexFilePath;
+    // Write to temporary file
+    QJsonDocument doc(indexArray);
+    tempFile.write(doc.toJson());
+    tempFile.close();
+    
+    // Atomically replace the old file with the new one
+    QFile::remove(indexFilePath);
+    if (!tempFile.rename(indexFilePath)) {
+        qWarning() << "Failed to replace index file:" << indexFilePath;
+        QFile::remove(tempPath);  // Clean up temp file
+        return;
     }
+    
+    lastSaveTime = QDateTime::currentDateTime();
+    qDebug() << "Saved" << indexArray.size() << "items to" << basePath;
 }
 
-havel::ClipboardManager::ClipboardItem ClipboardManager::loadItemFromFile(const QJsonObject& json) {
-    havel::ClipboardManager::ClipboardItem item;
+
+ClipboardManager::ClipboardItem ClipboardManager::loadItemFromFile(const QJsonObject& json) {
+    
+ClipboardManager::ClipboardItem item;
     
     item.type = static_cast<ContentType>(json["type"].toInt());
     item.timestamp = QDateTime::fromString(json["timestamp"].toString(), Qt::ISODate);
@@ -328,15 +373,19 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     : QMainWindow(parent)
     , io(io) {
     
+    // Enable high DPI scaling and high DPI pixmaps
+    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+    QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
+    QApplication::setAttribute(Qt::AA_UseStyleSheetPropagationInWidgetStyles, true);
+    
+    // Set a style that works well with the current theme
+    QApplication::setStyle(QStyleFactory::create("Fusion"));
+    
     // Set up the application name and organization for settings
     QCoreApplication::setOrganizationName("Havel");
     QCoreApplication::setApplicationName("ClipboardManager");
     
-    // Load settings and history
-    loadSettings();
-    loadHistory();
-    
-    // Initialize file type filters
+    // Initialize file type filters first
     fileTypeFilters = {
         {"Images", {"*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.svg"}},
         {"Documents", {"*.pdf", "*.doc", "*.docx", "*.odt", "*.txt", "*.md"}},
@@ -353,11 +402,12 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
         ContentType::FileList
     };
     
-    // Load saved settings
+    // Load saved settings and history
     loadSettings();
+    loadHistory();
     
     // Set window properties
-    setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+    //setWindowFlags(Qt::Dialog | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
     
     // Setup UI with custom font size and window size
     setupUI();
@@ -405,94 +455,169 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     windowSize = QSize(Configs::Get().Get<int>("ClipboardManager.Width", 900), 
                       Configs::Get().Get<int>("ClipboardManager.Height", 1000));
     // Hide by default - show only when needed
-    close();
+    hide();
+}
+
+void ClipboardManager::setupFonts() {
+    // Get system default font
+    QFont appFont = QApplication::font();
+    
+    // Set a safe default font family
+    QStringList preferredFonts = {
+        "Segoe UI", "Arial", "Noto Sans", "DejaVu Sans", "Liberation Sans",
+        "Helvetica", "Verdana", "Tahoma", "Ubuntu", "Roboto"
+    };
+    
+    // Try to find and set a preferred font
+    for (const QString& fontName : preferredFonts) {
+        if (QFontDatabase::hasFamily(fontName)) {
+            appFont.setFamily(fontName);
+            break;
+        }
+    }
+    
+    // Set reasonable font size and style
+    appFont.setPointSize(10);
+    appFont.setStyleHint(QFont::SansSerif);
+    appFont.setStyleStrategy(QFont::PreferAntialias);
+    
+    // Apply to application
+    QApplication::setFont(appFont);
+    setFont(appFont);
+    
+    // Set up status bar font
+    QFont statusFont = appFont;
+    statusFont.setPointSize(appFont.pointSize() * 0.8);
+    statusBar()->setFont(statusFont);
+}
+
+QListWidgetItem* ClipboardManager::createSafeListItem(const QString& text) {
+    QListWidgetItem* item = new QListWidgetItem(text);
+    
+    // Set safe font
+    QFont itemFont = font();
+    itemFont.setPointSize(font().pointSize());
+    item->setFont(itemFont);
+    
+    // Set reasonable size hints
+    QFontMetrics fm(itemFont);
+    int height = qMax(fm.height() * 1.5, 24.0); // Minimum 24px height
+    item->setSizeHint(QSize(item->sizeHint().width(), static_cast<int>(height)));
+    
+    // Enable necessary flags
+    item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable | Qt::ItemIsEditable);
+    
+    // Set text color that works with both light and dark themes
+    item->setForeground(Qt::white);
+    
+    return item;
 }
 
 void ClipboardManager::setupUI() {
-    // Set window size and properties
-    resize(windowSize);
+    using namespace UIConfig;
     
-    // Set window background to be solid
+    // Set up fonts
+    setupFonts();
+    
+    // Set window properties
+    setWindowTitle("Clipboard Manager");
+    setMinimumSize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+    
+    // Set window flags for better behavior
+    setWindowFlags(Qt::Tool | Qt::WindowStaysOnTopHint | Qt::CustomizeWindowHint);
     setAttribute(Qt::WA_TranslucentBackground, false);
-    setWindowFlags(windowFlags() & ~Qt::FramelessWindowHint);
     
-    // Create central widget and layout
+    // Create central widget and main layout
     centralWidget = new QWidget(this);
     centralWidget->setAutoFillBackground(true);
     setCentralWidget(centralWidget);
     
-    // Set window stylesheet for dark theme
-    QString styleSheet = R"(
+    // Set initial window size based on screen size
+    QScreen* screen = QGuiApplication::primaryScreen();
+    if (screen) {
+        QRect screenGeometry = screen->availableGeometry();
+        int width = qMin(WINDOW_MIN_WIDTH, static_cast<int>(screenGeometry.width() * 0.8));
+        int height = qMin(WINDOW_MIN_HEIGHT, static_cast<int>(screenGeometry.height() * 0.7));
+        resize(width, height);
+    } else {
+        resize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT);
+    }
+    // Set window stylesheet using theme variables
+    QString styleSheet = QString(R"(
         QMainWindow, QDialog, QWidget#centralWidget {
-            background-color: #1E1E1E;
-            color: #E0E0E0;
-            border: 1px solid #3F3F46;
+            background-color: %1;
+            color: %2;
+            border: 1px solid %3;
             border-radius: 8px;
         }
         
         QListWidget {
-            background-color: #252526;
-            border: 1px solid #3F3F46;
+            background-color: %4;
+            border: 1px solid %3;
             border-radius: 6px;
-            padding: 4px;
-            height: 100%;
+            padding: 6px;
             outline: 0;
             margin: 0;
+            show-decoration-selected: 1;
+            font-size: %9px;
         }
         
         QListWidget::item {
-            background-color: #2D2D30;
-            color: #E0E0E0;
+            background-color: %5;
+            color: %2;
             padding: 12px 16px;
             border-radius: 6px;
             margin: 4px 2px;
             border: 1px solid transparent;
+            min-height: %10px;
         }
         
         QListWidget::item:selected {
-            background-color: #37373D;
-            color: #FFFFFF;
-            border: 1px solid #505050;
+            background-color: %6;
+            color: white;
+            border: 1px solid %7;
         }
         
         QListWidget::item:hover {
-            background-color: #3E3E42;
-            border: 1px solid #5E5E60;
+            background-color: %6;
+            border: 1px solid %7;
         }
         
         QLineEdit {
-            background-color: #3C3C3C;
-            color: #E0E0E0;
-            border: 1px solid #3F3F46;
+            background-color: %5;
+            color: %2;
+            border: 1px solid %3;
             border-radius: 6px;
-            padding: 10px 14px;
-            selection-background-color: #264F78;
-            font-size: 24px;
+            padding: 12px 16px;
+            selection-background-color: %7;
+            font-size: %8px;
             margin-bottom: 8px;
+            min-height: %11px;
         }
         
         QLineEdit:focus {
-            border: 1px solid  rgb(10, 79, 124);
-            background-color: #3E3E42;
+            border: 1px solid %7;
+            background-color: %6;
         }
         
         QTextEdit {
-            background-color: #252526;
-            color: #E0E0E0;
-            border: 1px solid #3F3F46;
+            background-color: %4;
+            color: %2;
+            border: 1px solid %3;
             border-radius: 6px;
-            padding: 10px;
-            selection-background-color: #264F78;
-            font-size: 26px;
+            padding: 16px;
+            selection-background-color: %7;
+            font-size: %9px;
+            line-height: 1.5;
         }
         
         QTextEdit:focus {
-            border: 1px solid #007ACC;
+            border: 1px solid %7;
         }
         
         QScrollBar:vertical {
             border: none;
-            background: #252526;
+            background: %4;
             width: 12px;
             margin: 2px;
             border-radius: 6px;
@@ -509,25 +634,52 @@ void ClipboardManager::setupUI() {
             background: #5E5E60;
         }
         
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+        QScrollBar::add-line:vertical, 
+        QScrollBar::sub-line:vertical {
             height: 0px;
         }
         
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+        QScrollBar::add-page:vertical, 
+        QScrollBar::sub-page:vertical {
             background: none;
         }
         
         /* Custom selection colors */
         QListWidget::item:selected:active {
-            background: #264F78;
+            background: %7;
         }
         
         /* Search box placeholder text */
         QLineEdit::placeholder {
-            color: #858585;
+            color: %2;
+            opacity: 0.6;
             font-style: italic;
         }
-    )";
+        
+        /* Splitter styling */
+        QSplitter::handle:horizontal {
+            width: %12px;
+            background: %3;
+        }
+        
+        QSplitter::handle:horizontal:hover {
+            background: %7;
+        }
+    )").arg(
+        // Argument order must match the %1, %2, etc. in the template
+        Colors::BACKGROUND,    // %1
+        Colors::TEXT_PRIMARY,  // %2
+        Colors::BORDER,        // %3
+        Colors::SURFACE,       // %4
+        Colors::SURFACE_LIGHT, // %5
+        Colors::SURFACE_LIGHTER, // %6
+        Colors::PRIMARY,       // %7
+        QString::number(BASE_FONT_SIZE + 2), // %8 (search font size)
+        QString::number(BASE_FONT_SIZE),     // %9 (base font size)
+        QString::number(ITEM_HEIGHT),        // %10 (item height)
+        QString::number(ITEM_HEIGHT + 8),    // %11 (search box height)
+        QString::number(SPLITTER_HANDLE_WIDTH) // %12 (splitter handle width)
+    );
     
     setStyleSheet(styleSheet);
 
@@ -536,62 +688,137 @@ void ClipboardManager::setupUI() {
     mainLayout->setSpacing(8);
     mainLayout->setAlignment(Qt::AlignTop);
 
-    // Create font with custom size
-    QFont appFont = QApplication::font();
-    appFont.setPointSize(fontSize);
+    using namespace UIConfig;
+    
+    // Set up application font
+    QFont appFont(FONT_FAMILY, BASE_FONT_SIZE);
     appFont.setStyleHint(QFont::SansSerif);
+    qApp->setFont(appFont);
     setFont(appFont);
     
-    // Set window attributes for better appearance
+    // Set window attributes
     setWindowFlags(Qt::WindowStaysOnTopHint | Qt::Window);
     setAttribute(Qt::WA_TranslucentBackground, false);
-    
-    // Set window opacity for slight transparency
     setWindowOpacity(1.0);
+    
+    // Set application palette
     QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor(30, 30, 30));
-    darkPalette.setColor(QPalette::WindowText, Qt::white);
-    darkPalette.setColor(QPalette::Base, QColor(37, 37, 38));
-    darkPalette.setColor(QPalette::AlternateBase, QColor(45, 45, 48));
-    darkPalette.setColor(QPalette::ToolTipBase, QColor(255, 255, 255));
-    darkPalette.setColor(QPalette::ToolTipText, QColor(255, 255, 255));
-    darkPalette.setColor(QPalette::Text, QColor(224, 224, 224));
-    darkPalette.setColor(QPalette::Button, QColor(45, 45, 48));
-    darkPalette.setColor(QPalette::ButtonText, QColor(255, 255, 255));
-    darkPalette.setColor(QPalette::BrightText, Qt::red);
-    darkPalette.setColor(QPalette::Link, QColor(0, 122, 204));
-    darkPalette.setColor(QPalette::Highlight, QColor(38, 79, 120));
+    darkPalette.setColor(QPalette::Window, QColor(Colors::BACKGROUND));
+    darkPalette.setColor(QPalette::WindowText, QColor(Colors::TEXT_PRIMARY));
+    darkPalette.setColor(QPalette::Base, QColor(Colors::SURFACE));
+    darkPalette.setColor(QPalette::AlternateBase, QColor(Colors::SURFACE_LIGHT));
+    darkPalette.setColor(QPalette::ToolTipBase, QColor(Colors::TEXT_PRIMARY));
+    darkPalette.setColor(QPalette::ToolTipText, QColor(Colors::TEXT_PRIMARY));
+    darkPalette.setColor(QPalette::Text, QColor(Colors::TEXT_PRIMARY));
+    darkPalette.setColor(QPalette::Button, QColor(Colors::SURFACE_LIGHT));
+    darkPalette.setColor(QPalette::ButtonText, QColor(Colors::TEXT_PRIMARY));
+    darkPalette.setColor(QPalette::BrightText, QColor(Colors::PRIMARY_LIGHT));
+    darkPalette.setColor(QPalette::Link, QColor(Colors::PRIMARY));
+    darkPalette.setColor(QPalette::Highlight, QColor(Colors::PRIMARY));
     darkPalette.setColor(QPalette::HighlightedText, Qt::white);
     qApp->setPalette(darkPalette);
 
-    // Search box
+    // Search box with improved styling
     searchBox = new QLineEdit(this);
     searchBox->setPlaceholderText("Search clipboard history...");
     searchBox->setFont(appFont);
     searchBox->setClearButtonEnabled(true);
-    searchBox->setStyleSheet(QStringLiteral(
+    searchBox->setMinimumHeight(ITEM_HEIGHT + 8);
+    searchBox->setStyleSheet(QString(
         "QLineEdit { "
-        "    padding: 10px 14px; "
+        "    padding: 12px 16px; "
         "    border-radius: 6px; "
-        "    background: #3C3C3C; "
-        "    border: 1px solid #3F3F46; "
+        "    background: %1; "
+        "    color: %2; "
+        "    border: 1px solid %3; "
         "    margin-bottom: 8px;"
+        "    font-size: %4px;"
+        "    min-height: %5px;"
         "}"
         "QLineEdit:focus { "
-        "    border: 1px solid #007ACC; "
-        "    background: #3E3E42;"
+        "    border: 1px solid %6; "
+        "    background: %7;"
         "}"
+        "QLineEdit::placeholder { "
+        "    color: %8; "
+        "    opacity: 0.6; "
+        "    font-style: italic;"
+        "}"
+    ).arg(
+        Colors::SURFACE_LIGHT,  // Background
+        Colors::TEXT_PRIMARY,   // Text color
+        Colors::BORDER,         // Border color
+        QString::number(BASE_FONT_SIZE + 1),  // Font size
+        QString::number(ITEM_HEIGHT + 8),     // Min height
+        Colors::PRIMARY,         // Focus border
+        Colors::SURFACE_LIGHTER, // Focus background
+        Colors::TEXT_SECONDARY   // Placeholder color
     ));
+    
     connect(searchBox, &QLineEdit::textChanged,
             this, &ClipboardManager::onSearchTextChanged);
     mainLayout->addWidget(searchBox);
 
-    // Splitter for history and preview
-    splitter = new QSplitter(Qt::Horizontal, this);
+    // Create splitter for resizable panes
+    splitter = new QSplitter(Qt::Vertical, this);
+    splitter->setHandleWidth(SPLITTER_HANDLE_WIDTH);
+    splitter->setChildrenCollapsible(false);
+    splitter->setOpaqueResize(true);
     
-    // Create history list
+    // Create history list with improved settings
     historyList = new QListWidget();
     historyList->setObjectName("historyList");
+    historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    historyList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    historyList->setSelectionMode(QAbstractItemView::SingleSelection);
+    historyList->setTextElideMode(Qt::ElideRight);
+    historyList->setSpacing(4);
+    historyList->setFrameShape(QFrame::NoFrame);
+    historyList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    historyList->setStyleSheet(QString(
+        "QListWidget { "
+        "    background: %1; "
+        "    border: 1px solid %2; "
+        "    border-radius: 6px; "
+        "    padding: 6px; "
+        "    outline: none; "
+        "    font-size: %3px;"
+        "}"
+        "QListWidget::item { "
+        "    background: %4; "
+        "    color: %5; "
+        "    padding: 12px 16px; "
+        "    margin: 2px 0; "
+        "    border-radius: 4px; "
+        "    min-height: %6px;"
+        "}"
+        "QListWidget::item:selected { "
+        "    background: %7; "
+        "    border: 1px solid %8;"
+        "}"
+        "QListWidget::item:hover { "
+        "    background: %9; "
+        "    border: 1px solid %10;"
+        "}"
+    ).arg(
+        Colors::SURFACE,        // Background
+        Colors::BORDER,         // Border
+        QString::number(BASE_FONT_SIZE),  // Font size
+        Colors::SURFACE_LIGHT,  // Item background
+        Colors::TEXT_PRIMARY,   // Text color
+        QString::number(ITEM_HEIGHT),  // Item height
+        Colors::PRIMARY,        // Selected background
+        Colors::PRIMARY_LIGHT,  // Selected border
+        Colors::SURFACE_LIGHTER, // Hover background
+        Colors::BORDER          // Hover border
+    ));
+    
+    // Connect signals
+    connect(historyList, &QListWidget::itemDoubleClicked,
+            this, &ClipboardManager::onItemDoubleClicked);
+    connect(historyList->selectionModel(), &QItemSelectionModel::selectionChanged,
+            this, &ClipboardManager::onItemSelectionChanged);
     historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     historyList->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -622,6 +849,12 @@ void ClipboardManager::setupUI() {
             this, &ClipboardManager::onItemClicked);
     connect(historyList, &QListWidget::customContextMenuRequested,
             this, &ClipboardManager::showContextMenu);
+    // Connect item delegate signals
+    connect(historyList->itemDelegate(), &QAbstractItemDelegate::commitData,
+            this, [this](QWidget* editor) {
+                QListWidgetItem* item = historyList->currentItem();
+                if (item) onItemChanged(item);
+            });
     splitter->addWidget(listContainer);
 
     // Preview pane
@@ -856,6 +1089,12 @@ bool ClipboardManager::isFileTypeAllowed(const QString& fileName) const {
 void ClipboardManager::loadSettings() {
     QSettings settings("Havel", "ClipboardManager");
     
+    // Load history size (default to 1000 if not set, 0 or negative means unlimited)
+    maxHistorySize = settings.value("maxHistorySize", 1000).toInt();
+    
+    // Load preview max length (default to 1000 if not set)
+    previewMaxLength = settings.value("previewMaxLength", 1000).toInt();
+    
     // Load enabled content types
     QVariant enabledTypes = settings.value("enabledContentTypes");
     if (enabledTypes.isValid()) {
@@ -868,6 +1107,12 @@ void ClipboardManager::loadSettings() {
 
 void ClipboardManager::saveSettings() {
     QSettings settings("Havel", "ClipboardManager");
+    
+    // Save history size
+    settings.setValue("maxHistorySize", maxHistorySize);
+    
+    // Save preview max length
+    settings.setValue("previewMaxLength", previewMaxLength);
     
     // Save enabled content types
     QVariantList types;
@@ -1030,17 +1275,25 @@ QString ClipboardManager::formatFileList(const QList<QUrl>& urls) const {
 
 // Core functionality from first version
 void ClipboardManager::onClipboardChanged() {
-    if (clipboard) {
-        // Use the enhanced content processing from second version
-        processClipboardContent();
-        
-        // Also maintain backward compatibility with simple text
-        QString text = clipboard->text();
-        if (!text.isEmpty() && text != lastClipboard) {
-            lastClipboard = text;
-            addToHistory(text);
-        }
+    // Skip if we're the ones who changed the clipboard
+    if (m_isSettingClipboard) {
+        return;
     }
+
+    // Skip if already processing or no clipboard
+    if (!clipboard || m_isProcessingClipboardChange) {
+        return;
+    }
+
+    m_isProcessingClipboardChange = true;
+
+    try {
+        processClipboardContent();
+    } catch (...) {
+        qWarning() << "Error processing clipboard content";
+    }
+    
+    m_isProcessingClipboardChange = false;
 }
 
 void ClipboardManager::addToHistory(const ClipboardItem& item) {
@@ -1066,9 +1319,12 @@ void ClipboardManager::addToHistory(const ClipboardItem& item) {
     historyItems.prepend(newItem);
     
     // Limit size and remove oldest items if needed
-    while (historyItems.size() > MAX_HISTORY_SIZE) {
-        removeHistoryFiles(historyItems.size() - 1);
-        historyItems.removeLast();
+    int maxSize = getMaxHistorySize();
+    if (maxSize > 0) {  // If maxSize <= 0, unlimited history
+        while (historyItems.size() > maxSize) {
+            removeHistoryFiles(historyItems.size() - 1);
+            historyItems.removeLast();
+        }
     }
     
     // Save the updated history to disk
@@ -1092,8 +1348,12 @@ void ClipboardManager::addToHistory(const QString& text) {
     // Also maintain the simple string list for backward compatibility
     fullHistory.removeAll(text);
     fullHistory.prepend(text);
-    while (fullHistory.size() > MAX_HISTORY_SIZE) {
-        fullHistory.removeLast();
+    
+    // Only limit history size if maxHistorySize is greater than 0
+    if (maxHistorySize > 0) {
+        while (fullHistory.size() > maxHistorySize) {
+            fullHistory.removeLast();
+        }
     }
     
     // Save the updated history to disk
@@ -1130,8 +1390,9 @@ void ClipboardManager::filterHistory(const QString& filter) {
             listItem->setText(iconText + displayText);
             listItem->setData(Qt::UserRole, QVariant::fromValue(item));
             listItem->setToolTip(item.preview);
-            
-            historyList->addItem(listItem);
+            listItem->setFlags(listItem->flags() | Qt::ItemIsEditable | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
+            listItem->setSizeHint(QSize(listItem->sizeHint().width(), 50));
+            historyList->insertItem(0, listItem);
         }
     }
     
@@ -1146,8 +1407,81 @@ void ClipboardManager::filterHistory(const QString& filter) {
 void ClipboardManager::onItemDoubleClicked(QListWidgetItem* item) {
     if (!item) return;
     
-    copySelectedItem();
-    close();
+    int row = historyList->row(item);
+    if (row < 0 || row >= historyItems.size()) return;
+    
+    const auto& historyItem = historyItems[row];
+    if (!clipboard) {
+        clipboard = QApplication::clipboard();
+        if (!clipboard) return;
+    }
+    
+    // Use the guard to prevent notification loops
+    ClipboardSettingGuard guard(this);
+    
+    try {
+        if (historyItem.type == ContentType::Text || 
+            historyItem.type == ContentType::Markdown || 
+            historyItem.type == ContentType::Html) {
+            clipboard->setText(historyItem.data.toString());
+        } else if (historyItem.type == ContentType::Image) {
+            QImage image = qvariant_cast<QImage>(historyItem.data);
+            if (!image.isNull()) {
+                clipboard->setImage(image);
+            }
+        } else if (historyItem.type == ContentType::FileList) {
+            QList<QUrl> urls = qvariant_cast<QList<QUrl>>(historyItem.data);
+            if (!urls.isEmpty()) {
+                QMimeData* mimeData = new QMimeData();
+                mimeData->setUrls(urls);
+                clipboard->setMimeData(mimeData);
+            }
+        }
+        
+        hide();
+    } catch (...) {
+        qWarning() << "Error setting clipboard content from double-click";
+    }
+}
+
+void ClipboardManager::editSelectedItem() {
+    QListWidgetItem* item = historyList->currentItem();
+    if (item) {
+        historyList->editItem(item);
+    }
+}
+
+void ClipboardManager::onItemChanged(QListWidgetItem* item) {
+    if (!item) return;
+    
+    int row = historyList->row(item);
+    if (row < 0 || row >= historyItems.size()) return;
+    
+    // Update the item in our history
+    auto& historyItem = historyItems[row];
+    QString newText = item->text();
+    
+    if (historyItem.type == ContentType::Text || 
+        historyItem.type == ContentType::Markdown || 
+        historyItem.type == ContentType::Html) {
+        // For text items, update the data directly
+        historyItem.data = newText;
+        historyItem.displayText = newText.left(100);
+        historyItem.preview = newText.left(50);
+        
+        // Update the full history list
+        if (historyItem.type == ContentType::Text) {
+            fullHistory[row] = newText;
+        }
+        
+        // Update the preview if visible
+        if (previewPane) {
+            previewPane->setPlainText(newText);
+        }
+        
+        // Save the updated history
+        saveHistory();
+    }
 }
 
 void ClipboardManager::onItemSelectionChanged() {
@@ -1159,160 +1493,76 @@ void ClipboardManager::onItemSelectionChanged() {
     }
 
     QVariant itemData = item->data(Qt::UserRole);
-    if (!itemData.canConvert<ClipboardItem>()) {
-        // Fallback to simple text for backward compatibility
-        QString text = item->data(Qt::UserRole).toString();
-        if (!text.isEmpty()) {
-            QString previewText = text;
-            if (previewText.length() > PREVIEW_MAX_LENGTH) {
-                previewText = previewText.left(PREVIEW_MAX_LENGTH) + "\n\n[... truncated ...]";
-            }
-            previewPane->setPlainText(previewText);
-            statusBar()->showMessage(QString("Selected item: %1 characters").arg(text.length()));
-        }
-        return;
-    }
-
-    ClipboardItem clipboardItem = itemData.value<ClipboardItem>();
-    
-    // Set a basic style for the preview
-    QString style = "<style>"
-                   "body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.5; color: #e0e0e0; background-color: #252526; margin: 10px; }"
-                   "pre { background-color: #1e1e1e; padding: 10px; border-radius: 4px; overflow-x: auto; }"
-                   "code { font-family: 'Consolas', 'Monaco', monospace; }"
-                   "a { color: #4da6ff; text-decoration: none; }"
-                   "a:hover { text-decoration: underline; }"
-                   "h1, h2, h3 { color: #9cdcfe; margin: 10px 0; }"
-                   "img { max-width: 100%; height: auto; display: block; margin: 10px 0; }"
-                   "</style>";
-    
-    switch (clipboardItem.type) {
-        case ContentType::Text:
-            previewPane->setPlainText(clipboardItem.data.toString());
-            statusBar()->showMessage(QString("Text: %1 characters").arg(clipboardItem.data.toString().length()));
-            break;
-            
-        case ContentType::Markdown: {
-            QString html = markdownToHtml(clipboardItem.data.toString());
-            previewPane->setHtml(style + html);
-            statusBar()->showMessage(QString("Markdown: %1 characters").arg(clipboardItem.data.toString().length()));
-            break;
-        }
-            
-        case ContentType::Html: {
-            QString html = clipboardItem.data.toString();
-            if (!html.contains("<style>")) {
-                html = style + html;
-            }
-            previewPane->setHtml(html);
-            statusBar()->showMessage(QString("HTML: %1 characters").arg(html.length()));
-            break;
-        }
-            
-        case ContentType::Image: {
-            QImage image = qvariant_cast<QImage>(clipboardItem.data);
-            QPixmap pixmap = QPixmap::fromImage(image);
-            
-            // Scale image to fit preview while maintaining aspect ratio
-            QSize previewSize = previewPane->viewport()->size();
-            pixmap = pixmap.scaled(previewSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            
-            QString html = QString("<div style='text-align: center;'>"
-                                 "<p>Image: %1x%2 pixels</p>"
-                                 "<img src='data:image/png;base64,%3'/>"
-                                 "</div>")
-                         .arg(image.width())
-                         .arg(image.height())
-                         .arg([&pixmap]() -> QString {
-                             QByteArray byteArray;
-                             QBuffer buffer(&byteArray);
-                             pixmap.save(&buffer, "PNG");
-                             return QString(byteArray.toBase64());
-                         }());
-            
-            previewPane->setHtml(style + html);
-            statusBar()->showMessage(QString("Image: %1x%2 pixels").arg(image.width()).arg(image.height()));
-            break;
-        }
-            
-        case ContentType::FileList: {
-            QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
-            QStringList fileList;
-            
-            fileList << QString("<h3>%1 files:</h3><ul>").arg(urls.size());
-            
-            for (const QUrl& url : urls) {
-                if (url.isLocalFile()) {
-                    QFileInfo info(url.toLocalFile());
-                    fileList << QString("<li><b>%1</b> (%2, %3)")
-                        .arg(info.fileName())
-                        .arg(QString::fromLatin1("%1 MB").arg(info.size() / (1024.0 * 1024.0), 0, 'f', 2))
-                        .arg(info.lastModified().toString("yyyy-MM-dd hh:mm"));
-                } else {
-                    fileList << QString("<li><a href='%1'>%1</a>").arg(url.toString());
-                }
-            }
-            
-            fileList << "</ul>";
-            previewPane->setHtml(style + fileList.join(""));
-            statusBar()->showMessage(QString("File list: %1 files").arg(urls.size()));
-            break;
-        }
-            
-        default:
-            previewPane->setPlainText(tr("Preview not available for this content type."));
-            statusBar()->showMessage("Unsupported content type");
-            break;
-    }
-}
-
-void ClipboardManager::copySelectedItem() {
-    QListWidgetItem* item = historyList->currentItem();
-    if (!item || !clipboard) return;
-    
-    QVariant itemData = item->data(Qt::UserRole);
     
     if (itemData.canConvert<ClipboardItem>()) {
-        // Enhanced content type handling
+        // Enhanced content type handling for preview
         ClipboardItem clipboardItem = itemData.value<ClipboardItem>();
-        QMimeData* mimeData = new QMimeData();
         
+        // Update preview based on content type
         switch (clipboardItem.type) {
             case ContentType::Text:
-                mimeData->setText(clipboardItem.data.toString());
-                break;
-                
             case ContentType::Html:
-                mimeData->setHtml(clipboardItem.data.toString());
-                mimeData->setText(clipboardItem.data.toString());
+            case ContentType::Markdown: {
+                QString text = clipboardItem.data.toString();
+                if (text.length() > 200) {
+                    text = text.left(200) + "...";
+                }
+                previewPane->setPlainText(text);
+                statusBar()->showMessage(QString("Selected: %1 characters").arg(clipboardItem.data.toString().length()));
                 break;
+            }
                 
             case ContentType::Image: {
                 QImage image = qvariant_cast<QImage>(clipboardItem.data);
-                mimeData->setImageData(image);
+                if (!image.isNull()) {
+                    // Create a scaled version for preview
+                    QPixmap pixmap = QPixmap::fromImage(image.scaled(
+                        previewPane->size(), 
+                        Qt::KeepAspectRatio, 
+                        Qt::SmoothTransformation
+                    ));
+                    previewPane->clear();
+                    previewPane->document()->addResource(
+                        QTextDocument::ImageResource,
+                        QUrl("data:image"),
+                        QVariant(pixmap)
+                    );
+                    previewPane->setHtml(
+                        QString("<img src=\"data:image\" /><br>%1x%2 pixels")
+                            .arg(image.width())
+                            .arg(image.height())
+                    );
+                    statusBar()->showMessage(QString("Selected: Image %1x%2").arg(image.width()).arg(image.height()));
+                }
                 break;
             }
                 
             case ContentType::FileList: {
                 QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
-                mimeData->setUrls(urls);
+                QStringList fileNames;
+                for (const QUrl& url : urls) {
+                    QFileInfo fileInfo(url.toLocalFile());
+                    fileNames << fileInfo.fileName();
+                }
+                previewPane->setPlainText(fileNames.join("\n"));
+                statusBar()->showMessage(QString("Selected: %1 files").arg(urls.size()));
                 break;
             }
                 
             default:
-                // Fallback to text
-                mimeData->setText(clipboardItem.data.toString());
+                previewPane->clear();
+                statusBar()->showMessage("Ready - Double-click to copy, Del to remove");
                 break;
         }
-        
-        clipboard->setMimeData(mimeData);
     } else {
-        // Fallback to simple text
+        // Fallback to simple text preview
         QString text = itemData.toString();
-        clipboard->setText(text);
+        if (text.length() > 200) {
+            text = text.left(200) + "...";
+        }
+        previewPane->setPlainText(text);
+        statusBar()->showMessage(QString("Selected: %1 characters").arg(text.length()));
     }
-    
-    showTrayMessage("Copied to clipboard!");
 }
 
 void ClipboardManager::removeSelectedItem() {
@@ -1342,6 +1592,60 @@ void ClipboardManager::removeSelectedItem() {
     statusBar()->showMessage("Item removed");
 }
 
+void ClipboardManager::copySelectedItem() {
+    QListWidgetItem* item = historyList->currentItem();
+    if (!item) return;
+    
+    QVariant itemData = item->data(Qt::UserRole);
+    if (!itemData.canConvert<ClipboardItem>()) return;
+    
+    const ClipboardItem& clipboardItem = itemData.value<ClipboardItem>();
+    
+    if (!clipboard) {
+        clipboard = QApplication::clipboard();
+        if (!clipboard) return;
+    }
+    
+    // Use the guard to prevent notification loops
+    ClipboardSettingGuard guard(this);
+    
+    try {
+        switch (clipboardItem.type) {
+            case ContentType::Text:
+            case ContentType::Markdown:
+            case ContentType::Html:
+                clipboard->setText(clipboardItem.data.toString());
+                break;
+                
+            case ContentType::Image: {
+                QImage image = qvariant_cast<QImage>(clipboardItem.data);
+                if (!image.isNull()) {
+                    clipboard->setImage(image);
+                }
+                break;
+            }
+                
+            case ContentType::FileList: {
+                QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
+                if (!urls.isEmpty()) {
+                    QMimeData* mimeData = new QMimeData();
+                    mimeData->setUrls(urls);
+                    clipboard->setMimeData(mimeData);
+                }
+                break;
+            }
+                
+            default:
+                break;
+        }
+        
+        statusBar()->showMessage("Copied to clipboard", 2000);
+    } catch (...) {
+        qWarning() << "Error setting clipboard content";
+        throw;
+    }
+}
+
 void ClipboardManager::onClearAll() {
     // Remove all history files
     for (int i = 0; i < historyItems.size(); ++i) {
@@ -1366,11 +1670,11 @@ void ClipboardManager::onClearAll() {
 }
 
 void ClipboardManager::showAndFocus() {
-    if (shown || isVisible()) {
+    if (isVisible()) {
         if (historyList) {
             lastRow = historyList->currentRow();
         }
-        close();
+        QMainWindow::close();
     } else {
         // multimonitor support
         QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
@@ -1412,7 +1716,6 @@ void ClipboardManager::showAndFocus() {
             historyList->setCurrentRow(lastRow);
         }
     }
-    shown = !shown;
 }
 
 void ClipboardManager::toggleVisibility() {
@@ -1431,12 +1734,10 @@ void ClipboardManager::pasteHistoryItem(int index) {
         return;
     }
     
-    // Copy the item
-    historyList->setCurrentItem(item);
-    copySelectedItem();
-    
-    // Move the item to the top of the history
+    // Get the item data before making any changes
     QVariant itemData = item->data(Qt::UserRole);
+    
+    // Move the item to the top of the history first
     if (itemData.canConvert<ClipboardItem>()) {
         ClipboardItem clipboardItem = itemData.value<ClipboardItem>();
         
@@ -1460,7 +1761,59 @@ void ClipboardManager::pasteHistoryItem(int index) {
     historyList->insertItem(0, newItem);
     historyList->setCurrentItem(newItem);
     
-    // Hide the window after pasting
+    // Use the guard to prevent notification loops
+    ClipboardSettingGuard guard(this);
+    
+    try {
+        // Now copy the item to clipboard
+        if (itemData.canConvert<ClipboardItem>()) {
+            const ClipboardItem& clipboardItem = itemData.value<ClipboardItem>();
+            
+            if (!clipboard) {
+                clipboard = QApplication::clipboard();
+                if (!clipboard) return;
+            }
+            
+            switch (clipboardItem.type) {
+                case ContentType::Text:
+                case ContentType::Markdown:
+                case ContentType::Html:
+                    clipboard->setText(clipboardItem.data.toString());
+                    break;
+                    
+                case ContentType::Image: {
+                    QImage image = qvariant_cast<QImage>(clipboardItem.data);
+                    if (!image.isNull()) {
+                        clipboard->setImage(image);
+                    }
+                    break;
+                }
+                    
+                case ContentType::FileList: {
+                    QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
+                    if (!urls.isEmpty()) {
+                        QMimeData* mimeData = new QMimeData();
+                        mimeData->setUrls(urls);
+                        clipboard->setMimeData(mimeData);
+                    }
+                    break;
+                }
+                    
+                default:
+                    break;
+            }
+        } else {
+            // Simple text handling
+            if (clipboard) {
+                clipboard->setText(itemData.toString());
+            }
+        }
+        
+        statusBar()->showMessage("Pasted to clipboard", 2000);
+    } catch (...) {
+        qWarning() << "Error pasting item to clipboard";
+    }
+    
     close();
 }
 
@@ -1505,20 +1858,16 @@ void ClipboardManager::onTrayIconActivated(QSystemTrayIcon::ActivationReason rea
 }
 
 void ClipboardManager::showContextMenu(const QPoint& pos) {
+    QListWidgetItem* item = historyList->itemAt(pos);
     QMenu menu(this);
     
-    QAction* copyAction = menu.addAction("Copy");
-    QAction* deleteAction = menu.addAction("Delete");
-    menu.addSeparator();
-    QAction* clearAllAction = menu.addAction("Clear All");
-    menu.addSeparator();
-    QAction* quitAction = menu.addAction("Quit");
-    
-    connect(copyAction, &QAction::triggered, this, &ClipboardManager::copySelectedItem);
-    connect(deleteAction, &QAction::triggered, this, &ClipboardManager::removeSelectedItem);
-    connect(clearAllAction, &QAction::triggered, this, &ClipboardManager::onClearAll);
-    connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
-    
+    if (item) {
+        menu.addAction("Edit", this, &ClipboardManager::editSelectedItem);
+        menu.addAction("Copy", this, &ClipboardManager::copySelectedItem);
+        menu.addAction("Remove", this, &ClipboardManager::removeSelectedItem);
+        menu.addSeparator();
+    }
+    menu.addAction("Clear All", this, &ClipboardManager::onClearAll);
     menu.exec(historyList->mapToGlobal(pos));
 }
 
@@ -1530,13 +1879,16 @@ void ClipboardManager::showTrayMessage(const QString& message) {
 }
 
 void ClipboardManager::closeEvent(QCloseEvent* event) {
-    close();
-    event->ignore();
+    // Save any unsaved data
+    saveHistory();
+    
+    // Accept the close event - let the window actually close
+    event->accept();
 }
 
 void ClipboardManager::keyPressEvent(QKeyEvent* event) {
     if (event->key() == Qt::Key_Escape) {
-        close();
+        hide();
     } else {
         QMainWindow::keyPressEvent(event);
     }

@@ -22,6 +22,7 @@
 #include "automation/AutoKeyPresser.hpp"
 #include "automation/AutoRunner.hpp"
 #include <memory>
+#include "core/io/KeyTap.hpp"    
 
 namespace havel {
     struct HotkeyDefinition {
@@ -95,12 +96,6 @@ namespace havel {
 
         void RegisterSystemHotkeys();
 
-        bool AddHotkey(const std::string &hotkeyStr,
-                       std::function<void()> callback);
-
-        bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
-
-        bool RemoveHotkey(const std::string &hotkeyStr);
         void updateAllConditionalHotkeys();
 
         void LoadHotkeyConfigurations();
@@ -124,11 +119,26 @@ namespace havel {
         void stopAutomationTask(const std::string& taskType);
         void toggleAutomationTask(const std::string& taskType, const std::string& param = "");
         
+
+        bool AddHotkey(const std::string &hotkeyStr,
+            std::function<void()> callback);
+        bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
+
+        bool RemoveHotkey(const std::string &hotkeyStr);
+        // Contextual hotkey support
+        int AddContextualHotkey(const std::string& key, const std::string& condition,
+            std::function<void()> trueAction,
+            std::function<void()> falseAction = nullptr,
+            int id = 0);
+        int AddGamingHotkey(const std::string& key,
+        std::function<void()> trueAction,
+        std::function<void()> falseAction = nullptr,
+        int id = 0);
     private:
         // Condition evaluation state
         std::chrono::steady_clock::time_point lastConditionCheck = std::chrono::steady_clock::now();
         static constexpr int CONDITION_CHECK_INTERVAL_MS = 100; // Check every 100ms instead of constantly
-        
+        std::unique_ptr<KeyTap> lwin;
         // Cached condition results
         struct CachedCondition {
             bool result;
@@ -145,16 +155,6 @@ namespace havel {
         // Black overlay functionality
         void showBlackOverlay();
 
-        // Contextual hotkey support
-        int AddContextualHotkey(const std::string& key, const std::string& condition,
-                                std::function<void()> trueAction,
-                                std::function<void()> falseAction = nullptr,
-                                int id = 0);
-                                
-        int AddGamingHotkey(const std::string& key,
-                            std::function<void()> trueAction,
-                            std::function<void()> falseAction = nullptr,
-                            int id = 0);
         // Window management
         void minimizeActiveWindow();
 
@@ -178,6 +178,8 @@ namespace havel {
     private:
         void PlayPause();
         IO &io;
+        std::atomic<bool> winKeyComboDetected{false};
+        std::chrono::steady_clock::time_point winKeyPressTime;
         std::atomic<bool> genshinAutomationActive = false;
         std::thread genshinThread;
         WindowManager &windowManager;

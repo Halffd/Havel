@@ -58,6 +58,7 @@ struct HotKey {
     bool evdev = false;
     bool x11 = false;
     bool repeat = true;
+    bool wildcard = false;
     HotkeyType type = HotkeyType::Keyboard;
     HotkeyEventType eventType = HotkeyEventType::Down;
     
@@ -69,6 +70,17 @@ struct HotKey {
     std::vector<HotKey> comboSequence;
     // Time window for combo in milliseconds
     int comboTimeWindow = 500;
+};
+struct ParsedHotkey {
+  std::string keyPart;
+  int modifiers = 0;
+  bool isEvdev = false;
+  bool isX11 = false;
+  bool grab = true;
+  bool suspend = false;
+  bool repeat = true;
+  bool wildcard = false;
+  HotkeyEventType eventType = HotkeyEventType::Down;
 };
 
 struct InputDevice {
@@ -136,7 +148,7 @@ class IO {
   // Mouse button states
   std::atomic<bool> leftButtonDown{false};
   std::atomic<bool> rightButtonDown{false};
-  std::vector<int> emergencyHotkey = {KEY_ESC, KEY_LEFTALT, KEY_LEFTCTRL};
+  std::string emergencyHotkey = "^!esc";
   // Deadlock protection
   int evdevShutdownFd = -1;  // eventfd for clean shutdown
   std::atomic<bool> callbackInProgress{false};
@@ -157,7 +169,7 @@ class IO {
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
-  bool globalEvdev = true;
+  static bool globalEvdev;
   std::vector<HotKey> failedHotkeys;
   std::set<int> x11Hotkeys;
   std::set<int> evdevHotkeys;
@@ -266,7 +278,10 @@ public:
 
   int GetKeyboard();
 
-  int ParseModifiers(std::string str);
+  static ParsedHotkey ParseModifiersAndFlags(const std::string& input, bool isEvdev);
+  static KeyCode ParseKeyPart(const std::string& keyPart, bool isEvdev);
+  static ParsedHotkey ParseHotkeyString(const std::string& rawInput);
+  static int ParseModifiers(std::string str);
   static int ParseMouseButton(const std::string& str);
 
   void AssignHotkey(HotKey hotkey, int id);
@@ -415,7 +430,7 @@ private:
 
   void SendKeyEvent(Key key, bool down);
 
-  std::vector<IoEvent> ParseKeysString(const std::string &keys);
+  static std::vector<IoEvent> ParseKeysString(const std::string &keys);
 
   // Helper methods for X11 key grabbing
   bool Grab(Key input, unsigned int modifiers, Window root, bool grab,

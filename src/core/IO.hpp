@@ -18,6 +18,7 @@
 #include <vector>
 #include <condition_variable>
 #include <mutex>
+#include "core/io/HotkeyExecutor.hpp"
 #include "x11.h"
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
@@ -56,6 +57,7 @@ struct HotKey {
     bool success = false;
     bool evdev = false;
     bool x11 = false;
+    bool repeat = true;
     HotkeyType type = HotkeyType::Keyboard;
     HotkeyEventType eventType = HotkeyEventType::Down;
     
@@ -134,7 +136,7 @@ class IO {
   // Mouse button states
   std::atomic<bool> leftButtonDown{false};
   std::atomic<bool> rightButtonDown{false};
-  
+  std::vector<int> emergencyHotkey = {KEY_ESC, KEY_LEFTALT, KEY_LEFTCTRL};
   // Deadlock protection
   int evdevShutdownFd = -1;  // eventfd for clean shutdown
   std::atomic<bool> callbackInProgress{false};
@@ -147,6 +149,10 @@ class IO {
   
   // Track active callback threads for proper cleanup
   std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
+  
+  // Dedicated executor for slow operations
+  std::unique_ptr<HotkeyExecutor> slowOperationExecutor;
+  void executeHotkeyCallback(const std::function<void()>& callback, bool isInputEvent);
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
@@ -371,6 +377,7 @@ private:
   std::map<int, bool> evdevKeyState;
   // Track mouse button state for combos
   std::map<int, bool> evdevMouseButtonState;
+  std::unique_ptr<HotkeyExecutor> hotkeyExecutor;
   std::map<std::string, HotKey> instanceHotkeys;
   // Renamed to avoid conflict
   std::map<std::string, bool> hotkeyStates;
@@ -378,7 +385,6 @@ private:
   bool timerRunning = false;
   std::set<int> blockedKeys;
   std::mutex x11Mutex;
-  std::map<int, int> activeRemaps;
 
   // Static members
   static bool hotkeyEnabled;
@@ -386,6 +392,10 @@ private:
   std::timed_mutex hotkeyMutex;  // Use timed_mutex for try_lock_for() support
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
+  
+  // Remap tracking (persistent across events)
+  std::mutex remapMutex;
+  std::unordered_map<int, int> activeRemaps;  // original -> mapped
   
   // Mouse control members
   mutable std::mutex mouseMutex;

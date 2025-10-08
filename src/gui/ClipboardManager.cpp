@@ -5,18 +5,20 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 #include <QJsonArray>
-#include <QTextStream>
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QMessageBox>
 #include <QHeaderView>
 #include <QDateTime>
-#include <QStatusBar>
+#include <QClipboard>
 #include <QDebug>
-#include <QMenu>
-#include <QAction>
+#include <QDateTime>
+#include <QFileInfo>
+#include <QPainter>
+#include <QTextDocumentFragment>
 #include <QRegularExpression>
 #include <QFileInfo>
+#include <QStatusBar>
 #include <QDir>
 #include <QSettings>
 #include <QTextDocument>
@@ -29,9 +31,10 @@
 #include <QFontDatabase>
 #include <QStyleFactory>
 #include <QPainterPath>
+#include <QTimer>
+#include <QMenu>
 
 namespace havel {
-
 // File system operations
 QString ClipboardManager::getHistoryBasePath() const {
     return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/clipboard_history";
@@ -1227,19 +1230,31 @@ void ClipboardManager::processClipboardContent() {
         QString html = mimeData->html();
         qDebug() << "Processing HTML content, length:" << html.length();
         
-        // Extract plain text from HTML for display
+        // Extract plain text from HTML for pasting
         QTextDocument doc;
         doc.setHtml(html);
         QString plainText = doc.toPlainText().simplified();
         
+        // Store both HTML and plain text
         item.type = ContentType::Html;
-        item.data = html;
-        item.displayText = plainText.left(100) + (plainText.length() > 100 ? "..." : "");
-        item.preview = tr("🌐 ") + plainText.left(50) + (plainText.length() > 50 ? "..." : "");
+        item.data = html;  // Store original HTML
+        // Store plain text for pasting
+        item.data = plainText;
+        
+        // Create a preview with HTML formatting
+        QTextDocument previewDoc;
+        previewDoc.setHtml(html);
+        QString previewText = previewDoc.toPlainText().left(100);
+        if (previewText.length() == 100) {
+            previewText += "...";
+        }
+        
+        item.displayText = previewText;
+        item.preview = tr("🌐 ") + previewText.left(50) + (previewText.length() > 50 ? "..." : "");
         
         // Only add if different from last item to prevent duplicates
         if (lastClipboardItem.type != ContentType::Html || 
-            lastClipboardItem.data.toString() != html) {
+            lastClipboardItem.data.toString() != plainText) {
             qDebug() << "Adding new HTML content to history";
             lastClipboardItem = item;
             addToHistory(item);
@@ -1257,6 +1272,14 @@ void ClipboardManager::processClipboardContent() {
         if (text.isEmpty()) {
             qDebug() << "Text is empty, skipping";
             return;
+        }
+        
+        // Clean up the text - remove any HTML tags
+        if (text.contains(QLatin1String("<")) && text.contains(QLatin1String(">"))) {
+            QTextDocument doc;
+            doc.setHtml(text);
+            text = doc.toPlainText().trimmed();
+            qDebug() << "Cleaned HTML from text, new length:" << text.length();
         }
         
         // Skip if this is the same as the last text we processed
@@ -1455,166 +1478,83 @@ void ClipboardManager::filterHistory(const QString& filter) {
     statusBar()->showMessage(QString("Showing %1 items").arg(historyList->count()));
 }
 
-void ClipboardManager::onItemDoubleClicked(QListWidgetItem* item) {
-    if (!item) return;
-    
-    int row = historyList->row(item);
-    if (row < 0 || row >= historyItems.size()) return;
-    
-    const auto& historyItem = historyItems[row];
-    if (!clipboard) {
-        clipboard = QApplication::clipboard();
-        if (!clipboard) return;
-    }
-    
-    // Use the guard to prevent notification loops
-    ClipboardSettingGuard guard(this);
-    
-    try {
-        if (historyItem.type == ContentType::Text || 
-            historyItem.type == ContentType::Markdown || 
-            historyItem.type == ContentType::Html) {
-            clipboard->setText(historyItem.data.toString());
-        } else if (historyItem.type == ContentType::Image) {
-            QImage image = qvariant_cast<QImage>(historyItem.data);
-            if (!image.isNull()) {
-                clipboard->setImage(image);
-            }
-        } else if (historyItem.type == ContentType::FileList) {
-            QList<QUrl> urls = qvariant_cast<QList<QUrl>>(historyItem.data);
-            if (!urls.isEmpty()) {
-                QMimeData* mimeData = new QMimeData();
-                mimeData->setUrls(urls);
-                clipboard->setMimeData(mimeData);
-            }
-        }
-        
-        hide();
-    } catch (...) {
-        qWarning() << "Error setting clipboard content from double-click";
-    }
-}
-
-void ClipboardManager::editSelectedItem() {
-    QListWidgetItem* item = historyList->currentItem();
-    if (item) {
-        historyList->editItem(item);
-    }
-}
-
-void ClipboardManager::onItemChanged(QListWidgetItem* item) {
-    if (!item) return;
-    
-    int row = historyList->row(item);
-    if (row < 0 || row >= historyItems.size()) return;
-    
-    // Update the item in our history
-    auto& historyItem = historyItems[row];
-    QString newText = item->text();
-    
-    if (historyItem.type == ContentType::Text || 
-        historyItem.type == ContentType::Markdown || 
-        historyItem.type == ContentType::Html) {
-        // For text items, update the data directly
-        historyItem.data = newText;
-        historyItem.displayText = newText.left(100);
-        historyItem.preview = newText.left(50);
-        
-        // Update the full history list
-        if (historyItem.type == ContentType::Text) {
-            fullHistory[row] = newText;
-        }
-        
-        // Update the preview if visible
-        if (previewPane) {
-            previewPane->setPlainText(newText);
-        }
-        
-        // Save the updated history
-        saveHistory();
-    }
-}
-
 void ClipboardManager::onItemSelectionChanged() {
-    QListWidgetItem* item = historyList->currentItem();
-    if (!item) {
-        previewPane->clear();
-        statusBar()->showMessage("Ready - Double-click to copy, Del to remove");
+    QListWidgetItem* current = historyList->currentItem();
+    if (!current) {
+        statusBar()->showMessage("No item selected");
         return;
     }
 
-    QVariant itemData = item->data(Qt::UserRole);
+    int index = historyList->row(current);
+    if (index < 0 || index >= historyItems.size()) {
+        statusBar()->showMessage("Invalid item selected");
+        return;
+    }
+
+    const ClipboardItem& clipboardItem = historyItems[index];
     
-    if (itemData.canConvert<ClipboardItem>()) {
-        // Enhanced content type handling for preview
-        ClipboardItem clipboardItem = itemData.value<ClipboardItem>();
-        
-        // Update preview based on content type
-        switch (clipboardItem.type) {
-            case ContentType::Text:
-            case ContentType::Html:
-            case ContentType::Markdown: {
-                QString text = clipboardItem.data.toString();
-                if (text.length() > 200) {
-                    text = text.left(200) + "...";
-                }
-                previewPane->setPlainText(text);
-                statusBar()->showMessage(QString("Selected: %1 characters").arg(clipboardItem.data.toString().length()));
-                break;
+    // Update preview based on content type
+    if (!previewPane) {
+        return;
+    }
+
+    switch (clipboardItem.type) {
+        case ContentType::Text:
+        case ContentType::Html:
+        case ContentType::Markdown: {
+            QString text = clipboardItem.data.toString();
+            if (text.length() > 200) {
+                text = text.left(200) + "...";
             }
-                
-            case ContentType::Image: {
-                QImage image = qvariant_cast<QImage>(clipboardItem.data);
-                if (!image.isNull()) {
-                    // Create a scaled version for preview
-                    QPixmap pixmap = QPixmap::fromImage(image.scaled(
-                        previewPane->size(), 
-                        Qt::KeepAspectRatio, 
-                        Qt::SmoothTransformation
-                    ));
-                    previewPane->clear();
-                    previewPane->document()->addResource(
-                        QTextDocument::ImageResource,
-                        QUrl("data:image"),
-                        QVariant(pixmap)
-                    );
-                    previewPane->setHtml(
-                        QString("<img src=\"data:image\" /><br>%1x%2 pixels")
-                            .arg(image.width())
-                            .arg(image.height())
-                    );
-                    statusBar()->showMessage(QString("Selected: Image %1x%2").arg(image.width()).arg(image.height()));
-                }
-                break;
+            previewPane->setPlainText(text);
+            statusBar()->showMessage(QString("Selected: %1 characters").arg(clipboardItem.data.toString().length()));
+            break;
+        }
+            
+        case ContentType::Image: {
+            QImage image = qvariant_cast<QImage>(clipboardItem.data);
+            if (!image.isNull()) {
+                // Create a scaled version for preview
+                QPixmap pixmap = QPixmap::fromImage(image.scaled(
+                    previewPane->size(), 
+                    Qt::KeepAspectRatio, 
+                    Qt::SmoothTransformation
+                ));
+                previewPane->clear();
+                previewPane->document()->addResource(
+                    QTextDocument::ImageResource,
+                    QUrl("data:image"),
+                    QVariant(pixmap)
+                );
+                previewPane->setHtml(
+                    QString("<img src=\"data:image\" /><br>%1x%2 pixels")
+                        .arg(image.width())
+                        .arg(image.height())
+                );
+                statusBar()->showMessage(QString("Selected: Image %1x%2").arg(image.width()).arg(image.height()));
             }
-                
-            case ContentType::FileList: {
-                QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
-                QStringList fileNames;
-                for (const QUrl& url : urls) {
-                    QFileInfo fileInfo(url.toLocalFile());
-                    fileNames << fileInfo.fileName();
-                }
-                previewPane->setPlainText(fileNames.join("\n"));
-                statusBar()->showMessage(QString("Selected: %1 files").arg(urls.size()));
-                break;
+            break;
+        }
+            
+        case ContentType::FileList: {
+            QList<QUrl> urls = qvariant_cast<QList<QUrl>>(clipboardItem.data);
+            QStringList fileNames;
+            for (const QUrl& url : urls) {
+                QFileInfo fileInfo(url.toLocalFile());
+                fileNames << fileInfo.fileName();
             }
+            previewPane->setPlainText(fileNames.join("\n"));
+            statusBar()->showMessage(QString("Selected: %1 files").arg(urls.size()));
+            break;
+        }
                 
-            default:
+            default:{
                 previewPane->clear();
                 statusBar()->showMessage("Ready - Double-click to copy, Del to remove");
                 break;
+            }
         }
-    } else {
-        // Fallback to simple text preview
-        QString text = itemData.toString();
-        if (text.length() > 200) {
-            text = text.left(200) + "...";
-        }
-        previewPane->setPlainText(text);
-        statusBar()->showMessage(QString("Selected: %1 characters").arg(text.length()));
     }
-}
 
 void ClipboardManager::removeSelectedItem() {
     QListWidgetItem* item = historyList->currentItem();
@@ -1949,6 +1889,40 @@ void ClipboardManager::onItemClicked(QListWidgetItem* item) {
     if (item) {
         onItemSelectionChanged();
     }
+}
+
+void ClipboardManager::onItemDoubleClicked(QListWidgetItem* item) {
+    if (!item) return;
+    copySelectedItem();
+    hide();
+}
+
+void ClipboardManager::editSelectedItem() {
+    QListWidgetItem* item = historyList->currentItem();
+    if (!item) return;
+    
+    int index = historyList->row(item);
+    if (index < 0 || index >= historyItems.size()) return;
+    
+    historyList->editItem(item);
+}
+
+void ClipboardManager::onItemChanged(QListWidgetItem* item) {
+    if (!item) return;
+    
+    int index = historyList->row(item);
+    if (index < 0 || index >= historyItems.size()) return;
+    
+    // Update the display text of the corresponding history item
+    historyItems[index].displayText = item->text();
+    
+    // If the item contains text content, update the data as well
+    if (historyItems[index].data.canConvert<QString>()) {
+        historyItems[index].data = item->text();
+    }
+    
+    // Save the updated history
+    saveHistory();
 }
 
 } // namespace havel

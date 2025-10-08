@@ -51,119 +51,238 @@ int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   return 0; // Don't crash
 }
 
-void IO::executeHotkeyCallback(const std::function<void()> &callback,
-                               bool isInputEvent) {
-  if (!callback)
-    return;
+std::string IO::findEvdevDevice(const std::string &deviceName) {
+  debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
 
-  if (isInputEvent) {
-    // Fast path for input events - use detached thread with minimal overhead
-    std::thread([this, callback]() {
-      try {
-        pendingCallbacks++;
-        callback();
-      } catch (const std::exception &e) {
-        error("Hotkey callback error: {}", e.what());
-      } catch (...) {
-        error("Unknown error in hotkey callback");
+  std::ifstream proc("/proc/bus/input/devices");
+  if (!proc.is_open()) {
+    error("Cannot open /proc/bus/input/devices");
+    return "";
+  }
+
+  std::string line;
+  std::string currentName;
+  int deviceCount = 0;
+
+  while (std::getline(proc, line)) {
+    debug("Line: {}", line);
+
+    if (line.starts_with("N: Name=")) {
+      deviceCount++;
+      currentName = line.substr(8);
+      if (!currentName.empty() && currentName[0] == '"') {
+        currentName = currentName.substr(1, currentName.length() - 2);
       }
-      pendingCallbacks--;
-    }).detach();
-  } else if (slowOperationExecutor) {
-    // Slow path for non-critical operations
-    slowOperationExecutor->submit([this, callback]() {
-      try {
-        pendingCallbacks++;
-        callback();
-      } catch (const std::exception &e) {
-        error("Slow operation error: {}", e.what());
-      } catch (...) {
-        error("Unknown error in slow operation");
+      debug("  Device #{}: '{}'", deviceCount, currentName);
+
+      if (currentName == deviceName) {
+        debug("  🎯 EXACT MATCH FOUND!");
       }
-      pendingCallbacks--;
-    });
+    } else if (line.starts_with("H: Handlers=")) {
+      debug("  Handlers: {}", line);
+
+      if (currentName == deviceName) {
+        debug("  🔥 This is our target device!");
+
+        size_t eventPos = line.find("event");
+        if (eventPos != std::string::npos) {
+          std::string eventStr = line.substr(eventPos + 5);
+          size_t spacePos = eventStr.find(' ');
+          if (spacePos != std::string::npos) {
+            eventStr = eventStr.substr(0, spacePos);
+          }
+          std::string result = "/dev/input/event" + eventStr;
+          debug("  ✅ SUCCESS: {}", result);
+          return result;
+        }
+      }
+    }
+  }
+
+  debug("=== END DEBUG - Device not found ===");
+  return "";
+}
+std::string IO::getKeyboardDevice() {
+  std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
+  if (!id.empty()) {
+      debug("Using keyboard device ID from config: '{}'", id);
+      return findEvdevDevice(id);
+  }
+  
+  auto keyboards = Device::findKeyboards();
+  
+  debug("=== Keyboard Detection Results ===");
+  for (const auto& kb : keyboards) {
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
+            kb.name, kb.confidence * 100, kb.reason);
+  }
+  
+  if (!keyboards.empty()) {
+      info("✅ Selected keyboard: '{}' -> {} (confidence: {:.1f}%)", 
+           keyboards[0].name, keyboards[0].eventPath, keyboards[0].confidence * 100);
+      return keyboards[0].eventPath;
+  }
+  
+  error("❌ No suitable keyboard devices found");
+  return "";
+}
+
+std::string IO::getMouseDevice() {
+  std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
+  if (!id.empty()) {
+      debug("Using mouse device ID from config: '{}'", id);
+      return findEvdevDevice(id);
+  }
+  
+  auto mice = Device::findMice();
+  
+  debug("=== Mouse Detection Results ===");
+  for (const auto& mouse : mice) {
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
+            mouse.name, mouse.confidence * 100, mouse.reason);
+  }
+  
+  if (!mice.empty()) {
+      info("✅ Selected mouse: '{}' -> {} (confidence: {:.1f}%)", 
+           mice[0].name, mice[0].eventPath, mice[0].confidence * 100);
+      return mice[0].eventPath;
+  }
+  
+  warning("❌ No suitable mouse devices found");
+  return "";
+}
+
+std::string IO::getGamepadDevice() {
+  auto gamepads = Device::findGamepads();
+  
+  debug("=== Gamepad Detection Results ===");
+  for (const auto& gamepad : gamepads) {
+      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
+            gamepad.name, gamepad.confidence * 100, gamepad.reason);
+  }
+  
+  if (!gamepads.empty()) {
+      info("✅ Found gamepad: '{}' -> {} (confidence: {:.1f}%)", 
+           gamepads[0].name, gamepads[0].eventPath, gamepads[0].confidence * 100);
+      return gamepads[0].eventPath;
+  }
+  
+  return "";
+}
+
+void IO::listInputDevices() {
+  auto devices = Device::getAllDevices();
+  
+  std::cout << "=== Input Device Detection Results ===" << std::endl;
+  
+  for (const auto& device : devices) {
+      std::cout << device.toString() << std::endl;
+  }
+  
+  std::cout << "\n=== Summary ===" << std::endl;
+  
+  auto keyboards = Device::findKeyboards();
+  std::cout << "Keyboards found: " << keyboards.size() << std::endl;
+  for (const auto& kb : keyboards) {
+      std::cout << "  - " << kb.name << " (" << (kb.confidence * 100) << "%)" << std::endl;
+  }
+  
+  auto mice = Device::findMice();
+  std::cout << "Mice found: " << mice.size() << std::endl;
+  for (const auto& mouse : mice) {
+      std::cout << "  - " << mouse.name << " (" << (mouse.confidence * 100) << "%)" << std::endl;
+  }
+  
+  auto gamepads = Device::findGamepads();
+  std::cout << "Gamepads/Joysticks found: " << gamepads.size() << std::endl;
+  for (const auto& gamepad : gamepads) {
+      std::cout << "  - " << gamepad.name << " (" << (gamepad.confidence * 100) << "%)" << std::endl;
   }
 }
+
+// Updated constructor
 IO::IO() {
   info("IO constructor called");
-
-  // Initialize executors
-  // Single worker for hotkeys to maintain order
-  hotkeyExecutor = std::make_unique<HotkeyExecutor>(1, 256);
-  // Multiple workers for slow operations
-  slowOperationExecutor = std::make_unique<HotkeyExecutor>(4, 128);
-
-  // Set the error handler before making your XGrabKey call
+  
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
-
-  // Initialize XInput2 if available
-  xinput2Available = InitializeXInput2();
-  if (xinput2Available) {
-    info("XInput2 initialized successfully");
-  } else {
-    warning(
-        "XInput2 initialization failed, falling back to software sensitivity");
-  }
-
-  // Initialize mouse event timestamps
-  lastLeftPress = std::chrono::steady_clock::now();
-  lastRightPress = std::chrono::steady_clock::now();
+  
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
-
-  // Start hotkey monitoring thread for X11
-#ifdef __linux__
+  
+  #ifdef __linux__
   if (display) {
-    UpdateNumLockMask();
-
-    // Initialize keyboard device
-    std::string keyboardDevice = getKeyboardDevice();
-    if (!keyboardDevice.empty()) {
-      try {
-        info("Using keyboard device: {}", keyboardDevice);
-        SetupUinputDevice();
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        StartEvdevHotkeyListener(keyboardDevice);
-        info("Successfully started evdev hotkey listener for keyboard");
-      } catch (const std::exception &e) {
-        error("Failed to start evdev keyboard listener: {}", e.what());
-        globalEvdev = false;
+      UpdateNumLockMask();
+      
+      // Initialize keyboard device
+      std::string keyboardDevice = getKeyboardDevice();
+      if (!keyboardDevice.empty()) {
+          try {
+              info("Using keyboard device: {}", keyboardDevice);
+              SetupUinputDevice();
+              std::this_thread::sleep_for(std::chrono::milliseconds(10));
+              StartEvdevHotkeyListener(keyboardDevice);
+              info("Successfully started evdev hotkey listener for keyboard");
+          } catch (const std::exception &e) {
+              error("Failed to start evdev keyboard listener: {}", e.what());
+              globalEvdev = false;
+          }
+      } else {
+          globalEvdev = false;
+          error("Failed to find a suitable keyboard device");
       }
-    } else {
-      globalEvdev = false;
-      error("Failed to find a suitable keyboard device");
-    }
-
-    // Initialize mouse device if needed
-    std::string mouseDevice = getMouseDevice();
-    if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-      try {
-        info("Using mouse device: {}", mouseDevice);
-        StartEvdevMouseListener(mouseDevice);
-        info("Successfully started evdev mouse listener");
-      } catch (const std::exception &e) {
-        error("Failed to start evdev mouse listener: {}", e.what());
+      
+      // Initialize mouse device
+      std::string mouseDevice = getMouseDevice();
+      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+          try {
+              info("Using mouse device: {}", mouseDevice);
+              StartEvdevMouseListener(mouseDevice);
+              info("Successfully started evdev mouse listener");
+          } catch (const std::exception &e) {
+              error("Failed to start evdev mouse listener: {}", e.what());
+          }
+        } else if (mouseDevice.empty()) {
+          warning("No suitable mouse device found");
       }
-    } else if (mouseDevice.empty()) {
-      warning("No suitable mouse device found");
-    }
-
-    // Fall back to X11 hotkeys if evdev initialization failed
-    if (!globalEvdev) { // || !x11Hotkeys.empty()) {
-      timerRunning = true;
-      try {
-        timerThread = std::thread(&IO::MonitorHotkeys, this);
-        info("Started X11 hotkey monitoring thread");
-      } catch (const std::exception &e) {
-        error("Failed to start X11 hotkey monitoring thread: {}", e.what());
-        timerRunning = false;
+      
+      // Initialize gamepad device if requested
+      bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
+      if (enableGamepad) {
+          std::string gamepadDevice = getGamepadDevice();
+          if (!gamepadDevice.empty()) {
+              try {
+                  info("Using gamepad device: {}", gamepadDevice);
+                  StartEvdevGamepadListener(gamepadDevice);
+                  info("Successfully started evdev gamepad listener");
+              } catch (const std::exception &e) {
+                  error("Failed to start evdev gamepad listener: {}", e.what());
+              }
+          } else {
+              warning("Gamepad support enabled but no suitable gamepad device found");
+          }
       }
-    }
+      
+      // Fall back to X11 hotkeys if evdev initialization failed
+      if (!globalEvdev) {
+          timerRunning = true;
+          try {
+              timerThread = std::thread(&IO::MonitorHotkeys, this);
+              info("Started X11 hotkey monitoring thread");
+          } catch (const std::exception &e) {
+              error("Failed to start X11 hotkey monitoring thread: {}", e.what());
+              timerRunning = false;
+          }
+      }
+      
+      // Debug output - show what we detected
+      if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
+          listInputDevices();
+      }
   }
-#endif
+  #endif
 }
 IO::~IO() {
   std::cout << "IO destructor called" << std::endl;
@@ -172,13 +291,6 @@ IO::~IO() {
   if (timerRunning && timerThread.joinable()) {
     timerRunning = false;
     timerThread.join();
-  }
-
-  // Shutdown executors BEFORE stopping evdev (prevents race with SendUInput)
-  if (slowOperationExecutor) {
-    info("Shutting down slow operation executor...");
-    slowOperationExecutor->shutdown(std::chrono::milliseconds(1000));
-    slowOperationExecutor.reset();
   }
 
   if (hotkeyExecutor) {
@@ -3296,344 +3408,19 @@ void IO::CleanupUinputDevice() {
     uinputFd = -1;
   }
 }
-std::string IO::findEvdevDevice(const std::string &deviceName) {
-  debug("=== DEBUGGING findEvdevDevice for '{}' ===", deviceName);
-
-  std::ifstream proc("/proc/bus/input/devices");
-  if (!proc.is_open()) {
-    error("Cannot open /proc/bus/input/devices");
-    return "";
-  }
-
-  std::string line;
-  std::string currentName;
-  int deviceCount = 0;
-
-  while (std::getline(proc, line)) {
-    debug("Line: {}", line);
-
-    if (line.starts_with("N: Name=")) {
-      deviceCount++;
-      currentName = line.substr(8);
-      if (!currentName.empty() && currentName[0] == '"') {
-        currentName = currentName.substr(1, currentName.length() - 2);
-      }
-      debug("  Device #{}: '{}'", deviceCount, currentName);
-
-      if (currentName == deviceName) {
-        debug("  🎯 EXACT MATCH FOUND!");
-      }
-    } else if (line.starts_with("H: Handlers=")) {
-      debug("  Handlers: {}", line);
-
-      if (currentName == deviceName) {
-        debug("  🔥 This is our target device!");
-
-        size_t eventPos = line.find("event");
-        if (eventPos != std::string::npos) {
-          std::string eventStr = line.substr(eventPos + 5);
-          size_t spacePos = eventStr.find(' ');
-          if (spacePos != std::string::npos) {
-            eventStr = eventStr.substr(0, spacePos);
-          }
-          std::string result = "/dev/input/event" + eventStr;
-          debug("  ✅ SUCCESS: {}", result);
-          return result;
-        }
-      }
-    }
-  }
-
-  debug("=== END DEBUG - Device not found ===");
-  return "";
-}
-std::string IO::detectEvdevDevice(
-    const std::vector<std::string> &patterns,
-    const std::function<bool(const std::string &, int)> &deviceFilter) {
-
-  std::vector<InputDevice> devices = getInputDevices();
-
-  info("Scanning {} input devices for matches...", devices.size());
-  for (const auto &dev : devices) {
-    debug("  Device: '{}' (type: {}, id: {}, evdev: {})", dev.name, dev.type,
-          dev.id, dev.evdevPath.empty() ? "none" : dev.evdevPath);
-  }
-
-  // Try each pattern in order of preference
-  for (const auto &pattern : patterns) {
-    debug("Trying pattern: '{}'", pattern);
-
-    // PHASE 1: Try regex matching
-    try {
-      std::regex pattern_regex(pattern, std::regex_constants::icase);
-
-      for (const auto &device : devices) {
-        debug("    [REGEX] Checking device '{}' against pattern '{}'",
-              device.name, pattern);
-
-        if (std::regex_search(device.name, pattern_regex) &&
-            deviceFilter(device.type, device.id)) {
-
-          debug("    [REGEX] Device type '{}' and ID {} passed filter",
-                device.type, device.id);
-
-          // Try to get evdev path
-          std::string evdevPath = device.evdevPath;
-          if (evdevPath.empty()) {
-            debug("    [REGEX] No cached evdev path, searching with "
-                  "findEvdevDevice()");
-            evdevPath = findEvdevDevice(device.name);
-          }
-
-          if (!evdevPath.empty()) {
-            info("[REGEX] Matched device: '{}' (type: {}, id: {}) -> {} with "
-                 "pattern: '{}'",
-                 device.name, device.type, device.id, evdevPath, pattern);
-            return evdevPath;
-          } else {
-            debug("    [REGEX] Device matched but no evdev path found");
-          }
-        }
-      }
-
-    } catch (const std::regex_error &e) {
-      debug("[REGEX] Invalid regex pattern '{}': {}", pattern, e.what());
-    }
-
-    // PHASE 2: Fallback to case-insensitive substring search
-    debug(
-        "    [FALLBACK] Regex didn't match, trying substring search for: '{}'",
-        pattern);
-
-    for (const auto &device : devices) {
-      debug("    [FALLBACK] Checking device '{}' against pattern '{}'",
-            device.name, pattern);
-
-      // Case-insensitive substring matching
-      std::string lowerName = device.name;
-      std::string lowerPattern = pattern;
-      std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-                     ::tolower);
-      std::transform(lowerPattern.begin(), lowerPattern.end(),
-                     lowerPattern.begin(), ::tolower);
-
-      if (lowerName.find(lowerPattern) != std::string::npos &&
-          deviceFilter(device.type, device.id)) {
-
-        debug("    [FALLBACK] Device type '{}' and ID {} passed filter",
-              device.type, device.id);
-
-        // Try to get evdev path
-        std::string evdevPath = device.evdevPath;
-        if (evdevPath.empty()) {
-          debug("    [FALLBACK] No cached evdev path, searching with "
-                "findEvdevDevice()");
-          evdevPath = findEvdevDevice(device.name);
-        }
-
-        if (!evdevPath.empty()) {
-          info("✅ [FALLBACK] Matched device: '{}' (type: {}, id: {}) -> {} "
-               "with pattern: '{}' (substring)",
-               device.name, device.type, device.id, evdevPath, pattern);
-          return evdevPath;
-        } else {
-          debug("    [FALLBACK] Device matched but no evdev path found");
-        }
-      }
-    }
-  }
-
-  debug("No devices matched any patterns");
-  return "";
-}
-std::string IO::getKeyboardDevice() {
-  // Common keyboard device name patterns (in order of preference)
-  std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
-  if (!id.empty()) {
-    debug("Using keyboard device ID from config: '{}'", id);
-    return findEvdevDevice(id);
-  }
-  std::vector<std::string> keyboardPatterns = {
-      "keyboard",  "usb",        "bluetooth", "bt",          "hid",
-      "logitech",  "razer",      "corsair",   "steelseries", "apple",
-      "microsoft", "dell",       "hp",        "asus",        "wireless",
-      "gaming",    "mechanical", "membrane",  "translated",  "boot",
-      "instant",   "generic",    "standard",  "pc",          "desktop"};
-  std::string configPatterns =
-      Configs::Get().Get<std::string>("Device.Keyboard", "");
-  if (!configPatterns.empty()) {
-    debug("Using keyboard patterns from config: '{}'", configPatterns);
-    keyboardPatterns = split(configPatterns, ',');
-  } else {
-    debug("Using default keyboard patterns");
-  }
-  auto isKeyboardDevice = [](const std::string &type, int deviceId) -> bool {
-    std::string lowerType = type;
-    std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
-                   ::tolower);
-
-    // Check device type
-    bool typeMatch = lowerType.find("keyboard") != std::string::npos ||
-                     lowerType.find("key") != std::string::npos;
-
-    // Check known device IDs for your INSTANT keyboards
-    bool idMatch =
-        (deviceId == 11 || deviceId == 12 || deviceId == 13 || deviceId == 16);
-
-    debug("      Device filter: type='{}' typeMatch={} deviceId={} idMatch={}",
-          type, typeMatch, deviceId, idMatch);
-
-    return typeMatch || idMatch;
-  };
-
-  std::string result = detectEvdevDevice(keyboardPatterns, isKeyboardDevice);
-  if (result.empty()) {
-    debug("No keyboard found with specific patterns, trying fallback");
-    // Fallback: try to find any keyboard device
-    std::vector<std::string> fallbackPatterns = {"keyboard"};
-    result = detectEvdevDevice(fallbackPatterns, isKeyboardDevice);
-  }
-  return result;
+void IO::StartEvdevGamepadListener(const std::string& devicePath) {
+  // Similar to StartEvdevHotkeyListener but for gamepad events
+  info("Starting gamepad listener for device: {}", devicePath);
+  
+  // Implementation would handle gamepad-specific events
+  // like analog stick movements, trigger presses, etc.
+  // This could be used for gamepad-based hotkeys or controls
 }
 
-std::string IO::getMouseDevice() {
-  // Common mouse device name patterns (in order of preference)
-  std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
-  if (!id.empty()) {
-    debug("Using mouse device ID from config: '{}'", id);
-    return findEvdevDevice(id);
-  }
-  std::vector<std::string> mousePatterns = {
-      "mouse",     "trackpad", "trackball",  "touchpad",    "usb",
-      "bluetooth", "logitech", "razer",      "steelseries", "microsoft",
-      "dell",      "hp",       "asus",       "wireless",    "gaming",
-      "optical",   "laser",    "trackpoint", "touch",       "generic"};
-  std::string configPatterns =
-      Configs::Get().Get<std::string>("Device.Mouse", "");
-  if (!configPatterns.empty()) {
-    debug("Using mouse patterns from config: '{}'", configPatterns);
-    mousePatterns = split(configPatterns, ',');
-  } else {
-    debug("Using default mouse patterns");
-  }
-  // Device filter function
-  auto isMouseDevice = [](const std::string &type, int deviceId) -> bool {
-    std::string lowerType = type;
-    std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
-                   ::tolower);
-
-    // Check device type
-    bool typeMatch = lowerType.find("mouse") != std::string::npos ||
-                     lowerType.find("pointer") != std::string::npos ||
-                     lowerType.find("touchpad") != std::string::npos;
-
-    // Check known device IDs for your mouse
-    bool idMatch = (deviceId == 10 || deviceId == 14);
-
-    debug("      Device filter: type='{}' typeMatch={} deviceId={} idMatch={}",
-          type, typeMatch, deviceId, idMatch);
-
-    return typeMatch || idMatch;
-  };
-
-  std::string result = detectEvdevDevice(mousePatterns, isMouseDevice);
-  if (result.empty()) {
-    debug("No mouse found with specific patterns, trying fallback");
-    // Fallback: try to find any mouse device
-    std::vector<std::string> fallbackPatterns = {"mouse", "pointer"};
-    result = detectEvdevDevice(fallbackPatterns, isMouseDevice);
-  }
-  return result;
+void IO::StopEvdevGamepadListener() {
+  // Stop gamepad listener
+  info("Stopping gamepad listener");
 }
-
-std::vector<InputDevice> IO::getInputDevices() {
-  std::vector<InputDevice> devices;
-
-  Display *display = DisplayManager::GetDisplay();
-  if (!display) {
-    error("Cannot open display for device enumeration");
-    return devices;
-  }
-
-  int xi_opcode, event, error_code;
-  if (!XQueryExtension(display, "XInputExtension", &xi_opcode, &event,
-                       &error_code)) {
-    error("X Input extension not available");
-    return devices;
-  }
-
-  // Check XInput2 version
-  int major = 2, minor = 0;
-  if (XIQueryVersion(display, &major, &minor) == x11::XBadRequest) {
-    error("XInput2 not available");
-    return devices;
-  }
-
-  int ndevices;
-  XIDeviceInfo *info = XIQueryDevice(display, XIAllDevices, &ndevices);
-
-  for (int i = 0; i < ndevices; i++) {
-    InputDevice device;
-    device.id = info[i].deviceid;
-    device.name = info[i].name;
-    device.enabled = info[i].enabled;
-
-    // Determine device type
-    switch (info[i].use) {
-    case XIMasterPointer:
-      device.type = "master pointer";
-      break;
-    case XIMasterKeyboard:
-      device.type = "master keyboard";
-      break;
-    case XISlavePointer:
-      device.type = "slave pointer";
-      break;
-    case XISlaveKeyboard:
-      device.type = "slave keyboard";
-      break;
-    case XIFloatingSlave:
-      device.type = "floating slave";
-      break;
-    default:
-      device.type = "unknown";
-    }
-
-    // Find the real evdev path for keyboards and mice
-    if (device.type == "slave keyboard" || device.type == "master keyboard" ||
-        device.type == "slave pointer" || device.type == "master pointer") {
-      std::string evdevPath = findEvdevDevice(device.name);
-      if (!evdevPath.empty()) {
-        device.evdevPath = evdevPath;
-        debug("Device '{}' (XInput ID: {}) maps to {}", device.name, device.id,
-              evdevPath);
-      }
-    }
-
-    devices.push_back(device);
-  }
-
-  XIFreeDeviceInfo(info);
-  return devices;
-}
-void IO::listInputDevices() {
-  auto devices = getInputDevices();
-
-  std::cout << "⎡ Virtual core pointer                    id=" << std::endl;
-  std::cout << "⎜   ↳ Virtual core XTEST pointer          id=" << std::endl;
-
-  for (const auto &device : devices) {
-    std::string prefix = "⎜   ↳ ";
-    if (device.type == "master pointer" || device.type == "master keyboard") {
-      prefix = "⎡ ";
-    }
-
-    std::cout << prefix << device.name << "    id=" << device.id << "    ["
-              << device.type << " ("
-              << (device.enabled ? "enabled" : "disabled") << ")]" << std::endl;
-  }
-}
-
 // Mouse event handling methods
 bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
   if (mouseEvdevRunning) {

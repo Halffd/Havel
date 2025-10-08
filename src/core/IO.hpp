@@ -19,6 +19,7 @@
 #include <condition_variable>
 #include <mutex>
 #include "core/io/HotkeyExecutor.hpp"
+#include "core/io/Device.hpp"
 #include "x11.h"
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
@@ -162,10 +163,6 @@ class IO {
   // Track active callback threads for proper cleanup
   std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
   
-  // Dedicated executor for slow operations
-  std::unique_ptr<HotkeyExecutor> slowOperationExecutor;
-  void executeHotkeyCallback(const std::function<void()>& callback, bool isInputEvent);
-
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
@@ -174,7 +171,6 @@ public:
   std::set<int> x11Hotkeys;
   std::set<int> evdevHotkeys;
   IO();
-
   ~IO();
 
   // Key sending methods
@@ -444,6 +440,10 @@ private:
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();
+
+  std::string getGamepadDevice();
+  void StartEvdevGamepadListener(const std::string& devicePath);
+  void StopEvdevGamepadListener();
   // Combo evaluation
   bool EvaluateCombo(const HotKey& combo);
   

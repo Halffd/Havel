@@ -152,7 +152,8 @@ namespace havel {
         bool isZooming() const { return m_isZooming; }
         void setZooming(bool zooming) { m_isZooming = zooming; }
 
-        // Black overlay functionality
+        // Overlay functionality
+        void toggleFakeDesktopOverlay();
         void showBlackOverlay();
 
         // Window management

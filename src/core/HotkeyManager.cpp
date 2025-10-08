@@ -6,12 +6,15 @@
 #include "automation/AutoRunner.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "gui/ClipboardManager.hpp"
+#include "media/AudioManager.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
 #include <iostream>
 #include <map>
 #include <qclipboard.h>
+#include <qpainter.h>
+#include <qscreen.h>
 #include <vector>
 #include <unistd.h>
 #include <X11/keysym.h>
@@ -755,8 +758,8 @@ AddHotkey("@^!Home", [WinMove]() {
       AddHotkey("@numpad7:up", [&]() { mouseController->resetAcceleration(); });
       AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
       AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
-    AddHotkey("!+d", [this]() {
-        showBlackOverlay();
+    AddHotkey("!d", [this]() {
+        toggleFakeDesktopOverlay();
     });
 
     AddGamingHotkey("@y",
@@ -1101,7 +1104,7 @@ void HotkeyManager::RegisterSystemHotkeys() {
         Launcher::runShell("gnome-system-monitor &");
     });
 
-    AddHotkey("!d", [this]() {
+    AddHotkey("#!d", [this]() {
         showBlackOverlay();
         logWindowEvent("BLACK_OVERLAY", "Showing full-screen black overlay");
     });
@@ -1736,15 +1739,349 @@ void HotkeyManager::printCacheStats() {
              0);
 }
 
+void HotkeyManager::toggleFakeDesktopOverlay() {
+    info("Toggling fake desktop overlay");
+    
+    // Create a new QMainWindow for the overlay
+    static QMainWindow* fakeDesktopOverlay = nullptr;
+    
+    // If overlay already exists, close and delete it
+    if (fakeDesktopOverlay) {
+        // Restore audio if it was muted by this overlay
+        if (audioManager.isMuted()) {
+            audioManager.setMute(false);
+            info("Audio unmuted");
+        }
+        
+        fakeDesktopOverlay->close();
+        delete fakeDesktopOverlay;
+        fakeDesktopOverlay = nullptr;
+        info("Fake desktop overlay hidden");
+        return;
+    }
+    
+    // Mute audio when showing the overlay
+    if (!audioManager.isMuted()) {
+        audioManager.setMute(true);
+        info("Audio muted");
+    }
+    
+    // Create a new overlay window
+    fakeDesktopOverlay = new QMainWindow();
+    
+    // Set window properties for overlay
+    fakeDesktopOverlay->setWindowFlags(
+        Qt::Window | 
+        Qt::FramelessWindowHint | 
+        Qt::WindowStaysOnTopHint |
+        Qt::X11BypassWindowManagerHint
+    );
+    
+    // Make the window transparent for input
+    fakeDesktopOverlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    
+    // Set background to look like a fake desktop
+    QWidget* container = new QWidget();
+    QVBoxLayout* layout = new QVBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    
+    // Create a custom widget for the animated background
+    class AnimatedBackground : public QWidget {
+    public:
+        AnimatedBackground(QWidget* parent = nullptr) : QWidget(parent) {
+            // Set up animation timer
+            connect(&timer, &QTimer::timeout, this, [this]() {
+                // Update gradient colors
+                colorHue = fmod(colorHue + 0.001f, 1.0f);
+                
+                // Update floating curves
+                for (auto& curve : curves) {
+                    curve.x += curve.speedX;
+                    curve.y += curve.speedY;
+                    
+                    // Bounce off edges
+                    if (curve.x < 0 || curve.x > 1) curve.speedX *= -1;
+                    if (curve.y < 0 || curve.y > 1) curve.speedY *= -1;
+                    
+                    // Random direction changes
+                    if (rand() % 100 < 1) {
+                        curve.speedX = -0.5f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                        curve.speedY = -0.5f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                        
+                        // Normalize speed
+                        float len = sqrt(curve.speedX * curve.speedX + curve.speedY * curve.speedY);
+                        curve.speedX = curve.speedX / len * 0.001f;
+                        curve.speedY = curve.speedY / len * 0.001f;
+                    }
+                }
+                
+                update();
+            });
+            timer.start(16); // ~60 FPS
+            
+            // Initialize random curves
+            srand(static_cast<unsigned>(time(nullptr)));
+            for (int i = 0; i < 8; ++i) {
+                Curve curve;
+                curve.x = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                curve.y = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                curve.radius = 50 + rand() % 150;
+                curve.hue = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                curve.speedX = -0.5f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                curve.speedY = -0.5f + static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+                
+                // Normalize speed
+                float len = sqrt(curve.speedX * curve.speedX + curve.speedY * curve.speedY);
+                curve.speedX = curve.speedX / len * 0.001f;
+                curve.speedY = curve.speedY / len * 0.001f;
+                
+                curves.push_back(curve);
+            }
+        }
+        
+    protected:
+        void paintEvent(QPaintEvent* event) override {
+            QPainter painter(this);
+            painter.setRenderHint(QPainter::Antialiasing);
+            
+            // Draw animated gradient background
+            QLinearGradient gradient(0, 0, width(), height());
+            QColor color1 = QColor::fromHslF(colorHue, 0.7, 0.15);
+            QColor color2 = QColor::fromHslF(fmod(colorHue + 0.3, 1.0), 0.7, 0.2);
+            gradient.setColorAt(0, color1);
+            gradient.setColorAt(1, color2);
+            
+            painter.fillRect(rect(), gradient);
+            
+            // Draw floating curves
+            for (const auto& curve : curves) {
+                int x = static_cast<int>(curve.x * width());
+                int y = static_cast<int>(curve.y * height());
+                int r = curve.radius;
+                
+                // Create a radial gradient for the curve
+                QRadialGradient radialGrad(x, y, r);
+                QColor curveColor = QColor::fromHslF(curve.hue, 0.6, 0.5, 0.1);
+                radialGrad.setColorAt(0, curveColor);
+                radialGrad.setColorAt(1, Qt::transparent);
+                
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(radialGrad);
+                painter.drawEllipse(QPoint(x, y), r, r);
+            }
+        }
+        
+    private:
+        struct Curve {
+            float x, y;
+            float radius;
+            float hue;
+            float speedX, speedY;
+        };
+        
+        std::vector<Curve> curves;
+        float colorHue = 0.0f;
+        QTimer timer{this};
+    };
+    
+    // Create the animated background
+    AnimatedBackground* desktopBackground = new AnimatedBackground(container);
+    
+    // Create a container for the clock and calendar
+    QWidget* infoContainer = new QWidget(container);
+    QVBoxLayout* infoLayout = new QVBoxLayout(infoContainer);
+    infoLayout->setContentsMargins(20, 20, 20, 20);
+    infoLayout->setSpacing(10);
+    infoLayout->setAlignment(Qt::AlignCenter);
+    
+    // Add clock
+    QLabel* clockLabel = new QLabel(container);
+    clockLabel->setStyleSheet("color: white; font-size: 48px; font-weight: bold;");
+    clockLabel->setAlignment(Qt::AlignCenter);
+    
+    // Add date display
+    QLabel* dateLabel = new QLabel(container);
+    dateLabel->setStyleSheet("color: #aaa; font-size: 24px;");
+    dateLabel->setAlignment(Qt::AlignCenter);
+    
+    // Add calendar
+    QLabel* calendarLabel = new QLabel(container);
+    calendarLabel->setStyleSheet("color: #ccc; font-family: monospace; font-size: 16px;");
+    calendarLabel->setAlignment(Qt::AlignCenter);
+    
+    // Add focus mode message
+    QLabel* message = new QLabel("<p style='color: #888; margin-top: 30px;'>Press the hotkey again to exit focus mode</p>", 
+                               container);
+    message->setAlignment(Qt::AlignCenter);
+    
+    // Add widgets to layout
+    infoLayout->addWidget(clockLabel);
+    infoLayout->addWidget(dateLabel);
+    infoLayout->addSpacing(30);
+    infoLayout->addWidget(calendarLabel);
+    infoLayout->addWidget(message);
+    
+    // Add container to main layout
+    QWidget* centerWidget = new QWidget(container);
+    QVBoxLayout* centerLayout = new QVBoxLayout(centerWidget);
+    centerLayout->addWidget(infoContainer);
+    centerLayout->setAlignment(Qt::AlignCenter);
+    
+    // Add to main layout
+    layout->addWidget(desktopBackground, 1);
+    layout->addWidget(centerWidget);
+    
+    // Timer to update clock and calendar
+    QTimer* timer = new QTimer(container);
+    QObject::connect(timer, &QTimer::timeout, [=]() {
+        // Update clock
+        QTime currentTime = QTime::currentTime();
+        clockLabel->setText(currentTime.toString("hh:mm:ss"));
+        
+        // Update date
+        QDate currentDate = QDate::currentDate();
+        dateLabel->setText(currentDate.toString("dddd, MMMM d, yyyy"));
+        
+        // Update calendar
+        int year = currentDate.year();
+        int month = currentDate.month();
+        int day = currentDate.day();
+        
+        // Generate calendar
+        QDate firstDayOfMonth(year, month, 1);
+        int daysInMonth = firstDayOfMonth.daysInMonth();
+        int firstDayOfWeek = firstDayOfMonth.dayOfWeek();
+        
+        QStringList days = {"Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"};
+        QStringList calendarLines;
+        calendarLines.append(" " + days.join(" ") + " ");
+        
+        QString week;
+        // Add leading spaces for the first week
+        for (int i = 1; i < firstDayOfWeek; ++i) {
+            week += "   ";
+        }
+        
+        // Add days
+        for (int dayNum = 1; dayNum <= daysInMonth; ++dayNum) {
+            QString dayStr = QString("%1").arg(dayNum, 2);
+            if (dayNum == day) {
+                dayStr = "[" + dayStr + "]";
+            } else {
+                dayStr = " " + dayStr + " ";
+            }
+            week += dayStr;
+            
+            if ((dayNum + firstDayOfWeek - 1) % 7 == 0 || dayNum == daysInMonth) {
+                calendarLines.append(week);
+                week.clear();
+            }
+        }
+        
+        calendarLabel->setText(calendarLines.join("\n"));
+    });
+    
+    // Start timer with 1 second interval
+    timer->start(1000);
+    
+    fakeDesktopOverlay->setCentralWidget(container);
+    
+    // Show the overlay on all screens
+    QList<QScreen*> screens = QGuiApplication::screens();
+    if (screens.isEmpty()) {
+        error("No screens found");
+        delete fakeDesktopOverlay;
+        fakeDesktopOverlay = nullptr;
+        return;
+    }
+    
+    // Show on all screens
+    for (QScreen* screen : screens) {
+        QRect screenGeometry = screen->geometry();
+        fakeDesktopOverlay->setGeometry(screenGeometry);
+        fakeDesktopOverlay->showFullScreen();
+    }
+    
+    info("Fake desktop overlay shown");
+}
+
 void HotkeyManager::showBlackOverlay() {
     info("Showing black overlay window on all monitors");
-    QWidget* blackOverlay = new QWidget;
-    blackOverlay->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
-    blackOverlay->setStyleSheet("background-color: black;");
+    
+    // Create a new QMainWindow for the overlay
+    static QMainWindow* blackOverlay = nullptr;
+    
+    // If overlay already exists, close and delete it
+    if (blackOverlay) {
+        blackOverlay->close();
+        delete blackOverlay;
+        blackOverlay = nullptr;
+        info("Black overlay hidden");
+        return;
+    }
+    
+    // Create a new overlay window
+    blackOverlay = new QMainWindow();
+    
+    // Set window properties for overlay
+    blackOverlay->setWindowFlags(
+        Qt::Window | 
+        Qt::FramelessWindowHint | 
+        Qt::WindowStaysOnTopHint |
+        Qt::X11BypassWindowManagerHint
+    );
+    
+    // Make the window transparent for input
+    blackOverlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    
+    // Set black background
+    QPalette pal = blackOverlay->palette();
+    pal.setColor(QPalette::Window, Qt::black);
+    blackOverlay->setPalette(pal);
+    blackOverlay->setAutoFillBackground(true);
+    
+    // Get all available screens
+    QList<QScreen*> screens = QGuiApplication::screens();
+    if (screens.isEmpty()) {
+        error("No screens found");
+        delete blackOverlay;
+        blackOverlay = nullptr;
+        return;
+    }
+    
+    // Create a container widget to hold all screen overlays
+    QWidget* container = new QWidget();
+    QHBoxLayout* layout = new QHBoxLayout(container);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    
+    // Create a semi-transparent black overlay for each screen
+    for (QScreen* screen : screens) {
+        QRect screenGeometry = screen->geometry();
+        
+        QWidget* screenOverlay = new QWidget(container);
+        screenOverlay->setGeometry(screenGeometry);
+        screenOverlay->setStyleSheet("background-color: black;");
+        screenOverlay->setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint);
+        screenOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
+        screenOverlay->showFullScreen();
+        
+        // Add to layout (though they'll be positioned absolutely)
+        layout->addWidget(screenOverlay);
+    }
+    
+    // Set the container as central widget
+    blackOverlay->setCentralWidget(container);
+    
+    // Show the overlay
     blackOverlay->showFullScreen();
+    
+    // Make sure the window is on top and has focus
     blackOverlay->raise();
     blackOverlay->activateWindow();
-    blackOverlay->show();
+    
+    info("Black overlay shown");
 }
 
 void HotkeyManager::printActiveWindowInfo() {

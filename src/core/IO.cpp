@@ -39,6 +39,7 @@ HHOOK IO::keyboardHook = NULL;
 std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
+bool IO::globalEvdev = true;
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   if (ee->error_code == x11::XBadWindow ||
       (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess) ||
@@ -1483,92 +1484,158 @@ bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
   return true;
 }
 
-HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
-                     int id) {
+ParsedHotkey IO::ParseHotkeyString(const std::string &rawInput) {
+  ParsedHotkey result;
   std::string hotkeyStr = rawInput;
-  auto wrapped_action = [action, hotkeyStr]() {
-    if (Configs::Get().GetVerboseKeyLogging())
-      info("Hotkey pressed: " + hotkeyStr);
-    action();
-  };
-  bool hasAction = static_cast<bool>(action);
-  // Parse event type
-  HotkeyEventType eventType = HotkeyEventType::Down;
+
+  // Parse event type suffix (:up, :down, etc.)
   size_t colonPos = hotkeyStr.rfind(':');
   if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
     std::string suffix = hotkeyStr.substr(colonPos + 1);
-    eventType = ParseHotkeyEventType(suffix);
+    result.eventType = ParseHotkeyEventType(suffix);
     hotkeyStr = hotkeyStr.substr(0, colonPos);
   }
-  // Check for evdev prefix
+
+  // Parse @evdev prefix with regex
   std::regex evdevRegex(R"(@(.*))");
   std::smatch matches;
-  bool isEvdev = false;
   if (std::regex_search(hotkeyStr, matches, evdevRegex)) {
-    isEvdev = true;
+    result.isEvdev = true;
     hotkeyStr = matches[1].str();
   }
-  if (globalEvdev)
-    isEvdev = true;
+
+  if (globalEvdev) {
+    result.isEvdev = true;
+  }
+
   // Parse modifiers and flags
-  bool grab = true;
-  bool suspendKey = false;
-  int modifiers = 0;
-  bool isX11 = false;
-  bool repeat = true;
+  result = ParseModifiersAndFlags(hotkeyStr, result.isEvdev);
+  result.eventType = result.eventType; // Preserve event type
+
+  return result;
+}
+
+ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
+                                        bool isEvdev) {
+  ParsedHotkey result;
+  result.isEvdev = isEvdev;
+
   size_t i = 0;
-  while (i < hotkeyStr.size()) {
-    switch (hotkeyStr[i]) {
+  while (i < input.size()) {
+    char c = input[i];
+
+    // Check for escaped/doubled characters (e.g., "++", "##")
+    if (i + 1 < input.size() && input[i] == input[i + 1]) {
+      // Found doubled character - treat remaining as literal key
+      // Skip first character and treat rest as key
+      result.keyPart = input.substr(i + 1);
+      return result;
+    }
+
+    switch (c) {
     case '@':
-      isEvdev = true;
+      result.isEvdev = true;
       break;
     case '%':
-      isX11 = true;
+      result.isX11 = true;
       break;
     case '^':
-      modifiers |= isEvdev ? (1 << 0) : ControlMask;
+      result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
       break;
     case '+':
-      modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+      result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
       break;
     case '!':
-      modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+      result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
       break;
     case '#':
-      modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+      result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
       break;
     case '*':
-      repeat = false;
+      // Wildcard - ignore all current modifiers but don't set repeat=false
+      result.wildcard = true;
+      break;
+    case '|':
+      result.repeat = false;
       break;
     case '~':
-      grab = false;
+      result.grab = false;
       break;
     case '$':
-      suspendKey = true;
+      result.suspend = true;
       break;
     default:
-      goto done_parsing;
+      // Not a modifier - rest is the key part
+      result.keyPart = input.substr(i);
+      return result;
     }
     ++i;
   }
-done_parsing:
-  hotkeyStr = hotkeyStr.substr(i);
+
+  // If we got here, entire string was modifiers
+  result.keyPart = "";
+  return result;
+}
+
+KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
+  if (keyPart.empty()) {
+    return 0;
+  }
+
+  // Handle raw keycode (kc123)
+  if (keyPart.length() > 2 && keyPart.substr(0, 2) == "kc") {
+    try {
+      int kc = std::stoi(keyPart.substr(2));
+      if (kc > 0 && kc <= 767) {
+        return kc;
+      }
+    } catch (const std::exception &) {
+      return 0;
+    }
+    return 0;
+  }
+
+  // Handle evdev names
+  if (isEvdev) {
+    return EvdevNameToKeyCode(keyPart);
+  }
+
+  // Handle X11 names
+  std::string keyLower = toLower(keyPart);
+  return GetKeyCode(keyLower);
+}
+
+HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
+                     int id) {
+  auto wrapped_action = [action, rawInput]() {
+    if (Configs::Get().GetVerboseKeyLogging())
+      info("Hotkey pressed: " + rawInput);
+    action();
+  };
+
+  bool hasAction = static_cast<bool>(action);
+
+  // Parse the hotkey string
+  ParsedHotkey parsed = ParseHotkeyString(rawInput);
+
   // Build base hotkey
   HotKey hotkey;
-  hotkey.modifiers = modifiers;
-  hotkey.eventType = eventType;
-  hotkey.evdev = isEvdev;
-  hotkey.x11 = isX11;
+  hotkey.modifiers = parsed.modifiers;
+  hotkey.eventType = parsed.eventType;
+  hotkey.evdev = parsed.isEvdev;
+  hotkey.x11 = parsed.isX11;
   hotkey.callback = wrapped_action;
   hotkey.alias = rawInput;
   hotkey.action = "";
   hotkey.enabled = true;
-  hotkey.grab = grab;
-  hotkey.suspend = suspendKey;
-  hotkey.repeat = repeat;
+  hotkey.grab = parsed.grab;
+  hotkey.suspend = parsed.suspend;
+  hotkey.repeat = parsed.repeat;
+  hotkey.wildcard = parsed.wildcard;
   hotkey.success = false;
+
   // Check for mouse button or wheel
-  int mouseButton = ParseMouseButton(hotkeyStr);
+  int mouseButton = ParseMouseButton(parsed.keyPart);
   if (mouseButton != 0) {
     hotkey.type = (mouseButton == 1 || mouseButton == -1)
                       ? HotkeyType::MouseWheel
@@ -1581,16 +1648,17 @@ done_parsing:
     hotkey.success = true;
   } else {
     // Check for combo
-    size_t ampPos = hotkeyStr.find('&');
+    size_t ampPos = parsed.keyPart.find('&');
     if (ampPos != std::string::npos) {
       std::vector<std::string> parts;
       size_t start = 0;
       while (ampPos != std::string::npos) {
-        parts.push_back(hotkeyStr.substr(start, ampPos - start));
+        parts.push_back(parsed.keyPart.substr(start, ampPos - start));
         start = ampPos + 1;
-        ampPos = hotkeyStr.find('&', start);
+        ampPos = parsed.keyPart.find('&', start);
       }
-      parts.push_back(hotkeyStr.substr(start));
+      parts.push_back(parsed.keyPart.substr(start));
+
       hotkey.type = HotkeyType::Combo;
       for (const auto &part : parts) {
         auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
@@ -1599,36 +1667,20 @@ done_parsing:
       hotkey.success = !hotkey.comboSequence.empty();
     } else {
       // Regular keyboard hotkey
-      KeyCode keycode = 0;
-      if (hotkeyStr.substr(0, 2) == "kc") {
-        int kc = std::stoi(hotkeyStr.substr(2));
-        if (kc <= 0 || kc > 767) {
-          std::cerr << "Invalid raw keycode: " << kc << "\n";
-          return {};
-        }
-        keycode = kc;
-      } else if (isEvdev) {
-        keycode = EvdevNameToKeyCode(hotkeyStr);
-        if (keycode == 0) {
-          std::cerr << "Invalid evdev key name: " << hotkeyStr << "\n";
-          return {};
-        }
-      } else {
-        std::string keyLower = hotkeyStr;
-        std::transform(keyLower.begin(), keyLower.end(), keyLower.begin(),
-                       ::tolower);
-        keycode = GetKeyCode(keyLower);
-        if (keycode == 0) {
-          std::cerr << "Key '" << keyLower
-                    << "' not available on this keyboard layout\n";
-          return {};
-        }
+      KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+
+      if (keycode == 0) {
+        std::cerr << "Invalid key: '" << parsed.keyPart
+                  << "' in hotkey: " << rawInput << "\n";
+        return {};
       }
+
       hotkey.type = HotkeyType::Keyboard;
       hotkey.key = static_cast<Key>(keycode);
-      hotkey.success = (keycode > 0);
+      hotkey.success = true;
     }
   }
+
   // Add to maps if has action (skip for combo subs)
   if (hasAction) {
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
@@ -1640,6 +1692,7 @@ done_parsing:
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
   }
+
   return hotkey;
 }
 
@@ -1650,55 +1703,36 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       info("Hotkey pressed: " + hotkeyStr);
     action();
   };
+
   bool hasAction = static_cast<bool>(action);
-  // Parse modifiers (always X11 style)
-  int modifiers = 0;
-  size_t i = 0;
-  bool useX11 = false;
-  bool repeat = true;
-  while (i < hotkeyStr.size()) {
-    switch (hotkeyStr[i]) {
-    case '^':
-      modifiers |= ControlMask;
-      break;
-    case '+':
-      modifiers |= ShiftMask;
-      break;
-    case '!':
-      modifiers |= Mod1Mask;
-      break;
-    case '#':
-      modifiers |= Mod4Mask;
-      break;
-    case '%':
-      useX11 = true;
-      break;
-    case '*':
-      repeat = false;
-      break;
-    default:
-      goto done_parsing_modifiers;
-    }
-    i++;
-  }
-done_parsing_modifiers:
-  std::string rest = hotkeyStr.substr(i);
+
+  // Use the same parser as keyboard hotkeys
+  ParsedHotkey parsed = ParseHotkeyString(hotkeyStr);
+
   // Build base hotkey
   HotKey hotkey;
   hotkey.alias = hotkeyStr;
-  hotkey.modifiers = modifiers;
+  hotkey.modifiers = parsed.modifiers;
   hotkey.callback = wrapped_action;
   hotkey.action = "";
   hotkey.enabled = true;
   hotkey.grab = grab;
-  hotkey.suspend = false;
-  hotkey.repeat = repeat;
+  hotkey.suspend = parsed.suspend;
+  hotkey.repeat = parsed.repeat;
   hotkey.success = false;
-  hotkey.evdev = !useX11;
-  hotkey.x11 = useX11;
-  hotkey.eventType = HotkeyEventType::Down;
+  hotkey.evdev = parsed.isEvdev;
+  hotkey.x11 = parsed.isX11;
+  hotkey.eventType = parsed.eventType;
+  hotkey.wildcard = parsed.wildcard;
+
+  // For mouse hotkeys, default to evdev unless explicitly X11
+  if (!parsed.isX11 && !parsed.isEvdev) {
+    hotkey.evdev = true;
+    hotkey.x11 = false;
+  }
+
   // Check for mouse button or wheel
-  int button = ParseMouseButton(rest);
+  int button = ParseMouseButton(parsed.keyPart);
   if (button != 0) {
     hotkey.type = (button == 1 || button == -1) ? HotkeyType::MouseWheel
                                                 : HotkeyType::MouseButton;
@@ -1707,17 +1741,19 @@ done_parsing_modifiers:
     hotkey.key = static_cast<Key>(button);
     hotkey.success = true;
   }
+
   // Check for combo
-  size_t ampPos = rest.find('&');
+  size_t ampPos = parsed.keyPart.find('&');
   if (ampPos != std::string::npos) {
     std::vector<std::string> parts;
     size_t start = 0;
     while (ampPos != std::string::npos) {
-      parts.push_back(rest.substr(start, ampPos - start));
+      parts.push_back(parsed.keyPart.substr(start, ampPos - start));
       start = ampPos + 1;
-      ampPos = rest.find('&', start);
+      ampPos = parsed.keyPart.find('&', start);
     }
-    parts.push_back(rest.substr(start));
+    parts.push_back(parsed.keyPart.substr(start));
+
     hotkey.type = HotkeyType::Combo;
     for (const auto &part : parts) {
       auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0, false);
@@ -1725,6 +1761,7 @@ done_parsing_modifiers:
     }
     hotkey.success = !hotkey.comboSequence.empty();
   }
+
   // Add to maps if has action (skip for combo subs)
   if (hasAction) {
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
@@ -1736,9 +1773,9 @@ done_parsing_modifiers:
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
   }
+
   return hotkey;
 }
-
 bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
                 int id) {
   bool isMouseHotkey = (toLower(rawInput).find("button") != std::string::npos ||
@@ -1765,7 +1802,6 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
   }
   return true;
 }
-
 void IO::UpdateNumLockMask() {
   unsigned int i, j;
   XModifierKeymap *modmap;
@@ -2911,6 +2947,8 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
       error("evdev: failed to setup uinput device\n");
       return;
     }
+    auto parsedEmergencyHotkey = ParseHotkeyString(emergencyHotkey);
+    auto emergencyKey = ParseKeyPart(parsedEmergencyHotkey.keyPart, true);
 
     struct input_event evs[64];
     std::map<int, bool> modState;
@@ -2987,8 +3025,8 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         if (ev.type != EV_KEY)
           continue;
 
-        bool down = (ev.value == 1);
         bool repeat = (ev.value == 2);
+        bool down = (ev.value == 1 || repeat);
         int originalCode = ev.code;
 
         keyDownState[originalCode] = down;
@@ -3087,15 +3125,12 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         std::vector<std::function<void()>> callbacks;
         bool shouldBlockKey = false;
         // Emergency hotkey
-        if (keyDownState[emergencyHotkey[0]] && down) {
-          if (keyDownState[emergencyHotkey[1]] && down) {
-            if (keyDownState[emergencyHotkey[2]] && down) {
-              shouldBlockKey = true;
-              StopEvdevHotkeyListener();
-              StopEvdevMouseListener();
-              exit(0);
-            }
-          }
+        if (emergencyKey == originalCode &&
+            mask == parsedEmergencyHotkey.modifiers) {
+          shouldBlockKey = true;
+          StopEvdevHotkeyListener();
+          StopEvdevMouseListener();
+          exit(0);
         }
 
         {
@@ -3127,8 +3162,6 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             // Event type check
             if (!hotkey.repeat && repeat)
               continue;
-            else
-             down = true;
 
             if (hotkey.eventType == HotkeyEventType::Down && !down)
               continue;
@@ -3157,11 +3190,20 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
               bool shiftPressed = modState[ShiftMask];
               bool altPressed = modState[Mod1Mask];
               bool metaPressed = modState[Mod4Mask];
-
-              modifierMatch = (ctrlRequired == ctrlPressed) &&
-                              (shiftRequired == shiftPressed) &&
-                              (altRequired == altPressed) &&
-                              (metaRequired == metaPressed);
+              if (hotkey.wildcard) {
+                // Wildcard: only check that REQUIRED modifiers are pressed
+                // (ignore extra modifiers)
+                modifierMatch = (!ctrlRequired || ctrlPressed) &&
+                                (!shiftRequired || shiftPressed) &&
+                                (!altRequired || altPressed) &&
+                                (!metaRequired || metaPressed);
+              } else {
+                // Normal: exact modifier match
+                modifierMatch = (ctrlRequired == ctrlPressed) &&
+                                (shiftRequired == shiftPressed) &&
+                                (altRequired == altPressed) &&
+                                (metaRequired == metaPressed);
+              }
             }
 
             if (!modifierMatch)
@@ -3175,7 +3217,9 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
               }
             }
             hotkey.success = true;
-            debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}", hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
+            debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, "
+                  "repeat: {}",
+                  hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
             std::thread([callback = hotkey.callback, alias = hotkey.alias,
                          this]() {
               try {
@@ -3190,9 +3234,8 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             }).detach();
           }
         }
-
         if (shouldBlockKey) {
-          if (!down && !repeat) {
+          if (!down) {
             // Always release keys so modifiers don't stick
             SendUInput(mappedCode, false);
           } else {
@@ -3210,22 +3253,27 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   return true;
 }
 void IO::StopEvdevHotkeyListener() {
-  if (!evdevRunning) return;
+  if (!evdevRunning)
+    return;
 
   info("Stopping evdev hotkey listener...");
   evdevRunning = false;
-
+  for (const auto &[key, isDown] : keyDownState) {
+    if (isDown) {
+      SendUInput(key, false);
+    }
+  }
   // Signal shutdown
   if (evdevShutdownFd >= 0) {
-      uint64_t val = 1;
-      write(evdevShutdownFd, &val, sizeof(val));
+    uint64_t val = 1;
+    write(evdevShutdownFd, &val, sizeof(val));
   }
 
   // Wait for evdev thread to end BEFORE touching uinput
   if (evdevThread.joinable()) {
-      info("Waiting for evdev thread to exit...");
-      evdevThread.join(); // No timeout. Let it exit cleanly.
-      info("Evdev thread exited.");
+    info("Waiting for evdev thread to exit...");
+    evdevThread.join(); // No timeout. Let it exit cleanly.
+    info("Evdev thread exited.");
   }
 
   // Now cleanup uinput safely

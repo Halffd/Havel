@@ -357,6 +357,8 @@ public:
   static Key GetKeyCode(cstr keyName);
   double mouseSensitivity = 1.0;  // Default sensitivity (1.0 = 100%)
   double scrollSpeed = 1.0;       // Default scroll speed (1.0 = 100%)
+  bool shutdown = false;
+
 private:
   Display* display;
   int uinputFd;

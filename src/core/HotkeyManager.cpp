@@ -690,6 +690,10 @@ AddHotkey("@^!Home", [WinMove]() {
         clipboard->setText(clipboardText);
     });
     
+    AddHotkey("@numpad5", [this]() { 
+        io.Click(MouseButton::Left, MouseAction::Hold);
+    });
+    
     AddHotkey("@numpad5:up", [this]() { 
         io.Click(MouseButton::Left, MouseAction::Release);
     });

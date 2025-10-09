@@ -40,6 +40,7 @@ std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
 bool IO::globalEvdev = true;
+std::atomic<int> IO::syntheticEventsExpected{0};
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   if (ee->error_code == x11::XBadWindow ||
       (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess) ||
@@ -105,24 +106,25 @@ std::string IO::findEvdevDevice(const std::string &deviceName) {
 std::string IO::getKeyboardDevice() {
   std::string id = Configs::Get().Get<std::string>("Device.KeyboardID", "");
   if (!id.empty()) {
-      debug("Using keyboard device ID from config: '{}'", id);
-      return findEvdevDevice(id);
+    debug("Using keyboard device ID from config: '{}'", id);
+    return findEvdevDevice(id);
   }
-  
+
   auto keyboards = Device::findKeyboards();
-  
+
   debug("=== Keyboard Detection Results ===");
-  for (const auto& kb : keyboards) {
-      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
-            kb.name, kb.confidence * 100, kb.reason);
+  for (const auto &kb : keyboards) {
+    debug("Found: '{}' confidence={:.1f}% reason='{}'", kb.name,
+          kb.confidence * 100, kb.reason);
   }
-  
+
   if (!keyboards.empty()) {
-      info("✅ Selected keyboard: '{}' -> {} (confidence: {:.1f}%)", 
-           keyboards[0].name, keyboards[0].eventPath, keyboards[0].confidence * 100);
-      return keyboards[0].eventPath;
+    info("✅ Selected keyboard: '{}' -> {} (confidence: {:.1f}%)",
+         keyboards[0].name, keyboards[0].eventPath,
+         keyboards[0].confidence * 100);
+    return keyboards[0].eventPath;
   }
-  
+
   error("❌ No suitable keyboard devices found");
   return "";
 }
@@ -130,159 +132,163 @@ std::string IO::getKeyboardDevice() {
 std::string IO::getMouseDevice() {
   std::string id = Configs::Get().Get<std::string>("Device.MouseID", "");
   if (!id.empty()) {
-      debug("Using mouse device ID from config: '{}'", id);
-      return findEvdevDevice(id);
+    debug("Using mouse device ID from config: '{}'", id);
+    return findEvdevDevice(id);
   }
-  
+
   auto mice = Device::findMice();
-  
+
   debug("=== Mouse Detection Results ===");
-  for (const auto& mouse : mice) {
-      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
-            mouse.name, mouse.confidence * 100, mouse.reason);
+  for (const auto &mouse : mice) {
+    debug("Found: '{}' confidence={:.1f}% reason='{}'", mouse.name,
+          mouse.confidence * 100, mouse.reason);
   }
-  
+
   if (!mice.empty()) {
-      info("✅ Selected mouse: '{}' -> {} (confidence: {:.1f}%)", 
-           mice[0].name, mice[0].eventPath, mice[0].confidence * 100);
-      return mice[0].eventPath;
+    info("✅ Selected mouse: '{}' -> {} (confidence: {:.1f}%)", mice[0].name,
+         mice[0].eventPath, mice[0].confidence * 100);
+    return mice[0].eventPath;
   }
-  
+
   warning("❌ No suitable mouse devices found");
   return "";
 }
 
 std::string IO::getGamepadDevice() {
   auto gamepads = Device::findGamepads();
-  
+
   debug("=== Gamepad Detection Results ===");
-  for (const auto& gamepad : gamepads) {
-      debug("Found: '{}' confidence={:.1f}% reason='{}'", 
-            gamepad.name, gamepad.confidence * 100, gamepad.reason);
+  for (const auto &gamepad : gamepads) {
+    debug("Found: '{}' confidence={:.1f}% reason='{}'", gamepad.name,
+          gamepad.confidence * 100, gamepad.reason);
   }
-  
+
   if (!gamepads.empty()) {
-      info("✅ Found gamepad: '{}' -> {} (confidence: {:.1f}%)", 
-           gamepads[0].name, gamepads[0].eventPath, gamepads[0].confidence * 100);
-      return gamepads[0].eventPath;
+    info("✅ Found gamepad: '{}' -> {} (confidence: {:.1f}%)", gamepads[0].name,
+         gamepads[0].eventPath, gamepads[0].confidence * 100);
+    return gamepads[0].eventPath;
   }
-  
+
   return "";
 }
 
 void IO::listInputDevices() {
   auto devices = Device::getAllDevices();
-  
+
   std::cout << "=== Input Device Detection Results ===" << std::endl;
-  
-  for (const auto& device : devices) {
-      std::cout << device.toString() << std::endl;
+
+  for (const auto &device : devices) {
+    std::cout << device.toString() << std::endl;
   }
-  
+
   std::cout << "\n=== Summary ===" << std::endl;
-  
+
   auto keyboards = Device::findKeyboards();
   std::cout << "Keyboards found: " << keyboards.size() << std::endl;
-  for (const auto& kb : keyboards) {
-      std::cout << "  - " << kb.name << " (" << (kb.confidence * 100) << "%)" << std::endl;
+  for (const auto &kb : keyboards) {
+    std::cout << "  - " << kb.name << " (" << (kb.confidence * 100) << "%)"
+              << std::endl;
   }
-  
+
   auto mice = Device::findMice();
   std::cout << "Mice found: " << mice.size() << std::endl;
-  for (const auto& mouse : mice) {
-      std::cout << "  - " << mouse.name << " (" << (mouse.confidence * 100) << "%)" << std::endl;
+  for (const auto &mouse : mice) {
+    std::cout << "  - " << mouse.name << " (" << (mouse.confidence * 100)
+              << "%)" << std::endl;
   }
-  
+
   auto gamepads = Device::findGamepads();
   std::cout << "Gamepads/Joysticks found: " << gamepads.size() << std::endl;
-  for (const auto& gamepad : gamepads) {
-      std::cout << "  - " << gamepad.name << " (" << (gamepad.confidence * 100) << "%)" << std::endl;
+  for (const auto &gamepad : gamepads) {
+    std::cout << "  - " << gamepad.name << " (" << (gamepad.confidence * 100)
+              << "%)" << std::endl;
   }
 }
 
 // Updated constructor
 IO::IO() {
   info("IO constructor called");
-  
+
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
-  
+
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
-  
-  #ifdef __linux__
+
+#ifdef __linux__
   if (display) {
-      UpdateNumLockMask();
-      
-      // Initialize keyboard device
-      std::string keyboardDevice = getKeyboardDevice();
-      if (!keyboardDevice.empty()) {
-          try {
-              info("Using keyboard device: {}", keyboardDevice);
-              SetupUinputDevice();
-              std::this_thread::sleep_for(std::chrono::milliseconds(10));
-              StartEvdevHotkeyListener(keyboardDevice);
-              info("Successfully started evdev hotkey listener for keyboard");
-          } catch (const std::exception &e) {
-              error("Failed to start evdev keyboard listener: {}", e.what());
-              globalEvdev = false;
-          }
+    UpdateNumLockMask();
+
+    // Initialize keyboard device
+    std::string keyboardDevice = getKeyboardDevice();
+    if (!keyboardDevice.empty()) {
+      try {
+        info("Using keyboard device: {}", keyboardDevice);
+        SetupUinputDevice();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        StartEvdevHotkeyListener(keyboardDevice);
+        info("Successfully started evdev hotkey listener for keyboard");
+      } catch (const std::exception &e) {
+        error("Failed to start evdev keyboard listener: {}", e.what());
+        globalEvdev = false;
+      }
+    } else {
+      globalEvdev = false;
+      error("Failed to find a suitable keyboard device");
+    }
+
+    // Initialize mouse device
+    std::string mouseDevice = getMouseDevice();
+    if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+      try {
+        info("Using mouse device: {}", mouseDevice);
+        StartEvdevMouseListener(mouseDevice);
+        info("Successfully started evdev mouse listener");
+      } catch (const std::exception &e) {
+        error("Failed to start evdev mouse listener: {}", e.what());
+      }
+    } else if (mouseDevice.empty()) {
+      warning("No suitable mouse device found");
+    }
+
+    // Initialize gamepad device if requested
+    bool enableGamepad =
+        Configs::Get().Get<bool>("Device.EnableGamepad", false);
+    if (enableGamepad) {
+      std::string gamepadDevice = getGamepadDevice();
+      if (!gamepadDevice.empty()) {
+        try {
+          info("Using gamepad device: {}", gamepadDevice);
+          StartEvdevGamepadListener(gamepadDevice);
+          info("Successfully started evdev gamepad listener");
+        } catch (const std::exception &e) {
+          error("Failed to start evdev gamepad listener: {}", e.what());
+        }
       } else {
-          globalEvdev = false;
-          error("Failed to find a suitable keyboard device");
+        warning("Gamepad support enabled but no suitable gamepad device found");
       }
-      
-      // Initialize mouse device
-      std::string mouseDevice = getMouseDevice();
-      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-          try {
-              info("Using mouse device: {}", mouseDevice);
-              StartEvdevMouseListener(mouseDevice);
-              info("Successfully started evdev mouse listener");
-          } catch (const std::exception &e) {
-              error("Failed to start evdev mouse listener: {}", e.what());
-          }
-        } else if (mouseDevice.empty()) {
-          warning("No suitable mouse device found");
+    }
+
+    // Fall back to X11 hotkeys if evdev initialization failed
+    if (!globalEvdev) {
+      timerRunning = true;
+      try {
+        timerThread = std::thread(&IO::MonitorHotkeys, this);
+        info("Started X11 hotkey monitoring thread");
+      } catch (const std::exception &e) {
+        error("Failed to start X11 hotkey monitoring thread: {}", e.what());
+        timerRunning = false;
       }
-      
-      // Initialize gamepad device if requested
-      bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
-      if (enableGamepad) {
-          std::string gamepadDevice = getGamepadDevice();
-          if (!gamepadDevice.empty()) {
-              try {
-                  info("Using gamepad device: {}", gamepadDevice);
-                  StartEvdevGamepadListener(gamepadDevice);
-                  info("Successfully started evdev gamepad listener");
-              } catch (const std::exception &e) {
-                  error("Failed to start evdev gamepad listener: {}", e.what());
-              }
-          } else {
-              warning("Gamepad support enabled but no suitable gamepad device found");
-          }
-      }
-      
-      // Fall back to X11 hotkeys if evdev initialization failed
-      if (!globalEvdev) {
-          timerRunning = true;
-          try {
-              timerThread = std::thread(&IO::MonitorHotkeys, this);
-              info("Started X11 hotkey monitoring thread");
-          } catch (const std::exception &e) {
-              error("Failed to start X11 hotkey monitoring thread: {}", e.what());
-              timerRunning = false;
-          }
-      }
-      
-      // Debug output - show what we detected
-      if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
-          listInputDevices();
-      }
+    }
+
+    // Debug output - show what we detected
+    if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
+      listInputDevices();
+    }
   }
-  #endif
+#endif
 }
 IO::~IO() {
   std::cout << "IO destructor called" << std::endl;
@@ -293,23 +299,18 @@ IO::~IO() {
     timerThread.join();
   }
 
-  if (hotkeyExecutor) {
-    info("Shutting down hotkey executor...");
-    hotkeyExecutor->shutdown(std::chrono::milliseconds(1000));
-    hotkeyExecutor.reset();
-  }
-
   // Stop the evdev listener if it's running
   StopEvdevHotkeyListener();
+  StopEvdevMouseListener();
 
   // Ungrab all hotkeys before closing
 #ifdef __linux__
-  if (display) {
+  if (display && !globalEvdev) {
     Window root = DefaultRootWindow(display);
 
     // First, ungrab all hotkeys from the instance
     for (const auto &[id, hotkey] : instanceHotkeys) {
-      if (hotkey.key != 0) {
+      if (hotkey.key != 0 && !hotkey.evdev) {
         KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
         if (keycode != 0) {
           Ungrab(keycode, hotkey.modifiers, root);
@@ -319,7 +320,7 @@ IO::~IO() {
 
     // Then, ungrab all static hotkeys
     for (const auto &[id, hotkey] : hotkeys) {
-      if (hotkey.key != 0) {
+      if (hotkey.key != 0 && !hotkey.evdev) {
         KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
         if (keycode != 0) {
           Ungrab(keycode, hotkey.modifiers, root);
@@ -330,17 +331,8 @@ IO::~IO() {
     // Sync to ensure all ungrabs are processed
     XSync(display, x11::XFalse);
   }
-
-  // Clean up uinput device
-  CleanupUinputDevice();
-
-  // Close the uinput file descriptor if it's open
-  if (uinputFd >= 0) {
-    close(uinputFd);
-    uinputFd = -1;
-  }
 #endif
-
+  CleanupUinputDevice();
   // Don't close the display here, it's managed by DisplayManager
   display = nullptr;
 
@@ -836,13 +828,13 @@ bool IO::EmitClick(int btnCode, int action) {
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = 1; // Press
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     return true;
@@ -850,13 +842,13 @@ bool IO::EmitClick(int btnCode, int action) {
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = 0; // Release
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     return true;
@@ -865,14 +857,14 @@ bool IO::EmitClick(int btnCode, int action) {
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = 1;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     // Sync
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
 
     // Small delay to make it a click
@@ -882,25 +874,25 @@ bool IO::EmitClick(int btnCode, int action) {
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
     // Sync
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
   } else if (action == 1 || action == 0) {
     ev.type = EV_KEY;
     ev.code = btnCode;
     ev.value = action;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
     // Sync
     ev.type = EV_SYN;
     ev.code = SYN_REPORT;
     ev.value = 0;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
+    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
       return false;
   } else {
     std::cerr << "Invalid mouse action: " << action << "\n";
@@ -1018,11 +1010,11 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     actualDx = (dx > 0) ? 1 : -1;
   if (actualDy == 0 && dy != 0)
     actualDy = (dy > 0) ? 1 : -1;
-
   // Send the events
   input_event ev = {};
   debug("Mouse move: {} {}", actualDx, actualDy);
   if (actualDx != 0) {
+    syntheticEventsExpected.fetch_add(1); // Expect one more synthetic event
     ev.type = EV_REL;
     ev.code = REL_X;
     ev.value = actualDx;
@@ -1031,6 +1023,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   }
 
   if (actualDy != 0) {
+    syntheticEventsExpected.fetch_add(1); // Expect one more synthetic event
     ev.type = EV_REL;
     ev.code = REL_Y;
     ev.value = actualDy;
@@ -1809,7 +1802,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 }
 
 HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
-                          std::function<void()> action, int id, bool grab) {
+                          std::function<void()> action, int id) {
   auto wrapped_action = [action, hotkeyStr]() {
     if (Configs::Get().GetVerboseKeyLogging())
       info("Hotkey pressed: " + hotkeyStr);
@@ -1828,7 +1821,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
   hotkey.callback = wrapped_action;
   hotkey.action = "";
   hotkey.enabled = true;
-  hotkey.grab = grab;
+  hotkey.grab = parsed.grab;
   hotkey.suspend = parsed.suspend;
   hotkey.repeat = parsed.repeat;
   hotkey.success = false;
@@ -1868,7 +1861,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
 
     hotkey.type = HotkeyType::Combo;
     for (const auto &part : parts) {
-      auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0, false);
+      auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0);
       hotkey.comboSequence.push_back(subHotkey);
     }
     hotkey.success = !hotkey.comboSequence.empty();
@@ -1895,7 +1888,7 @@ bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
                         toLower(rawInput).find("scroll") != std::string::npos);
   HotKey hk;
   if (isMouseHotkey) {
-    hk = AddMouseHotkey(rawInput, std::move(action), id, true);
+    hk = AddMouseHotkey(rawInput, std::move(action), id);
   } else {
     hk = AddHotkey(rawInput, std::move(action), id);
   }
@@ -3061,6 +3054,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
     }
     auto parsedEmergencyHotkey = ParseHotkeyString(emergencyHotkey);
     auto emergencyKey = ParseKeyPart(parsedEmergencyHotkey.keyPart, true);
+    bool emergencyShutdown = false;
 
     struct input_event evs[64];
     std::map<int, bool> modState;
@@ -3237,12 +3231,26 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         std::vector<std::function<void()>> callbacks;
         bool shouldBlockKey = false;
         // Emergency hotkey
-        if (emergencyKey == originalCode &&
-            mask == parsedEmergencyHotkey.modifiers) {
-          shouldBlockKey = true;
-          StopEvdevHotkeyListener();
-          StopEvdevMouseListener();
-          exit(0);
+        if (down && emergencyKey == originalCode) {
+          bool modifierMatch;
+
+          if (parsedEmergencyHotkey.modifiers == 0) {
+            // No modifiers required - match if no modifiers pressed
+            modifierMatch = (mask == 0);
+          } else {
+            // Exact modifier match required
+            modifierMatch = (mask == parsedEmergencyHotkey.modifiers);
+          }
+
+          if (modifierMatch) {
+            error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
+            shouldBlockKey = true;
+
+            // Set flag to exit cleanly after this event loop
+            evdevRunning = false;
+            emergencyShutdown = true;
+            break; // Exit the event processing loop immediately
+          }
         }
 
         {
@@ -3357,6 +3365,18 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
         } else {
           SendUInput(mappedCode, down || repeat);
         }
+        if (emergencyShutdown) {
+          error("Emergency shutdown initiated - performing clean exit");
+
+          // Clean up in proper order
+          StopEvdevMouseListener();
+          CleanupUinputDevice();
+
+          // Signal main thread or call proper shutdown
+          // Don't use exit() - let destructors run!
+          std::raise(SIGTERM); // Or trigger your app's shutdown mechanism
+          return;
+        }
       }
     }
     close(fd);
@@ -3370,11 +3390,6 @@ void IO::StopEvdevHotkeyListener() {
 
   info("Stopping evdev hotkey listener...");
   evdevRunning = false;
-  for (const auto &[key, isDown] : keyDownState) {
-    if (isDown) {
-      SendUInput(key, false);
-    }
-  }
   // Signal shutdown
   if (evdevShutdownFd >= 0) {
     uint64_t val = 1;
@@ -3388,15 +3403,10 @@ void IO::StopEvdevHotkeyListener() {
     info("Evdev thread exited.");
   }
 
-  // Now cleanup uinput safely
-  CleanupUinputDevice();
-
   info("Evdev hotkey listener stopped");
 }
 
 void IO::CleanupUinputDevice() {
-  StopEvdevMouseListener();
-
   if (mouseUinputFd >= 0) {
     ioctl(mouseUinputFd, UI_DEV_DESTROY);
     close(mouseUinputFd);
@@ -3408,10 +3418,10 @@ void IO::CleanupUinputDevice() {
     uinputFd = -1;
   }
 }
-void IO::StartEvdevGamepadListener(const std::string& devicePath) {
+void IO::StartEvdevGamepadListener(const std::string &devicePath) {
   // Similar to StartEvdevHotkeyListener but for gamepad events
   info("Starting gamepad listener for device: {}", devicePath);
-  
+
   // Implementation would handle gamepad-specific events
   // like analog stick movements, trigger presses, etc.
   // This could be used for gamepad-based hotkeys or controls
@@ -3659,33 +3669,7 @@ void IO::StopEvdevMouseListener() {
 
   // Wait for the thread to finish with timeout
   if (mouseEvdevThread.joinable()) {
-    // Give the thread time to notice mouseEvdevRunning = false
-    auto start = std::chrono::steady_clock::now();
-    const int TIMEOUT_MS = 3000;
-
-    while (mouseEvdevThread.joinable()) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         std::chrono::steady_clock::now() - start)
-                         .count();
-
-      if (elapsed > TIMEOUT_MS) {
-        warning("Mouse thread didn't stop within timeout, detaching");
-        mouseEvdevThread.detach();
-        break;
-      }
-
-      // Try to join
-      if (mouseEvdevThread.joinable()) {
-        try {
-          mouseEvdevThread.join();
-          break;
-        } catch (...) {
-          // Join failed, continue waiting
-        }
-      }
-    }
+    mouseEvdevThread.join();
   }
 
   info("Mouse event listener stopped");
@@ -3870,6 +3854,12 @@ bool IO::handleMouseRelative(const input_event &ev) {
     struct input_event scaledEvent = ev;
 
     if (ev.code == REL_X || ev.code == REL_Y) {
+      if (syntheticEventsExpected.load() > 0) {
+        syntheticEventsExpected.fetch_sub(1);
+        debug("Skipping synthetic mouse event (remaining: {})",
+              syntheticEventsExpected.load());
+        return false; // Don't forward synthetic events
+      }
       // Apply sensitivity scaling
       double scaledValue = ev.value * mouseSensitivity;
       scaledEvent.value = static_cast<int32_t>(std::round(scaledValue));

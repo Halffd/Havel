@@ -3850,52 +3850,57 @@ void IO::StopEvdevGamepadListener() {
 
     // Handle mouse movement
     switch (ev.code) {
-    case REL_X:   // Mouse X movement
-    case REL_Y: { // Mouse Y movement
-      // Scale the movement value based on sensitivity
-      struct input_event scaledEvent = ev;
+      case REL_X:   // Mouse X movement
+      case REL_Y: { // Mouse Y movement
+        // Scale the movement value based on sensitivity
+        struct input_event scaledEvent = ev;
 
-      if (ev.code == REL_X || ev.code == REL_Y) {
-        if (syntheticEventsExpected.load() > 0) {
-          syntheticEventsExpected.fetch_sub(1);
-          debug("Skipping synthetic mouse event (remaining: {})",
-                syntheticEventsExpected.load());
-          return false; // Don't forward synthetic events
-        }
         // Apply sensitivity scaling
         double scaledValue = ev.value * mouseSensitivity;
-        scaledEvent.value = static_cast<int32_t>(std::round(scaledValue));
+        int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
+        
+        // Preserve direction for small movements that would otherwise be rounded to zero
+        if (scaledInt == 0 && ev.value != 0) {
+          scaledInt = (ev.value > 0) ? 1 : -1;
+        }
+        
+        scaledEvent.value = scaledInt;
 
         debug("Scaling mouse movement: original={}, sensitivity={}x, scaled={}",
-              ev.value, mouseSensitivity, scaledEvent.value);
+              ev.value, mouseSensitivity, scaledInt);
 
         // Forward the scaled event
         SendMouseUInput(scaledEvent);
         return true;
       }
-    }
 
-    case REL_WHEEL: // Vertical scroll
-      if (currentModifiers & Mod1Mask) {
-        info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
+      case REL_WHEEL: // Vertical scroll
+        if (currentModifiers & Mod1Mask) {
+          info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
 
-        if (ev.value > 0) {
-          executeComboAction("alt_scroll_up");
-        } else {
-          executeComboAction("alt_scroll_down");
+          if (ev.value > 0) {
+            executeComboAction("alt_scroll_up");
+          } else {
+            executeComboAction("alt_scroll_down");
+          }
+
+          shouldBlock = true; // Block the scroll from reaching system
         }
+        break;
 
-        shouldBlock = true; // Block the scroll from reaching system
-      }
-      break;
+      case REL_HWHEEL: // Horizontal scroll
+        if ((currentModifiers & Mod1Mask)) {
+          info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
+          executeComboAction("alt_hscroll");
+          shouldBlock = true;
+        }
+        break;
 
-    case REL_HWHEEL: // Horizontal scroll
-      if ((currentModifiers & Mod1Mask)) {
-        info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
-        executeComboAction("alt_hscroll");
-        shouldBlock = true;
-      }
-      break;
+      default:
+        // Log unhandled event types but don't forward them
+        debug("Unhandled relative event type: {}, code: {}, value: {}", 
+              ev.type, ev.code, ev.value);
+        break;
     }
 
     // Evaluate combo hotkeys as well (e.g., wheel + button combos)
@@ -3916,7 +3921,7 @@ void IO::StopEvdevGamepadListener() {
     return shouldBlock;
   }
 
-bool IO::EvaluateCombo(const HotKey &combo) {
+bool havel::IO::EvaluateCombo(const HotKey &combo) {
   // Require all parts to be currently active (pressed) within comboTimeWindow
   if (combo.comboSequence.empty())
     return false;
@@ -3954,7 +3959,7 @@ bool IO::EvaluateCombo(const HotKey &combo) {
   return true;
 }
 
-bool IO::handleMouseAbsolute(const input_event &ev) {
+bool havel::IO::handleMouseAbsolute(const input_event &ev) {
   // Get current modifier state
   int currentModifiers = GetCurrentModifiers();
 
@@ -3998,7 +4003,7 @@ bool IO::handleMouseAbsolute(const input_event &ev) {
   return false;
 }
 
-bool IO::SetupMouseUinputDevice() {
+bool havel::IO::SetupMouseUinputDevice() {
   mouseUinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
   if (mouseUinputFd < 0) {
     error("mouse uinput: failed to open /dev/uinput: {}", strerror(errno));
@@ -4048,25 +4053,37 @@ bool IO::SetupMouseUinputDevice() {
   return true;
 }
 
-void IO::SendMouseUInput(const input_event &ev) {
-  if (mouseUinputFd < 0)
+void havel::IO::SendMouseUInput(const input_event &ev) {
+  if (mouseUinputFd < 0) {
     return;
-  if (!mouseEvdevRunning.load()) return; // ignore during shutdown
-    struct input_event uievent = ev;
-  write(mouseUinputFd, &uievent, sizeof(uievent));
+  }
 
-  // Sync after each event
+  // Use a mutex to serialize all uinput writes (REL/SYN pairs must be atomic).
+  static std::mutex uinputWriteMutex;
+  std::lock_guard<std::mutex> lk(uinputWriteMutex);
+
+  ssize_t res = write(mouseUinputFd, &ev, sizeof(ev));
+  if (res != (ssize_t)sizeof(ev)) {
+    error("Failed to write uinput event (type={}, code={}, value={}): {}",
+          ev.type, ev.code, ev.value, strerror(errno));
+    return;
+  }
+
   struct input_event syn = {};
   syn.type = EV_SYN;
   syn.code = SYN_REPORT;
   syn.value = 0;
-  write(mouseUinputFd, &syn, sizeof(syn));
+
+  res = write(mouseUinputFd, &syn, sizeof(syn));
+  if (res != (ssize_t)sizeof(syn)) {
+    error("Failed to write uinput SYN: {}", strerror(errno));
+  }
 }
 
-void IO::setGlobalAltState(bool pressed) { globalAltPressed.store(pressed); }
+void havel::IO::setGlobalAltState(bool pressed) { globalAltPressed.store(pressed); }
 
-bool IO::getGlobalAltState() { return globalAltPressed.load(); }
-void IO::executeComboAction(const std::string &action) {
+bool havel::IO::getGlobalAltState() { return globalAltPressed.load(); }
+void havel::IO::executeComboAction(const std::string &action) {
   // Map combo action names to hotkey aliases
   std::unordered_map<std::string, std::string> comboToAlias = {
       {"left_right_combo", "@LButton & RButton"},

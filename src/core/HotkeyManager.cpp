@@ -212,7 +212,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         info("Reloading configuration");
     });
 
-    io.Hotkey("!Esc", []() {
+    io.Hotkey("!Esc", [this]() {
         if (App::instance()) {
             info("Quitting application");
             App::quit();
@@ -690,7 +690,7 @@ AddHotkey("@^!Home", [WinMove]() {
         clipboard->setText(clipboardText);
     });
     
-    AddHotkey("@numpad5", [this]() { 
+    AddHotkey("@|numpad5", [this]() { 
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
     

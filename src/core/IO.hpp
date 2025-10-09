@@ -192,7 +192,7 @@ public:
   bool AddHotkey(const std::string &alias, Key key, int modifiers,
                  std::function<void()> callback);
   HotKey AddMouseHotkey(const std::string &hotkeyStr,
-  std::function<void()> action, int id = 0, bool grab = false);
+  std::function<void()> action, int id = 0);
 
   HotKey AddHotkey(const std::string &rawInput, std::function<void()> action, int id = 0);
 
@@ -400,6 +400,8 @@ private:
   // Static members
   static bool hotkeyEnabled;
   static int hotkeyCount;
+
+  static std::atomic<int> syntheticEventsExpected;
   std::timed_mutex hotkeyMutex;  // Use timed_mutex for try_lock_for() support
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;

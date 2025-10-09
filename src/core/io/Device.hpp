@@ -3,7 +3,7 @@
 #include <vector>
 #include <cstdint>
 #include <sstream>
-
+#include <linux/input.h>
 // Event types from linux/input.h
 #define EV_SYN 0x00
 #define EV_KEY 0x01
@@ -15,35 +15,8 @@
 #define EV_SND 0x12
 #define EV_FF 0x15
 
-// Key codes from linux/input-event-codes.h
-#define KEY_A 30
-#define KEY_Z 44
-#define KEY_Q 16
-#define KEY_1 2
-#define KEY_9 10
-#define KEY_0 11
-#define KEY_SPACE 57
-#define KEY_ENTER 28
-#define KEY_LEFTSHIFT 42
-#define KEY_RIGHTSHIFT 54
-#define KEY_LEFTCTRL 29
-#define KEY_RIGHTCTRL 97
-#define KEY_LEFTALT 56
-#define KEY_RIGHTALT 100
-
-// Mouse buttons
-#define BTN_LEFT 0x110
-#define BTN_RIGHT 0x111
-#define BTN_MIDDLE 0x112
-#define BTN_SIDE 0x113
-#define BTN_EXTRA 0x114
-
 // Gamepad buttons
 #define BTN_GAMEPAD 0x130
-#define BTN_A 0x130
-#define BTN_B 0x131
-#define BTN_X 0x133
-#define BTN_Y 0x134
 #define BTN_TL 0x136
 #define BTN_TR 0x137
 #define BTN_SELECT 0x13a
@@ -53,19 +26,6 @@
 #define BTN_JOYSTICK 0x120
 #define BTN_TRIGGER 0x120
 #define BTN_THUMB 0x121
-
-// Relative axes
-#define REL_X 0x00
-#define REL_Y 0x01
-#define REL_WHEEL 0x08
-
-// Absolute axes
-#define ABS_X 0x00
-#define ABS_Y 0x01
-#define ABS_RX 0x03
-#define ABS_RY 0x04
-#define ABS_HAT0X 0x10
-#define ABS_HAT0Y 0x11
 
 enum class DeviceType {
     Unknown,

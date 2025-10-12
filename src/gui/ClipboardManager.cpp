@@ -1026,7 +1026,7 @@ void ClipboardManager::initializeHotkeys() {
     }
         
     // Register Alt+V hotkey
-    bool success = io->Hotkey("!v", [this]() {
+    bool success = io->Hotkey("!c", [this]() {
         qDebug() << "Alt+V pressed - toggling clipboard manager";
         QMetaObject::invokeMethod(this, "toggleVisibility", Qt::QueuedConnection);
     });

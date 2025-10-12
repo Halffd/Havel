@@ -240,7 +240,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("^+!a", [this]() {
         auto devices = audioManager.getDevices();
         for (const auto& device : devices) {
-            info("Device: {}", device);
+            info("Device: {} ({}) Vol: {:.0f}%", device.name, device.description, device.volume * 100);
         }
     });
     io.Hotkey("^+a", [this]() {

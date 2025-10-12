@@ -3,6 +3,7 @@
 #include "../utils/Logger.hpp"
 #include "../window/WindowManager.hpp"
 #include <cstdlib>
+#include <format>
 #include <iostream>
 
 // PulseAudio headers

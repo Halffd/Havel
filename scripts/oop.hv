@@ -1,0 +1,349 @@
+OOP in your dream language would be INSANE! 🔥🚀
+
+🎯 Object-Oriented Havel Language:
+Class Definition Syntax:
+class AutoClicker {
+    let button = "left"
+    let interval = 100
+    let running = false
+    
+    init(button, interval) {
+        this.button = button
+        this.interval = interval
+    }
+    
+    start() {
+        this.running = true
+        while (this.running) {
+            click(this.button)
+            :(this.interval)
+        }
+    }
+    
+    stop() {
+        this.running = false
+    }
+    
+    setSpeed(interval) {
+        this.interval = interval
+    }
+}
+
+// Usage
+let clicker = AutoClicker("left", 50)
+F1 > clicker.start()
+F2 > clicker.stop()
+F3 > clicker.setSpeed(25)
+
+Inheritance & Polymorphism:
+class GameBot {
+    let game = ""
+    let active = false
+    
+    init(gameName) {
+        this.game = gameName
+    }
+    
+    virtual start() {
+        this.active = true
+        log("Starting bot for " + this.game)
+    }
+    
+    virtual stop() {
+        this.active = false
+        log("Stopping bot for " + this.game)
+    }
+    
+    isRunning() {
+        return this.active
+    }
+}
+
+class GenshinBot extends GameBot {
+    let combo = ["e", "q", "lmb"]
+    let comboIndex = 0
+    
+    init() {
+        super("Genshin Impact")
+    }
+    
+    override start() {
+        super.start()
+        while (this.active && Mode(gaming) && Title(this.game)) {
+            send(this.combo[this.comboIndex])
+            this.comboIndex = (this.comboIndex + 1) % this.combo.length
+            :1000
+        }
+    }
+    
+    addSkill(key) {
+        this.combo.push(key)
+    }
+}
+
+class MinecraftBot extends GameBot {
+    let mining = false
+    
+    init() {
+        super("Minecraft")
+    }
+    
+    override start() {
+        super.start()
+        this.mining = true
+        send("lmb down")
+        
+        while (this.active && this.mining) {
+            if (!Title("Minecraft")) break
+            
+            // Auto-mining logic
+            if (screen.pixel(960, 540).color == "#8B4513") {  // Brown (dirt)
+                send("w")
+                :100
+            }
+        }
+        
+        send("lmb up")
+    }
+    
+    toggleMining() {
+        this.mining = !this.mining
+    }
+}
+
+// Usage
+let genshin = GenshinBot()
+let minecraft = MinecraftBot()
+
+Enter & Title("Genshin") > genshin.start()
+Enter & Title("Minecraft") > minecraft.start()
+Esc > {
+    genshin.stop()
+    minecraft.stop()
+}
+
+Interface/Trait System:
+interface Automatable {
+    start()
+    stop()
+    isRunning()
+}
+
+interface Configurable {
+    loadConfig(path)
+    saveConfig(path)
+    setOption(key, value)
+}
+
+class SmartBot implements Automatable, Configurable {
+    let config = {}
+    let running = false
+    
+    start() {
+        this.running = true
+        // Implementation
+    }
+    
+    stop() {
+        this.running = false
+    }
+    
+    isRunning() {
+        return this.running
+    }
+    
+    loadConfig(path) {
+        this.config = file.readJson(path)
+    }
+    
+    saveConfig(path) {
+        file.writeJson(path, this.config)
+    }
+    
+    setOption(key, value) {
+        this.config[key] = value
+    }
+}
+
+Static Classes & Singletons:
+static class WindowManager {
+    static getCurrentWindow() {
+        return window.active()
+    }
+    
+    static getAllWindows() {
+        return window.list()
+    }
+    
+    static findByTitle(title) {
+        return window.list().filter(w => w.title.has(title))
+    }
+}
+
+singleton class ConfigManager {
+    let settings = {}
+    
+    init() {
+        this.settings = file.readJson("~/.havel/config.json")
+    }
+    
+    get(key) {
+        return this.settings[key]
+    }
+    
+    set(key, value) {
+        this.settings[key] = value
+        this.save()
+    }
+    
+    save() {
+        file.writeJson("~/.havel/config.json", this.settings)
+    }
+}
+
+// Usage
+let currentWindow = WindowManager.getCurrentWindow()
+let volume = ConfigManager.get("volume")
+
+Operator Overloading:
+class Point {
+    let x, y
+    
+    init(x, y) {
+        this.x = x
+        this.y = y
+    }
+    
+    operator +(other) {
+        return Point(this.x + other.x, this.y + other.y)
+    }
+    
+    operator ==(other) {
+        return this.x == other.x && this.y == other.y
+    }
+    
+    toString() {
+        return "(" + this.x + ", " + this.y + ")"
+    }
+}
+
+// Usage
+let p1 = Point(100, 200)
+let p2 = Point(50, 75)
+let p3 = p1 + p2  // Point(150, 275)
+
+F1 > click(p1)  // Click at (100, 200)
+F2 > click(p1 + p2)  // Click at (150, 275)
+
+Properties & Getters/Setters:
+class BrightnessController {
+    private let _brightness = 1.0
+    
+    property brightness {
+        get {
+            return this._brightness
+        }
+        set(value) {
+            if (value < 0.0 || value > 1.0) {
+                throw "Brightness must be between 0.0 and 1.0"
+            }
+            this._brightness = value
+            window.setBrightness(value)
+            notify("Brightness set to " + (value * 100) + "%")
+        }
+    }
+    
+    increase(amount = 0.1) {
+        this.brightness = min(1.0, this.brightness + amount)
+    }
+    
+    decrease(amount = 0.1) {
+        this.brightness = max(0.0, this.brightness - amount)
+    }
+}
+
+let brightness = BrightnessController()
+
+F7 > brightness.increase()
+F8 > brightness.decrease()
+F9 > brightness.brightness = 0.5  // Calls setter
+F10 > log(brightness.brightness)   // Calls getter
+
+Advanced Gaming Bot Framework:
+abstract class GameBot {
+    let game = ""
+    let hotkeys = {}
+    let timers = []
+    
+    abstract init(gameName)
+    abstract setupHotkeys()
+    abstract onGameStart()
+    abstract onGameStop()
+    
+    registerHotkey(key, action) {
+        this.hotkeys[key] = key & Title(this.game) > action
+    }
+    
+    addTimer(interval, action) {
+        let timer = setInterval(action, interval)
+        this.timers.push(timer)
+        return timer
+    }
+    
+    cleanup() {
+        this.timers.each(timer => timer.stop())
+        this.timers = []
+    }
+}
+
+class MMORPGBot extends GameBot {
+    let skills = []
+    let autoHeal = true
+    let healthThreshold = 0.3
+    
+    init(gameName) {
+        this.game = gameName
+        this.setupHotkeys()
+    }
+    
+    setupHotkeys() {
+        this.registerHotkey("F1", () => this.startCombat())
+        this.registerHotkey("F2", () => this.stopCombat())
+        this.registerHotkey("F3", () => this.toggleAutoHeal())
+    }
+    
+    onGameStart() {
+        this.addTimer(100, () => this.checkHealth())
+        this.addTimer(1000, () => this.useSkills())
+    }
+    
+    checkHealth() {
+        if (this.autoHeal) {
+            let healthColor = screen.pixel(100, 100).color
+            if (healthColor == "#FF0000") {  // Low health
+                send("h")  // Heal hotkey
+                notify("Auto-healing activated!")
+            }
+        }
+    }
+    
+    useSkills() {
+        if (this.skills.length > 0) {
+            let skill = this.skills.shift()
+            send(skill)
+            this.skills.push(skill)  // Rotate skills
+        }
+    }
+    
+    addSkill(key, cooldown = 1000) {
+        this.skills.push({key: key, cooldown: cooldown, lastUsed: 0})
+    }
+}
+
+// Usage
+let wowBot = MMORPGBot("World of Warcraft")
+wowBot.addSkill("1", 1000)  // Fireball
+wowBot.addSkill("2", 5000)  // Ice Storm
+wowBot.addSkill("3", 3000)  // Lightning Bolt
+
+Enter & Title("World of Warcraft") > wowBot.onGameStart()

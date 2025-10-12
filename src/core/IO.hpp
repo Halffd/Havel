@@ -271,8 +271,6 @@ public:
   static void PressKey(const std::string &keyName, bool press);
 
   // Utility methods
-  std::shared_ptr<std::atomic<bool>>
-  SetTimer(int milliseconds, const std::function<void()> &func);
 
   void MsgBox(const std::string &message);
 

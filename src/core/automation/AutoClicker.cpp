@@ -1,6 +1,7 @@
 #include "AutoClicker.hpp"
 #include <stdexcept>
 #include <utility> // for std::move
+#include <chrono>
 
 namespace havel::automation {
 
@@ -74,6 +75,50 @@ void AutoClicker::onStart() {
 
 void AutoClicker::onStop() {
     // Cleanup when autoclicker stops
+}
+
+// Fast-mode: avoid AutoPresser's 10ms press/release cadence and just click once per interval
+void AutoClicker::start() {
+    if (isRunning()) return;
+    fastRunning_.store(true);
+    fastThread_ = std::make_unique<std::thread>(&AutoClicker::fastClickThread, this);
+    onStart();
+}
+
+void AutoClicker::stop() {
+    if (!isRunning()) return;
+    fastRunning_.store(false);
+    if (fastThread_ && fastThread_->joinable()) {
+        fastThread_->join();
+    }
+    fastThread_.reset();
+    onStop();
+}
+
+bool AutoClicker::isRunning() const {
+    return fastRunning_.load() && fastThread_ && fastThread_->joinable();
+}
+
+void AutoClicker::fastClickThread() {
+    using havel::MouseButton;
+    using havel::MouseAction;
+
+    auto toButton = [this]() {
+        switch (clickType_) {
+            case ClickType::Left: return MouseButton::Left;
+            case ClickType::Right: return MouseButton::Right;
+            case ClickType::Middle: return MouseButton::Middle;
+        }
+        return MouseButton::Left;
+    };
+
+    while (fastRunning_.load()) {
+        // Single instantaneous click
+        io_->Click(toButton(), MouseAction::Click);
+
+        // Sleep for configured interval
+        std::this_thread::sleep_for(getInterval());
+    }
 }
 
 } // namespace havel::automation

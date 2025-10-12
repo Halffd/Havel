@@ -4,6 +4,8 @@
 #include "../IO.hpp"
 #include <memory>
 #include <functional>
+#include <atomic>
+#include <thread>
 
 namespace havel::automation {
 
@@ -23,14 +25,24 @@ public:
     void setClickFunction(std::function<void()> clickFunc);
     void setIntervalMs(int intervalMs);
 
+    // Fast-mode: override to avoid press+release cycle and 10ms delay
+    void start() override;
+    void stop() override;
+    [[nodiscard]] bool isRunning() const override;
+
 private:
     void setupClickActions();
     void onStart() override;
     void onStop() override;
+    void fastClickThread();
 
     std::shared_ptr<havel::IO> io_;
     ClickType clickType_;
     std::function<void()> customClickFunc_;
+
+    // Fast-mode worker
+    std::atomic<bool> fastRunning_{false};
+    std::unique_ptr<std::thread> fastThread_;
 };
 
 } // namespace havel::automation

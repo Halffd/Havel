@@ -7,6 +7,7 @@
 #include "core/process/ProcessManager.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "media/AudioManager.hpp"
+#include "utils/Timer.hpp"
 #include "window/Window.hpp"
 #include "core/ConfigManager.hpp"
 #include "../process/Launcher.hpp"
@@ -233,13 +234,90 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     io.Hotkey("#f3", []() {
         Launcher::runShell("playerctl next");
     });
-
+    io.Hotkey("numpaddiv", [this]() {
+        audioManager.toggleMute();
+    });
+    io.Hotkey("^+!a", [this]() {
+        auto devices = audioManager.getDevices();
+        for (const auto& device : devices) {
+            info("Device: {}", device);
+        }
+    });
+    io.Hotkey("^+a", [this]() {
+        auto device = audioManager.findDeviceByIndex(0);
+        audioManager.setDefaultOutput(device->name);
+        info("Current device: {}", audioManager.getDefaultOutput());
+        // play audio
+        audioManager.playTestSound();
+    });
+    io.Hotkey("^+s", [this]() {
+        auto device = audioManager.findDeviceByIndex(1);
+        audioManager.setDefaultOutput(device->name);
+        info("Current device: {}", audioManager.getDefaultOutput());
+        // play audio
+        audioManager.playTestSound();
+    });
+    io.Hotkey("^+d", [this]() {
+        auto device = audioManager.findDeviceByIndex(2);
+        audioManager.setDefaultOutput(device->name);
+        info("Current device: {}", audioManager.getDefaultOutput());
+        // play audio
+        audioManager.playTestSound();
+    });
+    io.Hotkey("^+!a", [this]() {
+        auto device = audioManager.findDeviceByIndex(3);
+        audioManager.setDefaultOutput(device->name);
+        info("Current device: {}", audioManager.getDefaultOutput());
+        // play audio
+        audioManager.playTestSound();
+    });
+    io.Hotkey("^numpadadd", [this]() {
+        auto phone = audioManager.findDeviceByName("G30");
+        if(!phone){
+            phone = audioManager.findDeviceByName("200");
+        }
+        audioManager.increaseVolume(phone->name, 3);
+        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+    });
+    io.Hotkey("^numpadsub", [this]() {
+        auto phone = audioManager.findDeviceByName("G30");
+        if(!phone){
+            phone = audioManager.findDeviceByName("200");
+        }
+        audioManager.decreaseVolume(phone->name, 3);
+        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+    });
+    io.Hotkey("^numpad0", [this]() {
+        auto phone = audioManager.findDeviceByName("G30");
+        if(!phone){
+            phone = audioManager.findDeviceByName("200");
+        }
+        audioManager.setVolume(phone->name, 0);
+        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+    });
+    io.Hotkey("+numpadadd", [this]() {
+        auto builtIn = audioManager.findDeviceByName("Built-in Audio");
+        audioManager.increaseVolume(builtIn->name, 3);
+        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+    });
+    io.Hotkey("+numpadsub", [this]() {
+        auto builtIn = audioManager.findDeviceByName("Built-in Audio");
+        audioManager.decreaseVolume(builtIn->name, 3);
+        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+    });
+    io.Hotkey("+numpad0", [this]() {
+        auto builtIn = audioManager.findDeviceByName("Built-in Audio");
+        audioManager.setVolume(builtIn->name, 0);
+        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+    });
     io.Hotkey("@numpadAdd", [this]() {
         audioManager.increaseVolume(3);
+        info("Current volume (Default): {}", audioManager.getVolume());
     });
 
-    io.Hotkey("@numpadSub", [this]() {
+    io.Hotkey("@numpadsub", [this]() {
         audioManager.decreaseVolume(3);
+        info("Current volume (Default): {}", audioManager.getVolume());
     });
 
     io.Hotkey("f6", [this]() {
@@ -324,10 +402,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     AddHotkey("^f1", "~/scripts/f1.sh -1");
     AddHotkey("+f1", "~/scripts/f1.sh 0");
 
-    AddHotkey("+!l", "~/scripts/livelink.sh");
-    AddHotkey("^!l", "livelink screen toggle 1");
+    AddHotkey("!l", "~/scripts/livelink.sh");
+    AddHotkey("+!l", "livelink screen toggle 1");
     AddHotkey("!f10", "~/scripts/str");
-    AddHotkey("^!k", "livelink screen toggle 2");
+    AddHotkey("+!k", "livelink screen toggle 2");
     AddHotkey("^f10", "~/scripts/mpvv");
     AddHotkey("!^f", "~/scripts/freeze.sh thorium");
     AddHotkey("!f", []{
@@ -813,54 +891,87 @@ AddHotkey("@^!Home", [WinMove]() {
         nullptr,
         0
     );
-
+    AddHotkey("^.", [this]() {
+        info("Incrreasing volume for window: {}", WindowManager::GetActiveWindowTitle());
+        audioManager.increaseActiveApplicationVolume();
+    });
+    AddHotkey("^,", [this]() {
+        info("Decreasing volume for window: {}", WindowManager::GetActiveWindowTitle());
+        audioManager.decreaseActiveApplicationVolume();
+    });
+    TimerTask fTimer = nullptr;
+    AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this, &fTimer]{
+        static bool runF = true;
+        auto winId = WindowManager::GetActiveWindow();
+        if(runF) {
+            fTimer = TimerManager::SetTimer(100, [this, winId, &fTimer]() {
+                if(WindowManager::GetActiveWindow() != winId) {
+                    TimerManager::StopTimer(fTimer);
+                    return;
+                }
+                io.Send("f");
+            }, true);
+            SetTimeout(15000, [this, &fTimer]() {
+                TimerManager::StopTimer(fTimer);
+            });
+        } else {
+            TimerManager::StopTimer(fTimer);
+        }
+        runF = !runF;
+    });
+    TimerTask spaceTimer = nullptr;
+    AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this, &spaceTimer]() {
+        io.Send("space:up");
+        auto winId = WindowManager::GetActiveWindow();
+        spaceTimer = TimerManager::SetTimer(100, [this, winId, &spaceTimer]() {
+            if(WindowManager::GetActiveWindow() != winId) {
+                TimerManager::StopTimer(spaceTimer);
+                return;
+            }
+            io.Send("space");
+        }, true);
+    });
+    AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this, &spaceTimer]() {
+        TimerManager::StopTimer(spaceTimer);
+        io.Send("space:up");
+    });
     AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {
-        // Always stop existing automation first
+        // Toggle automation
         if (genshinAutomationActive) {
-            info("Stopping existing Genshin automation");
-            automationManager_->removeTask("genshinClicker");
+            automationManager_->stopAll();
             genshinAutomationActive = false;
-            // Give it a moment to clean up
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            info("Stopped Genshin automation");
+            return;
         }
     
         info("Starting Genshin automation");
-        showNotification("Genshin Automation", "Starting automation sequence");
         genshinAutomationActive = true;
     
-        std::vector<automation::AutomationManager::TimedAction> task = {
-            { [this]() { io.Send("e"); }, std::chrono::milliseconds(1000) },
-            { [this]() { io.Send("q"); }, std::chrono::milliseconds(2000) },
-            { [this]() { io.Click(MouseButton::Left, MouseAction::Click); }, std::chrono::milliseconds(10) },
-        };
-        
-        automationManager_->createChainedTask("genshinClicker", task, true); // loop=true
-        
-        // Store thread handle instead of detaching
-        if (monitorThread.joinable()) {
-            monitorThread.join(); // Clean up old thread
-        }
-        
-        monitorThread = std::thread([this]() {
-            while (genshinAutomationActive && currentMode == "gaming") {
-                if (!evaluateCondition("window.title ~ 'Genshin Impact'")) {
-                    info("Genshin automation: Window no longer active");
-                    genshinAutomationActive = false; // Let the loop exit naturally
-                    break;
-                }
-                std::this_thread::sleep_for(std::chrono::seconds(2));
-            }
-            
-            // Clean shutdown
-            automationManager_->removeTask("genshinClicker");
+        try {
+            // Create and start fast auto-clicker (20ms = ~50 CPS)
+            auto clicker = automationManager_->createAutoClicker("left", 60);
+            clicker->start();
+            info("Started fast auto-clicker");
+    
+            // Skill rotation
+            std::vector<automation::AutomationManager::TimedAction> skillRotation = {
+                { [this]() { io.Send("e"); }, std::chrono::milliseconds(100) },  // Skill E
+                { [this]() { io.Send("q"); }, std::chrono::milliseconds(1000) }  // Burst Q
+            };
+    
+            // Start skill rotation (looping)
+            automationManager_->createChainedTask("genshinSkills", skillRotation, true);
+            info("Started skill rotation");
+    
+        } catch (const std::exception& e) {
+            error("Failed to start Genshin automation: {}", e.what());
+            automationManager_->stopAll();
             genshinAutomationActive = false;
-            info("Genshin automation: Ended");
-        });
-    }, nullptr, 0);
-
+        }
+    }, 0);
     AddContextualHotkey("+s", "window.title ~ 'Genshin Impact'", [this]() {
         info("Genshin Impact detected - Skipping cutscene");
-        io.SetTimer(100, [this]() {
+            SetTimer(100, [this]() {
             Rect pos = {1600, 700};
             float speed = 100.0f;
             float accel = 5.0f;
@@ -1153,7 +1264,7 @@ bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()
 
 bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, const std::string& action) {
     return io.Hotkey(hotkeyStr, [action]() {
-        Launcher::runShell(action.c_str());
+        Launcher::runDetached(action.c_str());
     });
 }
 

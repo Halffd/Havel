@@ -1366,7 +1366,7 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
                     currentActive) {
                     previousActiveWindow = currentActive;
                     std::cout << "Updated previous active window to: " <<
-                            previousActiveWindow << std::endl;
+                            previousActiveWindow << "Title: " << GetActiveWindowTitle() << " Class: " << GetActiveWindowClass() << std::endl;
                 }
             }
         }

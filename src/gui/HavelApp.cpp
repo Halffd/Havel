@@ -114,9 +114,9 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     if (isStartup) {
         info("Setting startup brightness and gamma values");
-        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<int>("Display.StartupBrightness", 0.35));
+        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
         hotkeyManager->brightnessManager.setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
-        Launcher::runDetached("~/scripts/liveliink.sh");
+        Launcher::runShellDetached("~/scripts/liveliink.sh");
     }
 
     // Register all hotkeys

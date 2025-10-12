@@ -359,6 +359,8 @@ std::string AudioManager::getDefaultOutput() const {
     return "";
 }
 
+
+
 std::string AudioManager::getDefaultInput() const {
     // For PulseAudio, get the default source
     if (currentBackend == AudioBackend::PULSE) {
@@ -398,6 +400,29 @@ std::string AudioManager::getDefaultInput() const {
     
     // ALSA implementation would go here
     return "";
+}
+
+bool AudioManager::setDefaultInput(const std::string& device) {
+    if (currentBackend == AudioBackend::PULSE) {
+        if (!pa_context) return false;
+
+        pa_threaded_mainloop_lock(pa_mainloop);
+
+        pa_operation* op = pa_context_set_default_source(
+            pa_context, device.c_str(), nullptr, nullptr);
+
+        bool success = false;
+        if (op) {
+            pa_operation_unref(op);
+            success = true;
+        }
+
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        return success;
+    }
+
+    // ALSA implementation would go here
+    return false;
 }
 
 // === PLAYBACK CONTROL ===
@@ -957,14 +982,6 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         double* volume_ptr = static_cast<double*>(userdata);
         *volume_ptr = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
-    }
-
-    // Callback for sink input mute status
-    static void pulse_sink_input_mute_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
-        if (eol || !i) return;
-        
-        bool* mute_ptr = static_cast<bool*>(userdata);
-        *mute_ptr = i->mute;
     }
 
     // Callback for sink input enumeration

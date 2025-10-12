@@ -78,6 +78,7 @@ public:
     static ProcessResult runAsync(const std::string& cmd);
     static ProcessResult runHidden(const std::string& cmd);
     static ProcessResult runShell(const std::string& cmd);
+    static ProcessResult runShellDetached(const std::string& cmd);
     static ProcessResult runDetached(const std::string& cmd);
     
     // Terminal operations

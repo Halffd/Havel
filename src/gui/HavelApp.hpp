@@ -76,7 +76,7 @@ private:
     bool shutdownRequested = false;
 
     static constexpr int PERIODIC_INTERVAL_MS = 50;
-    static constexpr int WINDOW_CHECK_INTERVAL_MS = 300;
+    static constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
     static constexpr int CONFIG_CHECK_INTERVAL_S = 5;
 };
 

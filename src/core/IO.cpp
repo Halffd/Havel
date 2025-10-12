@@ -2448,33 +2448,6 @@ Key IO::EvdevNameToKeyCode(std::string keyName) {
   return 0; // Default for unrecognized keys
 }
 
-// Set a timer for a specified function
-std::shared_ptr<std::atomic<bool>>
-IO::SetTimer(int milliseconds, const std::function<void()> &func) {
-  auto running = std::make_shared<std::atomic<bool>>(true);
-
-  std::cout << "Setting timer for " << milliseconds << " ms" << std::endl;
-
-  std::thread([=]() {
-    if (milliseconds < 0) {
-      // One-time timer after delay
-      std::this_thread::sleep_for(std::chrono::milliseconds(-milliseconds));
-      if (*running)
-        func();
-    } else {
-      // Repeating timer
-      while (*running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds));
-        if (!*running)
-          break;
-        func();
-      }
-    }
-  }).detach();
-
-  return running;
-}
-
 // Display a message box
 void IO::MsgBox(const std::string &message) {
   // Stub implementation for message box

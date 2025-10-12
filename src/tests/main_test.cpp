@@ -7,6 +7,7 @@
 #include "window/WindowManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 #include "utils/Logger.hpp"
+#include "utils/Util.hpp"
 #include "x11.h"
 #include <iostream>
 
@@ -83,7 +84,7 @@ void testHandleKeyAction(havel::IO& io) {
 
 void testSetTimer(havel::IO& io) {
     std::cout << "Testing SetTimer function...\n";
-    io.SetTimer(1000, []() {
+    havel::SetTimer(1000, []() {
         std::cout << "Timer fired\n";
     });
 }

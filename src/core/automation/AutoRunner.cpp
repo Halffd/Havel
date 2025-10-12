@@ -1,4 +1,5 @@
 #include "AutoRunner.hpp"
+#include "utils/Util.hpp"
 #include <stdexcept>
 #include <utility> // for std::move
 
@@ -38,12 +39,18 @@ void AutoRunner::setIntervalMs(int intervalMs) {
 
 void AutoRunner::onStart() {
     // Press the direction key when starting
-    io_->Send(direction_);
+    io_->Send("{" + direction_ + ":down}" + "");
+    io_->Send("{LShift:down}");
+    SetTimer(100, [this]() {
+        io_->Send("{LShift:up}");
+        io_->Send("{LShift:down}");
+    });
 }
 
 void AutoRunner::onStop() {
     // Release the direction key when stopping
-    io_->Send(direction_ + " up");
+    io_->Send("{" + direction_ + ":up}");
+    io_->Send("{LShift:up}");
 }
 
 void AutoRunner::setupDirectionAction() {

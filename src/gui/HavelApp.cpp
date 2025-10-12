@@ -114,9 +114,9 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     if (isStartup) {
         info("Setting startup brightness and gamma values");
-        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<int>("Display.StartupBrightness", 100));
-        hotkeyManager->brightnessManager.setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 100));
-        io->SetHardwareMouseSensitivity(Configs::Get().Get<int>("Mouse.Sensitivity", 1.0));
+        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<int>("Display.StartupBrightness", 35));
+        hotkeyManager->brightnessManager.setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 80));
+        Launcher::runDetached("~/scripts/liveliink.sh");
     }
 
     // Register all hotkeys

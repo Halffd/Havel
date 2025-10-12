@@ -888,5 +888,223 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
     
     #endif // __linux__
+
+    // === APPLICATION VOLUME CONTROL IMPLEMENTATION ===
+#ifdef __linux__
+    // Callback for sink input volume
+    static void pulse_sink_input_volume_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+        if (eol || !i) return;
+        
+        double* volume_ptr = static_cast<double*>(userdata);
+        *volume_ptr = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+    }
+
+    // Callback for sink input mute status
+    static void pulse_sink_input_mute_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+        if (eol || !i) return;
+        
+        bool* mute_ptr = static_cast<bool*>(userdata);
+        *mute_ptr = i->mute;
+    }
+
+    // Callback for sink input enumeration
+    static void pulse_sink_input_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
+        if (eol) return;
+        
+        auto* applications = static_cast<std::vector<AudioManager::ApplicationInfo>*>(userdata);
+        
+        AudioManager::ApplicationInfo app;
+        app.index = i->index;
+        app.name = i->name ? i->name : "Unknown";
+        app.icon = i->proplist ? pa_proplist_gets(i->proplist, PA_PROP_APPLICATION_ICON_NAME) : "";
+        app.volume = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        app.isMuted = i->mute;
+        app.sinkInputIndex = i->index;
+        
+        applications->push_back(app);
+    }
+
+    // Per-application volume control methods
+    bool AudioManager::setApplicationVolume(const std::string& applicationName, double volume) {
+        if (currentBackend != AudioBackend::PULSE || !pa_context) return false;
+        
+        volume = std::clamp(volume, MIN_VOLUME, MAX_VOLUME);
+        
+        // First, get all applications to find the one with matching name
+        auto applications = getApplications();
+        for (const auto& app : applications) {
+            if (app.name == applicationName) {
+                return setApplicationVolume(app.sinkInputIndex, volume);
+            }
+        }
+        
+        return false;
+    }
+
+    bool AudioManager::setApplicationVolume(uint32_t applicationIndex, double volume) {
+        if (currentBackend != AudioBackend::PULSE || !pa_context) return false;
+        
+        volume = std::clamp(volume, MIN_VOLUME, MAX_VOLUME);
+        
+        pa_volume_t pa_volume = pa_sw_volume_from_linear(volume);
+        pa_cvolume cv;
+        pa_cvolume_set(&cv, 2, pa_volume); // Stereo
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        pa_operation* op = pa_context_set_sink_input_volume(
+            pa_context, applicationIndex, &cv, nullptr, nullptr);
+        
+        bool success = false;
+        if (op) {
+            pa_operation_unref(op);
+            success = true;
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        return success;
+    }
+
+    double AudioManager::getApplicationVolume(const std::string& applicationName) const {
+        if (currentBackend != AudioBackend::PULSE || !pa_context) return 0.0;
+        
+        // First, get all applications to find the one with matching name
+        auto applications = getApplications();
+        for (const auto& app : applications) {
+            if (app.name == applicationName) {
+                return getApplicationVolume(app.sinkInputIndex);
+            }
+        }
+        
+        return 0.0;
+    }
+
+    double AudioManager::getApplicationVolume(uint32_t applicationIndex) const {
+        if (currentBackend != AudioBackend::PULSE || !pa_context) return 0.0;
+        
+        double volume = 0.0;
+        
+        // Cast away const for C API compatibility
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        pa_operation* op = pa_context_get_sink_input_info(
+            ctx, applicationIndex, pulse_sink_input_volume_callback, &volume);
+        
+        if (op) {
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
+            pa_operation_unref(op);
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        return volume;
+    }
+
+    bool AudioManager::increaseApplicationVolume(const std::string& applicationName, double amount) {
+        double current = getApplicationVolume(applicationName);
+        return setApplicationVolume(applicationName, std::min(MAX_VOLUME, current + amount));
+    }
+
+    bool AudioManager::increaseApplicationVolume(uint32_t applicationIndex, double amount) {
+        double current = getApplicationVolume(applicationIndex);
+        return setApplicationVolume(applicationIndex, std::min(MAX_VOLUME, current + amount));
+    }
+
+    bool AudioManager::decreaseApplicationVolume(const std::string& applicationName, double amount) {
+        double current = getApplicationVolume(applicationName);
+        return setApplicationVolume(applicationName, std::max(MIN_VOLUME, current - amount));
+    }
+
+    bool AudioManager::decreaseApplicationVolume(uint32_t applicationIndex, double amount) {
+        double current = getApplicationVolume(applicationIndex);
+        return setApplicationVolume(applicationIndex, std::max(MIN_VOLUME, current - amount));
+    }
+
+    // Active window application volume control
+    bool AudioManager::setActiveApplicationVolume(double volume) {
+        std::string activeAppName = getActiveApplicationName();
+        if (activeAppName.empty()) return false;
+        
+        return setApplicationVolume(activeAppName, volume);
+    }
+
+    bool AudioManager::increaseActiveApplicationVolume(double amount) {
+        std::string activeAppName = getActiveApplicationName();
+        if (activeAppName.empty()) return false;
+        
+        return increaseApplicationVolume(activeAppName, amount);
+    }
+
+    bool AudioManager::decreaseActiveApplicationVolume(double amount) {
+        std::string activeAppName = getActiveApplicationName();
+        if (activeAppName.empty()) return false;
+        
+        return decreaseApplicationVolume(activeAppName, amount);
+    }
+
+    double AudioManager::getActiveApplicationVolume() const {
+        std::string activeAppName = getActiveApplicationName();
+        if (activeAppName.empty()) return 0.0;
+        
+        return getApplicationVolume(activeAppName);
+    }
+
+    std::vector<AudioManager::ApplicationInfo> AudioManager::getApplications() const {
+        std::vector<ApplicationInfo> applications;
+        
+        if (currentBackend != AudioBackend::PULSE || !pa_context) return applications;
+        
+        // Use a const_cast to work around the PulseAudio API's lack of const-correctness
+        auto* ctx = const_cast<struct pa_context*>(pa_context);
+        if (!ctx) return applications;
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        pa_operation* op = pa_context_get_sink_input_info_list(ctx, pulse_sink_input_callback, &applications);
+        
+        if (op) {
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
+            pa_operation_unref(op);
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        return applications;
+    }
+
+    std::string AudioManager::getActiveApplicationName() const {
+        // Get the active window's PID and use it to find the corresponding audio application
+        auto pid = havel::WindowManager::GetActiveWindowPID();
+        if (pid == 0) return "";
+        
+        // Get all applications and find the one with matching PID
+        auto applications = getApplications();
+        for (const auto& app : applications) {
+            // Try to match by process ID if available in the application info
+            // If not directly available, we might need to match by window class or title
+            std::string windowClass = havel::WindowManager::GetActiveWindowClass();
+            if (!windowClass.empty() && app.name.find(windowClass) != std::string::npos) {
+                return app.name;
+            }
+        }
+        
+        // If no match by class, try using the window title
+        std::string windowTitle = havel::WindowManager::GetActiveWindowTitle();
+        if (!windowTitle.empty()) {
+            for (const auto& app : applications) {
+                if (app.name.find(windowTitle) != std::string::npos) {
+                    return app.name;
+                }
+            }
+        }
+        
+        return "";
+    }
+
+#endif // __linux__
     
     } // namespace havel

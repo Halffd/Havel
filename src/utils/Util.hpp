@@ -23,7 +23,9 @@
 #include "./Object.hpp"
 #include "./JSON.hpp"
 #include "./CUtil.hpp"
-
+#include <memory>
+#include <atomic>
+#include "./Timer.hpp"
 namespace havel {
 
 // ===== Type Traits =====

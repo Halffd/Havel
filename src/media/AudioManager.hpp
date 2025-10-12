@@ -1,6 +1,7 @@
 #pragma once
 #include "core/ConfigManager.hpp"
 #include "../utils/Logger.hpp"
+#include "../window/WindowManager.hpp"
 #include <cstdlib>
 #include <iostream>
 
@@ -117,6 +118,37 @@ public:
     void setMuteCallback(MuteCallback callback) { muteCallback = callback; }
     void setDeviceCallback(DeviceCallback callback) { deviceCallback = callback; }
 
+    // === APPLICATION VOLUME CONTROL ===
+    // Per-application volume control methods
+    bool setApplicationVolume(const std::string& applicationName, double volume);
+    bool setApplicationVolume(uint32_t applicationIndex, double volume);
+    double getApplicationVolume(const std::string& applicationName) const;
+    double getApplicationVolume(uint32_t applicationIndex) const;
+    
+    bool increaseApplicationVolume(const std::string& applicationName, double amount = 0.05);
+    bool increaseApplicationVolume(uint32_t applicationIndex, double amount = 0.05);
+    bool decreaseApplicationVolume(const std::string& applicationName, double amount = 0.05);
+    bool decreaseApplicationVolume(uint32_t applicationIndex, double amount = 0.05);
+    
+    // Active window application volume control
+    bool setActiveApplicationVolume(double volume);
+    bool increaseActiveApplicationVolume(double amount = 0.05);
+    bool decreaseActiveApplicationVolume(double amount = 0.05);
+    double getActiveApplicationVolume() const;
+    
+    // Get list of applications with audio
+    struct ApplicationInfo {
+        uint32_t index;
+        std::string name;
+        std::string icon;
+        double volume;
+        bool isMuted;
+        uint32_t sinkInputIndex;
+    };
+    
+    std::vector<ApplicationInfo> getApplications() const;
+    std::string getActiveApplicationName() const;
+    
     // === UTILITY ===
     AudioBackend getBackend() const { return currentBackend; }
     bool isBackendAvailable(AudioBackend backend);

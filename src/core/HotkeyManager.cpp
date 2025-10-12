@@ -813,37 +813,47 @@ AddHotkey("@^!Home", [WinMove]() {
     );
 
     AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {
+        // Always stop existing automation first
         if (genshinAutomationActive) {
-            warning("Genshin automation is already active");
+            info("Stopping existing Genshin automation");
             automationManager_->removeTask("genshinClicker");
-            genshinAutomationActive = !genshinAutomationActive;
-            return;
+            genshinAutomationActive = false;
+            // Give it a moment to clean up
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
-
-        info("Genshin Impact detected - Starting specialized auto actions");
+    
+        info("Starting Genshin automation");
         showNotification("Genshin Automation", "Starting automation sequence");
         genshinAutomationActive = true;
-
+    
         std::vector<automation::AutomationManager::TimedAction> task = {
             { [this]() { io.Send("e"); }, std::chrono::milliseconds(1000) },
             { [this]() { io.Send("q"); }, std::chrono::milliseconds(2000) },
             { [this]() { io.Click(MouseButton::Left, MouseAction::Click); }, std::chrono::milliseconds(10) },
         };
-        automationManager_->createChainedTask("genshinClicker", task);
-        std::thread([this]() {
-            int counter = 0;
-
+        
+        automationManager_->createChainedTask("genshinClicker", task, true); // loop=true
+        
+        // Store thread handle instead of detaching
+        if (monitorThread.joinable()) {
+            monitorThread.join(); // Clean up old thread
+        }
+        
+        monitorThread = std::thread([this]() {
             while (genshinAutomationActive && currentMode == "gaming") {
                 if (!evaluateCondition("window.title ~ 'Genshin Impact'")) {
                     info("Genshin automation: Window no longer active");
-                    automationManager_->removeTask("genshinClicker");
+                    genshinAutomationActive = false; // Let the loop exit naturally
+                    break;
                 }
                 std::this_thread::sleep_for(std::chrono::seconds(2));
             }
-
+            
+            // Clean shutdown
+            automationManager_->removeTask("genshinClicker");
             genshinAutomationActive = false;
-            info("Genshin automation: Automation ended");
-        }).detach();
+            info("Genshin automation: Ended");
+        });
     }, nullptr, 0);
 
     AddContextualHotkey("+s", "window.title ~ 'Genshin Impact'", [this]() {
@@ -2160,8 +2170,10 @@ void HotkeyManager::printActiveWindowInfo() {
 void HotkeyManager::cleanup() {
     stopAllAutoclickers();
     setMode("default");
-    io.Send("{LAlt up}{RAlt up}{LShift up}{RShift up}{LCtrl up}{RCtrl up}{LWin up}{RWin up}");
-    
+    genshinAutomationActive = false;
+    if (monitorThread.joinable()) {
+        monitorThread.join();
+    }    
     // Stop all automation tasks
     {
         std::lock_guard<std::mutex> lock(automationMutex_);

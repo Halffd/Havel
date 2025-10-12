@@ -818,89 +818,32 @@ void IO::removeSpecialCharacters(str &keyName) {
 bool IO::EmitClick(int btnCode, int action) {
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> lock(uinputMutex);
-  input_event ev = {};
-
-  // action values:
-  // 0 = Release
-  // 1 = Hold
-  // 2 = Click (press and release)
-
-  if (action == 1) { // Hold
-    ev.type = EV_KEY;
-    ev.code = btnCode;
-    ev.value = 1; // Press
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    return true;
-  } else if (action == 0) { // Release
-    ev.type = EV_KEY;
-    ev.code = btnCode;
-    ev.value = 0; // Release
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    return true;
-  } else if (action == 2) { // Click (press and release)
-    // Press
-    ev.type = EV_KEY;
-    ev.code = btnCode;
-    ev.value = 1;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    // Sync
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-
-    // Small delay to make it a click
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-
-    // Release
-    ev.type = EV_KEY;
-    ev.code = btnCode;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-    // Sync
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-  } else if (action == 1 || action == 0) {
-    ev.type = EV_KEY;
-    ev.code = btnCode;
-    ev.value = action;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-    // Sync
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-  } else {
-    std::cerr << "Invalid mouse action: " << action << "\n";
-    return false;
+  
+  auto writeEvent = [&](uint16_t type, uint16_t code, int32_t value) -> bool {
+      input_event ev = {.type = type, .code = code, .value = value};
+      return write(mouseUinputFd, &ev, sizeof(ev)) == sizeof(ev);
+  };
+  
+  auto sync = [&]() -> bool {
+      return writeEvent(EV_SYN, SYN_REPORT, 0);
+  };
+  
+  switch(action) {
+      case 0: // Release
+          return writeEvent(EV_KEY, btnCode, 0) && sync();
+          
+      case 1: // Hold  
+          return writeEvent(EV_KEY, btnCode, 1) && sync();
+          
+      case 2: // Click (FAST)
+          return writeEvent(EV_KEY, btnCode, 1) && sync() &&
+                 writeEvent(EV_KEY, btnCode, 0) && sync();
+                 // No delay = instant click ⚡
+          
+      default:
+          error("Invalid mouse action: {}", action);
+          return false;
   }
-
-  return true;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
   if (mouseUinputFd < 0)
@@ -977,67 +920,65 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   if (mouseUinputFd < 0) {
-    error("mouseUinputFd is borked: {}", mouseUinputFd);
-    return false;
-  }
-  // Apply mouse sensitivity
-  double adjustedDx, adjustedDy;
-  {
-    std::lock_guard<std::mutex> lock(mouseMutex);
-    adjustedDx = dx * mouseSensitivity;
-    adjustedDy = dy * mouseSensitivity;
+      error("mouseUinputFd is borked: {}", mouseUinputFd);
+      return false;
   }
 
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> ioLock(uinputMutex);
 
-  dx = static_cast<int>(adjustedDx);
-  dy = static_cast<int>(adjustedDy);
+  // Apply speed and acceleration (but NO sensitivity scaling)
+  if (speed <= 0) speed = 1;
+  if (accel <= 0.0f) accel = 1.0f;
 
-  if (speed <= 0)
-    speed = 1;
-  if (accel <= 0.0f)
-    accel = 1.0f;
-
-  // Apply acceleration curve (exponential for more natural feeling)
+  // Apply acceleration curve
   float acceleratedSpeed = speed * std::pow(accel, 1.5f);
 
-  // Calculate movement with sub-pixel precision but integer output
+  // Calculate final movement
   int actualDx = static_cast<int>(dx * acceleratedSpeed);
   int actualDy = static_cast<int>(dy * acceleratedSpeed);
 
-  // For very small movements, ensure at least 1 pixel movement
+  // Preserve direction for tiny movements
   if (actualDx == 0 && dx != 0)
-    actualDx = (dx > 0) ? 1 : -1;
+      actualDx = (dx > 0) ? 1 : -1;
   if (actualDy == 0 && dy != 0)
-    actualDy = (dy > 0) ? 1 : -1;
-  // Send the events
-  input_event ev = {};
+      actualDy = (dy > 0) ? 1 : -1;
+
   debug("Mouse move: {} {}", actualDx, actualDy);
+
+  // Send X movement
   if (actualDx != 0) {
-    syntheticEventsExpected.fetch_add(1); // Expect one more synthetic event
-    ev.type = EV_REL;
-    ev.code = REL_X;
-    ev.value = actualDx;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
+      input_event ev = {};
+      ev.type = EV_REL;
+      ev.code = REL_X;
+      ev.value = actualDx;
+      if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
+          error("Failed to write X movement: {}", strerror(errno));
+          return false;
+      }
   }
 
+  // Send Y movement  
   if (actualDy != 0) {
-    syntheticEventsExpected.fetch_add(1); // Expect one more synthetic event
-    ev.type = EV_REL;
-    ev.code = REL_Y;
-    ev.value = actualDy;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-      return false;
+      input_event ev = {};
+      ev.type = EV_REL;
+      ev.code = REL_Y;
+      ev.value = actualDy;
+      if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
+          error("Failed to write Y movement: {}", strerror(errno));
+          return false;
+      }
   }
 
-  // Sync event
+  // Send sync event
+  input_event ev = {};
   ev.type = EV_SYN;
   ev.code = SYN_REPORT;
   ev.value = 0;
-  if (write(mouseUinputFd, &ev, sizeof(ev)) < 0)
-    return false;
+  if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
+      error("Failed to write sync event: {}", strerror(errno));
+      return false;
+  }
 
   return true;
 }
@@ -1250,7 +1191,7 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
 }
 void IO::SendUInput(int keycode, bool down) {
   static std::mutex uinputMutex;
-  if (!mouseEvdevRunning.load()) return; // ignore during shutdown
+  if (uinputFd < 0) return;
   std::lock_guard<std::mutex> lock(uinputMutex);
 
   // State tracking check
@@ -1413,8 +1354,15 @@ void IO::Send(cstr keys) {
     SendKeyImpl(keyName, down);
   };
   // release all modifiers
-  for (const auto &mod : modifierKeys) {
-    SendKey(mod.second, false);
+  std::set<std::string> toRelease;
+  if (currentModifierState.leftCtrl || currentModifierState.rightCtrl) toRelease.insert("ctrl");
+  if (currentModifierState.leftShift || currentModifierState.rightShift) toRelease.insert("shift");
+  if (currentModifierState.leftAlt || currentModifierState.rightAlt) toRelease.insert("alt");
+  if (currentModifierState.leftMeta || currentModifierState.rightMeta) toRelease.insert("meta");
+  
+  // Release interfering modifiers
+  for (const auto& mod : toRelease) {
+      SendKey(modifierKeys[mod], false);
   }
 
   size_t i = 0;
@@ -3355,6 +3303,9 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
               }
               pendingCallbacks--;
             }).detach();
+            if (hotkey.grab) {
+              shouldBlockKey = true;
+            }
           }
         }
         if (shutdown) {

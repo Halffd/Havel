@@ -95,6 +95,16 @@ ProcessResult Launcher::runShell(const std::string& cmd) {
     return run(cmd, {Method::Shell});
 }
 
+ProcessResult Launcher::runShellDetached(const std::string& cmd) {
+    LaunchParams params;
+    params.method = Method::Shell;
+    params.detachFromParent = true;  // This makes it survive parent death
+    params.windowState = WindowState::Hidden;  // Optional: run hidden
+    
+    debug("Running detached shell command: " + cmd);
+    return run(cmd, params);
+}
+
 ProcessResult Launcher::runDetached(const std::string& cmd) {
     LaunchParams params;
     params.method = Method::Async;

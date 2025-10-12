@@ -786,11 +786,11 @@ AddHotkey("@^!Home", [WinMove]() {
         io.Click(MouseButton::Right, MouseAction::Release);
     });
     
-    AddHotkey("@numpaddiv", [this]() { 
+    AddHotkey("@numpadenter+", [this]() { 
         io.Click(MouseButton::Middle, MouseAction::Hold);
     });
 
-    AddHotkey("@numpaddiv:up", [this]() { 
+    AddHotkey("@numpadenter:up", [this]() { 
         io.Click(MouseButton::Middle, MouseAction::Release);
     });
     
@@ -1263,8 +1263,8 @@ bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, std::function<void()
 }
 
 bool HotkeyManager::AddHotkey(const std::string& hotkeyStr, const std::string& action) {
-    return io.Hotkey(hotkeyStr, [action]() {
-        Launcher::runDetached(action.c_str());
+    return io.Hotkey(hotkeyStr,  [action]() {
+        Launcher::runShellDetached(action.c_str());
     });
 }
 

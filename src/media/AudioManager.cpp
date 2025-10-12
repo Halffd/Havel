@@ -146,6 +146,66 @@ bool AudioManager::isMuted(const std::string& device) {
 }
 
 // === DEVICE MANAGEMENT ===
+// Forward declare the callback function
+static void set_default_sink_callback(pa_context* c, int success, void* userdata) {
+    auto* data = static_cast<std::pair<bool*, pa_threaded_mainloop*>*>(userdata);
+    *(data->first) = (success >= 0);
+    pa_threaded_mainloop_signal(data->second, 0);
+    delete data;
+}
+
+bool AudioManager::setDefaultOutput(const std::string& device) {
+    if (currentBackend == AudioBackend::PULSE) {
+        if (!pa_context) return false;
+        
+        pa_threaded_mainloop_lock(pa_mainloop);
+        
+        // First, find the device to ensure it exists
+        const auto* dev = findDeviceByName(device);
+        if (!dev) {
+            error("Device not found: {}", device);
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            return false;
+        }
+        
+        // Create data to pass to the callback
+        auto* callback_data = new std::pair<bool*, pa_threaded_mainloop*>(nullptr, pa_mainloop);
+        bool success = false;
+        callback_data->first = &success;
+        
+        // Set the default sink
+        pa_operation* op = pa_context_set_default_sink(pa_context, dev->name.c_str(), 
+                                                     set_default_sink_callback, callback_data);
+        
+        if (op) {
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
+            pa_operation_unref(op);
+        } else {
+            delete callback_data;
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            error("Failed to create operation for setting default sink");
+            return false;
+        }
+        
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        
+        if (success) {
+            info("Set default output device to: {}", device);
+            updateDeviceCache(); // Refresh device cache
+        } else {
+            error("Failed to set default output device to: {}", device);
+        }
+        
+        return success;
+    }
+    
+    // ALSA implementation would go here
+    error("Setting default output device is not supported with the current backend");
+    return false;
+}
+
 void AudioManager::updateDeviceCache() const {
     std::lock_guard<std::mutex> lock(deviceMutex);
     

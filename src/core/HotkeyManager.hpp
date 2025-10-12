@@ -135,6 +135,7 @@ namespace havel {
         std::function<void()> falseAction = nullptr,
         int id = 0);
     private:
+        std::thread monitorThread;
         // Condition evaluation state
         std::chrono::steady_clock::time_point lastConditionCheck = std::chrono::steady_clock::now();
         static constexpr int CONDITION_CHECK_INTERVAL_MS = 100; // Check every 100ms instead of constantly

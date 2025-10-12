@@ -224,7 +224,13 @@ public:
   void executeComboAction(const std::string& action);
   void CleanupUinputDevice();
   // Access current modifier bitmask (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
-  int GetCurrentModifiers() const { return currentEvdevModifiers.load(); }
+  int GetCurrentModifiers() const { 
+    if(currentModifierState.leftCtrl || currentModifierState.rightCtrl) return ControlMask;
+    if(currentModifierState.leftShift || currentModifierState.rightShift) return ShiftMask;
+    if(currentModifierState.leftAlt || currentModifierState.rightAlt) return Mod1Mask;
+    if(currentModifierState.leftMeta || currentModifierState.rightMeta) return Mod4Mask;
+    return 0;
+   }
   const ModifierState& GetModifierState() const { return currentModifierState; }
   
   // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)

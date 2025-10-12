@@ -43,6 +43,8 @@ std::string HotkeyManager::getMode() const {
 }
 
 void HotkeyManager::Zoom(int zoom) {
+    printStackTrace();      
+    info("Ctrl down? {} | Shift down? {} | Alt down? {} | Super down? {}", io.IsCtrlPressed(), io.IsShiftPressed(), io.IsAltPressed(), io.IsWinPressed());
     if (zoom < 0) zoom = 0;
     else if (zoom > 3) zoom = 3;
     if (zoom == 1) {
@@ -1363,7 +1365,7 @@ bool HotkeyManager::isGamingWindow() {
 
     const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
     for (const auto& app : gamingApps) {
-        if (windowClass.find(app) != std::string::npos || windowTitle.find(app) != std::string::npos) {
+        if (windowClass.find(app) != std::string::npos){ // || windowTitle.find(app) != std::string::npos) {
             return true;
         }
     }

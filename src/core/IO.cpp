@@ -637,6 +637,7 @@ void IO::MonitorHotkeys() {
                 }
 
                 if (hotkey.callback) {
+                  info("Executing hotkey callback: {} key: {} modifiers: {}", hotkey.alias, hotkey.key, hotkey.modifiers);
                   callbacks.emplace_back(hotkey.callback);
                 }
 
@@ -1362,6 +1363,7 @@ void IO::Send(cstr keys) {
   
   // Release interfering modifiers
   for (const auto& mod : toRelease) {
+    info("Releasing modifier: " + mod);
       SendKey(modifierKeys[mod], false);
   }
 
@@ -1416,11 +1418,13 @@ void IO::Send(cstr keys) {
           SendKey(mod, false);
         }
       } else if (modifierKeys.count(seq)) {
+        info("Sending modifier: " + seq);
         SendKey(modifierKeys[seq], true);
         // Small delay to ensure press is registered before release
         std::this_thread::sleep_for(std::chrono::microseconds(100));
         SendKey(modifierKeys[seq], false);
       } else {
+        info("Sending key: " + seq);
         SendKey(seq, true);
         std::this_thread::sleep_for(std::chrono::microseconds(100));
         SendKey(seq, false);
@@ -1430,6 +1434,7 @@ void IO::Send(cstr keys) {
     }
 
     if (!isspace(keys[i])) {
+      info("Sending key: " + std::string(1, keys[i]));
       std::string key(1, keys[i]);
       SendKey(key, true);
       std::this_thread::sleep_for(std::chrono::microseconds(100));
@@ -1441,8 +1446,10 @@ void IO::Send(cstr keys) {
   // Release all held modifiers (fail-safe)
   for (const auto &mod : activeModifiers) {
     if (modifierKeys.count(mod)) {
+      info("Releasing modifier: " + mod);
       SendKey(modifierKeys[mod], false);
     } else {
+      info("Releasing key: " + mod);
       SendKey(mod, false);
     }
   }
@@ -1753,17 +1760,31 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 
 HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
                           std::function<void()> action, int id) {
-  auto wrapped_action = [action, hotkeyStr]() {
-    if (Configs::Get().GetVerboseKeyLogging())
-      info("Hotkey pressed: " + hotkeyStr);
-    action();
-  };
-
-  bool hasAction = static_cast<bool>(action);
+   bool hasAction = static_cast<bool>(action);
 
   // Use the same parser as keyboard hotkeys
   ParsedHotkey parsed = ParseHotkeyString(hotkeyStr);
 
+  auto wrapped_action = [action, hotkeyStr, parsed]() {
+    if (Configs::Get().GetVerboseKeyLogging()) {
+      std::string eventTypeStr;
+      switch (parsed.eventType) {
+        case HotkeyEventType::Down: eventTypeStr = "Down"; break;
+        case HotkeyEventType::Up: eventTypeStr = "Up"; break;
+        case HotkeyEventType::Both: eventTypeStr = "Both"; break;
+        default: eventTypeStr = "Unknown";
+      }
+      info("Hotkey pressed: " + hotkeyStr + 
+           " | Modifiers: " + std::to_string(parsed.modifiers) + 
+           " | Key: " + parsed.keyPart + 
+           " | Event Type: " + eventTypeStr + 
+           " | Grab: " + (parsed.grab ? "true" : "false") + 
+           " | Suspend: " + (parsed.suspend ? "true" : "false") + 
+           " | Repeat: " + (parsed.repeat ? "true" : "false") + 
+           " | Wildcard: " + (parsed.wildcard ? "true" : "false"));
+    }
+    action();
+  };
   // Build base hotkey
   HotKey hotkey;
   hotkey.alias = hotkeyStr;
@@ -1789,11 +1810,20 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
   // Check for mouse button or wheel
   int button = ParseMouseButton(parsed.keyPart);
   if (button != 0) {
-    hotkey.type = (button == 1 || button == -1) ? HotkeyType::MouseWheel
-                                                : HotkeyType::MouseButton;
-    hotkey.wheelDirection = (button == 1 || button == -1) ? button : 0;
-    hotkey.mouseButton = (button == 1 || button == -1) ? 0 : button;
-    hotkey.key = static_cast<Key>(button);
+    bool isWheelEvent = (button == 1 || button == -1);
+    hotkey.type = isWheelEvent ? HotkeyType::MouseWheel : HotkeyType::MouseButton;
+    
+    if (isWheelEvent) {
+      // For wheel events, only set wheelDirection and leave key as 0
+      hotkey.wheelDirection = button;
+      hotkey.mouseButton = 0;
+      hotkey.key = 0;  // Explicitly set to 0 for wheel events
+    } else {
+      // For regular mouse buttons
+      hotkey.wheelDirection = 0;
+      hotkey.mouseButton = button;
+      hotkey.key = static_cast<Key>(button);
+    }
     hotkey.success = true;
   }
 
@@ -2724,16 +2754,16 @@ bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
   return false;
 }
 bool IO::IsShiftPressed() {
-  return GetKeyState("lshift") || GetKeyState("rshift");
+  return currentModifierState.leftShift || currentModifierState.rightShift;
 }
 
 bool IO::IsCtrlPressed() {
-  return GetKeyState("lctrl") || GetKeyState("rctrl");
+  return currentModifierState.leftCtrl || currentModifierState.rightCtrl;
 }
 
-bool IO::IsAltPressed() { return GetKeyState("lalt") || GetKeyState("ralt"); }
+bool IO::IsAltPressed() { return currentModifierState.leftAlt || currentModifierState.rightAlt; }
 
-bool IO::IsWinPressed() { return GetKeyState("lwin") || GetKeyState("rwin"); }
+bool IO::IsWinPressed() { return currentModifierState.leftMeta || currentModifierState.rightMeta; }
 Key IO::GetKeyCode(cstr keyName) {
   // Convert string to keysym
   KeySym keysym = StringToVirtualKey(keyName);
@@ -3289,9 +3319,9 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, "
                   "repeat: {}",
                   hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
-            std::thread([callback = hotkey.callback, alias = hotkey.alias,
-                         this]() {
+            std::thread([callback = hotkey.callback, alias = hotkey.alias, key = hotkey.key, modifiers = hotkey.modifiers, this]() {
               try {
+                info("Executing hotkey callback: {} key: {} modifiers: {}", alias, key, modifiers);
                 pendingCallbacks++;
                 if(evdevRunning && !shutdown){
                 callback();
@@ -3669,6 +3699,7 @@ void IO::StopEvdevGamepadListener() {
         if ((hotkey.modifiers & currentModifiers) == hotkey.modifiers) {
           // Execute the hotkey callback
           if (hotkey.callback) {
+            info("Executing hotkey callback: {} key: {} modifiers: {}", hotkey.alias, hotkey.key, hotkey.modifiers);
             hotkey.callback();
           }
           shouldBlock = hotkey.grab;
@@ -3752,6 +3783,7 @@ void IO::StopEvdevGamepadListener() {
       if ((hotkey.modifiers & GetCurrentModifiers()) != hotkey.modifiers)
         continue;
       if (EvaluateCombo(hotkey)) {
+        info("Executing combo hotkey button callback: {} key: {} modifiers: {}", hotkey.alias, hotkey.key, hotkey.modifiers);
         if (hotkey.callback)
           hotkey.callback();
         if (hotkey.grab)
@@ -3763,11 +3795,28 @@ void IO::StopEvdevGamepadListener() {
   }
 
   bool IO::handleMouseRelative(const input_event &ev) {
-    bool shouldBlock = false;
-    int currentModifiers = GetCurrentModifiers();
+  bool shouldBlock = false;
+  // Current modifiers in X11 mask form (ShiftMask, ControlMask, Mod1Mask, Mod4Mask)
+  int currentModifiersX11 = GetCurrentModifiers();
+  // Build evdev-style bitmask: bit0=Ctrl, bit1=Shift, bit2=Alt, bit3=Meta
+  int currentModifiersEvdev = 0;
+  if (currentModifierState.leftCtrl || currentModifierState.rightCtrl)
+    currentModifiersEvdev |= (1 << 0);
+  if (currentModifierState.leftShift || currentModifierState.rightShift)
+    currentModifiersEvdev |= (1 << 1);
+  if (currentModifierState.leftAlt || currentModifierState.rightAlt)
+    currentModifiersEvdev |= (1 << 2);
+  if (currentModifierState.leftMeta || currentModifierState.rightMeta)
+    currentModifiersEvdev |= (1 << 3);
 
-    // Check for wheel events first
-    if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
+  if (ev.code == REL_WHEEL) {
+    debug("WHEEL: X11Mods=0x{:x}, EvdevMods=0x{:x} | ctrl(L/R)={}{} shift(L/R)={}{} alt(L/R)={}{} meta(L/R)={}{}",
+          currentModifiersX11, currentModifiersEvdev,
+          currentModifierState.leftCtrl, currentModifierState.rightCtrl,
+          currentModifierState.leftShift, currentModifierState.rightShift,
+          currentModifierState.leftAlt, currentModifierState.rightAlt,
+          currentModifierState.leftMeta, currentModifierState.rightMeta);
+  }
       // Check for registered wheel hotkeys
       for (auto &[id, hotkey] : hotkeys) {
         if (!hotkey.enabled || hotkey.type != HotkeyType::MouseWheel)
@@ -3782,9 +3831,14 @@ void IO::StopEvdevGamepadListener() {
         }
 
         if (isWheelMatch) {
-          // Check if modifiers match (exact match required)
-          if (hotkey.modifiers == currentModifiers) {
-            // Execute the hotkey callback
+          // Choose correct modifier domain for comparison
+          int currentMods = hotkey.evdev ? currentModifiersEvdev : currentModifiersX11;
+          bool match = (hotkey.modifiers == currentMods);
+          debug("WHEEL MODIFIER CHECK: expected={} current={} evdev={} match={} alias={}",
+                hotkey.modifiers, currentMods, hotkey.evdev, match, hotkey.alias);
+
+          if (match) {
+            info("MODIFIER MATCH - executing hotkey");
             if (hotkey.callback) {
               hotkey.callback();
             }
@@ -3797,7 +3851,6 @@ void IO::StopEvdevGamepadListener() {
           }
         }
       }
-    }
 
     // Handle mouse movement
     switch (ev.code) {
@@ -3826,7 +3879,7 @@ void IO::StopEvdevGamepadListener() {
       }
 
       case REL_WHEEL: // Vertical scroll
-        if (currentModifiers & Mod1Mask) {
+        if (currentModifierState.leftAlt || currentModifierState.rightAlt) {
           info("🎯 ALT+SCROLL WHEEL: {}", ev.value > 0 ? "UP" : "DOWN");
 
           if (ev.value > 0) {
@@ -3836,14 +3889,6 @@ void IO::StopEvdevGamepadListener() {
           }
 
           shouldBlock = true; // Block the scroll from reaching system
-        }
-        break;
-
-      case REL_HWHEEL: // Horizontal scroll
-        if ((currentModifiers & Mod1Mask)) {
-          info("🎯 ALT+HORIZONTAL SCROLL: {}", ev.value > 0 ? "RIGHT" : "LEFT");
-          executeComboAction("alt_hscroll");
-          shouldBlock = true;
         }
         break;
 
@@ -3858,9 +3903,11 @@ void IO::StopEvdevGamepadListener() {
     for (auto &[id, hotkey] : hotkeys) {
       if (!hotkey.enabled || hotkey.type != HotkeyType::Combo)
         continue;
-      if ((hotkey.modifiers & currentModifiers) != hotkey.modifiers)
+      int currentModsForCombo = hotkey.evdev ? currentModifiersEvdev : currentModifiersX11;
+      if ((hotkey.modifiers & currentModsForCombo) != hotkey.modifiers)
         continue;
       if (EvaluateCombo(hotkey)) {
+        info("Combo hotkey pressed: {}", hotkey.alias);
         if (hotkey.callback)
           hotkey.callback();
         if (hotkey.grab)
@@ -3868,7 +3915,7 @@ void IO::StopEvdevGamepadListener() {
         shouldBlock = shouldBlock || hotkey.grab;
       }
     }
-
+ 
     return shouldBlock;
   }
 
@@ -3938,6 +3985,7 @@ bool havel::IO::handleMouseAbsolute(const input_event &ev) {
       // Check if modifiers match (exact match required)
       if ((hotkey.modifiers & currentModifiers) == hotkey.modifiers) {
         // Execute the hotkey callback with the current value
+        info("Mouse hotkey pressed: {}", hotkey.alias);
         if (hotkey.callback) {
           hotkey.callback();
         }
@@ -4034,35 +4082,37 @@ void havel::IO::SendMouseUInput(const input_event &ev) {
 void havel::IO::setGlobalAltState(bool pressed) { globalAltPressed.store(pressed); }
 
 bool havel::IO::getGlobalAltState() { return globalAltPressed.load(); }
-void havel::IO::executeComboAction(const std::string &action) {
-  // Map combo action names to hotkey aliases
-  std::unordered_map<std::string, std::string> comboToAlias = {
-      {"left_right_combo", "@LButton & RButton"},
-      {"right_left_combo", "@RButton & LButton"},
-      {"alt_middle_click", "@!MButton"},
-      {"alt_scroll_up", "@!WheelUp"},
-      {"alt_scroll_down", "@!WheelDown"},
-      {"alt_hscroll", "@!HWheelLeft"}};
-
-  // Find the matching alias
-  auto it = comboToAlias.find(action);
-  if (it != comboToAlias.end()) {
-    std::string targetAlias = it->second;
-
-    // Look for hotkey with matching alias
-    for (auto &[id, hotkey] : hotkeys) {
-      if (hotkey.alias == targetAlias && hotkey.callback) {
-        info("Executing combo action '{}' via hotkey '{}'", action,
-             targetAlias);
+void IO::executeComboAction(const std::string &action) {
+  info("Executing combo action: {}", action);
+  
+  // Transform action to hotkey alias
+  std::string targetAlias;
+  if (action == "alt_scroll_up") targetAlias = "@!WheelUp";
+  else if (action == "alt_scroll_down") targetAlias = "@!WheelDown";
+  else targetAlias = action;
+  
+  debug("Looking for hotkey with alias: '{}'", targetAlias);
+  
+  // Get current modifier state  
+  int currentMods = GetCurrentModifiers();
+  debug("Current modifiers: 0x{:x}", currentMods);
+  
+  for (auto &[id, hotkey] : hotkeys) {
+    if (hotkey.enabled && hotkey.callback && hotkey.alias == targetAlias) {
+      // Check modifiers match
+      if (hotkey.modifiers == currentMods) {
+        info("Executing hotkey '{}' for action '{}'", hotkey.alias, action);
         hotkey.callback();
         return;
+      } else {
+        debug("Modifiers don't match: expected={}, current={}", 
+              hotkey.modifiers, currentMods);
       }
     }
   }
-
-  info("No handler registered for combo action: {}", action);
+  
+  warn("No handler found for combo action: {}", action);
 }
-
 // Mouse button click methods
 void IO::MouseClick(int button) {
   MouseDown(button);

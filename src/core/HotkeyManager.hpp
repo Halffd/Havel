@@ -21,6 +21,7 @@
 #include "automation/AutoClicker.hpp"
 #include "automation/AutoKeyPresser.hpp"
 #include "automation/AutoRunner.hpp"
+#include "utils/Timer.hpp"
 #include <memory>
 #include "core/io/KeyTap.hpp"    
 
@@ -184,6 +185,11 @@ namespace havel {
         std::chrono::steady_clock::time_point winKeyPressTime;
         std::atomic<bool> genshinAutomationActive = false;
         std::thread genshinThread;
+        
+        // Genshin automation timer management
+        std::shared_ptr<std::atomic<bool>> fTimer = nullptr;
+        std::shared_ptr<std::atomic<bool>> spaceTimer = nullptr;
+        bool fRunning = false;
         WindowManager &windowManager;
         MPVController &mpv;
         AudioManager &audioManager;

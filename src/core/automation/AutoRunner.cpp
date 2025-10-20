@@ -1,7 +1,7 @@
 #include "AutoRunner.hpp"
-#include "utils/Util.hpp"
 #include <stdexcept>
-#include <utility> // for std::move
+#include <utility>
+#include "utils/Logger.hpp"
 
 namespace havel::automation {
 
@@ -12,7 +12,7 @@ AutoRunner::AutoRunner(std::shared_ptr<IO> io)
     if (!io_) {
         throw std::invalid_argument("IO cannot be null");
     }
-    setupDirectionAction();
+    // Don't setup actions - we'll handle everything in onStart/onStop
 }
 
 void AutoRunner::setDirection(const std::string& direction) {
@@ -26,7 +26,6 @@ void AutoRunner::setDirection(const std::string& direction) {
     }
     
     direction_ = direction;
-    setupDirectionAction();
     
     if (wasRunning) {
         start();
@@ -38,31 +37,27 @@ void AutoRunner::setIntervalMs(int intervalMs) {
 }
 
 void AutoRunner::onStart() {
-    // Press the direction key when starting
-    io_->Send("{" + direction_ + ":down}" + "");
+    // JUST hold the keys down - no spamming needed!
+    io_->Send("{" + direction_ + ":down}");
     io_->Send("{LShift:down}");
-    SetTimer(100, [this]() {
-        io_->Send("{LShift:up}");
-        io_->Send("{LShift:down}");
-    });
+    info("AutoRunner started - holding {} and Shift", direction_);
 }
 
 void AutoRunner::onStop() {
-    // Release the direction key when stopping
+    // Release both keys
     io_->Send("{" + direction_ + ":up}");
     io_->Send("{LShift:up}");
+    info("AutoRunner stopped - released {} and Shift", direction_);
 }
 
 void AutoRunner::setupDirectionAction() {
-    setPressAction([this]() {
-        // Press the direction key
-        io_->Send(direction_);
-    });
+    // DON'T SET PRESS/RELEASE ACTIONS!
+    // AutoPresser will call onPress/onRelease which we don't want for holding keys
+    // We only want onStart/onStop for hold-style automation
     
-    setReleaseAction([this]() {
-        // Release the direction key
-        io_->Send(direction_ + " up");
-    });
+    // Clear any actions to prevent AutoPresser from doing press/release cycles
+    setPressAction(nullptr);
+    setReleaseAction(nullptr);
 }
 
 } // namespace havel::automation

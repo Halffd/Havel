@@ -899,40 +899,73 @@ AddHotkey("@^!Home", [WinMove]() {
         info("Decreasing volume for window: {}", WindowManager::GetActiveWindowTitle());
         audioManager.decreaseActiveApplicationVolume();
     });
-    TimerTask fTimer = nullptr;
-    AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this, &fTimer]{
-        static bool runF = true;
+    AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this](){
         auto winId = WindowManager::GetActiveWindow();
-        if(runF) {
-            fTimer = TimerManager::SetTimer(100, [this, winId, &fTimer]() {
-                if(WindowManager::GetActiveWindow() != winId) {
-                    TimerManager::StopTimer(fTimer);
+        
+        if (!fRunning) {
+            // Start F spamming
+            fRunning = true;
+            fTimer = TimerManager::SetTimer(100, [this, winId]() {
+                if (WindowManager::GetActiveWindow() != winId) {
+                    info("Window changed, stopping F timer");
+                    if (fTimer) {
+                        TimerManager::StopTimer(fTimer);
+                        fTimer = nullptr;
+                    }
+                    fRunning = false;
                     return;
                 }
                 io.Send("f");
             }, true);
-            SetTimeout(15000, [this, &fTimer]() {
-                TimerManager::StopTimer(fTimer);
+            
+            // Auto-stop after 15 seconds
+            SetTimeout(15000, [this]() {
+                if (fRunning) {
+                    info("F timer auto-stopped after 15s");
+                    if (fTimer) {
+                        TimerManager::StopTimer(fTimer);
+                        fTimer = nullptr;
+                    }
+                    fRunning = false;
+                }
             });
+            
+            info("Started F spamming");
         } else {
-            TimerManager::StopTimer(fTimer);
+            // Stop F spamming
+            if (fTimer) {
+                TimerManager::StopTimer(fTimer);
+                fTimer = nullptr;
+            }
+            fRunning = false;
+            info("Stopped F spamming");
         }
-        runF = !runF;
     });
-    TimerTask spaceTimer = nullptr;
-    AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this, &spaceTimer]() {
-        io.Send("space:up");
+
+    AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
+        info("Space pressed - starting spam");
+        io.Send("space:up");  // Release first to ensure clean state
+        
         auto winId = WindowManager::GetActiveWindow();
-        spaceTimer = TimerManager::SetTimer(100, [this, winId, &spaceTimer]() {
-            if(WindowManager::GetActiveWindow() != winId) {
-                TimerManager::StopTimer(spaceTimer);
+        spaceTimer = TimerManager::SetTimer(100, [this, winId]() {
+            if (WindowManager::GetActiveWindow() != winId) {
+                info("Window changed, stopping space timer");
+                if (spaceTimer) {
+                    TimerManager::StopTimer(spaceTimer);
+                    spaceTimer = nullptr;
+                }
                 return;
             }
             io.Send("space");
         }, true);
     });
-    AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this, &spaceTimer]() {
-        TimerManager::StopTimer(spaceTimer);
+
+    AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
+        info("Space released - stopping spam");
+        if (spaceTimer) {
+            TimerManager::StopTimer(spaceTimer);
+            spaceTimer = nullptr;
+        }
         io.Send("space:up");
     });
     AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {

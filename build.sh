@@ -23,15 +23,15 @@ THREADS=3
 declare -A BUILD_CONFIGS=(
     [0]="Debug,ON,ON,ON,build-debug"              # 0: debug, tests, lang, llvm
     [1]="Release,OFF,OFF,ON,build-release"        # 1: release, no tests, no lang, llvm  
-    [2]="Debug,OFF,OFF,ON,build-debug-minimal"    # 2: debug, no tests, no lang, llvm
-    [3]="Debug,OFF,OFF,OFF,build-debug-fast"      # 3: debug, tests, no lang, llvm
-    [5]="Release,ON,ON,ON,build-release-full"     # 5: release, tests, lang, llvm
+    [2]="Debug,OFF,OFF,ON,build-debug"    # 2: debug, no tests, no lang, llvm
+    [3]="Debug,OFF,OFF,OFF,build-debug"      # 3: debug, tests, no lang, llvm
+    [5]="Release,ON,ON,ON,build-release"     # 5: release, tests, lang, llvm
     
     # LLVM-specific modes
-    [6]="Debug,ON,ON,OFF,build-debug-nollvm"      # 6: debug, tests, lang, NO llvm
-    [7]="Release,OFF,OFF,OFF,build-release-nollvm" # 7: release, no tests, no lang, NO llvm
-    [8]="Debug,OFF,ON,OFF,build-debug-pure"       # 8: debug, no tests, lang, NO llvm
-    [9]="Release,ON,ON,OFF,build-release-pure"    # 9: release, tests, lang, NO llvm
+    [6]="Debug,ON,ON,OFF,build-debug"      # 6: debug, tests, lang, NO llvm
+    [7]="Release,OFF,OFF,OFF,build-release" # 7: release, no tests, no lang, NO llvm
+    [8]="Debug,OFF,ON,OFF,build-debug"       # 8: debug, no tests, lang, NO llvm
+    [9]="Release,ON,ON,OFF,build-release"    # 9: release, tests, lang, NO llvm
 )
 
 # Parse build mode from environment or first arg
@@ -132,7 +132,16 @@ build() {
     mkdir -p "${BUILD_DIR}"
 
     log "INFO" "Generating build files with CMake..." "${YELLOW}"
-    
+    # Backup all executable files (max 5 separate backups)
+    find "${BUILD_DIR}" -type f -perm /a+x -print0 | xargs -0 -n1 bash -c '
+        for file in "$@"; do
+            DATE=$(date +"%Y-%m-%d-%H-%M-%S")
+            BACKUP_DIR="${BUILD_DIR}/backups"
+            mkdir -p "${BACKUP_DIR}"
+            ls -lt "${BACKUP_DIR}" | head -n5 | xargs rm -f
+            cp "$file" "${BACKUP_DIR}/${file##*/}-${DATE}"
+        done
+    '
     # Build CMake command based on configuration
     local cmake_cmd="cmake"
     cmake_cmd+=" -DCMAKE_BUILD_TYPE=${BUILD_TYPE}"

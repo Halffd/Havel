@@ -10,6 +10,15 @@
 
 namespace havel {
 
+// Helper userdata structs for threaded mainloop signaling (must be visible to all callbacks)
+#ifdef __linux__
+struct PAResultDouble { double* out; pa_threaded_mainloop* ml; };
+struct PAResultBool { bool* out; pa_threaded_mainloop* ml; };
+struct PAResultString { std::string* out; pa_threaded_mainloop* ml; };
+struct PAResultDevices { std::vector<AudioDevice>* out; pa_threaded_mainloop* ml; };
+struct PAResultApps { std::vector<AudioManager::ApplicationInfo>* out; pa_threaded_mainloop* ml; };
+#endif
+
 AudioManager::AudioManager(AudioBackend backend) : currentBackend(backend) {
     debug("Initializing AudioManager with backend: {}", 
           backend == AudioBackend::AUTO ? "AUTO" : 
@@ -318,89 +327,97 @@ void AudioManager::printDevices() const {
     }
 }
 
-std::string AudioManager::getDefaultOutput() const {
-    if (currentBackend == AudioBackend::PULSE) {
-        // For PulseAudio, we can get the default sink
-        if (!pa_context) return "";
-        
-        std::string defaultSink;
-        auto* ctx = const_cast<struct pa_context*>(pa_context);
-        
-        pa_threaded_mainloop_lock(pa_mainloop);
-        
-        pa_operation* op = pa_context_get_server_info(ctx, 
-            [](struct pa_context* c, const pa_server_info* i, void* userdata) {
-                if (!i) return;
-                std::string* defSink = static_cast<std::string*>(userdata);
-                *defSink = i->default_sink_name;
-            }, &defaultSink);
+    std::string AudioManager::getDefaultOutput() const {
+        if (currentBackend == AudioBackend::PULSE) {
+            // For PulseAudio, we can get the default sink
+            if (!pa_context) return "";
             
-        if (op) {
-            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
-                pa_threaded_mainloop_wait(pa_mainloop);
-            }
-            pa_operation_unref(op);
-        }
-        
-        pa_threaded_mainloop_unlock(pa_mainloop);
-        
-        // If we couldn't get the default sink, try to get the first output device
-        if (defaultSink.empty()) {
-            auto outputs = getOutputDevices();
-            if (!outputs.empty()) {
-                defaultSink = outputs[0].name;
-            }
-        }
-        
-        return defaultSink;
-    }
-    
-    // ALSA implementation would go here
-    return "";
-}
-
-
-
-std::string AudioManager::getDefaultInput() const {
-    // For PulseAudio, get the default source
-    if (currentBackend == AudioBackend::PULSE) {
-        if (!pa_context) return "";
-        
-        std::string defaultSource;
-        auto* ctx = const_cast<struct pa_context*>(pa_context);
-        
-        pa_threaded_mainloop_lock(pa_mainloop);
-        
-        pa_operation* op = pa_context_get_server_info(ctx, 
-            [](struct pa_context* c, const pa_server_info* i, void* userdata) {
-                if (!i) return;
-                std::string* defSource = static_cast<std::string*>(userdata);
-                *defSource = i->default_source_name;
-            }, &defaultSource);
+            std::string defaultSink;
+            auto* ctx = const_cast<struct pa_context*>(pa_context);
             
-        if (op) {
-            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
-                pa_threaded_mainloop_wait(pa_mainloop);
+            pa_threaded_mainloop_lock(pa_mainloop);
+            
+            PAResultString data{&defaultSink, pa_mainloop};
+            pa_operation* op = pa_context_get_server_info(ctx, 
+                [](struct pa_context* c, const pa_server_info* i, void* userdata) {
+                    auto* d = static_cast<PAResultString*>(userdata);
+                    if (!d) return;
+                    if (i && d->out) {
+                        *(d->out) = i->default_sink_name ? i->default_sink_name : "";
+                    }
+                    if (d->ml) pa_threaded_mainloop_signal(d->ml, 0);
+                }, &data);
+                
+            if (op) {
+                while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                    pa_threaded_mainloop_wait(pa_mainloop);
+                }
+                pa_operation_unref(op);
             }
-            pa_operation_unref(op);
+            
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            
+            // If we couldn't get the default sink, try to get the first output device
+            if (defaultSink.empty()) {
+                auto outputs = getOutputDevices();
+                if (!outputs.empty()) {
+                    defaultSink = outputs[0].name;
+                }
+            }
+            
+            return defaultSink;
         }
         
-        pa_threaded_mainloop_unlock(pa_mainloop);
-        
-        // If we couldn't get the default source, try to get the first input device
-        if (defaultSource.empty()) {
-            auto inputs = getInputDevices();
-            if (!inputs.empty()) {
-                defaultSource = inputs[0].name;
-            }
-        }
-        
-        return defaultSource;
+        // ALSA implementation would go here
+        return "";
     }
-    
-    // ALSA implementation would go here
-    return "";
-}
+
+
+
+    std::string AudioManager::getDefaultInput() const {
+        // For PulseAudio, get the default source
+        if (currentBackend == AudioBackend::PULSE) {
+            if (!pa_context) return "";
+            
+            std::string defaultSource;
+            auto* ctx = const_cast<struct pa_context*>(pa_context);
+            
+            pa_threaded_mainloop_lock(pa_mainloop);
+            
+            PAResultString data{&defaultSource, pa_mainloop};
+            pa_operation* op = pa_context_get_server_info(ctx, 
+                [](struct pa_context* c, const pa_server_info* i, void* userdata) {
+                    auto* d = static_cast<PAResultString*>(userdata);
+                    if (!d) return;
+                    if (i && d->out) {
+                        *(d->out) = i->default_source_name ? i->default_source_name : "";
+                    }
+                    if (d->ml) pa_threaded_mainloop_signal(d->ml, 0);
+                }, &data);
+                
+            if (op) {
+                while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                    pa_threaded_mainloop_wait(pa_mainloop);
+                }
+                pa_operation_unref(op);
+            }
+            
+            pa_threaded_mainloop_unlock(pa_mainloop);
+            
+            // If we couldn't get the default source, try to get the first input device
+            if (defaultSource.empty()) {
+                auto inputs = getInputDevices();
+                if (!inputs.empty()) {
+                    defaultSource = inputs[0].name;
+                }
+            }
+            
+            return defaultSource;
+        }
+        
+        // ALSA implementation would go here
+        return "";
+    }
 
 bool AudioManager::setDefaultInput(const std::string& device) {
     if (currentBackend == AudioBackend::PULSE) {
@@ -710,10 +727,18 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     
     // Callback for getting volume
     static void pulse_volume_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
-        if (eol || !i) return;
-        
-        double* volume_ptr = static_cast<double*>(userdata);
-        *volume_ptr = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        if (eol || !i || !userdata) {
+            if (userdata) {
+                auto* data = static_cast<PAResultDouble*>(userdata);
+                if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            }
+            return;
+        }
+        auto* data = static_cast<PAResultDouble*>(userdata);
+        if (data && data->out) {
+            *(data->out) = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        }
+        if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
     }
     
     double AudioManager::getPulseVolume(const std::string& device) const {
@@ -726,8 +751,9 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         pa_threaded_mainloop_lock(pa_mainloop);
         
+        PAResultDouble data{&volume, pa_mainloop};
         pa_operation* op = pa_context_get_sink_info_by_name(
-            ctx, device.c_str(), pulse_volume_callback, &volume);
+            ctx, device.c_str(), pulse_volume_callback, &data);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
@@ -760,10 +786,18 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     
     // Callback for getting mute status
     static void pulse_mute_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
-        if (eol || !i) return;
-        
-        bool* mute_ptr = static_cast<bool*>(userdata);
-        *mute_ptr = i->mute;
+        if (eol || !i || !userdata) {
+            if (userdata) {
+                auto* data = static_cast<PAResultBool*>(userdata);
+                if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            }
+            return;
+        }
+        auto* data = static_cast<PAResultBool*>(userdata);
+        if (data && data->out) {
+            *(data->out) = i->mute;
+        }
+        if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
     }
     
     bool AudioManager::isPulseMuted(const std::string& device) const {
@@ -776,8 +810,9 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         pa_threaded_mainloop_lock(pa_mainloop);
         
+        PAResultBool data{&muted, pa_mainloop};
         pa_operation* op = pa_context_get_sink_info_by_name(
-            ctx, device.c_str(), pulse_mute_callback, &muted);
+            ctx, device.c_str(), pulse_mute_callback, &data);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
@@ -790,21 +825,42 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         return muted;
     }
     
-    // Callback for device enumeration
-    static void pulse_device_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
-        if (eol) return;
-        
-        auto* devices = static_cast<std::vector<AudioDevice>*>(userdata);
-        
+    // Callback for device enumeration (sinks)
+    static void pulse_sink_device_callback(struct pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+        auto* data = static_cast<PAResultDevices*>(userdata);
+        if (!data) return;
+        if (eol) {
+            if (data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            return;
+        }
+        if (!i || !data->out) return;
         AudioDevice device;
-        device.name = i->name;
-        device.description = i->description;
+        device.name = i->name ? i->name : "";
+        device.description = i->description ? i->description : "";
         device.index = i->index;
         device.channels = i->sample_spec.channels;
         device.volume = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
         device.isMuted = i->mute;
-        
-        devices->push_back(device);
+        data->out->push_back(device);
+    }
+
+    // Callback for device enumeration (sources)
+    static void pulse_source_device_callback(struct pa_context *c, const pa_source_info *i, int eol, void *userdata) {
+        auto* data = static_cast<PAResultDevices*>(userdata);
+        if (!data) return;
+        if (eol) {
+            if (data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            return;
+        }
+        if (!i || !data->out) return;
+        AudioDevice device;
+        device.name = i->name ? i->name : "";
+        device.description = i->description ? i->description : "";
+        device.index = i->index;
+        device.channels = i->sample_spec.channels;
+        device.volume = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        device.isMuted = i->mute;
+        data->out->push_back(device);
     }
     
     std::vector<AudioDevice> AudioManager::getPulseDevices(bool input) const {
@@ -816,12 +872,12 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         pa_threaded_mainloop_lock(pa_mainloop);
         
-        pa_operation* op;
+        PAResultDevices data{&devices, pa_mainloop};
+        pa_operation* op = nullptr;
         if (input) {
-            op = pa_context_get_source_info_list(ctx, 
-                reinterpret_cast<pa_source_info_cb_t>(pulse_device_callback), &devices);
+            op = pa_context_get_source_info_list(ctx, pulse_source_device_callback, &data);
         } else {
-            op = pa_context_get_sink_info_list(ctx, pulse_device_callback, &devices);
+            op = pa_context_get_sink_info_list(ctx, pulse_sink_device_callback, &data);
         }
         
         if (op) {
@@ -978,27 +1034,47 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
 #ifdef __linux__
     // Callback for sink input volume
     static void pulse_sink_input_volume_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
-        if (eol || !i) return;
-        
-        double* volume_ptr = static_cast<double*>(userdata);
-        *volume_ptr = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        if (eol || !userdata) {
+            if (userdata) {
+                auto* data = static_cast<PAResultDouble*>(userdata);
+                if (data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            }
+            return;
+        }
+        if (!i) {
+            auto* data = static_cast<PAResultDouble*>(userdata);
+            if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            return;
+        }
+        auto* data = static_cast<PAResultDouble*>(userdata);
+        if (data && data->out) {
+            *(data->out) = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
+        }
+        if (data && data->ml) pa_threaded_mainloop_signal(data->ml, 0);
     }
 
     // Callback for sink input enumeration
     static void pulse_sink_input_callback(struct pa_context *c, const pa_sink_input_info *i, int eol, void *userdata) {
-        if (eol) return;
-        
-        auto* applications = static_cast<std::vector<AudioManager::ApplicationInfo>*>(userdata);
-        
+        auto* data = static_cast<PAResultApps*>(userdata);
+        if (!data) return;
+        if (eol) {
+            if (data->ml) pa_threaded_mainloop_signal(data->ml, 0);
+            return;
+        }
+        if (!i || !data->out) return;
         AudioManager::ApplicationInfo app;
         app.index = i->index;
         app.name = i->name ? i->name : "Unknown";
-        app.icon = i->proplist ? pa_proplist_gets(i->proplist, PA_PROP_APPLICATION_ICON_NAME) : "";
+        // Safely get icon name, checking for NULL
+        const char* icon_name = nullptr;
+        if (i->proplist) {
+            icon_name = pa_proplist_gets(i->proplist, PA_PROP_APPLICATION_ICON_NAME);
+        }
+        app.icon = icon_name ? icon_name : "";
         app.volume = pa_sw_volume_to_linear(pa_cvolume_avg(&i->volume));
         app.isMuted = i->mute;
         app.sinkInputIndex = i->index;
-        
-        applications->push_back(app);
+        data->out->push_back(app);
     }
 
     // Per-application volume control methods
@@ -1066,8 +1142,9 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         pa_threaded_mainloop_lock(pa_mainloop);
         
+        PAResultDouble data{&volume, pa_mainloop};
         pa_operation* op = pa_context_get_sink_input_info(
-            ctx, applicationIndex, pulse_sink_input_volume_callback, &volume);
+            ctx, applicationIndex, pulse_sink_input_volume_callback, &data);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
@@ -1176,7 +1253,8 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
             
             pa_threaded_mainloop_lock(pa_mainloop);
             
-            pa_operation* op = pa_context_get_sink_input_info_list(ctx, pulse_sink_input_callback, &applications);
+            PAResultApps data{&applications, pa_mainloop};
+            pa_operation* op = pa_context_get_sink_input_info_list(ctx, pulse_sink_input_callback, &data);
             
             if (op) {
                 while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {

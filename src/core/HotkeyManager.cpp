@@ -236,6 +236,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("numpaddiv", [this]() {
         audioManager.toggleMute();
+        bool muted = audioManager.isMuted();
+        showNotification("Mute", muted ? "Muted" : "Unmuted");
     });
     io.Hotkey("^+!a", [this]() {
         auto devices = audioManager.getDevices();
@@ -276,16 +278,20 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         if(!phone){
             phone = audioManager.findDeviceByName("200");
         }
-        audioManager.increaseVolume(phone->name, 3);
-        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+        audioManager.increaseVolume(phone->name, 0.05);
+        double vol = audioManager.getVolume(phone->name);
+        showNotification("Volume (G30)", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (G30): {:.0f}%", vol * 100);
     });
     io.Hotkey("^numpadsub", [this]() {
         auto phone = audioManager.findDeviceByName("G30");
         if(!phone){
             phone = audioManager.findDeviceByName("200");
         }
-        audioManager.decreaseVolume(phone->name, 3);
-        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+        audioManager.decreaseVolume(phone->name, 0.05);
+        double vol = audioManager.getVolume(phone->name);
+        showNotification("Volume (G30)", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (G30): {:.0f}%", vol * 100);
     });
     io.Hotkey("^numpad0", [this]() {
         auto phone = audioManager.findDeviceByName("G30");
@@ -293,31 +299,41 @@ void HotkeyManager::RegisterDefaultHotkeys() {
             phone = audioManager.findDeviceByName("200");
         }
         audioManager.setVolume(phone->name, 0);
-        info("Current volume (G30): {}", audioManager.getVolume(phone->name));
+        showNotification("Volume (G30)", "0%");
+        info("Current volume (G30): 0%");
     });
     io.Hotkey("+numpadadd", [this]() {
         auto builtIn = audioManager.findDeviceByName("Built-in Audio");
-        audioManager.increaseVolume(builtIn->name, 3);
-        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+        audioManager.increaseVolume(builtIn->name, 0.05);
+        double vol = audioManager.getVolume(builtIn->name);
+        showNotification("Volume (Built-in)", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
     });
     io.Hotkey("+numpadsub", [this]() {
         auto builtIn = audioManager.findDeviceByName("Built-in Audio");
-        audioManager.decreaseVolume(builtIn->name, 3);
-        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+        audioManager.decreaseVolume(builtIn->name, 0.05);
+        double vol = audioManager.getVolume(builtIn->name);
+        showNotification("Volume (Built-in)", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
     });
     io.Hotkey("+numpad0", [this]() {
         auto builtIn = audioManager.findDeviceByName("Built-in Audio");
         audioManager.setVolume(builtIn->name, 0);
-        info("Current volume (Built-in Audio): {}", audioManager.getVolume(builtIn->name));
+        showNotification("Volume (Built-in)", "0%");
+        info("Current volume (Built-in Audio): 0%");
     });
     io.Hotkey("@numpadAdd", [this]() {
-        audioManager.increaseVolume(3);
-        info("Current volume (Default): {}", audioManager.getVolume());
+        audioManager.increaseVolume(0.05);
+        double vol = audioManager.getVolume();
+        showNotification("Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (Default): {:.0f}%", vol * 100);
     });
 
     io.Hotkey("@numpadsub", [this]() {
-        audioManager.decreaseVolume(3);
-        info("Current volume (Default): {}", audioManager.getVolume());
+        audioManager.decreaseVolume(0.05);
+        double vol = audioManager.getVolume();
+        showNotification("Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Current volume (Default): {:.0f}%", vol * 100);
     });
 
     io.Hotkey("f6", [this]() {
@@ -614,33 +630,33 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("+f7", [this]() {
         info("Decreasing temperature");
-        brightnessManager.decreaseTemperature(500);
+        brightnessManager.decreaseTemperature(200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature()));
     });
     io.Hotkey("^+f7", [this]() {
         info("Decreasing temperature");
-        brightnessManager.decreaseTemperature(0,500);
+        brightnessManager.decreaseTemperature(0,200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(0)));
     });
     io.Hotkey("^!+f7", [this]() {
         info("Decreasing temperature");
-        brightnessManager.decreaseTemperature(1,500);
+        brightnessManager.decreaseTemperature(1,200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
 
     io.Hotkey("+f8", [this]() {
         info("Increasing temperature");
-        brightnessManager.increaseTemperature(500);
+        brightnessManager.increaseTemperature(200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature()));
     });
     io.Hotkey("^+f8", [this]() {
         info("Increasing temperature");
-        brightnessManager.increaseTemperature(0,500);
+        brightnessManager.increaseTemperature(0,200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(0)));
     });
     io.Hotkey("^!+f8", [this]() {
         info("Increasing temperature");
-        brightnessManager.increaseTemperature(1,500);
+        brightnessManager.increaseTemperature(1,200);
         info("Current temperature: " + std::to_string(brightnessManager.getTemperature(1)));
     });
     // Mouse wheel + click combinations
@@ -669,15 +685,18 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         Zoom(0);
     });
     io.Hotkey("@!-", [this]() {
-        io.mouseSensitivity -= std::max(0.0, io.mouseSensitivity - Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
+        io.mouseSensitivity -= std::max(0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
         Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
         info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
         Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     });
     io.Hotkey("@!=", [this]() {
-        io.mouseSensitivity += std::min(1.0, io.mouseSensitivity + Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.04));
+        io.mouseSensitivity += std::min(1.0,  Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
         info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
         Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
+    });
+    AddHotkey("#a", []() {
+        Launcher::runAsync("/bin/pavucontrol");
     });
     //Emergency exit
     AddHotkey("@^!+#Esc", [this]() {
@@ -892,12 +911,18 @@ AddHotkey("@^!Home", [WinMove]() {
         0
     );
     AddHotkey("^.", [this]() {
-        info("Incrreasing volume for window: {}", WindowManager::GetActiveWindowTitle());
+        std::string app = WindowManager::GetActiveWindowTitle();
         audioManager.increaseActiveApplicationVolume();
+        double vol = audioManager.getActiveApplicationVolume();
+        showNotification("App Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Volume for {}: {:.0f}%", app, vol * 100);
     });
     AddHotkey("^,", [this]() {
-        info("Decreasing volume for window: {}", WindowManager::GetActiveWindowTitle());
+        std::string app = WindowManager::GetActiveWindowTitle();
         audioManager.decreaseActiveApplicationVolume();
+        double vol = audioManager.getActiveApplicationVolume();
+        showNotification("App Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
+        info("Volume for {}: {:.0f}%", app, vol * 100);
     });
     AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this](){
         auto winId = WindowManager::GetActiveWindow();

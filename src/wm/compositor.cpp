@@ -1,6 +1,7 @@
 #define WLR_USE_UNSTABLE
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <memory>
 #include <vector>
 #include <algorithm>
@@ -26,6 +27,12 @@
 struct Server;
 struct XdgSurface;
 static void arrange_views(Server* server);
+enum class TilingMode {
+    HORIZONTAL, // Side by side
+    VERTICAL,   // Stacked
+    GRID        // Grid layout
+};
+
 struct Server {
 struct wl_display* display;
 struct wlr_backend* backend;
@@ -40,6 +47,7 @@ struct wlr_seat* seat;
 struct wlr_cursor* cursor;
 struct wlr_xcursor_manager* cursor_mgr;
 std::vector<struct XdgSurface*> views;
+TilingMode tiling_mode = TilingMode::HORIZONTAL;
 struct wl_listener new_output;
 struct wl_listener new_xdg_surface;
 struct wl_listener new_input;
@@ -157,14 +165,131 @@ struct Keyboard* keyboard = wl_container_of(listener, keyboard, modifiers);
 wlr_seat_set_keyboard(keyboard->server->seat, keyboard->keyboard);
 wlr_seat_keyboard_notify_modifiers(keyboard->server->seat, &keyboard->keyboard->modifiers);
 }
-static bool handle_keybinding(Server* server, xkb_keysym_t sym) {
-switch (sym) {
-case XKB_KEY_Escape:
-wl_display_terminate(server->display);
-return true;
-default:
-return false;
+static void focus_next_view(Server* server) {
+    if (server->views.empty()) return;
+    
+    // Find currently focused view
+    struct wlr_surface* focused = server->seat->keyboard_state.focused_surface;
+    auto current_it = server->views.begin();
+    
+    for (auto it = server->views.begin(); it != server->views.end(); ++it) {
+        if ((*it)->xdg_toplevel->base->surface == focused) {
+            current_it = it;
+            break;
+        }
+    }
+    
+    // Move to next view (wrap around)
+    ++current_it;
+    if (current_it == server->views.end()) {
+        current_it = server->views.begin();
+    }
+    
+    if (current_it != server->views.end()) {
+        focus_view(*current_it, (*current_it)->xdg_toplevel->base->surface);
+    }
 }
+
+static void focus_prev_view(Server* server) {
+    if (server->views.empty()) return;
+    
+    // Find currently focused view
+    struct wlr_surface* focused = server->seat->keyboard_state.focused_surface;
+    auto current_it = server->views.begin();
+    
+    for (auto it = server->views.begin(); it != server->views.end(); ++it) {
+        if ((*it)->xdg_toplevel->base->surface == focused) {
+            current_it = it;
+            break;
+        }
+    }
+    
+    // Move to previous view (wrap around)
+    if (current_it == server->views.begin()) {
+        current_it = server->views.end();
+    }
+    --current_it;
+    
+    if (current_it != server->views.end()) {
+        focus_view(*current_it, (*current_it)->xdg_toplevel->base->surface);
+    }
+}
+
+static void close_focused_view(Server* server) {
+    struct wlr_surface* focused = server->seat->keyboard_state.focused_surface;
+    if (!focused) return;
+    
+    for (auto* view : server->views) {
+        if (view->xdg_toplevel->base->surface == focused) {
+            wlr_xdg_toplevel_send_close(view->xdg_toplevel);
+            break;
+        }
+    }
+}
+
+static bool handle_keybinding(Server* server, xkb_keysym_t sym) {
+    switch (sym) {
+    case XKB_KEY_Escape:
+        wl_display_terminate(server->display);
+        return true;
+    case XKB_KEY_j: // Focus next window
+        focus_next_view(server);
+        return true;
+    case XKB_KEY_k: // Focus previous window
+        focus_prev_view(server);
+        return true;
+    case XKB_KEY_q: // Close focused window
+        close_focused_view(server);
+        return true;
+    case XKB_KEY_Return: // Launch terminal
+        if (fork() == 0) {
+            execl("/usr/bin/weston-terminal", "weston-terminal", (char*)nullptr);
+            // Fallback terminals
+            execl("/usr/bin/alacritty", "alacritty", (char*)nullptr);
+            execl("/usr/bin/foot", "foot", (char*)nullptr);
+            execl("/usr/bin/gnome-terminal", "gnome-terminal", (char*)nullptr);
+            exit(1);
+        }
+        return true;
+    case XKB_KEY_d: // Launch application launcher
+        if (fork() == 0) {
+            execl("/usr/bin/wofi", "wofi", "--show", "run", (char*)nullptr);
+            execl("/usr/bin/dmenu_run", "dmenu_run", (char*)nullptr);
+            exit(1);
+        }
+        return true;
+    case XKB_KEY_h: // Switch to horizontal tiling
+        server->tiling_mode = TilingMode::HORIZONTAL;
+        arrange_views(server);
+        printf("Switched to horizontal tiling\n");
+        return true;
+    case XKB_KEY_v: // Switch to vertical tiling
+        server->tiling_mode = TilingMode::VERTICAL;
+        arrange_views(server);
+        printf("Switched to vertical tiling\n");
+        return true;
+    case XKB_KEY_g: // Switch to grid tiling
+        server->tiling_mode = TilingMode::GRID;
+        arrange_views(server);
+        printf("Switched to grid tiling\n");
+        return true;
+    case XKB_KEY_f: // Toggle fullscreen (simple implementation)
+        {
+            struct wlr_surface* focused = server->seat->keyboard_state.focused_surface;
+            if (!focused) return true;
+            
+            for (auto* view : server->views) {
+                if (view->xdg_toplevel->base->surface == focused) {
+                    wlr_xdg_toplevel_set_fullscreen(view->xdg_toplevel, true);
+                    printf("Set window to fullscreen\n");
+                    break;
+                }
+            }
+        }
+        return true;
+    default:
+        return false;
+    }
 }
 static void keyboard_handle_key(struct wl_listener* listener, void* data) {
 struct Keyboard* keyboard = wl_container_of(listener, keyboard, key);
@@ -237,32 +362,74 @@ caps |= WL_SEAT_CAPABILITY_KEYBOARD;
 wlr_seat_set_capabilities(server->seat, caps);
 }
 static void arrange_views(Server* server) {
-if (server->views.empty()) {
-return;
-}
-struct wlr_output* output = nullptr;
-struct wlr_output_layout_output* l_output = nullptr;
-wl_list_for_each(l_output, &server->output_layout->outputs, link) {
-output = l_output->output;
-break;
-}
-if (!output) {
-return;
-}
-int usable_width = output->width;
-int usable_height = output->height;
-int num_views = server->views.size();
-int view_width = usable_width / num_views;
-int x = 0;
-for (auto* view : server->views) {
-view->x = x;
-view->y = 0;
-view->width = view_width;
-view->height = usable_height;
-wlr_xdg_toplevel_set_size(view->xdg_toplevel, view->width, view->height);
-wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
-x += view_width;
-}
+    if (server->views.empty()) {
+        return;
+    }
+    
+    struct wlr_output* output = nullptr;
+    struct wlr_output_layout_output* l_output = nullptr;
+    wl_list_for_each(l_output, &server->output_layout->outputs, link) {
+        output = l_output->output;
+        break;
+    }
+    if (!output) {
+        return;
+    }
+    
+    int usable_width = output->width;
+    int usable_height = output->height;
+    int num_views = server->views.size();
+    
+    switch (server->tiling_mode) {
+    case TilingMode::HORIZONTAL: {
+        int view_width = usable_width / num_views;
+        int x = 0;
+        for (auto* view : server->views) {
+            view->x = x;
+            view->y = 0;
+            view->width = view_width;
+            view->height = usable_height;
+            wlr_xdg_toplevel_set_size(view->xdg_toplevel, view->width, view->height);
+            wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
+            x += view_width;
+        }
+        break;
+    }
+    case TilingMode::VERTICAL: {
+        int view_height = usable_height / num_views;
+        int y = 0;
+        for (auto* view : server->views) {
+            view->x = 0;
+            view->y = y;
+            view->width = usable_width;
+            view->height = view_height;
+            wlr_xdg_toplevel_set_size(view->xdg_toplevel, view->width, view->height);
+            wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
+            y += view_height;
+        }
+        break;
+    }
+    case TilingMode::GRID: {
+        int cols = static_cast<int>(std::ceil(std::sqrt(num_views)));
+        int rows = static_cast<int>(std::ceil(static_cast<double>(num_views) / cols));
+        int view_width = usable_width / cols;
+        int view_height = usable_height / rows;
+        
+        for (size_t i = 0; i < server->views.size(); ++i) {
+            auto* view = server->views[i];
+            int col = i % cols;
+            int row = i / cols;
+            
+            view->x = col * view_width;
+            view->y = row * view_height;
+            view->width = view_width;
+            view->height = view_height;
+            wlr_xdg_toplevel_set_size(view->xdg_toplevel, view->width, view->height);
+            wlr_scene_node_set_position(&view->scene_tree->node, view->x, view->y);
+        }
+        break;
+    }
+    }
 }
 static void xdg_surface_map(struct wl_listener* listener, void* data) {
 struct XdgSurface* surface = wl_container_of(listener, surface, map);
@@ -286,10 +453,31 @@ delete surface;
 arrange_views(surface->server);
 }
 static void xdg_toplevel_request_move(struct wl_listener* listener, void* data) {
-// TODO: Implement move
+    struct XdgSurface* surface = wl_container_of(listener, surface, request_move);
+    struct wlr_xdg_toplevel_move_event* event = static_cast<struct wlr_xdg_toplevel_move_event*>(data);
+    
+    // For now, just log the move request - a full implementation would start an interactive move
+    printf("Move requested for surface\n");
+    
+    // In a complete implementation, you would:
+    // 1. Set the cursor to a move cursor
+    // 2. Capture pointer events
+    // 3. Update window position based on pointer movement
+    // 4. End the move operation when the button is released
 }
 static void xdg_toplevel_request_resize(struct wl_listener* listener, void* data) {
-// TODO: Implement resize
+    struct XdgSurface* surface = wl_container_of(listener, surface, request_resize);
+    struct wlr_xdg_toplevel_resize_event* event = static_cast<struct wlr_xdg_toplevel_resize_event*>(data);
+    
+    // For now, just log the resize request
+    printf("Resize requested for surface with edges: %u\n", event->edges);
+    
+    // In a complete implementation, you would:
+    // 1. Set the cursor to appropriate resize cursor based on edges
+    // 2. Capture pointer events
+    // 3. Update window size based on pointer movement and resize edges
+    // 4. Send size updates to the client
+    // 5. End the resize operation when the button is released
 }
 static void server_new_xdg_surface(struct wl_listener* listener, void* data) {
 struct Server* server = wl_container_of(listener, server, new_xdg_surface);

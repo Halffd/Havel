@@ -1109,17 +1109,39 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
 
     bool AudioManager::increaseActiveApplicationVolume(double amount) {
-        std::string activeAppName = getActiveApplicationName();
-        if (activeAppName.empty()) return false;
-        
-        return increaseApplicationVolume(activeAppName, amount);
+        try {
+            std::string activeAppName = getActiveApplicationName();
+            if (activeAppName.empty()) {
+                debug("No active application found for volume control");
+                return false;
+            }
+            
+            debug("Attempting to increase volume for application: {}", activeAppName);
+            bool result = increaseApplicationVolume(activeAppName, amount);
+            debug("Volume increase result: {}", result ? "SUCCESS" : "FAILED");
+            return result;
+        } catch (const std::exception& e) {
+            error("Exception in increaseActiveApplicationVolume: {}", e.what());
+            return false;
+        }
     }
 
     bool AudioManager::decreaseActiveApplicationVolume(double amount) {
-        std::string activeAppName = getActiveApplicationName();
-        if (activeAppName.empty()) return false;
-        
-        return decreaseApplicationVolume(activeAppName, amount);
+        try {
+            std::string activeAppName = getActiveApplicationName();
+            if (activeAppName.empty()) {
+                debug("No active application found for volume control");
+                return false;
+            }
+            
+            debug("Attempting to decrease volume for application: {}", activeAppName);
+            bool result = decreaseApplicationVolume(activeAppName, amount);
+            debug("Volume decrease result: {}", result ? "SUCCESS" : "FAILED");
+            return result;
+        } catch (const std::exception& e) {
+            error("Exception in decreaseActiveApplicationVolume: {}", e.what());
+            return false;
+        }
     }
 
     double AudioManager::getActiveApplicationVolume() const {
@@ -1132,53 +1154,107 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     std::vector<AudioManager::ApplicationInfo> AudioManager::getApplications() const {
         std::vector<ApplicationInfo> applications;
         
-        if (currentBackend != AudioBackend::PULSE || !pa_context) return applications;
-        
-        // Use a const_cast to work around the PulseAudio API's lack of const-correctness
-        auto* ctx = const_cast<struct pa_context*>(pa_context);
-        if (!ctx) return applications;
-        
-        pa_threaded_mainloop_lock(pa_mainloop);
-        
-        pa_operation* op = pa_context_get_sink_input_info_list(ctx, pulse_sink_input_callback, &applications);
-        
-        if (op) {
-            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
-                pa_threaded_mainloop_wait(pa_mainloop);
-            }
-            pa_operation_unref(op);
+        if (currentBackend != AudioBackend::PULSE || !pa_context || !pa_mainloop) {
+            debug("PulseAudio not available for application enumeration");
+            return applications;
         }
         
-        pa_threaded_mainloop_unlock(pa_mainloop);
+        try {
+            // Use a const_cast to work around the PulseAudio API's lack of const-correctness
+            auto* ctx = const_cast<struct pa_context*>(pa_context);
+            if (!ctx) {
+                debug("Invalid PulseAudio context");
+                return applications;
+            }
+            
+            // Check context state before proceeding
+            pa_context_state_t state = pa_context_get_state(ctx);
+            if (state != PA_CONTEXT_READY) {
+                debug("PulseAudio context not ready (state: {})", static_cast<int>(state));
+                return applications;
+            }
+            
+            pa_threaded_mainloop_lock(pa_mainloop);
+            
+            pa_operation* op = pa_context_get_sink_input_info_list(ctx, pulse_sink_input_callback, &applications);
+            
+            if (op) {
+                while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                    pa_threaded_mainloop_wait(pa_mainloop);
+                }
+                pa_operation_unref(op);
+            } else {
+                debug("Failed to create operation for sink input list");
+            }
+            
+            pa_threaded_mainloop_unlock(pa_mainloop);
+        } catch (const std::exception& e) {
+            error("Exception in getApplications: {}", e.what());
+            if (pa_mainloop) {
+                pa_threaded_mainloop_unlock(pa_mainloop);
+            }
+        }
+        
+        debug("Found {} audio applications", applications.size());
         return applications;
     }
 
     std::string AudioManager::getActiveApplicationName() const {
+        // Check if PulseAudio backend is available
+        if (currentBackend != AudioBackend::PULSE || !pa_context || !pa_mainloop) {
+            debug("PulseAudio not available for active application detection");
+            return "";
+        }
+        
         // Get the active window's PID and use it to find the corresponding audio application
         auto pid = havel::WindowManager::GetActiveWindowPID();
-        if (pid == 0) return "";
+        if (pid == 0) {
+            debug("No active window PID found");
+            return "";
+        }
         
         // Get all applications and find the one with matching PID
         auto applications = getApplications();
-        for (const auto& app : applications) {
-            // Try to match by process ID if available in the application info
-            // If not directly available, we might need to match by window class or title
-            std::string windowClass = havel::WindowManager::GetActiveWindowClass();
-            if (!windowClass.empty() && app.name.find(windowClass) != std::string::npos) {
-                return app.name;
-            }
+        if (applications.empty()) {
+            debug("No audio applications found");
+            return "";
         }
         
-        // If no match by class, try using the window title
-        std::string windowTitle = havel::WindowManager::GetActiveWindowTitle();
-        if (!windowTitle.empty()) {
+        // First try to match by process name/class
+        std::string windowClass;
+        try {
+            windowClass = havel::WindowManager::GetActiveWindowClass();
+        } catch (const std::exception& e) {
+            debug("Failed to get active window class: {}", e.what());
+        }
+        
+        if (!windowClass.empty()) {
             for (const auto& app : applications) {
-                if (app.name.find(windowTitle) != std::string::npos) {
+                if (!app.name.empty() && app.name.find(windowClass) != std::string::npos) {
+                    debug("Found application by class match: {}", app.name);
                     return app.name;
                 }
             }
         }
         
+        // If no match by class, try using the window title
+        std::string windowTitle;
+        try {
+            windowTitle = havel::WindowManager::GetActiveWindowTitle();
+        } catch (const std::exception& e) {
+            debug("Failed to get active window title: {}", e.what());
+        }
+        
+        if (!windowTitle.empty()) {
+            for (const auto& app : applications) {
+                if (!app.name.empty() && app.name.find(windowTitle) != std::string::npos) {
+                    debug("Found application by title match: {}", app.name);
+                    return app.name;
+                }
+            }
+        }
+        
+        debug("No matching audio application found for active window");
         return "";
     }
 

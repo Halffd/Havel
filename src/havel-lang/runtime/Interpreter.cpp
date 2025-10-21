@@ -718,8 +718,10 @@ void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
     if (!modesObject.empty()) {
         std::string initialMode = modesObject.begin()->first;
         environment->Define("__current_mode__", HavelValue(initialMode));
+        environment->Define("__previous_mode__", HavelValue(std::string("default")));
     } else {
         environment->Define("__current_mode__", HavelValue(std::string("default")));
+        environment->Define("__previous_mode__", HavelValue(std::string("default")));
     }
     
     // Store the modes block as a special variable for script access

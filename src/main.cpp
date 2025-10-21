@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
     
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
-        if (arg == "--startup") {
+        if (arg == "--startup" || arg == "-s") {
             isStartup = true;
         } else if (arg == "--debug" || arg == "-d") {
             debugMode = true;
@@ -51,11 +51,16 @@ int main(int argc, char* argv[]) {
             std::cout << "  --debug, -d     Enable debug logging\n";
             std::cout << "  --help, -h      Show this help\n";
             std::cout << "\nIf a .hv script file is provided, it will be executed and the program will exit.\n";
-            std::cout << "Otherwise, the GUI system tray app will start.\n";
             return 0;
-        } else if (arg.ends_with(".hv") && scriptFile.empty()) {
+        } else {
+            if(!scriptFile.empty()) {
+                error("Error: Only one script file can be provided. Got {} and {}", scriptFile, arg);
+                return 1;
+            } else if(!arg.ends_with(".hv")) {
+                warning("Script file {} does not end with .hv extension.", arg);
+            }
             scriptFile = arg;
-        }
+        } 
     }
 
 #ifndef DISABLE_HAVEL_LANG

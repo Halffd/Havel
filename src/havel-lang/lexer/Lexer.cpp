@@ -10,6 +10,11 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"if", TokenType::If},
     {"else", TokenType::Else},
     {"while", TokenType::While},
+    {"for", TokenType::For},
+    {"in", TokenType::In},
+    {"loop", TokenType::Loop},
+    {"break", TokenType::Break},
+    {"continue", TokenType::Continue},
     {"match", TokenType::Match},
     {"case", TokenType::Case},
     {"default", TokenType::Default},
@@ -346,6 +351,13 @@ std::vector<Token> Lexer::tokenize() {
         // Handle single equals (assignment)
         if (c == '=') {
             tokens.push_back(makeToken("=", TokenType::Assign));
+            continue;
+        }
+        
+        // Handle .. (range operator)
+        if (c == '.' && peek() == '.') {
+            advance(); // consume second '.'
+            tokens.push_back(makeToken("..", TokenType::DotDot));
             continue;
         }
         

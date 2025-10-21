@@ -12,6 +12,11 @@ namespace havel {
         If,
         Else,
         While,
+        For,
+        In,
+        Loop,
+        Break,
+        Continue,
         Match,
         Case,
         Default,
@@ -55,6 +60,7 @@ namespace havel {
         Question,       // ?
         OpenBracket,    // [
         CloseBracket,   // ]
+        DotDot,         // ..
         EOF_TOKEN
     };
 

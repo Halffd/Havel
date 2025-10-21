@@ -189,7 +189,10 @@ void Interpreter::visitBlockStatement(const ast::BlockStatement& node) {
     HavelResult blockResult = HavelValue(nullptr);
     for (const auto& stmt : node.body) {
         blockResult = Evaluate(*stmt);
-        if (isError(blockResult) || std::holds_alternative<ReturnValue>(blockResult)) {
+        if (isError(blockResult) || 
+            std::holds_alternative<ReturnValue>(blockResult) ||
+            std::holds_alternative<BreakValue>(blockResult) ||
+            std::holds_alternative<ContinueValue>(blockResult)) {
             break;
         }
     }
@@ -249,14 +252,46 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression& node) {
                 lastResult = ValueToNumber(left) + ValueToNumber(right);
             }
             break;
-        case ast::BinaryOperator::Sub: lastResult = ValueToNumber(left) - ValueToNumber(right); break;
-        case ast::BinaryOperator::Mul: lastResult = ValueToNumber(left) * ValueToNumber(right); break;
+        case ast::BinaryOperator::Sub: 
+            lastResult = ValueToNumber(left) - ValueToNumber(right); 
+            break;
+        case ast::BinaryOperator::Mul: 
+            lastResult = ValueToNumber(left) * ValueToNumber(right); 
+            break;
         case ast::BinaryOperator::Div:
             if(ValueToNumber(right) == 0.0) { lastResult = HavelRuntimeError("Division by zero"); return; }
             lastResult = ValueToNumber(left) / ValueToNumber(right); 
             break;
-        // ... other operators
-        default: lastResult = HavelRuntimeError("Unsupported binary operator");
+        case ast::BinaryOperator::Mod:
+            if(ValueToNumber(right) == 0.0) { lastResult = HavelRuntimeError("Modulo by zero"); return; }
+            lastResult = static_cast<int>(ValueToNumber(left)) % static_cast<int>(ValueToNumber(right)); 
+            break;
+        case ast::BinaryOperator::Equal:
+            lastResult = (ValueToString(left) == ValueToString(right));
+            break;
+        case ast::BinaryOperator::NotEqual:
+            lastResult = (ValueToString(left) != ValueToString(right));
+            break;
+        case ast::BinaryOperator::Less:
+            lastResult = ValueToNumber(left) < ValueToNumber(right);
+            break;
+        case ast::BinaryOperator::Greater:
+            lastResult = ValueToNumber(left) > ValueToNumber(right);
+            break;
+        case ast::BinaryOperator::LessEqual:
+            lastResult = ValueToNumber(left) <= ValueToNumber(right);
+            break;
+        case ast::BinaryOperator::GreaterEqual:
+            lastResult = ValueToNumber(left) >= ValueToNumber(right);
+            break;
+        case ast::BinaryOperator::And:
+            lastResult = ValueToBool(left) && ValueToBool(right);
+            break;
+        case ast::BinaryOperator::Or:
+            lastResult = ValueToBool(left) || ValueToBool(right);
+            break;
+        default: 
+            lastResult = HavelRuntimeError("Unsupported binary operator");
     }
 }
 
@@ -581,9 +616,188 @@ void Interpreter::visitWhileStatement(const ast::WhileStatement& node) {
             lastResult = bodyResult;
             return;
         }
+        
+        // Handle break
+        if (std::holds_alternative<BreakValue>(bodyResult)) {
+            break;
+        }
+        
+        // Handle continue
+        if (std::holds_alternative<ContinueValue>(bodyResult)) {
+            continue;
+        }
     }
     
     lastResult = nullptr;
+}
+void Interpreter::visitRangeExpression(const ast::RangeExpression& node) {
+    auto startResult = Evaluate(*node.start);
+    if (isError(startResult)) {
+        lastResult = startResult;
+        return;
+    }
+    
+    auto endResult = Evaluate(*node.end);
+    if (isError(endResult)) {
+        lastResult = endResult;
+        return;
+    }
+    
+    int start = static_cast<int>(ValueToNumber(unwrap(startResult)));
+    int end = static_cast<int>(ValueToNumber(unwrap(endResult)));
+    
+    // Create an array from start to end (exclusive)
+    HavelArray rangeArray;
+    for (int i = start; i < end; ++i) {
+        rangeArray.push_back(HavelValue(i));
+    }
+    
+    lastResult = rangeArray;
+}
+
+void Interpreter::visitAssignmentExpression(const ast::AssignmentExpression& node) {
+    // Evaluate the right-hand side
+    auto valueResult = Evaluate(*node.value);
+    if (isError(valueResult)) {
+        lastResult = valueResult;
+        return;
+    }
+    HavelValue value = unwrap(valueResult);
+    
+    // Determine what we're assigning to
+    if (auto* identifier = dynamic_cast<const ast::Identifier*>(node.target.get())) {
+        // Simple variable assignment
+        if (!environment->Assign(identifier->symbol, value)) {
+            lastResult = HavelRuntimeError("Undefined variable: " + identifier->symbol);
+            return;
+        }
+    } 
+    else if (auto* index = dynamic_cast<const ast::IndexExpression*>(node.target.get())) {
+        // Array/object index assignment (array[0] = value)
+        auto objectResult = Evaluate(*index->object);
+        if (isError(objectResult)) {
+            lastResult = objectResult;
+            return;
+        }
+        
+        auto indexResult = Evaluate(*index->index);
+        if (isError(indexResult)) {
+            lastResult = indexResult;
+            return;
+        }
+        
+        HavelValue objectValue = unwrap(objectResult);
+        HavelValue indexValue = unwrap(indexResult);
+        
+        if (auto* array = std::get_if<HavelArray>(&objectValue)) {
+            int idx = static_cast<int>(ValueToNumber(indexValue));
+            if (idx < 0 || idx >= static_cast<int>(array->size())) {
+                lastResult = HavelRuntimeError("Array index out of bounds");
+                return;
+            }
+            (*array)[idx] = value;
+        } else if (auto* object = std::get_if<HavelObject>(&objectValue)) {
+            std::string key = ValueToString(indexValue);
+            (*object)[key] = value;
+        } else {
+            lastResult = HavelRuntimeError("Cannot index non-array/non-object value");
+            return;
+        }
+    }
+    else {
+        lastResult = HavelRuntimeError("Invalid assignment target");
+        return;
+    }
+    
+    lastResult = value;  // Assignment expressions return the assigned value
+}
+
+void Interpreter::visitForStatement(const ast::ForStatement& node) {
+    // Evaluate the iterable
+    auto iterableResult = Evaluate(*node.iterable);
+    if (isError(iterableResult)) {
+        lastResult = iterableResult;
+        return;
+    }
+    
+    HavelValue iterableValue = unwrap(iterableResult);
+    
+    // Check if iterable is an array
+    if (auto* array = std::get_if<HavelArray>(&iterableValue)) {
+        // Iterate over each element
+        for (const auto& element : *array) {
+            // Define iterator variable in current scope
+            environment->Define(node.iterator->symbol, element);
+            
+            // Execute loop body
+            auto bodyResult = Evaluate(*node.body);
+            
+            // Handle errors and return statements
+            if (isError(bodyResult)) {
+                lastResult = bodyResult;
+                return;
+            }
+            
+            if (std::holds_alternative<ReturnValue>(bodyResult)) {
+                lastResult = bodyResult;
+                return;
+            }
+            
+            // Handle break
+            if (std::holds_alternative<BreakValue>(bodyResult)) {
+                break;
+            }
+            
+            // Handle continue
+            if (std::holds_alternative<ContinueValue>(bodyResult)) {
+                continue;
+            }
+        }
+        
+        lastResult = nullptr;
+        return;
+    }
+    
+    lastResult = HavelRuntimeError("for-in loop requires an iterable (array)");
+}
+
+void Interpreter::visitLoopStatement(const ast::LoopStatement& node) {
+    // Infinite loop
+    while (true) {
+        // Execute loop body
+        auto bodyResult = Evaluate(*node.body);
+        
+        // Handle errors and return statements
+        if (isError(bodyResult)) {
+            lastResult = bodyResult;
+            return;
+        }
+        
+        if (std::holds_alternative<ReturnValue>(bodyResult)) {
+            lastResult = bodyResult;
+            return;
+        }
+        
+        // Handle break
+        if (std::holds_alternative<BreakValue>(bodyResult)) {
+            break;
+        }
+        
+        // Handle continue
+        if (std::holds_alternative<ContinueValue>(bodyResult)) {
+            continue;
+        }
+    }
+    
+    lastResult = nullptr;
+}
+
+void Interpreter::visitBreakStatement(const ast::BreakStatement& node) {
+    lastResult = BreakValue{};
+}
+
+void Interpreter::visitContinueStatement(const ast::ContinueStatement& node) {
+    lastResult = ContinueValue{};
 }
 
 // Stubs for unimplemented visit methods
@@ -608,6 +822,48 @@ void Interpreter::InitializeSystemBuiltins() {
             std::cout << this->ValueToString(arg) << " ";
         }
         std::cout << std::endl;
+        std::cout.flush();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("log", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[LOG] ";
+        for(const auto& arg : args) {
+            std::cout << this->ValueToString(arg) << " ";
+        }
+        std::cout << std::endl;
+        std::cout.flush();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("warn", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cerr << "[WARN] ";
+        for(const auto& arg : args) {
+            std::cerr << this->ValueToString(arg) << " ";
+        }
+        std::cerr << std::endl;
+        std::cerr.flush();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("error", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cerr << "[ERROR] ";
+        for(const auto& arg : args) {
+            std::cerr << this->ValueToString(arg) << " ";
+        }
+        std::cerr << std::endl;
+        std::cerr.flush();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("fatal", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cerr << "[FATAL] ";
+        for(const auto& arg : args) {
+            std::cerr << this->ValueToString(arg) << " ";
+        }
+        std::cerr << std::endl;
+        std::cerr.flush();
+        std::exit(1);
         return HavelValue(nullptr);
     }));
     

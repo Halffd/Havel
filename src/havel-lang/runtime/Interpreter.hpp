@@ -32,13 +32,15 @@ public:
 struct HavelValue;
 struct HavelFunction;
 struct ReturnValue;
+struct BreakValue;
+struct ContinueValue;
 
 // Recursive types
 using HavelObject = std::unordered_map<std::string, HavelValue>;
 using HavelArray = std::vector<HavelValue>;
 
 // Result type (declare BEFORE BuiltinFunction)
-using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue>;
+using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue, BreakValue, ContinueValue>;
 
 // Function type (now HavelResult is known)
 using BuiltinFunction = std::function<HavelResult(const std::vector<HavelValue>&)>;
@@ -62,6 +64,12 @@ struct HavelValue : std::variant<
 struct ReturnValue {
     HavelValue value;
 };
+
+// Break value wrapper
+struct BreakValue {};
+
+// Continue value wrapper
+struct ContinueValue {};
 
 // User-defined function
 struct HavelFunction {
@@ -87,6 +95,18 @@ public:
             return parent->Get(name);
         }
         return std::nullopt;
+    }
+    
+    bool Assign(const std::string& name, const HavelValue& value) {
+        auto it = values.find(name);
+        if (it != values.end()) {
+            values[name] = value;
+            return true;
+        }
+        if (parent) {
+            return parent->Assign(name, value);
+        }
+        return false;  // Variable not found
     }
 
 private:
@@ -126,6 +146,12 @@ public:
     void visitObjectLiteral(const ast::ObjectLiteral& node) override;
     void visitIndexExpression(const ast::IndexExpression& node) override;
     void visitTernaryExpression(const ast::TernaryExpression& node) override;
+    void visitRangeExpression(const ast::RangeExpression& node) override;
+    void visitAssignmentExpression(const ast::AssignmentExpression& node) override;
+    void visitForStatement(const ast::ForStatement& node) override;
+    void visitLoopStatement(const ast::LoopStatement& node) override;
+    void visitBreakStatement(const ast::BreakStatement& node) override;
+    void visitContinueStatement(const ast::ContinueStatement& node) override;
     
     // Stubs for unused AST nodes
     void visitWhileStatement(const ast::WhileStatement& node) override;

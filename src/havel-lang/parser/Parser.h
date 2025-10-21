@@ -22,6 +22,7 @@ private:
     // Parser methods (following Tyler's structure)
     std::unique_ptr<havel::ast::Statement> parseStatement();
     std::unique_ptr<havel::ast::Expression> parseExpression();
+    std::unique_ptr<havel::ast::Expression> parseAssignmentExpression();
     std::unique_ptr<havel::ast::Expression> parsePipelineExpression();
     std::unique_ptr<havel::ast::Expression> parseTernaryExpression();
     std::unique_ptr<havel::ast::Expression> parseBinaryExpression();
@@ -31,6 +32,10 @@ private:
     std::unique_ptr<havel::ast::Statement> parseLetDeclaration();
     std::unique_ptr<havel::ast::Statement> parseIfStatement();
     std::unique_ptr<havel::ast::Statement> parseWhileStatement();
+    std::unique_ptr<havel::ast::Statement> parseForStatement();
+    std::unique_ptr<havel::ast::Statement> parseLoopStatement();
+    std::unique_ptr<havel::ast::Statement> parseBreakStatement();
+    std::unique_ptr<havel::ast::Statement> parseContinueStatement();
     std::unique_ptr<havel::ast::Statement> parseFunctionDeclaration();
     std::unique_ptr<havel::ast::Statement> parseReturnStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();
@@ -41,6 +46,7 @@ private:
     std::unique_ptr<havel::ast::Expression> parseLogicalAnd();
     std::unique_ptr<havel::ast::Expression> parseEquality();
     std::unique_ptr<havel::ast::Expression> parseComparison();
+    std::unique_ptr<havel::ast::Expression> parseRange();
     std::unique_ptr<havel::ast::Expression> parseAdditive();
     std::unique_ptr<havel::ast::Expression> parseMultiplicative();
     std::unique_ptr<havel::ast::Expression> parseUnary();

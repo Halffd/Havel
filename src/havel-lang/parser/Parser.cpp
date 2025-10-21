@@ -60,6 +60,14 @@ namespace havel::parser {
                 return parseIfStatement();
             case havel::TokenType::While:
                 return parseWhileStatement();
+            case havel::TokenType::For:
+                return parseForStatement();
+            case havel::TokenType::Loop:
+                return parseLoopStatement();
+            case havel::TokenType::Break:
+                return parseBreakStatement();
+            case havel::TokenType::Continue:
+                return parseContinueStatement();
             case havel::TokenType::Fn:
                 return parseFunctionDeclaration();
             case havel::TokenType::Return:
@@ -168,6 +176,62 @@ namespace havel::parser {
         return std::make_unique<havel::ast::WhileStatement>(std::move(condition), std::move(body));
     }
 
+    std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
+        advance(); // consume "for"
+
+        if (at().type != havel::TokenType::Identifier) {
+            throw std::runtime_error("Expected iterator variable after 'for'");
+        }
+        auto iterator = std::make_unique<havel::ast::Identifier>(advance().value);
+
+        if (at().type != havel::TokenType::In) {
+            throw std::runtime_error("Expected 'in' after iterator variable");
+        }
+        advance(); // consume "in"
+
+        auto iterable = parseExpression();
+
+        // Skip newlines before opening brace
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after for iterable");
+        }
+
+        auto body = parseBlockStatement();
+
+        return std::make_unique<havel::ast::ForStatement>(std::move(iterator), std::move(iterable), std::move(body));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
+        advance(); // consume "loop"
+
+        // Skip newlines before opening brace
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after 'loop'");
+        }
+
+        auto body = parseBlockStatement();
+
+        return std::make_unique<havel::ast::LoopStatement>(std::move(body));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {
+        advance(); // consume "break"
+        return std::make_unique<havel::ast::BreakStatement>();
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseContinueStatement() {
+        advance(); // consume "continue"
+        return std::make_unique<havel::ast::ContinueStatement>();
+    }
+
     std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
         advance(); // consume "let"
 
@@ -244,6 +308,12 @@ namespace havel::parser {
 
         // Parse statements until closing brace
         while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+            // Skip newlines and semicolons (empty statements)
+            if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+                advance();
+                continue;
+            }
+            
             auto stmt = parseStatement();
             if (stmt) {
                 block->body.push_back(std::move(stmt));
@@ -324,7 +394,27 @@ namespace havel::parser {
     }
 
     std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
-        return parsePipelineExpression();
+        return parseAssignmentExpression();
+    }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
+        auto left = parsePipelineExpression();
+        
+        // Check for assignment operator =
+        if (at().type == havel::TokenType::Assign) {
+            advance(); // consume '='
+            
+            // Right-associative: a = b = c means a = (b = c)
+            auto value = parseAssignmentExpression();
+            
+            return std::make_unique<havel::ast::AssignmentExpression>(
+                std::move(left),
+                std::move(value),
+                "="
+            );
+        }
+        
+        return left;
     }
 
     std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
@@ -417,7 +507,7 @@ namespace havel::parser {
     }
     
     std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
-        auto left = parseAdditive();
+        auto left = parseRange();
         
         while (at().type == havel::TokenType::Less || 
                at().type == havel::TokenType::Greater ||
@@ -425,8 +515,20 @@ namespace havel::parser {
                at().type == havel::TokenType::GreaterEquals) {
             auto op = tokenToBinaryOperator(at().type);
             advance();
-            auto right = parseAdditive();
+            auto right = parseRange();
             left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op, std::move(right));
+        }
+        
+        return left;
+    }
+
+    std::unique_ptr<havel::ast::Expression> Parser::parseRange() {
+        auto left = parseAdditive();
+        
+        if (at().type == havel::TokenType::DotDot) {
+            advance(); // consume '..'
+            auto right = parseAdditive();
+            return std::make_unique<havel::ast::RangeExpression>(std::move(left), std::move(right));
         }
         
         return left;

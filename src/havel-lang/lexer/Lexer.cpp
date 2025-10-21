@@ -191,11 +191,26 @@ Token Lexer::scanString() {
                     value += escaped;
                     break;
             }
-        } else if (c == '$' && peek(1) == '{') {
+        } else if (c == '$') {
             // Found interpolation marker
             hasInterpolation = true;
             value += advance(); // $
-            value += advance(); // {
+            
+            // Check if it's ${expr} or $var
+            if (peek() == '{') {
+                value += advance(); // {
+            } else if (isAlpha(peek()) || peek() == '_') {
+                // Bash-style $var - consume the variable name
+                // Add implicit { } around the variable name for consistent parsing
+                value += '{';
+                while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+                    value += advance();
+                }
+                value += '}';
+            } else {
+                // Just a $ not followed by { or identifier, treat as literal
+                hasInterpolation = false;
+            }
         } else {
             value += advance();
         }

@@ -144,6 +144,9 @@ public:
     void visitImportStatement(const ast::ImportStatement& node) override;
     void visitArrayLiteral(const ast::ArrayLiteral& node) override;
     void visitObjectLiteral(const ast::ObjectLiteral& node) override;
+    void visitConfigBlock(const ast::ConfigBlock& node) override;
+    void visitDevicesBlock(const ast::DevicesBlock& node) override;
+    void visitModesBlock(const ast::ModesBlock& node) override;
     void visitIndexExpression(const ast::IndexExpression& node) override;
     void visitTernaryExpression(const ast::TernaryExpression& node) override;
     void visitRangeExpression(const ast::RangeExpression& node) override;

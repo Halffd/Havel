@@ -76,6 +76,12 @@ namespace havel::parser {
                 return parseBlockStatement();
             case havel::TokenType::Import:
                 return parseImportStatement();
+            case havel::TokenType::Config:
+                return parseConfigBlock();
+            case havel::TokenType::Devices:
+                return parseDevicesBlock();
+            case havel::TokenType::Modes:
+                return parseModesBlock();
             default: {
                 auto expr = parseExpression();
                 return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
@@ -849,6 +855,202 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
     
     return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs));
 }
+
+std::unique_ptr<havel::ast::Statement> Parser::parseConfigBlock() {
+    advance(); // consume 'config'
+    
+    // Skip optional newlines
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    
+    if (at().type != havel::TokenType::OpenBrace) {
+        throw std::runtime_error("Expected '{' after 'config'");
+    }
+    
+    std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> pairs;
+    
+    advance(); // consume '{'
+    
+    // Parse config key-value pairs
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+        // Skip newlines
+        if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+        }
+        
+        // Handle closing brace
+        if (at().type == havel::TokenType::CloseBrace) {
+            break;
+        }
+        
+        // Parse key - can be identifier or string
+        std::string key;
+        if (at().type == havel::TokenType::Identifier) {
+            key = advance().value;
+        } else if (at().type == havel::TokenType::String) {
+            key = advance().value;
+        } else {
+            throw std::runtime_error("Expected identifier or string as config key");
+        }
+        
+        // Expect colon
+        if (at().type != havel::TokenType::Colon) {
+            throw std::runtime_error("Expected ':' after config key");
+        }
+        advance(); // consume ':'
+        
+        // Parse value
+        auto value = parseExpression();
+        pairs.push_back({key, std::move(value)});
+        
+        // Handle comma or newline as separator
+        if (at().type == havel::TokenType::Comma || at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+        } else if (at().type != havel::TokenType::CloseBrace) {
+            throw std::runtime_error("Expected ',', newline, or '}' in config block");
+        }
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+        throw std::runtime_error("Expected '}' to close config block");
+    }
+    advance(); // consume '}'
+    
+    return std::make_unique<havel::ast::ConfigBlock>(std::move(pairs));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
+    advance(); // consume 'devices'
+    
+    // Skip optional newlines
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    
+    if (at().type != havel::TokenType::OpenBrace) {
+        throw std::runtime_error("Expected '{' after 'devices'");
+    }
+    
+    std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> pairs;
+    
+    advance(); // consume '{'
+    
+    // Parse devices key-value pairs
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+        // Skip newlines
+        if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+        }
+        
+        // Handle closing brace
+        if (at().type == havel::TokenType::CloseBrace) {
+            break;
+        }
+        
+        // Parse key - can be identifier or string
+        std::string key;
+        if (at().type == havel::TokenType::Identifier) {
+            key = advance().value;
+        } else if (at().type == havel::TokenType::String) {
+            key = advance().value;
+        } else {
+            throw std::runtime_error("Expected identifier or string as devices key");
+        }
+        
+        // Expect colon
+        if (at().type != havel::TokenType::Colon) {
+            throw std::runtime_error("Expected ':' after devices key");
+        }
+        advance(); // consume ':'
+        
+        // Parse value
+        auto value = parseExpression();
+        pairs.push_back({key, std::move(value)});
+        
+        // Handle comma or newline as separator
+        if (at().type == havel::TokenType::Comma || at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+        } else if (at().type != havel::TokenType::CloseBrace) {
+            throw std::runtime_error("Expected ',', newline, or '}' in devices block");
+        }
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+        throw std::runtime_error("Expected '}' to close devices block");
+    }
+    advance(); // consume '}'
+    
+    return std::make_unique<havel::ast::DevicesBlock>(std::move(pairs));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
+    advance(); // consume 'modes'
+    
+    // Skip optional newlines
+    while (at().type == havel::TokenType::NewLine) {
+        advance();
+    }
+    
+    if (at().type != havel::TokenType::OpenBrace) {
+        throw std::runtime_error("Expected '{' after 'modes'");
+    }
+    
+    std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> pairs;
+    
+    advance(); // consume '{'
+    
+    // Parse modes key-value pairs
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+        // Skip newlines
+        if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+            continue;
+        }
+        
+        // Handle closing brace
+        if (at().type == havel::TokenType::CloseBrace) {
+            break;
+        }
+        
+        // Parse key - can be identifier or string
+        std::string key;
+        if (at().type == havel::TokenType::Identifier) {
+            key = advance().value;
+        } else if (at().type == havel::TokenType::String) {
+            key = advance().value;
+        } else {
+            throw std::runtime_error("Expected identifier or string as modes key");
+        }
+        
+        // Expect colon
+        if (at().type != havel::TokenType::Colon) {
+            throw std::runtime_error("Expected ':' after modes key");
+        }
+        advance(); // consume ':'
+        
+        // Parse value
+        auto value = parseExpression();
+        pairs.push_back({key, std::move(value)});
+        
+        // Handle comma or newline as separator
+        if (at().type == havel::TokenType::Comma || at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+            advance();
+        } else if (at().type != havel::TokenType::CloseBrace) {
+            throw std::runtime_error("Expected ',', newline, or '}' in modes block");
+        }
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+        throw std::runtime_error("Expected '}' to close modes block");
+    }
+    advance(); // consume '}'
+    
+    return std::make_unique<havel::ast::ModesBlock>(std::move(pairs));
+}
+
     void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
         std::string padding(indent * 2, ' ');
         std::cout << padding << node.toString() << std::endl;

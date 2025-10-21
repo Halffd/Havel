@@ -58,6 +58,7 @@ enum class NodeType {
   RecordPattern, // {name, age}
   // Literals
   StringLiteral,  // "Hello"
+  InterpolatedStringExpression, // "Hello ${name}"
   NumberLiteral,  // 42, 3.14
   BooleanLiteral, // true, false
   AtomLiteral,    // :ok, :error (like Elixir atoms)
@@ -386,6 +387,33 @@ struct StringLiteral : public Expression {
     return "StringLiteral{\"" + display_val + "\"}";
   }
 
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Interpolated String Expression ("Hello ${name}")
+struct InterpolatedStringExpression : public Expression {
+  // Alternating string segments and expressions
+  // e.g., "Hello ${name}!" -> ["Hello ", name_expr, "!"]
+  struct Segment {
+    bool isString;  // true for string literal, false for expression
+    std::string stringValue;  // if isString
+    std::unique_ptr<Expression> expression;  // if !isString
+    
+    Segment(const std::string& str) : isString(true), stringValue(str) {}
+    Segment(std::unique_ptr<Expression> expr) : isString(false), expression(std::move(expr)) {}
+  };
+  
+  std::vector<Segment> segments;
+  
+  InterpolatedStringExpression(std::vector<Segment> segs = {})
+      : segments(std::move(segs)) {
+    kind = NodeType::InterpolatedStringExpression;
+  }
+  
+  std::string toString() const override {
+    return "InterpolatedString{" + std::to_string(segments.size()) + " segments}";
+  }
+  
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -961,6 +989,8 @@ public:
 
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
 
+  virtual void visitInterpolatedStringExpression(const InterpolatedStringExpression &node) = 0;
+
   virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
 
   virtual void visitIdentifier(const Identifier &node) = 0;
@@ -1039,6 +1069,10 @@ inline void MemberExpression::accept(ASTVisitor &visitor) const {
 
 inline void StringLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitStringLiteral(*this);
+}
+
+inline void InterpolatedStringExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitInterpolatedStringExpression(*this);
 }
 
 inline void NumberLiteral::accept(ASTVisitor &visitor) const {

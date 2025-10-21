@@ -138,6 +138,7 @@ public:
     void visitCallExpression(const ast::CallExpression& node) override;
     void visitMemberExpression(const ast::MemberExpression& node) override;
     void visitStringLiteral(const ast::StringLiteral& node) override;
+    void visitInterpolatedStringExpression(const ast::InterpolatedStringExpression& node) override;
     void visitNumberLiteral(const ast::NumberLiteral& node) override;
     void visitIdentifier(const ast::Identifier& node) override;
     void visitHotkeyLiteral(const ast::HotkeyLiteral& node) override;

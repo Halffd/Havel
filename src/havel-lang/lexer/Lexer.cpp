@@ -165,6 +165,7 @@ Token Lexer::scanNumber() {
 Token Lexer::scanString() {
     std::string value;
     std::string raw;
+    bool hasInterpolation = false;
     
     // Skip opening quote
     char quote = source[position - 1];
@@ -190,6 +191,11 @@ Token Lexer::scanString() {
                     value += escaped;
                     break;
             }
+        } else if (c == '$' && peek(1) == '{') {
+            // Found interpolation marker
+            hasInterpolation = true;
+            value += advance(); // $
+            value += advance(); // {
         } else {
             value += advance();
         }
@@ -202,7 +208,8 @@ Token Lexer::scanString() {
     // Consume closing quote
     advance();
     
-    return makeToken(value, TokenType::String, raw);
+    TokenType type = hasInterpolation ? TokenType::InterpolatedString : TokenType::String;
+    return makeToken(value, type, raw);
 }
 
 Token Lexer::scanIdentifier() {

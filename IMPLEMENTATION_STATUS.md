@@ -391,3 +391,28 @@ Value Interpreter::evaluateObject(const ObjectLiteralNode &node) {
 
 
 When printing, recursively dump JSON-style — it’s invaluable for debugging.
+
+# Documentation
+Update Markdown files, leave only Havel.md for language documentation, README.md for project summary, build and run instructions, TODO.md for missing features and WARP.md for AI usage, celete the other markdown files
+# Fix segfaults
+
+>>> fn g(){print("hello world")}
+>>> g()
+[1]    2293070 segmentation fault (core dumped)  ./build/havel --repl
+
+>>> fn f(){}
+>>> f
+=> <function>
+>>> fn g(num){ return num*num*num}
+>>> g(4)
+
+
+
+[1]    2283449 segmentation fault (core dumped)  ./build/havel --repl
+❯
+
+
+>>> a => { print("a press") }
+Error: Unexpected token in expression: =>
+>>> a => print("a")
+Error: Unexpected token in expression: =>

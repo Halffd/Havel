@@ -23,6 +23,10 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"config", TokenType::Config},
     {"devices", TokenType::Devices},
     {"modes", TokenType::Modes},
+    {"on", TokenType::On},
+    {"off", TokenType::Off},
+    {"when", TokenType::When},
+    {"mode", TokenType::Mode},
     {"send", TokenType::Identifier},
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module
@@ -169,12 +173,20 @@ Token Lexer::scanString() {
     
     // Skip opening quote
     char quote = source[position - 1];
+    int braceDepth = 0; // Tracks depth inside ${ ... }
     
-    while (!isAtEnd() && peek() != quote) {
+    while (!isAtEnd()) {
         char c = peek();
+        
+        // If we're not inside an interpolation, a matching quote ends the string
+        if (braceDepth == 0 && c == quote) {
+            break;
+        }
+        
         raw += c;
         
-        if (c == '\\' && !isAtEnd()) {
+        if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
+            // Only process escape sequences in the outer string portion
             advance(); // consume backslash
             raw += peek();
             
@@ -199,6 +211,7 @@ Token Lexer::scanString() {
             // Check if it's ${expr} or $var
             if (peek() == '{') {
                 value += advance(); // {
+                braceDepth++;       // Enter interpolation context
             } else if (isAlpha(peek()) || peek() == '_') {
                 // Bash-style $var - consume the variable name
                 // Add implicit { } around the variable name for consistent parsing
@@ -207,12 +220,25 @@ Token Lexer::scanString() {
                     value += advance();
                 }
                 value += '}';
+                // No change to braceDepth since we synthetically closed it immediately
             } else {
-                // Just a $ not followed by { or identifier, treat as literal
-                hasInterpolation = false;
+                // Just a $ not followed by { or identifier, treat as literal '$'
+                // Do not mark as interpolation in this case
+                hasInterpolation = hasInterpolation; // no-op, keep previous state
             }
         } else {
-            value += advance();
+            // Regular character processing
+            char consumed = advance();
+            value += consumed;
+            
+            if (braceDepth > 0) {
+                if (consumed == '{') {
+                    // Track nested braces within interpolation (e.g., object literals)
+                    braceDepth++;
+                } else if (consumed == '}') {
+                    braceDepth--;
+                }
+            }
         }
     }
     

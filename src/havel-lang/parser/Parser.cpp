@@ -68,6 +68,10 @@ namespace havel::parser {
                 return parseBreakStatement();
             case havel::TokenType::Continue:
                 return parseContinueStatement();
+            case havel::TokenType::On:
+                return parseOnModeStatement();
+            case havel::TokenType::Off:
+                return parseOffModeStatement();
             case havel::TokenType::Fn:
                 return parseFunctionDeclaration();
             case havel::TokenType::Return:
@@ -236,6 +240,81 @@ namespace havel::parser {
     std::unique_ptr<havel::ast::Statement> Parser::parseContinueStatement() {
         advance(); // consume "continue"
         return std::make_unique<havel::ast::ContinueStatement>();
+    }
+    
+    std::unique_ptr<havel::ast::Statement> Parser::parseOnModeStatement() {
+        advance(); // consume "on"
+        
+        // Expect "mode" keyword
+        if (at().type != havel::TokenType::Mode) {
+            throw std::runtime_error("Expected 'mode' after 'on'");
+        }
+        advance(); // consume "mode"
+        
+        // Get mode name
+        if (at().type != havel::TokenType::Identifier) {
+            throw std::runtime_error("Expected mode name after 'on mode'");
+        }
+        std::string modeName = advance().value;
+        
+        // Skip newlines
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        
+        // Parse body block
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after mode name");
+        }
+        auto body = parseBlockStatement();
+        
+        // Check for else block
+        std::unique_ptr<havel::ast::Statement> alternative = nullptr;
+        if (at().type == havel::TokenType::Else) {
+            advance(); // consume "else"
+            
+            // Skip newlines
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            
+            if (at().type == havel::TokenType::OpenBrace) {
+                alternative = parseBlockStatement();
+            } else {
+                throw std::runtime_error("Expected '{' after else");
+            }
+        }
+        
+        return std::make_unique<havel::ast::OnModeStatement>(modeName, std::move(body), std::move(alternative));
+    }
+    
+    std::unique_ptr<havel::ast::Statement> Parser::parseOffModeStatement() {
+        advance(); // consume "off"
+        
+        // Expect "mode" keyword
+        if (at().type != havel::TokenType::Mode) {
+            throw std::runtime_error("Expected 'mode' after 'off'");
+        }
+        advance(); // consume "mode"
+        
+        // Get mode name
+        if (at().type != havel::TokenType::Identifier) {
+            throw std::runtime_error("Expected mode name after 'off mode'");
+        }
+        std::string modeName = advance().value;
+        
+        // Skip newlines
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        
+        // Parse body block
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after mode name");
+        }
+        auto body = parseBlockStatement();
+        
+        return std::make_unique<havel::ast::OffModeStatement>(modeName, std::move(body));
     }
 
     std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {

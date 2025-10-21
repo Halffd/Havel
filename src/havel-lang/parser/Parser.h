@@ -36,6 +36,8 @@ private:
     std::unique_ptr<havel::ast::Statement> parseLoopStatement();
     std::unique_ptr<havel::ast::Statement> parseBreakStatement();
     std::unique_ptr<havel::ast::Statement> parseContinueStatement();
+    std::unique_ptr<havel::ast::Statement> parseOnModeStatement();
+    std::unique_ptr<havel::ast::Statement> parseOffModeStatement();
     std::unique_ptr<havel::ast::Statement> parseFunctionDeclaration();
     std::unique_ptr<havel::ast::Statement> parseReturnStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();

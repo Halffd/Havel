@@ -43,7 +43,11 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto -DNDEBUG -ffast-math")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto")
 endif()
-
+find_program(CCACHE ccache)
+if(CCACHE)
+    set(CMAKE_CXX_COMPILER_LAUNCHER ccache)
+    message("Using ccache")
+endif()
 # ==============================================================================
 # DEPENDENCY VALIDATION
 # ==============================================================================
@@ -305,6 +309,17 @@ set_target_properties(havel PROPERTIES
     CXX_STANDARD 23
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF
+)
+target_precompile_headers(havel PRIVATE
+    <iostream>
+    <string>
+    <memory>
+    <vector>
+    <unordered_map>
+    <algorithm>
+    <functional>
+    <future>
+    <thread>
 )
 
 # Include directories

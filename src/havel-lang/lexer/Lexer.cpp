@@ -29,11 +29,11 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {',', TokenType::Comma},
     {';', TokenType::Semicolon},
     {'|', TokenType::Pipe},
-    {'+', TokenType::BinaryOp},
-    {'-', TokenType::BinaryOp},
-    {'*', TokenType::BinaryOp},
-    {'/', TokenType::BinaryOp},
-    {'%', TokenType::BinaryOp},
+    {'+', TokenType::Plus},
+    {'-', TokenType::Minus},
+    {'*', TokenType::Multiply},
+    {'/', TokenType::Divide},
+    {'%', TokenType::Modulo},
     {'\n', TokenType::NewLine}
 };
 
@@ -81,7 +81,7 @@ bool Lexer::isSkippable(char c) const {
 }
 
 bool Lexer::isHotkeyChar(char c) const {
-    return isAlphaNumeric(c) || c == '+' || c == '-';
+    return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#';
 }
 
 Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
@@ -208,45 +208,40 @@ Token Lexer::scanIdentifier() {
 
 Token Lexer::scanHotkey() {
     std::string hotkey;
-    
-    // Add the character we already consumed
+
+    // Include the already consumed character
     hotkey += source[position - 1];
-    
-    // Scan for F1-F12 keys
-    if (hotkey[0] == 'F' && !isAtEnd() && isDigit(peek())) {
-        while (!isAtEnd() && isDigit(peek())) {
-            hotkey += advance();
-        }
-        
-        // Validate F-key range (F1-F12)
-        int fkeyNum = std::stoi(hotkey.substr(1));
-        if (fkeyNum >= 1 && fkeyNum <= 12) {
-            return makeToken(hotkey, TokenType::Hotkey);
-        }
-    }
-    
-    // Scan for modifier combinations (Ctrl+, Alt+, Shift+, Win+)
-    while (!isAtEnd() && isHotkeyChar(peek())) {
+
+    // Continue consuming characters that are part of a hotkey until a terminator
+    while (!isAtEnd()) {
         char c = peek();
-        hotkey += advance();
-        
-        // Stop at whitespace or special characters that end hotkeys
-        if (c == ' ' || c == '=' || c == '{' || c == '(' || c == '|') {
-            position--; // Put back the character
-            hotkey.pop_back();
+        // Stop at whitespace or special characters that end hotkeys or start other tokens
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' || c == '|' ) {
             break;
         }
+        if (!isHotkeyChar(c)) break;
+        hotkey += advance();
     }
-    
-    // Check if this looks like a hotkey pattern
-    std::regex hotkeyPattern(R"((Ctrl|Alt|Shift|Win)\+\w+|F[1-9]|F1[0-2])");
-    if (std::regex_match(hotkey, hotkeyPattern)) {
+
+    // Special handling for plain F-keys (F1..F12)
+    if (hotkey.size() >= 2 && hotkey[0] == 'F') {
+        bool allDigits = true;
+        for (size_t i = 1; i < hotkey.size(); ++i) allDigits &= std::isdigit(static_cast<unsigned char>(hotkey[i]));
+        if (allDigits) {
+            try {
+                int fnum = std::stoi(hotkey.substr(1));
+                if (fnum >= 1 && fnum <= 12) return makeToken(hotkey, TokenType::Hotkey);
+            } catch (...) {}
+        }
+    }
+
+    // Accept raw modifier-based forms like ^+!F12 as Hotkey
+    if (!hotkey.empty() && (hotkey.find('^') != std::string::npos || hotkey.find('!') != std::string::npos || hotkey.find('+') != std::string::npos || hotkey[0] == 'F')) {
         return makeToken(hotkey, TokenType::Hotkey);
     }
-    
-    // Not a hotkey, treat as identifier
-    // Reset position to scan as identifier
-    position -= hotkey.length() - 1;
+
+    // Fallback: not a recognizable hotkey, rewind and treat as identifier
+    position -= (hotkey.size() - 1);
     return scanIdentifier();
 }
 
@@ -300,7 +295,7 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        // Handle identifiers and potential hotkeys
+// Handle identifiers and potential hotkeys
         if (isAlpha(c) || c == 'F') {
             // Check if this might be a hotkey starting with F
             if (c == 'F' && isDigit(peek())) {
@@ -311,58 +306,9 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        // Handle potential modifier hotkeys (Ctrl, Alt, Shift, Win), special keys (Suspend, Grab, etc.)
-        if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@' || c == '$' || c == '~' || c == '&' || c == '*') {
-            std::string modifierKey;
-            modifierKey += c;
-            
-            // Map special characters to modifier names
-            std::unordered_map<char, std::string> modifierMap = {
-                {'^', "Ctrl"},
-                {'!', "Alt"},
-                {'+', "Shift"},
-                {'#', "Win"},
-                {'@', "Super"},
-                {'$', "Meta"},
-                {'~', "Tilde"},
-                {'&', "Ampersand"},
-                {'*', "Asterisk"}
-            };
-            
-            // Convert the special character to its modifier name
-            std::string modifierName = modifierMap[c];
-            
-            // Check if there's a key after the modifier
-            if (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '{')) {
-                if (peek() == '{') {
-                    // Handle complex key names like {F1}, {Home}, etc.
-                    advance(); // consume '{'
-                    std::string keyName;
-                    
-                    while (!isAtEnd() && peek() != '}') {
-                        keyName += advance();
-                    }
-                    
-                    if (isAtEnd() || peek() != '}') {
-                        throw std::runtime_error("Unterminated key name in braces at line " + std::to_string(line));
-                    }
-                    
-                    advance(); // consume '}'
-                    
-                    // Create the full hotkey with modifier+key
-                    std::string fullHotkey = modifierName + "+" + keyName;
-                    tokens.push_back(makeToken(fullHotkey, TokenType::Hotkey));
-                } else {
-                    // Handle simple keys like Ctrl+C, Alt+F4, etc.
-                    char key = advance();
-                    std::string fullHotkey = modifierName + "+" + key;
-                    tokens.push_back(makeToken(fullHotkey, TokenType::Hotkey));
-                }
-            } else {
-                // Just the modifier by itself
-                tokens.push_back(makeToken(modifierName, TokenType::Identifier));
-            }
-            
+        // Handle modifier-based hotkeys starting with special characters like ^ + ! #
+        if (c == '^' || c == '!' || c == '+' || c == '#') {
+            tokens.push_back(scanHotkey());
             continue;
         }
 

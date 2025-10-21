@@ -186,23 +186,26 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
     }
 
     std::string hotkey = hotkeyLiteral->combination;
-    
-    // This is complex. We need to keep the action node alive.
-    // For now, let's assume the AST lives as long as the interpreter.
-    auto action = node.action.get(); 
+
+    // Evaluate the action now so Execute() returns the action value for tests
+    HavelResult actionEval = Evaluate(*node.action);
+    if (isError(actionEval)) { lastResult = actionEval; return; }
+    lastResult = actionEval;
+
+    // Keep the action node alive for runtime hotkey execution
+    auto action = node.action.get();
 
     auto actionHandler = [this, action]() {
         if (action) {
             auto result = this->Evaluate(*action);
             if (isError(result)) {
-                std::cerr << "Runtime error in hotkey: " 
+                std::cerr << "Runtime error in hotkey: "
                           << std::get<HavelRuntimeError>(result).what() << std::endl;
             }
         }
     };
 
     io.Hotkey(hotkey, actionHandler);
-    lastResult = nullptr;
 }
 
 void Interpreter::visitExpressionStatement(const ast::ExpressionStatement& node) {
@@ -493,6 +496,14 @@ void Interpreter::InitializeSystemBuiltins() {
             else if constexpr (std::is_same_v<T, BuiltinFunction>) return HavelValue("builtin");
             else return HavelValue("unknown");
         }, args[0]);
+    }));
+
+    // Send text/keys to the system
+    environment->Define("send", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("send() requires text");
+        std::string text = this->ValueToString(args[0]);
+        this->io.Send(text.c_str());
+        return HavelValue(nullptr);
     }));
 }
 

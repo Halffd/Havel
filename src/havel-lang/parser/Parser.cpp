@@ -36,6 +36,11 @@ namespace havel::parser {
 
         // Parse all statements until EOF
         while (notEOF()) {
+            // Skip empty lines or statement separators
+            if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+                advance();
+                continue;
+            }
             auto stmt = parseStatement();
             if (stmt) {
                 program->body.push_back(std::move(stmt));
@@ -481,7 +486,7 @@ namespace havel::parser {
                 auto identTk = advance();
                 auto identifier = std::make_unique<havel::ast::Identifier>(identTk.value);
     
-                // Check for function call
+                // Check for function call with parentheses
                 if (at().type == havel::TokenType::OpenParen) {
                     return parseCallExpression(std::move(identifier));
                 }
@@ -489,6 +494,14 @@ namespace havel::parser {
                 // Check for member access
                 if (at().type == havel::TokenType::Dot) {
                     return parseMemberExpression(std::move(identifier));
+                }
+
+                // Implicit call: identifier followed by a literal/expression (e.g., send "Hello")
+                if (at().type == havel::TokenType::String || at().type == havel::TokenType::Number) {
+                    auto arg = parsePrimaryExpression();
+                    std::vector<std::unique_ptr<havel::ast::Expression>> args;
+                    args.push_back(std::move(arg));
+                    return std::make_unique<havel::ast::CallExpression>(std::move(identifier), std::move(args));
                 }
     
                 return std::move(identifier);

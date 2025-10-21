@@ -1,5 +1,6 @@
 #include "Compiler.h"
 
+#ifdef HAVEL_ENABLE_LLVM
 #include <cmath>
 #include <stdexcept>
 
@@ -759,3 +760,4 @@ namespace havel::compiler {
         module->print(llvm::outs(), nullptr);
     }
 } // namespace havel::compiler
+#endif // HAVEL_ENABLE_LLVM

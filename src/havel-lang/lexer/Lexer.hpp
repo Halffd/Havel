@@ -47,6 +47,10 @@ namespace havel {
         Import,         // import
         From,           // from
         As,             // as
+        Colon,          // :
+        Question,       // ?
+        OpenBracket,    // [
+        CloseBracket,   // ]
         EOF_TOKEN
     };
 

@@ -1,0 +1,1 @@
+F1 => send "test" | upper

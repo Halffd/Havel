@@ -530,6 +530,60 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral& node) {
     lastResult = HavelValue(object);
 }
 
+void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
+    HavelObject configObject;
+    
+    for (const auto& [key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        configObject[key] = unwrap(result);
+    }
+    
+    // Store the config block as a special variable
+    environment->Define("__config__", HavelValue(configObject));
+    
+    lastResult = nullptr; // Config blocks don't return a value
+}
+
+void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
+    HavelObject devicesObject;
+    
+    for (const auto& [key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        devicesObject[key] = unwrap(result);
+    }
+    
+    // Store the devices block as a special variable
+    environment->Define("__devices__", HavelValue(devicesObject));
+    
+    lastResult = nullptr; // Devices blocks don't return a value
+}
+
+void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
+    HavelObject modesObject;
+    
+    for (const auto& [key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        modesObject[key] = unwrap(result);
+    }
+    
+    // Store the modes block as a special variable
+    environment->Define("__modes__", HavelValue(modesObject));
+    
+    lastResult = nullptr; // Modes blocks don't return a value
+}
+
 void Interpreter::visitIndexExpression(const ast::IndexExpression& node) {
     auto objectResult = Evaluate(*node.object);
     if (isError(objectResult)) {
@@ -817,6 +871,11 @@ void Interpreter::InitializeStandardLibrary() {
     InitializeFileBuiltins();
 }
 void Interpreter::InitializeSystemBuiltins() {
+    // Define boolean constants
+    environment->Define("true", HavelValue(true));
+    environment->Define("false", HavelValue(false));
+    environment->Define("null", HavelValue(nullptr));
+    
     environment->Define("print", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         for(const auto& arg : args) {
             std::cout << this->ValueToString(arg) << " ";

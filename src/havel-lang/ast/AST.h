@@ -43,6 +43,9 @@ enum class NodeType {
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
   ObjectLiteral,    // {name: "John", age: 30} - actual implementation
+  ConfigBlock,      // config { ... }
+  DevicesBlock,     // devices { ... }
+  ModesBlock,       // modes { ... }
   IndexExpression,  // arr[0] or obj["key"]
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
@@ -776,6 +779,54 @@ struct ObjectLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Config Block (config { ... })
+struct ConfigBlock : public Statement {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ConfigBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::ConfigBlock;
+  }
+
+  std::string toString() const override {
+    return "ConfigBlock{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Devices Block (devices { ... })
+struct DevicesBlock : public Statement {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  DevicesBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::DevicesBlock;
+  }
+
+  std::string toString() const override {
+    return "DevicesBlock{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Modes Block (modes { ... })
+struct ModesBlock : public Statement {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ModesBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::ModesBlock;
+  }
+
+  std::string toString() const override {
+    return "ModesBlock{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Index Expression (arr[0] or obj["key"])
 struct IndexExpression : public Expression {
   std::unique_ptr<Expression> object;
@@ -941,6 +992,9 @@ public:
   virtual void visitImportStatement(const ImportStatement& node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral& node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
+  virtual void visitConfigBlock(const ConfigBlock& node) = 0;
+  virtual void visitDevicesBlock(const DevicesBlock& node) = 0;
+  virtual void visitModesBlock(const ModesBlock& node) = 0;
   virtual void visitIndexExpression(const IndexExpression& node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression& node) = 0;
   virtual void visitRangeExpression(const RangeExpression& node) = 0;
@@ -1024,6 +1078,18 @@ inline void ArrayLiteral::accept(ASTVisitor &visitor) const {
 
 inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitObjectLiteral(*this);
+}
+
+inline void ConfigBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitConfigBlock(*this);
+}
+
+inline void DevicesBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitDevicesBlock(*this);
+}
+
+inline void ModesBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitModesBlock(*this);
 }
 
 inline void IndexExpression::accept(ASTVisitor &visitor) const {

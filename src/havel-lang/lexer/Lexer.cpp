@@ -20,7 +20,10 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"default", TokenType::Default},
     {"fn", TokenType::Fn},
     {"return", TokenType::Return},
-    {"send", TokenType::Identifier},      // Built-in function
+    {"config", TokenType::Config},
+    {"devices", TokenType::Devices},
+    {"modes", TokenType::Modes},
+    {"send", TokenType::Identifier},
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module
     {"window", TokenType::Identifier},    // Built-in module

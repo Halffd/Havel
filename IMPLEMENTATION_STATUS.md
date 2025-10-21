@@ -188,10 +188,57 @@ To get `example.hv` running, implement in this order:
 4. Store these in interpreter context as special variables
 
 ### Phase 4: Advanced Features
-1. Pipeline operator parsing and evaluation
+0. Ensure modes integrate with condition system, example:
+modes {
+    gaming:  { class: ["steam", "lutris", "proton", "wine"], title: ["minecraft", "genshin"], ignore: ["chrome", "firefox", "vlc", "obs", "streamlabs"] }
+    streaming: { class: ["obs", "streamlabs"], title: ["twitch", "youtube"] }
+    coding: { class: ["jetbrains"], title: ["code", "py", "js", "ts"] }
+    typing: { class: ["*"], title: ["keybr"] }
+    test: { class: ["*"], title: ["*"] }
+    verbose: { class: ["*"], title: ["terminal"] }
+    default: { class: ["*"], title: ["*"] }
+}
+
+on mode gaming {
+    print "Switched to gaming mode."
+} else {
+    print "Switched from gaming to mode " + mode
+}
+off mode streaming {
+    print "Switched from streaming to mode " + mode
+}
+y when mode gaming => print("You are in gaming mode.")
+Enter when mode gaming && title "genshin" => sequence {
+    click(); sleep 30
+    send "e"; sleep 100
+    send "q"; sleep 2000
+}
+1. Pipeline operator parsing and evaluation. Example: 
+^!V => clipboard.get | upper | send
 2. Implicit function calls (command-style syntax)
-3. For loops with iterators
-4. String interpolation
+3. String interpolation
+4. Make config use ConfigManager.hpp. Example:
+config {
+    file: "~/Documents/havel.cfg"
+    defaults: {
+        volume: 50
+        brightness: 100
+        brightnessStep: 10
+    }
+}
+5. Make devices change device config using the config set before, using ConfigManager.hpp example:
+devices {
+    keyboard: "INSTANT Keyboard"
+    mouse: "USB Mouse"
+    joystick: "PS5 Controller"
+    mouseSensitivity: 0.2
+    ignoreMouse: false
+}
+keyboard: change Device.Keyboard config
+mouse: change Device.Mouse config
+joystick: change Device.Joystick config
+mouseSensitivity: change Mouse.Sensitivity config
+ignoreMouse: change Device.IgnoreMouse config
 
 ### Phase 5: Standard Library
 1. Built-in print/log functions

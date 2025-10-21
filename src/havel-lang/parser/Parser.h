@@ -41,6 +41,9 @@ private:
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();
     std::unique_ptr<havel::ast::BlockStatement> parseBlockStatement();
     std::unique_ptr<havel::ast::Statement> parseImportStatement();
+    std::unique_ptr<havel::ast::Statement> parseConfigBlock();
+    std::unique_ptr<havel::ast::Statement> parseDevicesBlock();
+    std::unique_ptr<havel::ast::Statement> parseModesBlock();
     havel::ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
     std::unique_ptr<havel::ast::Expression> parseLogicalOr();
     std::unique_ptr<havel::ast::Expression> parseLogicalAnd();

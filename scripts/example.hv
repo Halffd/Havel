@@ -17,7 +17,7 @@ devices {
 }
 
 modes {
-    gaming:  { class: ["steam", "lutris", "proton", "wine"], title: ["minecraft", "genshin"] }
+    gaming:  { class: ["steam", "lutris", "proton", "wine"], title: ["minecraft", "genshin"], ignore: ["chrome", "firefox", "vlc", "obs", "streamlabs"] }
     streaming: { class: ["obs", "streamlabs"], title: ["twitch", "youtube"] }
     coding: { class: ["jetbrains"], title: ["code", "py", "js", "ts"] }
     typing: { class: ["*"], title: ["keybr"] }
@@ -25,7 +25,14 @@ modes {
     verbose: { class: ["*"], title: ["terminal"] }
     default: { class: ["*"], title: ["*"] }
 }
-
+on mode gaming {
+    print "Switched to gaming mode."
+} else {
+    print "Switched from gaming to mode " + mode
+}
+off mode streaming {
+    print "Switched from streaming to mode " + mode
+}
 on mode gaming {
     audio.volume = 100
     map {
@@ -105,6 +112,7 @@ F6 => media.toggle()
 F7 => repeat(10) { click([500, 300]); sleep 50 }
 
 # --- GAME AUTOMATION EXAMPLE ---
+y when mode gaming => print("You are in gaming mode.")
 Enter when mode gaming && title "genshin" => sequence {
     click(); sleep 30
     send "e"; sleep 100

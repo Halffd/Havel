@@ -23,12 +23,14 @@ private:
     std::unique_ptr<havel::ast::Statement> parseStatement();
     std::unique_ptr<havel::ast::Expression> parseExpression();
     std::unique_ptr<havel::ast::Expression> parsePipelineExpression();
+    std::unique_ptr<havel::ast::Expression> parseTernaryExpression();
     std::unique_ptr<havel::ast::Expression> parseBinaryExpression();
     std::unique_ptr<havel::ast::Expression> parsePrimaryExpression();
 
     // Havel-specific parsers
     std::unique_ptr<havel::ast::Statement> parseLetDeclaration();
     std::unique_ptr<havel::ast::Statement> parseIfStatement();
+    std::unique_ptr<havel::ast::Statement> parseWhileStatement();
     std::unique_ptr<havel::ast::Statement> parseFunctionDeclaration();
     std::unique_ptr<havel::ast::Statement> parseReturnStatement();
     std::unique_ptr<havel::ast::HotkeyBinding> parseHotkeyBinding();

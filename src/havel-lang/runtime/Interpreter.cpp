@@ -541,8 +541,52 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression& node) {
     lastResult = HavelRuntimeError("Cannot index non-array/non-object value");
 }
 
+void Interpreter::visitTernaryExpression(const ast::TernaryExpression& node) {
+    auto conditionResult = Evaluate(*node.condition);
+    if (isError(conditionResult)) {
+        lastResult = conditionResult;
+        return;
+    }
+    
+    if (ValueToBool(unwrap(conditionResult))) {
+        lastResult = Evaluate(*node.trueValue);
+    } else {
+        lastResult = Evaluate(*node.falseValue);
+    }
+}
+
+void Interpreter::visitWhileStatement(const ast::WhileStatement& node) {
+    // Evaluate condition and loop while true
+    while (true) {
+        auto conditionResult = Evaluate(*node.condition);
+        if (isError(conditionResult)) {
+            lastResult = conditionResult;
+            return;
+        }
+        
+        if (!ValueToBool(unwrap(conditionResult))) {
+            break; // Exit loop when condition is false
+        }
+        
+        // Execute loop body
+        auto bodyResult = Evaluate(*node.body);
+        
+        // Handle errors and return statements
+        if (isError(bodyResult)) {
+            lastResult = bodyResult;
+            return;
+        }
+        
+        if (std::holds_alternative<ReturnValue>(bodyResult)) {
+            lastResult = bodyResult;
+            return;
+        }
+    }
+    
+    lastResult = nullptr;
+}
+
 // Stubs for unimplemented visit methods
-void Interpreter::visitWhileStatement(const ast::WhileStatement& node) { lastResult = HavelRuntimeError("While loops not implemented."); }
 void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration& node) { lastResult = HavelRuntimeError("Type declarations not implemented."); }
 void Interpreter::visitTypeAnnotation(const ast::TypeAnnotation& node) { lastResult = HavelRuntimeError("Type annotations not implemented."); }
 void Interpreter::visitUnionType(const ast::UnionType& node) { lastResult = HavelRuntimeError("Union types not implemented."); }

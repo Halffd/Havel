@@ -19,6 +19,12 @@
 
 namespace havel {
 
+// Forward declarations for managers
+class HotkeyManager;
+class BrightnessManager;
+class AudioManager;
+class GUIManager;
+
 // Forward declarations
 class Environment; 
 namespace ast { struct FunctionDeclaration; }
@@ -118,7 +124,11 @@ private:
 // Main Interpreter class implementing the visitor pattern
 class Interpreter : public ast::ASTVisitor {
 public:
-    Interpreter(IO& io_system, WindowManager& window_mgr);
+    Interpreter(IO& io_system, WindowManager& window_mgr,
+                HotkeyManager* hotkey_mgr = nullptr,
+                BrightnessManager* brightness_mgr = nullptr,
+                AudioManager* audio_mgr = nullptr,
+                GUIManager* gui_mgr = nullptr);
     ~Interpreter() = default;
     
     HavelResult Execute(const std::string& sourceCode);
@@ -179,6 +189,10 @@ private:
     std::shared_ptr<Environment> environment;
     IO& io;
     WindowManager& windowManager;
+    HotkeyManager* hotkeyManager;
+    BrightnessManager* brightnessManager;
+    AudioManager* audioManager;
+    GUIManager* guiManager;
     HavelResult lastResult;
 
     HavelResult Evaluate(const ast::ASTNode& node);
@@ -193,6 +207,10 @@ private:
     void InitializeIOBuiltins();
     void InitializeBrightnessBuiltins();
     void InitializeDebugBuiltins();
+    void InitializeAudioBuiltins();
+    void InitializeMediaBuiltins();
+    void InitializeLauncherBuiltins();
+    void InitializeGUIBuiltins();
 };
 
 } // namespace havel

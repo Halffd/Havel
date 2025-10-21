@@ -554,17 +554,80 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral& node) {
 
 void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
     HavelObject configObject;
+    auto& config = Configs::Get();
     
+    // Special handling for "file" key - if present, load that config file
+    for (const auto& [key, valueExpr] : node.pairs) {
+        if (key == "file") {
+            auto result = Evaluate(*valueExpr);
+            if (isError(result)) {
+                lastResult = result;
+                return;
+            }
+            std::string filePath = ValueToString(unwrap(result));
+            
+            // Expand ~ to home directory
+            if (!filePath.empty() && filePath[0] == '~') {
+                const char* home = std::getenv("HOME");
+                if (home) {
+                    filePath = std::string(home) + filePath.substr(1);
+                }
+            }
+            
+            config.Load(filePath);
+        }
+    }
+    
+    // Process all config key-value pairs
     for (const auto& [key, valueExpr] : node.pairs) {
         auto result = Evaluate(*valueExpr);
         if (isError(result)) {
             lastResult = result;
             return;
         }
-        configObject[key] = unwrap(result);
+        
+        HavelValue value = unwrap(result);
+        configObject[key] = value;
+        
+        // Write to actual Configs if not "file" or "defaults"
+        if (key != "file" && key != "defaults") {
+            // Use "Havel." prefix for config keys from the language
+            std::string configKey = "Havel." + key;
+            
+            // Convert HavelValue to string for Configs
+            std::string strValue = ValueToString(value);
+            
+            // Handle different value types appropriately
+            if (std::holds_alternative<bool>(value)) {
+                config.Set(configKey, std::get<bool>(value) ? "true" : "false");
+            } else if (std::holds_alternative<int>(value)) {
+                config.Set(configKey, std::get<int>(value));
+            } else if (std::holds_alternative<double>(value)) {
+                config.Set(configKey, std::get<double>(value));
+            } else {
+                config.Set(configKey, strValue);
+            }
+        }
+        
+        // Handle defaults object
+        if (key == "defaults" && std::holds_alternative<HavelObject>(value)) {
+            auto& defaults = std::get<HavelObject>(value);
+            for (const auto& [defaultKey, defaultValue] : defaults) {
+                std::string configKey = "Havel." + defaultKey;
+                std::string strValue = ValueToString(defaultValue);
+                
+                // Only set if not already set
+                if (config.Get<std::string>(configKey, "").empty()) {
+                    config.Set(configKey, strValue);
+                }
+            }
+        }
     }
     
-    // Store the config block as a special variable
+    // Save config to file
+    config.Save();
+    
+    // Store the config block as a special variable for script access
     environment->Define("__config__", HavelValue(configObject));
     
     lastResult = nullptr; // Config blocks don't return a value
@@ -572,6 +635,16 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
 
 void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
     HavelObject devicesObject;
+    auto& config = Configs::Get();
+    
+    // Device configuration mappings
+    std::unordered_map<std::string, std::string> deviceKeyMap = {
+        {"keyboard", "Device.Keyboard"},
+        {"mouse", "Device.Mouse"},
+        {"joystick", "Device.Joystick"},
+        {"mouseSensitivity", "Mouse.Sensitivity"},
+        {"ignoreMouse", "Device.IgnoreMouse"}
+    };
     
     for (const auto& [key, valueExpr] : node.pairs) {
         auto result = Evaluate(*valueExpr);
@@ -579,10 +652,35 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
             lastResult = result;
             return;
         }
-        devicesObject[key] = unwrap(result);
+        
+        HavelValue value = unwrap(result);
+        devicesObject[key] = value;
+        
+        // Map to config keys and write to Configs
+        auto it = deviceKeyMap.find(key);
+        if (it != deviceKeyMap.end()) {
+            std::string configKey = it->second;
+            
+            // Convert value to appropriate type
+            if (std::holds_alternative<bool>(value)) {
+                config.Set(configKey, std::get<bool>(value) ? "true" : "false");
+            } else if (std::holds_alternative<int>(value)) {
+                config.Set(configKey, std::get<int>(value));
+            } else if (std::holds_alternative<double>(value)) {
+                config.Set(configKey, std::get<double>(value));
+            } else {
+                config.Set(configKey, ValueToString(value));
+            }
+        } else {
+            // Unknown device config key, store with Device prefix
+            config.Set("Device." + key, ValueToString(value));
+        }
     }
     
-    // Store the devices block as a special variable
+    // Save config
+    config.Save();
+    
+    // Store the devices block as a special variable for script access
     environment->Define("__devices__", HavelValue(devicesObject));
     
     lastResult = nullptr; // Devices blocks don't return a value

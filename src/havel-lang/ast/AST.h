@@ -39,6 +39,9 @@ enum class NodeType {
   LoopStatement,   // loop { ... }
   BreakStatement,  // break
   ContinueStatement, // continue
+  OnModeStatement,  // on mode gaming { ... }
+  OffModeStatement, // off mode gaming { ... }
+  WhenModeExpression, // when mode gaming
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
@@ -612,6 +615,45 @@ struct ContinueStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On Mode Statement (on mode gaming { ... } else { ... })
+struct OnModeStatement : public Statement {
+  std::string modeName;
+  std::unique_ptr<Statement> body;
+  std::unique_ptr<Statement> alternative; // Optional else block
+  
+  OnModeStatement(const std::string& mode, std::unique_ptr<Statement> bd,
+                  std::unique_ptr<Statement> alt = nullptr)
+      : modeName(mode), body(std::move(bd)), alternative(std::move(alt)) {
+    kind = NodeType::OnModeStatement;
+  }
+  
+  std::string toString() const override {
+    return "OnModeStatement{mode: " + modeName + ", body: " +
+           (body ? body->toString() : "nullptr") +
+           (alternative ? ", else: " + alternative->toString() : "") + "}";
+  }
+  
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Off Mode Statement (off mode gaming { ... })
+struct OffModeStatement : public Statement {
+  std::string modeName;
+  std::unique_ptr<Statement> body;
+  
+  OffModeStatement(const std::string& mode, std::unique_ptr<Statement> bd)
+      : modeName(mode), body(std::move(bd)) {
+    kind = NodeType::OffModeStatement;
+  }
+  
+  std::string toString() const override {
+    return "OffModeStatement{mode: " + modeName + ", body: " +
+           (body ? body->toString() : "nullptr") + "}";
+  }
+  
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Function Declaration
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
@@ -1033,6 +1075,8 @@ public:
   virtual void visitLoopStatement(const LoopStatement& node) = 0;
   virtual void visitBreakStatement(const BreakStatement& node) = 0;
   virtual void visitContinueStatement(const ContinueStatement& node) = 0;
+  virtual void visitOnModeStatement(const OnModeStatement& node) = 0;
+  virtual void visitOffModeStatement(const OffModeStatement& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -1156,5 +1200,13 @@ inline void BreakStatement::accept(ASTVisitor &visitor) const {
 
 inline void ContinueStatement::accept(ASTVisitor &visitor) const {
   visitor.visitContinueStatement(*this);
+}
+
+inline void OnModeStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnModeStatement(*this);
+}
+
+inline void OffModeStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOffModeStatement(*this);
 }
 } // namespace havel::ast

@@ -689,16 +689,40 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
 void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
     HavelObject modesObject;
     
-    for (const auto& [key, valueExpr] : node.pairs) {
+    // Process mode definitions
+    for (const auto& [modeName, valueExpr] : node.pairs) {
         auto result = Evaluate(*valueExpr);
         if (isError(result)) {
             lastResult = result;
             return;
         }
-        modesObject[key] = unwrap(result);
+        
+        HavelValue value = unwrap(result);
+        modesObject[modeName] = value;
+        
+        // If value is an object with class/title/ignore arrays, register with condition system
+        if (std::holds_alternative<HavelObject>(value)) {
+            auto& modeConfig = std::get<HavelObject>(value);
+            
+            // Store mode configuration for condition checking
+            // The mode config will be checked later when evaluating conditions
+            // Format: modes.gaming.class = ["steam", "lutris", ...]
+            for (const auto& [configKey, configValue] : modeConfig) {
+                std::string fullKey = "__mode_" + modeName + "_" + configKey;
+                environment->Define(fullKey, configValue);
+            }
+        }
     }
     
-    // Store the modes block as a special variable
+    // Initialize current mode (default to first mode or "default")
+    if (!modesObject.empty()) {
+        std::string initialMode = modesObject.begin()->first;
+        environment->Define("__current_mode__", HavelValue(initialMode));
+    } else {
+        environment->Define("__current_mode__", HavelValue(std::string("default")));
+    }
+    
+    // Store the modes block as a special variable for script access
     environment->Define("__modes__", HavelValue(modesObject));
     
     lastResult = nullptr; // Modes blocks don't return a value
@@ -972,6 +996,51 @@ void Interpreter::visitBreakStatement(const ast::BreakStatement& node) {
 
 void Interpreter::visitContinueStatement(const ast::ContinueStatement& node) {
     lastResult = ContinueValue{};
+}
+
+void Interpreter::visitOnModeStatement(const ast::OnModeStatement& node) {
+    // Get current mode
+    auto currentModeOpt = environment->Get("__current_mode__");
+    std::string currentMode = "default";
+    
+    if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
+        currentMode = std::get<std::string>(*currentModeOpt);
+    }
+    
+    // Check if we're entering the specified mode
+    if (currentMode == node.modeName) {
+        // Execute the on-mode body
+        lastResult = Evaluate(*node.body);
+    } else if (node.alternative) {
+        // Execute the else block if provided
+        lastResult = Evaluate(*node.alternative);
+    } else {
+        lastResult = nullptr;
+    }
+}
+
+void Interpreter::visitOffModeStatement(const ast::OffModeStatement& node) {
+    // Get previous mode (we'll track this when mode changes)
+    auto prevModeOpt = environment->Get("__previous_mode__");
+    auto currentModeOpt = environment->Get("__current_mode__");
+    
+    std::string previousMode = "default";
+    std::string currentMode = "default";
+    
+    if (prevModeOpt && std::holds_alternative<std::string>(*prevModeOpt)) {
+        previousMode = std::get<std::string>(*prevModeOpt);
+    }
+    if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
+        currentMode = std::get<std::string>(*currentModeOpt);
+    }
+    
+    // Check if we're leaving the specified mode
+    if (previousMode == node.modeName && currentMode != node.modeName) {
+        // Execute the off-mode body
+        lastResult = Evaluate(*node.body);
+    } else {
+        lastResult = nullptr;
+    }
 }
 
 // Stubs for unimplemented visit methods

@@ -1,0 +1,45 @@
+// Simple Havel Script - Using Currently Supported Features
+
+// Basic hotkeys with string literals
+F1 => send "Hello from Havel!"
+F2 => send "Testing F2 key"
+
+// Hotkey with function call
+F3 => print "F3 pressed"
+
+// Pipeline expression
+F4 => clipboard.get | upper | send
+
+// Multiple statements in block
+F5 => {
+    print "F5 pressed"
+    send "Block execution"
+}
+
+// String concatenation
+F6 => send "Hello" + " " + "World"
+
+// Numbers and arithmetic
+F7 => print 2 + 3
+F8 => print 10 - 5
+
+// Clipboard operations
+^C => clipboard.get | print
+^V => clipboard.get | send
+
+// Window operations
+!T => window.getTitle | print
+
+// Text transformations
+F9 => send "lowercase text" | upper
+F10 => clipboard.get | lower | send
+
+// Sleep function
+F11 => {
+    send "First"
+    sleep 1000
+    send "Second"
+}
+
+// Print to console
+F12 => print "Script is working!"

@@ -95,16 +95,17 @@ void Lexer::skipWhitespace() {
 }
 
 void Lexer::skipComment() {
+    // At this point, we've already consumed the first '/' and verified the next char
     // Single line comment //
-    if (peek() == '/' && peek(1) == '/') {
+    if (peek() == '/') {
+        advance(); // consume second '/'
         while (!isAtEnd() && peek() != '\n') {
             advance();
         }
     }
     // Multi-line comment /* */
-    else if (peek() == '/' && peek(1) == '*') {
-        advance(); // /
-        advance(); // *
+    else if (peek() == '*') {
+        advance(); // consume '*'
         
         while (!isAtEnd()) {
             if (peek() == '*' && peek(1) == '/') {
@@ -255,10 +256,8 @@ std::vector<Token> Lexer::tokenize() {
         
         char c = advance();
         
-        // Handle comments
+        // Handle comments BEFORE other tokens (especially '/')
         if (c == '/' && (peek() == '/' || peek() == '*')) {
-            position--; // Put back the '/'
-            advance(); // Re-consume it
             skipComment();
             continue;
         }

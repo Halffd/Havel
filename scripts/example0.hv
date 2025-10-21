@@ -1,0 +1,292 @@
+import * from "havel"
+import mouse.click as cllck
+import io.getKey as getKey
+import window.active as active
+import media, audio, window
+set Config {
+    path: "~/Documents/havel.cfg"
+    default: {
+        "volume": 50
+        "brightness": 100
+        "brightnessInc": 10
+        "brightnessDec": 10
+    }
+}
+set DeviceNames {
+    keyboard: "INSTANT Keyboard"
+    mouse: "USB Mouse"
+    joystick: "PS5 Controller"
+}
+set Modes {
+    gaming: {
+        "class": "steam", "proton", "lutris", "wine"
+        "title": "minecraft", "genshin"
+    },
+    streaming: {
+        "class": "obs", "streamlabs", "twitch", "youtube"
+        "title": "any"
+    },
+    coding: {
+        "class": "jetbrains"
+        "title": "code", "py", "js", "ts"
+    },
+    default: {
+        "class": "any"
+        "title": "any"
+    }
+}
+onMode(gaming) > {
+    audio.setVolume(100)
+    let mapping = {
+        "left": "a",
+        "right": "d",
+        "up": "w",
+        "down": "s"
+    }
+    mapping.each | key, value > {
+        map(key, value)
+    }
+} < {
+    mapping.each | key, value > {
+        unmap(key)
+    }
+}
+onMode(streaming) > {
+    audio.setVolume(70)
+    let lastBrightness = window.brightness()
+    window.setBrightness(0.5)
+} < {
+    window.setBrightness(lastBrightness)
+}
+onMode(coding) > {
+    disable("!x")
+    window.setTransparent(80)
+} < {
+    enable("!x")
+    window.find("mode coding") | setTransparent(100)
+}
+onMode(default) > {
+    log("default mode")
+}
+F1 > send "hello"
+!l > log "hello"
+^!V > clipboard.get | upper | send
+
+f7  > window.increaseBrightness(Config.brightnessInc)
+f8  > window.decreaseBrightness(Config.brightnessDec)
+let clipboard_history = []
+
+alias ":" < sleep
+^+V > {
+    let current = clipboard.get
+    if (current != clipboard_history[0]) {
+        clipboard_history.push(current)
+    }
+
+    while (clipboard_history.length > 10) {
+        clipboard_history.shift()
+    }
+
+    show_clipboard_menu(clipboard_history)
+}
+let clicking = false
+
+F6 > media.playPause()
+!insert > {
+    clicking = !clicking
+    clicking ? {
+        while (clicking) {
+            click([200, 500])
+            :100
+            scroll(0, 1)
+            :10
+            click([1200, 500])
+            :10
+        }
+    } : {
+        clicking = false
+    }
+}
+
+// Or more advanced with coordinates
+F7 > {
+    let target = [500, 300]
+    repeat(10) {
+        click(target)
+        :50
+    }
+}
+Enter & Mode(gaming) & Title("genshin") > {
+    let tasks = (
+        click()
+        :30
+    ),
+    (
+        send("e")
+        :100
+    ),
+    (
+        send("q")
+        :2000
+    )
+    chain < {
+        tasks.each | task > thread(task()) | join
+    }
+}
+let spamming = false
+F8 > {
+    if (window.active() | title | has("Minecraft")) {
+        spamming = !spamming
+        while (spamming) {
+            send "w"  // spam W key
+            :16  // ~60fps spam rate
+        }
+    } else {
+        notify("Only works in Minecraft!")
+    }
+}
+
+// Or target specific window class
+F9 > {
+    if (window.active() | class | has("kate"|"gedit"|"notepad")) {
+        repeat(100) {
+            send "spam text "
+            :10
+        }
+    }
+}
+!d > {
+    gui.window("Lock screen") {
+        io.block()
+        gui.image("bg.png")
+        gui.button("Close", [1800, 0]) {
+            io.unblock()
+            gui.close()
+        }
+        gui.line([1800, 1080], [0, 1080])
+        gui.line([0, 1080], [0, 0])
+        gui.line([0, 0], [1800, 0])
+        gui.line([1800, 0], [1800, 1080])
+        gui.animate < {
+            gui.fade(0)
+            gui.transition("ease-in-out", 100)
+        } > :100
+        setInterval < {
+            if(getKey("Esc")) {
+                io.unblock()
+                gui.close()
+            }
+        } > :100
+    }
+}
+F10 > {
+    gui.message("Hello World!", "Title")
+}
+
+F11 > {
+    let name = gui.input("Enter your name:", "User Input")
+    if (name != null) {
+        send "Hello " + name + "!"
+    }
+}
+
+// Advanced GUI with choices
+F12 > {
+    let choice = gui.choice("Pick action:", ["Copy", "Paste", "Clear"])
+    choice < {
+        "Copy" > send "^c"
+        "Paste" > send "^v"
+        "Clear" > send "^a{Del}"
+    }
+}
+
+let fishing_active = false
+
+^F & Title("World of Warcraft") > {
+    fishing_active = !fishing_active
+
+    notify("Fishing macro " + (fishing_active ? "ON" : "OFF"))
+
+        while (fishing_active) {
+            send "1"  // cast fishing line
+            :2000  // wait for fish
+
+            // Check for fish bite (pixel color change)
+            if (screen.pixel(600, 400).color == "#FF0000") {
+                send "1"  // reel in
+                :1000
+            }
+        }
+}
+import ai
+!PrintScreen > {
+    let img = screenshot()
+    ai.ocr(img) | log & clipboard.set
+}
+!Enter & Mode(gaming) > {
+    let win = active()
+    send "w down"
+    setInterval < {
+        if(!Mode.gaming || !active(win)) {
+            send "w up"
+        }
+        let img = screenshot()
+        if(ai.classify(img).has("red")) {
+            send "b"
+        }
+    } > :100
+}
+F12 > {
+    screenshot("screenshot.png")
+    notify("Screenshot saved as screenshot.png")
+}
+F11 > {
+    let level = gui.input("Set brightness level (0.0 to 1.0):", "Brightness")
+    setBrightness(level.toFloat())
+}
+F10 > {
+    let text = gui.input("Enter text to copy:", "Clipboard")
+    clipboard.set(text)
+}
+
+F9 > {
+    let pastedText = clipboard.get()
+    gui.message("Pasted text: " + pastedText)
+}
+// Clipboard GUI
+F10 > {
+    let clipboardHistory = getClipboardHistory() // Fetch clipboard history
+    gui.window("Clipboard Manager") {
+        for (item in clipboardHistory) {
+            gui.label(item) // Display each item
+        }
+        gui.button("Clear History") {
+            clearClipboardHistory()
+            gui.message("Clipboard history cleared.")
+        }
+    }
+}
+
+// Screenshot GUI
+F11 > {
+    gui.window("Screenshot Tool") {
+        gui.button("Take Screenshot") {
+            screenshot("screenshot.png")
+            notify("Screenshot saved as screenshot.png")
+        }
+        gui.button("Open Screenshot Folder") {
+            openFolder("~") // Open folder where screenshots are saved
+        }
+    }
+}
+
+// Brightness GUI
+F12 > {
+    gui.window("Brightness Control") {
+        let currentBrightness = getCurrentBrightness()
+        gui.slider("Adjust Brightness", currentBrightness, 0.0, 1.0) {
+            setBrightness(value)
+            gui.message("Brightness set to " + value)
+        }
+    }
+}

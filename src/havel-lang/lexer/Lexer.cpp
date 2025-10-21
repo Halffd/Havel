@@ -25,9 +25,13 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {')', TokenType::CloseParen},
     {'{', TokenType::OpenBrace},
     {'}', TokenType::CloseBrace},
+    {'[', TokenType::OpenBracket},
+    {']', TokenType::CloseBracket},
     {'.', TokenType::Dot},
     {',', TokenType::Comma},
     {';', TokenType::Semicolon},
+    {':', TokenType::Colon},
+    {'?', TokenType::Question},
     {'|', TokenType::Pipe},
     {'+', TokenType::Plus},
     {'-', TokenType::Minus},
@@ -256,9 +260,17 @@ std::vector<Token> Lexer::tokenize() {
         
         char c = advance();
         
-        // Handle comments BEFORE other tokens (especially '/')
+        // Handle comments BEFORE other tokens (especially '/' and '#')
         if (c == '/' && (peek() == '/' || peek() == '*')) {
             skipComment();
+            continue;
+        }
+        
+        // Handle # comments (hash-style)
+        if (c == '#') {
+            while (!isAtEnd() && peek() != '\n') {
+                advance();
+            }
             continue;
         }
         
@@ -281,9 +293,55 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        // Handle equals
+        // Handle == and !=
+        if (c == '=' && peek() == '=') {
+            advance();
+            tokens.push_back(makeToken("==", TokenType::Equals));
+            continue;
+        }
+        if (c == '!' && peek() == '=') {
+            advance();
+            tokens.push_back(makeToken("!=", TokenType::NotEquals));
+            continue;
+        }
+        
+        // Handle && and ||
+        if (c == '&' && peek() == '&') {
+            advance();
+            tokens.push_back(makeToken("&&", TokenType::And));
+            continue;
+        }
+        if (c == '|' && peek() == '|') {
+            advance();
+            tokens.push_back(makeToken("||", TokenType::Or));
+            continue;
+        }
+        
+        // Handle <= and >=
+        if (c == '<' && peek() == '=') {
+            advance();
+            tokens.push_back(makeToken("<=", TokenType::LessEquals));
+            continue;
+        }
+        if (c == '>' && peek() == '=') {
+            advance();
+            tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
+            continue;
+        }
+        
+        // Handle single < and >
+        if (c == '<') {
+            tokens.push_back(makeToken("<", TokenType::Less));
+            continue;
+        }
+        if (c == '>') {
+            tokens.push_back(makeToken(">", TokenType::Greater));
+            continue;
+        }
+        
+        // Handle single equals (assignment)
         if (c == '=') {
-            tokens.push_back(makeToken("=", TokenType::Equals));
+            tokens.push_back(makeToken("=", TokenType::Assign));
             continue;
         }
         

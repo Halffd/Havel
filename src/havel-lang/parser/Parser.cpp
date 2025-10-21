@@ -247,8 +247,26 @@ namespace havel::parser {
 
         std::vector<std::pair<std::string, std::string>> items;
         
+        // Handle `import *` for wildcard imports
+        if (at().type == havel::TokenType::Multiply) {
+            advance(); // consume '*'
+            items.push_back({"*", "*"});
+        }
+        // Handle comma-separated identifiers: `import a, b, c from "module"`
+        else if (at().type == havel::TokenType::Identifier) {
+            while (notEOF() && at().type == havel::TokenType::Identifier) {
+                std::string name = advance().value;
+                items.push_back({name, name});
+                
+                if (at().type == havel::TokenType::Comma) {
+                    advance();
+                } else {
+                    break;
+                }
+            }
+        }
         // `import { item1, item2 as alias } from "path"`
-        if (at().type == havel::TokenType::OpenBrace) {
+        else if (at().type == havel::TokenType::OpenBrace) {
             advance(); // consume '{'
             while(notEOF() && at().type != havel::TokenType::CloseBrace) {
                 if (at().type != havel::TokenType::Identifier) {

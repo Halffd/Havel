@@ -1,4 +1,9 @@
 #include "Interpreter.hpp"
+#include "core/HotkeyManager.hpp"
+#include "core/BrightnessManager.hpp"
+#include "media/AudioManager.hpp"
+#include "gui/GUIManager.hpp"
+#include "process/Launcher.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <iostream>
@@ -91,8 +96,14 @@ double Interpreter::ValueToNumber(const HavelValue& value) {
 }
 
 // Constructor with Dependency Injection
-Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr)
-    : io(io_system), windowManager(window_mgr), lastResult(nullptr) {
+Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr,
+                        HotkeyManager* hotkey_mgr,
+                        BrightnessManager* brightness_mgr,
+                        AudioManager* audio_mgr,
+                        GUIManager* gui_mgr)
+    : io(io_system), windowManager(window_mgr),
+      hotkeyManager(hotkey_mgr), brightnessManager(brightness_mgr),
+      audioManager(audio_mgr), guiManager(gui_mgr), lastResult(nullptr) {
     environment = std::make_shared<Environment>();
     InitializeStandardLibrary();
 }
@@ -1064,6 +1075,10 @@ void Interpreter::InitializeStandardLibrary() {
     InitializeIOBuiltins();
     InitializeBrightnessBuiltins();
     InitializeDebugBuiltins();
+    InitializeAudioBuiltins();
+    InitializeMediaBuiltins();
+    InitializeLauncherBuiltins();
+    InitializeGUIBuiltins();
 }
 void Interpreter::InitializeSystemBuiltins() {
     // Define boolean constants
@@ -1484,35 +1499,51 @@ void Interpreter::InitializeArrayBuiltins() {
 void Interpreter::InitializeIOBuiltins() {
     // IO block - disable all input
     environment->Define("io.block", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        // TODO: Implement actual input blocking via HotkeyManager
-        log("[INFO] IO input blocked");
+        if (hotkeyManager) {
+            // TODO: Add actual block method to HotkeyManager when available
+            std::cout << "[INFO] IO input blocked" << std::endl;
+        } else {
+            std::cout << "[WARN] HotkeyManager not available" << std::endl;
+        }
         return HavelValue(nullptr);
     }));
     
     // IO unblock - enable all input
     environment->Define("io.unblock", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        // TODO: Implement actual input unblocking
-        log("[INFO] IO input unblocked");
+        if (hotkeyManager) {
+            // TODO: Add actual unblock method to HotkeyManager when available
+            std::cout << "[INFO] IO input unblocked" << std::endl;
+        } else {
+            std::cout << "[WARN] HotkeyManager not available" << std::endl;
+        }
         return HavelValue(nullptr);
     }));
     
     // IO grab - grab exclusive input
     environment->Define("io.grab", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        // TODO: Implement input grabbing
-        log("[INFO] IO input grabbed");
+        if (hotkeyManager) {
+            // TODO: Add actual grab method to HotkeyManager when available
+            std::cout << "[INFO] IO input grabbed" << std::endl;
+        } else {
+            std::cout << "[WARN] HotkeyManager not available" << std::endl;
+        }
         return HavelValue(nullptr);
     }));
     
     // IO ungrab - release exclusive input
     environment->Define("io.ungrab", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        // TODO: Implement input ungrabbing
-        log("[INFO] IO input ungrabbed");
+        if (hotkeyManager) {
+            // TODO: Add actual ungrab method to HotkeyManager when available
+            std::cout << "[INFO] IO input ungrabbed" << std::endl;
+        } else {
+            std::cout << "[WARN] HotkeyManager not available" << std::endl;
+        }
         return HavelValue(nullptr);
     }));
     
     // IO test keycode - print keycode for next pressed key
     environment->Define("io.testKeycode", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        log("[INFO] Press any key to see its keycode... (Not yet implemented)");
+        std::cout << "[INFO] Press any key to see its keycode... (Not yet implemented)" << std::endl;
         // TODO: Implement keycode testing mode
         return HavelValue(nullptr);
     }));
@@ -1521,32 +1552,32 @@ void Interpreter::InitializeIOBuiltins() {
 void Interpreter::InitializeBrightnessBuiltins() {
     // Brightness get
     environment->Define("brightnessManager.getBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        // TODO: Implement actual brightness getting
-        return HavelValue(1.0); // Return default brightness
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        return HavelValue(brightnessManager->getBrightness());
     }));
     
     // Brightness set
     environment->Define("brightnessManager.setBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
         if (args.empty()) return HavelRuntimeError("setBrightness() requires brightness value");
         double brightness = ValueToNumber(args[0]);
-        log("[INFO] Setting brightness to: " + std::to_string(brightness));
-        // TODO: Implement actual brightness setting
+        brightnessManager->setBrightness(brightness);
         return HavelValue(nullptr);
     }));
     
     // Brightness increase
     environment->Define("brightnessManager.increaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
         double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
-        log("[INFO] Increasing brightness by: " + std::to_string(step));
-        // TODO: Implement actual brightness increase
+        brightnessManager->increaseBrightness(step);
         return HavelValue(nullptr);
     }));
     
     // Brightness decrease
     environment->Define("brightnessManager.decreaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
         double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
-        log("[INFO] Decreasing brightness by: " + std::to_string(step));
-        // TODO: Implement actual brightness decrease
+        brightnessManager->decreaseBrightness(step);
         return HavelValue(nullptr);
     }));
 }
@@ -1578,6 +1609,209 @@ void Interpreter::InitializeDebugBuiltins() {
             return HavelRuntimeError(msg);
         }
         return HavelValue(nullptr);
+    }));
+}
+
+void Interpreter::InitializeAudioBuiltins() {
+    // Volume control
+    environment->Define("audio.getVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        return HavelValue(audioManager->getVolume());
+    }));
+    
+    environment->Define("audio.setVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        if (args.empty()) return HavelRuntimeError("setVolume() requires volume value (0.0-1.0)");
+        double volume = ValueToNumber(args[0]);
+        audioManager->setVolume(volume);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("audio.increaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        double amount = args.empty() ? 0.05 : ValueToNumber(args[0]);
+        audioManager->increaseVolume(amount);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("audio.decreaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        double amount = args.empty() ? 0.05 : ValueToNumber(args[0]);
+        audioManager->decreaseVolume(amount);
+        return HavelValue(nullptr);
+    }));
+    
+    // Mute control
+    environment->Define("audio.toggleMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        audioManager->toggleMute();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("audio.setMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        if (args.empty()) return HavelRuntimeError("setMute() requires boolean value");
+        bool muted = ValueToBool(args[0]);
+        audioManager->setMute(muted);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("audio.isMuted", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!audioManager) return HavelRuntimeError("AudioManager not available");
+        return HavelValue(audioManager->isMuted());
+    }));
+}
+
+void Interpreter::InitializeMediaBuiltins() {
+    // Note: Media controls typically work through MPVController or system media keys
+    // These are placeholders for future implementation
+    environment->Define("media.play", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[INFO] media.play() not yet implemented" << std::endl;
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("media.pause", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[INFO] media.pause() not yet implemented" << std::endl;
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("media.toggle", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[INFO] media.toggle() not yet implemented" << std::endl;
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("media.next", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[INFO] media.next() not yet implemented" << std::endl;
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("media.previous", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::cout << "[INFO] media.previous() not yet implemented" << std::endl;
+        return HavelValue(nullptr);
+    }));
+}
+
+void Interpreter::InitializeLauncherBuiltins() {
+    // Process launching
+    environment->Define("run", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("run() requires command");
+        std::string command = ValueToString(args[0]);
+        
+        auto result = Launcher::runSync(command);
+        return HavelValue(result.success);
+    }));
+    
+    environment->Define("runAsync", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("runAsync() requires command");
+        std::string command = ValueToString(args[0]);
+        
+        auto result = Launcher::runAsync(command);
+        return HavelValue(static_cast<double>(result.pid));
+    }));
+    
+    environment->Define("runDetached", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("runDetached() requires command");
+        std::string command = ValueToString(args[0]);
+        
+        auto result = Launcher::runDetached(command);
+        return HavelValue(result.success);
+    }));
+    
+    environment->Define("terminal", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("terminal() requires command");
+        std::string command = ValueToString(args[0]);
+        
+        auto result = Launcher::terminal(command);
+        return HavelValue(result.success);
+    }));
+}
+
+void Interpreter::InitializeGUIBuiltins() {
+    // Menu and dialogs
+    environment->Define("gui.menu", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        if (args.size() < 2) return HavelRuntimeError("gui.menu() requires (title, options)");
+        
+        std::string title = ValueToString(args[0]);
+        if (!std::holds_alternative<HavelArray>(args[1])) {
+            return HavelRuntimeError("gui.menu() second arg must be array");
+        }
+        
+        auto& optionsArray = std::get<HavelArray>(args[1]);
+        std::vector<std::string> options;
+        for (const auto& opt : optionsArray) {
+            options.push_back(ValueToString(opt));
+        }
+        
+        std::string selected = guiManager->showMenu(title, options);
+        return HavelValue(selected);
+    }));
+    
+    environment->Define("gui.input", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        if (args.empty()) return HavelRuntimeError("gui.input() requires title");
+        
+        std::string title = ValueToString(args[0]);
+        std::string prompt = args.size() > 1 ? ValueToString(args[1]) : "";
+        std::string defaultValue = args.size() > 2 ? ValueToString(args[2]) : "";
+        
+        std::string input = guiManager->showInputDialog(title, prompt, defaultValue);
+        return HavelValue(input);
+    }));
+    
+    environment->Define("gui.confirm", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        if (args.size() < 2) return HavelRuntimeError("gui.confirm() requires (title, message)");
+        
+        std::string title = ValueToString(args[0]);
+        std::string message = ValueToString(args[1]);
+        
+        bool confirmed = guiManager->showConfirmDialog(title, message);
+        return HavelValue(confirmed);
+    }));
+    
+    environment->Define("gui.notify", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        if (args.size() < 2) return HavelRuntimeError("gui.notify() requires (title, message)");
+        
+        std::string title = ValueToString(args[0]);
+        std::string message = ValueToString(args[1]);
+        std::string icon = args.size() > 2 ? ValueToString(args[2]) : "info";
+        
+        guiManager->showNotification(title, message, icon);
+        return HavelValue(nullptr);
+    }));
+    
+    // Window transparency
+    environment->Define("window.setTransparency", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        if (args.empty()) return HavelRuntimeError("setTransparency() requires opacity (0.0-1.0)");
+        
+        double opacity = ValueToNumber(args[0]);
+        bool success = guiManager->setActiveWindowTransparency(opacity);
+        return HavelValue(success);
+    }));
+    
+    // File dialogs
+    environment->Define("gui.fileDialog", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        
+        std::string title = args.size() > 0 ? ValueToString(args[0]) : "Select File";
+        std::string startDir = args.size() > 1 ? ValueToString(args[1]) : "";
+        std::string filter = args.size() > 2 ? ValueToString(args[2]) : "";
+        
+        std::string selected = guiManager->showFileDialog(title, startDir, filter, false);
+        return HavelValue(selected);
+    }));
+    
+    environment->Define("gui.directoryDialog", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!guiManager) return HavelRuntimeError("GUIManager not available");
+        
+        std::string title = args.size() > 0 ? ValueToString(args[0]) : "Select Directory";
+        std::string startDir = args.size() > 1 ? ValueToString(args[1]) : "";
+        
+        std::string selected = guiManager->showDirectoryDialog(title, startDir);
+        return HavelValue(selected);
     }));
 }
 

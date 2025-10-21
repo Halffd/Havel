@@ -1,0 +1,10 @@
+// Math module example
+// Returns an object with math utility functions
+
+let exports = {
+    PI: 3.14159265359,
+    E: 2.71828182846,
+    version: "1.0"
+}
+
+exports

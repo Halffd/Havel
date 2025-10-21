@@ -49,6 +49,7 @@ struct zxdg_output_v1;
 #include <chrono>
 #include <mutex>
 #include <functional>
+#include <map>
 #include <unordered_map>
 
 using namespace std;
@@ -270,11 +271,11 @@ public:
     mutex settingsMutex;
     
     // Current state tracking
-    map<string, double> brightness;
-    map<string, int> temperature;
+    std::map<string, double> brightness;
+    std::map<string, int> temperature;
     vector<string> monitors;
-    map<string, RGBColor> gammaRGB;
-    map<string, double> shadowLift;
+    std::map<string, RGBColor> gammaRGB;
+    std::map<string, double> shadowLift;
 };
 
 } // namespace havel

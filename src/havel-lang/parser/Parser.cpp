@@ -719,7 +719,9 @@ namespace havel::parser {
                         expr = parseMemberExpression(std::move(expr));
                     } else if (at().type == havel::TokenType::OpenBracket) {
                         expr = parseIndexExpression(std::move(expr));
-                    } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::Number) {
+                    } else if (at().type == havel::TokenType::String || 
+                               at().type == havel::TokenType::Number ||
+                               at().type == havel::TokenType::InterpolatedString) {
                         // Implicit call: identifier followed by a literal (e.g., send "Hello")
                         auto arg = parsePrimaryExpression();
                         std::vector<std::unique_ptr<havel::ast::Expression>> args;

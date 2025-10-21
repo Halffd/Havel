@@ -182,9 +182,9 @@ To get `example.hv` running, implement in this order:
 4. Ternary operator parsing and evaluation
 
 ### Phase 3: Special Blocks
-1. Config block parsing (treat as object literal)
-2. Devices block parsing (treat as object literal)
-3. Modes block parsing (treat as object literal)
+1. Config block parsing (treat as object literal), use existing ConfigManager.hpp
+2. Devices block parsing (treat as object literal), use existing IO.hpp
+3. Modes block parsing (treat as object literal), use existing HotkeyManager.hpp and ConditionSystem.hpp (check how they work first and use them)
 4. Store these in interpreter context as special variables
 
 ### Phase 4: Advanced Features

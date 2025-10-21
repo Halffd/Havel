@@ -110,6 +110,89 @@ int main() {
             engine.ExecuteCode(code);
         }
 
+        // Test range expressions
+        {
+            std::cout << "\n--- Test 14: Range Expression (0..5) ---" << std::endl;
+            std::string code = "let range = 0..5\nprint(range)";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        // Test for-in loops
+        {
+            std::cout << "\n--- Test 15: For-In Loop with Range ---" << std::endl;
+            std::string code = "for i in 0..5 {\n  print(i)\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        {
+            std::cout << "\n--- Test 16: For-In Loop with Array ---" << std::endl;
+            std::string code = "let arr = [10, 20, 30]\nfor item in arr {\n  print(item)\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        {
+            std::cout << "\n--- Test 17: Nested For-In Loops ---" << std::endl;
+            std::string code = "for i in 0..2 {\n  for j in 0..2 {\n    print(i)\n    print(j)\n  }\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        // Test break statement
+        {
+            std::cout << "\n--- Test 18: For Loop with Break ---" << std::endl;
+            std::string code = "for i in 0..10 {\n  if i == 5 {\n    break\n  }\n  print(i)\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        {
+            std::cout << "\n--- Test 19: While Loop with Break ---" << std::endl;
+            std::string code = "let i = 0\nwhile i < 10 {\n  if i == 5 {\n    break\n  }\n  print(i)\n  i = i + 1\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        // Test continue statement
+        {
+            std::cout << "\n--- Test 20: For Loop with Continue ---" << std::endl;
+            std::string code = "for i in 0..5 {\n  if i == 2 {\n    continue\n  }\n  print(i)\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        {
+            std::cout << "\n--- Test 21: While Loop with Continue ---" << std::endl;
+            std::string code = "let i = 0\nwhile i < 5 {\n  i = i + 1\n  if i == 3 {\n    continue\n  }\n  print(i)\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        // Test loop statement (infinite loop with break)
+        {
+            std::cout << "\n--- Test 22: Loop Statement with Break ---" << std::endl;
+            std::string code = "let counter = 0\nloop {\n  if counter == 3 {\n    break\n  }\n  print(counter)\n  counter = counter + 1\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        // Test complex combinations
+        {
+            std::cout << "\n--- Test 23: Nested Loops with Break and Continue ---" << std::endl;
+            std::string code = "for i in 0..3 {\n  for j in 0..3 {\n    if j == 1 {\n      continue\n    }\n    if j == 2 {\n      break\n    }\n    print(i)\n    print(j)\n  }\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
+        {
+            std::cout << "\n--- Test 24: For Loop with If-Elif-Else ---" << std::endl;
+            std::string code = "for i in 0..5 {\n  if i < 2 {\n    print(\"small\")\n  } else if i == 3 {\n    print(\"medium\")\n  } else {\n    print(\"large\")\n  }\n}";
+            std::cout << "Code: " << code << std::endl;
+            engine.ExecuteCode(code);
+        }
+
         std::cout << "\n=== All Control Flow Tests Complete! ===" << std::endl;
         return 0;
     } catch (const std::exception& e) {

@@ -31,8 +31,14 @@ enum class NodeType {
   BlockStatement,  // { ... }
   IfStatement,     // if condition { ... } else { ... }
   TernaryExpression, // condition ? trueValue : falseValue
+  RangeExpression,   // 0..10
+  AssignmentExpression, // identifier = value
   ReturnStatement, // return value;
   WhileStatement,  // while condition { ... }
+  ForStatement,    // for i in range { ... }
+  LoopStatement,   // loop { ... }
+  BreakStatement,  // break
+  ContinueStatement, // continue
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
@@ -514,6 +520,67 @@ struct WhileStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// For Statement (for i in range { ... })
+struct ForStatement : public Statement {
+  std::unique_ptr<Identifier> iterator;
+  std::unique_ptr<Expression> iterable;
+  std::unique_ptr<Statement> body;
+
+  ForStatement(std::unique_ptr<Identifier> iter,
+               std::unique_ptr<Expression> itbl,
+               std::unique_ptr<Statement> bd)
+      : iterator(std::move(iter)), iterable(std::move(itbl)), body(std::move(bd)) {
+    kind = NodeType::ForStatement;
+  }
+
+  std::string toString() const override {
+    return "ForStatement{iterator: " +
+           (iterator ? iterator->toString() : "nullptr") +
+           ", iterable: " + (iterable ? iterable->toString() : "nullptr") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Loop Statement (infinite loop)
+struct LoopStatement : public Statement {
+  std::unique_ptr<Statement> body;
+
+  LoopStatement(std::unique_ptr<Statement> bd)
+      : body(std::move(bd)) {
+    kind = NodeType::LoopStatement;
+  }
+
+  std::string toString() const override {
+    return "LoopStatement{body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Break Statement
+struct BreakStatement : public Statement {
+  BreakStatement() { kind = NodeType::BreakStatement; }
+
+  std::string toString() const override {
+    return "BreakStatement{}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Continue Statement
+struct ContinueStatement : public Statement {
+  ContinueStatement() { kind = NodeType::ContinueStatement; }
+
+  std::string toString() const override {
+    return "ContinueStatement{}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Function Declaration
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
@@ -751,6 +818,47 @@ struct TernaryExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Range Expression (0..10)
+struct RangeExpression : public Expression {
+  std::unique_ptr<Expression> start;
+  std::unique_ptr<Expression> end;
+
+  RangeExpression(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e)
+      : start(std::move(s)), end(std::move(e)) {
+    kind = NodeType::RangeExpression;
+  }
+
+  std::string toString() const override {
+    return "RangeExpression{" + 
+           (start ? start->toString() : "nullptr") + ".." +
+           (end ? end->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Assignment Expression (identifier = value)
+struct AssignmentExpression : public Expression {
+  std::unique_ptr<Expression> target;  // What we're assigning to
+  std::unique_ptr<Expression> value;   // The new value
+  std::string operator_;               // "=" for now
+
+  AssignmentExpression(std::unique_ptr<Expression> t, 
+                       std::unique_ptr<Expression> v,
+                       std::string op = "=")
+      : target(std::move(t)), value(std::move(v)), operator_(std::move(op)) {
+    kind = NodeType::AssignmentExpression;
+  }
+
+  std::string toString() const override {
+    return "AssignmentExpression{" + 
+           (target ? target->toString() : "nullptr") + " " + operator_ + " " +
+           (value ? value->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
   std::string modulePath;
@@ -835,6 +943,12 @@ public:
   virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
   virtual void visitIndexExpression(const IndexExpression& node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression& node) = 0;
+  virtual void visitRangeExpression(const RangeExpression& node) = 0;
+  virtual void visitAssignmentExpression(const AssignmentExpression& node) = 0;
+  virtual void visitForStatement(const ForStatement& node) = 0;
+  virtual void visitLoopStatement(const LoopStatement& node) = 0;
+  virtual void visitBreakStatement(const BreakStatement& node) = 0;
+  virtual void visitContinueStatement(const ContinueStatement& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -918,5 +1032,29 @@ inline void IndexExpression::accept(ASTVisitor &visitor) const {
 
 inline void TernaryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitTernaryExpression(*this);
+}
+
+inline void RangeExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitRangeExpression(*this);
+}
+
+inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAssignmentExpression(*this);
+}
+
+inline void ForStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitForStatement(*this);
+}
+
+inline void LoopStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitLoopStatement(*this);
+}
+
+inline void BreakStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitBreakStatement(*this);
+}
+
+inline void ContinueStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitContinueStatement(*this);
 }
 } // namespace havel::ast

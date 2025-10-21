@@ -34,6 +34,9 @@ enum class NodeType {
   WhileStatement,  // while condition { ... }
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
+  ArrayLiteral,     // [1, 2, 3] - actual implementation
+  ObjectLiteral,    // {name: "John", age: 30} - actual implementation
+  IndexExpression,  // arr[0] or obj["key"]
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
   MapExpression,    // #{key1: val1, key2: val2}
@@ -673,6 +676,57 @@ struct UnaryExpression : public Expression {
     
     void accept(ASTVisitor &visitor) const override;
 };
+// Array Literal ([1, 2, 3])
+struct ArrayLiteral : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  ArrayLiteral(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::ArrayLiteral;
+  }
+
+  std::string toString() const override {
+    return "ArrayLiteral{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Object Literal ({key: value, ...})
+struct ObjectLiteral : public Expression {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ObjectLiteral(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : pairs(std::move(p)) {
+    kind = NodeType::ObjectLiteral;
+  }
+
+  std::string toString() const override {
+    return "ObjectLiteral{" + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Index Expression (arr[0] or obj["key"])
+struct IndexExpression : public Expression {
+  std::unique_ptr<Expression> object;
+  std::unique_ptr<Expression> index;
+
+  IndexExpression(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
+      : object(std::move(obj)), index(std::move(idx)) {
+    kind = NodeType::IndexExpression;
+  }
+
+  std::string toString() const override {
+    return "IndexExpression{" + 
+           (object ? object->toString() : "nullptr") + "[" +
+           (index ? index->toString() : "nullptr") + "]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
   std::string modulePath;
@@ -753,6 +807,9 @@ public:
   virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement& node) = 0;
+  virtual void visitArrayLiteral(const ArrayLiteral& node) = 0;
+  virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
+  virtual void visitIndexExpression(const IndexExpression& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -818,7 +875,19 @@ inline void ReturnStatement::accept(ASTVisitor &visitor) const {
 inline void WhileStatement::accept(ASTVisitor &visitor) const {
   visitor.visitWhileStatement(*this);
 }
-
 inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitFunctionDeclaration(*this);
-}} // namespace havel::ast
+}
+
+inline void ArrayLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitArrayLiteral(*this);
+}
+
+inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitObjectLiteral(*this);
+}
+
+inline void IndexExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitIndexExpression(*this);
+}
+} // namespace havel::ast

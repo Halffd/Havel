@@ -1,0 +1,49 @@
+# Test script for array and object literals
+
+# Test 1: Simple array
+let arr1 = [1, 2, 3]
+print(arr1)
+
+# Test 2: Array with different types
+let arr2 = [1, "hello", 3.14]
+print(arr2)
+
+# Test 3: Empty array
+let arr3 = []
+print(arr3)
+
+# Test 4: Simple object
+let obj1 = { a: 1, b: 2 }
+print(obj1)
+
+# Test 5: Object with different value types
+let obj2 = { name: "John", age: 30, active: true }
+print(obj2)
+
+# Test 6: Empty object
+let obj3 = {}
+print(obj3)
+
+# Test 7: Nested arrays
+let nested_arr = [1, [2, 3], 4]
+print(nested_arr)
+
+# Test 8: Nested objects
+let nested_obj = { outer: { inner: 42 } }
+print(nested_obj)
+
+# Test 9: Array in object
+let mixed1 = { numbers: [1, 2, 3], name: "test" }
+print(mixed1)
+
+# Test 10: Object in array
+let mixed2 = [{ x: 1 }, { x: 2 }, { x: 3 }]
+print(mixed2)
+
+# Test 11: Expression evaluation in arrays
+let arr_expr = [1 + 1, 2 * 3, 10 - 5]
+print(arr_expr)
+
+# Test 12: Expression evaluation in objects
+let obj_expr = { sum: 1 + 2, product: 3 * 4 }
+print(obj_expr)

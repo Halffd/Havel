@@ -38,8 +38,28 @@ std::string Interpreter::ValueToString(const HavelValue& value) {
         else if constexpr (std::is_same_v<T, std::string>) return arg;
         else if constexpr (std::is_same_v<T, std::shared_ptr<HavelFunction>>) return "<function>";
         else if constexpr (std::is_same_v<T, BuiltinFunction>) return "<builtin_function>";
-        else if constexpr (std::is_same_v<T, HavelArray>) return "<array>";
-        else if constexpr (std::is_same_v<T, HavelObject>) return "<object>";
+        else if constexpr (std::is_same_v<T, HavelArray>) {
+            // Recursively format array in JSON style
+            std::string result = "[";
+            for (size_t i = 0; i < arg.size(); ++i) {
+                result += ValueToString(arg[i]);
+                if (i < arg.size() - 1) result += ", ";
+            }
+            result += "]";
+            return result;
+        }
+        else if constexpr (std::is_same_v<T, HavelObject>) {
+            // Recursively format object in JSON style
+            std::string result = "{";
+            size_t i = 0;
+            for (const auto& [key, val] : arg) {
+                result += key + ": " + ValueToString(val);
+                if (i < arg.size() - 1) result += ", ";
+                ++i;
+            }
+            result += "}";
+            return result;
+        }
         else return "unprintable";
     }, value);
 }
@@ -444,6 +464,83 @@ void Interpreter::visitIdentifier(const ast::Identifier& node) {
         lastResult = HavelRuntimeError("Undefined variable: " + node.symbol);
     }
 }
+
+void Interpreter::visitArrayLiteral(const ast::ArrayLiteral& node) {
+    HavelArray array;
+    
+    for (const auto& element : node.elements) {
+        auto result = Evaluate(*element);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        array.push_back(unwrap(result));
+    }
+    
+    lastResult = HavelValue(array);
+}
+
+void Interpreter::visitObjectLiteral(const ast::ObjectLiteral& node) {
+    HavelObject object;
+    
+    for (const auto& [key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            lastResult = result;
+            return;
+        }
+        object[key] = unwrap(result);
+    }
+    
+    lastResult = HavelValue(object);
+}
+
+void Interpreter::visitIndexExpression(const ast::IndexExpression& node) {
+    auto objectResult = Evaluate(*node.object);
+    if (isError(objectResult)) {
+        lastResult = objectResult;
+        return;
+    }
+    
+    auto indexResult = Evaluate(*node.index);
+    if (isError(indexResult)) {
+        lastResult = indexResult;
+        return;
+    }
+    
+    HavelValue objectValue = unwrap(objectResult);
+    HavelValue indexValue = unwrap(indexResult);
+    
+    // Handle array indexing
+    if (auto* array = std::get_if<HavelArray>(&objectValue)) {
+        // Convert index to integer
+        int index = static_cast<int>(ValueToNumber(indexValue));
+        
+        if (index < 0 || index >= static_cast<int>(array->size())) {
+            lastResult = HavelRuntimeError("Array index out of bounds: " + std::to_string(index));
+            return;
+        }
+        
+        lastResult = (*array)[index];
+        return;
+    }
+    
+    // Handle object property access
+    if (auto* object = std::get_if<HavelObject>(&objectValue)) {
+        std::string key = ValueToString(indexValue);
+        
+        auto it = object->find(key);
+        if (it != object->end()) {
+            lastResult = it->second;
+        } else {
+            lastResult = nullptr; // Return null for missing properties
+        }
+        return;
+    }
+    
+    lastResult = HavelRuntimeError("Cannot index non-array/non-object value");
+}
+
 // Stubs for unimplemented visit methods
 void Interpreter::visitWhileStatement(const ast::WhileStatement& node) { lastResult = HavelRuntimeError("While loops not implemented."); }
 void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration& node) { lastResult = HavelRuntimeError("Type declarations not implemented."); }

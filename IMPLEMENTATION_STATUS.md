@@ -46,6 +46,9 @@ This document tracks the implementation status of language features needed to fu
 - 🚧 **Match expressions**: `match` keyword exists but full case/default parsing incomplete
 - 🚧 **While loops**: `while` keyword exists but parsing not implemented
 - 🚧 **If statements**: `if` keyword exists but parsing not implemented
+- 🚧 **Modes**: `modes` using existing HotkeyManager.hpp and ConditionSystem.hpp
+- 🚧 **Devices**: `devices` using existing IO.cpp and Device.hpp
+- 🚧 **Config**: `config` using existing ConfigManager.hpp
 
 ### Interpreter
 - 🚧 **Control flow**: if/else execution not implemented
@@ -94,8 +97,8 @@ This document tracks the implementation status of language features needed to fu
 - ❌ **Math functions**: `Math.floor()`, `Math.random()`, etc.
 - ❌ **String functions**: String manipulation utilities
 - ❌ **Array utilities**: Array manipulation helpers
-- ❌ **I/O functions**: File reading/writing
-- ❌ **System functions**: Environment, process management
+- ❌ **I/O functions**: Use fs/FileManager.cpp
+- ❌ **System functions**: Env.cpp, ProcessManager.cpp
 
 ### Integration
 - ❌ **Script file argument**: Modify `main.cpp` to accept script path as first argument
@@ -257,3 +260,86 @@ For each feature:
 - Prioritize features used in `example.hv` over unused features
 - Keep AST design extensible for future features
 - Consider performance optimizations after correctness is achieved
+
+1️⃣ Add arrays + objects (core syntax foundation)
+
+You cannot interpret config { defaults: { ... } }, modes { ... }, or even map { ... } until these parse.
+
+Implement parseArrayLiteral() and parseObjectLiteral()
+
+Update Value to store std::vector<Value> and std::unordered_map<std::string, Value>
+
+Make array/object printable (for debugging)
+
+✅ Outcome: You can run expressions like:
+
+let x = [1, 2, 3]
+let y = { a: 1, b: 2 }
+print(x[1] + y.a)
+
+
+This unlocks half of example.hv already.
+
+2️⃣ Add if statements
+
+You need conditional logic for mode switching, hotkeys, and block behavior.
+
+Implement parseIfStatement() and evaluateIf()
+
+You can do elif/else handling
+
+✅ Outcome: You can execute mode-dependent sections like:
+
+if mode == "gaming" { ... } else { ... }
+
+3️⃣ Implement “block-as-object” for config, devices, modes
+
+Treat these syntactic sugars as special keywords that:
+
+Parse a {} block
+
+Return a map-like Value
+
+Automatically assign it to a global (config, devices, etc.)
+
+You can literally reuse your object literal parser:
+
+if (match(TokenType::ConfigKeyword)) {
+    auto obj = parseObjectLiteral();
+    interpreter.setGlobal("config", obj);
+}
+
+
+✅ Outcome: Now example.hv starts executing and storing structured configuration.
+
+4️⃣ Add array indexing + assignment
+
+Basic but critical for DSL automation logic:
+
+let x = [1, 2, 3]
+x[0] = 10
+
+
+✅ Outcome: Enables dynamic state (like clipboard history trimming).
+
+5️⃣ Add while + simple loop control
+
+Optional for now. Most of your automation loops can use built-in commands or coroutines later.
+
+⚙️ Implementation Advice
+
+Use ExpressionNode subclasses that return Value::Object or Value::Array.
+
+For object literals, allow both quoted and bare keys (key: and "key":).
+
+Use a helper like:
+
+Value Interpreter::evaluateObject(const ObjectLiteralNode &node) {
+    Value::Object obj;
+    for (auto &pair : node.pairs)
+        obj[pair.first] = evaluate(pair.second);
+    return Value(obj);
+}
+
+
+When printing, recursively dump JSON-style — it’s invaluable for debugging.

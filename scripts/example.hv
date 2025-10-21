@@ -1,5 +1,5 @@
 import * from "havel"
-import mouse, keyboard, io, window, audio, media, ai, gui, clipboard, havel
+import mouse, keyboard, io, window, audio, media, ai, gui, clipboard, brightnessManager
 
 config {
     file: "~/Documents/havel.cfg"

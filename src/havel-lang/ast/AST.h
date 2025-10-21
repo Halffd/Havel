@@ -30,6 +30,7 @@ enum class NodeType {
   GuardExpression, // | x when x > 0 -> "positive"
   BlockStatement,  // { ... }
   IfStatement,     // if condition { ... } else { ... }
+  TernaryExpression, // condition ? trueValue : falseValue
   ReturnStatement, // return value;
   WhileStatement,  // while condition { ... }
   // Immutable data structures
@@ -727,6 +728,29 @@ struct IndexExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Ternary Expression (condition ? trueValue : falseValue)
+struct TernaryExpression : public Expression {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Expression> trueValue;
+  std::unique_ptr<Expression> falseValue;
+
+  TernaryExpression(std::unique_ptr<Expression> cond, 
+                    std::unique_ptr<Expression> tVal,
+                    std::unique_ptr<Expression> fVal)
+      : condition(std::move(cond)), trueValue(std::move(tVal)), falseValue(std::move(fVal)) {
+    kind = NodeType::TernaryExpression;
+  }
+
+  std::string toString() const override {
+    return "TernaryExpression{" + 
+           (condition ? condition->toString() : "nullptr") + " ? " +
+           (trueValue ? trueValue->toString() : "nullptr") + " : " +
+           (falseValue ? falseValue->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
   std::string modulePath;
@@ -810,6 +834,7 @@ public:
   virtual void visitArrayLiteral(const ArrayLiteral& node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
   virtual void visitIndexExpression(const IndexExpression& node) = 0;
+  virtual void visitTernaryExpression(const TernaryExpression& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -889,5 +914,9 @@ inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
 
 inline void IndexExpression::accept(ASTVisitor &visitor) const {
   visitor.visitIndexExpression(*this);
+}
+
+inline void TernaryExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitTernaryExpression(*this);
 }
 } // namespace havel::ast

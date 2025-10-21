@@ -58,6 +58,8 @@ namespace havel::parser {
                 return parseLetDeclaration();
             case havel::TokenType::If:
                 return parseIfStatement();
+            case havel::TokenType::While:
+                return parseWhileStatement();
             case havel::TokenType::Fn:
                 return parseFunctionDeclaration();
             case havel::TokenType::Return:
@@ -150,6 +152,20 @@ namespace havel::parser {
         }
 
         return std::make_unique<havel::ast::IfStatement>(std::move(condition), std::move(consequence), std::move(alternative));
+    }
+
+    std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
+        advance(); // consume "while"
+
+        auto condition = parseExpression();
+
+        if (at().type != havel::TokenType::OpenBrace) {
+            throw std::runtime_error("Expected '{' after while condition");
+        }
+
+        auto body = parseBlockStatement();
+
+        return std::make_unique<havel::ast::WhileStatement>(std::move(condition), std::move(body));
     }
 
     std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
@@ -312,7 +328,7 @@ namespace havel::parser {
     }
 
     std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
-        auto left = parseBinaryExpression();
+        auto left = parseTernaryExpression();
 
         // Check for pipeline operator |
         if (at().type == havel::TokenType::Pipe) {
@@ -321,7 +337,7 @@ namespace havel::parser {
 
             while (at().type == havel::TokenType::Pipe) {
                 advance(); // consume '|'
-                auto stage = parseBinaryExpression();
+                auto stage = parseTernaryExpression();
                 pipeline->stages.push_back(std::move(stage));
             }
 
@@ -330,6 +346,31 @@ namespace havel::parser {
 
         return left;
     }
+    
+    std::unique_ptr<havel::ast::Expression> Parser::parseTernaryExpression() {
+        auto condition = parseBinaryExpression();
+        
+        // Check for ternary operator ?
+        if (at().type == havel::TokenType::Question) {
+            advance(); // consume '?'
+            
+            auto trueValue = parseBinaryExpression();
+            
+            if (at().type != havel::TokenType::Colon) {
+                throw std::runtime_error("Expected ':' in ternary expression");
+            }
+            advance(); // consume ':'
+            
+            auto falseValue = parseTernaryExpression(); // Right-associative
+            
+            return std::make_unique<havel::ast::TernaryExpression>(
+                std::move(condition), std::move(trueValue), std::move(falseValue)
+            );
+        }
+        
+        return condition;
+    }
+    
     std::unique_ptr<havel::ast::Expression> Parser::parseBinaryExpression() {
         return parseLogicalOr();
     }

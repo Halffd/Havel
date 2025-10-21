@@ -125,6 +125,7 @@ public:
     void visitArrayLiteral(const ast::ArrayLiteral& node) override;
     void visitObjectLiteral(const ast::ObjectLiteral& node) override;
     void visitIndexExpression(const ast::IndexExpression& node) override;
+    void visitTernaryExpression(const ast::TernaryExpression& node) override;
     
     // Stubs for unused AST nodes
     void visitWhileStatement(const ast::WhileStatement& node) override;

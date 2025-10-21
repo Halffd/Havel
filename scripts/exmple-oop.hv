@@ -1,0 +1,332 @@
+import * from "havel"
+import mouse, keyboard, io, window, audio, media, ai, gui, clipboard, brightnessManager
+
+// -------------------------
+// Interfaces / traits
+// -------------------------
+interface StartStop {
+    start()
+    stop()
+    isRunning()
+}
+
+interface Configurable {
+    loadConfig(path)
+    saveConfig(path)
+}
+
+// -------------------------
+// Core singletons (managers)
+// -------------------------
+singleton class BrightnessManager {
+    private let level = 1.0
+
+    init() {
+        this.level = brightnessManager.getBrightness() // seed from lower-level binding
+    }
+
+    property brightness {
+        get { return this.level }
+        set(v) {
+            if (v < 0) v = 0
+            if (v > 1) v = 1
+            this.level = v
+            brightnessManager.setBrightness(v)    // call underlying API
+            notify("Brightness: " + (v * 100) + "%")
+        }
+    }
+
+    increase(step = 0.1) {
+        this.brightness = this.brightness + step
+    }
+
+    decrease(step = 0.1) {
+        this.brightness = this.brightness - step
+    }
+
+    getBrightness() { return this.brightness }
+    setBrightness(v) { this.brightness = v }
+}
+
+singleton class AudioManager {
+    let vol = 50
+    init() {
+        this.vol = audio.getVolume()
+    }
+    property volume {
+        get { return this.vol }
+        set(v) {
+            this.vol = max(0, min(100, v))
+            audio.setVolume(this.vol)
+        }
+    }
+}
+
+singleton class ModeManager {
+    let current = "default"
+    let modes = {}
+
+    init() { this.modes = {} }
+
+    register(name, descriptor) {
+        this.modes[name] = descriptor
+    }
+
+    setMode(name) {
+        if (this.current == name) return
+        let prev = this.current
+        this.current = name
+        emit("modeChanged", name, prev)
+    }
+
+    onMode(name, fn) {
+        on("modeChanged") | (newMode, oldMode) > {
+            if (newMode == name) fn(true)
+            else if (oldMode == name) fn(false)
+        }
+    }
+}
+
+singleton class HotkeyManager {
+    let bindings = {}
+
+    bind(hotkeySpec, target) {
+        hotkey.bind(hotkeySpec) > {
+            // target can be function or method reference
+            if (typeof(target) == "function") {
+                spawn target()
+            } else if (typeof(target) == "object") {
+                // {obj, methodName}
+                spawn target.obj[target.method]()
+            }
+        }
+        this.bindings[hotkeySpec] = target
+    }
+
+    unbind(hotkeySpec) {
+        hotkey.unbind(hotkeySpec)
+        this.bindings.remove(hotkeySpec)
+    }
+}
+
+singleton class ClipboardManager {
+    let history = []
+
+    pushCurrent() {
+        let cur = clipboard.get()
+        if (cur && cur != this.history[0]) {
+            this.history.unshift(cur)
+            if (this.history.length > 20) this.history.pop()
+        }
+    }
+
+    showMenu() {
+        gui.menu("Clipboard", this.history) | (sel) => {
+            if (sel) clipboard.set(sel)
+        }
+    }
+}
+
+// -------------------------
+// Generic AutoClicker (implements StartStop)
+// -------------------------
+class AutoClicker implements StartStop {
+    let button = "left"
+    let interval = 100      // ms
+    private let running = false
+
+    init(btn = "left", intervalMs = 100) {
+        this.button = btn
+        this.interval = intervalMs
+    }
+
+    start() {
+        if (this.running) return
+        this.running = true
+        spawn {
+            while (this.running) {
+                mouse.click(this.button)
+                sleep this.interval
+            }
+        }
+    }
+
+    stop() {
+        this.running = false
+    }
+
+    isRunning() { return this.running }
+
+    toggle() { this.running ? this.stop() : this.start() }
+}
+
+// -------------------------
+// Base GameBot (abstract)
+// -------------------------
+class GameBot implements StartStop {
+    let gameName = ""
+    protected let active = false
+    let tasks = []
+
+    init(name) { this.gameName = name }
+
+    start() {
+        this.active = true
+        this._run()
+    }
+
+    stop() {
+        this.active = false
+    }
+
+    isRunning() { return this.active }
+
+    // an overridable method that runs the bot loop (coroutine)
+    virtual _run() {
+        while (this.active) {
+            sleep 1000
+        }
+    }
+
+    addTask(fn) { this.tasks.push(fn) }
+}
+
+// -------------------------
+// Concrete GenshinBot example
+// -------------------------
+class GenshinBot extends GameBot {
+    let combo = ["e", "q"]
+    let index = 0
+
+    init() { super("Genshin") }
+
+    override _run() {
+        while (this.active && ModeManager.current == "gaming" && window.active().title.has("Genshin")) {
+            // simple combo cycle
+            keyboard.send(this.combo[this.index])
+            this.index = (this.index + 1) % this.combo.length
+            sleep 500
+        }
+        this.active = false
+    }
+
+    addSkill(key) { this.combo.push(key) }
+}
+
+// -------------------------
+// GUI lock screen object
+// -------------------------
+class LockScreen {
+    let title = "Lock Screen"
+    let imagePath = "bg.png"
+    private let open = false
+
+    show() {
+        io.block()
+        gui.window(this.title) {
+            gui.image(this.imagePath)
+            gui.button("Close", [1800,0]) {
+                io.unblock()
+                gui.close()
+            }
+            gui.onKey("Esc") {
+                io.unblock()
+                gui.close()
+            }
+        }
+    }
+}
+
+// -------------------------
+// Example usage wiring (maps to your top-level script)
+// -------------------------
+// register modes descriptors (same shape as your original config)
+ModeManager.register("gaming", { class: ["steam","lutris","proton","wine"], title: ["minecraft","genshin"] })
+ModeManager.register("streaming", { class: ["obs","streamlabs"], title: ["twitch","youtube"] })
+ModeManager.register("coding", { class: ["jetbrains"], title: ["code","py","js","ts"] })
+ModeManager.register("default", { class: ["*"], title: ["*"] })
+
+// Hotkeys bound to manager methods
+HotkeyManager.bind("F1", () => keyboard.send("hello"))
+HotkeyManager.bind("!L", () => log("hello"))
+HotkeyManager.bind("^!V", () => clipboard.get() | upper | keyboard.send)
+
+// Brightness hotkeys use the BrightnessManager singleton
+HotkeyManager.bind("F7", () => BrightnessManager.increase(0.1))
+HotkeyManager.bind("F8", () => BrightnessManager.decrease(0.1))
+
+// Simple clipboard UI binding
+let clipMgr = ClipboardManager
+HotkeyManager.bind("^+V", () => {
+    clipMgr.pushCurrent()
+    clipMgr.showMenu()
+})
+
+// Media toggle
+HotkeyManager.bind("F6", () => media.toggle())
+
+// AutoClicker instantiation and hotkey to toggle
+let clicker = AutoClicker("left", 100)
+HotkeyManager.bind("!Insert", () => clicker.toggle())
+
+// Game-specific sequence example (coroutine sequence)
+HotkeyManager.bind("Enter when mode gaming && title 'genshin'", () => {
+    // runs as sequence (synchronous within coroutine)
+    mouse.click(); sleep 30
+    keyboard.send("e"); sleep 100
+    keyboard.send("q"); sleep 2000
+})
+
+// Spamming example when Minecraft active
+HotkeyManager.bind("F8 when window.active.title has 'Minecraft'", () => {
+    toggle spamming {
+        while (spamming) {
+            keyboard.send("w")
+            sleep 16
+        }
+    }
+})
+
+// Lock screen
+let locker = LockScreen()
+HotkeyManager.bind("!D", () => locker.show())
+
+// AI OCR binding
+HotkeyManager.bind("!PrintScreen", () => {
+    let img = screenshot()
+    let text = ai.ocr(img)
+    log(text)
+    clipboard.set(text)
+})
+
+// Example bot usage
+let genshinBot = GenshinBot()
+HotkeyManager.bind("F11 when title 'Genshin'", () => genshinBot.toggle())
+
+// Mode transitions: use ModeManager.onMode (calls provided handlers)
+ModeManager.onMode("gaming", (active) => {
+    if (active) {
+        AudioManager.volume = 100
+        // map keys in runtime
+        map {
+            left: "a"
+            right: "d"
+            up: "w"
+            down: "s"
+        }
+    } else {
+        unmap all
+    }
+})
+
+ModeManager.onMode("streaming", (active) => {
+    if (active) {
+        let prev = BrightnessManager.getBrightness()
+        BrightnessManager.setBrightness(0.5)
+    } else {
+        BrightnessManager.setBrightness(prev)
+    }
+})
+
+// Keep main config & bindings minimal — the classes encapsulate the logic
+log("OOP-style Havel configuration loaded")

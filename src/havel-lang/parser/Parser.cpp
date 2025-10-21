@@ -160,7 +160,7 @@ namespace havel::parser {
         }
         auto name = std::make_unique<havel::ast::Identifier>(advance().value);
 
-        if (at().type != havel::TokenType::Equals) {
+        if (at().type != havel::TokenType::Assign) {
             // Allow declarations without assignment, e.g., `let x;`
             return std::make_unique<havel::ast::LetDeclaration>(std::move(name));
         }
@@ -502,27 +502,28 @@ namespace havel::parser {
     
             case havel::TokenType::Identifier: {
                 auto identTk = advance();
-                auto identifier = std::make_unique<havel::ast::Identifier>(identTk.value);
+                std::unique_ptr<havel::ast::Expression> expr = std::make_unique<havel::ast::Identifier>(identTk.value);
     
-                // Check for function call with parentheses
-                if (at().type == havel::TokenType::OpenParen) {
-                    return parseCallExpression(std::move(identifier));
-                }
-                
-                // Check for member access
-                if (at().type == havel::TokenType::Dot) {
-                    return parseMemberExpression(std::move(identifier));
-                }
-
-                // Implicit call: identifier followed by a literal/expression (e.g., send "Hello")
-                if (at().type == havel::TokenType::String || at().type == havel::TokenType::Number) {
-                    auto arg = parsePrimaryExpression();
-                    std::vector<std::unique_ptr<havel::ast::Expression>> args;
-                    args.push_back(std::move(arg));
-                    return std::make_unique<havel::ast::CallExpression>(std::move(identifier), std::move(args));
+                // Handle postfix operations in a loop to support chaining: arr[0].prop() etc.
+                while (true) {
+                    if (at().type == havel::TokenType::OpenParen) {
+                        expr = parseCallExpression(std::move(expr));
+                    } else if (at().type == havel::TokenType::Dot) {
+                        expr = parseMemberExpression(std::move(expr));
+                    } else if (at().type == havel::TokenType::OpenBracket) {
+                        expr = parseIndexExpression(std::move(expr));
+                    } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::Number) {
+                        // Implicit call: identifier followed by a literal (e.g., send "Hello")
+                        auto arg = parsePrimaryExpression();
+                        std::vector<std::unique_ptr<havel::ast::Expression>> args;
+                        args.push_back(std::move(arg));
+                        return std::make_unique<havel::ast::CallExpression>(std::move(expr), std::move(args));
+                    } else {
+                        break;
+                    }
                 }
     
-                return std::move(identifier);
+                return expr;
             }
     
             case havel::TokenType::Hotkey: {
@@ -540,6 +541,27 @@ namespace havel::parser {
                 advance(); // consume ')'
     
                 return expr;
+            }
+            
+            case havel::TokenType::OpenBracket: {
+                auto array = parseArrayLiteral();
+                // Check for chained operations on array literals
+                while (at().type == havel::TokenType::OpenBracket || 
+                       at().type == havel::TokenType::Dot ||
+                       at().type == havel::TokenType::OpenParen) {
+                    if (at().type == havel::TokenType::OpenBracket) {
+                        array = parseIndexExpression(std::move(array));
+                    } else if (at().type == havel::TokenType::Dot) {
+                        array = parseMemberExpression(std::move(array));
+                    } else if (at().type == havel::TokenType::OpenParen) {
+                        array = parseCallExpression(std::move(array));
+                    }
+                }
+                return array;
+            }
+            
+            case havel::TokenType::OpenBrace: {
+                return parseObjectLiteral();
             }
             
             default:
@@ -590,12 +612,99 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMemberExpression(
     auto property = advance();
     member->property = std::make_unique<havel::ast::Identifier>(property.value);
     
-    // Check if this member access is followed by a function call
-    if (at().type == havel::TokenType::OpenParen) {
-        return parseCallExpression(std::move(member));
+    return std::move(member);
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseIndexExpression(
+    std::unique_ptr<havel::ast::Expression> object) {
+    
+    advance(); // consume '['
+    
+    auto index = parseExpression();
+    
+    if (at().type != havel::TokenType::CloseBracket) {
+        throw std::runtime_error("Expected ']' after array index");
+    }
+    advance(); // consume ']'
+    
+    return std::make_unique<havel::ast::IndexExpression>(std::move(object), std::move(index));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
+    std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+    
+    advance(); // consume '['
+    
+    // Parse array elements
+    while (notEOF() && at().type != havel::TokenType::CloseBracket) {
+        // Handle trailing comma
+        if (at().type == havel::TokenType::CloseBracket) {
+            break;
+        }
+        
+        auto element = parseExpression();
+        elements.push_back(std::move(element));
+        
+        if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+        } else if (at().type != havel::TokenType::CloseBracket) {
+            throw std::runtime_error("Expected ',' or ']' in array literal");
+        }
     }
     
-    return std::move(member);
+    if (at().type != havel::TokenType::CloseBracket) {
+        throw std::runtime_error("Expected ']' to close array literal");
+    }
+    advance(); // consume ']'
+    
+    return std::make_unique<havel::ast::ArrayLiteral>(std::move(elements));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
+    std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>> pairs;
+    
+    advance(); // consume '{'
+    
+    // Parse object key-value pairs
+    while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+        // Handle trailing comma
+        if (at().type == havel::TokenType::CloseBrace) {
+            break;
+        }
+        
+        // Parse key - can be identifier or string
+        std::string key;
+        if (at().type == havel::TokenType::Identifier) {
+            key = advance().value;
+        } else if (at().type == havel::TokenType::String) {
+            key = advance().value;
+        } else {
+            throw std::runtime_error("Expected identifier or string as object key");
+        }
+        
+        // Expect colon
+        if (at().type != havel::TokenType::Colon) {
+            throw std::runtime_error("Expected ':' after object key");
+        }
+        advance(); // consume ':'
+        
+        // Parse value
+        auto value = parseExpression();
+        pairs.push_back({key, std::move(value)});
+        
+        if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+        } else if (at().type != havel::TokenType::CloseBrace) {
+            throw std::runtime_error("Expected ',' or '}' in object literal");
+        }
+    }
+    
+    if (at().type != havel::TokenType::CloseBrace) {
+        throw std::runtime_error("Expected '}' to close object literal");
+    }
+    advance(); // consume '}'
+    
+    return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs));
 }
     void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
         std::string padding(indent * 2, ' ');

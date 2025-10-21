@@ -119,7 +119,13 @@ havel::HavelValue Engine::ExecuteCode(const std::string& sourceCode) {
                 throw std::runtime_error("AOT mode requires CompileToExecutable, not ExecuteCode");
 #endif
             default:
+#ifndef HAVEL_ENABLE_LLVM
+                // Fallback to interpreter if LLVM is disabled
+                result_variant = interpreter->Execute(sourceCode);
+                break;
+#else
                 throw std::runtime_error("Unsupported execution mode");
+#endif
         }
     } catch (const std::exception& e) {
         std::cerr << "❌ Execution error: " << e.what() << std::endl;

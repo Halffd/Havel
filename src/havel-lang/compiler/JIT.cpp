@@ -1,5 +1,6 @@
 #include "JIT.h"
 
+#ifdef HAVEL_ENABLE_LLVM
 namespace havel::compiler {
 
 JIT::JIT() {
@@ -50,3 +51,4 @@ void JIT::CompileScript(const ast::Program& program) {
 }
 
 } // namespace havel::compiler
+#endif // HAVEL_ENABLE_LLVM

@@ -1,5 +1,6 @@
 #pragma once
 
+#ifdef HAVEL_ENABLE_LLVM
 #include "../ast/AST.h"
 
 // Guard against macro conflicts
@@ -87,3 +88,6 @@ public:
 };
 
 } // namespace havel::compiler
+#else
+namespace havel::compiler { class Compiler {}; }
+#endif // HAVEL_ENABLE_LLVM

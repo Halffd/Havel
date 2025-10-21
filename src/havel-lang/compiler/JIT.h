@@ -1,6 +1,7 @@
 // src/havel-lang/compiler/JIT.hpp
 #pragma once
 
+#ifdef HAVEL_ENABLE_LLVM
 #include "llvm.h"
 #include "Compiler.h"
 #include "../ast/AST.h"
@@ -32,3 +33,4 @@ namespace havel::compiler {
     };
 
 } // namespace havel::compiler
+#endif // HAVEL_ENABLE_LLVM

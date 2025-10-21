@@ -28,6 +28,7 @@ namespace havel {
         Identifier,
         Number,
         String,
+        InterpolatedString,
         Hotkey,
         Arrow,
         BinaryOp,

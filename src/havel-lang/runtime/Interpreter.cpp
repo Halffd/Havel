@@ -490,6 +490,28 @@ void Interpreter::visitImportStatement(const ast::ImportStatement& node) {
 
 
 void Interpreter::visitStringLiteral(const ast::StringLiteral& node) { lastResult = node.value; }
+
+void Interpreter::visitInterpolatedStringExpression(const ast::InterpolatedStringExpression& node) {
+    std::string result;
+    
+    for (const auto& segment : node.segments) {
+        if (segment.isString) {
+            result += segment.stringValue;
+        } else {
+            // Evaluate the expression
+            auto exprResult = Evaluate(*segment.expression);
+            if (isError(exprResult)) {
+                lastResult = exprResult;
+                return;
+            }
+            // Convert result to string and append
+            result += ValueToString(unwrap(exprResult));
+        }
+    }
+    
+    lastResult = result;
+}
+
 void Interpreter::visitNumberLiteral(const ast::NumberLiteral& node) { lastResult = node.value; }
 void Interpreter::visitHotkeyLiteral(const ast::HotkeyLiteral& node) { lastResult = node.combination; }
 void Interpreter::visitIdentifier(const ast::Identifier& node) {

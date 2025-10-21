@@ -648,6 +648,64 @@ namespace havel::parser {
                 advance();
                 return std::make_unique<havel::ast::StringLiteral>(tk.value);
             }
+            
+            case havel::TokenType::InterpolatedString: {
+                advance();
+                // Parse the interpolated string: "text ${expr} more text"
+                std::vector<havel::ast::InterpolatedStringExpression::Segment> segments;
+                std::string str = tk.value;
+                size_t pos = 0;
+                
+                while (pos < str.length()) {
+                    // Find next ${
+                    size_t start = str.find("${", pos);
+                    
+                    if (start == std::string::npos) {
+                        // No more interpolations, add rest as string
+                        if (pos < str.length()) {
+                            segments.push_back(havel::ast::InterpolatedStringExpression::Segment(str.substr(pos)));
+                        }
+                        break;
+                    }
+                    
+                    // Add text before ${ as string segment
+                    if (start > pos) {
+                        segments.push_back(havel::ast::InterpolatedStringExpression::Segment(str.substr(pos, start - pos)));
+                    }
+                    
+                    // Find matching }
+                    size_t end = str.find('}', start + 2);
+                    if (end == std::string::npos) {
+                        throw std::runtime_error("Unclosed interpolation in string");
+                    }
+                    
+                    // Parse expression between ${ and }
+                    std::string exprCode = str.substr(start + 2, end - start - 2);
+                    
+                    // Create a mini-parser for the expression
+                    havel::Lexer exprLexer(exprCode);
+                    auto exprTokens = exprLexer.tokenize();
+                    
+                    // Save current parser state
+                    auto savedTokens = tokens;
+                    auto savedPos = position;
+                    
+                    // Parse the expression
+                    tokens = exprTokens;
+                    position = 0;
+                    auto expr = parseExpression();
+                    
+                    // Restore parser state
+                    tokens = savedTokens;
+                    position = savedPos;
+                    
+                    segments.push_back(havel::ast::InterpolatedStringExpression::Segment(std::move(expr)));
+                    
+                    pos = end + 1;
+                }
+                
+                return std::make_unique<havel::ast::InterpolatedStringExpression>(std::move(segments));
+            }
     
             case havel::TokenType::Identifier: {
                 auto identTk = advance();

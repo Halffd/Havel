@@ -5,6 +5,7 @@
 #include "window/WindowManager.hpp"
 #include "window/Window.hpp"
 #include "core/IO.hpp"
+#include "core/ConfigManager.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 

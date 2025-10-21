@@ -1060,6 +1060,10 @@ void Interpreter::InitializeStandardLibrary() {
     InitializeClipboardBuiltins();
     InitializeTextBuiltins();
     InitializeFileBuiltins();
+    InitializeArrayBuiltins();
+    InitializeIOBuiltins();
+    InitializeBrightnessBuiltins();
+    InitializeDebugBuiltins();
 }
 void Interpreter::InitializeSystemBuiltins() {
     // Define boolean constants
@@ -1314,6 +1318,266 @@ void Interpreter::InitializeFileBuiltins() {
         if (args.empty()) return HavelRuntimeError("file.exists() requires path");
         std::string path = this->ValueToString(args[0]);
         return HavelValue(std::filesystem::exists(path));
+    }));
+}
+
+void Interpreter::InitializeArrayBuiltins() {
+    // Array map
+    environment->Define("map", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("map() requires (array, function)");
+        if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("map() first arg must be array");
+        
+        auto& array = std::get<HavelArray>(args[0]);
+        auto& fn = args[1];
+        
+        HavelArray result;
+        for (const auto& item : array) {
+            // Call function with item
+            std::vector<HavelValue> fnArgs = {item};
+            HavelResult res;
+            
+            if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
+                res = (*builtin)(fnArgs);
+            } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                auto& func = *userFunc;
+                if (fnArgs.size() != func->declaration->parameters.size()) {
+                    return HavelRuntimeError("Function parameter count mismatch");
+                }
+                
+                auto funcEnv = std::make_shared<Environment>(func->closure);
+                for (size_t i = 0; i < fnArgs.size(); ++i) {
+                    funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                }
+                
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                res = Evaluate(*func->declaration->body);
+                this->environment = originalEnv;
+                
+                if (std::holds_alternative<ReturnValue>(res)) {
+                    result.push_back(std::get<ReturnValue>(res).value);
+                } else if (!isError(res)) {
+                    result.push_back(unwrap(res));
+                } else {
+                    return res;
+                }
+                continue;
+            } else {
+                return HavelRuntimeError("map() requires callable function");
+            }
+            
+            if (isError(res)) return res;
+            result.push_back(unwrap(res));
+        }
+        return HavelValue(result);
+    }));
+    
+    // Array filter
+    environment->Define("filter", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("filter() requires (array, predicate)");
+        if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("filter() first arg must be array");
+        
+        auto& array = std::get<HavelArray>(args[0]);
+        auto& fn = args[1];
+        
+        HavelArray result;
+        for (const auto& item : array) {
+            std::vector<HavelValue> fnArgs = {item};
+            HavelResult res;
+            
+            if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
+                res = (*builtin)(fnArgs);
+            } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                auto& func = *userFunc;
+                auto funcEnv = std::make_shared<Environment>(func->closure);
+                for (size_t i = 0; i < fnArgs.size(); ++i) {
+                    funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                }
+                
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                res = Evaluate(*func->declaration->body);
+                this->environment = originalEnv;
+                
+                if (std::holds_alternative<ReturnValue>(res)) {
+                    if (ValueToBool(std::get<ReturnValue>(res).value)) {
+                        result.push_back(item);
+                    }
+                } else if (!isError(res) && ValueToBool(unwrap(res))) {
+                    result.push_back(item);
+                } else if (isError(res)) {
+                    return res;
+                }
+                continue;
+            } else {
+                return HavelRuntimeError("filter() requires callable function");
+            }
+            
+            if (isError(res)) return res;
+            if (ValueToBool(unwrap(res))) {
+                result.push_back(item);
+            }
+        }
+        return HavelValue(result);
+    }));
+    
+    // Array push
+    environment->Define("push", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("push() requires (array, value)");
+        if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("push() first arg must be array");
+        
+        auto array = std::get<HavelArray>(args[0]);
+        array.push_back(args[1]);
+        return HavelValue(array);
+    }));
+    
+    // Array pop
+    environment->Define("pop", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("pop() requires array");
+        if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("pop() arg must be array");
+        
+        auto array = std::get<HavelArray>(args[0]);
+        if (array.empty()) return HavelRuntimeError("Cannot pop from empty array");
+        
+        HavelValue last = array.back();
+        array.pop_back();
+        return last;
+    }));
+    
+    // Array join
+    environment->Define("join", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("join() requires array");
+        if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("join() first arg must be array");
+        
+        auto& array = std::get<HavelArray>(args[0]);
+        std::string separator = args.size() > 1 ? ValueToString(args[1]) : ",";
+        
+        std::string result;
+        for (size_t i = 0; i < array.size(); ++i) {
+            result += ValueToString(array[i]);
+            if (i < array.size() - 1) result += separator;
+        }
+        return HavelValue(result);
+    }));
+    
+    // String split
+    environment->Define("split", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("split() requires string");
+        std::string text = ValueToString(args[0]);
+        std::string delimiter = args.size() > 1 ? ValueToString(args[1]) : ",";
+        
+        HavelArray result;
+        size_t start = 0;
+        size_t end = text.find(delimiter);
+        
+        while (end != std::string::npos) {
+            result.push_back(HavelValue(text.substr(start, end - start)));
+            start = end + delimiter.length();
+            end = text.find(delimiter, start);
+        }
+        result.push_back(HavelValue(text.substr(start)));
+        
+        return HavelValue(result);
+    }));
+}
+
+void Interpreter::InitializeIOBuiltins() {
+    // IO block - disable all input
+    environment->Define("io.block", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        // TODO: Implement actual input blocking via HotkeyManager
+        log("[INFO] IO input blocked");
+        return HavelValue(nullptr);
+    }));
+    
+    // IO unblock - enable all input
+    environment->Define("io.unblock", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        // TODO: Implement actual input unblocking
+        log("[INFO] IO input unblocked");
+        return HavelValue(nullptr);
+    }));
+    
+    // IO grab - grab exclusive input
+    environment->Define("io.grab", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        // TODO: Implement input grabbing
+        log("[INFO] IO input grabbed");
+        return HavelValue(nullptr);
+    }));
+    
+    // IO ungrab - release exclusive input
+    environment->Define("io.ungrab", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        // TODO: Implement input ungrabbing
+        log("[INFO] IO input ungrabbed");
+        return HavelValue(nullptr);
+    }));
+    
+    // IO test keycode - print keycode for next pressed key
+    environment->Define("io.testKeycode", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        log("[INFO] Press any key to see its keycode... (Not yet implemented)");
+        // TODO: Implement keycode testing mode
+        return HavelValue(nullptr);
+    }));
+}
+
+void Interpreter::InitializeBrightnessBuiltins() {
+    // Brightness get
+    environment->Define("brightnessManager.getBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        // TODO: Implement actual brightness getting
+        return HavelValue(1.0); // Return default brightness
+    }));
+    
+    // Brightness set
+    environment->Define("brightnessManager.setBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("setBrightness() requires brightness value");
+        double brightness = ValueToNumber(args[0]);
+        log("[INFO] Setting brightness to: " + std::to_string(brightness));
+        // TODO: Implement actual brightness setting
+        return HavelValue(nullptr);
+    }));
+    
+    // Brightness increase
+    environment->Define("brightnessManager.increaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
+        log("[INFO] Increasing brightness by: " + std::to_string(step));
+        // TODO: Implement actual brightness increase
+        return HavelValue(nullptr);
+    }));
+    
+    // Brightness decrease
+    environment->Define("brightnessManager.decreaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
+        log("[INFO] Decreasing brightness by: " + std::to_string(step));
+        // TODO: Implement actual brightness decrease
+        return HavelValue(nullptr);
+    }));
+}
+
+void Interpreter::InitializeDebugBuiltins() {
+    // Debug flag
+    environment->Define("debug", HavelValue(false));
+    
+    // Debug print with conditional execution
+    environment->Define("debug.print", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        auto debugFlag = environment->Get("debug");
+        bool isDebug = debugFlag && ValueToBool(*debugFlag);
+        
+        if (isDebug) {
+            std::cout << "[DEBUG] ";
+            for(const auto& arg : args) {
+                std::cout << this->ValueToString(arg) << " ";
+            }
+            std::cout << std::endl;
+        }
+        return HavelValue(nullptr);
+    }));
+    
+    // Assert function
+    environment->Define("assert", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("assert() requires condition");
+        if (!ValueToBool(args[0])) {
+            std::string msg = args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
+            return HavelRuntimeError(msg);
+        }
+        return HavelValue(nullptr);
     }));
 }
 

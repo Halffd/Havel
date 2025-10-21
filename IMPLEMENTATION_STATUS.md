@@ -241,10 +241,11 @@ mouseSensitivity: change Mouse.Sensitivity config
 ignoreMouse: change Device.IgnoreMouse config
 
 ### Phase 5: Standard Library
-1. Built-in print/log functions
+1. Built-in debug, IO key code test, input block/unblock and key grab functions
 2. Array methods (map, filter, reduce, etc.)
 3. String methods
-4. I/O functions matching imports in example.hv
+4. I/O, window, brightnessManager functions matching imports in example.hv
+Merge all havel-lang tests into a single file to get better build times(command arguments if testing specific things) and make sure they pass
 
 ### Phase 6: Integration
 1. Script file argument handling in main

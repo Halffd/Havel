@@ -189,6 +189,10 @@ private:
     void InitializeClipboardBuiltins();
     void InitializeTextBuiltins();
     void InitializeFileBuiltins();
+    void InitializeArrayBuiltins();
+    void InitializeIOBuiltins();
+    void InitializeBrightnessBuiltins();
+    void InitializeDebugBuiltins();
 };
 
 } // namespace havel

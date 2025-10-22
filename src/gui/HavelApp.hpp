@@ -19,6 +19,7 @@
 #include "media/AudioManager.hpp"
 #include "x11.h"
 #include "gui/ClipboardManager.hpp"
+#include "gui/TextChunkerWindow.hpp"
 namespace havel {
 
 class HavelApp : public QObject {
@@ -37,6 +38,7 @@ public:
     bool isInitialized() const noexcept { return initialized; }
 
 private slots:
+    void showTextChunker();
     void onPeriodicCheck();
     void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void showSettings();

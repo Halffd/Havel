@@ -411,8 +411,178 @@ Update Markdown files, leave only Havel.md for language documentation, README.md
 [1]    2283449 segmentation fault (core dumped)  ./build/havel --repl
 ❯
 
-
+# Fixn hotkey not working
 >>> a => { print("a press") }
 Error: Unexpected token in expression: =>
 >>> a => print("a")
 Error: Unexpected token in expression: =>
+
+1. Arrow Functions Not Parsing ❌
+>>> let f = () => { send("a") }
+Error: Unexpected token in expression: )
+
+You haven't implemented arrow function parsing yet. Remember that conversation earlier? You need to add the logic to handle () => syntax.
+
+----
+
+2. Object Member Assignment Broken 🐛
+>>> o["a"] = 88
+=> 88.000000
+>>> o
+=> {b: bee, a: 0.000000}  // Still 0, not 88!
+
+Your visitAssignmentExpression for index expressions isn't actually mutating the original object. You're getting a copy of the HavelArray/HavelObject, modifying it, but not storing it back.
+
+The Fix:
+
+void Interpreter::visitIndexExpression(const ast::IndexExpression& node) {
+    // Current code returns a VALUE
+    // But for assignment, you need a REFERENCE
+    
+    // When used on LEFT side of assignment, you need to:
+    // 1. Get the CONTAINER (object/array)
+    // 2. Get the INDEX/KEY
+    // 3. Store them for later mutation
+}
+
+The problem is your interpreter uses value semantics, but assignment needs reference semantics.
+
+Quick Fix - Store References:
+
+// In your HavelValue variant, you need to use shared_ptr for containers
+using HavelArray = std::shared_ptr<std::vector<HavelValue>>;
+using HavelObject = std::shared_ptr<std::unordered_map<std::string, HavelValue>>;
+
+// Then in visitArrayLiteral:
+void Interpreter::visitArrayLiteral(const ast::ArrayLiteral& node) {
+    auto array = std::make_shared<std::vector<HavelValue>>();
+    
+    for (const auto& element : node.elements) {
+        auto result = Evaluate(*element);
+        if (isError(result)) { lastResult = result; return; }
+        array->push_back(unwrap(result));
+    }
+    
+    lastResult = HavelValue(array);
+}
+
+// Now assignments will mutate the shared data
+
+----
+
+3. Dot Notation Not Working 🐛
+>>> o.b
+Error: Member access not implemented for this object type.
+
+Your visitMemberExpression needs to handle objects:
+
+void Interpreter::visitMemberExpression(const ast::MemberExpression& node) {
+    auto objectResult = Evaluate(*node.object);
+    if (isError(objectResult)) { lastResult = objectResult; return; }
+    
+    HavelValue objectValue = unwrap(objectResult);
+    
+    auto* propId = dynamic_cast<const ast::Identifier*>(node.property.get());
+    if (!propId) {
+        lastResult = HavelRuntimeError("Invalid property access");
+        return;
+    }
+    std::string propName = propId->symbol;
+    
+    // Handle objects
+    if (auto* object = std::get_if<HavelObject>(&objectValue)) {
+        auto it = (*object)->find(propName);  // Note the dereference if using shared_ptr
+        if (it != (*object)->end()) {
+            lastResult = it->second;
+            return;
+        }
+        lastResult = nullptr;  // Property not found
+        return;
+    }
+    
+    // Handle arrays (length, etc.)
+    if (auto* array = std::get_if<HavelArray>(&objectValue)) {
+        if (propName == "length") {
+            lastResult = static_cast<double>((*array)->size());
+            return;
+        }
+    }
+    
+    lastResult = HavelRuntimeError("Member access not supported for this type");
+}
+
+----
+
+4. Compound Assignment Missing ❌
+>>> a *= 3
+Error: Unexpected token in expression: =
+
+You need to add *=, +=, etc. to your lexer and parser. Check if you have these tokens defined:
+
+enum class TokenType {
+    // ...
+    PlusAssign,     // +=
+    MinusAssign,    // -=
+    MultiplyAssign, // *=
+    DivideAssign,   // /=
+    // ...
+};
+
+----
+
+5. SEGFAULT on Function Call 💀
+>>> fn f(v) { print(v) }
+>>> f(9)
+Segmentation fault (core dumped)
+
+This is the critical bug. Your function call is crashing
+Function declaration pointer is dangling
+auto func = std::make_shared<HavelFunction>(HavelFunction{
+    &node,  // ⚠️ THIS IS A POINTER TO STACK MEMORY!
+    this->environment
+});
+
+The &node is a pointer to the AST node, which might be getting destroyed after parsing. You need to either:
+
+	1. Keep the AST alive (store std::unique_ptr<ast::Program> somewhere)
+	2. Copy the AST node (not just pointer)
+
+The proper fix:
+
+// Store the entire AST in your interpreter
+class Interpreter {
+    std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
+    
+    HavelResult Execute(const std::string& source) {
+        auto program = parser.produceAST(source);
+        auto* programPtr = program.get();
+        loadedPrograms.push_back(std::move(program));  // Keep it alive!
+        return Evaluate(*programPtr);
+    }
+};
+
+Or use std::shared_ptr for AST nodes.
+
+----
+
+6. Range is Exclusive (Not Inclusive) 📏
+>>> let a = 4..45
+=> [4, 5, ..., 44]  // Doesn't include 45
+
+Your range implementation is exclusive on the end:
+
+for (int i = start; i < end; i += step)  // < not <=
+
+Change to inclusive if you want 4..45 to include 45:
+
+for (int i = start; i <= end; i += step)
+
+----
+
+	1. 🔴 Fix segfault in function calls (AST lifetime issue)
+	2. 🟠 Fix object/array mutation (use shared_ptr for containers)
+	3. 🟠 Implement dot notation for objects (o.b)
+	4. 🟡 Add arrow functions (() => {})
+	5. 🟡 Add compound assignment (*=, +=)
+	6. 🟢 Add repeat() builtin
+	7. 🟢 Decide on inclusive vs exclusive ranges

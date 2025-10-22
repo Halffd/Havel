@@ -342,3 +342,5 @@ QWidget* GUIManager::getQWidgetForWindow(uint64_t windowId) {
 }
 
 } // namespace havel
+
+

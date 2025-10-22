@@ -285,3 +285,19 @@ void HavelApp::cleanup() noexcept {
 }
 
 } // namespace havel
+
+void havel::HavelApp::showTextChunker() {
+    QClipboard* clipboard = QApplication::clipboard();
+    std::string text = clipboard->text().toStdString();
+
+    if (text.empty()) {
+        if (trayIcon) {
+            trayIcon->showMessage("Text Chunker", "Clipboard is empty.", QSystemTrayIcon::Warning);
+        }
+        return;
+    }
+
+    // The window will delete itself on close
+    auto* chunkerWindow = new havel::gui::TextChunkerWindow(text);
+    chunkerWindow->show();
+}

@@ -366,37 +366,4 @@ void visitTypeReference(const TypeReference& node) override {
             out << getIndent() << "}" << std::endl;
         }
     };
-    inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
-        visitor.visitTypeDeclaration(*this);
-    }
-
-    inline void TypeAnnotation::accept(ASTVisitor& visitor) const {
-        visitor.visitTypeAnnotation(*this);
-    }
-
-    inline void UnionType::accept(ASTVisitor& visitor) const {
-        visitor.visitUnionType(*this);
-    }
-
-    inline void RecordType::accept(ASTVisitor& visitor) const {
-        visitor.visitRecordType(*this);
-    }
-
-    inline void FunctionType::accept(ASTVisitor& visitor) const {
-        visitor.visitFunctionType(*this);
-    }
-
-    inline void TypeReference::accept(ASTVisitor& visitor) const {
-        visitor.visitTypeReference(*this);
-    }
-
-    inline void TryExpression::accept(ASTVisitor& visitor) const {
-        visitor.visitTryExpression(*this);
-    }
-    inline void UnaryExpression::accept(ASTVisitor &visitor) const {
-        visitor.visitUnaryExpression(*this);
-    }
-    inline void ImportStatement::accept(ASTVisitor& visitor) const {
-        visitor.visitImportStatement(*this);
-    }
 } // namespace havel::ast

@@ -897,6 +897,24 @@ struct ModesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Lambda (arrow) Function Expression (() => { ... } or x => expr)
+struct LambdaExpression : public Expression {
+  std::vector<std::unique_ptr<Identifier>> parameters;
+  std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
+
+  LambdaExpression(std::vector<std::unique_ptr<Identifier>> params,
+                   std::unique_ptr<Statement> bd)
+      : parameters(std::move(params)), body(std::move(bd)) {
+    kind = NodeType::LambdaExpression;
+  }
+
+  std::string toString() const override {
+    return "Lambda{" + std::to_string(parameters.size()) + " params}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Index Expression (arr[0] or obj["key"])
 struct IndexExpression : public Expression {
   std::unique_ptr<Expression> object;
@@ -1026,8 +1044,10 @@ public:
   virtual void visitBinaryExpression(const BinaryExpression &node) = 0;
 
   virtual void visitCallExpression(const CallExpression &node) = 0;
-
+  
   virtual void visitMemberExpression(const MemberExpression &node) = 0;
+  
+  virtual void visitLambdaExpression(const LambdaExpression &node) = 0;
 
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
 
@@ -1109,6 +1129,10 @@ inline void CallExpression::accept(ASTVisitor &visitor) const {
 
 inline void MemberExpression::accept(ASTVisitor &visitor) const {
   visitor.visitMemberExpression(*this);
+}
+
+inline void LambdaExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitLambdaExpression(*this);
 }
 
 inline void StringLiteral::accept(ASTVisitor &visitor) const {

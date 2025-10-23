@@ -404,6 +404,28 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression& node) {
 }
 
 
+void Interpreter::visitLambdaExpression(const ast::LambdaExpression& node) {
+    // Capture current environment (closure)
+    auto closureEnv = this->environment;
+    // Build a callable that binds args to parameter names and evaluates body
+    BuiltinFunction lambda = [this, closureEnv, &node](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() != node.parameters.size()) {
+            return HavelRuntimeError("Mismatched argument count for lambda");
+        }
+        auto funcEnv = std::make_shared<Environment>(closureEnv);
+        for (size_t i = 0; i < args.size(); ++i) {
+            funcEnv->Define(node.parameters[i]->symbol, args[i]);
+        }
+        auto originalEnv = this->environment;
+        this->environment = funcEnv;
+        auto res = Evaluate(*node.body);
+        this->environment = originalEnv;
+        if (std::holds_alternative<ReturnValue>(res)) return std::get<ReturnValue>(res).value;
+        return res;
+    };
+    lastResult = HavelValue(lambda);
+}
+
 void Interpreter::visitPipelineExpression(const ast::PipelineExpression& node) {
     if (node.stages.empty()) {
         lastResult = nullptr;
@@ -471,21 +493,33 @@ void Interpreter::visitImportStatement(const ast::ImportStatement& node) {
     std::string path = node.modulePath;
     HavelObject exports;
 
+    // Special case: no path provided -> import built-in modules by name
+    if (path.empty()) {
+        for (const auto& item : node.importedItems) {
+            const std::string& moduleName = item.first;
+            const std::string& alias = item.second;
+            auto val = environment->Get(moduleName);
+            if (!val || !std::holds_alternative<HavelObject>(*val)) {
+                lastResult = HavelRuntimeError("Built-in module not found or not an object: " + moduleName);
+                return;
+            }
+            environment->Define(alias, std::get<HavelObject>(*val));
+        }
+        lastResult = nullptr;
+        return;
+    }
+
     // Check cache first
     if (moduleCache.count(path)) {
         exports = moduleCache.at(path);
     } else {
-        // Check for built-in modules
-        if (path.rfind("havel:", 0) == 0) {
-            std::string moduleName = path.substr(6);
-            auto moduleVal = environment->Get(moduleName);
-            if (moduleVal && std::holds_alternative<HavelObject>(*moduleVal)) {
-                exports = std::get<HavelObject>(*moduleVal);
-            } else {
-                lastResult = HavelRuntimeError("Built-in module not found: " + moduleName);
-                return;
-            }
-        } else {
+        // Check for built-in modules by name (with or without 'havel:' prefix)
+        std::string moduleName = path;
+        if (path.rfind("havel:", 0) == 0) moduleName = path.substr(6);
+        auto moduleVal = environment->Get(moduleName);
+        if (moduleVal && std::holds_alternative<HavelObject>(*moduleVal)) {
+            exports = std::get<HavelObject>(*moduleVal);
+        } else if (!moduleVal) {
             // Load from file
             std::ifstream file(path);
             if (!file) {
@@ -508,9 +542,23 @@ void Interpreter::visitImportStatement(const ast::ImportStatement& node) {
                 return;
             }
             exports = std::get<HavelObject>(exportedValue);
+        } else {
+            lastResult = HavelRuntimeError("Built-in module not found: " + moduleName);
+            return;
         }
         // Cache the result
         moduleCache[path] = exports;
+    }
+
+    // Wildcard import: import * from module
+    if (node.importedItems.size() == 1 && node.importedItems[0].first == "*") {
+        if (exports) {
+            for (const auto& [k, v] : *exports) {
+                environment->Define(k, v);
+            }
+            lastResult = nullptr;
+            return;
+        }
     }
 
     // Import symbols into the current environment
@@ -1271,6 +1319,13 @@ void Interpreter::InitializeSystemBuiltins() {
         this->io.Send(text.c_str());
         return HavelValue(nullptr);
     }));
+    
+    // Expose as module object: clipboard
+    auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("clipboard.get")) (*clip)["get"] = *v;
+    if (auto v = environment->Get("clipboard.set")) (*clip)["set"] = *v;
+    if (auto v = environment->Get("clipboard.clear")) (*clip)["clear"] = *v;
+    environment->Define("clipboard", HavelValue(clip));
 }
 
 void Interpreter::InitializeWindowBuiltins() {
@@ -1326,6 +1381,18 @@ void Interpreter::InitializeWindowBuiltins() {
         }
         return HavelValue(false);
     }));
+
+    // Expose as module object: window
+    auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("window.getTitle")) (*win)["getTitle"] = *v;
+    if (auto v = environment->Get("window.maximize")) (*win)["maximize"] = *v;
+    if (auto v = environment->Get("window.minimize")) (*win)["minimize"] = *v;
+    if (auto v = environment->Get("window.next")) (*win)["next"] = *v;
+    if (auto v = environment->Get("window.previous")) (*win)["previous"] = *v;
+    if (auto v = environment->Get("window.close")) (*win)["close"] = *v;
+    if (auto v = environment->Get("window.center")) (*win)["center"] = *v;
+    if (auto v = environment->Get("window.focus")) (*win)["focus"] = *v;
+    environment->Define("window", HavelValue(win));
 }
 
 void Interpreter::InitializeClipboardBuiltins() {
@@ -1601,6 +1668,14 @@ void Interpreter::InitializeArrayBuiltins() {
         
         return HavelValue(result);
     }));
+    
+    // Expose as module object: brightnessManager
+    auto bm = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("brightnessManager.getBrightness")) (*bm)["getBrightness"] = *v;
+    if (auto v = environment->Get("brightnessManager.setBrightness")) (*bm)["setBrightness"] = *v;
+    if (auto v = environment->Get("brightnessManager.increaseBrightness")) (*bm)["increaseBrightness"] = *v;
+    if (auto v = environment->Get("brightnessManager.decreaseBrightness")) (*bm)["decreaseBrightness"] = *v;
+    environment->Define("brightnessManager", HavelValue(bm));
 }
 
 void Interpreter::InitializeIOBuiltins() {
@@ -1654,6 +1729,17 @@ void Interpreter::InitializeIOBuiltins() {
         // TODO: Implement keycode testing mode
         return HavelValue(nullptr);
     }));
+    
+    // Expose as module object: audioManager
+    auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("audio.getVolume")) (*am)["getVolume"] = *v;
+    if (auto v = environment->Get("audio.setVolume")) (*am)["setVolume"] = *v;
+    if (auto v = environment->Get("audio.increaseVolume")) (*am)["increaseVolume"] = *v;
+    if (auto v = environment->Get("audio.decreaseVolume")) (*am)["decreaseVolume"] = *v;
+    if (auto v = environment->Get("audio.toggleMute")) (*am)["toggleMute"] = *v;
+    if (auto v = environment->Get("audio.setMute")) (*am)["setMute"] = *v;
+    if (auto v = environment->Get("audio.isMuted")) (*am)["isMuted"] = *v;
+    environment->Define("audioManager", HavelValue(am));
 }
 
 void Interpreter::InitializeBrightnessBuiltins() {
@@ -1687,6 +1773,14 @@ void Interpreter::InitializeBrightnessBuiltins() {
         brightnessManager->decreaseBrightness(step);
         return HavelValue(nullptr);
     }));
+    
+    // Expose as module object: launcher
+    auto launcher = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("run")) (*launcher)["run"] = *v;
+    if (auto v = environment->Get("runAsync")) (*launcher)["runAsync"] = *v;
+    if (auto v = environment->Get("runDetached")) (*launcher)["runDetached"] = *v;
+    if (auto v = environment->Get("terminal")) (*launcher)["terminal"] = *v;
+    environment->Define("launcher", HavelValue(launcher));
 }
 
 void Interpreter::InitializeDebugBuiltins() {
@@ -1831,6 +1925,16 @@ void Interpreter::InitializeLauncherBuiltins() {
         auto result = Launcher::terminal(command);
         return HavelValue(result.success);
     }));
+    
+    // Expose as module object: gui
+    auto guiObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("gui.menu")) (*guiObj)["menu"] = *v;
+    if (auto v = environment->Get("gui.input")) (*guiObj)["input"] = *v;
+    if (auto v = environment->Get("gui.confirm")) (*guiObj)["confirm"] = *v;
+    if (auto v = environment->Get("gui.notify")) (*guiObj)["notify"] = *v;
+    if (auto v = environment->Get("gui.fileDialog")) (*guiObj)["fileDialog"] = *v;
+    if (auto v = environment->Get("gui.directoryDialog")) (*guiObj)["directoryDialog"] = *v;
+    environment->Define("gui", HavelValue(guiObj));
 }
 
 void Interpreter::InitializeGUIBuiltins() {

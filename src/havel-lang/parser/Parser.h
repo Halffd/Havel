@@ -60,6 +60,7 @@ private:
     std::unique_ptr<havel::ast::Expression> parseIndexExpression(std::unique_ptr<havel::ast::Expression> object);
     std::unique_ptr<havel::ast::Expression> parseArrayLiteral();
     std::unique_ptr<havel::ast::Expression> parseObjectLiteral();
+    std::unique_ptr<havel::ast::Expression> parseLambdaFromParams(std::vector<std::unique_ptr<havel::ast::Identifier>> params);
     havel::TokenType getBinaryOperatorToken(ast::BinaryOperator op);
 public:
     explicit Parser() = default;

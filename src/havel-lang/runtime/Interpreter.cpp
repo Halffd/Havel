@@ -46,9 +46,11 @@ std::string Interpreter::ValueToString(const HavelValue& value) {
         else if constexpr (std::is_same_v<T, HavelArray>) {
             // Recursively format array in JSON style
             std::string result = "[";
-            for (size_t i = 0; i < arg.size(); ++i) {
-                result += ValueToString(arg[i]);
-                if (i < arg.size() - 1) result += ", ";
+            if (arg) {
+                for (size_t i = 0; i < arg->size(); ++i) {
+                    result += ValueToString((*arg)[i]);
+                    if (i < arg->size() - 1) result += ", ";
+                }
             }
             result += "]";
             return result;
@@ -56,11 +58,13 @@ std::string Interpreter::ValueToString(const HavelValue& value) {
         else if constexpr (std::is_same_v<T, HavelObject>) {
             // Recursively format object in JSON style
             std::string result = "{";
-            size_t i = 0;
-            for (const auto& [key, val] : arg) {
-                result += key + ": " + ValueToString(val);
-                if (i < arg.size() - 1) result += ", ";
-                ++i;
+            if (arg) {
+                size_t i = 0;
+                for (const auto& [key, val] : *arg) {
+                    result += key + ": " + ValueToString(val);
+                    if (i < arg->size() - 1) result += ", ";
+                    ++i;
+                }
             }
             result += "}";
             return result;
@@ -111,7 +115,10 @@ Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr,
 HavelResult Interpreter::Execute(const std::string& sourceCode) {
     parser::Parser parser;
     auto program = parser.produceAST(sourceCode);
-    return Evaluate(*program);
+    auto* programPtr = program.get();
+    // Keep the AST alive to avoid dangling pointers captured in functions/closures
+    loadedPrograms.push_back(std::move(program));
+    return Evaluate(*programPtr);
 }
 
 void Interpreter::RegisterHotkeys(const std::string& sourceCode) {
@@ -361,16 +368,39 @@ void Interpreter::visitCallExpression(const ast::CallExpression& node) {
 }
 
 void Interpreter::visitMemberExpression(const ast::MemberExpression& node) {
-     if(const auto* objId = dynamic_cast<const ast::Identifier*>(node.object.get())) {
-        if(const auto* propId = dynamic_cast<const ast::Identifier*>(node.property.get())) {
-            std::string fullName = objId->symbol + "." + propId->symbol;
-            if (auto val = environment->Get(fullName)) {
-                lastResult = *val;
+    auto objectResult = Evaluate(*node.object);
+    if (isError(objectResult)) { lastResult = objectResult; return; }
+    HavelValue objectValue = unwrap(objectResult);
+
+    auto* propId = dynamic_cast<const ast::Identifier*>(node.property.get());
+    if (!propId) {
+        lastResult = HavelRuntimeError("Invalid property access");
+        return;
+    }
+    std::string propName = propId->symbol;
+
+    // Objects: o.b
+    if (auto* objPtr = std::get_if<HavelObject>(&objectValue)) {
+        if (*objPtr) {
+            auto it = (*objPtr)->find(propName);
+            if (it != (*objPtr)->end()) {
+                lastResult = it->second;
                 return;
             }
         }
+        lastResult = HavelValue(nullptr);
+        return;
     }
-    lastResult = HavelRuntimeError("Member access not implemented for this object type.");
+
+    // Arrays: special properties like length
+    if (auto* arrPtr = std::get_if<HavelArray>(&objectValue)) {
+        if (propName == "length") {
+            lastResult = static_cast<double>((*arrPtr) ? (*arrPtr)->size() : 0);
+            return;
+        }
+    }
+
+    lastResult = HavelRuntimeError("Member access not supported for this type");
 }
 
 
@@ -488,8 +518,8 @@ void Interpreter::visitImportStatement(const ast::ImportStatement& node) {
         const std::string& originalName = item.first;
         const std::string& alias = item.second;
         
-        if (exports.count(originalName)) {
-            environment->Define(alias, exports.at(originalName));
+        if (exports && exports->count(originalName)) {
+            environment->Define(alias, exports->at(originalName));
         } else {
             lastResult = HavelRuntimeError("Module '" + path + "' does not export symbol: " + originalName);
             return;
@@ -534,7 +564,7 @@ void Interpreter::visitIdentifier(const ast::Identifier& node) {
 }
 
 void Interpreter::visitArrayLiteral(const ast::ArrayLiteral& node) {
-    HavelArray array;
+    auto array = std::make_shared<std::vector<HavelValue>>();
     
     for (const auto& element : node.elements) {
         auto result = Evaluate(*element);
@@ -542,14 +572,14 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral& node) {
             lastResult = result;
             return;
         }
-        array.push_back(unwrap(result));
+        array->push_back(unwrap(result));
     }
     
     lastResult = HavelValue(array);
 }
 
 void Interpreter::visitObjectLiteral(const ast::ObjectLiteral& node) {
-    HavelObject object;
+    auto object = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
     for (const auto& [key, valueExpr] : node.pairs) {
         auto result = Evaluate(*valueExpr);
@@ -557,14 +587,14 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral& node) {
             lastResult = result;
             return;
         }
-        object[key] = unwrap(result);
+        (*object)[key] = unwrap(result);
     }
     
     lastResult = HavelValue(object);
 }
 
 void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
-    HavelObject configObject;
+    auto configObject = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     auto& config = Configs::Get();
     
     // Special handling for "file" key - if present, load that config file
@@ -598,7 +628,7 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
         }
         
         HavelValue value = unwrap(result);
-        configObject[key] = value;
+(*configObject)[key] = value;
         
         // Write to actual Configs if not "file" or "defaults"
         if (key != "file" && key != "defaults") {
@@ -622,8 +652,8 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
         
         // Handle defaults object
         if (key == "defaults" && std::holds_alternative<HavelObject>(value)) {
-            auto& defaults = std::get<HavelObject>(value);
-            for (const auto& [defaultKey, defaultValue] : defaults) {
+auto& defaults = std::get<HavelObject>(value);
+            if (defaults) for (const auto& [defaultKey, defaultValue] : *defaults) {
                 std::string configKey = "Havel." + defaultKey;
                 std::string strValue = ValueToString(defaultValue);
                 
@@ -645,7 +675,7 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock& node) {
 }
 
 void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
-    HavelObject devicesObject;
+    auto devicesObject = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     auto& config = Configs::Get();
     
     // Device configuration mappings
@@ -665,7 +695,7 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
         }
         
         HavelValue value = unwrap(result);
-        devicesObject[key] = value;
+(*devicesObject)[key] = value;
         
         // Map to config keys and write to Configs
         auto it = deviceKeyMap.find(key);
@@ -698,7 +728,7 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock& node) {
 }
 
 void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
-    HavelObject modesObject;
+    auto modesObject = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
     // Process mode definitions
     for (const auto& [modeName, valueExpr] : node.pairs) {
@@ -709,16 +739,16 @@ void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
         }
         
         HavelValue value = unwrap(result);
-        modesObject[modeName] = value;
+(*modesObject)[modeName] = value;
         
         // If value is an object with class/title/ignore arrays, register with condition system
-        if (std::holds_alternative<HavelObject>(value)) {
+if (std::holds_alternative<HavelObject>(value)) {
             auto& modeConfig = std::get<HavelObject>(value);
             
             // Store mode configuration for condition checking
             // The mode config will be checked later when evaluating conditions
             // Format: modes.gaming.class = ["steam", "lutris", ...]
-            for (const auto& [configKey, configValue] : modeConfig) {
+            if (modeConfig) for (const auto& [configKey, configValue] : *modeConfig) {
                 std::string fullKey = "__mode_" + modeName + "_" + configKey;
                 environment->Define(fullKey, configValue);
             }
@@ -726,8 +756,8 @@ void Interpreter::visitModesBlock(const ast::ModesBlock& node) {
     }
     
     // Initialize current mode (default to first mode or "default")
-    if (!modesObject.empty()) {
-        std::string initialMode = modesObject.begin()->first;
+    if (modesObject && !modesObject->empty()) {
+        std::string initialMode = modesObject->begin()->first;
         environment->Define("__current_mode__", HavelValue(initialMode));
         environment->Define("__previous_mode__", HavelValue(std::string("default")));
     } else {
@@ -758,28 +788,32 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression& node) {
     HavelValue indexValue = unwrap(indexResult);
     
     // Handle array indexing
-    if (auto* array = std::get_if<HavelArray>(&objectValue)) {
+    if (auto* arrayPtr = std::get_if<HavelArray>(&objectValue)) {
         // Convert index to integer
         int index = static_cast<int>(ValueToNumber(indexValue));
         
-        if (index < 0 || index >= static_cast<int>(array->size())) {
+        if (!*arrayPtr || index < 0 || index >= static_cast<int>((*arrayPtr)->size())) {
             lastResult = HavelRuntimeError("Array index out of bounds: " + std::to_string(index));
             return;
         }
         
-        lastResult = (*array)[index];
+        lastResult = (**arrayPtr)[index];
         return;
     }
     
     // Handle object property access
-    if (auto* object = std::get_if<HavelObject>(&objectValue)) {
+    if (auto* objectPtr = std::get_if<HavelObject>(&objectValue)) {
         std::string key = ValueToString(indexValue);
         
-        auto it = object->find(key);
-        if (it != object->end()) {
-            lastResult = it->second;
+        if (*objectPtr) {
+            auto it = (*objectPtr)->find(key);
+            if (it != (*objectPtr)->end()) {
+                lastResult = it->second;
+            } else {
+                lastResult = nullptr; // Return null for missing properties
+            }
         } else {
-            lastResult = nullptr; // Return null for missing properties
+            lastResult = nullptr;
         }
         return;
     }
@@ -857,10 +891,10 @@ void Interpreter::visitRangeExpression(const ast::RangeExpression& node) {
     int start = static_cast<int>(ValueToNumber(unwrap(startResult)));
     int end = static_cast<int>(ValueToNumber(unwrap(endResult)));
     
-    // Create an array from start to end (exclusive)
-    HavelArray rangeArray;
-    for (int i = start; i < end; ++i) {
-        rangeArray.push_back(HavelValue(i));
+    // Create an array from start to end (inclusive)
+    auto rangeArray = std::make_shared<std::vector<HavelValue>>();
+    for (int i = start; i <= end; ++i) {
+        rangeArray->push_back(HavelValue(i));
     }
     
     lastResult = rangeArray;
@@ -875,15 +909,38 @@ void Interpreter::visitAssignmentExpression(const ast::AssignmentExpression& nod
     }
     HavelValue value = unwrap(valueResult);
     
+    auto applyCompound = [this](const std::string& op, const HavelValue& lhs, const HavelValue& rhs) -> HavelValue {
+        if (op == "=") return rhs;
+        if (op == "+=") return HavelValue(ValueToNumber(lhs) + ValueToNumber(rhs));
+        if (op == "-") return HavelValue(ValueToNumber(lhs) - ValueToNumber(rhs)); // not used
+        if (op == "-=") return HavelValue(ValueToNumber(lhs) - ValueToNumber(rhs));
+        if (op == "*=") return HavelValue(ValueToNumber(lhs) * ValueToNumber(rhs));
+        if (op == "/=") {
+            double denom = ValueToNumber(rhs);
+            if (denom == 0.0) throw HavelRuntimeError("Division by zero");
+            return HavelValue(ValueToNumber(lhs) / denom);
+        }
+        return rhs; // fallback
+    };
+
+    const std::string& op = node.operator_;
+
     // Determine what we're assigning to
     if (auto* identifier = dynamic_cast<const ast::Identifier*>(node.target.get())) {
-        // Simple variable assignment
-        if (!environment->Assign(identifier->symbol, value)) {
+        // Simple variable assignment (may be compound)
+        auto current = environment->Get(identifier->symbol);
+        if (!current.has_value()) {
             lastResult = HavelRuntimeError("Undefined variable: " + identifier->symbol);
             return;
         }
+        HavelValue newValue = applyCompound(op, *current, value);
+        if (!environment->Assign(identifier->symbol, newValue)) {
+            lastResult = HavelRuntimeError("Undefined variable: " + identifier->symbol);
+            return;
+        }
+        value = newValue;
     } 
-    else if (auto* index = dynamic_cast<const ast::IndexExpression*>(node.target.get())) {
+else if (auto* index = dynamic_cast<const ast::IndexExpression*>(node.target.get())) {
         // Array/object index assignment (array[0] = value)
         auto objectResult = Evaluate(*index->object);
         if (isError(objectResult)) {
@@ -900,16 +957,30 @@ void Interpreter::visitAssignmentExpression(const ast::AssignmentExpression& nod
         HavelValue objectValue = unwrap(objectResult);
         HavelValue indexValue = unwrap(indexResult);
         
-        if (auto* array = std::get_if<HavelArray>(&objectValue)) {
+        if (auto* arrayPtr = std::get_if<HavelArray>(&objectValue)) {
             int idx = static_cast<int>(ValueToNumber(indexValue));
-            if (idx < 0 || idx >= static_cast<int>(array->size())) {
+            if (!*arrayPtr || idx < 0 || idx >= static_cast<int>((*arrayPtr)->size())) {
                 lastResult = HavelRuntimeError("Array index out of bounds");
                 return;
             }
-            (*array)[idx] = value;
-        } else if (auto* object = std::get_if<HavelObject>(&objectValue)) {
+            // Apply compound operator to existing value
+            HavelValue newValue = applyCompound(op, (**arrayPtr)[idx], value);
+            (**arrayPtr)[idx] = newValue;
+            value = newValue;
+        } else if (auto* objectPtr = std::get_if<HavelObject>(&objectValue)) {
             std::string key = ValueToString(indexValue);
-            (*object)[key] = value;
+            if (!*objectPtr) {
+                *objectPtr = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            }
+            // If property exists, apply compound operator; otherwise treat as simple assignment
+            auto it = (**objectPtr).find(key);
+            if (it != (**objectPtr).end()) {
+                HavelValue newValue = applyCompound(op, it->second, value);
+                it->second = newValue;
+                value = newValue;
+            } else {
+                (**objectPtr)[key] = value;
+            }
         } else {
             lastResult = HavelRuntimeError("Cannot index non-array/non-object value");
             return;
@@ -936,7 +1007,7 @@ void Interpreter::visitForStatement(const ast::ForStatement& node) {
     // Check if iterable is an array
     if (auto* array = std::get_if<HavelArray>(&iterableValue)) {
         // Iterate over each element
-        for (const auto& element : *array) {
+        if (*array) for (const auto& element : **array) {
             // Define iterator variable in current scope
             environment->Define(node.iterator->symbol, element);
             
@@ -1092,6 +1163,35 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         std::cout << std::endl;
         std::cout.flush();
+        return HavelValue(nullptr);
+    }));
+    
+    // repeat(n, fn)
+    environment->Define("repeat", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("repeat() requires (count, function)");
+        int count = static_cast<int>(ValueToNumber(args[0]));
+        const HavelValue& fn = args[1];
+        for (int i = 0; i < count; ++i) {
+            std::vector<HavelValue> fnArgs = { HavelValue(static_cast<double>(i)) };
+            HavelResult res;
+            if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
+                res = (*builtin)(fnArgs);
+            } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                auto& func = *userFunc;
+                auto funcEnv = std::make_shared<Environment>(func->closure);
+                for (size_t p = 0; p < func->declaration->parameters.size() && p < fnArgs.size(); ++p) {
+                    funcEnv->Define(func->declaration->parameters[p]->symbol, fnArgs[p]);
+                }
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                res = Evaluate(*func->declaration->body);
+                this->environment = originalEnv;
+                if (isError(res)) return res;
+            } else {
+                return HavelRuntimeError("repeat() requires callable function");
+            }
+            if (isError(res)) return res;
+        }
         return HavelValue(nullptr);
     }));
     
@@ -1342,47 +1442,49 @@ void Interpreter::InitializeArrayBuiltins() {
         if (args.size() < 2) return HavelRuntimeError("map() requires (array, function)");
         if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("map() first arg must be array");
         
-        auto& array = std::get<HavelArray>(args[0]);
+        auto array = std::get<HavelArray>(args[0]);
         auto& fn = args[1];
         
-        HavelArray result;
-        for (const auto& item : array) {
-            // Call function with item
-            std::vector<HavelValue> fnArgs = {item};
-            HavelResult res;
-            
-            if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
-                res = (*builtin)(fnArgs);
-            } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
-                auto& func = *userFunc;
-                if (fnArgs.size() != func->declaration->parameters.size()) {
-                    return HavelRuntimeError("Function parameter count mismatch");
-                }
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        if (array) {
+            for (const auto& item : *array) {
+                // Call function with item
+                std::vector<HavelValue> fnArgs = {item};
+                HavelResult res;
                 
-                auto funcEnv = std::make_shared<Environment>(func->closure);
-                for (size_t i = 0; i < fnArgs.size(); ++i) {
-                    funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
-                }
-                
-                auto originalEnv = this->environment;
-                this->environment = funcEnv;
-                res = Evaluate(*func->declaration->body);
-                this->environment = originalEnv;
-                
-                if (std::holds_alternative<ReturnValue>(res)) {
-                    result.push_back(std::get<ReturnValue>(res).value);
-                } else if (!isError(res)) {
-                    result.push_back(unwrap(res));
+                if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
+                    res = (*builtin)(fnArgs);
+                } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                    auto& func = *userFunc;
+                    if (fnArgs.size() != func->declaration->parameters.size()) {
+                        return HavelRuntimeError("Function parameter count mismatch");
+                    }
+                    
+                    auto funcEnv = std::make_shared<Environment>(func->closure);
+                    for (size_t i = 0; i < fnArgs.size(); ++i) {
+                        funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                    }
+                    
+                    auto originalEnv = this->environment;
+                    this->environment = funcEnv;
+                    res = Evaluate(*func->declaration->body);
+                    this->environment = originalEnv;
+                    
+                    if (std::holds_alternative<ReturnValue>(res)) {
+                        result->push_back(std::get<ReturnValue>(res).value);
+                    } else if (!isError(res)) {
+                        result->push_back(unwrap(res));
+                    } else {
+                        return res;
+                    }
+                    continue;
                 } else {
-                    return res;
+                    return HavelRuntimeError("map() requires callable function");
                 }
-                continue;
-            } else {
-                return HavelRuntimeError("map() requires callable function");
+                
+                if (isError(res)) return res;
+                result->push_back(unwrap(res));
             }
-            
-            if (isError(res)) return res;
-            result.push_back(unwrap(res));
         }
         return HavelValue(result);
     }));
@@ -1392,45 +1494,47 @@ void Interpreter::InitializeArrayBuiltins() {
         if (args.size() < 2) return HavelRuntimeError("filter() requires (array, predicate)");
         if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("filter() first arg must be array");
         
-        auto& array = std::get<HavelArray>(args[0]);
+        auto array = std::get<HavelArray>(args[0]);
         auto& fn = args[1];
         
-        HavelArray result;
-        for (const auto& item : array) {
-            std::vector<HavelValue> fnArgs = {item};
-            HavelResult res;
-            
-            if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
-                res = (*builtin)(fnArgs);
-            } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
-                auto& func = *userFunc;
-                auto funcEnv = std::make_shared<Environment>(func->closure);
-                for (size_t i = 0; i < fnArgs.size(); ++i) {
-                    funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
-                }
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        if (array) {
+            for (const auto& item : *array) {
+                std::vector<HavelValue> fnArgs = {item};
+                HavelResult res;
                 
-                auto originalEnv = this->environment;
-                this->environment = funcEnv;
-                res = Evaluate(*func->declaration->body);
-                this->environment = originalEnv;
-                
-                if (std::holds_alternative<ReturnValue>(res)) {
-                    if (ValueToBool(std::get<ReturnValue>(res).value)) {
-                        result.push_back(item);
+                if (auto* builtin = std::get_if<BuiltinFunction>(&fn)) {
+                    res = (*builtin)(fnArgs);
+                } else if (auto* userFunc = std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                    auto& func = *userFunc;
+                    auto funcEnv = std::make_shared<Environment>(func->closure);
+                    for (size_t i = 0; i < fnArgs.size(); ++i) {
+                        funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
                     }
-                } else if (!isError(res) && ValueToBool(unwrap(res))) {
-                    result.push_back(item);
-                } else if (isError(res)) {
-                    return res;
+                    
+                    auto originalEnv = this->environment;
+                    this->environment = funcEnv;
+                    res = Evaluate(*func->declaration->body);
+                    this->environment = originalEnv;
+                    
+                    if (std::holds_alternative<ReturnValue>(res)) {
+                        if (ValueToBool(std::get<ReturnValue>(res).value)) {
+                            result->push_back(item);
+                        }
+                    } else if (!isError(res) && ValueToBool(unwrap(res))) {
+                        result->push_back(item);
+                    } else if (isError(res)) {
+                        return res;
+                    }
+                    continue;
+                } else {
+                    return HavelRuntimeError("filter() requires callable function");
                 }
-                continue;
-            } else {
-                return HavelRuntimeError("filter() requires callable function");
-            }
-            
-            if (isError(res)) return res;
-            if (ValueToBool(unwrap(res))) {
-                result.push_back(item);
+                
+                if (isError(res)) return res;
+                if (ValueToBool(unwrap(res))) {
+                    result->push_back(item);
+                }
             }
         }
         return HavelValue(result);
@@ -1442,7 +1546,8 @@ void Interpreter::InitializeArrayBuiltins() {
         if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("push() first arg must be array");
         
         auto array = std::get<HavelArray>(args[0]);
-        array.push_back(args[1]);
+        if (!array) return HavelRuntimeError("push() received null array");
+        array->push_back(args[1]);
         return HavelValue(array);
     }));
     
@@ -1452,10 +1557,10 @@ void Interpreter::InitializeArrayBuiltins() {
         if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("pop() arg must be array");
         
         auto array = std::get<HavelArray>(args[0]);
-        if (array.empty()) return HavelRuntimeError("Cannot pop from empty array");
+        if (!array || array->empty()) return HavelRuntimeError("Cannot pop from empty array");
         
-        HavelValue last = array.back();
-        array.pop_back();
+        HavelValue last = array->back();
+        array->pop_back();
         return last;
     }));
     
@@ -1464,13 +1569,15 @@ void Interpreter::InitializeArrayBuiltins() {
         if (args.empty()) return HavelRuntimeError("join() requires array");
         if (!std::holds_alternative<HavelArray>(args[0])) return HavelRuntimeError("join() first arg must be array");
         
-        auto& array = std::get<HavelArray>(args[0]);
+        auto array = std::get<HavelArray>(args[0]);
         std::string separator = args.size() > 1 ? ValueToString(args[1]) : ",";
         
         std::string result;
-        for (size_t i = 0; i < array.size(); ++i) {
-            result += ValueToString(array[i]);
-            if (i < array.size() - 1) result += separator;
+        if (array) {
+            for (size_t i = 0; i < array->size(); ++i) {
+                result += ValueToString((*array)[i]);
+                if (i < array->size() - 1) result += separator;
+            }
         }
         return HavelValue(result);
     }));
@@ -1481,16 +1588,16 @@ void Interpreter::InitializeArrayBuiltins() {
         std::string text = ValueToString(args[0]);
         std::string delimiter = args.size() > 1 ? ValueToString(args[1]) : ",";
         
-        HavelArray result;
+        auto result = std::make_shared<std::vector<HavelValue>>();
         size_t start = 0;
         size_t end = text.find(delimiter);
         
         while (end != std::string::npos) {
-            result.push_back(HavelValue(text.substr(start, end - start)));
+            result->push_back(HavelValue(text.substr(start, end - start)));
             start = end + delimiter.length();
             end = text.find(delimiter, start);
         }
-        result.push_back(HavelValue(text.substr(start)));
+        result->push_back(HavelValue(text.substr(start)));
         
         return HavelValue(result);
     }));
@@ -1737,10 +1844,12 @@ void Interpreter::InitializeGUIBuiltins() {
             return HavelRuntimeError("gui.menu() second arg must be array");
         }
         
-        auto& optionsArray = std::get<HavelArray>(args[1]);
+        auto optionsArray = std::get<HavelArray>(args[1]);
         std::vector<std::string> options;
-        for (const auto& opt : optionsArray) {
-            options.push_back(ValueToString(opt));
+        if (optionsArray) {
+            for (const auto& opt : *optionsArray) {
+                options.push_back(ValueToString(opt));
+            }
         }
         
         std::string selected = guiManager->showMenu(title, options);

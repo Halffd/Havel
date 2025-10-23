@@ -27,7 +27,7 @@ class GUIManager;
 
 // Forward declarations
 class Environment; 
-namespace ast { struct FunctionDeclaration; }
+namespace ast { struct FunctionDeclaration; struct Program; }
 
 // Error Handling
 class HavelRuntimeError : public std::runtime_error {
@@ -42,9 +42,9 @@ struct ReturnValue;
 struct BreakValue;
 struct ContinueValue;
 
-// Recursive types
-using HavelObject = std::unordered_map<std::string, HavelValue>;
-using HavelArray = std::vector<HavelValue>;
+// Recursive types now use shared_ptr for reference semantics
+using HavelArray = std::shared_ptr<std::vector<HavelValue>>;
+using HavelObject = std::shared_ptr<std::unordered_map<std::string, HavelValue>>;
 
 // Result type (declare BEFORE BuiltinFunction)
 using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue, BreakValue, ContinueValue>;
@@ -194,6 +194,9 @@ private:
     AudioManager* audioManager;
     GUIManager* guiManager;
     HavelResult lastResult;
+
+    // Keep parsed programs alive for function declarations captured by closures
+    std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
 
     HavelResult Evaluate(const ast::ASTNode& node);
 

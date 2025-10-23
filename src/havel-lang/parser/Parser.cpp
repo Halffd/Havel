@@ -50,10 +50,30 @@ namespace havel::parser {
         return program;
     }
 
-    std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
+std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         switch (at().type) {
             case havel::TokenType::Hotkey:
                 return parseHotkeyBinding();
+            case havel::TokenType::Identifier: {
+                // Support bare-letter hotkeys: e.g., a => { ... }
+                if (at(1).type == havel::TokenType::Arrow) {
+                    auto binding = std::make_unique<havel::ast::HotkeyBinding>();
+                    auto hotkeyToken = advance(); // identifier as hotkey
+                    advance(); // consume '=>'
+                    binding->hotkey = std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value);
+                    if (at().type == havel::TokenType::OpenBrace) {
+                        binding->action = parseBlockStatement();
+                    } else {
+                        auto expr = parseExpression();
+                        auto exprStmt = std::make_unique<havel::ast::ExpressionStatement>();
+                        exprStmt->expression = std::move(expr);
+                        binding->action = std::move(exprStmt);
+                    }
+                    return binding;
+                }
+                // Fallthrough to expression if not a hotkey binding
+                [[fallthrough]];
+            }
             case havel::TokenType::Let:
                 return parseLetDeclaration();
             case havel::TokenType::If:
@@ -485,9 +505,13 @@ namespace havel::parser {
     std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
         auto left = parsePipelineExpression();
         
-        // Check for assignment operator =
-        if (at().type == havel::TokenType::Assign) {
-            advance(); // consume '='
+        // Check for assignment operators
+        if (at().type == havel::TokenType::Assign ||
+            at().type == havel::TokenType::PlusAssign ||
+            at().type == havel::TokenType::MinusAssign ||
+            at().type == havel::TokenType::MultiplyAssign ||
+            at().type == havel::TokenType::DivideAssign) {
+            auto opTok = advance(); // consume the operator
             
             // Right-associative: a = b = c means a = (b = c)
             auto value = parseAssignmentExpression();
@@ -495,7 +519,7 @@ namespace havel::parser {
             return std::make_unique<havel::ast::AssignmentExpression>(
                 std::move(left),
                 std::move(value),
-                "="
+                opTok.value
             );
         }
         

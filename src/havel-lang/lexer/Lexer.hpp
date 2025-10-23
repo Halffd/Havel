@@ -57,7 +57,11 @@ namespace havel {
         And,            // &&
         Or,             // ||
         Not,            // !
-        Assign,
+        Assign,         // =
+        PlusAssign,     // +=
+        MinusAssign,    // -=
+        MultiplyAssign, // *=
+        DivideAssign,   // /=
         Pipe,
         Comment,
         NewLine,

@@ -148,6 +148,7 @@ public:
     void visitUnaryExpression(const ast::UnaryExpression& node) override;
     void visitCallExpression(const ast::CallExpression& node) override;
     void visitMemberExpression(const ast::MemberExpression& node) override;
+    void visitLambdaExpression(const ast::LambdaExpression& node) override;
     void visitStringLiteral(const ast::StringLiteral& node) override;
     void visitInterpolatedStringExpression(const ast::InterpolatedStringExpression& node) override;
     void visitNumberLiteral(const ast::NumberLiteral& node) override;

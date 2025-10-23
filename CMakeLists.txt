@@ -67,6 +67,14 @@ find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 
+# Optional: GNU Readline for REPL line-editing/history
+find_library(READLINE_LIB readline)
+if(READLINE_LIB)
+    message(STATUS "Readline:       ✓ ENABLED")
+else()
+    message(STATUS "Readline:       ✗ NOT FOUND (REPL falls back to std::getline)")
+endif()
+
 # D-Bus
 pkg_check_modules(DBUS REQUIRED dbus-1)
 
@@ -283,6 +291,8 @@ set(COMMON_LIBS
     Threads::Threads
     ${DBUS_LIBRARIES}
     ${LUA_LIBRARIES}
+    # Optional Readline
+    ${READLINE_LIB}
     # Qt6 libraries
     Qt6::Core
     Qt6::Widgets
@@ -348,6 +358,7 @@ target_link_libraries(havel PRIVATE
 target_compile_definitions(havel PRIVATE
     $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+    $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
 )
 
 # ==============================================================================

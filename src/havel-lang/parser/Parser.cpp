@@ -485,17 +485,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
             advance(); // consume '}'
         }
 
-        if (at().type != havel::TokenType::From) {
-            throw std::runtime_error("Expected 'from' keyword in import statement");
+        // Optional 'from' clause
+        if (at().type == havel::TokenType::From) {
+            advance(); // consume 'from'
+            if (at().type != havel::TokenType::String && at().type != havel::TokenType::Identifier) {
+                throw std::runtime_error("Expected module path after 'from'");
+            }
+            std::string path = advance().value;
+            return std::make_unique<havel::ast::ImportStatement>(path, items);
         }
-        advance(); // consume 'from'
-
-        if (at().type != havel::TokenType::String) {
-            throw std::runtime_error("Expected module path string after 'from'");
-        }
-        std::string path = advance().value;
-
-        return std::make_unique<havel::ast::ImportStatement>(path, items);
+        // No 'from': treat as importing built-in modules by name
+        return std::make_unique<havel::ast::ImportStatement>(std::string(""), items);
     }
 
     std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
@@ -811,7 +811,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
             }
     
             case havel::TokenType::Identifier: {
-                auto identTk = advance();
+                auto identTk = at();
+                // Arrow lambda with single parameter: x => expr
+                if (at(1).type == havel::TokenType::Arrow) {
+                    // single identifier parameter
+                    advance(); // consume identifier
+                    advance(); // consume '=>'
+                    std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+                    params.push_back(std::make_unique<havel::ast::Identifier>(identTk.value));
+                    return parseLambdaFromParams(std::move(params));
+                }
+                // Otherwise it's a normal identifier expression
+                identTk = advance();
                 std::unique_ptr<havel::ast::Expression> expr = std::make_unique<havel::ast::Identifier>(identTk.value);
     
                 // Handle postfix operations in a loop to support chaining: arr[0].prop() etc.
@@ -845,13 +856,39 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     
             case havel::TokenType::OpenParen: {
                 advance(); // consume '('
+                
+                // Detect empty or parameter list for arrow lambda: (a, b) => ... or () => ...
+                std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+                bool isParamList = false;
+                if (at().type == havel::TokenType::CloseParen) {
+                    // ()
+                    isParamList = true;
+                } else if (at().type == havel::TokenType::Identifier) {
+                    isParamList = true;
+                    while (notEOF() && at().type == havel::TokenType::Identifier) {
+                        params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+                        if (at().type == havel::TokenType::Comma) {
+                            advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                if (at().type != havel::TokenType::CloseParen) {
+                    throw std::runtime_error("Expected ')' after parameter list");
+                }
+                advance(); // consume ')'
+                if (isParamList && at().type == havel::TokenType::Arrow) {
+                    advance(); // consume '=>'
+                    return parseLambdaFromParams(std::move(params));
+                }
+                
+                // Not a lambda, treat as grouped expression
                 auto expr = parseExpression();
-    
                 if (at().type != havel::TokenType::CloseParen) {
                     throw std::runtime_error("Expected ')'");
                 }
                 advance(); // consume ')'
-    
                 return expr;
             }
             
@@ -1017,6 +1054,20 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
     advance(); // consume '}'
     
     return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseLambdaFromParams(std::vector<std::unique_ptr<havel::ast::Identifier>> params) {
+    // Body can be block or expression
+    if (at().type == havel::TokenType::OpenBrace) {
+        auto block = parseBlockStatement();
+        return std::make_unique<havel::ast::LambdaExpression>(std::move(params), std::move(block));
+    }
+    // Expression body: wrap in Return inside a block
+    auto expr = parseExpression();
+    auto exprStmt = std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    auto block = std::make_unique<havel::ast::BlockStatement>();
+    block->body.push_back(std::move(exprStmt));
+    return std::make_unique<havel::ast::LambdaExpression>(std::move(params), std::move(block));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseConfigBlock() {

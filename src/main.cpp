@@ -4,8 +4,13 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 #include "core/ConfigManager.hpp"
 #include "utils/Logger.hpp"
+#ifdef HAVE_READLINE
+#include <readline/readline.h>
+#include <readline/history.h>
+#endif
 
 #ifndef DISABLE_HAVEL_LANG
 #include "havel-lang/runtime/Engine.h"
@@ -85,17 +90,25 @@ int main(int argc, char* argv[]) {
         std::string multiline;
         int braceCount = 0;
         
+        // REPL log file
+        std::string home = std::getenv("HOME") ? std::getenv("HOME") : std::string(".");
+        std::string logPath = home + "/.havel_repl.log";
+        std::ofstream replLog(logPath, std::ios::app);
+        
         while (true) {
             // Prompt
-            if (braceCount > 0) {
-                std::cout << "... ";
-            } else {
-                std::cout << ">>> ";
-            }
+            std::string prompt = (braceCount > 0) ? "... " : ">>> ";
             
-            if (!std::getline(std::cin, line)) {
-                break; // EOF
-            }
+#ifdef HAVE_READLINE
+            char* input = readline(prompt.c_str());
+            if (!input) break; // EOF
+            line = std::string(input);
+            free(input);
+            if (!line.empty()) add_history(line.c_str());
+#else
+            std::cout << prompt;
+            if (!std::getline(std::cin, line)) break;
+#endif
             
             // Trim whitespace
             size_t start = line.find_first_not_of(" \t");
@@ -104,6 +117,12 @@ int main(int argc, char* argv[]) {
                 line = "";
             } else {
                 line = line.substr(start);
+            }
+            
+            // Log input
+            if (replLog.is_open()) {
+                replLog << line << '\n';
+                replLog.flush();
             }
             
             // Commands

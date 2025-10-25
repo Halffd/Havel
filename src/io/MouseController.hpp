@@ -10,9 +10,9 @@ namespace havel {
 
 class MouseController {
 private:
-  std::atomic<int> baseSpeed{10};
-  std::atomic<float> acceleration{1.6f};
-  std::atomic<int> currentSpeed{10};
+  std::atomic<int> baseSpeed{8};
+  std::atomic<float> acceleration{1.4f};
+  std::atomic<int> currentSpeed{8};
   std::atomic<bool> accelerationActive{false};
 
   std::atomic<std::chrono::steady_clock::time_point::rep> lastMoveTicks{0};

@@ -44,7 +44,7 @@ void KeyTap::stopMonitoring() {
 }
 
 void KeyTap::setup() {
-    std::string keyDown = "@" + keyName;
+    std::string keyDown = "@~" + keyName;
     std::string keyUp = "@" + keyName + ":up";
     
     // Tap behavior (press)
@@ -62,7 +62,7 @@ void KeyTap::setup() {
     
     // Combo behavior (press) - if different condition
     if (onCombo && !comboCondition.empty()) {
-        hotkeyManager.AddContextualHotkey(keyDown, comboCondition, [this]() {
+        hotkeyManager.AddContextualHotkey("@" + keyName, comboCondition, [this]() {
             std::cout << "[KeyTap] Triggering combo action for " << keyName << std::endl;
             onCombo();
         });

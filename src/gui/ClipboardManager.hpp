@@ -56,7 +56,7 @@ class ClipboardManager : public QMainWindow  {
 public:
     explicit ClipboardManager(IO* io, QWidget* parent = nullptr);
     ~ClipboardManager();
-    QClipboard* clipboard = nullptr;
+    static QClipboard* clipboard    ;
 
     void initializeHotkeys();
     Q_INVOKABLE void toggleVisibility();

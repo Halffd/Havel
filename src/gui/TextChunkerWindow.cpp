@@ -1,3 +1,4 @@
+// TextChunkerWindow.cpp
 #include "TextChunkerWindow.hpp"
 #include <QApplication>
 #include <QClipboard>
@@ -6,20 +7,20 @@
 #include <QLabel>
 #include <QScrollArea>
 #include <QSpinBox>
-#include <QPushButton>
 #include <QStatusBar>
 #include <QKeyEvent>
-#include <QString>
 #include <QFont>
-#include <QScreen>
 #include <QTimer>
 #include <algorithm>
-#include <iostream>
 
 namespace havel::gui {
 
+TextChunkerWindow* TextChunkerWindow::instance = nullptr;
+
 TextChunkerWindow::TextChunkerWindow(const std::string& inputText, size_t size, bool tail, QWidget* parent)
     : QMainWindow(parent), text(inputText), chunk_size(size), tail_mode(tail), inverted(false), current_chunk(1) {
+
+    instance = this;
 
     recalcChunks();
     if (tail_mode) current_chunk = total_chunks;
@@ -28,11 +29,11 @@ TextChunkerWindow::TextChunkerWindow(const std::string& inputText, size_t size, 
     updateUI();
     
     setAttribute(Qt::WA_DeleteOnClose);
-    statusBar()->showMessage("Local hotkeys active. Global hotkeys are managed by Havel.", 5000);
+    //setWindowFlags(Qt::Window | Qt::WindowStaysOnTopHint);
 }
 
 TextChunkerWindow::~TextChunkerWindow() {
-    // Destructor body
+    if (instance == this) instance = nullptr;
 }
 
 void TextChunkerWindow::recalcChunks() {
@@ -54,7 +55,6 @@ std::string TextChunkerWindow::getChunk(int pos) {
     }
     return text.substr(start_pos, end_pos - start_pos);
 }
-
 void TextChunkerWindow::updateUI() {
     std::string chunk = getChunk(current_chunk);
     chunkLabel->setText(QString::fromStdString(chunk));
@@ -71,11 +71,14 @@ void TextChunkerWindow::updateUI() {
     if (!modes.isEmpty()) info += " | " + modes.trimmed();
     
     infoLabel->setText(info);
-
     statusBar()->showMessage(QString("Copied %1 characters to clipboard").arg(chunk.length()));
-    clipboard->setText(QString::fromStdString(chunk));
+    
+    // Copy to clipboard asynchronously using timer
+    QTimer::singleShot(0, this, [this, chunk]() {
+        clipboard->setText(QString::fromStdString(chunk), QClipboard::Clipboard);
+    });
 
-    if (!isActiveWindow()) {
+    if (!isActiveWindow() && isVisible()) {
         activateWindow();
         raise();
         setWindowOpacity(0.9);
@@ -84,7 +87,6 @@ void TextChunkerWindow::updateUI() {
         });
     }
 }
-
 void TextChunkerWindow::goNext() {
     if (tail_mode ^ inverted)
         current_chunk = std::max(1, current_chunk - 1);
@@ -99,6 +101,31 @@ void TextChunkerWindow::goPrev() {
     else
         current_chunk = std::max(1, current_chunk - 1);
     updateUI();
+}
+
+void TextChunkerWindow::nextChunk() { goNext(); }
+void TextChunkerWindow::prevChunk() { goPrev(); }
+
+void TextChunkerWindow::invertMode() {
+    inverted = !inverted;
+    current_chunk = total_chunks - current_chunk + 1;
+    updateUI();
+}
+
+void TextChunkerWindow::recopyChunk() {
+    auto chunk = getChunk(current_chunk);
+    QTimer::singleShot(0, this, [this, chunk]() {
+        clipboard->setText(QString::fromStdString(chunk), QClipboard::Clipboard);
+    });
+    statusBar()->showMessage("Recopied to clipboard", 2000);
+}
+
+void TextChunkerWindow::increaseLimit() {
+    chunkSizeSpinBox->setValue(chunkSizeSpinBox->value() + 1000);
+}
+
+void TextChunkerWindow::decreaseLimit() {
+    chunkSizeSpinBox->setValue(chunkSizeSpinBox->value() - 1000);
 }
 
 void TextChunkerWindow::loadNewText() {
@@ -119,24 +146,38 @@ void TextChunkerWindow::loadNewText() {
     
     statusBar()->showMessage("Loaded new text from clipboard!", 2000);
     updateUI();
+    
+    if (!isVisible()) {
+        show();
+        raise();
+        activateWindow();
+    }
+}
+
+void TextChunkerWindow::toggleVisibility() {
+    if (isVisible()) {
+        hide();
+    } else {
+        show();
+        raise();
+        activateWindow();
+    }
 }
 
 void TextChunkerWindow::keyPressEvent(QKeyEvent* event) {
     switch (event->key()) {
-    case Qt::Key_N: case Qt::Key_Right: case Qt::Key_Space: case Qt::Key_Return: case Qt::Key_Enter:
+    case Qt::Key_N: case Qt::Key_Right: case Qt::Key_Space:
+    case Qt::Key_Return: case Qt::Key_Enter:
         goNext();
         break;
     case Qt::Key_P: case Qt::Key_Left: case Qt::Key_Backspace:
         goPrev();
         break;
     case Qt::Key_R: case Qt::Key_C:
-        clipboard->setText(QString::fromStdString(getChunk(current_chunk)));
-        statusBar()->showMessage("Recopied to clipboard", 2000);
+        recopyChunk();
         break;
     case Qt::Key_I:
-        inverted = !inverted;
-        current_chunk = total_chunks - current_chunk + 1;
-        updateUI();
+        invertMode();
         break;
     case Qt::Key_F: case Qt::Key_Home:
         current_chunk = (tail_mode ^ inverted) ? total_chunks : 1;
@@ -150,7 +191,7 @@ void TextChunkerWindow::keyPressEvent(QKeyEvent* event) {
         loadNewText();
         break;
     case Qt::Key_Q: case Qt::Key_Escape:
-        this->close(); // Use close() instead of QApplication::quit()
+        hide();
         break;
     }
 }
@@ -162,7 +203,6 @@ void TextChunkerWindow::onChunkSizeChanged() {
 }
 
 void TextChunkerWindow::setupUI() {
-    // This is mostly the same as the user's code, just with some adjustments.
     QWidget* central = new QWidget(this);
     QVBoxLayout* mainLayout = new QVBoxLayout(central);
     mainLayout->setSpacing(15);
@@ -218,7 +258,8 @@ void TextChunkerWindow::setupUI() {
     infoLabel->setFont(infoFont);
     mainLayout->addWidget(infoLabel);
 
-    helpLabel = new QLabel("⌨️  Local: N/Space/Enter/→=Next  P/Backspace/←=Prev  R/C=Recopy  V=New Text  Q/Esc=Quit", this);
+    helpLabel = new QLabel("⌨️  Local: N/→=Next P/←=Prev R=Recopy V=NewText I=Invert Q/Esc=Hide\n"
+                          "🌐 Global: Managed by Havel", this);
     helpLabel->setAlignment(Qt::AlignCenter);
     helpLabel->setWordWrap(true);
     QFont helpFont = helpLabel->font();
@@ -249,7 +290,6 @@ void TextChunkerWindow::setupUI() {
     chunkLabel->setObjectName("chunkLabel");
     statusBar()->setSizeGripEnabled(true);
     statusBar()->showMessage("Ready");
-
     clipboard = QApplication::clipboard();
 }
 

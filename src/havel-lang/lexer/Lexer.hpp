@@ -99,13 +99,14 @@ namespace havel {
         std::vector<Token> tokenize();
         void printTokens(const std::vector<Token>& tokens) const;
 
+        static const std::unordered_map<std::string, TokenType> KEYWORDS;
+
     private:
         std::string source;
         size_t position = 0;
         size_t line = 1;
         size_t column = 1;
 
-        static const std::unordered_map<std::string, TokenType> KEYWORDS;
         static const std::unordered_map<char, TokenType> SINGLE_CHAR_TOKENS;
 
         bool isAtEnd() const;

@@ -11,7 +11,7 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
-
+#include "havel-lang/common/Debug.hpp"
 #ifndef DISABLE_HAVEL_LANG
 #include "havel-lang/runtime/Engine.h"
 #include "havel-lang/runtime/Interpreter.hpp"
@@ -50,6 +50,12 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--debug" || arg == "-d") {
             debugMode = true;
             Logger::getInstance().setLogLevel(Logger::LOG_DEBUG);
+        } else if (arg == "--debug-parser" || arg == "-dp") {
+            debugging::debug_parser = true;
+        } else if (arg == "--debug-ast" || arg == "-da") {
+            debugging::debug_ast = true;
+        } else if (arg == "--debug-lexer" || arg == "-dl") {
+            debugging::debug_lexer = true;
         } else if (arg == "--repl" || arg == "-r") {
             // REPL mode flag
             scriptFile = "--repl";
@@ -58,8 +64,9 @@ int main(int argc, char* argv[]) {
             std::cout << "Options:\n";
             std::cout << "  --startup       Run at system startup\n";
             std::cout << "  --debug, -d     Enable debug logging\n";
-            std::cout << "  --repl, -r      Start interactive REPL\n";
-            std::cout << "  --help, -h      Show this help\n";
+            std::cout << "  --debug-parser, -dp  Enable debug parser\n";
+            std::cout << "  --debug-ast, -da   Enable debug AST\n";
+            std::cout << "  --debug-lexer, -dl Enable debug lexer\n";
             std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
             std::cout << "If no script is provided, the GUI tray application starts.\n";
             return 0;
@@ -158,6 +165,9 @@ int main(int argc, char* argv[]) {
             
             // Execute when braces are balanced
             if (braceCount == 0 && !multiline.empty()) {
+                if (havel::debugging::debug_repl) {
+                    std::cout << "[REPL-DEBUG] Executing: " << multiline << std::endl;
+                }
                 try {
                     auto result = interpreter.Execute(multiline);
                     

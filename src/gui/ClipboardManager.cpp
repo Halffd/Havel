@@ -35,6 +35,7 @@
 #include <QMenu>
 
 namespace havel {
+    QClipboard* ClipboardManager::clipboard = nullptr;
 // File system operations
 QString ClipboardManager::getHistoryBasePath() const {
     return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/clipboard_history";

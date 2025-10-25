@@ -127,6 +127,69 @@ void HavelApp::initializeComponents(bool isStartup) {
     hotkeyManager->LoadHotkeyConfigurations();
     
 
+    // Toggle visibility
+    io->Hotkey("@^!c", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) {
+                gui::TextChunkerWindow::instance->toggleVisibility();
+            }
+        }, Qt::QueuedConnection);
+    });
+    
+    // Load new text
+    io->Hotkey("@^!v", [this]() {
+        QMetaObject::invokeMethod(this, [this]() {
+            showTextChunker();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Next chunk
+    io->Hotkey("@^!n", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->nextChunk();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Previous chunk
+    io->Hotkey("@^!p", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->prevChunk();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Invert
+    io->Hotkey("@^!i", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->invertMode();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Recopy
+    io->Hotkey("@^!r", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->recopyChunk();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Increase limit
+    io->Hotkey("@^!equal", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->increaseLimit();
+        }, Qt::QueuedConnection);
+    });
+    
+    // Decrease limit
+    io->Hotkey("@^!minus", [this]() {
+        QMetaObject::invokeMethod(this, []() {
+            if (gui::TextChunkerWindow::instance) 
+                gui::TextChunkerWindow::instance->decreaseLimit();
+        }, Qt::QueuedConnection);
+    });
     // Initialize AutomationSuite with IO instance
     AutomationSuite::Instance(io.get());
     
@@ -283,10 +346,7 @@ void HavelApp::cleanup() noexcept {
     
     info("HavelApp cleanup complete");
 }
-
-} // namespace havel
-
-void havel::HavelApp::showTextChunker() {
+void HavelApp::showTextChunker() {
     QClipboard* clipboard = QApplication::clipboard();
     std::string text = clipboard->text().toStdString();
 
@@ -297,7 +357,11 @@ void havel::HavelApp::showTextChunker() {
         return;
     }
 
-    // The window will delete itself on close
-    auto* chunkerWindow = new havel::gui::TextChunkerWindow(text);
-    chunkerWindow->show();
+    if (gui::TextChunkerWindow::instance) {
+        gui::TextChunkerWindow::instance->loadNewText();
+    } else {
+        auto* chunkerWindow = new havel::gui::TextChunkerWindow(text);
+        chunkerWindow->hide(); // Start hidden
+    }
 }
+} // namespace havel

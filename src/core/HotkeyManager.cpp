@@ -273,20 +273,22 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         // play audio
         audioManager.playTestSound();
     });
-    io.Hotkey("^numpadadd", [this]() {
+    io.Hotkey("^numpadsub", [this]() {
         auto phone = audioManager.findDeviceByName("G30");
-        if(!phone){
-            phone = audioManager.findDeviceByName("200");
+        auto bt = audioManager.findDeviceByName("200");
+        if(bt){
+            audioManager.increaseVolume(bt->name, 0.05);
         }
         audioManager.increaseVolume(phone->name, 0.05);
         double vol = audioManager.getVolume(phone->name);
         showNotification("Volume (G30)", std::to_string(static_cast<int>(vol * 100)) + "%");
         info("Current volume (G30): {:.0f}%", vol * 100);
     });
-    io.Hotkey("^numpadsub", [this]() {
+    io.Hotkey("^numpadadd", [this]() {
         auto phone = audioManager.findDeviceByName("G30");
-        if(!phone){
-            phone = audioManager.findDeviceByName("200");
+        auto bt = audioManager.findDeviceByName("200");
+        if(bt){
+            audioManager.decreaseVolume(bt->name, 0.05);
         }
         audioManager.decreaseVolume(phone->name, 0.05);
         double vol = audioManager.getVolume(phone->name);
@@ -295,21 +297,22 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
     io.Hotkey("^numpad0", [this]() {
         auto phone = audioManager.findDeviceByName("G30");
-        if(!phone){
-            phone = audioManager.findDeviceByName("200");
+        auto bt = audioManager.findDeviceByName("200");
+        if(bt){
+            audioManager.setVolume(bt->name, 0);
         }
         audioManager.setVolume(phone->name, 0);
         showNotification("Volume (G30)", "0%");
         info("Current volume (G30): 0%");
     });
-    io.Hotkey("+numpadadd", [this]() {
+    io.Hotkey("+numpadsub", [this]() {
         auto builtIn = audioManager.findDeviceByName("Built-in Audio");
         audioManager.increaseVolume(builtIn->name, 0.05);
         double vol = audioManager.getVolume(builtIn->name);
         showNotification("Volume (Built-in)", std::to_string(static_cast<int>(vol * 100)) + "%");
         info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
     });
-    io.Hotkey("+numpadsub", [this]() {
+    io.Hotkey("+numpadadd", [this]() {
         auto builtIn = audioManager.findDeviceByName("Built-in Audio");
         audioManager.decreaseVolume(builtIn->name, 0.05);
         double vol = audioManager.getVolume(builtIn->name);
@@ -322,14 +325,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         showNotification("Volume (Built-in)", "0%");
         info("Current volume (Built-in Audio): 0%");
     });
-    io.Hotkey("@numpadAdd", [this]() {
+    io.Hotkey("@numpadsub", [this]() {
         audioManager.increaseVolume(0.05);
         double vol = audioManager.getVolume();
         showNotification("Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
         info("Current volume (Default): {:.0f}%", vol * 100);
     });
 
-    io.Hotkey("@numpadsub", [this]() {
+    io.Hotkey("@numpadadd", [this]() {
         audioManager.decreaseVolume(0.05);
         double vol = audioManager.getVolume();
         showNotification("Volume", std::to_string(static_cast<int>(vol * 100)) + "%");
@@ -357,27 +360,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         "mode == 'gaming'"                                             // Combo condition
     );
     lwin->setup();
-        
-    AddContextualHotkey("@lwin:up", "mode != 'gaming'", 
-        [this]() {
-            auto now = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - winKeyPressTime).count();
-            
-            // Only open menu if:
-            // 1. No other keys were pressed during Win hold
-            // 2. Win key wasn't held too long (avoid accidental triggers)
-            if (!winKeyComboDetected && duration < 500) {
-                Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
-            }
-        });
-        
-    // Detect when other keys are pressed while Win is down
-    // Add this logic to your main key processing loop:
-    // if (winKeyPressed && keycode != KEY_LEFTMETA && keycode != KEY_RIGHTMETA) {
-    //     winKeyComboDetected = true;
-    // }
-
     AddGamingHotkey("u", 
         [this]() {
             if (!holdClick) {
@@ -775,18 +757,17 @@ AddHotkey("@^!Home", [WinMove]() {
         info("NPEnter Click");
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
-    QClipboard *clipboard = QApplication::clipboard();
-    AddHotkey("@!3", [clipboard]() { 
-        auto clipboardText = clipboard->text();
+    AddHotkey("@!3", []() { 
+        auto clipboardText = ClipboardManager::clipboard->text();
         // get first 20000 characters
         clipboardText = clipboardText.left(20000);
-        clipboard->setText(clipboardText);
+        ClipboardManager::clipboard->setText(clipboardText);
     });
-    AddHotkey("@!4", [clipboard]() { 
-        auto clipboardText = clipboard->text();
+    AddHotkey("@!4", []() { 
+        auto clipboardText = ClipboardManager::clipboard->text();
         // get last 20000 characters
         clipboardText = clipboardText.right(20000);
-        clipboard->setText(clipboardText);
+        ClipboardManager::clipboard->setText(clipboardText);
     });
     
     AddHotkey("@|numpad5", [this]() { 
@@ -814,11 +795,22 @@ AddHotkey("@^!Home", [WinMove]() {
     });
     
     AddHotkey("@numpad0", [this]() { 
-        io.Scroll(-1, 0);
+        io.Scroll(-2, 0);
     });
     
     AddHotkey("@numpaddec", [this]() { 
+        io.Scroll(2, 0);
+    });
+    AddHotkey("@!numpad0", [this]() { 
         io.Scroll(1, 0);
+    });
+
+    AddHotkey("@+numpaddec", [this]() { 
+        io.Scroll(0, 2);
+    });
+    
+    AddHotkey("@+numpad0", [this]() { 
+        io.Scroll(0, -2);
     });
     
       AddHotkey("@numpad1", [&]() { 

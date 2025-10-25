@@ -4,6 +4,7 @@
 #pragma once
 #include "../lexer/Lexer.hpp"
 #include "../ast/AST.h"
+#include "../common/Debug.hpp"
 #include <vector>
 #include <memory>
 

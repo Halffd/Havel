@@ -1,15 +1,13 @@
+// TextChunkerWindow.hpp
 #pragma once
 
 #include <QMainWindow>
 #include <string>
 
-// Forward declarations for Qt classes to reduce header dependencies
 class QLabel;
 class QSpinBox;
-class QPushButton;
 class QScrollArea;
 class QClipboard;
-class QKeyEvent;
 
 namespace havel::gui {
 
@@ -18,12 +16,19 @@ class TextChunkerWindow : public QMainWindow {
 
 public:
     TextChunkerWindow(const std::string& inputText, size_t size = 20000, bool tail = false, QWidget* parent = nullptr);
-    ~TextChunkerWindow() override;
+    ~TextChunkerWindow();
 
-public slots:
-    void goNext();
-    void goPrev();
+    static TextChunkerWindow* instance;
+
+    // Public methods for global hotkey control
+    void nextChunk();
+    void prevChunk();
+    void invertMode();
+    void recopyChunk();
+    void increaseLimit();
+    void decreaseLimit();
     void loadNewText();
+    void toggleVisibility();
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
@@ -32,10 +37,12 @@ private slots:
     void onChunkSizeChanged();
 
 private:
-    void setupUI();
     void recalcChunks();
     std::string getChunk(int pos);
     void updateUI();
+    void goNext();
+    void goPrev();
+    void setupUI();
 
     std::string text;
     size_t chunk_size;

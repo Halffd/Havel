@@ -215,6 +215,7 @@ private:
     void InitializeMediaBuiltins();
     void InitializeLauncherBuiltins();
     void InitializeGUIBuiltins();
+    void InitializeHelpBuiltin();
 };
 
 } // namespace havel

@@ -39,7 +39,7 @@ bool MappingCondition::Evaluate() const {
             int revert;
             XGetInputFocus(display, &focused, &revert);
             
-            if (focused == None) {
+            if (focused == 0) {  // X11 None constant
                 XCloseDisplay(display);
                 return false;
             }
@@ -345,7 +345,7 @@ void MapManager::ClearAllMappings() {
     // Remove all registered hotkeys
     for (auto& [profileId, hotkeyIds] : profileHotkeyIds) {
         for (int id : hotkeyIds) {
-            io->RemoveHotkey(id);
+            io->UngrabHotkey(id);
         }
     }
     profileHotkeyIds.clear();
@@ -383,7 +383,7 @@ void MapManager::PreviousProfile() {
 
 void MapManager::SetProfileSwitchHotkey(const std::string& hotkey) {
     if (profileSwitchHotkeyId != -1) {
-        io->RemoveHotkey(profileSwitchHotkeyId);
+        io->UngrabHotkey(profileSwitchHotkeyId);
     }
     
     profileSwitchHotkeyId = io->Hotkey(hotkey, [this]() {
@@ -458,7 +458,7 @@ void MapManager::UnregisterMapping(const std::string& profileId, const std::stri
     auto it = profileHotkeyIds.find(profileId);
     if (it != profileHotkeyIds.end()) {
         for (int id : it->second) {
-            io->RemoveHotkey(id);
+            io->UngrabHotkey(id);
         }
         it->second.clear();
     }
@@ -477,9 +477,9 @@ void MapManager::ExecuteMapping(Mapping& mapping, bool down) {
         case ActionType::Hold:
             for (const auto& key : mapping.targetKeys) {
                 if (down) {
-                    io->KeyDown(key);
+                    io->SendX11Key(key, true);  // KeyDown
                 } else {
-                    io->KeyUp(key);
+                    io->SendX11Key(key, false);  // KeyUp
                 }
             }
             break;
@@ -489,9 +489,9 @@ void MapManager::ExecuteMapping(Mapping& mapping, bool down) {
                 mapping.toggleState = !mapping.toggleState;
                 for (const auto& key : mapping.targetKeys) {
                     if (mapping.toggleState) {
-                        io->KeyDown(key);
+                        io->SendX11Key(key, true);  // KeyDown
                     } else {
-                        io->KeyUp(key);
+                        io->SendX11Key(key, false);  // KeyUp
                     }
                 }
             }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QWidget>
+#include <QDialog>
 #include <QListWidget>
 #include <QPushButton>
 #include <QComboBox>
@@ -190,7 +191,7 @@ class MappingEditorDialog : public QDialog {
 public:
     explicit MappingEditorDialog(Mapping* mapping, IO* io, QWidget* parent = nullptr);
     
-    Mapping getMapping() const { return editedMapping; }
+    const Mapping& getMapping() const { return editedMapping; }
     bool wasAccepted() const { return accepted; }
 
 private slots:

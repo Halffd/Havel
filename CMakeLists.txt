@@ -253,6 +253,13 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/utils/*.cpp"
 )
 
+# Explicitly add IO sources that might be missed by glob
+list(APPEND CORE_SOURCES
+    "src/core/io/EventListener.cpp"
+    "src/core/io/KeyMapData.cpp"
+    "src/core/io/X11HotkeyMonitor.cpp"
+)
+
 # GUI sources (always included)
 file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
 list(FILTER GUI_SOURCES EXCLUDE REGEX "main\\.cpp$")
@@ -301,7 +308,7 @@ set(COMMON_LIBS
     wayland-protos
     ${WAYLAND_LIBRARIES}
     # System libraries
-    dl crypto zip ssl pthread m
+    dl crypto zip ssl pthread m fmt
 )
 
 # ==============================================================================

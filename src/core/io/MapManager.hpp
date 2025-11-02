@@ -117,6 +117,52 @@ struct Mapping {
     std::chrono::steady_clock::time_point lastFireTime;
     std::atomic<bool> active{false};
     
+    // Default constructor
+    Mapping() = default;
+    
+    // Copy constructor
+    Mapping(const Mapping& other) 
+        : id(other.id), name(other.name), enabled(other.enabled),
+          type(other.type), sourceKey(other.sourceKey), sourceCode(other.sourceCode),
+          actionType(other.actionType), targetKeys(other.targetKeys), targetCodes(other.targetCodes),
+          autofire(other.autofire), autofireInterval(other.autofireInterval),
+          turbo(other.turbo), turboInterval(other.turboInterval),
+          mouseMovement(other.mouseMovement), sensitivity(other.sensitivity),
+          deadzone(other.deadzone), acceleration(other.acceleration),
+          toggleMode(other.toggleMode), toggleState(other.toggleState),
+          macroSequence(other.macroSequence), conditions(other.conditions),
+          lastFireTime(other.lastFireTime), active(other.active.load()) {}
+    
+    // Copy assignment
+    Mapping& operator=(const Mapping& other) {
+        if (this != &other) {
+            id = other.id;
+            name = other.name;
+            enabled = other.enabled;
+            type = other.type;
+            sourceKey = other.sourceKey;
+            sourceCode = other.sourceCode;
+            actionType = other.actionType;
+            targetKeys = other.targetKeys;
+            targetCodes = other.targetCodes;
+            autofire = other.autofire;
+            autofireInterval = other.autofireInterval;
+            turbo = other.turbo;
+            turboInterval = other.turboInterval;
+            mouseMovement = other.mouseMovement;
+            sensitivity = other.sensitivity;
+            deadzone = other.deadzone;
+            acceleration = other.acceleration;
+            toggleMode = other.toggleMode;
+            toggleState = other.toggleState;
+            macroSequence = other.macroSequence;
+            conditions = other.conditions;
+            lastFireTime = other.lastFireTime;
+            active.store(other.active.load());
+        }
+        return *this;
+    }
+    
     // Check if mapping should be active
     bool ShouldActivate() const;
 };

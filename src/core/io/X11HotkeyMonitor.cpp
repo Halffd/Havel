@@ -120,11 +120,11 @@ void X11HotkeyMonitor::MonitorLoop() {
                 
                 try {
                     // Only process key events
-                    if (event.type != KeyPress && event.type != KeyRelease) {
+                    if (event.type != x11::XKeyPress && event.type != x11::XKeyRelease) {
                         continue;
                     }
                     
-                    const bool isDown = (event.type == KeyPress);
+                    const bool isDown = (event.type == x11::XKeyPress);
                     const XKeyEvent* keyEvent = &event.xkey;
                     
                     // Clean modifier state
@@ -193,7 +193,7 @@ void X11HotkeyMonitor::MonitorLoop() {
     info("X11 hotkey monitoring loop stopped");
 }
 
-bool X11HotkeyMonitor::IsModifierKey(KeySym ks) {
+bool X11HotkeyMonitor::IsModifierKeySym(KeySym ks) {
     return ks == XK_Shift_L || ks == XK_Shift_R || 
            ks == XK_Control_L || ks == XK_Control_R || 
            ks == XK_Alt_L || ks == XK_Alt_R ||

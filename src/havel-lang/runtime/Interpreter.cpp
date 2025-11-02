@@ -957,7 +957,7 @@ void Interpreter::visitAssignmentExpression(const ast::AssignmentExpression& nod
     }
     HavelValue value = unwrap(valueResult);
     
-    auto applyCompound = [this](const std::string& op, const HavelValue& lhs, const HavelValue& rhs) -> HavelValue {
+    auto applyCompound = [](const std::string& op, const HavelValue& lhs, const HavelValue& rhs) -> HavelValue {
         if (op == "=") return rhs;
         if (op == "+=") return HavelValue(ValueToNumber(lhs) + ValueToNumber(rhs));
         if (op == "-") return HavelValue(ValueToNumber(lhs) - ValueToNumber(rhs)); // not used
@@ -1284,7 +1284,7 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(nullptr);
     }));
     
-    environment->Define("sleep", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("sleep", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("sleep() requires milliseconds");
         double ms = ValueToNumber(args[0]);
         std::this_thread::sleep_for(std::chrono::milliseconds((int)ms));
@@ -1370,7 +1370,7 @@ void Interpreter::InitializeWindowBuiltins() {
         return HavelValue(nullptr);
     }));
     
-    environment->Define("window.focus", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("window.focus", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("window.focus() requires window title");
         std::string title = ValueToString(args[0]);
         wID winId = havel::WindowManager::FindByTitle(title.c_str());

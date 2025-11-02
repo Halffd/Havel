@@ -20,6 +20,8 @@
 #include <mutex>
 #include "core/io/HotkeyExecutor.hpp"
 #include "core/io/Device.hpp"
+#include "core/io/KeyMap.hpp"
+#include "core/io/EventListener.hpp"
 #include "x11.h"
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
@@ -71,6 +73,10 @@ struct HotKey {
     std::vector<HotKey> comboSequence;
     // Time window for combo in milliseconds
     int comboTimeWindow = 500;
+    
+    // Repeat interval in milliseconds (0 = use default key repeat)
+    int repeatInterval = 0;
+    std::chrono::steady_clock::time_point lastTriggerTime;
 };
 struct ParsedHotkey {
   std::string keyPart;
@@ -82,6 +88,7 @@ struct ParsedHotkey {
   bool repeat = true;
   bool wildcard = false;
   HotkeyEventType eventType = HotkeyEventType::Down;
+  int repeatInterval = 0; // Custom repeat interval in milliseconds
 };
 
 struct InputDevice {
@@ -162,6 +169,10 @@ class IO {
   
   // Track active callback threads for proper cleanup
   std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
+  
+  // New unified event listener
+  std::unique_ptr<EventListener> eventListener;
+  bool useNewEventListener = false;
   
 public:
   static std::unordered_map<int, HotKey> hotkeys;

@@ -919,7 +919,7 @@ AddHotkey("@^!Home", [WinMove]() {
     AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this](){
         auto winId = WindowManager::GetActiveWindow();
         
-        if (!fRunning) {
+        //if (!fRunning) {
             // Start F spamming
             fRunning = true;
             fTimer = TimerManager::SetTimer(100, [this, winId]() {
@@ -948,7 +948,8 @@ AddHotkey("@^!Home", [WinMove]() {
             });
             
             info("Started F spamming");
-        } else {
+        //} 
+        if(io.GetKeyState("lctrl")) {
             // Stop F spamming
             if (fTimer) {
                 TimerManager::StopTimer(fTimer);
@@ -961,7 +962,7 @@ AddHotkey("@^!Home", [WinMove]() {
 
     AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
         info("Space pressed - starting spam");
-        io.Send("space:up");  // Release first to ensure clean state
+        io.Send("{space:up}");  // Release first to ensure clean state
         
         auto winId = WindowManager::GetActiveWindow();
         spaceTimer = TimerManager::SetTimer(100, [this, winId]() {
@@ -973,7 +974,7 @@ AddHotkey("@^!Home", [WinMove]() {
                 }
                 return;
             }
-            io.Send("space");
+            io.Send("{space}");
         }, true);
     });
 
@@ -983,7 +984,7 @@ AddHotkey("@^!Home", [WinMove]() {
             TimerManager::StopTimer(spaceTimer);
             spaceTimer = nullptr;
         }
-        io.Send("space:up");
+        io.Send("{space:up}");
     });
     AddContextualHotkey("enter", "window.title ~ 'Genshin Impact'", [this]() {
         // Toggle automation

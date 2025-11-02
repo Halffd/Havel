@@ -214,61 +214,119 @@ IO::IO() {
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
 
+  // Initialize KeyMap
+  KeyMap::Initialize();
+  
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
+  
+  // Check if we should use the new EventListener
+  useNewEventListener = Configs::Get().Get<bool>("IO.UseNewEventListener", false);
 
 #ifdef __linux__
   if (display) {
     UpdateNumLockMask();
 
-    // Initialize keyboard device
-    std::string keyboardDevice = getKeyboardDevice();
-    if (!keyboardDevice.empty()) {
-      try {
-        info("Using keyboard device: {}", keyboardDevice);
-        SetupUinputDevice();
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        StartEvdevHotkeyListener(keyboardDevice);
-        info("Successfully started evdev hotkey listener for keyboard");
-      } catch (const std::exception &e) {
-        error("Failed to start evdev keyboard listener: {}", e.what());
-        globalEvdev = false;
+    if (useNewEventListener) {
+      // Use new unified EventListener
+      info("Using new unified EventListener");
+      
+      std::vector<std::string> devices;
+      std::string keyboardDevice = getKeyboardDevice();
+      std::string mouseDevice = getMouseDevice();
+      std::string gamepadDevice;
+      
+      if (!keyboardDevice.empty()) {
+        devices.push_back(keyboardDevice);
+        info("Adding keyboard device: {}", keyboardDevice);
       }
-    } else {
-      globalEvdev = false;
-      error("Failed to find a suitable keyboard device");
-    }
-
-    // Initialize mouse device
-    std::string mouseDevice = getMouseDevice();
-    if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-      try {
-        info("Using mouse device: {}", mouseDevice);
-        StartEvdevMouseListener(mouseDevice);
-        info("Successfully started evdev mouse listener");
-      } catch (const std::exception &e) {
-        error("Failed to start evdev mouse listener: {}", e.what());
+      
+      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+        devices.push_back(mouseDevice);
+        info("Adding mouse device: {}", mouseDevice);
       }
-    } else if (mouseDevice.empty()) {
-      warning("No suitable mouse device found");
-    }
-
-    // Initialize gamepad device if requested
-    bool enableGamepad =
-        Configs::Get().Get<bool>("Device.EnableGamepad", false);
-    if (enableGamepad) {
-      std::string gamepadDevice = getGamepadDevice();
-      if (!gamepadDevice.empty()) {
+      
+      bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
+      if (enableGamepad) {
+        gamepadDevice = getGamepadDevice();
+        if (!gamepadDevice.empty()) {
+          devices.push_back(gamepadDevice);
+          info("Adding gamepad device: {}", gamepadDevice);
+        }
+      }
+      
+      if (!devices.empty()) {
         try {
-          info("Using gamepad device: {}", gamepadDevice);
-          StartEvdevGamepadListener(gamepadDevice);
-          info("Successfully started evdev gamepad listener");
+          eventListener = std::make_unique<EventListener>();
+          eventListener->SetupUinput();
+          
+          // Set mouse and scroll sensitivity
+          eventListener->SetMouseSensitivity(mouseSensitivity);
+          eventListener->SetScrollSpeed(Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+          
+          eventListener->Start(devices);
+          globalEvdev = true;
+          info("Successfully started unified EventListener with {} devices", devices.size());
         } catch (const std::exception &e) {
-          error("Failed to start evdev gamepad listener: {}", e.what());
+          error("Failed to start unified EventListener: {}", e.what());
+          globalEvdev = false;
         }
       } else {
-        warning("Gamepad support enabled but no suitable gamepad device found");
+        globalEvdev = false;
+        error("No input devices found for EventListener");
+      }
+    } else {
+      // Use old separate listeners
+      // Initialize keyboard device
+      std::string keyboardDevice = getKeyboardDevice();
+      if (!keyboardDevice.empty()) {
+        try {
+          info("Using keyboard device: {}", keyboardDevice);
+          SetupUinputDevice();
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+          StartEvdevHotkeyListener(keyboardDevice);
+          info("Successfully started evdev hotkey listener for keyboard");
+        } catch (const std::exception &e) {
+          error("Failed to start evdev keyboard listener: {}", e.what());
+          globalEvdev = false;
+        }
+      } else {
+        globalEvdev = false;
+        error("Failed to find a suitable keyboard device");
+      }
+
+      // Initialize mouse device
+      std::string mouseDevice = getMouseDevice();
+      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+        try {
+          info("Using mouse device: {}", mouseDevice);
+          StartEvdevMouseListener(mouseDevice);
+          info("Successfully started evdev mouse listener");
+        } catch (const std::exception &e) {
+          error("Failed to start evdev mouse listener: {}", e.what());
+        }
+      } else if (mouseDevice.empty()) {
+        warning("No suitable mouse device found");
+      }
+
+      // Initialize gamepad device if requested
+      bool enableGamepad =
+          Configs::Get().Get<bool>("Device.EnableGamepad", false);
+      if (enableGamepad) {
+        std::string gamepadDevice = getGamepadDevice();
+        if (!gamepadDevice.empty()) {
+          try {
+            info("Using gamepad device: {}", gamepadDevice);
+            StartEvdevGamepadListener(gamepadDevice);
+            info("Successfully started evdev gamepad listener");
+          } catch (const std::exception &e) {
+            error("Failed to start evdev gamepad listener: {}", e.what());
+          }
+        } else {
+          warning("Gamepad support enabled but no suitable gamepad device found");
+        }
       }
     }
 
@@ -1550,12 +1608,29 @@ ParsedHotkey IO::ParseHotkeyString(const std::string &rawInput) {
   ParsedHotkey result;
   std::string hotkeyStr = rawInput;
 
-  // Parse event type suffix (:up, :down, etc.)
+  // Parse event type suffix (:up, :down, :N, etc.)
   size_t colonPos = hotkeyStr.rfind(':');
   if (colonPos != std::string::npos && colonPos + 1 < hotkeyStr.size()) {
     std::string suffix = hotkeyStr.substr(colonPos + 1);
-    result.eventType = ParseHotkeyEventType(suffix);
-    hotkeyStr = hotkeyStr.substr(0, colonPos);
+    
+    // Check if suffix is a number (repeat interval)
+    bool isNumber = !suffix.empty() && std::all_of(suffix.begin(), suffix.end(), ::isdigit);
+    
+    if (isNumber) {
+      // Parse as repeat interval in milliseconds
+      try {
+        result.repeatInterval = std::stoi(suffix);
+        hotkeyStr = hotkeyStr.substr(0, colonPos);
+      } catch (const std::exception&) {
+        // Invalid number, treat as event type
+        result.eventType = ParseHotkeyEventType(suffix);
+        hotkeyStr = hotkeyStr.substr(0, colonPos);
+      }
+    } else {
+      // Parse as event type
+      result.eventType = ParseHotkeyEventType(suffix);
+      hotkeyStr = hotkeyStr.substr(0, colonPos);
+    }
   }
 
   // Parse @evdev prefix with regex
@@ -1571,8 +1646,15 @@ ParsedHotkey IO::ParseHotkeyString(const std::string &rawInput) {
   }
 
   // Parse modifiers and flags
-  result = ParseModifiersAndFlags(hotkeyStr, result.isEvdev);
-  result.eventType = result.eventType; // Preserve event type
+  auto parsed = ParseModifiersAndFlags(hotkeyStr, result.isEvdev);
+  result.keyPart = parsed.keyPart;
+  result.modifiers = parsed.modifiers;
+  result.grab = parsed.grab;
+  result.suspend = parsed.suspend;
+  result.repeat = parsed.repeat;
+  result.wildcard = parsed.wildcard;
+  result.isEvdev = parsed.isEvdev || result.isEvdev;
+  result.isX11 = parsed.isX11;
 
   return result;
 }
@@ -1695,6 +1777,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   hotkey.repeat = parsed.repeat;
   hotkey.wildcard = parsed.wildcard;
   hotkey.success = false;
+  hotkey.repeatInterval = parsed.repeatInterval;
 
   // Check for mouse button or wheel
   int mouseButton = ParseMouseButton(parsed.keyPart);
@@ -1753,6 +1836,11 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
       x11Hotkeys.insert(id);
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
+    
+    // Register with EventListener if using it
+    if (useNewEventListener && eventListener && hotkey.evdev) {
+      eventListener->RegisterHotkey(id, hotkey);
+    }
   }
 
   return hotkey;
@@ -1800,6 +1888,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
   hotkey.x11 = parsed.isX11;
   hotkey.eventType = parsed.eventType;
   hotkey.wildcard = parsed.wildcard;
+  hotkey.repeatInterval = parsed.repeatInterval;
 
   // For mouse hotkeys, default to evdev unless explicitly X11
   if (!parsed.isX11 && !parsed.isEvdev) {
@@ -1857,6 +1946,11 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       x11Hotkeys.insert(id);
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
+    
+    // Register with EventListener if using it
+    if (useNewEventListener && eventListener && hotkey.evdev) {
+      eventListener->RegisterHotkey(id, hotkey);
+    }
   }
 
   return hotkey;
@@ -1924,6 +2018,721 @@ int IO::GetMouse() {
   return 0;
 }
 
+Key IO::StringToVirtualKey(std::string keyName) {
+    removeSpecialCharacters(keyName);
+    keyName = ToLower(keyName);
+    
+    // Use KeyMap for lookup
+#ifdef WINDOWS
+    int code = KeyMap::ToWindows(keyName);
+    if (code != 0) {
+        return code;
+    }
+#else
+    unsigned long code = KeyMap::ToX11(keyName);
+    if (code != 0) {
+        return code;
+    }
+#endif
+    
+    // Fallback to old logic for compatibility
+    // Single character handling
+    if (keyName.length() == 1) {
+#ifdef WINDOWS
+        return VkKeyScan(keyName[0]);
+#else
+        return XStringToKeysym(keyName.c_str());
+#endif
+    }
+
+    // Unified lookup table with compile-time selection
+    static const std::unordered_map<std::string, Key> keyMap = {
+        // Common keys
+        {"esc", 
+#ifdef WINDOWS
+            VK_ESCAPE
+#else
+            XK_Escape
+#endif
+        },
+        {"enter", 
+#ifdef WINDOWS
+            VK_RETURN
+#else
+            XK_Return
+#endif
+        },
+        {"space", 
+#ifdef WINDOWS
+            VK_SPACE
+#else
+            XK_space
+#endif
+        },
+        {"tab", 
+#ifdef WINDOWS
+            VK_TAB
+#else
+            XK_Tab
+#endif
+        },
+        {"backspace", 
+#ifdef WINDOWS
+            VK_BACK
+#else
+            XK_BackSpace
+#endif
+        },
+        {"delete", 
+#ifdef WINDOWS
+            VK_DELETE
+#else
+            XK_Delete
+#endif
+        },
+        
+        // Modifiers
+        {"ctrl", 
+#ifdef WINDOWS
+            VK_CONTROL
+#else
+            XK_Control_L
+#endif
+        },
+        {"lctrl", 
+#ifdef WINDOWS
+            VK_LCONTROL
+#else
+            XK_Control_L
+#endif
+        },
+        {"rctrl", 
+#ifdef WINDOWS
+            VK_RCONTROL
+#else
+            XK_Control_R
+#endif
+        },
+        {"shift", 
+#ifdef WINDOWS
+            VK_SHIFT
+#else
+            XK_Shift_L
+#endif
+        },
+        {"lshift", 
+#ifdef WINDOWS
+            VK_LSHIFT
+#else
+            XK_Shift_L
+#endif
+        },
+        {"rshift", 
+#ifdef WINDOWS
+            VK_RSHIFT
+#else
+            XK_Shift_R
+#endif
+        },
+        {"alt", 
+#ifdef WINDOWS
+            VK_MENU
+#else
+            XK_Alt_L
+#endif
+        },
+        {"lalt", 
+#ifdef WINDOWS
+            VK_LMENU
+#else
+            XK_Alt_L
+#endif
+        },
+        {"ralt", 
+#ifdef WINDOWS
+            VK_RMENU
+#else
+            XK_Alt_R
+#endif
+        },
+        {"win", 
+#ifdef WINDOWS
+            0x5B
+#else
+            XK_Super_L
+#endif
+        },
+        {"lwin", 
+#ifdef WINDOWS
+            VK_LWIN
+#else
+            XK_Super_L
+#endif
+        },
+        {"rwin", 
+#ifdef WINDOWS
+            VK_RWIN
+#else
+            XK_Super_R
+#endif
+        },
+        
+        // Navigation
+        {"home", 
+#ifdef WINDOWS
+            VK_HOME
+#else
+            XK_Home
+#endif
+        },
+        {"end", 
+#ifdef WINDOWS
+            VK_END
+#else
+            XK_End
+#endif
+        },
+        {"pgup", 
+#ifdef WINDOWS
+            VK_PRIOR
+#else
+            XK_Page_Up
+#endif
+        },
+        {"pgdn", 
+#ifdef WINDOWS
+            VK_NEXT
+#else
+            XK_Page_Down
+#endif
+        },
+        {"insert", 
+#ifdef WINDOWS
+            VK_INSERT
+#else
+            XK_Insert
+#endif
+        },
+        {"left", 
+#ifdef WINDOWS
+            VK_LEFT
+#else
+            XK_Left
+#endif
+        },
+        {"right", 
+#ifdef WINDOWS
+            VK_RIGHT
+#else
+            XK_Right
+#endif
+        },
+        {"up", 
+#ifdef WINDOWS
+            VK_UP
+#else
+            XK_Up
+#endif
+        },
+        {"down", 
+#ifdef WINDOWS
+            VK_DOWN
+#else
+            XK_Down
+#endif
+        },
+        
+        // Lock keys
+        {"capslock", 
+#ifdef WINDOWS
+            VK_CAPITAL
+#else
+            XK_Caps_Lock
+#endif
+        },
+        {"numlock", 
+#ifdef WINDOWS
+            VK_NUMLOCK
+#else
+            XK_Num_Lock
+#endif
+        },
+        {"scrolllock", 
+#ifdef WINDOWS
+            VK_SCROLL
+#else
+            XK_Scroll_Lock
+#endif
+        },
+        
+        // Function keys
+        {"f1", 
+#ifdef WINDOWS
+            VK_F1
+#else
+            XK_F1
+#endif
+        },
+        {"f2", 
+#ifdef WINDOWS
+            VK_F2
+#else
+            XK_F2
+#endif
+        },
+        {"f3", 
+#ifdef WINDOWS
+            VK_F3
+#else
+            XK_F3
+#endif
+        },
+        {"f4", 
+#ifdef WINDOWS
+            VK_F4
+#else
+            XK_F4
+#endif
+        },
+        {"f5", 
+#ifdef WINDOWS
+            VK_F5
+#else
+            XK_F5
+#endif
+        },
+        {"f6", 
+#ifdef WINDOWS
+            VK_F6
+#else
+            XK_F6
+#endif
+        },
+        {"f7", 
+#ifdef WINDOWS
+            VK_F7
+#else
+            XK_F7
+#endif
+        },
+        {"f8", 
+#ifdef WINDOWS
+            VK_F8
+#else
+            XK_F8
+#endif
+        },
+        {"f9", 
+#ifdef WINDOWS
+            VK_F9
+#else
+            XK_F9
+#endif
+        },
+        {"f10", 
+#ifdef WINDOWS
+            VK_F10
+#else
+            XK_F10
+#endif
+        },
+        {"f11", 
+#ifdef WINDOWS
+            VK_F11
+#else
+            XK_F11
+#endif
+        },
+        {"f12", 
+#ifdef WINDOWS
+            VK_F21  // typo in original?
+#else
+            XK_F12
+#endif
+        },
+        {"f13", 
+#ifdef WINDOWS
+            VK_F13
+#else
+            XK_F13
+#endif
+        },
+        {"f14", 
+#ifdef WINDOWS
+            VK_F14
+#else
+            XK_F14
+#endif
+        },
+        {"f15", 
+#ifdef WINDOWS
+            VK_F15
+#else
+            XK_F15
+#endif
+        },
+        {"f16", 
+#ifdef WINDOWS
+            VK_F16
+#else
+            XK_F16
+#endif
+        },
+        {"f17", 
+#ifdef WINDOWS
+            VK_F17
+#else
+            XK_F17
+#endif
+        },
+        {"f18", 
+#ifdef WINDOWS
+            VK_F18
+#else
+            XK_F18
+#endif
+        },
+        {"f19", 
+#ifdef WINDOWS
+            VK_F19
+#else
+            XK_F19
+#endif
+        },
+        {"f20", 
+#ifdef WINDOWS
+            VK_F20
+#else
+            XK_F20
+#endif
+        },
+        {"f21", 
+#ifdef WINDOWS
+            VK_F21
+#else
+            XK_F21
+#endif
+        },
+        {"f22", 
+#ifdef WINDOWS
+            VK_F22
+#else
+            XK_F22
+#endif
+        },
+        {"f23", 
+#ifdef WINDOWS
+            VK_F23
+#else
+            XK_F23
+#endif
+        },
+        {"f24", 
+#ifdef WINDOWS
+            VK_F24
+#else
+            XK_F24
+#endif
+        },
+        
+        // Numpad
+        {"numpad0", 
+#ifdef WINDOWS
+            VK_NUMPAD0
+#else
+            XK_KP_0
+#endif
+        },
+        {"numpad1", 
+#ifdef WINDOWS
+            VK_NUMPAD1
+#else
+            XK_KP_1
+#endif
+        },
+        {"numpad2", 
+#ifdef WINDOWS
+            VK_NUMPAD2
+#else
+            XK_KP_2
+#endif
+        },
+        {"numpad3", 
+#ifdef WINDOWS
+            VK_NUMPAD3
+#else
+            XK_KP_3
+#endif
+        },
+        {"numpad4", 
+#ifdef WINDOWS
+            VK_NUMPAD4
+#else
+            XK_KP_4
+#endif
+        },
+        {"numpad5", 
+#ifdef WINDOWS
+            VK_NUMPAD5
+#else
+            XK_KP_5
+#endif
+        },
+        {"numpad6", 
+#ifdef WINDOWS
+            VK_NUMPAD6
+#else
+            XK_KP_6
+#endif
+        },
+        {"numpad7", 
+#ifdef WINDOWS
+            VK_NUMPAD7
+#else
+            XK_KP_7
+#endif
+        },
+        {"numpad8", 
+#ifdef WINDOWS
+            VK_NUMPAD8
+#else
+            XK_KP_8
+#endif
+        },
+        {"numpad9", 
+#ifdef WINDOWS
+            VK_NUMPAD9
+#else
+            XK_KP_9
+#endif
+        },
+        {"numpadadd", 
+#ifdef WINDOWS
+            VK_NUMPAD_ADD
+#else
+            XK_KP_Add
+#endif
+        },
+        {"numpadsub", 
+#ifdef WINDOWS
+            VK_NUMPAD_SUBTRACT
+#else
+            XK_KP_Subtract
+#endif
+        },
+        {"numpadmul", 
+#ifdef WINDOWS
+            VK_NUMPAD_MULTIPLY
+#else
+            XK_KP_Multiply
+#endif
+        },
+        {"numpadmult", 
+#ifdef WINDOWS
+            VK_NUMPAD_MULTIPLY
+#else
+            XK_KP_Multiply
+#endif
+        },
+        {"numpaddiv", 
+#ifdef WINDOWS
+            VK_NUMPAD_DIVIDE
+#else
+            XK_KP_Divide
+#endif
+        },
+        {"numpaddec", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpaddecimal", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpaddot", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpadperiod", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpaddel", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpaddelete", 
+#ifdef WINDOWS
+            VK_NUMPAD_DECIMAL
+#else
+            XK_KP_Decimal
+#endif
+        },
+        {"numpadenter", 
+#ifdef WINDOWS
+            VK_NUMPAD_ENTER
+#else
+            XK_KP_Enter
+#endif
+        },
+        
+        // Symbols (X11 only)
+#ifndef WINDOWS
+        {"minus", XK_minus},
+        {"-", XK_minus},
+        {"equal", XK_equal},
+        {"equals", XK_equal},
+        {"=", XK_equal},
+        {"leftbrace", XK_bracketleft},
+        {"rightbrace", XK_bracketright},
+        {"semicolon", XK_semicolon},
+        {";", XK_semicolon},
+        {"apostrophe", XK_apostrophe},
+        {"'", XK_apostrophe},
+        {"grave", XK_grave},
+        {"`", XK_grave},
+        {"backslash", XK_backslash},
+        {"\\", XK_backslash},
+        {"comma", XK_comma},
+        {",", XK_comma},
+        {"dot", XK_period},
+        {"period", XK_period},
+        {".", XK_period},
+        {"slash", XK_slash},
+        {"/", XK_slash},
+        {"less", XK_less},
+        {"<", XK_less},
+        {"*", XK_KP_Multiply},
+#endif
+        
+        // Media keys
+        {"volumeup", 
+#ifdef WINDOWS
+            VK_VOLUME_UP
+#else
+            XF86XK_AudioRaiseVolume
+#endif
+        },
+        {"volumedown", 
+#ifdef WINDOWS
+            VK_VOLUME_DOWN
+#else
+            XF86XK_AudioLowerVolume
+#endif
+        },
+        {"volumemute", 
+#ifdef WINDOWS
+            0  // No direct VK constant
+#else
+            XF86XK_AudioMute
+#endif
+        },
+        {"mediaplay", 
+#ifdef WINDOWS
+            0  // No direct VK constant
+#else
+            XF86XK_AudioPlay
+#endif
+        },
+        {"medianext", 
+#ifdef WINDOWS
+            0  // No direct VK constant
+#else
+            XF86XK_AudioNext
+#endif
+        },
+        {"mediaprev", 
+#ifdef WINDOWS
+            0  // No direct VK constant
+#else
+            XF86XK_AudioPrev
+#endif
+        },
+        
+        // Special keys
+        {"printscreen", 
+#ifdef WINDOWS
+            VK_SNAPSHOT
+#else
+            XK_Print
+#endif
+        },
+        {"pause", 
+#ifdef WINDOWS
+            VK_PAUSE
+#else
+            XK_Pause
+#endif
+        },
+        {"pausebreak", 
+#ifdef WINDOWS
+            VK_PAUSE
+#else
+            XK_Pause
+#endif
+        },
+        {"menu", 
+#ifdef WINDOWS
+            VK_APPS
+#else
+            XK_Menu
+#endif
+        },
+        {"apps", 
+#ifdef WINDOWS
+            VK_APPS
+#else
+            XK_Menu
+#endif
+        },
+        
+        // Mouse buttons (Windows only)
+#ifdef WINDOWS
+        {"lbutton", VK_LBUTTON},
+        {"rbutton", VK_RBUTTON},
+#endif
+        
+        // Alphabet handled by single-char logic above
+        // Numbers handled by single-char logic above
+        
+        // Special marker
+        {"nosymbol", 
+#ifdef WINDOWS
+            0
+#else
+            XK_VoidSymbol
+#endif
+        },
+    };
+
+    auto it = keyMap.find(keyName);
+    if (it != keyMap.end()) {
+        return it->second;
+    }
+
+#ifndef WINDOWS
+    // Fallback for X11: try button lookup
+    return IO::StringToButton(keyName);
+#else
+    return 0;
+#endif
+}
+
 Key IO::StringToButton(const std::string &buttonNameRaw) {
   std::string buttonName = ToLower(buttonNameRaw);
 
@@ -1949,503 +2758,284 @@ Key IO::StringToButton(const std::string &buttonNameRaw) {
 
   return 0; // Invalid / unrecognized
 }
-
-// Helper function to convert string to virtual key code
-Key IO::StringToVirtualKey(str keyName) {
-  removeSpecialCharacters(keyName);
-#ifdef WINDOWS
-  if (keyName.length() == 1) {
-    return VkKeyScan(keyName[0]);
-  }
-  keyName = ToLower(keyName);
-  // Map string names to virtual key codes
-  if (keyName == "esc")
-    return VK_ESCAPE;
-  if (keyName == "home")
-    return VK_HOME;
-  if (keyName == "end")
-    return VK_END;
-  if (keyName == "pgup")
-    return VK_PRIOR;
-  if (keyName == "pgdn")
-    return VK_NEXT;
-  if (keyName == "insert")
-    return VK_INSERT;
-  if (keyName == "delete")
-    return VK_DELETE;
-  if (keyName == "numpad0")
-    return VK_NUMPAD0;
-  if (keyName == "numpad1")
-    return VK_NUMPAD1;
-  if (keyName == "numpad2")
-    return VK_NUMPAD2;
-  if (keyName == "numpad3")
-    return VK_NUMPAD3;
-  if (keyName == "numpad4")
-    return VK_NUMPAD4;
-  if (keyName == "numpad5")
-    return VK_NUMPAD5;
-  if (keyName == "numpad6")
-    return VK_NUMPAD6;
-  if (keyName == "numpad7")
-    return VK_NUMPAD7;
-  if (keyName == "numpad8")
-    return VK_NUMPAD8;
-  if (keyName == "numpad9")
-    return VK_NUMPAD9;
-  if (keyName == "numpadadd")
-    return VK_NUMPAD_ADD;
-  if (keyName == "aumpadsub")
-    return VK_NUMPAD_SUBTRACT;
-  if (keyName == "numpadmult")
-    return VK_NUMPAD_MULTIPLY;
-  if (keyName == "numpaddiv")
-    return VK_NUMPAD_DIVIDE;
-  if (keyName == "numpadenter")
-    return VK_NUMPAD_ENTER;
-  if (keyName == "numpaddecimal" || keyName == "numpaddot")
-    return VK_NUMPAD_DECIMAL;
-  if (keyName == "numlock")
-    return VK_NUMPAD_LOCK;
-  if (keyName == "up")
-    return VK_UP;
-  if (keyName == "down")
-    return VK_DOWN;
-  if (keyName == "left")
-    return VK_LEFT;
-  if (keyName == "right")
-    return VK_RIGHT;
-  if (keyName == "f1")
-    return VK_F1;
-  if (keyName == "f2")
-    return VK_F2;
-  if (keyName == "f3")
-    return VK_F3;
-  if (keyName == "f4")
-    return VK_F4;
-  if (keyName == "f5")
-    return VK_F5;
-  if (keyName == "f6")
-    return VK_F6;
-  if (keyName == "f7")
-    return VK_F7;
-  if (keyName == "f8")
-    return VK_F8;
-  if (keyName == "f9")
-    return VK_F9;
-  if (keyName == "f10")
-    return VK_F10;
-  if (keyName == "f11")
-    return VK_F11;
-  if (keyName == "f12")
-    return VK_F21;
-  if (keyName == "f13")
-    return VK_F13;
-  if (keyName == "f14")
-    return VK_F14;
-  if (keyName == "f15")
-    return VK_F15;
-  if (keyName == "f16")
-    return VK_F16;
-  if (keyName == "f17")
-    return VK_F17;
-  if (keyName == "f18")
-    return VK_F18;
-  if (keyName == "f19")
-    return VK_F19;
-  if (keyName == "f20")
-    return VK_F20;
-  if (keyName == "f21")
-    return VK_F21;
-  if (keyName == "f22")
-    return VK_F22;
-  if (keyName == "f23")
-    return VK_F23;
-  if (keyName == "f24")
-    return VK_F24;
-  if (keyName == "enter")
-    return VK_RETURN;
-  if (keyName == "space")
-    return VK_SPACE;
-  if (keyName == "lbutton")
-    return VK_LBUTTON;
-  if (keyName == "rbutton")
-    return VK_RBUTTON;
-  if (keyName == "apps")
-    return VK_APPS;
-  if (keyName == "win")
-    return 0x5B;
-  if (keyName == "lwin")
-    return VK_LWIN;
-  if (keyName == "rwin")
-    return VK_RWIN;
-  if (keyName == "ctrl")
-    return VK_CONTROL;
-  if (keyName == "lctrl")
-    return VK_LCONTROL;
-  if (keyName == "rctrl")
-    return VK_RCONTROL;
-  if (keyName == "shift")
-    return VK_SHIFT;
-  if (keyName == "lshift")
-    return VK_LSHIFT;
-  if (keyName == "rshift")
-    return VK_RSHIFT;
-  if (keyName == "alt")
-    return VK_MENU;
-  if (keyName == "lalt")
-    return VK_LMENU;
-  if (keyName == "ralt")
-    return VK_RMENU;
-  if (keyName == "backspace")
-    return VK_BACK;
-  if (keyName == "tab")
-    return VK_TAB;
-  if (keyName == "capslock")
-    return VK_CAPITAL;
-  if (keyName == "numlock")
-    return VK_NUMLOCK;
-  if (keyName == "scrolllock")
-    return VK_SCROLL;
-  if (keyName == "pausebreak")
-    return VK_PAUSE;
-  if (keyName == "printscreen")
-    return VK_SNAPSHOT;
-  if (keyName == "volumeup")
-    return VK_VOLUME_UP;
-  if (keyName == "volumedown")
-    return VK_VOLUME_DOWN;
-  return 0; // Default case for unrecognized keys
-#else
-  if (keyName.length() == 1) {
-    return XStringToKeysym(keyName.c_str());
-  }
-  keyName = ToLower(keyName);
-  if (keyName == "minus")
-    return XK_minus;
-  if (keyName == "equals" || keyName == "equal")
-    return XK_equal;
-  if (keyName == "esc")
-    return XK_Escape;
-  if (keyName == "enter")
-    return XK_Return;
-  if (keyName == "space")
-    return XK_space;
-  if (keyName == "tab")
-    return XK_Tab;
-  if (keyName == "ctrl")
-    return XK_Control_L;
-  if (keyName == "lctrl")
-    return XK_Control_L;
-  if (keyName == "rctrl")
-    return XK_Control_R;
-  if (keyName == "shift")
-    return XK_Shift_L;
-  if (keyName == "lshift")
-    return XK_Shift_L;
-  if (keyName == "rshift")
-    return XK_Shift_R;
-  if (keyName == "alt")
-    return XK_Alt_L;
-  if (keyName == "lalt")
-    return XK_Alt_L;
-  if (keyName == "ralt")
-    return XK_Alt_R;
-  if (keyName == "win")
-    return XK_Super_L;
-  if (keyName == "lwin")
-    return XK_Super_L;
-  if (keyName == "rwin")
-    return XK_Super_R;
-  if (keyName == "backspace")
-    return XK_BackSpace;
-  if (keyName == "delete")
-    return XK_Delete;
-  if (keyName == "insert")
-    return XK_Insert;
-  if (keyName == "home")
-    return XK_Home;
-  if (keyName == "end")
-    return XK_End;
-  if (keyName == "pgup")
-    return XK_Page_Up;
-  if (keyName == "pgdn")
-    return XK_Page_Down;
-  if (keyName == "left")
-    return XK_Left;
-  if (keyName == "right")
-    return XK_Right;
-  if (keyName == "up")
-    return XK_Up;
-  if (keyName == "down")
-    return XK_Down;
-  if (keyName == "capslock")
-    return XK_Caps_Lock;
-  if (keyName == "numlock")
-    return XK_Num_Lock;
-  if (keyName == "scrolllock")
-    return XK_Scroll_Lock;
-  if (keyName == "pause")
-    return XK_Pause;
-  if (keyName == "f1")
-    return XK_F1;
-  if (keyName == "f2")
-    return XK_F2;
-  if (keyName == "f3")
-    return XK_F3;
-  if (keyName == "f4")
-    return XK_F4;
-  if (keyName == "f5")
-    return XK_F5;
-  if (keyName == "f6")
-    return XK_F6;
-  if (keyName == "f7")
-    return XK_F7;
-  if (keyName == "f8")
-    return XK_F8;
-  if (keyName == "f9")
-    return XK_F9;
-  if (keyName == "f10")
-    return XK_F10;
-  if (keyName == "f11")
-    return XK_F11;
-  if (keyName == "f12")
-    return XK_F12;
-  if (keyName == "f13")
-    return XK_F13;
-  if (keyName == "f14")
-    return XK_F14;
-  if (keyName == "f15")
-    return XK_F15;
-  if (keyName == "f16")
-    return XK_F16;
-  if (keyName == "f17")
-    return XK_F17;
-  if (keyName == "f18")
-    return XK_F18;
-  if (keyName == "f19")
-    return XK_F19;
-  if (keyName == "f20")
-    return XK_F20;
-  if (keyName == "f21")
-    return XK_F21;
-  if (keyName == "f22")
-    return XK_F22;
-  if (keyName == "f23")
-    return XK_F23;
-  if (keyName == "f24")
-    return XK_F24;
-  if (keyName == "numpad0")
-    return XK_KP_0;
-  if (keyName == "numpad1")
-    return XK_KP_1;
-  if (keyName == "numpad2")
-    return XK_KP_2;
-  if (keyName == "numpad3")
-    return XK_KP_3;
-  if (keyName == "numpad4")
-    return XK_KP_4;
-  if (keyName == "numpad5")
-    return XK_KP_5;
-  if (keyName == "numpad6")
-    return XK_KP_6;
-  if (keyName == "numpad7")
-    return XK_KP_7;
-  if (keyName == "numpad8")
-    return XK_KP_8;
-  if (keyName == "numpad9")
-    return XK_KP_9;
-  if (keyName == "numpadadd")
-    return XK_KP_Add;
-  if (keyName == "numpadsub")
-    return XK_KP_Subtract;
-  if (keyName == "numpadmul")
-    return XK_KP_Multiply;
-  if (keyName == "numpaddiv")
-    return XK_KP_Divide;
-  if (keyName == "numpaddec" || keyName == "numpaddecimal" ||
-      keyName == "numpadperiod" || keyName == "numpaddel" ||
-      keyName == "numpaddelete")
-    return XK_KP_Decimal;
-  if (keyName == "numpadenter")
-    return XK_KP_Enter;
-  if (keyName == "menu")
-    return XK_Menu;
-  if (keyName == "printscreen")
-    return XK_Print;
-  if (keyName == "volumeup")
-    return XF86XK_AudioRaiseVolume; // Requires <X11/XF86keysym.h>
-  if (keyName == "volumedown")
-    return XF86XK_AudioLowerVolume; // Requires <X11/XF86keysym.h>
-  if (keyName == "volumemute")
-    return XF86XK_AudioMute; // Requires <X11/XF86keysym.h>
-  if (keyName == "medianext")
-    return XF86XK_AudioNext;
-  if (keyName == "mediaprev")
-    return XF86XK_AudioPrev;
-  if (keyName == "mediaplay")
-    return XF86XK_AudioPlay;
-
-  return IO::StringToButton(keyName); // Default for unsupported keys}
-#endif
-}
-
 Key IO::EvdevNameToKeyCode(std::string keyName) {
-  removeSpecialCharacters(keyName);
-  keyName = ToLower(keyName);
+    removeSpecialCharacters(keyName);
+    keyName = ToLower(keyName);
+    
+    // Use KeyMap for lookup
+    int code = KeyMap::FromString(keyName);
+    if (code != 0) {
+        return code;
+    }
+    
+    // Fallback to old logic for compatibility
+    // Single character handling for letters/numbers
+    if (keyName.length() == 1) {
+        char c = keyName[0];
+        if (c >= 'a' && c <= 'z') return KEY_A + (c - 'a');
+        if (c >= '0' && c <= '9') return (c == '0') ? KEY_0 : KEY_1 + (c - '1');
+    }
 
-  static const std::unordered_map<std::string, Key> keyMap = {
-      {"esc", KEY_ESC},
-      {"1", KEY_1},
-      {"2", KEY_2},
-      {"3", KEY_3},
-      {"4", KEY_4},
-      {"5", KEY_5},
-      {"6", KEY_6},
-      {"7", KEY_7},
-      {"8", KEY_8},
-      {"9", KEY_9},
-      {"0", KEY_0},
-      {"minus", KEY_MINUS},
-      {"-", KEY_MINUS},
-      {"equal", KEY_EQUAL},
-      {"=", KEY_EQUAL},
-      {"backspace", KEY_BACKSPACE},
-      {"tab", KEY_TAB},
-      {"q", KEY_Q},
-      {"w", KEY_W},
-      {"e", KEY_E},
-      {"r", KEY_R},
-      {"t", KEY_T},
-      {"y", KEY_Y},
-      {"u", KEY_U},
-      {"i", KEY_I},
-      {"o", KEY_O},
-      {"p", KEY_P},
-      {"leftbrace", KEY_LEFTBRACE},
-      {"rightbrace", KEY_RIGHTBRACE},
-      {"enter", KEY_ENTER},
-      {"ctrl", KEY_LEFTCTRL},
-      {"lctrl", KEY_LEFTCTRL},
-      {"rctrl", KEY_RIGHTCTRL},
-      {"a", KEY_A},
-      {"s", KEY_S},
-      {"d", KEY_D},
-      {"f", KEY_F},
-      {"g", KEY_G},
-      {"h", KEY_H},
-      {"j", KEY_J},
-      {"k", KEY_K},
-      {"l", KEY_L},
-      {"semicolon", KEY_SEMICOLON},
-      {";", KEY_SEMICOLON},
-      {"apostrophe", KEY_APOSTROPHE},
-      {"'", KEY_APOSTROPHE},
-      {"grave", KEY_GRAVE},
-      {"`", KEY_GRAVE},
-      {"shift", KEY_LEFTSHIFT},
-      {"lshift", KEY_LEFTSHIFT},
-      {"rshift", KEY_RIGHTSHIFT},
-      {"backslash", KEY_BACKSLASH},
-      {"\\", KEY_BACKSLASH},
-      {"z", KEY_Z},
-      {"x", KEY_X},
-      {"c", KEY_C},
-      {"v", KEY_V},
-      {"b", KEY_B},
-      {"n", KEY_N},
-      {"m", KEY_M},
-      {"comma", KEY_COMMA},
-      {",", KEY_COMMA},
-      {"dot", KEY_DOT},
-      {"period", KEY_DOT},
-      {".", KEY_DOT},
-      {"slash", KEY_SLASH},
-      {"/", KEY_SLASH},
-      {"less", KEY_102ND},
-      {"<", KEY_102ND},
-      {"alt", KEY_LEFTALT},
-      {"lalt", KEY_LEFTALT},
-      {"ralt", KEY_RIGHTALT},
-      {"space", KEY_SPACE},
-      {"capslock", KEY_CAPSLOCK},
-      {"f1", KEY_F1},
-      {"f2", KEY_F2},
-      {"f3", KEY_F3},
-      {"f4", KEY_F4},
-      {"f5", KEY_F5},
-      {"f6", KEY_F6},
-      {"f7", KEY_F7},
-      {"f8", KEY_F8},
-      {"f9", KEY_F9},
-      {"f10", KEY_F10},
-      {"f11", KEY_F11},
-      {"f12", KEY_F12},
-      {"f13", KEY_F13},
-      {"f14", KEY_F14},
-      {"f15", KEY_F15},
-      {"f16", KEY_F16},
-      {"f17", KEY_F17},
-      {"f18", KEY_F18},
-      {"f19", KEY_F19},
-      {"f20", KEY_F20},
-      {"f21", KEY_F21},
-      {"f22", KEY_F22},
-      {"f23", KEY_F23},
-      {"f24", KEY_F24},
-      {"insert", KEY_INSERT},
-      {"delete", KEY_DELETE},
-      {"home", KEY_HOME},
-      {"end", KEY_END},
-      {"pgup", KEY_PAGEUP},
-      {"pgdn", KEY_PAGEDOWN},
-      {"right", KEY_RIGHT},
-      {"left", KEY_LEFT},
-      {"down", KEY_DOWN},
-      {"up", KEY_UP},
-      {"numlock", KEY_NUMLOCK},
-      {"scrolllock", KEY_SCROLLLOCK},
-      {"pause", KEY_PAUSE},
-      {"printscreen", KEY_SYSRQ},
-      {"volumeup", KEY_VOLUMEUP},
-      {"volumedown", KEY_VOLUMEDOWN},
-      {"volumemute", KEY_MUTE},
-      {"mediaplay", KEY_PLAYPAUSE},
-      {"medianext", KEY_NEXTSONG},
-      {"mediaprev", KEY_PREVIOUSSONG},
-      {"numpad0", KEY_KP0},
-      {"numpad1", KEY_KP1},
-      {"numpad2", KEY_KP2},
-      {"numpad3", KEY_KP3},
-      {"numpad4", KEY_KP4},
-      {"numpad5", KEY_KP5},
-      {"numpad6", KEY_KP6},
-      {"numpad7", KEY_KP7},
-      {"numpad8", KEY_KP8},
-      {"numpad9", KEY_KP9},
-      {"numpadadd", KEY_KPPLUS},
-      {"numpadsub", KEY_KPMINUS},
-      {"numpadmul", KEY_KPASTERISK},
-      {"*", KEY_KPASTERISK},
-      {"numpaddiv", KEY_KPSLASH},
-      {"numpaddec", KEY_KPDOT},
-      {"numpaddot", KEY_KPDOT},
-      {"numpaddel", KEY_KPDOT},
-      {"numpadenter", KEY_KPENTER},
-      {"menu", KEY_MENU},
-      {"win", KEY_LEFTMETA},
-      {"meta", KEY_LEFTMETA},
-      {"lwin", KEY_LEFTMETA},
-      {"lmeta", KEY_LEFTMETA},
-      {"rwin", KEY_RIGHTMETA},
-      {"rmeta", KEY_RIGHTMETA},
-      {"nosymbol", KEY_RO}};
+    static const std::unordered_map<std::string, Key> evdevMap = {
+        // Control keys
+        {"esc", KEY_ESC},
+        {"enter", KEY_ENTER},
+        {"space", KEY_SPACE},
+        {"tab", KEY_TAB},
+        {"backspace", KEY_BACKSPACE},
+        {"delete", KEY_DELETE},
+        
+        // Modifiers
+        {"ctrl", KEY_LEFTCTRL},
+        {"lctrl", KEY_LEFTCTRL},
+        {"rctrl", KEY_RIGHTCTRL},
+        {"shift", KEY_LEFTSHIFT},
+        {"lshift", KEY_LEFTSHIFT},
+        {"rshift", KEY_RIGHTSHIFT},
+        {"alt", KEY_LEFTALT},
+        {"lalt", KEY_LEFTALT},
+        {"ralt", KEY_RIGHTALT},
+        {"win", KEY_LEFTMETA},
+        {"meta", KEY_LEFTMETA},
+        {"lwin", KEY_LEFTMETA},
+        {"lmeta", KEY_LEFTMETA},
+        {"rwin", KEY_RIGHTMETA},
+        {"rmeta", KEY_RIGHTMETA},
+        
+        // Navigation
+        {"home", KEY_HOME},
+        {"end", KEY_END},
+        {"pgup", KEY_PAGEUP},
+        {"pgdn", KEY_PAGEDOWN},
+        {"pageup", KEY_PAGEUP},
+        {"pagedown", KEY_PAGEDOWN},
+        {"insert", KEY_INSERT},
+        {"left", KEY_LEFT},
+        {"right", KEY_RIGHT},
+        {"up", KEY_UP},
+        {"down", KEY_DOWN},
+        
+        // Lock keys
+        {"capslock", KEY_CAPSLOCK},
+        {"numlock", KEY_NUMLOCK},
+        {"scrolllock", KEY_SCROLLLOCK},
+        
+        // Function keys
+        {"f1", KEY_F1}, {"f2", KEY_F2}, {"f3", KEY_F3}, {"f4", KEY_F4},
+        {"f5", KEY_F5}, {"f6", KEY_F6}, {"f7", KEY_F7}, {"f8", KEY_F8},
+        {"f9", KEY_F9}, {"f10", KEY_F10}, {"f11", KEY_F11}, {"f12", KEY_F12},
+        {"f13", KEY_F13}, {"f14", KEY_F14}, {"f15", KEY_F15}, {"f16", KEY_F16},
+        {"f17", KEY_F17}, {"f18", KEY_F18}, {"f19", KEY_F19}, {"f20", KEY_F20},
+        {"f21", KEY_F21}, {"f22", KEY_F22}, {"f23", KEY_F23}, {"f24", KEY_F24},
+        
+        // Numpad
+        {"numpad0", KEY_KP0}, {"numpad1", KEY_KP1}, {"numpad2", KEY_KP2},
+        {"numpad3", KEY_KP3}, {"numpad4", KEY_KP4}, {"numpad5", KEY_KP5},
+        {"numpad6", KEY_KP6}, {"numpad7", KEY_KP7}, {"numpad8", KEY_KP8},
+        {"numpad9", KEY_KP9},
+        {"numpadadd", KEY_KPPLUS},
+        {"numpadplus", KEY_KPPLUS},
+        {"numpadsub", KEY_KPMINUS},
+        {"numpadminus", KEY_KPMINUS},
+        {"numpadmul", KEY_KPASTERISK},
+        {"numpadmult", KEY_KPASTERISK},
+        {"numpadasterisk", KEY_KPASTERISK},
+        {"*", KEY_KPASTERISK},
+        {"numpaddiv", KEY_KPSLASH},
+        {"numpaddec", KEY_KPDOT},
+        {"numpaddot", KEY_KPDOT},
+        {"numpaddel", KEY_KPDOT},
+        {"numpadperiod", KEY_KPDOT},
+        {"numpaddelete", KEY_KPDOT},
+        {"numpaddecimal", KEY_KPDOT},
+        {"numpadenter", KEY_KPENTER},
+        {"numpadequal", KEY_KPEQUAL},
+        {"numpadcomma", KEY_KPCOMMA},
+        {"numpadleftparen", KEY_KPLEFTPAREN},
+        {"numpadrightparen", KEY_KPRIGHTPAREN},
+        
+        // Symbols
+        {"minus", KEY_MINUS}, {"-", KEY_MINUS},
+        {"equal", KEY_EQUAL}, {"equals", KEY_EQUAL}, {"=", KEY_EQUAL},
+        {"leftbrace", KEY_LEFTBRACE}, {"[", KEY_LEFTBRACE},
+        {"rightbrace", KEY_RIGHTBRACE}, {"]", KEY_RIGHTBRACE},
+        {"semicolon", KEY_SEMICOLON}, {";", KEY_SEMICOLON},
+        {"apostrophe", KEY_APOSTROPHE}, {"'", KEY_APOSTROPHE},
+        {"grave", KEY_GRAVE}, {"`", KEY_GRAVE},
+        {"backslash", KEY_BACKSLASH}, {"\\", KEY_BACKSLASH},
+        {"comma", KEY_COMMA}, {",", KEY_COMMA},
+        {"dot", KEY_DOT}, {"period", KEY_DOT}, {".", KEY_DOT},
+        {"slash", KEY_SLASH}, {"/", KEY_SLASH},
+        {"less", KEY_102ND}, {"<", KEY_102ND},
+        
+        // Media control keys
+        {"playpause", KEY_PLAYPAUSE},
+        {"play", KEY_PLAY},
+        {"pause", KEY_PAUSE},
+        {"stop", KEY_STOP},
+        {"stopcd", KEY_STOPCD},
+        {"record", KEY_RECORD},
+        {"rewind", KEY_REWIND},
+        {"fastforward", KEY_FASTFORWARD},
+        {"ejectcd", KEY_EJECTCD},
+        {"eject", KEY_EJECTCD},
+        {"nextsong", KEY_NEXTSONG},
+        {"previoussong", KEY_PREVIOUSSONG},
+        {"next", KEY_NEXTSONG},
+        {"prev", KEY_PREVIOUSSONG},
+        {"previous", KEY_PREVIOUSSONG},
+        
+        // Volume control
+        {"volumeup", KEY_VOLUMEUP},
+        {"volumedown", KEY_VOLUMEDOWN},
+        {"mute", KEY_MUTE},
+        {"volumemute", KEY_MUTE},
+        {"micmute", KEY_MICMUTE},
+        
+        // Browser keys
+        {"homepage", KEY_HOMEPAGE},
+        {"back", KEY_BACK},
+        {"forward", KEY_FORWARD},
+        {"search", KEY_SEARCH},
+        {"bookmarks", KEY_BOOKMARKS},
+        {"refresh", KEY_REFRESH},
+        {"stop", KEY_STOP},
+        {"favorites", KEY_FAVORITES},
+        
+        // Application launcher keys
+        {"mail", KEY_MAIL},
+        {"calc", KEY_CALC},
+        {"calculator", KEY_CALC},
+        {"computer", KEY_COMPUTER},
+        {"media", KEY_MEDIA},
+        {"www", KEY_WWW},
+        {"finance", KEY_FINANCE},
+        {"shop", KEY_SHOP},
+        {"coffee", KEY_COFFEE},
+        {"chat", KEY_CHAT},
+        {"messenger", KEY_MESSENGER},
+        {"calendar", KEY_CALENDAR},
+        
+        // Media player control
+        {"mediaplay", KEY_PLAYPAUSE},
+        {"medianext", KEY_NEXTSONG},
+        {"mediaprev", KEY_PREVIOUSSONG},
+        {"mediastop", KEY_STOPCD},
+        {"mediarecord", KEY_RECORD},
+        {"mediarewind", KEY_REWIND},
+        {"mediaforward", KEY_FASTFORWARD},
+        {"mediaeject", KEY_EJECTCD},
+        
+        // Power management
+        {"power", KEY_POWER},
+        {"sleep", KEY_SLEEP},
+        {"wakeup", KEY_WAKEUP},
+        {"suspend", KEY_SUSPEND},
+        // Display/brightness
+        {"brightnessup", KEY_BRIGHTNESSUP},
+        {"brightnessdown", KEY_BRIGHTNESSDOWN},
+        {"brightness", KEY_BRIGHTNESS_AUTO},
+        {"brightnessauto", KEY_BRIGHTNESS_AUTO},
+        {"displayoff", KEY_DISPLAY_OFF},
+        {"switchvideomode", KEY_SWITCHVIDEOMODE},
+        
+        // Keyboard backlight
+        {"kbdillumup", KEY_KBDILLUMUP},
+        {"kbdillumdown", KEY_KBDILLUMDOWN},
+        {"kbdillumtoggle", KEY_KBDILLUMTOGGLE},
+        
+        // Wireless
+        {"wlan", KEY_WLAN},
+        {"bluetooth", KEY_BLUETOOTH},
+        {"wifi", KEY_WLAN},
+        {"rfkill", KEY_RFKILL},
+        
+        // Battery
+        {"battery", KEY_BATTERY},
+        
+        // Zoom
+        {"zoomin", KEY_ZOOMIN},
+        {"zoomout", KEY_ZOOMOUT},
+        {"zoomreset", KEY_ZOOMRESET},
+        
+        // Screen control
+        {"cyclewindows", KEY_CYCLEWINDOWS},
+        {"scale", KEY_SCALE},
+        {"dashboard", KEY_DASHBOARD},
+        
+        // File operations
+        {"file", KEY_FILE},
+        {"open", KEY_OPEN},
+        {"close", KEY_CLOSE},
+        {"save", KEY_SAVE},
+        {"print", KEY_PRINT},
+        {"cut", KEY_CUT},
+        {"copy", KEY_COPY},
+        {"paste", KEY_PASTE},
+        {"find", KEY_FIND},
+        {"undo", KEY_UNDO},
+        {"redo", KEY_REDO},
+        
+        // Text editing
+        {"again", KEY_AGAIN},
+        {"props", KEY_PROPS},
+        {"front", KEY_FRONT},
+        {"help", KEY_HELP},
+        {"menu", KEY_MENU},
+        {"select", KEY_SELECT},
+        {"cancel", KEY_CANCEL},
+        
+        // ISO keyboard extras
+        {"iso", KEY_102ND},
+        {"102nd", KEY_102ND},
+        {"ro", KEY_RO},
+        {"katakanahiragana", KEY_KATAKANAHIRAGANA},
+        {"yen", KEY_YEN},
+        {"henkan", KEY_HENKAN},
+        {"muhenkan", KEY_MUHENKAN},
+        {"kpjpcomma", KEY_KPJPCOMMA},
+        {"hangeul", KEY_HANGEUL},
+        {"hanja", KEY_HANJA},
+        {"katakana", KEY_KATAKANA},
+        {"hiragana", KEY_HIRAGANA},
+        {"zenkakuhankaku", KEY_ZENKAKUHANKAKU},
+        
+        // Special system keys
+        {"sysrq", KEY_SYSRQ},
+        {"printscreen", KEY_SYSRQ},
+        {"pausebreak", KEY_PAUSE},
+        {"scrollup", KEY_SCROLLUP},
+        {"scrolldown", KEY_SCROLLDOWN},
+        
+        // Gaming/multimedia extras
+        {"prog1", KEY_PROG1},
+        {"prog2", KEY_PROG2},
+        {"prog3", KEY_PROG3},
+        {"prog4", KEY_PROG4},
+        {"macro", KEY_MACRO},
+        {"fn", KEY_FN},
+        {"fnesc", KEY_FN_ESC},
+        {"fnf1", KEY_FN_F1},
+        {"fnf2", KEY_FN_F2},
+        {"fnf3", KEY_FN_F3},
+        {"fnf4", KEY_FN_F4},
+        {"fnf5", KEY_FN_F5},
+        {"fnf6", KEY_FN_F6},
+        {"fnf7", KEY_FN_F7},
+        {"fnf8", KEY_FN_F8},
+        {"fnf9", KEY_FN_F9},
+        {"fnf10", KEY_FN_F10},
+        {"fnf11", KEY_FN_F11},
+        {"fnf12", KEY_FN_F12},
+        
+        // Special marker
+        {"nosymbol", KEY_RO},
+        {"reserved", KEY_RESERVED},
+        {"unknown", KEY_UNKNOWN}
+    };
 
-  auto it = keyMap.find(keyName);
-  if (it != keyMap.end())
-    return it->second;
-
-  return 0; // Default for unrecognized keys
+    auto it = evdevMap.find(keyName);
+    return (it != evdevMap.end()) ? it->second : 0;
 }
 
 // Display a message box
@@ -2602,6 +3192,14 @@ int IO::ParseModifiers(str str) {
   return modifiers;
 }
 bool IO::GetKeyState(const std::string &keyName) {
+  // Use EventListener if enabled
+  if (useNewEventListener && eventListener) {
+    int keycode = KeyMap::FromString(keyName);
+    if (keycode != 0) {
+      return eventListener->GetKeyState(keycode);
+    }
+  }
+  
   // Try evdev first if available
   if (evdevRunning && !evdevKeyState.empty()) {
     int keycode = StringToVirtualKey(keyName);
@@ -2622,6 +3220,11 @@ bool IO::GetKeyState(const std::string &keyName) {
 }
 
 bool IO::GetKeyState(int keycode) {
+  // Use EventListener if enabled
+  if (useNewEventListener && eventListener) {
+    return eventListener->GetKeyState(keycode);
+  }
+  
   // Direct keycode lookup - faster for known codes
   if (evdevRunning) {
     auto it = evdevKeyState.find(keycode);
@@ -2934,6 +3537,12 @@ void IO::Remap(const std::string &key1, const std::string &key2) {
     evdevRemappedKeys[code1] = code2;
     evdevRemappedKeys[code2] = code1;
     debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2, code2);
+    
+    // Also add to EventListener if enabled
+    if (useNewEventListener && eventListener) {
+      eventListener->AddKeyRemap(code1, code2);
+      eventListener->AddKeyRemap(code2, code1);
+    }
   } else {
     warn("Failed to remap keys: {} <-> {} ({} <-> {})", key1, key2, code1,
          code2);
@@ -3288,6 +3897,22 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
                 continue;
               }
             }
+            // Check repeat interval if specified
+            if (hotkey.repeatInterval > 0 && repeat) {
+              auto now = std::chrono::steady_clock::now();
+              auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                  now - hotkey.lastTriggerTime).count();
+              
+              if (elapsed < hotkey.repeatInterval) {
+                // Too soon, skip this repeat
+                continue;
+              }
+              hotkey.lastTriggerTime = now;
+            } else if (down && !repeat) {
+              // First press, initialize timer
+              hotkey.lastTriggerTime = std::chrono::steady_clock::now();
+            }
+            
             hotkey.success = true;
             debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, "
                   "repeat: {}",

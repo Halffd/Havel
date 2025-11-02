@@ -53,7 +53,7 @@ private:
     void MonitorLoop();
     
     // Check if keysym is a modifier
-    static bool IsModifierKey(KeySym ks);
+    static bool IsModifierKeySym(KeySym ks);
     
     // Clean modifier mask
     static unsigned int CleanMask(unsigned int mask);

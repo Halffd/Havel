@@ -387,12 +387,66 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         binding->hotkey = std::make_unique<havel::ast::HotkeyLiteral>(
             hotkeyToken.value);
 
+        // Check for conditional 'when' clause
+        if (at().type == havel::TokenType::When) {
+            advance(); // consume 'when'
+            
+            // Parse conditions (mode X && title Y)
+            while (true) {
+                // Parse condition type (mode, title, class, etc.)
+                if (at().type == havel::TokenType::Mode) {
+                    advance(); // consume 'mode'
+                    if (at().type == havel::TokenType::Identifier) {
+                        binding->conditions.push_back("mode " + advance().value);
+                    }
+                } else if (at().type == havel::TokenType::Identifier) {
+                    std::string condType = advance().value;
+                    if (condType == "title" || condType == "class" || condType == "process") {
+                        if (at().type == havel::TokenType::String || at().type == havel::TokenType::Identifier) {
+                            binding->conditions.push_back(condType + " " + advance().value);
+                        }
+                    }
+                }
+                
+                // Check for && (AND operator)
+                if (at().type == havel::TokenType::And) {
+                    advance(); // consume '&&'
+                    continue;
+                }
+                break;
+            }
+        }
+
         // Expect and consume the arrow operator '=>'
         if (at().type != havel::TokenType::Arrow) {
             throw std::runtime_error(
                 "Expected '=>' after hotkey '" + hotkeyToken.value + "'");
         }
         advance(); // consume the '=>'
+
+        // Check for direct key mapping (e.g., Left => A)
+        if (at().type == havel::TokenType::Identifier || at().type == havel::TokenType::Hotkey) {
+            // Peek ahead to see if this is a simple key mapping
+            if (at(1).type == havel::TokenType::NewLine || 
+                at(1).type == havel::TokenType::Semicolon ||
+                at(1).type == havel::TokenType::EOF_TOKEN) {
+                // Direct key mapping
+                binding->isKeyMapping = true;
+                binding->mappedKey = advance().value;
+                
+                // Create a simple send action
+                auto sendCallee = std::make_unique<havel::ast::Identifier>("send");
+                std::vector<std::unique_ptr<havel::ast::Expression>> args;
+                args.push_back(std::make_unique<havel::ast::StringLiteral>(binding->mappedKey));
+                auto sendExpr = std::make_unique<havel::ast::CallExpression>(std::move(sendCallee), std::move(args));
+                
+                auto exprStmt = std::make_unique<havel::ast::ExpressionStatement>();
+                exprStmt->expression = std::move(sendExpr);
+                binding->action = std::move(exprStmt);
+                
+                return binding;
+            }
+        }
 
         // Parse the action - could be an expression or a block statement
         if (at().type == havel::TokenType::OpenBrace) {

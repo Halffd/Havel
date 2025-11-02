@@ -235,8 +235,55 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
 
     // Keep the action node alive for runtime hotkey execution
     auto action = node.action.get();
+    
+    // Build condition lambdas from the conditions vector
+    std::vector<std::function<bool()>> contextChecks;
+    for (const auto& condition : node.conditions) {
+        // Parse condition string: "mode gaming", "title genshin", "class firefox"
+        size_t spacePos = condition.find(' ');
+        if (spacePos != std::string::npos) {
+            std::string condType = condition.substr(0, spacePos);
+            std::string condValue = condition.substr(spacePos + 1);
+            
+            if (condType == "mode") {
+                // Mode condition - check against current mode
+                contextChecks.push_back([this, condValue]() {
+                    // TODO: Implement mode system
+                    // For now, always return true
+                    return true;
+                });
+            } else if (condType == "title") {
+                // Window title condition
+                contextChecks.push_back([this, condValue]() {
+                    std::string activeTitle = this->windowManager.GetActiveWindowTitle();
+                    return activeTitle.find(condValue) != std::string::npos;
+                });
+            } else if (condType == "class") {
+                // Window class condition
+                contextChecks.push_back([this, condValue]() {
+                    std::string activeClass = this->windowManager.GetActiveWindowClass();
+                    return activeClass.find(condValue) != std::string::npos;
+                });
+            } else if (condType == "process") {
+                // Process name condition
+                contextChecks.push_back([this, condValue]() {
+                    pID pid = this->windowManager.GetActiveWindowPID();
+                    std::string processName = havel::WindowManager::getProcessName(pid);
+                    return processName.find(condValue) != std::string::npos;
+                });
+            }
+        }
+    }
 
-    auto actionHandler = [this, action]() {
+    auto actionHandler = [this, action, contextChecks]() {
+        // Check all conditions before executing
+        for (const auto& check : contextChecks) {
+            if (!check()) {
+                // Condition not met, don't execute
+                return;
+            }
+        }
+        
         if (action) {
             auto result = this->Evaluate(*action);
             if (isError(result)) {
@@ -1198,6 +1245,7 @@ void Interpreter::InitializeStandardLibrary() {
     InitializeMediaBuiltins();
     InitializeLauncherBuiltins();
     InitializeGUIBuiltins();
+    InitializeHelpBuiltin();
 }
 void Interpreter::InitializeSystemBuiltins() {
     // Define boolean constants
@@ -1390,36 +1438,36 @@ void Interpreter::InitializeSystemBuiltins() {
     environment->Define("audio.setVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.setVolume() requires volume (0.0-1.0)");
         double volume = std::get<double>(args[0]);
-        return HavelValue(this->audioManager.setVolume(volume));
+        return HavelValue(this->audioManager->setVolume(volume));
     }));
     
     environment->Define("audio.getVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        return HavelValue(this->audioManager.getVolume());
+        return HavelValue(this->audioManager->getVolume());
     }));
     
     environment->Define("audio.increaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
-        return HavelValue(this->audioManager.increaseVolume(amount));
+        return HavelValue(this->audioManager->increaseVolume(amount));
     }));
     
     environment->Define("audio.decreaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
-        return HavelValue(this->audioManager.decreaseVolume(amount));
+        return HavelValue(this->audioManager->decreaseVolume(amount));
     }));
     
     // Mute control
     environment->Define("audio.toggleMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        return HavelValue(this->audioManager.toggleMute());
+        return HavelValue(this->audioManager->toggleMute());
     }));
     
     environment->Define("audio.setMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.setMute() requires boolean");
         bool muted = std::get<bool>(args[0]);
-        return HavelValue(this->audioManager.setMute(muted));
+        return HavelValue(this->audioManager->setMute(muted));
     }));
     
     environment->Define("audio.isMuted", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        return HavelValue(this->audioManager.isMuted());
+        return HavelValue(this->audioManager->isMuted());
     }));
     
     // Application volume control
@@ -1427,53 +1475,53 @@ void Interpreter::InitializeSystemBuiltins() {
         if (args.size() < 2) return HavelRuntimeError("audio.setAppVolume() requires (appName, volume)");
         std::string appName = this->ValueToString(args[0]);
         double volume = std::get<double>(args[1]);
-        return HavelValue(this->audioManager.setApplicationVolume(appName, volume));
+        return HavelValue(this->audioManager->setApplicationVolume(appName, volume));
     }));
     
     environment->Define("audio.getAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.getAppVolume() requires appName");
         std::string appName = this->ValueToString(args[0]);
-        return HavelValue(this->audioManager.getApplicationVolume(appName));
+        return HavelValue(this->audioManager->getApplicationVolume(appName));
     }));
     
     environment->Define("audio.increaseAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.increaseAppVolume() requires appName");
         std::string appName = this->ValueToString(args[0]);
         double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
-        return HavelValue(this->audioManager.increaseApplicationVolume(appName, amount));
+        return HavelValue(this->audioManager->increaseApplicationVolume(appName, amount));
     }));
     
     environment->Define("audio.decreaseAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.decreaseAppVolume() requires appName");
         std::string appName = this->ValueToString(args[0]);
         double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
-        return HavelValue(this->audioManager.decreaseApplicationVolume(appName, amount));
+        return HavelValue(this->audioManager->decreaseApplicationVolume(appName, amount));
     }));
     
     // Active window application volume
     environment->Define("audio.setActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.setActiveAppVolume() requires volume");
         double volume = std::get<double>(args[0]);
-        return HavelValue(this->audioManager.setActiveApplicationVolume(volume));
+        return HavelValue(this->audioManager->setActiveApplicationVolume(volume));
     }));
     
     environment->Define("audio.getActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        return HavelValue(this->audioManager.getActiveApplicationVolume());
+        return HavelValue(this->audioManager->getActiveApplicationVolume());
     }));
     
     environment->Define("audio.increaseActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
-        return HavelValue(this->audioManager.increaseActiveApplicationVolume(amount));
+        return HavelValue(this->audioManager->increaseActiveApplicationVolume(amount));
     }));
     
     environment->Define("audio.decreaseActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
-        return HavelValue(this->audioManager.decreaseActiveApplicationVolume(amount));
+        return HavelValue(this->audioManager->decreaseActiveApplicationVolume(amount));
     }));
     
     // Get applications list
     environment->Define("audio.getApplications", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        auto apps = this->audioManager.getApplications();
+        auto apps = this->audioManager->getApplications();
         auto arr = std::make_shared<std::vector<HavelValue>>();
         for (const auto& app : apps) {
             auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -1582,10 +1630,111 @@ void Interpreter::InitializeWindowBuiltins() {
         }
         return HavelValue(false);
     }));
+    
+    // Additional window methods
+    environment->Define("window.move", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("window.move() requires (x, y)");
+        int x = static_cast<int>(std::get<double>(args[0]));
+        int y = static_cast<int>(std::get<double>(args[1]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.Move(x, y));
+    }));
+    
+    environment->Define("window.resize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("window.resize() requires (width, height)");
+        int width = static_cast<int>(std::get<double>(args[0]));
+        int height = static_cast<int>(std::get<double>(args[1]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.Resize(width, height));
+    }));
+    
+    environment->Define("window.moveResize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 4) return HavelRuntimeError("window.moveResize() requires (x, y, width, height)");
+        int x = static_cast<int>(std::get<double>(args[0]));
+        int y = static_cast<int>(std::get<double>(args[1]));
+        int width = static_cast<int>(std::get<double>(args[2]));
+        int height = static_cast<int>(std::get<double>(args[3]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.MoveResize(x, y, width, height));
+    }));
+    
+    // Note: Hide/Show not implemented yet in Window class
+    // environment->Define("window.hide", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    //     havel::Window activeWin(this->windowManager.GetActiveWindow());
+    //     activeWin.Hide();
+    //     return HavelValue(nullptr);
+    // }));
+    // 
+    // environment->Define("window.show", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    //     havel::Window activeWin(this->windowManager.GetActiveWindow());
+    //     activeWin.Show();
+    //     return HavelValue(nullptr);
+    // }));
+    
+    environment->Define("window.alwaysOnTop", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        bool top = args.empty() ? true : std::get<bool>(args[0]);
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        activeWin.AlwaysOnTop(top);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.transparency", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int alpha = args.empty() ? 255 : static_cast<int>(std::get<double>(args[0]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        activeWin.Transparency(alpha);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.toggleFullscreen", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        activeWin.ToggleFullscreen();
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.snap", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("window.snap() requires position (0-3)");
+        int position = static_cast<int>(std::get<double>(args[0]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        activeWin.Snap(position);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("window.moveToMonitor", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("window.moveToMonitor() requires monitor index");
+        int monitor = static_cast<int>(std::get<double>(args[0]));
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.MoveToMonitor(monitor));
+    }));
+    
+    environment->Define("window.moveToCorner", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("window.moveToCorner() requires corner name");
+        std::string corner = this->ValueToString(args[0]);
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.MoveToCorner(corner));
+    }));
+    
+    environment->Define("window.getClass", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->windowManager.GetActiveWindowClass());
+    }));
+    
+    environment->Define("window.exists", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            havel::Window activeWin(this->windowManager.GetActiveWindow());
+            return HavelValue(activeWin.Exists());
+        }
+        std::string title = this->ValueToString(args[0]);
+        wID winId = havel::WindowManager::FindByTitle(title.c_str());
+        return HavelValue(winId != 0);
+    }));
+    
+    environment->Define("window.isActive", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        return HavelValue(activeWin.Active());
+    }));
 
     // Expose as module object: window
     auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-if (auto v = environment->Get("window.getTitle")) (*win)["getTitle"] = *v;
+    if (auto v = environment->Get("window.getTitle")) (*win)["getTitle"] = *v;
     if (auto v = environment->Get("window.maximize")) (*win)["maximize"] = *v;
     if (auto v = environment->Get("window.minimize")) (*win)["minimize"] = *v;
     if (auto v = environment->Get("window.next")) (*win)["next"] = *v;
@@ -1593,6 +1742,20 @@ if (auto v = environment->Get("window.getTitle")) (*win)["getTitle"] = *v;
     if (auto v = environment->Get("window.close")) (*win)["close"] = *v;
     if (auto v = environment->Get("window.center")) (*win)["center"] = *v;
     if (auto v = environment->Get("window.focus")) (*win)["focus"] = *v;
+    if (auto v = environment->Get("window.move")) (*win)["move"] = *v;
+    if (auto v = environment->Get("window.resize")) (*win)["resize"] = *v;
+    if (auto v = environment->Get("window.moveResize")) (*win)["moveResize"] = *v;
+    // if (auto v = environment->Get("window.hide")) (*win)["hide"] = *v;
+    // if (auto v = environment->Get("window.show")) (*win)["show"] = *v;
+    if (auto v = environment->Get("window.alwaysOnTop")) (*win)["alwaysOnTop"] = *v;
+    if (auto v = environment->Get("window.transparency")) (*win)["transparency"] = *v;
+    if (auto v = environment->Get("window.toggleFullscreen")) (*win)["toggleFullscreen"] = *v;
+    if (auto v = environment->Get("window.snap")) (*win)["snap"] = *v;
+    if (auto v = environment->Get("window.moveToMonitor")) (*win)["moveToMonitor"] = *v;
+    if (auto v = environment->Get("window.moveToCorner")) (*win)["moveToCorner"] = *v;
+    if (auto v = environment->Get("window.getClass")) (*win)["getClass"] = *v;
+    if (auto v = environment->Get("window.exists")) (*win)["exists"] = *v;
+    if (auto v = environment->Get("window.isActive")) (*win)["isActive"] = *v;
     environment->Define("window", HavelValue(win));
 }
 
@@ -2226,6 +2389,168 @@ void Interpreter::InitializeGUIBuiltins() {
         
         std::string selected = guiManager->showDirectoryDialog(title, startDir);
         return HavelValue(selected);
+    }));
+}
+
+void Interpreter::InitializeHelpBuiltin() {
+    environment->Define("help", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::stringstream help;
+        
+        if (args.empty()) {
+            // Show general help
+            help << "\n=== Havel Language Help ===\n\n";
+            help << "Usage: help()          - Show this help\n";
+            help << "       help(\"module\")  - Show help for specific module\n\n";
+            help << "Available modules:\n";
+            help << "  - system      : System functions (print, sleep, exit, etc.)\n";
+            help << "  - window      : Window management functions\n";
+            help << "  - clipboard   : Clipboard operations\n";
+            help << "  - text        : Text manipulation (upper, lower, trim, etc.)\n";
+            help << "  - file        : File I/O operations\n";
+            help << "  - array       : Array manipulation (map, filter, reduce, etc.)\n";
+            help << "  - io          : Input/output control\n";
+            help << "  - audio       : Audio control (volume, mute, etc.)\n";
+            help << "  - media       : Media playback control\n";
+            help << "  - brightness  : Screen brightness control\n";
+            help << "  - launcher    : Process launching (run, kill, etc.)\n";
+            help << "  - gui         : GUI dialogs and menus\n";
+            help << "  - debug       : Debugging utilities\n\n";
+            help << "For detailed documentation, see Havel.md\n";
+        } else {
+            std::string module = ValueToString(args[0]);
+            
+            if (module == "system") {
+                help << "\n=== System Module ===\n\n";
+                help << "Constants:\n";
+                help << "  true, false, null\n\n";
+                help << "Functions:\n";
+                help << "  print(...args)         - Print values to stdout\n";
+                help << "  println(...args)       - Print values with newline\n";
+                help << "  sleep(ms)              - Sleep for milliseconds\n";
+                help << "  exit([code])           - Exit program with optional code\n";
+                help << "  type(value)            - Get type of value\n";
+                help << "  len(array|string)      - Get length\n";
+                help << "  range(start, end)      - Create array of numbers\n";
+                help << "  random([min, max])     - Generate random number\n";
+            } else if (module == "window") {
+                help << "\n=== Window Module ===\n\n";
+                help << "Functions:\n";
+                help << "  window.getTitle()              - Get active window title\n";
+                help << "  window.maximize()              - Maximize active window\n";
+                help << "  window.minimize()              - Minimize active window\n";
+                help << "  window.close()                 - Close active window\n";
+                help << "  window.center()                - Center active window\n";
+                help << "  window.focus()                 - Focus active window\n";
+                help << "  window.next()                  - Switch to next window\n";
+                help << "  window.previous()              - Switch to previous window\n";
+                help << "  window.move(x, y)              - Move window to position\n";
+                help << "  window.resize(w, h)            - Resize window\n";
+                help << "  window.moveResize(x,y,w,h)     - Move and resize\n";
+                help << "  window.alwaysOnTop(enable)     - Set always on top\n";
+                help << "  window.transparency(level)     - Set transparency (0-1)\n";
+                help << "  window.toggleFullscreen()      - Toggle fullscreen\n";
+                help << "  window.snap(direction)         - Snap to screen edge\n";
+                help << "  window.moveToMonitor(index)    - Move to monitor\n";
+                help << "  window.moveToCorner(corner)    - Move to corner\n";
+                help << "  window.getClass()              - Get window class\n";
+                help << "  window.exists()                - Check if window exists\n";
+                help << "  window.isActive()              - Check if window is active\n";
+            } else if (module == "clipboard") {
+                help << "\n=== Clipboard Module ===\n\n";
+                help << "Functions:\n";
+                help << "  clipboard.get()        - Get clipboard text\n";
+                help << "  clipboard.set(text)    - Set clipboard text\n";
+                help << "  clipboard.clear()      - Clear clipboard\n";
+            } else if (module == "text") {
+                help << "\n=== Text Module ===\n\n";
+                help << "Functions:\n";
+                help << "  upper(text)            - Convert to uppercase\n";
+                help << "  lower(text)            - Convert to lowercase\n";
+                help << "  trim(text)             - Remove leading/trailing whitespace\n";
+                help << "  split(text, delimiter) - Split text into array\n";
+                help << "  join(array, separator) - Join array into text\n";
+                help << "  replace(text, old, new)- Replace text\n";
+                help << "  contains(text, search) - Check if text contains substring\n";
+                help << "  startsWith(text, prefix) - Check if starts with\n";
+                help << "  endsWith(text, suffix)   - Check if ends with\n";
+            } else if (module == "file") {
+                help << "\n=== File Module ===\n\n";
+                help << "Functions:\n";
+                help << "  file.read(path)        - Read file contents\n";
+                help << "  file.write(path, data) - Write to file\n";
+                help << "  file.exists(path)      - Check if file exists\n";
+            } else if (module == "array") {
+                help << "\n=== Array Module ===\n\n";
+                help << "Functions:\n";
+                help << "  map(array, fn)         - Transform array elements\n";
+                help << "  filter(array, fn)      - Filter array elements\n";
+                help << "  reduce(array, fn, init)- Reduce array to single value\n";
+                help << "  forEach(array, fn)     - Execute function for each element\n";
+                help << "  push(array, value)     - Add element to end\n";
+                help << "  pop(array)             - Remove and return last element\n";
+                help << "  shift(array)           - Remove and return first element\n";
+                help << "  unshift(array, value)  - Add element to beginning\n";
+                help << "  reverse(array)         - Reverse array\n";
+                help << "  sort(array, [fn])      - Sort array\n";
+            } else if (module == "io") {
+                help << "\n=== IO Module ===\n\n";
+                help << "Functions:\n";
+                help << "  io.block()             - Block all input\n";
+                help << "  io.unblock()           - Unblock input\n";
+                help << "  send(keys)             - Send keystrokes\n";
+                help << "  click([button])        - Simulate mouse click\n";
+                help << "  mouseMove(x, y)        - Move mouse to position\n";
+            } else if (module == "audio") {
+                help << "\n=== Audio Module ===\n\n";
+                help << "Functions:\n";
+                help << "  audio.getVolume()      - Get system volume (0-100)\n";
+                help << "  audio.setVolume(level) - Set system volume\n";
+                help << "  audio.mute()           - Mute audio\n";
+                help << "  audio.unmute()         - Unmute audio\n";
+                help << "  audio.toggleMute()     - Toggle mute state\n";
+            } else if (module == "media") {
+                help << "\n=== Media Module ===\n\n";
+                help << "Functions:\n";
+                help << "  media.play()           - Play media\n";
+                help << "  media.pause()          - Pause media\n";
+                help << "  media.stop()           - Stop media\n";
+                help << "  media.next()           - Next track\n";
+                help << "  media.previous()       - Previous track\n";
+            } else if (module == "brightness") {
+                help << "\n=== Brightness Module ===\n\n";
+                help << "Functions:\n";
+                help << "  brightnessManager.getBrightness()    - Get brightness (0-100)\n";
+                help << "  brightnessManager.setBrightness(val) - Set brightness\n";
+            } else if (module == "launcher") {
+                help << "\n=== Launcher Module ===\n\n";
+                help << "Functions:\n";
+                help << "  run(command, [args])   - Run command\n";
+                help << "  kill(pid)              - Kill process by PID\n";
+                help << "  killByName(name)       - Kill process by name\n";
+            } else if (module == "gui") {
+                help << "\n=== GUI Module ===\n\n";
+                help << "Functions:\n";
+                help << "  gui.menu(items)        - Show menu dialog\n";
+                help << "  gui.notify(title, msg) - Show notification\n";
+                help << "  gui.confirm(msg)       - Show confirmation dialog\n";
+                help << "  gui.input(prompt)      - Show input dialog\n";
+                help << "  gui.fileDialog([title, dir, filter]) - Show file picker\n";
+                help << "  gui.directoryDialog([title, dir])    - Show directory picker\n";
+            } else if (module == "debug") {
+                help << "\n=== Debug Module ===\n\n";
+                help << "Variables:\n";
+                help << "  debug                  - Debug flag (boolean)\n\n";
+                help << "Functions:\n";
+                help << "  assert(condition, msg) - Assert condition\n";
+                help << "  trace(msg)             - Print trace message\n";
+            } else {
+                help << "\nUnknown module: " << module << "\n";
+                help << "Use help() to see available modules.\n";
+            }
+        }
+        
+        std::cout << help.str();
+        return HavelValue(nullptr);
     }));
 }
 

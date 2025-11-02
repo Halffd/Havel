@@ -300,6 +300,13 @@ struct HotkeyBinding : public Statement {
   std::unique_ptr<Expression> hotkey;
   std::unique_ptr<Statement> action;
   // Changed from Expression to Statement
+  
+  // Conditional support
+  std::vector<std::string> conditions;  // e.g., ["mode gaming", "title genshin"]
+  
+  // Direct key mapping support (e.g., Left => A)
+  bool isKeyMapping = false;
+  std::string mappedKey;  // Target key for mapping
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
   HotkeyBinding(std::unique_ptr<Expression> hk, std::unique_ptr<Statement> act)
@@ -308,9 +315,22 @@ struct HotkeyBinding : public Statement {
   }
 
   std::string toString() const override {
-    return "HotkeyBinding{hotkey: " +
+    std::string result = "HotkeyBinding{hotkey: " +
            (hotkey ? hotkey->toString() : "nullptr") +
-           ", action: " + (action ? action->toString() : "nullptr") + "}";
+           ", action: " + (action ? action->toString() : "nullptr");
+    if (!conditions.empty()) {
+      result += ", conditions: [";
+      for (size_t i = 0; i < conditions.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += conditions[i];
+      }
+      result += "]";
+    }
+    if (isKeyMapping) {
+      result += ", mapping to: " + mappedKey;
+    }
+    result += "}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

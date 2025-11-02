@@ -1095,7 +1095,7 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
 
     bool AudioManager::setApplicationVolume(uint32_t applicationIndex, double volume) {
-        if (currentBackend != AudioBackend::PULSE || !pa_context) return false;
+        if (currentBackend != AudioBackend::PULSE || !pa_context || !pa_mainloop) return false;
         
         volume = std::clamp(volume, MIN_VOLUME, MAX_VOLUME);
         
@@ -1110,6 +1110,10 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
         
         bool success = false;
         if (op) {
+            // Wait for operation to complete
+            while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
+                pa_threaded_mainloop_wait(pa_mainloop);
+            }
             pa_operation_unref(op);
             success = true;
         }
@@ -1133,27 +1137,28 @@ bool AudioManager::setPulseVolume(const std::string& device, double volume) {
     }
 
     double AudioManager::getApplicationVolume(uint32_t applicationIndex) const {
-        if (currentBackend != AudioBackend::PULSE || !pa_context) return 0.0;
+        if (currentBackend != AudioBackend::PULSE || !pa_context || !pa_mainloop) return 0.0;
         
         double volume = 0.0;
         
         // Cast away const for C API compatibility
         auto* ctx = const_cast<struct pa_context*>(pa_context);
+        auto* ml = const_cast<pa_threaded_mainloop*>(pa_mainloop);
         
-        pa_threaded_mainloop_lock(pa_mainloop);
+        pa_threaded_mainloop_lock(ml);
         
-        PAResultDouble data{&volume, pa_mainloop};
+        PAResultDouble data{&volume, ml};
         pa_operation* op = pa_context_get_sink_input_info(
             ctx, applicationIndex, pulse_sink_input_volume_callback, &data);
         
         if (op) {
             while (pa_operation_get_state(op) == PA_OPERATION_RUNNING) {
-                pa_threaded_mainloop_wait(pa_mainloop);
+                pa_threaded_mainloop_wait(ml);
             }
             pa_operation_unref(op);
         }
         
-        pa_threaded_mainloop_unlock(pa_mainloop);
+        pa_threaded_mainloop_unlock(ml);
         return volume;
     }
 

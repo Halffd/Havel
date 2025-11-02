@@ -1320,12 +1320,213 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(nullptr);
     }));
     
-    // Expose as module object: clipboard
+    // === IO METHODS ===
+    // Mouse methods
+    environment->Define("io.mouseMove", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("io.mouseMove() requires (dx, dy)");
+        int dx = static_cast<int>(std::get<double>(args[0]));
+        int dy = static_cast<int>(std::get<double>(args[1]));
+        this->io.MouseMove(dx, dy);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("io.mouseMoveTo", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("io.mouseMoveTo() requires (x, y)");
+        int x = static_cast<int>(std::get<double>(args[0]));
+        int y = static_cast<int>(std::get<double>(args[1]));
+        this->io.MouseMoveTo(x, y);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("io.mouseClick", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int button = args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
+        this->io.MouseClick(button);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("io.mouseDown", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int button = args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
+        this->io.MouseDown(button);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("io.mouseUp", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int button = args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
+        this->io.MouseUp(button);
+        return HavelValue(nullptr);
+    }));
+    
+    environment->Define("io.mouseWheel", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int amount = args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
+        this->io.MouseWheel(amount);
+        return HavelValue(nullptr);
+    }));
+    
+    // Key state methods
+    environment->Define("io.getKeyState", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.getKeyState() requires key name");
+        std::string key = this->ValueToString(args[0]);
+        return HavelValue(this->io.GetKeyState(key));
+    }));
+    
+    environment->Define("io.isShiftPressed", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->io.IsShiftPressed());
+    }));
+    
+    environment->Define("io.isCtrlPressed", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->io.IsCtrlPressed());
+    }));
+    
+    environment->Define("io.isAltPressed", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->io.IsAltPressed());
+    }));
+    
+    environment->Define("io.isWinPressed", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->io.IsWinPressed());
+    }));
+    
+    // === AUDIO MANAGER METHODS ===
+    // Volume control
+    environment->Define("audio.setVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.setVolume() requires volume (0.0-1.0)");
+        double volume = std::get<double>(args[0]);
+        return HavelValue(this->audioManager.setVolume(volume));
+    }));
+    
+    environment->Define("audio.getVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->audioManager.getVolume());
+    }));
+    
+    environment->Define("audio.increaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        return HavelValue(this->audioManager.increaseVolume(amount));
+    }));
+    
+    environment->Define("audio.decreaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        return HavelValue(this->audioManager.decreaseVolume(amount));
+    }));
+    
+    // Mute control
+    environment->Define("audio.toggleMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->audioManager.toggleMute());
+    }));
+    
+    environment->Define("audio.setMute", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.setMute() requires boolean");
+        bool muted = std::get<bool>(args[0]);
+        return HavelValue(this->audioManager.setMute(muted));
+    }));
+    
+    environment->Define("audio.isMuted", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->audioManager.isMuted());
+    }));
+    
+    // Application volume control
+    environment->Define("audio.setAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("audio.setAppVolume() requires (appName, volume)");
+        std::string appName = this->ValueToString(args[0]);
+        double volume = std::get<double>(args[1]);
+        return HavelValue(this->audioManager.setApplicationVolume(appName, volume));
+    }));
+    
+    environment->Define("audio.getAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.getAppVolume() requires appName");
+        std::string appName = this->ValueToString(args[0]);
+        return HavelValue(this->audioManager.getApplicationVolume(appName));
+    }));
+    
+    environment->Define("audio.increaseAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.increaseAppVolume() requires appName");
+        std::string appName = this->ValueToString(args[0]);
+        double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
+        return HavelValue(this->audioManager.increaseApplicationVolume(appName, amount));
+    }));
+    
+    environment->Define("audio.decreaseAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.decreaseAppVolume() requires appName");
+        std::string appName = this->ValueToString(args[0]);
+        double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
+        return HavelValue(this->audioManager.decreaseApplicationVolume(appName, amount));
+    }));
+    
+    // Active window application volume
+    environment->Define("audio.setActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.setActiveAppVolume() requires volume");
+        double volume = std::get<double>(args[0]);
+        return HavelValue(this->audioManager.setActiveApplicationVolume(volume));
+    }));
+    
+    environment->Define("audio.getActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        return HavelValue(this->audioManager.getActiveApplicationVolume());
+    }));
+    
+    environment->Define("audio.increaseActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        return HavelValue(this->audioManager.increaseActiveApplicationVolume(amount));
+    }));
+    
+    environment->Define("audio.decreaseActiveAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        return HavelValue(this->audioManager.decreaseActiveApplicationVolume(amount));
+    }));
+    
+    // Get applications list
+    environment->Define("audio.getApplications", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        auto apps = this->audioManager.getApplications();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& app : apps) {
+            auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*obj)["name"] = HavelValue(app.name);
+            (*obj)["volume"] = HavelValue(app.volume);
+            (*obj)["isMuted"] = HavelValue(app.isMuted);
+            (*obj)["index"] = HavelValue(static_cast<double>(app.index));
+            arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+    }));
+    
+    // Expose as module objects
     auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-if (auto v = environment->Get("clipboard.get")) (*clip)["get"] = *v;
+    if (auto v = environment->Get("clipboard.get")) (*clip)["get"] = *v;
     if (auto v = environment->Get("clipboard.set")) (*clip)["set"] = *v;
     if (auto v = environment->Get("clipboard.clear")) (*clip)["clear"] = *v;
     environment->Define("clipboard", HavelValue(clip));
+    
+    // Create io module
+    auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("io.mouseMove")) (*ioMod)["mouseMove"] = *v;
+    if (auto v = environment->Get("io.mouseMoveTo")) (*ioMod)["mouseMoveTo"] = *v;
+    if (auto v = environment->Get("io.mouseClick")) (*ioMod)["mouseClick"] = *v;
+    if (auto v = environment->Get("io.mouseDown")) (*ioMod)["mouseDown"] = *v;
+    if (auto v = environment->Get("io.mouseUp")) (*ioMod)["mouseUp"] = *v;
+    if (auto v = environment->Get("io.mouseWheel")) (*ioMod)["mouseWheel"] = *v;
+    if (auto v = environment->Get("io.getKeyState")) (*ioMod)["getKeyState"] = *v;
+    if (auto v = environment->Get("io.isShiftPressed")) (*ioMod)["isShiftPressed"] = *v;
+    if (auto v = environment->Get("io.isCtrlPressed")) (*ioMod)["isCtrlPressed"] = *v;
+    if (auto v = environment->Get("io.isAltPressed")) (*ioMod)["isAltPressed"] = *v;
+    if (auto v = environment->Get("io.isWinPressed")) (*ioMod)["isWinPressed"] = *v;
+    environment->Define("io", HavelValue(ioMod));
+    
+    // Create audio module
+    auto audioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("audio.setVolume")) (*audioMod)["setVolume"] = *v;
+    if (auto v = environment->Get("audio.getVolume")) (*audioMod)["getVolume"] = *v;
+    if (auto v = environment->Get("audio.increaseVolume")) (*audioMod)["increaseVolume"] = *v;
+    if (auto v = environment->Get("audio.decreaseVolume")) (*audioMod)["decreaseVolume"] = *v;
+    if (auto v = environment->Get("audio.toggleMute")) (*audioMod)["toggleMute"] = *v;
+    if (auto v = environment->Get("audio.setMute")) (*audioMod)["setMute"] = *v;
+    if (auto v = environment->Get("audio.isMuted")) (*audioMod)["isMuted"] = *v;
+    if (auto v = environment->Get("audio.setAppVolume")) (*audioMod)["setAppVolume"] = *v;
+    if (auto v = environment->Get("audio.getAppVolume")) (*audioMod)["getAppVolume"] = *v;
+    if (auto v = environment->Get("audio.increaseAppVolume")) (*audioMod)["increaseAppVolume"] = *v;
+    if (auto v = environment->Get("audio.decreaseAppVolume")) (*audioMod)["decreaseAppVolume"] = *v;
+    if (auto v = environment->Get("audio.setActiveAppVolume")) (*audioMod)["setActiveAppVolume"] = *v;
+    if (auto v = environment->Get("audio.getActiveAppVolume")) (*audioMod)["getActiveAppVolume"] = *v;
+    if (auto v = environment->Get("audio.increaseActiveAppVolume")) (*audioMod)["increaseActiveAppVolume"] = *v;
+    if (auto v = environment->Get("audio.decreaseActiveAppVolume")) (*audioMod)["decreaseActiveAppVolume"] = *v;
+    if (auto v = environment->Get("audio.getApplications")) (*audioMod)["getApplications"] = *v;
+    environment->Define("audio", HavelValue(audioMod));
 }
 
 void Interpreter::InitializeWindowBuiltins() {

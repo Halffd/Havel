@@ -29,10 +29,13 @@ public:
     ~EventListener();
     
     // Start listening on specified devices
-    bool Start(const std::vector<std::string>& devicePaths);
+    bool Start(const std::vector<std::string>& devicePaths, bool grabDevices = false);
     
     // Stop listening
     void Stop();
+    
+    // Enable/disable device grabbing
+    void SetGrabDevices(bool grab) { grabDevices = grab; }
     
     // Check if running
     bool IsRunning() const { return running.load(); }
@@ -169,6 +172,9 @@ private:
     
     // Mouse button state tracking
     std::map<int, bool> mouseButtonState;
+    
+    // Device grabbing
+    bool grabDevices = false;
     
     // X11 hotkey monitor (separate component)
     #ifdef __linux__

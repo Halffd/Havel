@@ -52,8 +52,18 @@ EventListener::~EventListener() {
     }
 }
 
-bool EventListener::Start(const std::vector<std::string>& devicePaths) {
+bool EventListener::Start(const std::vector<std::string>& devicePaths, bool grabDevices) {
     if (running.load()) {
+        warn("EventListener already running");
+        return false;
+    }
+    
+    this->grabDevices = grabDevices;
+    
+    // Create eventfd for shutdown signaling
+    shutdownFd = eventfd(0, EFD_NONBLOCK);
+    if (shutdownFd < 0) {
+        error("Failed to create eventfd");
         return false;
     }
     
@@ -67,6 +77,16 @@ bool EventListener::Start(const std::vector<std::string>& devicePaths) {
         
         char name[256] = "Unknown";
         ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+        
+        // Try to grab device if requested
+        if (grabDevices) {
+            if (ioctl(fd, EVIOCGRAB, 1) < 0) {
+                error("Failed to grab device {} ({}): already grabbed elsewhere. Closing device.", name, path);
+                close(fd);
+                continue;
+            }
+            info("Successfully grabbed device: {} ({})", name, path);
+        }
         
         DeviceInfo device;
         device.path = path;
@@ -107,9 +127,12 @@ void EventListener::Stop() {
         eventThread.join();
     }
     
-    // Close all devices
+    // Ungrab and close all devices
     for (auto& device : devices) {
         if (device.fd >= 0) {
+            if (grabDevices) {
+                ioctl(device.fd, EVIOCGRAB, 0);  // Ungrab device
+            }
             close(device.fd);
         }
     }

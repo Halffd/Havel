@@ -297,7 +297,7 @@ namespace havel::compiler {
         const ast::PipelineExpression &pipeline) {
         if (pipeline.stages.empty()) {
             return llvm::ConstantPointerNull::get(
-                llvm::PointerType::get(llvm::Type::getInt8Ty(context), 0));
+                llvm::PointerType::get(context, 0));
         }
 
         // Start with first stage: clipboard.out
@@ -422,7 +422,7 @@ namespace havel::compiler {
     void Compiler::CreateStandardLibrary() {
         // Create function types
         llvm::Type *int8Type = llvm::Type::getInt8Ty(context);
-        llvm::Type *stringType = llvm::PointerType::get(int8Type, 0);
+        llvm::Type *stringType = llvm::PointerType::get(context, 0);
         // i8* for strings
         llvm::Type *voidType = llvm::Type::getVoidTy(context);
 

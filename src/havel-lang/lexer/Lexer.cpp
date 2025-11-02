@@ -224,7 +224,6 @@ Token Lexer::scanString() {
             } else {
                 // Just a $ not followed by { or identifier, treat as literal '$'
                 // Do not mark as interpolation in this case
-                hasInterpolation = hasInterpolation; // no-op, keep previous state
             }
         } else {
             // Regular character processing

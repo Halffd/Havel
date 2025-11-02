@@ -158,8 +158,7 @@ public:
     // Constants
     static constexpr double DEFAULT_VOLUME_STEP = 0.05;
     static constexpr double MIN_VOLUME = 0.0;
-    static constexpr double MAX_VOLUME = 1.53;  // 153%
-
+    double MAX_VOLUME = 4.0;
 private:
     AudioBackend currentBackend;
     void* backendData = nullptr;  // Backend-specific data

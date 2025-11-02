@@ -31,6 +31,7 @@ void HavelCore::initializeHotkeys() {
     auto mpv = std::make_unique<MPVController>();
     auto scriptEngine = std::make_unique<ScriptEngine>(*io, *windowManager);
     auto audioManager = std::make_unique<AudioManager>(AudioBackend::AUTO);
+    audioManager->MAX_VOLUME = Configs::Get().Get<double>("Audio.MaxVolume", 4.0);
 
     hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine);
     hotkeyManager->RegisterDefaultHotkeys();

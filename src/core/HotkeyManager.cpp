@@ -5,6 +5,7 @@
 #include "core/ConditionSystem.hpp"
 #include "automation/AutoRunner.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "gui/AutomationSuite.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "media/AudioManager.hpp"
 #include "utils/Timer.hpp"
@@ -117,8 +118,8 @@ info("Working hotkeys: " + workingHotkeys);
 
     info("=== End Hotkey Report ===");
 }
-HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager, ScriptEngine &scriptEngine)
-    : io(io), windowManager(windowManager), mpv(mpv), audioManager(audioManager), scriptEngine(scriptEngine) {
+HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager, ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager)
+    : io(io), windowManager(windowManager), mpv(mpv), audioManager(audioManager), scriptEngine(scriptEngine), screenshotManager(screenshotManager) {
     config = Configs::Get();
     mouseController = std::make_unique<MouseController>(io);
     conditionEngine = std::make_unique<ConditionEngine>();
@@ -344,12 +345,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     });
 
     // Application Shortcuts
-    io.Hotkey("@rwin", [this]() {
-        std::cout << "rwin" << std::endl;
+    io.Hotkey("@|rwin", [this]() {
         io.Send("@!{backspace}");
     });
-    io.Hotkey("@ralt", []() {
-        std::cout << "ralt" << std::endl;
+    io.Hotkey("@|ralt", []() {
         WindowManager::MoveWindowToNextMonitor();
     }); 
     // This should now work correctly
@@ -769,7 +768,18 @@ AddHotkey("@^!Home", [WinMove]() {
         clipboardText = clipboardText.right(20000);
         ClipboardManager::clipboard->setText(clipboardText);
     });
-    
+    // Register screenshot hotkeys
+    io.Hotkey("@^Print", [this]() {
+        screenshotManager.takeScreenshot();
+    });
+
+    io.Hotkey("@Print", [this]() {
+        screenshotManager.takeRegionScreenshot();
+    });
+
+    io.Hotkey("@Pause", [this]() {
+        screenshotManager.takeScreenshotOfCurrentMonitor();
+    });
     AddHotkey("@|numpad5", [this]() { 
         io.Click(MouseButton::Left, MouseAction::Hold);
     });
@@ -1060,7 +1070,7 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+-", [this]() { mpv.ToggleMute(); }, nullptr, mpvBaseId++ },
 
     // Playback
-    { "@rctrl", [this]() { info("rctrl PlayPause"); PlayPause(); }, nullptr, mpvBaseId++ },
+    { "@|rctrl", [this]() { info("rctrl PlayPause"); PlayPause(); }, nullptr, mpvBaseId++ },
     { "+Esc", [this]() { mpv.Stop(); }, nullptr, mpvBaseId++ },
     { "+PgUp", [this]() { mpv.Next(); }, nullptr, mpvBaseId++ },
     { "+PgDn", [this]() { mpv.Previous(); }, nullptr, mpvBaseId++ },
@@ -1073,8 +1083,8 @@ std::vector<HotkeyDefinition> mpvHotkeys = {
     { "+p", [this]() { mpv.SendCommand({"add", "speed", "0.1"}); }, nullptr, mpvBaseId++ },
 
     // Subtitles
-    { "n", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
-    { "+n", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "|n", [this]() { mpv.SendCommand({"cycle", "sub-visibility"}); }, nullptr, mpvBaseId++ },
+    { "+|n", [this]() { mpv.SendCommand({"cycle", "secondary-sub-visibility"}); }, nullptr, mpvBaseId++ },
     { "7", [this]() { mpv.SendCommand({"add", "sub-scale", "-0.1"}); }, nullptr, mpvBaseId++ },
     { "8", [this]() { mpv.SendCommand({"add", "sub-scale", "0.1"}); }, nullptr, mpvBaseId++ },
     { "+z", [this]() { mpv.SendCommand({"add", "sub-delay", "-0.1"}); }, nullptr, mpvBaseId++ },

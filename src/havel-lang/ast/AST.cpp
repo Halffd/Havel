@@ -51,7 +51,9 @@ namespace havel::ast {
         void visitHotkeyBinding(const HotkeyBinding &node) override {
             out << getIndent() << "HotkeyBinding {" << std::endl;
             indentLevel++;
-            printChildNode("hotkey: ", node.hotkey);
+            for (size_t i = 0; i < node.hotkeys.size(); ++i) {
+                printChildNode("hotkey[" + std::to_string(i) + "]: ", node.hotkeys[i]);
+            }
             printChildNode("action: ", node.action);
             indentLevel--;
             out << getIndent() << "}" << std::endl;

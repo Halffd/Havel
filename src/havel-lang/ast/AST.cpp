@@ -52,7 +52,7 @@ namespace havel::ast {
             out << getIndent() << "HotkeyBinding {" << std::endl;
             indentLevel++;
             for (size_t i = 0; i < node.hotkeys.size(); ++i) {
-                printChildNode("hotkey[" + std::to_string(i) + "]: ", node.hotkeys[i]);
+                printChildNode(("hotkey[" + std::to_string(i) + "]: ").c_str(), node.hotkeys[i]);
             }
             printChildNode("action: ", node.action);
             indentLevel--;

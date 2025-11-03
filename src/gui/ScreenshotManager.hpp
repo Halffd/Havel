@@ -45,6 +45,7 @@ public:
 public slots:
     void takeScreenshot();
     void takeRegionScreenshot();
+    void takeScreenshotOfCurrentMonitor();
     void captureRegion(const QRect &region);
 
 private:

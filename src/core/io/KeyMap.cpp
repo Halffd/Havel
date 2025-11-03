@@ -373,7 +373,9 @@ void KeyMap::Initialize() {
     // Special system keys
     AddKey("sysrq", KEY_SYSRQ, XK_Sys_Req, 0);
     AddKey("printscreen", KEY_SYSRQ, XK_Print, VK_SNAPSHOT);
+    AddAlias("print", "printscreen");
     AddKey("pausebreak", KEY_PAUSE, XK_Pause, VK_PAUSE);
+    AddAlias("pause", "pausebreak");
     AddKey("scrollup", KEY_SCROLLUP, 0, 0);
     AddKey("scrolldown", KEY_SCROLLDOWN, 0, 0);
     

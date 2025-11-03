@@ -46,7 +46,7 @@ void ScreenshotManager::takeScreenshot() {
     auto screen = QApplication::primaryScreen();
     auto pixmap = screen->grabWindow(0);
 
-    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss"));
+    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
     pixmap.save(screenshotDir + "/" + filename);
 
     addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
@@ -61,11 +61,24 @@ void ScreenshotManager::takeRegionScreenshot() {
     });
 }
 
+void ScreenshotManager::takeScreenshotOfCurrentMonitor() {
+    auto screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+    auto pixmap = screen->grabWindow(0, screen->geometry().x(), screen->geometry().y(), screen->geometry().width(), screen->geometry().height());
+
+    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
+    pixmap.save(screenshotDir + "/" + filename);
+
+    addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
+}
+
 void ScreenshotManager::captureRegion(const QRect &region) {
     auto screen = QApplication::primaryScreen();
     auto pixmap = screen->grabWindow(0, region.x(), region.y(), region.width(), region.height());
 
-    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss"));
+    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
     pixmap.save(screenshotDir + "/" + filename);
 
     addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));

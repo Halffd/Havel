@@ -655,7 +655,13 @@ namespace havel::compiler {
                 false
             );
 
-            std::string hotkeyFuncName = "hotkey_" + hotkeyStmt.hotkey->toString();
+            // Create a unique name for the handler function.
+            // Using the first hotkey for the name is fine for debugging.
+            std::string hotkeyFuncName = "hotkey_handler";
+            if (!hotkeyStmt.hotkeys.empty()) {
+                hotkeyFuncName = "hotkey_" + hotkeyStmt.hotkeys[0]->toString();
+            }
+
             llvm::Function* hotkeyFunc = llvm::Function::Create(
                 hotkeyFuncType,
                 llvm::Function::ExternalLinkage,
@@ -685,8 +691,21 @@ namespace havel::compiler {
             builder.SetInsertPoint(prevBlock);
             symbolTable = prevSymbolTable;
 
-            // Register the hotkey (you'll need to implement this)
-            RegisterHotkey(hotkeyStmt.hotkey->toString(), hotkeyFunc);
+            // Register the hotkey for each hotkey literal in the binding
+            for (const auto& hotkeyExpr : hotkeyStmt.hotkeys) {
+                // Evaluate expression at compile-time if constant
+                if (auto* hotkeyLit = dynamic_cast<const ast::HotkeyLiteral*>(hotkeyExpr.get())) {
+                    RegisterHotkey(*hotkeyLit, hotkeyFunc);
+                } else if (auto* strLit = dynamic_cast<const ast::StringLiteral*>(hotkeyExpr.get())) {
+                    // Allow string literals too: "^+F1" => action()
+                    ast::HotkeyLiteral literal(strLit->value);
+                    RegisterHotkey(literal, hotkeyFunc);
+                } else {
+                    // For variables/expressions, register at runtime
+                    warn("Hotkey expression is not constant, will register at runtime");
+                    // Emit code to call IO::Hotkey() at runtime
+                }
+            }
 
             return hotkeyFunc;
         }

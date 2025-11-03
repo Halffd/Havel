@@ -23,7 +23,8 @@
 #include "automation/AutoRunner.hpp"
 #include "utils/Timer.hpp"
 #include <memory>
-#include "core/io/KeyTap.hpp"    
+#include "core/io/KeyTap.hpp"
+#include "gui/ScreenshotManager.hpp"   
 
 namespace havel {
     struct HotkeyDefinition {
@@ -46,7 +47,7 @@ namespace havel {
     class HotkeyManager {
     public:
         HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager,
-                      ScriptEngine &scriptEngine);
+                      ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager);
         std::unique_ptr<MouseController> mouseController;
         virtual ~HotkeyManager() {
             cleanup();
@@ -194,6 +195,7 @@ namespace havel {
         MPVController &mpv;
         AudioManager &audioManager;
         ScriptEngine &scriptEngine;
+        ScreenshotManager &screenshotManager;
         Configs config;
 
         // Mode management

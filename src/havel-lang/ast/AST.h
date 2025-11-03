@@ -297,7 +297,7 @@ struct BlockStatement : public Statement {
 
 // Hotkey Binding (Havel-specific)
 struct HotkeyBinding : public Statement {
-  std::unique_ptr<Expression> hotkey;
+  std::vector<std::unique_ptr<Expression>> hotkeys;
   std::unique_ptr<Statement> action;
   // Changed from Expression to Statement
   
@@ -309,15 +309,19 @@ struct HotkeyBinding : public Statement {
   std::string mappedKey;  // Target key for mapping
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
-  HotkeyBinding(std::unique_ptr<Expression> hk, std::unique_ptr<Statement> act)
-      : hotkey(std::move(hk)), action(std::move(act)) {
+  HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
+                std::unique_ptr<Statement> act)
+      : hotkeys(std::move(hks)), action(std::move(act)) {
     kind = NodeType::HotkeyBinding;
   }
 
   std::string toString() const override {
-    std::string result = "HotkeyBinding{hotkey: " +
-           (hotkey ? hotkey->toString() : "nullptr") +
-           ", action: " + (action ? action->toString() : "nullptr");
+    std::string result = "HotkeyBinding{hotkeys: [";
+    for (size_t i = 0; i < hotkeys.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += hotkeys[i] ? hotkeys[i]->toString() : "nullptr";
+    }
+    result += "], action: " + (action ? action->toString() : "nullptr");
     if (!conditions.empty()) {
       result += ", conditions: [";
       for (size_t i = 0; i < conditions.size(); ++i) {

@@ -5,8 +5,11 @@
 ### Core Features
 - [ ] Complete Wayland support for Window/WindowManager (currently placeholders)
 - [ ] Implement multi-hotkey declaration support (e.g., `H => F5 => audio.mute()`)
-- [ ] Full mode system implementation for ConditionSystem
+- [ ] Full mode system support for ConditionSystem
+- [ ] Help builtin supporting all modules/functions documentation/args
 - [ ] Window Show/Hide methods implementation
+- [ ] Improve screenshot manager, with io hotkeys, screenshot view window and current monitor screenshot
+commit
 
 ### Havel Language
 - [ ] LLVM JIT compilation support

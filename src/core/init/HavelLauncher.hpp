@@ -1,27 +1,38 @@
 #pragma once
 #include "qt.hpp"
+#include <string>
+
 namespace havel::init {
 
 class HavelLauncher {
 public:
     enum class Mode {
-        DAEMON,      // Full system with hotkeys + GUI
+        DAEMON,      // Full system with hotkeys + GUI (default)
         GUI_ONLY,    // Just GUI tools
-        COMPILER,    // Havel-lang compiler
-        INTERPRETER, // Havel-lang interpreter
+        SCRIPT,      // Execute .hv script file
+        REPL,        // Interactive REPL
         CLI          // Command-line tools
     };
     
     int run(int argc, char* argv[]);
     
 private:
-    Mode parseMode(int argc, char* argv[]);
-    int runDaemon(int argc, char* argv[]);
-    int runGuiOnly(int argc, char* argv[]);
-    int runCompiler(int argc, char* argv[]);
-    int runInterpreter(int argc, char* argv[]);
+    struct LaunchConfig {
+        Mode mode = Mode::DAEMON;
+        std::string scriptFile;
+        bool isStartup = false;
+        bool debugMode = false;
+        bool debugParser = false;
+        bool debugAst = false;
+        bool debugLexer = false;
+    };
+    
+    LaunchConfig parseArgs(int argc, char* argv[]);
+    int runDaemon(const LaunchConfig& cfg, int argc, char* argv[]);
+    int runGuiOnly(const LaunchConfig& cfg, int argc, char* argv[]);
+    int runScript(const LaunchConfig& cfg);
+    int runRepl(const LaunchConfig& cfg);
     int runCli(int argc, char* argv[]);
-    static int compileFiles();
     void showHelp();
 };
 

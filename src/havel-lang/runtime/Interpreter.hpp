@@ -24,6 +24,7 @@ class HotkeyManager;
 class BrightnessManager;
 class AudioManager;
 class GUIManager;
+class ScreenshotManager;
 
 // Forward declarations
 class Environment; 
@@ -128,7 +129,8 @@ public:
                 HotkeyManager* hotkey_mgr = nullptr,
                 BrightnessManager* brightness_mgr = nullptr,
                 AudioManager* audio_mgr = nullptr,
-                GUIManager* gui_mgr = nullptr);
+                GUIManager* gui_mgr = nullptr,
+                ScreenshotManager* screenshot_mgr = nullptr);
     ~Interpreter() = default;
     
     HavelResult Execute(const std::string& sourceCode);
@@ -194,6 +196,7 @@ private:
     BrightnessManager* brightnessManager;
     AudioManager* audioManager;
     GUIManager* guiManager;
+    ScreenshotManager* screenshotManager;
     HavelResult lastResult;
 
     // Keep parsed programs alive for function declarations captured by closures
@@ -215,6 +218,7 @@ private:
     void InitializeMediaBuiltins();
     void InitializeLauncherBuiltins();
     void InitializeGUIBuiltins();
+    void InitializeScreenshotBuiltins();
     void InitializeHelpBuiltin();
 };
 

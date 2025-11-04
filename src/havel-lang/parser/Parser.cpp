@@ -64,7 +64,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                     auto binding = std::make_unique<havel::ast::HotkeyBinding>();
                     auto hotkeyToken = advance(); // identifier as hotkey
                     advance(); // consume '=>'
-                    binding->hotkey = std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value);
+                    binding->hotkeys.push_back(
+                        std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value)
+                    );
                     if (at().type == havel::TokenType::OpenBrace) {
                         binding->action = parseBlockStatement();
                     } else {
@@ -384,8 +386,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                 "Expected hotkey token at start of hotkey binding");
         }
         auto hotkeyToken = advance();
-        binding->hotkey = std::make_unique<havel::ast::HotkeyLiteral>(
-            hotkeyToken.value);
+        binding->hotkeys.push_back(std::make_unique<havel::ast::HotkeyLiteral>(
+            hotkeyToken.value));
 
         // Check for conditional 'when' clause
         if (at().type == havel::TokenType::When) {
@@ -466,7 +468,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         }
 
         // Validate that we successfully created the binding
-        if (!binding->hotkey || !binding->action) {
+        if (binding->hotkeys.empty() || !binding->action) {
             throw std::runtime_error(
                 "Failed to create complete hotkey binding");
         }
@@ -1397,7 +1399,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
         } else if (node.kind == havel::ast::NodeType::HotkeyBinding) {
             const auto &binding = static_cast<const havel::ast::HotkeyBinding &>
                     (node);
-            printAST(*binding.hotkey, indent + 1);
+            for (size_t i = 0; i < binding.hotkeys.size(); ++i) {
+                std::cout << std::string(indent * 2, ' ') << "Hotkey[" << i << "]: ";
+                printAST(*binding.hotkeys[i], indent + 1);
+            }
             printAST(*binding.action, indent + 1);
         } else if (node.kind == havel::ast::NodeType::PipelineExpression) {
             const auto &pipeline = static_cast<const

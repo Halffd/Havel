@@ -47,7 +47,7 @@ namespace havel {
     class HotkeyManager {
     public:
         HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager,
-                      ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager);
+                      ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager);
         std::unique_ptr<MouseController> mouseController;
         virtual ~HotkeyManager() {
             cleanup();
@@ -63,8 +63,7 @@ namespace havel {
         int speed = 5;
         float acc = 1.0f;
 
-        BrightnessManager brightnessManager;
-
+        
         bool evaluateCondition(const std::string &condition);
 
         std::unique_ptr<ConditionEngine> conditionEngine;
@@ -83,13 +82,13 @@ namespace havel {
 
         // Load debug settings from config
         void loadDebugSettings();
-
+        
         // Apply current debug settings
         void applyDebugSettings();
         
         // Cache statistics
         void printCacheStats();
-
+        
         void RegisterDefaultHotkeys();
 
         void RegisterMediaHotkeys();
@@ -124,8 +123,8 @@ namespace havel {
 
         bool AddHotkey(const std::string &hotkeyStr,
             std::function<void()> callback);
-        bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
-
+            bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
+            
         bool RemoveHotkey(const std::string &hotkeyStr);
         // Contextual hotkey support
         int AddContextualHotkey(const std::string& key, const std::string& condition,
@@ -158,7 +157,7 @@ namespace havel {
         // Overlay functionality
         void toggleFakeDesktopOverlay();
         void showBlackOverlay();
-
+        
         // Window management
         void minimizeActiveWindow();
 
@@ -195,6 +194,7 @@ namespace havel {
         MPVController &mpv;
         AudioManager &audioManager;
         ScriptEngine &scriptEngine;
+        BrightnessManager &brightnessManager;
         ScreenshotManager &screenshotManager;
         Configs config;
 

@@ -118,8 +118,8 @@ info("Working hotkeys: " + workingHotkeys);
 
     info("=== End Hotkey Report ===");
 }
-HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager, ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager)
-    : io(io), windowManager(windowManager), mpv(mpv), audioManager(audioManager), scriptEngine(scriptEngine), screenshotManager(screenshotManager) {
+HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv, AudioManager &audioManager, ScriptEngine &scriptEngine, ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager)
+    : io(io), windowManager(windowManager), mpv(mpv), audioManager(audioManager), scriptEngine(scriptEngine), screenshotManager(screenshotManager), brightnessManager(brightnessManager) {
     config = Configs::Get();
     mouseController = std::make_unique<MouseController>(io);
     conditionEngine = std::make_unique<ConditionEngine>();

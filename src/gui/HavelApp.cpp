@@ -14,14 +14,19 @@
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "gui/GUIManager.hpp"
 #include "utils/Logger.hpp"
 
 namespace havel {
-
 HavelApp::HavelApp(bool isStartup, QObject* parent) 
     : QObject(parent)
     , lastCheck(std::chrono::steady_clock::now())
     , lastWindowCheck(std::chrono::steady_clock::now()) {
+    
+    if (instance) {
+        throw std::runtime_error("HavelApp instance already exists");
+    }
+    instance = this;
     
     try {
         setupSignalHandling();
@@ -39,7 +44,10 @@ HavelApp::HavelApp(bool isStartup, QObject* parent)
 
 HavelApp::~HavelApp() {
     cleanup();
-    exit(0);
+    if (instance == this) {
+        instance = nullptr;
+    }
+    debug("HavelApp destroyed");
 }
 
 void HavelApp::setupTrayIcon() {
@@ -103,7 +111,11 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!audioManager) {
         throw std::runtime_error("Failed to create AudioManager");
     }
-    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine);
+    brightnessManager = std::make_unique<BrightnessManager>();
+    if (!brightnessManager) {
+        throw std::runtime_error("Failed to create BrightnessManager");
+    }
+    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine, *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager);
     if (!hotkeyManager) {
         throw std::runtime_error("Failed to create HotkeyManager");
     }
@@ -241,6 +253,16 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!display) {
         throw std::runtime_error("Failed to open X11 display");
     }
+    GUIManager guiManager = new GUIManager(windowManager);
+    interpreter = std::make_unique<Interpreter>(
+        *io,
+        *windowManager,
+        hotkeyManager.get(),
+        brightnessManager.get(),
+        audioManager.get(),
+        guiManager,
+        AutomationSuite::Instance()->getScreenshotManager()
+    );
 
     info("All components initialized successfully");
 }

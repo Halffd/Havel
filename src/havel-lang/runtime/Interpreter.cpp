@@ -3,6 +3,7 @@
 #include "core/BrightnessManager.hpp"
 #include "media/AudioManager.hpp"
 #include "gui/GUIManager.hpp"
+#include "gui/ScreenshotManager.hpp"
 #include "process/Launcher.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
@@ -104,10 +105,12 @@ Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr,
                         HotkeyManager* hotkey_mgr,
                         BrightnessManager* brightness_mgr,
                         AudioManager* audio_mgr,
-                        GUIManager* gui_mgr)
+                        GUIManager* gui_mgr,
+                        ScreenshotManager* screenshot_mgr)
     : io(io_system), windowManager(window_mgr),
       hotkeyManager(hotkey_mgr), brightnessManager(brightness_mgr),
-      audioManager(audio_mgr), guiManager(gui_mgr), lastResult(nullptr) {
+      audioManager(audio_mgr), guiManager(gui_mgr),
+      screenshotManager(screenshot_mgr), lastResult(nullptr) {
     environment = std::make_shared<Environment>();
     InitializeStandardLibrary();
 }
@@ -220,17 +223,17 @@ void Interpreter::visitBlockStatement(const ast::BlockStatement& node) {
 }
 
 void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
-    auto hotkeyLiteral = dynamic_cast<const ast::HotkeyLiteral*>(node.hotkey.get());
-    if (!hotkeyLiteral) {
-        lastResult = HavelRuntimeError("Invalid hotkey in binding");
+    if (node.hotkeys.empty()) {
+        lastResult = HavelRuntimeError("Hotkey binding has no hotkeys");
         return;
     }
 
-    std::string hotkey = hotkeyLiteral->combination;
-
-    // Evaluate the action now so Execute() returns the action value for tests
+    // Evaluate the action once (for testing/validation)
     HavelResult actionEval = Evaluate(*node.action);
-    if (isError(actionEval)) { lastResult = actionEval; return; }
+    if (isError(actionEval)) { 
+        lastResult = actionEval; 
+        return; 
+    }
     lastResult = actionEval;
 
     // Keep the action node alive for runtime hotkey execution
@@ -239,33 +242,27 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
     // Build condition lambdas from the conditions vector
     std::vector<std::function<bool()>> contextChecks;
     for (const auto& condition : node.conditions) {
-        // Parse condition string: "mode gaming", "title genshin", "class firefox"
         size_t spacePos = condition.find(' ');
         if (spacePos != std::string::npos) {
             std::string condType = condition.substr(0, spacePos);
             std::string condValue = condition.substr(spacePos + 1);
             
             if (condType == "mode") {
-                // Mode condition - check against current mode
                 contextChecks.push_back([this, condValue]() {
                     // TODO: Implement mode system
-                    // For now, always return true
                     return true;
                 });
             } else if (condType == "title") {
-                // Window title condition
                 contextChecks.push_back([this, condValue]() {
                     std::string activeTitle = this->windowManager.GetActiveWindowTitle();
                     return activeTitle.find(condValue) != std::string::npos;
                 });
             } else if (condType == "class") {
-                // Window class condition
                 contextChecks.push_back([this, condValue]() {
                     std::string activeClass = this->windowManager.GetActiveWindowClass();
                     return activeClass.find(condValue) != std::string::npos;
                 });
             } else if (condType == "process") {
-                // Process name condition
                 contextChecks.push_back([this, condValue]() {
                     pID pid = this->windowManager.GetActiveWindowPID();
                     std::string processName = havel::WindowManager::getProcessName(pid);
@@ -275,12 +272,12 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
         }
     }
 
+    // Create shared action handler for all hotkeys
     auto actionHandler = [this, action, contextChecks]() {
         // Check all conditions before executing
         for (const auto& check : contextChecks) {
             if (!check()) {
-                // Condition not met, don't execute
-                return;
+                return; // Condition not met
             }
         }
         
@@ -293,9 +290,18 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
         }
     };
 
-    io.Hotkey(hotkey, actionHandler);
-}
+    // Register ALL hotkeys with the same action handler
+    for (const auto& hotkeyExpr : node.hotkeys) {
+        auto hotkeyLiteral = dynamic_cast<const ast::HotkeyLiteral*>(hotkeyExpr.get());
+        if (!hotkeyLiteral) {
+            std::cerr << "Warning: Skipping non-literal hotkey in multi-hotkey binding\n";
+            continue;
+        }
 
+        std::string hotkey = hotkeyLiteral->combination;
+        io.Hotkey(hotkey, actionHandler);
+    }
+}
 void Interpreter::visitExpressionStatement(const ast::ExpressionStatement& node) {
     lastResult = Evaluate(*node.expression);
 }
@@ -1245,6 +1251,7 @@ void Interpreter::InitializeStandardLibrary() {
     InitializeMediaBuiltins();
     InitializeLauncherBuiltins();
     InitializeGUIBuiltins();
+    InitializeScreenshotBuiltins();
     InitializeHelpBuiltin();
 }
 void Interpreter::InitializeSystemBuiltins() {
@@ -2014,7 +2021,7 @@ void Interpreter::InitializeArrayBuiltins() {
     }));
     
     // String split
-    environment->Define("split", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("split", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("split() requires string");
         std::string text = ValueToString(args[0]);
         std::string delimiter = args.size() > 1 ? ValueToString(args[1]) : ",";
@@ -2088,7 +2095,7 @@ void Interpreter::InitializeIOBuiltins() {
     }));
     
     // IO test keycode - print keycode for next pressed key
-    environment->Define("io.testKeycode", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("io.testKeycode", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         std::cout << "[INFO] Press any key to see its keycode... (Not yet implemented)" << std::endl;
         // TODO: Implement keycode testing mode
         return HavelValue(nullptr);
@@ -2167,7 +2174,7 @@ void Interpreter::InitializeDebugBuiltins() {
     }));
     
     // Assert function
-    environment->Define("assert", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    environment->Define("assert", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("assert() requires condition");
         if (!ValueToBool(args[0])) {
             std::string msg = args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
@@ -2302,28 +2309,30 @@ if (auto v = environment->Get("gui.menu")) (*guiObj)["menu"] = *v;
 }
 
 void Interpreter::InitializeGUIBuiltins() {
-    // Menu and dialogs
-    environment->Define("gui.menu", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+    // Menu
+    environment->Define("gui.showMenu", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
-        if (args.size() < 2) return HavelRuntimeError("gui.menu() requires (title, options)");
+        if (args.size() < 2) return HavelRuntimeError("gui.showMenu() requires (title, options)");
         
-        std::string title = ValueToString(args[0]);
+        std::string title = this->ValueToString(args[0]);
+        
         if (!std::holds_alternative<HavelArray>(args[1])) {
-            return HavelRuntimeError("gui.menu() second arg must be array");
+            return HavelRuntimeError("gui.showMenu() requires an array of options");
         }
-        
-        auto optionsArray = std::get<HavelArray>(args[1]);
+        auto optionsVec = std::get<HavelArray>(args[1]);
         std::vector<std::string> options;
-        if (optionsArray) {
-            for (const auto& opt : *optionsArray) {
-                options.push_back(ValueToString(opt));
+        if (optionsVec) {
+            for (const auto& opt : *optionsVec) {
+                options.push_back(this->ValueToString(opt));
             }
         }
         
-        std::string selected = guiManager->showMenu(title, options);
+        bool multiSelect = args.size() > 2 ? ValueToBool(args[2]) : false;
+        std::string selected = guiManager->showMenu(title, options, multiSelect);
         return HavelValue(selected);
     }));
     
+    // Input dialog
     environment->Define("gui.input", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
         if (args.empty()) return HavelRuntimeError("gui.input() requires title");
@@ -2336,6 +2345,7 @@ void Interpreter::InitializeGUIBuiltins() {
         return HavelValue(input);
     }));
     
+    // Confirm dialog
     environment->Define("gui.confirm", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
         if (args.size() < 2) return HavelRuntimeError("gui.confirm() requires (title, message)");
@@ -2347,6 +2357,7 @@ void Interpreter::InitializeGUIBuiltins() {
         return HavelValue(confirmed);
     }));
     
+    // Notification
     environment->Define("gui.notify", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
         if (args.size() < 2) return HavelRuntimeError("gui.notify() requires (title, message)");
@@ -2362,14 +2373,14 @@ void Interpreter::InitializeGUIBuiltins() {
     // Window transparency
     environment->Define("window.setTransparency", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
-        if (args.empty()) return HavelRuntimeError("setTransparency() requires opacity (0.0-1.0)");
+        if (args.empty()) return HavelRuntimeError("window.setTransparency() requires opacity (0.0-1.0)");
         
         double opacity = ValueToNumber(args[0]);
         bool success = guiManager->setActiveWindowTransparency(opacity);
         return HavelValue(success);
     }));
     
-    // File dialogs
+    // File dialog
     environment->Define("gui.fileDialog", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
         
@@ -2381,6 +2392,7 @@ void Interpreter::InitializeGUIBuiltins() {
         return HavelValue(selected);
     }));
     
+    // Directory dialog
     environment->Define("gui.directoryDialog", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!guiManager) return HavelRuntimeError("GUIManager not available");
         
@@ -2390,6 +2402,57 @@ void Interpreter::InitializeGUIBuiltins() {
         std::string selected = guiManager->showDirectoryDialog(title, startDir);
         return HavelValue(selected);
     }));
+    
+    // Expose as module object
+    auto gui = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("gui.showMenu")) (*gui)["showMenu"] = *v;
+    if (auto v = environment->Get("gui.input")) (*gui)["input"] = *v;
+    if (auto v = environment->Get("gui.confirm")) (*gui)["confirm"] = *v;
+    if (auto v = environment->Get("gui.notify")) (*gui)["notify"] = *v;
+    if (auto v = environment->Get("gui.fileDialog")) (*gui)["fileDialog"] = *v;
+    if (auto v = environment->Get("gui.directoryDialog")) (*gui)["directoryDialog"] = *v;
+    
+    auto window = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("window.setTransparency")) (*window)["setTransparency"] = *v;
+    
+    environment->Define("gui", HavelValue(gui));
+    environment->Define("window", HavelValue(window));
+}
+
+void Interpreter::InitializeScreenshotBuiltins() {
+    environment->Define("screenshot.full", BuiltinFunction([this](const std::vector<HavelValue>&) -> HavelResult {
+        if (!screenshotManager) {
+            return HavelRuntimeError("ScreenshotManager not available");
+        }
+        QMetaObject::invokeMethod(screenshotManager, "takeScreenshot", 
+                                 Qt::QueuedConnection);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("screenshot.region", BuiltinFunction([this](const std::vector<HavelValue>&) -> HavelResult {
+        if (!screenshotManager) {
+            return HavelRuntimeError("ScreenshotManager not available");
+        }
+        QMetaObject::invokeMethod(screenshotManager, "takeRegionScreenshot", 
+                                 Qt::QueuedConnection);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("screenshot.monitor", BuiltinFunction([this](const std::vector<HavelValue>&) -> HavelResult {
+        if (!screenshotManager) {
+            return HavelRuntimeError("ScreenshotManager not available");
+        }
+        QMetaObject::invokeMethod(screenshotManager, "takeScreenshotOfCurrentMonitor", 
+                                 Qt::QueuedConnection);
+        return HavelValue(nullptr);
+    }));
+
+    // Module object
+    auto screenshotMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("screenshot.full")) (*screenshotMod)["full"] = *v;
+    if (auto v = environment->Get("screenshot.region")) (*screenshotMod)["region"] = *v;
+    if (auto v = environment->Get("screenshot.monitor")) (*screenshotMod)["monitor"] = *v;
+    environment->Define("screenshot", HavelValue(screenshotMod));
 }
 
 void Interpreter::InitializeHelpBuiltin() {

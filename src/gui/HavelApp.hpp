@@ -5,12 +5,14 @@
 #include <QTimer>
 #include <QMenu>
 #include <QIcon>
+#include "core/BrightnessManager.hpp"
 #include "qt.hpp"
 #include "gui/SettingsWindow.hpp"
 #include <memory>
 #include <chrono>
 
 #include "core/util/SignalWatcher.hpp"
+#include "runtime/Interpreter.hpp"
 #include "window/WindowManager.hpp"
 #include "core/IO.hpp"
 #include "core/ScriptEngine.hpp"
@@ -36,22 +38,16 @@ public:
     HavelApp& operator=(HavelApp&&) = delete;
 
     bool isInitialized() const noexcept { return initialized; }
-
-private slots:
-    void showTextChunker();
-    void onPeriodicCheck();
-    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
-    void showSettings();
-    void exitApp();
-
-private:
+// Singleton instance
+    inline static HavelApp* instance = nullptr;
     void setupTrayIcon();
     void initializeComponents(bool isStartup);
     void setupTimers();
     void setupSignalHandling();
     void cleanup() noexcept;
-
+    
     // Components
+    Interpreter* getInterpreter() { return interpreter.get(); }
     std::unique_ptr<IO> io;
     std::unique_ptr<WindowManager> windowManager;
     std::unique_ptr<MPVController> mpv;
@@ -59,11 +55,20 @@ private:
     std::unique_ptr<HotkeyManager> hotkeyManager;
     std::unique_ptr<ClipboardManager> clipboardManager;
     std::unique_ptr<AudioManager> audioManager;
+    std::unique_ptr<BrightnessManager> brightnessManager;
+    std::unique_ptr<QMenu> trayMenu;
     
+private slots:
+    void showTextChunker();
+    void onPeriodicCheck();
+    void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
+    void showSettings();
+    void exitApp();
+    
+    private:
     // Qt components
     std::unique_ptr<QSystemTrayIcon> trayIcon;
     std::unique_ptr<QTimer> periodicTimer;
-    std::unique_ptr<QMenu> trayMenu;
     
     // System components
     havel::util::SignalWatcher signalWatcher;
@@ -77,6 +82,7 @@ private:
     bool initialized = false;
     bool shutdownRequested = false;
 
+    std::unique_ptr<Interpreter> interpreter;
     static constexpr int PERIODIC_INTERVAL_MS = 50;
     static constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
     static constexpr int CONFIG_CHECK_INTERVAL_S = 5;

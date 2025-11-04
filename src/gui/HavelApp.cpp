@@ -6,10 +6,7 @@
 #include <QMenu>
 #include <QIcon>
 #include <QColor>
-#include <cstdlib>
 #include <stdexcept>
-#include <iostream>
-
 #include "AutomationSuite.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
@@ -126,8 +123,8 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     if (isStartup) {
         info("Setting startup brightness and gamma values");
-        hotkeyManager->brightnessManager.setBrightness(Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
-        hotkeyManager->brightnessManager.setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
+        brightnessManager->setBrightness(Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
+        brightnessManager->setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
     }
 
     // Register all hotkeys
@@ -253,14 +250,14 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!display) {
         throw std::runtime_error("Failed to open X11 display");
     }
-    GUIManager guiManager = new GUIManager(windowManager);
+    guiManager = std::make_unique<GUIManager>(*windowManager);
     interpreter = std::make_unique<Interpreter>(
         *io,
         *windowManager,
         hotkeyManager.get(),
         brightnessManager.get(),
         audioManager.get(),
-        guiManager,
+        guiManager.get(),
         AutomationSuite::Instance()->getScreenshotManager()
     );
 

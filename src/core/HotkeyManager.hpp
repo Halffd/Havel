@@ -178,7 +178,7 @@ namespace havel {
         
         // Clean up resources and release all keys
         void cleanup();;
-    private:
+        
         void PlayPause();
         IO &io;
         std::atomic<bool> winKeyComboDetected{false};
@@ -194,8 +194,8 @@ namespace havel {
         MPVController &mpv;
         AudioManager &audioManager;
         ScriptEngine &scriptEngine;
-        BrightnessManager &brightnessManager;
         ScreenshotManager &screenshotManager;
+        BrightnessManager &brightnessManager;
         Configs config;
 
         // Mode management

@@ -56,6 +56,7 @@ public:
     std::unique_ptr<ClipboardManager> clipboardManager;
     std::unique_ptr<AudioManager> audioManager;
     std::unique_ptr<BrightnessManager> brightnessManager;
+    std::unique_ptr<GUIManager> guiManager;
     std::unique_ptr<QMenu> trayMenu;
     
 private slots:

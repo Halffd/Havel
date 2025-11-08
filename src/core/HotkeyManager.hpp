@@ -216,8 +216,8 @@ namespace havel {
         bool mouse2Pressed{false};
 
         std::unique_ptr<automation::AutoClicker> autoClicker;
-        std::unique_ptr<havel::automation::AutoRunner> autoRunner;
-        std::unique_ptr<havel::automation::AutoKeyPresser> autoKeyPresser;
+        std::unique_ptr<automation::AutoRunner> autoRunner;
+        std::unique_ptr<automation::AutoKeyPresser> autoKeyPresser;
         wID autoclickerWindowID = 0;
         // Key name conversion maps
         const std::map<std::string, std::string> keyNameAliases = {

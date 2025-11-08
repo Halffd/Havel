@@ -72,7 +72,7 @@ private slots:
     std::unique_ptr<QTimer> periodicTimer;
     
     // System components
-    havel::util::SignalWatcher signalWatcher;
+    util::SignalWatcher signalWatcher;
     Display* display = nullptr;
     
     // Timing

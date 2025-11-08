@@ -271,7 +271,7 @@ signals:
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;
-    void mousePressEvent(QMouseEvent* event) override;
+    void mousePressEvent(::QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;

@@ -198,11 +198,11 @@ public:
     bool setBrightnessGamma(const std::string &monitor, double brightness);
     // Debug logging helpers
     static void debug(const std::string& message) {
-        havel::Logger::getInstance().debug("[BrightnessManager] " + message);
+        Logger::getInstance().debug("[BrightnessManager] " + message);
     }
     
     static void error(const std::string& message) {
-        havel::Logger::getInstance().error("[BrightnessManager] " + message);
+        Logger::getInstance().error("[BrightnessManager] " + message);
     }
        /**
      * Debug logging with automatic [BrightnessManager] prefix
@@ -210,27 +210,27 @@ public:
      */
     template<typename... Args>
     static void debug(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().debug("[BrightnessManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().debug("[BrightnessManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void info(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().info("[BrightnessManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().info("[BrightnessManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void warning(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().warning("[BrightnessManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().warning("[BrightnessManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void error(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().error("[BrightnessManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().error("[BrightnessManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void fatal(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().fatal("[BrightnessManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().fatal("[BrightnessManager] " + format, std::forward<Args>(args)...);
     }
     // === KELVIN TO RGB CONVERSION ===
 

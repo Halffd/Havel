@@ -14,7 +14,7 @@ namespace havel::automation {
 
 class AutomationManager {
 public:
-    explicit AutomationManager(std::shared_ptr<havel::IO> io);
+    explicit AutomationManager(std::shared_ptr<IO> io);
     ~AutomationManager() = default;
 
     // Disable copying
@@ -54,7 +54,7 @@ public:
     }
 
 private:
-    std::shared_ptr<havel::IO> io_;
+    std::shared_ptr<IO> io_;
     std::unordered_map<std::string, TaskPtr> tasks_;
     mutable std::mutex tasksMutex_;
     

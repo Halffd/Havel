@@ -1,14 +1,15 @@
 #pragma once
 
+#include "qt.hpp" // Moved to top
 #include <QFileSystemModel>
 #include <QSplitter>
 #include <QListView>
 #include <QTreeView>
 #include <QDir>
-#include "qt.hpp"
+#include <QMainWindow> // Added for QMainWindow definition
 #include "types.hpp"
 
-class FileAutomator : public havel::QWindow {
+class FileAutomator : public ::QMainWindow {
     Q_OBJECT
 
 public:
@@ -21,6 +22,6 @@ private:
     void setupUI();
 
     QFileSystemModel* model;
-    havel::TreeView* tree;
-    havel::ListView* list;
+    QTreeView* tree;
+    QListView* list;
 };

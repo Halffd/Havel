@@ -66,6 +66,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 
 # Optional: GNU Readline for REPL line-editing/history
 find_library(READLINE_LIB readline)
@@ -165,7 +166,6 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Charts Test)
 
 # Handle X11/Qt keyword conflicts in MOC
 set(CMAKE_AUTOMOC_MOC_OPTIONS 
-    "-DQT_NO_KEYWORDS"
     "-DMOC_PARSING"
     "-DNone=0L"
     "-DTrue=1"
@@ -293,15 +293,11 @@ set(COMMON_LIBS
     ${LUA_LIBRARIES}
     # Optional Readline
     ${READLINE_LIB}
+    dl crypto zip ssl pthread m pcre2-16
     # Qt6 libraries
     Qt6::Core
     Qt6::Widgets
     Qt6::Charts
-    # Wayland support
-    wayland-protos
-    ${WAYLAND_LIBRARIES}
-    # System libraries
-    dl crypto zip ssl pthread m fmt
 )
 
 # ==============================================================================
@@ -351,6 +347,7 @@ target_include_directories(havel PRIVATE
 # Link libraries
 target_link_libraries(havel PRIVATE 
     ${COMMON_LIBS}
+    spdlog::spdlog
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
 )
 
@@ -384,6 +381,7 @@ if(ENABLE_HAVEL_LANG)
     
     target_link_libraries(havel_lang PRIVATE 
         ${COMMON_LIBS}
+        spdlog::spdlog
         $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
     )
     
@@ -420,6 +418,7 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
         
         target_link_libraries(${test_name} PRIVATE 
             ${COMMON_LIBS}
+            spdlog::spdlog
             GTest::gtest 
             GTest::gtest_main 
             Qt6::Test
@@ -441,6 +440,7 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
         add_executable(test_gui tests/TestGUI.cpp)
         
         target_link_libraries(test_gui PRIVATE
+            spdlog::spdlog
             Qt6::Widgets 
             Qt6::Test
             GTest::gtest 

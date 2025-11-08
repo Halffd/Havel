@@ -16,11 +16,11 @@ void FileAutomator::setupUI() {
     model->setRootPath(QDir::homePath());
     model->setFilter(QDir::AllDirs | QDir::Files | QDir::NoDotAndDotDot);
 
-    tree = new havel::TreeView(splitter);
+    tree = new QTreeView(splitter);
     tree->setModel(model);
     tree->setRootIndex(model->index(QDir::homePath()));
 
-    list = new havel::ListView(splitter);
+    list = new QListView(splitter);
     list->setModel(model);
     list->setViewMode(QListView::IconMode);
     list->setGridSize(QSize(100, 100));

@@ -1,10 +1,141 @@
 #include "KeyMap.hpp"
 #include <X11/XF86keysym.h>
+#include <algorithm> // For std::transform
+#include <iostream>  // For debugging
 
 // This file contains all the key mapping data extracted from IO.cpp
 // It populates the KeyMap with comprehensive mappings for evdev, X11, and Windows
 
 namespace havel {
+
+// Static member definitions
+bool KeyMap::initialized = false;
+std::unordered_map<std::string, KeyMap::KeyEntry> KeyMap::nameToKey;
+std::unordered_map<int, std::string> KeyMap::evdevToName;
+std::unordered_map<unsigned long, std::string> KeyMap::x11ToName;
+std::unordered_map<int, std::string> KeyMap::windowsToName;
+
+void KeyMap::AddKey(const std::string& name, int evdev, unsigned long x11, int windows) {
+    KeyEntry entry = {name, {}, evdev, x11, windows};
+    nameToKey[name] = entry;
+    evdevToName[evdev] = name;
+    x11ToName[x11] = name;
+    windowsToName[windows] = name;
+}
+
+void KeyMap::AddAlias(const std::string& alias, const std::string& primaryName) {
+    auto it = nameToKey.find(primaryName);
+    if (it != nameToKey.end()) {
+        it->second.aliases.push_back(alias);
+        nameToKey[alias] = it->second; // Alias points to the same entry
+    } else {
+        // Handle error: primaryName not found
+        std::cerr << "Warning: Primary key name '" << primaryName << "' not found for alias '" << alias << "'" << std::endl;
+    }
+}
+
+int KeyMap::FromString(const std::string& name) {
+    auto it = nameToKey.find(name);
+    if (it != nameToKey.end()) {
+        return it->second.evdevCode;
+    }
+    return 0; // Or some error code
+}
+
+unsigned long KeyMap::ToX11(const std::string& name) {
+    auto it = nameToKey.find(name);
+    if (it != nameToKey.end()) {
+        return it->second.x11KeySym;
+    }
+    return 0; // Or some error code
+}
+
+int KeyMap::ToWindows(const std::string& name) {
+    auto it = nameToKey.find(name);
+    if (it != nameToKey.end()) {
+        return it->second.windowsVK;
+    }
+    return 0; // Or some error code
+}
+
+std::string KeyMap::EvdevToString(int code) {
+    auto it = evdevToName.find(code);
+    if (it != evdevToName.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+std::string KeyMap::X11ToString(unsigned long keysym) {
+    auto it = x11ToName.find(keysym);
+    if (it != x11ToName.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+std::string KeyMap::WindowsToString(int vk) {
+    auto it = windowsToName.find(vk);
+    if (it != windowsToName.end()) {
+        return it->second;
+    }
+    return "";
+}
+
+unsigned long KeyMap::EvdevToX11(int evdev) {
+    std::string name = EvdevToString(evdev);
+    if (!name.empty()) {
+        return ToX11(name);
+    }
+    return 0;
+}
+
+int KeyMap::X11ToEvdev(unsigned long keysym) {
+    std::string name = X11ToString(keysym);
+    if (!name.empty()) {
+        return FromString(name);
+    }
+    return 0;
+}
+
+int KeyMap::EvdevToWindows(int evdev) {
+    std::string name = EvdevToString(evdev);
+    if (!name.empty()) {
+        return ToWindows(name);
+    }
+    return 0;
+}
+
+int KeyMap::WindowsToEvdev(int vk) {
+    std::string name = WindowsToString(vk);
+    if (!name.empty()) {
+        return FromString(name);
+    }
+    return 0;
+}
+
+bool KeyMap::IsModifier(int evdev) {
+    return evdev == KEY_LEFTCTRL || evdev == KEY_RIGHTCTRL ||
+           evdev == KEY_LEFTSHIFT || evdev == KEY_RIGHTSHIFT ||
+           evdev == KEY_LEFTALT || evdev == KEY_RIGHTALT ||
+           evdev == KEY_LEFTMETA || evdev == KEY_RIGHTMETA;
+}
+
+bool KeyMap::IsMouseButton(int evdev) {
+    return evdev >= BTN_LEFT && evdev <= BTN_TASK;
+}
+
+bool KeyMap::IsJoystickButton(int evdev) {
+    return evdev >= BTN_JOYSTICK && evdev <= BTN_THUMBR;
+}
+
+std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
+    auto it = nameToKey.find(name);
+    if (it != nameToKey.end()) {
+        return it->second.aliases;
+    }
+    return {};
+}
 
 // Helper to add all key mappings
 void KeyMap::Initialize() {
@@ -89,10 +220,10 @@ void KeyMap::Initialize() {
     #define VK_OEM_7 0xDE
     #define VK_OEM_3 0xC0
     #define VK_OEM_5 0xDC
+    #define VK_OEM_102 0xE2
     #define VK_OEM_COMMA 0xBC
     #define VK_OEM_PERIOD 0xBE
     #define VK_OEM_2 0xBF
-    #define VK_OEM_102 0xE2
     #define VK_MEDIA_PLAY_PAUSE 0xB3
     #define VK_PLAY 0xFA
     #define VK_PAUSE 0x13

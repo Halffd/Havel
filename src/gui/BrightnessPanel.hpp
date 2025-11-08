@@ -2,12 +2,13 @@
 
 #include "types.hpp"
 #include <QSystemTrayIcon>
+#include <QMainWindow> // Added for QWindow (QMainWindow) definition
 
 #include "core/BrightnessManager.hpp"
 #include "qt.hpp"
 namespace havel {
 
-class BrightnessPanel : public QWindow {
+class BrightnessPanel : public ::QMainWindow {
     Q_OBJECT
 
 public:
@@ -24,8 +25,8 @@ public slots:
 private:
     void setupUI();
 
-    Slider* brightnessSlider;
-    Label* percentageLabel;
+    ::QSlider* brightnessSlider;
+    ::QLabel* percentageLabel;
     QSystemTrayIcon* trayIcon;
     QTimer* scheduleTimer;
     BrightnessManager brightnessManager;

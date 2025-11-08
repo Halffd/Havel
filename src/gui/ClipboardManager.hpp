@@ -90,6 +90,20 @@ private slots:
     void copySelectedItem();
     void removeSelectedItem();
 
+private:
+    // RAII helper to manage the m_isSettingClipboard flag
+    class ClipboardSettingGuard {
+    public:
+        explicit ClipboardSettingGuard(ClipboardManager* manager) : m_manager(manager) {
+            m_manager->m_isSettingClipboard = true;
+        }
+        ~ClipboardSettingGuard() {
+            m_manager->m_isSettingClipboard = false;
+        }
+    private:
+        ClipboardManager* m_manager;
+    };
+
     // Clipboard content types
     enum class ContentType {
         Text,
@@ -127,19 +141,6 @@ private slots:
                 displayText = data.toString();
             }
         }
-    };
-private:
-    // RAII helper to manage the m_isSettingClipboard flag
-    class ClipboardSettingGuard {
-    public:
-        explicit ClipboardSettingGuard(ClipboardManager* manager) : m_manager(manager) {
-            m_manager->m_isSettingClipboard = true;
-        }
-        ~ClipboardSettingGuard() {
-            m_manager->m_isSettingClipboard = false;
-        }
-    private:
-        ClipboardManager* m_manager;
     };
 
     void setupUI();

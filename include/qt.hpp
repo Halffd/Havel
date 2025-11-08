@@ -64,37 +64,7 @@
 #include <QStyle>
 
 namespace havel {
-    using Button = QPushButton;
-    using Label = QLabel;
-    using Layout = QVBoxLayout;
-    using HLayout = QHBoxLayout;
-    using QWindow = QMainWindow;
-    using Widget = QWidget;
-    using MessageBox = QMessageBox;
     using App = QApplication;
-    using Menu = QMenu;
-    using Action = QAction;
-    using Timer = QTimer;
-    using Thread = QThread;
-    using Dialog = QDialog;
-    using LineEdit = QLineEdit;
-    using TextEdit = QTextEdit;
-    using CheckBox = QCheckBox;
-    using RadioButton = QRadioButton;
-    using ComboBox = QComboBox;
-    using Slider = QSlider;
-    using ProgressBar = QProgressBar;
-    using TreeWidget = QTreeWidget;
-    using TableWidget = QTableWidget;
-    using ListView = QListView;
-    using TabWidget = QTabWidget;
-    using ScrollArea = QScrollArea;
-    using Splitter = QSplitter;
-    using StatusBar = QStatusBar;
-    using ToolBar = QToolBar;
-    using MenuBar = QMenuBar;
-    using TreeView = QTreeView;
-    using FileSystemModel = QFileSystemModel;
 }
 #ifndef emit
 #define emit

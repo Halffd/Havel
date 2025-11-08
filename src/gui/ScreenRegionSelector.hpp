@@ -11,7 +11,7 @@ QT_END_NAMESPACE
 
 namespace havel {
 
-class ScreenRegionSelector : public QWidget {
+class ScreenRegionSelector : public ::QWidget {
     Q_OBJECT
 
 public:
@@ -21,10 +21,10 @@ signals:
     void regionSelected(const QRect &region);
 
 protected:
-    void paintEvent(::QPaintEvent *event) override;
-    void mousePressEvent(::QMouseEvent *event) override;
-    void mouseMoveEvent(::QMouseEvent *event) override;
-    void mouseReleaseEvent(::QMouseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
 
 private:
     QRect selectionRect;

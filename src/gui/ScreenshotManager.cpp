@@ -9,6 +9,10 @@
 #include <QMouseEvent>
 #include <QTableWidgetItem>
 #include <QHBoxLayout>
+#include <QFileSystemWatcher>
+#include <QTimer>
+#include <QGuiApplication>
+#include <QCursor>
 
 #undef Window
 #undef None
@@ -32,7 +36,10 @@ void ScreenshotManager::setupUI() {
     setWindowTitle("Screenshot Manager");
     setMinimumSize(800, 600);
 
-    auto mainLayout = new QHBoxLayout(this);
+    auto centralWidget = new QWidget(this);
+    setCentralWidget(centralWidget);
+
+    auto mainLayout = new QHBoxLayout(centralWidget);
     screenshotGrid = new QTableWidget(this);
     screenshotGrid->setColumnCount(4);
     screenshotGrid->setRowCount(0);
@@ -56,8 +63,8 @@ void ScreenshotManager::takeScreenshot() {
 void ScreenshotManager::takeRegionScreenshot() {
     hide();
     QTimer::singleShot(200, [this]() {
-        auto selector = new havel::ScreenRegionSelector;
-        connect(selector, &havel::ScreenRegionSelector::regionSelected, this, &ScreenshotManager::captureRegion);
+        auto selector = new ScreenRegionSelector;
+        connect(selector, &ScreenRegionSelector::regionSelected, this, &ScreenshotManager::captureRegion);
         selector->show();
     });
 }
@@ -94,7 +101,4 @@ void ScreenshotManager::addToGrid(const QString &filename, const QPixmap &pixmap
     screenshotGrid->setItem(row, 0, item);
 }
 
-
-
 } // namespace havel
-

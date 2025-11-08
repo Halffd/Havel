@@ -1,19 +1,11 @@
 #pragma once
 
-#include <QFileSystemWatcher>
-#include <QTimer>
-#include <QWidget>
-#include <QMainWindow>
-#include <QTableWidget>
-#include <QLabel>
 #include "qt.hpp"
 #include "types.hpp"
-
-
+#include "ScreenRegionSelector.hpp"
+#include <QFileSystemWatcher>
 
 namespace havel {
-
-#include "ScreenRegionSelector.hpp"
 
 class ScreenshotManager : public QMainWindow {
     Q_OBJECT

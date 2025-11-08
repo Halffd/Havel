@@ -2,7 +2,7 @@
 
 #include <QShortcut>
 
-havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QWindow(parent) {
+havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QMainWindow(parent) {
     setupUI();
 
     //scheduleTimer = new QTimer(this);
@@ -30,15 +30,15 @@ void havel::BrightnessPanel::setupUI() {
     setMinimumSize(300, 100);
 
     auto mainLayout = new QVBoxLayout(this);
-    brightnessSlider = new Slider(Qt::Horizontal, this);
+    brightnessSlider = new ::QSlider(Qt::Horizontal, this);
     brightnessSlider->setRange(0, 100);
     mainLayout->addWidget(brightnessSlider);
 
-    percentageLabel = new Label("100%", this);
+    percentageLabel = new ::QLabel("100%", this);
     percentageLabel->setAlignment(Qt::AlignCenter);
     mainLayout->addWidget(percentageLabel);
 
-    connect(brightnessSlider, &Slider::valueChanged, this, &BrightnessPanel::setBrightness);
+    connect(brightnessSlider, &::QSlider::valueChanged, this, &BrightnessPanel::setBrightness);
 }
 
 void havel::BrightnessPanel::setBrightness(int value) {

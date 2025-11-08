@@ -1169,6 +1169,24 @@ QString ClipboardManager::markdownToHtml(const QString& markdown) {
     
     return "<html><body>" + html + "</body></html>";
 }
+void ClipboardManager::onCustomContextMenuRequested(const QPoint &pos) {
+    QMenu contextMenu(this);
+    
+    QAction *copyAction = new QAction("Copy", this);
+    connect(copyAction, &QAction::triggered, this, &ClipboardManager::copySelectedItem);
+    
+    QAction *deleteAction = new QAction("Delete", this);
+    connect(deleteAction, &QAction::triggered, this, &ClipboardManager::removeSelectedItem);
+    
+    QAction *clearAllAction = new QAction("Clear All", this);
+    connect(clearAllAction, &QAction::triggered, this, &ClipboardManager::onClearAll);
+    
+    contextMenu.addAction(copyAction);
+    contextMenu.addAction(deleteAction);
+    contextMenu.addAction(clearAllAction);
+    
+    contextMenu.exec(mapToGlobal(pos));
+}
 void ClipboardManager::processClipboardContent() {
     if (!clipboard) return;
 

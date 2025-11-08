@@ -30,13 +30,13 @@ protected:
 
 // Basic window tests
 TEST_F(QtTestFixture, TestWindowCreation) {
-    havel::QWindow window;
+    ::QMainWindow window;
     ASSERT_TRUE(window.isWindow());
     EXPECT_FALSE(window.isVisible());
 }
 
 TEST_F(QtTestFixture, TestWindowProperties) {
-    havel::QWindow window;
+    ::QMainWindow window;
     
     // Test title
     window.setWindowTitle("Test Window");
@@ -58,7 +58,7 @@ TEST_F(QtTestFixture, TestWindowProperties) {
 }
 
 TEST_F(QtTestFixture, TestWidgetCreation) {
-    havel::QWindow window;
+    ::QMainWindow window;
     
     // Create widgets
     auto button = std::make_unique<QPushButton>("Click Me");
@@ -84,7 +84,7 @@ TEST_F(QtTestFixture, TestWidgetCreation) {
 }
 
 TEST_F(QtTestFixture, TestButtonClicks) {
-    havel::QWindow window;
+    ::QMainWindow window;
     auto button = std::make_unique<QPushButton>("Click Me");
     
     // Test click event using lambda
@@ -110,7 +110,7 @@ TEST_F(QtTestFixture, TestButtonClicks) {
 }
 
 TEST_F(QtTestFixture, TestLayoutManagement) {
-    havel::QWindow window;
+    ::QMainWindow window;
     
     auto centralWidget = new QWidget();
     auto vboxLayout = new QVBoxLayout(centralWidget);
@@ -141,7 +141,7 @@ TEST_F(QtTestFixture, TestLayoutManagement) {
 }
 
 TEST_F(QtTestFixture, TestKeyboardInput) {
-    havel::QWindow window;
+    ::QMainWindow window;
     auto lineEdit = new QLineEdit();
     
     // Setup window
@@ -162,7 +162,7 @@ TEST_F(QtTestFixture, TestKeyboardInput) {
 }
 
 TEST_F(QtTestFixture, TestAsyncTimer) {
-    havel::QWindow window;
+    ::QMainWindow window;
     bool timerTriggered = false;
     
     // Test async operation with QTimer
@@ -181,7 +181,7 @@ TEST_F(QtTestFixture, TestAsyncTimer) {
 }
 
 TEST_F(QtTestFixture, TestMultipleButtons) {
-    havel::QWindow window;
+    ::QMainWindow window;
     
     auto button1 = new QPushButton("Button 1");
     auto button2 = new QPushButton("Button 2");

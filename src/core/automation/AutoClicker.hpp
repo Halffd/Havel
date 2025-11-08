@@ -36,7 +36,7 @@ private:
     void onStop() override;
     void fastClickThread();
 
-    std::shared_ptr<havel::IO> io_;
+    std::shared_ptr<IO> io_;
     ClickType clickType_;
     std::function<void()> customClickFunc_;
 

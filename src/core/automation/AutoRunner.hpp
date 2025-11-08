@@ -21,7 +21,7 @@ private:
     void onStop() override;
     void setupDirectionAction();
 
-    std::shared_ptr<havel::IO> io_;
+    std::shared_ptr<IO> io_;
     std::string direction_;
 };
 

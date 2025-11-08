@@ -478,7 +478,7 @@ inline float Configs::Convert<float>(const std::string& val) {
 // Now Mappings class can properly reference Configs
 class Mappings {
 public:
-    Mappings(havel::IO& ioRef) : io(ioRef) {}
+    Mappings(IO& ioRef) : io(ioRef) {}
 
     static Mappings& Get() {
         static IO io; // Create a static IO instance
@@ -571,7 +571,7 @@ public:
     }
 
 private:
-    havel::IO& io;
+    IO& io;
     std::unordered_map<std::string, std::string> hotkeys;
     bool needsRebind = false;
 

@@ -7,7 +7,7 @@
 #include "qt.hpp"
 namespace havel {
 
-class BrightnessPanel : public havel::QWindow {
+class BrightnessPanel : public QWindow {
     Q_OBJECT
 
 public:
@@ -28,7 +28,7 @@ private:
     Label* percentageLabel;
     QSystemTrayIcon* trayIcon;
     QTimer* scheduleTimer;
-    havel::BrightnessManager brightnessManager;
+    BrightnessManager brightnessManager;
 };
 
 } // namespace havel

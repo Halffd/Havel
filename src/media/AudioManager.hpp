@@ -219,22 +219,22 @@ private:
     // Logging helpers
     template<typename... Args>
     static void debug(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().debug("[AudioManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().debug("[AudioManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void info(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().info("[AudioManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().info("[AudioManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void warning(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().warning("[AudioManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().warning("[AudioManager] " + format, std::forward<Args>(args)...);
     }
     
     template<typename... Args>
     static void error(const std::string& format, Args&&... args) {
-        havel::Logger::getInstance().error("[AudioManager] " + format, std::forward<Args>(args)...);
+        Logger::getInstance().error("[AudioManager] " + format, std::forward<Args>(args)...);
     }
 };
 

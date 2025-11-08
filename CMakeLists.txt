@@ -244,6 +244,7 @@ endif()
 # Core sources (always required)
 file(GLOB_RECURSE CORE_SOURCES 
     "src/core/*.cpp"
+    "src/core/io/*.cpp"
     "src/window/*.cpp" 
     "src/utils/*.cpp"
     "src/fs/*.cpp"

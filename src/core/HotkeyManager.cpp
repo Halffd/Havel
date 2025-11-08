@@ -141,10 +141,10 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
   applyDebugSettings();
 
   // Initialize auto clicker with IO reference
-  autoClicker = std::make_unique<havel::automation::AutoClicker>(
+  autoClicker = std::make_unique<automation::AutoClicker>(
       std::shared_ptr<IO>(&io, [](IO *) {}));
   // Initialize automation manager
-  automationManager_ = std::make_shared<havel::automation::AutomationManager>(
+  automationManager_ = std::make_shared<automation::AutomationManager>(
       std::shared_ptr<IO>(&io, [](IO *) {}));
   currentMode = "default";
 }
@@ -154,7 +154,7 @@ void HotkeyManager::loadVideoSites() {
   videoSites.clear();
 
   // Get video sites from config
-  std::string sitesStr = havel::Configs::Get().Get<std::string>(
+  std::string sitesStr = Configs::Get().Get<std::string>(
       "VideoSites.Sites", "netflix,animelon,youtube");
 
   // Split the comma-separated string into vector
@@ -480,7 +480,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
            {"Restart application",
             []() {
               info("Restarting application");
-              std::string exePath = havel::GetExecutablePath();
+              std::string exePath = GetExecutablePath();
               if (!exePath.empty()) {
                 debug("Executable path: " + exePath);
                 if (fork() == 0) {
@@ -737,7 +737,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
 
   auto WinMove = [](int x, int y, int w, int h) {
-    havel::Window win(WindowManager::GetActiveWindow());
+    Window win(WindowManager::GetActiveWindow());
     Rect pos = win.Pos();
     WindowManager::MoveResize(win.ID(), pos.x + x, pos.y + y, pos.w + w,
                               pos.h + h);
@@ -1593,19 +1593,19 @@ void HotkeyManager::startAutoclicker(const std::string &button) {
     info("Starting autoclicker (" + button +
          ") in window: " + std::to_string(autoclickerWindowID));
 
-    autoClicker = std::make_unique<havel::automation::AutoClicker>(
+    autoClicker = std::make_unique<automation::AutoClicker>(
         std::shared_ptr<IO>(&io, [](IO *) {}));
 
     // Set the appropriate click type based on button
     if (button == "Button1" || button == "Left") {
       autoClicker->setClickType(
-          havel::automation::AutoClicker::ClickType::Left);
+          automation::AutoClicker::ClickType::Left);
     } else if (button == "Button2" || button == "Right") {
       autoClicker->setClickType(
-          havel::automation::AutoClicker::ClickType::Right);
+          automation::AutoClicker::ClickType::Right);
     } else if (button == "Button3" || button == "Middle") {
       autoClicker->setClickType(
-          havel::automation::AutoClicker::ClickType::Middle);
+          automation::AutoClicker::ClickType::Middle);
     } else if (button == "Side1" || button == "Side2") {
       // For side buttons, use a custom click function
       autoClicker->setClickFunction([this, button]() {
@@ -2084,7 +2084,7 @@ void HotkeyManager::toggleFakeDesktopOverlay() {
     }
 
   protected:
-    void paintEvent(QPaintEvent *event) override {
+    void paintEvent(::QPaintEvent *event) override {
       QPainter painter(this);
       painter.setRenderHint(QPainter::Antialiasing);
 
@@ -2343,7 +2343,7 @@ void HotkeyManager::printActiveWindowInfo() {
   int x = 0, y = 0, width = 0, height = 0;
 
   try {
-    havel::Window window("ActiveWindow", activeWindow);
+    Window window("ActiveWindow", activeWindow);
     windowTitle = window.Title();
 
     // Get window geometry

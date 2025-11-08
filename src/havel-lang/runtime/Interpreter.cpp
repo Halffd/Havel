@@ -265,7 +265,7 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
             } else if (condType == "process") {
                 contextChecks.push_back([this, condValue]() {
                     pID pid = this->windowManager.GetActiveWindowPID();
-                    std::string processName = havel::WindowManager::getProcessName(pid);
+                    std::string processName = WindowManager::getProcessName(pid);
                     return processName.find(condValue) != std::string::npos;
                 });
             }
@@ -1586,7 +1586,7 @@ void Interpreter::InitializeSystemBuiltins() {
 
 void Interpreter::InitializeWindowBuiltins() {
     environment->Define("window.getTitle", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        Window activeWin = Window(this->windowManager.GetActiveWindow());
         if (activeWin.Exists()) {
             return HavelValue(activeWin.Title());
         }
@@ -1594,13 +1594,13 @@ void Interpreter::InitializeWindowBuiltins() {
     }));
     
     environment->Define("window.maximize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        Window activeWin = Window(this->windowManager.GetActiveWindow());
         activeWin.Max();
         return HavelValue(nullptr);
     }));
     
     environment->Define("window.minimize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        havel::Window activeWin = havel::Window(this->windowManager.GetActiveWindow());
+        Window activeWin = Window(this->windowManager.GetActiveWindow());
         activeWin.Min();
         return HavelValue(nullptr);
     }));
@@ -1629,9 +1629,9 @@ void Interpreter::InitializeWindowBuiltins() {
     environment->Define("window.focus", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("window.focus() requires window title");
         std::string title = ValueToString(args[0]);
-        wID winId = havel::WindowManager::FindByTitle(title.c_str());
+        wID winId = WindowManager::FindByTitle(title.c_str());
         if (winId != 0) {
-            havel::Window window("", winId);
+            Window window("", winId);
             window.Activate(winId);
             return HavelValue(true);
         }
@@ -1643,7 +1643,7 @@ void Interpreter::InitializeWindowBuiltins() {
         if (args.size() < 2) return HavelRuntimeError("window.move() requires (x, y)");
         int x = static_cast<int>(std::get<double>(args[0]));
         int y = static_cast<int>(std::get<double>(args[1]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.Move(x, y));
     }));
     
@@ -1651,7 +1651,7 @@ void Interpreter::InitializeWindowBuiltins() {
         if (args.size() < 2) return HavelRuntimeError("window.resize() requires (width, height)");
         int width = static_cast<int>(std::get<double>(args[0]));
         int height = static_cast<int>(std::get<double>(args[1]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.Resize(width, height));
     }));
     
@@ -1661,39 +1661,39 @@ void Interpreter::InitializeWindowBuiltins() {
         int y = static_cast<int>(std::get<double>(args[1]));
         int width = static_cast<int>(std::get<double>(args[2]));
         int height = static_cast<int>(std::get<double>(args[3]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.MoveResize(x, y, width, height));
     }));
     
     // Note: Hide/Show not implemented yet in Window class
     // environment->Define("window.hide", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-    //     havel::Window activeWin(this->windowManager.GetActiveWindow());
+    //     Window activeWin(this->windowManager.GetActiveWindow());
     //     activeWin.Hide();
     //     return HavelValue(nullptr);
     // }));
     // 
     // environment->Define("window.show", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-    //     havel::Window activeWin(this->windowManager.GetActiveWindow());
+    //     Window activeWin(this->windowManager.GetActiveWindow());
     //     activeWin.Show();
     //     return HavelValue(nullptr);
     // }));
     
     environment->Define("window.alwaysOnTop", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         bool top = args.empty() ? true : std::get<bool>(args[0]);
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         activeWin.AlwaysOnTop(top);
         return HavelValue(nullptr);
     }));
     
     environment->Define("window.transparency", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         int alpha = args.empty() ? 255 : static_cast<int>(std::get<double>(args[0]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         activeWin.Transparency(alpha);
         return HavelValue(nullptr);
     }));
     
     environment->Define("window.toggleFullscreen", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         activeWin.ToggleFullscreen();
         return HavelValue(nullptr);
     }));
@@ -1701,7 +1701,7 @@ void Interpreter::InitializeWindowBuiltins() {
     environment->Define("window.snap", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("window.snap() requires position (0-3)");
         int position = static_cast<int>(std::get<double>(args[0]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         activeWin.Snap(position);
         return HavelValue(nullptr);
     }));
@@ -1709,14 +1709,14 @@ void Interpreter::InitializeWindowBuiltins() {
     environment->Define("window.moveToMonitor", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("window.moveToMonitor() requires monitor index");
         int monitor = static_cast<int>(std::get<double>(args[0]));
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.MoveToMonitor(monitor));
     }));
     
     environment->Define("window.moveToCorner", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("window.moveToCorner() requires corner name");
         std::string corner = this->ValueToString(args[0]);
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.MoveToCorner(corner));
     }));
     
@@ -1726,16 +1726,16 @@ void Interpreter::InitializeWindowBuiltins() {
     
     environment->Define("window.exists", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
-            havel::Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager.GetActiveWindow());
             return HavelValue(activeWin.Exists());
         }
         std::string title = this->ValueToString(args[0]);
-        wID winId = havel::WindowManager::FindByTitle(title.c_str());
+        wID winId = WindowManager::FindByTitle(title.c_str());
         return HavelValue(winId != 0);
     }));
     
     environment->Define("window.isActive", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        havel::Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.Active());
     }));
 

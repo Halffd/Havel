@@ -857,6 +857,13 @@ bool EventListener::EvaluateCombo(const HotKey& hotkey) {
         if (elapsed > comboTimeWindow) {
             return false; // Key pressed too long ago
         }
+
+        // Only check modifiers if this combo part explicitly requires them
+        if (comboKey.modifiers != 0) { // Modified condition
+            if (!CheckModifierMatch(comboKey.modifiers, comboKey.wildcard)) {
+                return false; // Modifiers for this combo part do not match
+            }
+        }
     }
     
     // All keys in combo are pressed within time window

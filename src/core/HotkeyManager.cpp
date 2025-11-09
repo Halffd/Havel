@@ -1558,9 +1558,21 @@ bool HotkeyManager::isGamingWindow() {
                  ::tolower);
 
   const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
+
+  // Debug logging
+  info("isGamingWindow check: Active Class='{}', Active Title='{}'", windowClass, windowTitle);
+  if (Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false)) {
+      std::string appsList;
+      for (const auto& app : gamingApps) {
+          appsList += "'" + app + "' ";
+      }
+      info("isGamingWindow check: Gaming Apps configured: {}", appsList);
+  }
+
   for (const auto &app : gamingApps) {
     if (windowClass.find(app) !=
         std::string::npos) { // || windowTitle.find(app) != std::string::npos) {
+      info("isGamingWindow: Matched '{}' in window class '{}'", app, windowClass);
       return true;
     }
   }

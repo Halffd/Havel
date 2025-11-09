@@ -3500,7 +3500,66 @@ bool IO::UngrabHotkeysByPrefix(const std::string &prefix) {
   return false;
 #endif
 }
+bool IO::EnableHotkey(const std::string& keyName) {
+    std::lock_guard<std::mutex> lock(hotkeySetMutex);
+    bool found = false;
+    
+    // Find the hotkey by name and enable it
+    for (auto& [id, hotkey] : hotkeys) {
+        if (hotkey.alias == keyName) {
+            hotkey.enabled = true;
+            found = true;
+            
+            // If the hotkey should be grabbed, re-grab it
+            if (hotkey.grab && !hotkey.evdev) {
+                GrabHotkey(id);
+            }
+        }
+    }
+    
+    return found;
+}
 
+bool IO::DisableHotkey(const std::string& keyName) {
+    std::lock_guard<std::mutex> lock(hotkeySetMutex);
+    bool found = false;
+    
+    // Find the hotkey by name and disable it
+    for (auto& [id, hotkey] : hotkeys) {
+        if (hotkey.alias == keyName) {
+            hotkey.enabled = false;
+            found = true;
+            
+            // If the hotkey was grabbed, ungrab it
+            if (hotkey.grab && !hotkey.evdev) {
+                UngrabHotkey(id);
+            }
+        }
+    }
+    
+    return found;
+}
+
+bool IO::ToggleHotkey(const std::string& keyName) {
+    std::lock_guard<std::mutex> lock(hotkeySetMutex);
+    bool found = false;
+    
+    // Find the hotkey by name and toggle its state
+    for (auto& [id, hotkey] : hotkeys) {
+        if (hotkey.alias == keyName) {
+            hotkey.enabled = !hotkey.enabled;
+            found = true;
+            
+            if (hotkey.enabled && hotkey.grab && !hotkey.evdev) {
+                GrabHotkey(id);
+            } else if (!hotkey.enabled && hotkey.grab && !hotkey.evdev) {
+                UngrabHotkey(id);
+            }
+        }
+    }
+    
+    return found;
+}
 void IO::Map(const std::string &from, const std::string &to) {
   // X11 mapping for backward compatibility
   KeySym fromKey = StringToVirtualKey(from);

@@ -199,7 +199,9 @@ public:
 
   // Hotkey methods
   bool ContextActive(std::vector<std::function<bool()>> contexts);
-
+  bool EnableHotkey(const std::string& keyName);
+  bool DisableHotkey(const std::string& keyName);
+  bool ToggleHotkey(const std::string& keyName);
   bool AddHotkey(const std::string &alias, Key key, int modifiers,
                  std::function<void()> callback);
   HotKey AddMouseHotkey(const std::string &hotkeyStr,
@@ -380,6 +382,8 @@ private:
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;
   std::mutex keyStateMutex;
+  std::mutex hotkeySetMutex;
+
   template <typename T> static constexpr bool always_false = false;
   unsigned int numlockmask = 0;
 

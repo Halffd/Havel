@@ -147,6 +147,10 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
   automationManager_ = std::make_shared<automation::AutomationManager>(
       std::shared_ptr<IO>(&io, [](IO *) {}));
   currentMode = "default";
+
+  // Start the update loop thread
+  updateLoopRunning.store(true);
+  updateLoopThread = std::thread(&HotkeyManager::UpdateLoop, this);
 }
 
 void HotkeyManager::loadVideoSites() {
@@ -971,6 +975,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
     info("Space pressed - starting spam");
     io.Send("{space:up}"); // Release first to ensure clean state
+    io.DisableHotkey("~space");
 
     auto winId = WindowManager::GetActiveWindow();
     spaceTimer = TimerManager::SetTimer(
@@ -996,6 +1001,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       spaceTimer = nullptr;
     }
     io.Send("{space:up}");
+    io.EnableHotkey("~space");
   });
   AddContextualHotkey(
       "enter", "window.title ~ 'Genshin Impact'",
@@ -1371,14 +1377,21 @@ void HotkeyManager::updateAllConditionalHotkeys() {
   }
   lastConditionCheck = now;
 
+  bool gamingWindowActive = isGamingWindow();
+  std::string currentActiveMode;
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
+    currentActiveMode = currentMode;
+  }
+
   // Update mode once per batch of hotkey updates
-  if (isGamingWindow() && currentMode != "gaming") {
+  if (gamingWindowActive && currentActiveMode != "gaming") {
     io.Map("Left", "a");
     io.Map("Right", "d");
     io.Map("Up", "w");
     io.Map("Down", "s");
     setMode("gaming");
-  } else if (!isGamingWindow() && currentMode != "default") {
+  } else if (!gamingWindowActive && currentActiveMode != "default") {
     io.Map("Left", "Left");
     io.Map("Right", "Right");
     io.Map("Up", "Up");
@@ -1398,27 +1411,42 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
           "CurrentlyGrabbed: {}",
           hotkey.key, hotkey.condition, hotkey.currentlyGrabbed);
   }
-  // Check cache first
-  auto now = std::chrono::steady_clock::now();
-  bool conditionMet;
 
-  auto cacheIt = conditionCache.find(hotkey.condition);
-  if (cacheIt != conditionCache.end()) {
-    auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   now - cacheIt->second.timestamp)
-                   .count();
-    if (age < CACHE_DURATION_MS) {
-      conditionMet = cacheIt->second.result;
-    } else {
-      // Cache expired, re-evaluate
-      conditionMet = evaluateCondition(hotkey.condition);
-      conditionCache[hotkey.condition] = {conditionMet, now};
+  bool conditionMet;
+  auto now = std::chrono::steady_clock::now();
+
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    // Check cache first
+    auto cacheIt = conditionCache.find(hotkey.condition);
+    if (cacheIt != conditionCache.end()) {
+      auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+                     now - cacheIt->second.timestamp)
+                     .count();
+      if (age < CACHE_DURATION_MS) {
+        conditionMet = cacheIt->second.result;
+
+        // Only log when condition changes
+        if (conditionMet != hotkey.lastConditionResult &&
+            verboseConditionLogging) {
+          info("Condition from cache: {} for {} ({}) - was:{} now:{}",
+               conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
+               hotkey.lastConditionResult, conditionMet);
+        }
+
+        // Update hotkey state based on cached condition
+        updateHotkeyState(hotkey, conditionMet);
+        return;
+      }
     }
-  } else {
-    // Not in cache, evaluate and store
-    conditionMet = evaluateCondition(hotkey.condition);
-    conditionCache[hotkey.condition] = {conditionMet, now};
   }
+
+  // If we get here, either cache miss or cache expired
+  conditionMet = evaluateCondition(hotkey.condition);
+
+  // Update cache with the new result
+  conditionCache[hotkey.condition] = {conditionMet, now};
 
   // Only log when condition changes
   if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
@@ -1427,6 +1455,12 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
          hotkey.lastConditionResult, conditionMet);
   }
 
+  // Update hotkey state based on new condition
+  updateHotkeyState(hotkey, conditionMet);
+}
+
+void HotkeyManager::updateHotkeyState(ConditionalHotkey &hotkey,
+                                      bool conditionMet) {
   // Only update hotkey state if needed
   if (conditionMet && !hotkey.currentlyGrabbed) {
     io.GrabHotkey(hotkey.id);
@@ -1533,8 +1567,20 @@ void HotkeyManager::setupConditionEngine() {
 }
 
 bool HotkeyManager::evaluateCondition(const std::string &condition) {
-  conditionEngine->invalidateCache();
-  bool result = conditionEngine->evaluateCondition(condition);
+  if (!conditionEngine) {
+    if (verboseConditionLogging) {
+      logWindowEvent("CONDITION_EVAL_ERROR",
+                     "Condition engine not initialized");
+    }
+    return false;
+  }
+
+  bool result;
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    conditionEngine->invalidateCache();
+    result = conditionEngine->evaluateCondition(condition);
+  }
 
   if (verboseConditionLogging) {
     logWindowEvent("CONDITION_EVAL",
@@ -1559,20 +1605,8 @@ bool HotkeyManager::isGamingWindow() {
 
   const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
 
-  // Debug logging
-  info("isGamingWindow check: Active Class='{}', Active Title='{}'", windowClass, windowTitle);
-  if (Configs::Get().Get<bool>("Debug.VerboseConditionLogging", false)) {
-      std::string appsList;
-      for (const auto& app : gamingApps) {
-          appsList += "'" + app + "' ";
-      }
-      info("isGamingWindow check: Gaming Apps configured: {}", appsList);
-  }
-
   for (const auto &app : gamingApps) {
-    if (windowClass.find(app) !=
-        std::string::npos) { // || windowTitle.find(app) != std::string::npos) {
-      info("isGamingWindow: Matched '{}' in window class '{}'", app, windowClass);
+    if (windowClass.find(app) != std::string::npos) {
       return true;
     }
   }
@@ -1610,14 +1644,11 @@ void HotkeyManager::startAutoclicker(const std::string &button) {
 
     // Set the appropriate click type based on button
     if (button == "Button1" || button == "Left") {
-      autoClicker->setClickType(
-          automation::AutoClicker::ClickType::Left);
+      autoClicker->setClickType(automation::AutoClicker::ClickType::Left);
     } else if (button == "Button2" || button == "Right") {
-      autoClicker->setClickType(
-          automation::AutoClicker::ClickType::Right);
+      autoClicker->setClickType(automation::AutoClicker::ClickType::Right);
     } else if (button == "Button3" || button == "Middle") {
-      autoClicker->setClickType(
-          automation::AutoClicker::ClickType::Middle);
+      autoClicker->setClickType(automation::AutoClicker::ClickType::Middle);
     } else if (button == "Side1" || button == "Side2") {
       // For side buttons, use a custom click function
       autoClicker->setClickFunction([this, button]() {
@@ -1925,7 +1956,6 @@ void HotkeyManager::handleMediaCommand(
       logWindowEvent("MEDIA_CONTROL", "Sending MPV command: " + commandStr);
     }
 
-    // Create a copy of the command vector to pass to SendCommand
     std::vector<std::string> commandToSend = mpvCommand;
     mpv.SendCommand(commandToSend);
   }
@@ -1935,29 +1965,66 @@ void HotkeyManager::setMode(const std::string &newMode) {
   std::string oldMode;
   bool modeChanged = false;
 
+  // Update mode with minimal lock scope
   {
     std::lock_guard<std::mutex> lock(modeMutex);
-    if (currentMode != newMode) {
-      oldMode = currentMode;
-      currentMode = newMode;
-      modeChanged = true;
-    } else {
-      return; // No change needed
-    }
+    if (currentMode == newMode)
+      return;
+
+    oldMode = currentMode;
+    currentMode = newMode;
+    modeChanged = true;
   }
 
-  if (modeChanged) {
-    logModeSwitch(oldMode, newMode);
+  if (!modeChanged)
+    return;
 
-    // Clear condition cache when mode changes
-    conditionCache.clear();
-    if (verboseConditionLogging) {
-      debug("Cleared condition cache due to mode change: {} → {}", oldMode,
-            newMode);
+  logModeSwitch(oldMode, newMode);
+
+  // Clear caches without holding locks
+  conditionCache.clear();
+  if (conditionEngine) {
+    conditionEngine->invalidateCache();
+  }
+
+  if (verboseConditionLogging) {
+    debug("Mode changed: {} → {} - Cleared condition cache", oldMode, newMode);
+  }
+
+  // Force immediate re-evaluation of all conditional hotkeys
+  std::vector<ConditionalHotkey> hotkeysCopy;
+  {
+    std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
+    hotkeysCopy = conditionalHotkeys;
+  }
+
+  // Update hotkeys outside the lock to avoid deadlock
+  for (auto &hotkey : hotkeysCopy) {
+    bool conditionMet = evaluateCondition(hotkey.condition);
+
+    // Acquire lock only for state modification
+    {
+      std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
+
+      // Find the actual hotkey in the list (hotkeysCopy is stale)
+      auto it = std::find_if(
+          conditionalHotkeys.begin(), conditionalHotkeys.end(),
+          [&](const ConditionalHotkey &h) { return h.id == hotkey.id; });
+
+      if (it == conditionalHotkeys.end())
+        continue;
+
+      if (conditionMet && !it->currentlyGrabbed) {
+        io.GrabHotkey(it->id);
+        it->currentlyGrabbed = true;
+      } else if (!conditionMet && it->currentlyGrabbed) {
+        io.UngrabHotkey(it->id);
+        it->currentlyGrabbed = false;
+      }
+      it->lastConditionResult = conditionMet;
     }
   }
 }
-
 void HotkeyManager::printCacheStats() {
   info("Condition cache: {} entries", conditionCache.size());
 
@@ -2342,20 +2409,19 @@ void HotkeyManager::showBlackOverlay() {
 }
 
 void HotkeyManager::printActiveWindowInfo() {
-  wID activeWindow = WindowManager::GetActiveWindow();
-  if (activeWindow == 0) {
+  wID activeWin = windowManager.GetActiveWindow();
+  if (activeWin == 0) {
     info("╔══════════════════════════════════════╗");
     info("║      NO ACTIVE WINDOW DETECTED       ║");
     info("╚══════════════════════════════════════╝");
     return;
   }
-
   std::string windowClass = WindowManager::GetActiveWindowClass();
   std::string windowTitle;
   int x = 0, y = 0, width = 0, height = 0;
 
   try {
-    Window window("ActiveWindow", activeWindow);
+    Window window(activeWin);
     windowTitle = window.Title();
 
     // Get window geometry
@@ -2363,7 +2429,7 @@ void HotkeyManager::printActiveWindowInfo() {
     unsigned int border_width, depth;
     Display *display = XOpenDisplay(nullptr);
     if (display) {
-      XGetGeometry(display, activeWindow, &root, &x, &y, (unsigned int *)&width,
+      XGetGeometry(display, activeWin, &root, &x, &y, (unsigned int *)&width,
                    (unsigned int *)&height, &border_width, &depth);
       XCloseDisplay(display);
     }
@@ -2390,7 +2456,7 @@ void HotkeyManager::printActiveWindowInfo() {
   info("╔══════════════════════════════════════════════════════════╗");
   info("║             ACTIVE WINDOW INFORMATION                    ║");
   info("╠══════════════════════════════════════════════════════════╣");
-  info(formatLine("Window ID: ", std::to_string(activeWindow)));
+  info(formatLine("Window ID: ", std::to_string(activeWin)));
   info(formatLine("Window Title: \"", windowTitle + "\""));
   info(formatLine("Window Class: \"", windowClass + "\""));
   info(formatLine("Window Geometry: ", geometry));
@@ -2413,6 +2479,19 @@ void HotkeyManager::printActiveWindowInfo() {
 }
 
 void HotkeyManager::cleanup() {
+  // Signal the update loop to stop
+  {
+    std::lock_guard<std::mutex> lock(updateLoopMutex);
+    updateLoopRunning = false;
+    updateLoopCv.notify_all();
+  }
+
+  // Wait for the update loop thread to finish
+  if (updateLoopThread.joinable()) {
+    updateLoopThread.join();
+  }
+
+  // Clean up other resources
   stopAllAutoclickers();
   setMode("default");
   genshinAutomationActive = false;
@@ -2453,6 +2532,74 @@ void HotkeyManager::cleanup() {
   }
 }
 
+void HotkeyManager::UpdateLoop() {
+  const auto updateInterval =
+      std::chrono::milliseconds(50); // 20 updates per second
+
+  while (updateLoopRunning) {
+    auto startTime = std::chrono::steady_clock::now();
+
+    try {
+      // Check for window state changes and update mode if needed
+      bool gamingWindowActive = isGamingWindow();
+      std::string currentActiveMode;
+      {
+        std::lock_guard<std::mutex> lock(modeMutex);
+        currentActiveMode = currentMode;
+      }
+
+      // Update mode if needed
+      if (gamingWindowActive && currentActiveMode != "gaming") {
+        io.Map("Left", "a");
+        io.Map("Right", "d");
+        io.Map("Up", "w");
+        io.Map("Down", "s");
+        setMode("gaming");
+        if (verboseConditionLogging) {
+          info("UpdateLoop: Switched to gaming mode");
+        }
+      } else if (!gamingWindowActive && currentActiveMode != "default") {
+        io.Map("Left", "Left");
+        io.Map("Right", "Right");
+        io.Map("Up", "Up");
+        io.Map("Down", "Down");
+        setMode("default");
+        if (verboseConditionLogging) {
+          info("UpdateLoop: Switched to default mode");
+        }
+      }
+
+      // Update conditional hotkeys
+      updateAllConditionalHotkeys();
+
+      // Update window properties for condition engine
+      updateWindowProperties();
+
+      // Update video playback status
+      updateVideoPlaybackStatus();
+
+    } catch (const std::exception &e) {
+      error("Exception in UpdateLoop: {}", e.what());
+    } catch (...) {
+      error("Unknown exception in UpdateLoop");
+    }
+
+    // Sleep for the remaining time in the update interval
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        endTime - startTime);
+
+    if (elapsed < updateInterval) {
+      std::unique_lock<std::mutex> lock(updateLoopMutex);
+      updateLoopCv.wait_for(lock, updateInterval - elapsed,
+                            [this] { return !updateLoopRunning; });
+    }
+  }
+}
+void HotkeyManager::updateWindowProperties()
+{
+  return;
+}
 void HotkeyManager::toggleWindowFocusTracking() {
   trackWindowFocus = !trackWindowFocus;
   if (trackWindowFocus) {

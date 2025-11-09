@@ -348,9 +348,18 @@ namespace havel {
         std::vector<int> conditionalHotkeyIds;
         std::vector<int> gamingHotkeyIds;
         std::vector<ConditionalHotkey> conditionalHotkeys;
+        std::mutex hotkeyMutex;  // Protects conditionalHotkeys and conditionCache
         void updateConditionalHotkey(ConditionalHotkey& hotkey);
+        void updateHotkeyState(ConditionalHotkey& hotkey, bool conditionMet);
         // Window focus tracking
         bool trackWindowFocus;
         wID lastActiveWindowId;
+
+        // Update loop members
+        std::thread updateLoopThread;
+        std::atomic<bool> updateLoopRunning{false};
+        std::condition_variable updateLoopCv;
+        std::mutex updateLoopMutex;
+        void UpdateLoop();
     };
 }

@@ -289,6 +289,7 @@ set(COMMON_LIBS
     ${PULSEAUDIO_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads
+    ncurses
     ${DBUS_LIBRARIES}
     ${LUA_LIBRARIES}
     # Optional Readline

@@ -25,6 +25,14 @@ struct HotKey;
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {
 public:
+    // Modifier keys bitmask
+    enum Modifier {
+        Null = 0,
+        Ctrl = 1 << 0,
+        Shift = 1 << 1,
+        Alt = 1 << 2,
+        Meta = 1 << 3
+    };
     EventListener();
     ~EventListener();
     
@@ -67,6 +75,21 @@ public:
     };
     
     ModifierState GetModifierState() const;
+    
+    // Debugging
+    std::string GetModifiersString() const;
+    std::string GetActiveInputsString() const;
+    
+    // Hotkey optimization
+    struct ActiveInput {
+        std::chrono::steady_clock::time_point timestamp;
+        int modifiers;  // Modifiers that were held when this key was pressed
+        
+        ActiveInput() : modifiers(0) {}
+        explicit ActiveInput(int mods) : 
+            timestamp(std::chrono::steady_clock::now()),
+            modifiers(mods) {}
+    };
     
     // Setup uinput for event forwarding
     bool SetupUinput();
@@ -137,7 +160,8 @@ private:
     
     // Handle key remap
     int RemapKey(int evdevCode, bool down);
-    
+    bool EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection);
+
     std::atomic<bool> running{false};
     std::atomic<bool> shutdown{false};
     std::atomic<bool> blockInput{false};
@@ -153,12 +177,16 @@ private:
     mutable std::mutex stateMutex;
     std::map<int, bool> evdevKeyState;
     std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
-    std::unordered_map<int, std::chrono::steady_clock::time_point> activeInputs;
+    std::unordered_map<int, ActiveInput> activeInputs;  // Maps key code to ActiveInput
     ModifierState modifierState;
     
     // Hotkey management (exact from IO.cpp)
     mutable std::mutex hotkeyMutex;
     std::map<int, HotKey> hotkeys;
+    
+    // Hotkey optimization data structures
+    std::unordered_map<int, std::vector<int>> combosByKey;  // keyCode -> hotkey IDs
+    std::unordered_map<int, int> comboPressedCount;  // hotkey ID -> count of pressed keys
     
     // Key remapping (exact from IO.cpp)
     std::mutex remapMutex;

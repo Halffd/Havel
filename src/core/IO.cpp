@@ -41,6 +41,8 @@ std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
 bool IO::globalEvdev = true;
+double IO::mouseSensitivity = 1.0;
+double IO::scrollSpeed = 1.0;
 std::atomic<int> IO::syntheticEventsExpected{0};
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   if (ee->error_code == x11::XBadWindow ||
@@ -1048,16 +1050,15 @@ void IO::SetMouseSensitivity(double sensitivity) {
   sensitivity = std::max(0.1, std::min(10.0, sensitivity));
 
   // Try to set hardware sensitivity first
+  if(!globalEvdev){
   bool hardwareSuccess = false;
   if (xinput2Available) {
     hardwareSuccess = SetHardwareMouseSensitivity(sensitivity);
   }
 
   // Fall back to software sensitivity if hardware control fails
-  if (!hardwareSuccess) {
-    mouseSensitivity = sensitivity;
-    info("Using software mouse sensitivity: {}", mouseSensitivity);
-  } else {
+  mouseSensitivity = sensitivity;
+ } else {
     // Keep them in sync in case we need to fall back later
     mouseSensitivity = sensitivity;
   }
@@ -1760,10 +1761,27 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   bool hasAction = static_cast<bool>(action);
 
   // Parse the hotkey string
-  ParsedHotkey parsed = ParseHotkeyString(rawInput);
+  std::string processedInput = rawInput;
+  int comboTimeWindow = 500; // Default value
+  
+  // Check for combo time window in format "alias::500"
+  size_t dblColonPos = processedInput.rfind("::");
+  if (dblColonPos != std::string::npos && dblColonPos + 2 < processedInput.size()) {
+    std::string timeStr = processedInput.substr(dblColonPos + 2);
+    try {
+      comboTimeWindow = std::stoi(timeStr);
+      // Remove the ::number part from the alias
+      processedInput = processedInput.substr(0, dblColonPos);
+    } catch (const std::exception&) {
+      // If conversion fails, keep the default value and don't modify the input
+    }
+  }
+  
+  ParsedHotkey parsed = ParseHotkeyString(processedInput);
 
   // Build base hotkey
   HotKey hotkey;
+  hotkey.comboTimeWindow = comboTimeWindow;
   hotkey.modifiers = parsed.modifiers;
   hotkey.eventType = parsed.eventType;
   hotkey.evdev = parsed.isEvdev;
@@ -3573,6 +3591,9 @@ void IO::Map(const std::string &from, const std::string &to) {
   int toCode = EvdevNameToKeyCode(to);
   if (fromCode > 0 && toCode > 0) {
     evdevKeyMap[fromCode] = toCode;
+    if (eventListener) {
+      eventListener->AddKeyRemap(fromCode, toCode);
+    }
     debug("Mapped evdev key {} ({}) to {} ({})", from, fromCode, to, toCode);
   } else {
     warn("Failed to map keys: {} -> {} (from:{} to:{})", from, to, fromCode,

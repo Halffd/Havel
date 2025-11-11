@@ -82,7 +82,11 @@ void HotkeyManager::printHotkeys() const {
         hotkey.action + "' " + "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
         "grab=" + (hotkey.grab ? "Y" : "N") + " " +
         "succ=" + (hotkey.success ? "Y" : "N") + " " +
-        "susp=" + (hotkey.suspend ? "Y" : "N");
+        "susp=" + (hotkey.suspend ? "Y" : "N")
+        + " " + "repeat=" + std::to_string(hotkey.repeatInterval) + " " +
+        "combo=" + std::to_string(hotkey.comboTimeWindow) + " " +
+        "repeatInterval=" + std::to_string(hotkey.repeatInterval) + " " +
+        "comboTimeWindow=" + std::to_string(hotkey.comboTimeWindow);
     info(status);
   }
   info("-------------------------------------");
@@ -695,26 +699,44 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     info("Alt + Wheel up");
     Zoom(1);
   });
+  io.Hotkey("@RShift & WheelUp", [this]() {
+    info("RShift + Wheel up");
+    Zoom(1);
+  });
   io.Hotkey("@!WheelDown", [this]() {
     info("Alt + Wheel down");
     Zoom(0);
   });
-  io.Hotkey("@LButton & RButton", [this]() {
+  io.Hotkey("@RShift & WheelDown", [this]() {
+    info("RShift + Wheel down");
+    Zoom(0);
+  });
+  io.Hotkey("@LButton & RButton::90000", [this]() {
     info("Left click + right click");
     Zoom(2);
   });
-  io.Hotkey("@RButton & LButton", [this]() {
+  io.Hotkey("@RButton & LButton::90000", [this]() {
     info("Right click + left click");
     Zoom(1);
   });
-  io.Hotkey("@RButton & WheelUp", [this]() {
+  io.Hotkey("@RButton & WheelUp::90000", [this]() {
     info("Right click + wheel up");
     Zoom(1);
   });
-  io.Hotkey("@RButton & WheelDown", [this]() {
+  io.Hotkey("@RButton & WheelDown::90000", [this]() {
     info("Right click + wheel down");
     Zoom(0);
   });
+  io.Hotkey("@~^l & g", []() {
+    Launcher::runAsync("/usr/bin/lutris");
+  });
+  io.Hotkey("@~^s & g", []() {
+    Launcher::runAsync("/usr/bin/steam");
+  });
+  io.Hotkey("@~^h & g", []() {
+    Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
+  });
+  io.Map("CapsLock", "LAlt");
   io.Hotkey("@!-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));

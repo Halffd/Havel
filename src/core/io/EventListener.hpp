@@ -109,6 +109,8 @@ private:
         std::string name;
     };
     
+
+    void ExecuteHotkeyCallback(const HotKey& hotkey);
     // Main event loop (exact logic from IO.cpp)
     void EventLoop();
     

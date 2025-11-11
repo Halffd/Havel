@@ -253,16 +253,44 @@ void KeyMap::Initialize() {
     #endif
     
     // Alphabet keys (A-Z)
-    for (char c = 'a'; c <= 'z'; c++) {
-        std::string key(1, c);
-        AddKey(key, KEY_A + (c - 'a'), XK_a + (c - 'a'), 0x41 + (c - 'a'));
-    }
+    AddKey("a", KEY_A, XK_a, 0x41);
+    AddKey("b", KEY_B, XK_b, 0x42);
+    AddKey("c", KEY_C, XK_c, 0x43);
+    AddKey("d", KEY_D, XK_d, 0x44);
+    AddKey("e", KEY_E, XK_e, 0x45);
+    AddKey("f", KEY_F, XK_f, 0x46);
+    AddKey("g", KEY_G, XK_g, 0x47);
+    AddKey("h", KEY_H, XK_h, 0x48);
+    AddKey("i", KEY_I, XK_i, 0x49);
+    AddKey("j", KEY_J, XK_j, 0x4A);
+    AddKey("k", KEY_K, XK_k, 0x4B);
+    AddKey("l", KEY_L, XK_l, 0x4C);
+    AddKey("m", KEY_M, XK_m, 0x4D);
+    AddKey("n", KEY_N, XK_n, 0x4E);
+    AddKey("o", KEY_O, XK_o, 0x4F);
+    AddKey("p", KEY_P, XK_p, 0x50);
+    AddKey("q", KEY_Q, XK_q, 0x51);
+    AddKey("r", KEY_R, XK_r, 0x52);
+    AddKey("s", KEY_S, XK_s, 0x53);
+    AddKey("t", KEY_T, XK_t, 0x54);
+    AddKey("u", KEY_U, XK_u, 0x55);
+    AddKey("v", KEY_V, XK_v, 0x56);
+    AddKey("w", KEY_W, XK_w, 0x57);
+    AddKey("x", KEY_X, XK_x, 0x58);
+    AddKey("y", KEY_Y, XK_y, 0x59);
+    AddKey("z", KEY_Z, XK_z, 0x5A);
     
     // Number keys (0-9)
     AddKey("0", KEY_0, XK_0, 0x30);
-    for (int i = 1; i <= 9; i++) {
-        AddKey(std::to_string(i), KEY_1 + (i - 1), XK_1 + (i - 1), 0x31 + (i - 1));
-    }
+    AddKey("1", KEY_1, XK_1, 0x31);
+    AddKey("2", KEY_2, XK_2, 0x32);
+    AddKey("3", KEY_3, XK_3, 0x33);
+    AddKey("4", KEY_4, XK_4, 0x34);
+    AddKey("5", KEY_5, XK_5, 0x35);
+    AddKey("6", KEY_6, XK_6, 0x36);
+    AddKey("7", KEY_7, XK_7, 0x37);
+    AddKey("8", KEY_8, XK_8, 0x38);
+    AddKey("9", KEY_9, XK_9, 0x39);
     
     // Control keys
     AddKey("esc", KEY_ESC, XK_Escape, VK_ESCAPE);
@@ -311,16 +339,43 @@ void KeyMap::Initialize() {
     AddKey("scrolllock", KEY_SCROLLLOCK, XK_Scroll_Lock, VK_SCROLL);
     
     // Function keys (F1-F24)
-    for (int i = 1; i <= 24; i++) {
-        std::string fname = "f" + std::to_string(i);
-        AddKey(fname, KEY_F1 + (i - 1), XK_F1 + (i - 1), VK_F1 + (i - 1));
-    }
+    AddKey("f1", KEY_F1, XK_F1, VK_F1);
+    AddKey("f2", KEY_F2, XK_F2, VK_F2);
+    AddKey("f3", KEY_F3, XK_F3, VK_F3);
+    AddKey("f4", KEY_F4, XK_F4, VK_F4);
+    AddKey("f5", KEY_F5, XK_F5, VK_F5);
+    AddKey("f6", KEY_F6, XK_F6, VK_F6);
+    AddKey("f7", KEY_F7, XK_F7, VK_F7);
+    AddKey("f8", KEY_F8, XK_F8, VK_F8);
+    AddKey("f9", KEY_F9, XK_F9, VK_F9);
+    AddKey("f10", KEY_F10, XK_F10, VK_F10);
+    AddKey("f11", KEY_F11, XK_F11, VK_F11);
+    AddKey("f12", KEY_F12, XK_F12, VK_F12);
+    AddKey("f13", KEY_F13, XK_F13, VK_F13);
+    AddKey("f14", KEY_F14, XK_F14, VK_F14);
+    AddKey("f15", KEY_F15, XK_F15, VK_F15);
+    AddKey("f16", KEY_F16, XK_F16, VK_F16);
+    AddKey("f17", KEY_F17, XK_F17, VK_F17);
+    AddKey("f18", KEY_F18, XK_F18, VK_F18);
+    AddKey("f19", KEY_F19, XK_F19, VK_F19);
+    AddKey("f20", KEY_F20, XK_F20, VK_F20);
+    AddKey("f21", KEY_F21, XK_F21, VK_F21);
+    AddKey("f22", KEY_F22, XK_F22, VK_F22);
+    AddKey("f23", KEY_F23, XK_F23, VK_F23);
+    AddKey("f24", KEY_F24, XK_F24, VK_F24);
     
     // Numpad
     AddKey("numpad0", KEY_KP0, XK_KP_0, VK_NUMPAD0);
-    for (int i = 1; i <= 9; i++) {
-        AddKey("numpad" + std::to_string(i), KEY_KP1 + (i - 1), XK_KP_1 + (i - 1), VK_NUMPAD1 + (i - 1));
-    }
+    AddKey("numpad1", KEY_KP1, XK_KP_1, VK_NUMPAD1);
+    AddKey("numpad2", KEY_KP2, XK_KP_2, VK_NUMPAD2);
+    AddKey("numpad3", KEY_KP3, XK_KP_3, VK_NUMPAD3);
+    AddKey("numpad4", KEY_KP4, XK_KP_4, VK_NUMPAD4);
+    AddKey("numpad5", KEY_KP5, XK_KP_5, VK_NUMPAD5);
+    AddKey("numpad6", KEY_KP6, XK_KP_6, VK_NUMPAD6);
+    AddKey("numpad7", KEY_KP7, XK_KP_7, VK_NUMPAD7);
+    AddKey("numpad8", KEY_KP8, XK_KP_8, VK_NUMPAD8);
+    AddKey("numpad9", KEY_KP9, XK_KP_9, VK_NUMPAD9);
+    
     AddKey("numpadadd", KEY_KPPLUS, XK_KP_Add, VK_ADD);
     AddAlias("numpadplus", "numpadadd");
     AddKey("numpadsub", KEY_KPMINUS, XK_KP_Subtract, VK_SUBTRACT);

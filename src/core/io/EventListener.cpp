@@ -150,7 +150,7 @@ bool EventListener::SetupUinput() {
     ioctl(uinputFd, UI_SET_EVBIT, EV_KEY);
     ioctl(uinputFd, UI_SET_EVBIT, EV_SYN);
     ioctl(uinputFd, UI_SET_EVBIT, EV_REL);
-    ioctl(uinputFd, UI_SET_EVBIT, EV_ABS);
+    //ioctl(uinputFd, UI_SET_EVBIT, EV_ABS);
     
     // Enable all keys
     for (int i = 0; i < KEY_MAX; i++) {
@@ -296,7 +296,6 @@ bool EventListener::IsX11MonitorRunning() const {
 }
 #endif
 
-// Main event loop - EXACT logic from IO.cpp StartEvdevHotkeyListener
 void EventListener::EventLoop() {
     info("EventListener: Starting event loop");
     
@@ -326,46 +325,40 @@ void EventListener::EventLoop() {
             break;
         }
         
-        if (ret == 0) {
-            // Timeout
-            continue;
-        }
+        if (ret == 0) continue;
         
-        // Check shutdown signal
-        if (FD_ISSET(shutdownFd, &readfds)) {
-            break;
-        }
+        if (FD_ISSET(shutdownFd, &readfds)) break;
         
         // Process events from all devices
         for (const auto& device : devices) {
-            if (!FD_ISSET(device.fd, &readfds)) {
-                continue;
-            }
+            if (!FD_ISSET(device.fd, &readfds)) continue;
             
             struct input_event ev;
             ssize_t n = read(device.fd, &ev, sizeof(ev));
             
-            if (n != sizeof(ev)) {
-                continue;
-            }
+            if (n != sizeof(ev)) continue;
             
+            // Route based on event type AND code
             if (ev.type == EV_KEY) {
-                ProcessKeyboardEvent(ev);
+                // Check if it's a mouse button
+                if (ev.code >= BTN_MOUSE && ev.code < BTN_JOYSTICK) {
+                    ProcessMouseEvent(ev);
+                } else {
+                    ProcessKeyboardEvent(ev);
+                }
             } else if (ev.type == EV_REL || ev.type == EV_ABS) {
                 ProcessMouseEvent(ev);
             }
         }
     }
     
-    // Wait for pending callbacks
-    info("EventListener: Waiting for {} pending callbacks", pendingCallbacks.load());
+    info("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
     while (pendingCallbacks.load() > 0) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     
-    info("EventListener: Event loop stopped");
+    info("EventListener: Stopped");
 }
-
 // Process keyboard event - EXACT logic from IO.cpp
 void EventListener::ProcessKeyboardEvent(const input_event& ev) {
     int originalCode = ev.code;
@@ -428,7 +421,22 @@ void EventListener::ProcessKeyboardEvent(const input_event& ev) {
         SendUinputEvent(EV_KEY, mappedCode, 0);
     }
 }
-
+void EventListener::ExecuteHotkeyCallback(const HotKey& hotkey)
+ {
+    if (!hotkey.callback) return;
+    
+    pendingCallbacks++;
+    std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
+        try {
+            if (running.load() && !shutdown.load()) {
+                callback();
+            }
+        } catch (const std::exception& e) {
+            error("Hotkey '{}' exception: {}", alias, e.what());
+        }
+        pendingCallbacks--;
+    }).detach();
+}
 /**
  * Process mouse event - Handles mouse buttons, movement, and wheel
  * 
@@ -443,18 +451,16 @@ void EventListener::ProcessKeyboardEvent(const input_event& ev) {
  * 3. Applies sensitivity scaling (mouse movement, scroll speed)
  * 4. Forwards events to uinput (unless blocked by a grabbed hotkey)
  * 
- * EXACT logic from IO.cpp handleMouseButton/handleMouseRelative
  */
 void EventListener::ProcessMouseEvent(const input_event& ev) {
     bool shouldBlock = false;
     auto now = std::chrono::steady_clock::now();
     
-    // Handle different event types based on evdev event type
     if (ev.type == EV_KEY) {
-        // Mouse button event (BTN_LEFT, BTN_RIGHT, BTN_MIDDLE, BTN_SIDE, BTN_EXTRA)
+        // Mouse button event
         bool down = (ev.value == 1);
         
-        // Update button state and active inputs
+        // Update button state
         {
             std::lock_guard<std::mutex> lock(stateMutex);
             mouseButtonState[ev.code] = down;
@@ -466,48 +472,40 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
             }
         }
         
-        // Check for mouse button hotkeys
+        // Evaluate hotkeys
         std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
         std::lock_guard<std::mutex> stateLock(stateMutex);
         
         for (auto& [id, hotkey] : hotkeys) {
             if (!hotkey.enabled) continue;
             
-            // Check for combo hotkeys first
+            // Handle combo hotkeys
             if (hotkey.type == HotkeyType::Combo) {
                 if (EvaluateCombo(hotkey)) {
-                    // Combo matched
-                    pendingCallbacks++;
-                    std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
-                        try {
-                            if (running.load() && !shutdown.load()) {
-                                callback();
-                            }
-                        } catch (const std::exception& e) {
-                            error("Hotkey '{}' threw: {}", alias, e.what());
-                        }
-                        pendingCallbacks--;
-                    }).detach();
-                    
-                    if (hotkey.grab) {
-                        shouldBlock = true;
-                    }
+                    ExecuteHotkeyCallback(hotkey);
+                    if (hotkey.grab) shouldBlock = true;
                 }
                 continue;
             }
             
-            // Check for mouse button hotkeys
+            // Handle mouse button hotkeys
             if (hotkey.type != HotkeyType::MouseButton) continue;
-            
-            // Match button code
             if (hotkey.mouseButton != ev.code) continue;
             
             // Event type check
             if (hotkey.eventType == HotkeyEventType::Down && !down) continue;
             if (hotkey.eventType == HotkeyEventType::Up && down) continue;
             
-            // Modifier matching
-            bool modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+            // CRITICAL FIX: Mouse buttons ignore modifiers unless explicitly set
+            bool modifierMatch;
+            if (hotkey.modifiers == 0) {
+                // No modifiers required - always match
+                modifierMatch = true;
+            } else {
+                // Modifiers explicitly required (e.g., ^LButton)
+                modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+            }
+            
             if (!modifierMatch) continue;
             
             // Context checks
@@ -518,29 +516,19 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
                 }
             }
             
-            // Hotkey matched! Execute callback
-            info("Mouse button hotkey triggered: {} button: {}", hotkey.alias, ev.code);
+            // Hotkey matched!
+            info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias, ev.code, down);
+            ExecuteHotkeyCallback(hotkey);
             
-            pendingCallbacks++;
-            std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
-                try {
-                    if (running.load() && !shutdown.load()) {
-                        callback();
-                    }
-                } catch (const std::exception& e) {
-                    error("Hotkey '{}' threw: {}", alias, e.what());
-                }
-                pendingCallbacks--;
-            }).detach();
-            
-            if (hotkey.grab) {
-                shouldBlock = true;
-            }
+            if (hotkey.grab) shouldBlock = true;
         }
         
-        // Forward event if not blocked
+        // Forward if not blocked
         if (!shouldBlock && !blockInput.load()) {
             SendUinputEvent(EV_KEY, ev.code, ev.value);
+        } else if (!down) {
+            // Always release to prevent stuck buttons
+            SendUinputEvent(EV_KEY, ev.code, 0);
         }
         
     } else if (ev.type == EV_REL) {
@@ -559,7 +547,6 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
             if (!blockInput.load()) {
                 SendUinputEvent(EV_REL, ev.code, scaledInt);
             }
-            
         } else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
             // Mouse wheel - check for wheel hotkeys
             int wheelDirection = (ev.value > 0) ? 1 : -1;
@@ -568,19 +555,31 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
             std::lock_guard<std::mutex> stateLock(stateMutex);
             
             for (auto& [id, hotkey] : hotkeys) {
-                if (!hotkey.enabled || hotkey.type != HotkeyType::MouseWheel) continue;
+                if (!hotkey.enabled) continue;
+                if (hotkey.type != HotkeyType::MouseWheel) continue;
+                if (hotkey.wheelDirection != 0 && (hotkey.wheelDirection != wheelDirection)) continue;
                 
-                // Match wheel direction
-                if (hotkey.wheelDirection != wheelDirection) continue;
+                // Check if this wheel event matches the hotkey direction
+                if ((wheelDirection > 0 && hotkey.wheelDirection <= 0) ||
+                    (wheelDirection < 0 && hotkey.wheelDirection >= 0)) {
+                    continue;
+                }
                 
-                // Modifier matching
-                bool modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-                if (!modifierMatch) continue;
+                // Modifier check
+                if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard)) {
+                    continue;
+                }
                 
                 // Context checks
                 if (!hotkey.contexts.empty()) {
-                    if (!std::all_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                                   [](auto& ctx) { return ctx(); })) {
+                    bool contextMatch = false;
+                    for (const auto& context : hotkey.contexts) {
+                        if (context()) {
+                            contextMatch = true;
+                            break;
+                        }
+                    }
+                    if (!contextMatch) {
                         continue;
                     }
                 }
@@ -588,17 +587,7 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
                 // Hotkey matched! Execute callback
                 info("Wheel hotkey triggered: {} direction: {}", hotkey.alias, wheelDirection);
                 
-                pendingCallbacks++;
-                std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
-                    try {
-                        if (running.load() && !shutdown.load()) {
-                            callback();
-                        }
-                    } catch (const std::exception& e) {
-                        error("Hotkey '{}' threw: {}", alias, e.what());
-                    }
-                    pendingCallbacks--;
-                }).detach();
+                ExecuteHotkeyCallback(hotkey);
                 
                 if (hotkey.grab) {
                     shouldBlock = true;
@@ -610,7 +599,6 @@ void EventListener::ProcessMouseEvent(const input_event& ev) {
                 double scaledValue = ev.value * scrollSpeed;
                 int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
                 
-                // Preserve direction
                 if (scaledInt == 0 && ev.value != 0) {
                     scaledInt = (ev.value > 0) ? 1 : -1;
                 }
@@ -686,7 +674,6 @@ bool EventListener::CheckModifierMatch(int requiredModifiers, bool wildcard) con
     }
 }
 
-// Evaluate hotkeys - EXACT logic from IO.cpp
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
     std::lock_guard<std::mutex> stateLock(stateMutex);
@@ -710,19 +697,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         if (hotkey.type == HotkeyType::Combo) {
             if (EvaluateCombo(hotkey)) {
                 // Combo matched, execute callback
-                pendingCallbacks++;
-                std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
-                    try {
-                        if (running.load() && !shutdown.load()) {
-                            callback();
-                        }
-                    } catch (const std::exception& e) {
-                        error("Hotkey '{}' threw: {}", alias, e.what());
-                    } catch (...) {
-                        error("Hotkey '{}' threw unknown exception", alias);
-                    }
-                    pendingCallbacks--;
-                }).detach();
+                ExecuteHotkeyCallback(hotkey);
                 
                 if (hotkey.grab) {
                     shouldBlock = true;
@@ -792,20 +767,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}",
               hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
         
-        pendingCallbacks++;
-        std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
-            try {
-                info("Executing hotkey callback: {}", alias);
-                if (running.load() && !shutdown.load()) {
-                    callback();
-                }
-            } catch (const std::exception& e) {
-                error("Hotkey '{}' threw: {}", alias, e.what());
-            } catch (...) {
-                error("Hotkey '{}' threw unknown exception", alias);
-            }
-            pendingCallbacks--;
-        }).detach();
+        ExecuteHotkeyCallback(hotkey);
         
         if (hotkey.grab) {
             shouldBlock = true;
@@ -830,43 +792,41 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
  * This allows for natural combo input where keys don't need to be pressed
  * at exactly the same instant, but within a short time window.
  * 
- * EXACT logic from IO.cpp
  */
 bool EventListener::EvaluateCombo(const HotKey& hotkey) {
-    // This is called with stateMutex already locked
-    
-    if (hotkey.comboSequence.empty()) {
-        return false;
-    }
+    // Called with stateMutex and hotkeyMutex already locked
     
     auto now = std::chrono::steady_clock::now();
     
-    // Check if all keys in combo are currently pressed within time window
     for (const auto& comboKey : hotkey.comboSequence) {
-        int keyCode = static_cast<int>(comboKey.key);
+        int keyCode;
         
-        auto it = activeInputs.find(keyCode);
-        if (it == activeInputs.end()) {
-            return false; // Key not pressed
+        // Get the code based on type
+        if (comboKey.type == HotkeyType::MouseButton) {
+            keyCode = comboKey.mouseButton;
+        } else if (comboKey.type == HotkeyType::Keyboard) {
+            keyCode = static_cast<int>(comboKey.key);
+        } else {
+            // Unsupported combo part (wheel, etc.)
+            return false;
         }
         
-        // Check if key was pressed within time window
+        // Check if key is in activeInputs
+        auto it = activeInputs.find(keyCode);
+        if (it == activeInputs.end()) {
+            return false;  // Key not pressed
+        }
+        
+        // Check time window
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - it->second).count();
         
         if (elapsed > comboTimeWindow) {
-            return false; // Key pressed too long ago
-        }
-
-        // Only check modifiers if this combo part explicitly requires them
-        if (comboKey.modifiers != 0) { // Modified condition
-            if (!CheckModifierMatch(comboKey.modifiers, comboKey.wildcard)) {
-                return false; // Modifiers for this combo part do not match
-            }
+            return false;  // Key pressed too long ago
         }
     }
     
-    // All keys in combo are pressed within time window
+    // All keys in combo are currently pressed within time window
     return true;
 }
 

@@ -1,6 +1,7 @@
 #include "core/IO.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
@@ -881,7 +882,14 @@ bool IO::EmitClick(int btnCode, int action) {
   std::lock_guard<std::mutex> lock(uinputMutex);
   
   auto writeEvent = [&](uint16_t type, uint16_t code, int32_t value) -> bool {
-      input_event ev = {.type = type, .code = code, .value = value};
+      struct timespec ts;
+      clock_gettime(CLOCK_MONOTONIC, &ts);
+      input_event ev = {
+          .time = {.tv_sec = ts.tv_sec, .tv_usec = ts.tv_nsec / 1000},
+          .type = type,
+          .code = code,
+          .value = value
+      };
       return write(mouseUinputFd, &ev, sizeof(ev)) == sizeof(ev);
   };
   
@@ -1051,12 +1059,9 @@ void IO::SetMouseSensitivity(double sensitivity) {
 
   // Try to set hardware sensitivity first
   if(!globalEvdev){
-  bool hardwareSuccess = false;
   if (xinput2Available) {
-    hardwareSuccess = SetHardwareMouseSensitivity(sensitivity);
+    SetHardwareMouseSensitivity(sensitivity);
   }
-
-  // Fall back to software sensitivity if hardware control fails
   mouseSensitivity = sensitivity;
  } else {
     // Keep them in sync in case we need to fall back later
@@ -1415,10 +1420,10 @@ void IO::Send(cstr keys) {
   };
   // release all modifiers
   std::set<std::string> toRelease;
-  if (currentModifierState.leftCtrl || currentModifierState.rightCtrl) toRelease.insert("ctrl");
-  if (currentModifierState.leftShift || currentModifierState.rightShift) toRelease.insert("shift");
-  if (currentModifierState.leftAlt || currentModifierState.rightAlt) toRelease.insert("alt");
-  if (currentModifierState.leftMeta || currentModifierState.rightMeta) toRelease.insert("meta");
+  if (IsCtrlPressed()) toRelease.insert("lctrl"); toRelease.insert("rctrl");
+  if (IsShiftPressed()) toRelease.insert("lshift"); toRelease.insert("rshift");
+  if (IsAltPressed()) toRelease.insert("lalt"); toRelease.insert("ralt");
+  if (IsWinPressed()) toRelease.insert("lmeta"); toRelease.insert("rmeta");
   
   // Release interfering modifiers
   for (const auto& mod : toRelease) {
@@ -3348,16 +3353,35 @@ bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
   return false;
 }
 bool IO::IsShiftPressed() {
+  if(eventListener){
+    auto modState = eventListener->GetModifierState();
+    return modState.leftShift || modState.rightShift;
+  }
   return currentModifierState.leftShift || currentModifierState.rightShift;
 }
 
 bool IO::IsCtrlPressed() {
+  if(eventListener){
+    auto modState = eventListener->GetModifierState();
+    return modState.leftCtrl || modState.rightCtrl;
+  }
   return currentModifierState.leftCtrl || currentModifierState.rightCtrl;
 }
 
-bool IO::IsAltPressed() { return currentModifierState.leftAlt || currentModifierState.rightAlt; }
+bool IO::IsAltPressed() { 
+  if(eventListener){
+    auto modState = eventListener->GetModifierState();
+    return modState.leftAlt || modState.rightAlt;
+  }
+  return currentModifierState.leftAlt || currentModifierState.rightAlt; }
 
-bool IO::IsWinPressed() { return currentModifierState.leftMeta || currentModifierState.rightMeta; }
+bool IO::IsWinPressed() { 
+  if(eventListener){
+    auto modState = eventListener->GetModifierState();
+    return modState.leftMeta || modState.rightMeta;
+  }
+  return currentModifierState.leftMeta || currentModifierState.rightMeta; }
+
 Key IO::GetKeyCode(cstr keyName) {
   // Convert string to keysym
   KeySym keysym = StringToVirtualKey(keyName);

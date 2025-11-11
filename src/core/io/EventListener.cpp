@@ -4,21 +4,19 @@
 #include <cstring>
 #include <fcntl.h>
 #include <linux/uinput.h>
-#include <spdlog/spdlog.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <unistd.h>
 #include <sstream>
-
-using namespace spdlog;
+#include <cmath>
+#include "utils/Logger.hpp"
 
 namespace havel {
-
 std::string EventListener::GetActiveInputsString() const {
   std::stringstream ss;
-  for (const auto& [code, time] : activeInputs) {
+  for (const auto& [code, activeInput] : activeInputs) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - time).count();
+        std::chrono::steady_clock::now() - activeInput.timestamp).count();
     ss << code << "(" << elapsed << "ms) ";
   }
   return ss.str();
@@ -62,7 +60,7 @@ EventListener::~EventListener() {
 bool EventListener::Start(const std::vector<std::string> &devicePaths,
                           bool grabDevices) {
   if (running.load()) {
-    warn("EventListener already running");
+    info("EventListener already running");
     return false;
   }
 
@@ -351,7 +349,15 @@ bool EventListener::IsX11MonitorRunning() const {
   return x11Monitor && x11Monitor->IsRunning();
 }
 #endif
-
+int EventListener::GetCurrentModifiersMask() const {
+    // This is called with stateMutex already locked
+    int mask = 0;
+    if (modifierState.IsCtrlPressed()) mask |= Modifier::Ctrl;
+    if (modifierState.IsShiftPressed()) mask |= Modifier::Shift;
+    if (modifierState.IsAltPressed()) mask |= Modifier::Alt;
+    if (modifierState.IsMetaPressed()) mask |= Modifier::Meta;
+    return mask;
+}
 void EventListener::EventLoop() {
   info("EventListener: Starting event loop");
 
@@ -430,22 +436,22 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   {
     std::lock_guard<std::mutex> lock(remapMutex);
     if (down && !repeat) {
-      // On press: apply remapping
+      // On press: apply remapping and store the mapping
       auto remapIt = keyRemaps.find(originalCode);
       if (remapIt != keyRemaps.end()) {
         mappedCode = remapIt->second;
       }
+      // Store the mapping for this key press
       activeRemaps[originalCode] = mappedCode;
-    } else {
+    } else if (!down) {
       // On release: use the same mapping we stored on press
       auto it = activeRemaps.find(originalCode);
       if (it != activeRemaps.end()) {
         mappedCode = it->second;
-        if (!down) {
-          activeRemaps.erase(it);
-        }
+        // Remove from active remaps after we've used it for release
+        activeRemaps.erase(it);
       } else {
-        // Fallback
+        // Fallback: try to get remapping from keyRemaps
         auto remapIt = keyRemaps.find(originalCode);
         if (remapIt != keyRemaps.end()) {
           mappedCode = remapIt->second;
@@ -577,8 +583,8 @@ bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection)
         
         // Check time window
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - it->second).count();
-        
+            now - it->second.timestamp).count();
+
         if (elapsed > comboTimeWindow) {
             debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)", 
                  hotkey.alias, keyCode, elapsed);
@@ -626,7 +632,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       mouseButtonState[ev.code] = down;
 
       if (down) {
-        activeInputs[ev.code] = now;
+        int currentMods = GetCurrentModifiersMask();
+        activeInputs[ev.code] = ActiveInput(currentMods, now);
         debug("🖱️  Mouse BUTTON DOWN: code={} | Active buttons: {}", 
              ev.code, GetActiveInputsString());
       } else {

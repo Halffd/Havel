@@ -80,6 +80,7 @@ public:
     std::string GetModifiersString() const;
     std::string GetActiveInputsString() const;
     
+    int GetCurrentModifiersMask() const;
     // Hotkey optimization
     struct ActiveInput {
         std::chrono::steady_clock::time_point timestamp;

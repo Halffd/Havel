@@ -90,6 +90,9 @@ public:
         explicit ActiveInput(int mods) : 
             timestamp(std::chrono::steady_clock::now()),
             modifiers(mods) {}
+        ActiveInput(int mods, std::chrono::steady_clock::time_point time) :
+            timestamp(time),
+            modifiers(mods) {}
     };
     
     // Setup uinput for event forwarding

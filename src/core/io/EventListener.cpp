@@ -716,11 +716,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
            ev.code == REL_X ? "X" : "Y", 
            ev.value, scaledValue, IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
-
-      // Preserve direction for small movements
-      if (scaledInt == 0 && ev.value != 0) {
-        scaledInt = (ev.value > 0) ? 1 : -1;
-      }
+      if (scaledInt == 0 && ev.value != 0 && IO::mouseSensitivity >= 1.0) {
+              scaledInt = (ev.value > 0) ? 1 : -1;
+          }
 
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);

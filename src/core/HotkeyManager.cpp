@@ -12,6 +12,7 @@
 #include "gui/AutomationSuite.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "media/AudioManager.hpp"
+#include "process/ProcessManager.hpp"
 #include "utils/Timer.hpp"
 #include "utils/Util.hpp"
 #include "window/Window.hpp"
@@ -246,6 +247,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("!Esc", [this]() {
     if (App::instance()) {
       info("Quitting application");
+      App::quit();
+    }
+  });
+  io.Hotkey("#!Esc", [this]() {
+    auto pid = ProcessManager::getCurrentPid();
+    std::string exec = ProcessManager::getProcessExecutablePath(pid);
+
+    info("Restarting {}", exec);
+
+    // flush logs
+    fflush(nullptr);
+
+    std::vector<char*> args;
+    args.push_back(const_cast<char*>(exec.c_str()));
+    args.push_back(nullptr);
+
+    execvp(exec.c_str(), args.data());
+
+    // If we get here, exec failed.
+    error("Failed to exec: {}", strerror(errno));
+    if(App::instance()) {
       App::quit();
     }
   });

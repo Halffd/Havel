@@ -271,6 +271,7 @@ IO::IO() {
           eventListener->Start(devices);
           globalEvdev = true;
           info("Successfully started unified EventListener with {} devices", devices.size());
+          uinputFd = eventListener->uinputFd;
         } catch (const std::exception &e) {
           error("Failed to start unified EventListener: {}", e.what());
           globalEvdev = false;
@@ -1408,7 +1409,12 @@ void IO::Send(cstr keys) {
       info("Sending key: " + keyName + " (" + std::to_string(down) +
            ") code: " + std::to_string(code));
       if (code != -1) {
-        SendUInput(code, down); // Now includes state tracking
+        // Use EventListener's uinput if available, otherwise use old method
+        if (eventListener && useNewEventListener) {
+          eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
+        } else {
+          SendUInput(code, down); // Fallback to old method
+        }
       }
     } else {
       SendX11Key(keyName, down); // Now includes state tracking
@@ -1420,11 +1426,23 @@ void IO::Send(cstr keys) {
   };
   // release all modifiers
   std::set<std::string> toRelease;
-  if (IsCtrlPressed()) toRelease.insert("lctrl"); toRelease.insert("rctrl");
-  if (IsShiftPressed()) toRelease.insert("lshift"); toRelease.insert("rshift");
-  if (IsAltPressed()) toRelease.insert("lalt"); toRelease.insert("ralt");
-  if (IsWinPressed()) toRelease.insert("lmeta"); toRelease.insert("rmeta");
-  
+  if (IsCtrlPressed()) {
+    toRelease.insert("lctrl");
+    toRelease.insert("rctrl");
+  }
+  if (IsShiftPressed()) {
+    toRelease.insert("lshift");
+    toRelease.insert("rshift");
+  }
+  if (IsAltPressed()) {
+    toRelease.insert("lalt");
+    toRelease.insert("ralt");
+  }
+  if (IsWinPressed()) {
+    toRelease.insert("lmeta");
+    toRelease.insert("rmeta");
+  }
+  info(toString(toRelease));
   // Release interfering modifiers
   for (const auto& mod : toRelease) {
     info("Releasing modifier: " + mod);

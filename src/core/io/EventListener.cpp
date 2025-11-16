@@ -10,16 +10,21 @@
 #include <sstream>
 #include <cmath>
 #include "utils/Logger.hpp"
+#include <fmt/format.h>
 
 namespace havel {
 std::string EventListener::GetActiveInputsString() const {
-  std::stringstream ss;
-  for (const auto& [code, activeInput] : activeInputs) {
+  if (activeInputs.empty()) return "[none]";
+  
+  std::string result;
+  for (const auto& [code, input] : activeInputs) {
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - activeInput.timestamp).count();
-    ss << code << "(" << elapsed << "ms) ";
+        std::chrono::steady_clock::now() - input.timestamp).count();
+    
+    result += std::to_string(code) + "(mods:0x" + std::to_string(input.modifiers) + 
+              ", " + std::to_string(elapsed) + "ms) ";
   }
-  return ss.str();
+  return result;
 }
 
 /**
@@ -204,22 +209,40 @@ bool EventListener::SetupUinput() {
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
   if (uinputFd < 0) {
+    error("Cannot send event: uinput not initialized (fd={})", uinputFd);
     return;
   }
 
-  struct input_event ev = {};
-  ev.type = type;
-  ev.code = code;
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  
+  input_event ev = {};
+  ev.time.tv_sec = ts.tv_sec;
+  ev.time.tv_usec = ts.tv_nsec / 1000;
+  ev.type = static_cast<__u16>(type);
+  ev.code = static_cast<__u16>(code);
   ev.value = value;
-  gettimeofday(&ev.time, nullptr);
 
-  write(uinputFd, &ev, sizeof(ev));
+  ssize_t written = write(uinputFd, &ev, sizeof(ev));
+  if (written != sizeof(ev)) {
+    error("Failed to write to uinput: {} (fd={})", strerror(errno), uinputFd);
+    return;
+  }
 
-  // Send SYN event
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  write(uinputFd, &ev, sizeof(ev));
+  // Send SYN event - critical for uinput to work properly
+  input_event syn = {};
+  syn.time.tv_sec = ts.tv_sec;
+  syn.time.tv_usec = ts.tv_nsec / 1000;
+  syn.type = EV_SYN;
+  syn.code = SYN_REPORT;
+  syn.value = 0;
+  
+  ssize_t syn_written = write(uinputFd, &syn, sizeof(syn));
+  if (syn_written != sizeof(syn)) {
+    error("Failed to write SYN event to uinput: {} (fd={})", strerror(errno), uinputFd);
+  }
+  
+  debug("Forwarded uinput: type={} code={} value={} fd={}", type, code, value, uinputFd);
 }
 
 void EventListener::RegisterHotkey(int id, const HotKey& hotkey) {
@@ -287,7 +310,7 @@ bool EventListener::GetKeyState(int evdevCode) const {
   return it != evdevKeyState.end() && it->second;
 }
 
-EventListener::ModifierState EventListener::GetModifierState() const {
+const EventListener::ModifierState& EventListener::GetModifierState() const {
   std::lock_guard<std::mutex> lock(stateMutex);
   return modifierState;
 }
@@ -726,6 +749,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     }
     // Mouse wheel
     else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
+      bool shouldBlock = false;  // Local to wheel events
       int wheelDirection = (ev.value > 0) ? 1 : -1;
       debug("🖱️  Mouse WHEEL: axis={}, direction={}, speed={}",
            ev.code == REL_WHEEL ? "VERT" : "HORZ",
@@ -787,11 +811,15 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         double scaledValue = ev.value * IO::scrollSpeed;
         int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
 
-        if (scaledInt == 0 && ev.value != 0) {
+        if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
+        debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}", 
+              ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
         SendUinputEvent(EV_REL, ev.code, scaledInt);
+      } else {
+        debug("Wheel BLOCKED");
       }
     }
     // Other relative events
@@ -978,59 +1006,57 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
  * at exactly the same instant, but within a short time window.
  */
 bool EventListener::EvaluateCombo(const HotKey &hotkey) {
-  // Called with stateMutex and hotkeyMutex already locked
   auto now = std::chrono::steady_clock::now();
   
-  debug("🔍 Evaluating combo '{}' | Active inputs: {}", 
+  // Always log combo evaluation
+  info("🔍 Evaluating combo '{}' | Active inputs: {}", 
        hotkey.alias, GetActiveInputsString());
-
+  
   for (const auto &comboKey : hotkey.comboSequence) {
     int keyCode;
+    
     if (comboKey.type == HotkeyType::Keyboard) {
       keyCode = static_cast<int>(comboKey.key);
     } else if (comboKey.type == HotkeyType::MouseButton) {
       keyCode = comboKey.mouseButton;
     } else if (comboKey.type == HotkeyType::MouseWheel) {
-      // Skip wheel parts as they're handled separately
-      continue;
+      continue;  // Handled separately
     } else {
-      // Unsupported combo part
-      debug("❌ Combo '{}' failed: unsupported type", hotkey.alias);
+      info("❌ Combo '{}' failed: unsupported type {}", hotkey.alias, (int)comboKey.type);
       return false;
     }
-
-    // Check if key is in activeInputs
+    
     auto it = activeInputs.find(keyCode);
     if (it == activeInputs.end()) {
-      debug("❌ Combo '{}' failed: key {} not pressed", 
+      info("❌ Combo '{}' failed: key {} not in activeInputs", 
            hotkey.alias, keyCode);
       return false;
     }
-
-    // Check time window using the timestamp from ActiveInput
+    
+    // Time window
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         now - it->second.timestamp).count();
     
     if (elapsed > comboTimeWindow) {
-      debug("⏱️  Combo '{}' failed: key {} pressed too long ago ({}ms > {}ms)", 
+      info("⏱️  Combo '{}' failed: key {} too old ({}ms > {}ms)", 
            hotkey.alias, keyCode, elapsed, comboTimeWindow);
       return false;
     }
-
-    // Check modifiers for this combo part using the stored modifiers
+    
+    // Modifiers
     if (comboKey.modifiers != 0) {
-      // Check if the modifiers when the key was pressed match the required ones
-      if ((it->second.modifiers & comboKey.modifiers) != comboKey.modifiers) {
-        debug("❌ Combo '{}' failed: key {} modifiers don't match (have: 0x{:x}, required: 0x{:x})", 
-             hotkey.alias, keyCode, it->second.modifiers, comboKey.modifiers);
+      int storedMods = it->second.modifiers;
+      int requiredMods = comboKey.modifiers;
+      
+      if ((storedMods & requiredMods) != requiredMods) {
+        info("❌ Combo '{}' failed: key {} modifiers mismatch (have: 0x{:x}, need: 0x{:x})", 
+             hotkey.alias, keyCode, storedMods, requiredMods);
         return false;
       }
     }
   }
-
-  // All keys in combo are currently pressed within time window with correct modifiers
-  debug("✅ Combo '{}' MATCHED | Active inputs: {}", 
-       hotkey.alias, GetActiveInputsString());
+  
+  info("✅ Combo '{}' MATCHED!", hotkey.alias);
   return true;
 }
 } // namespace havel

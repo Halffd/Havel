@@ -74,7 +74,7 @@ public:
         bool IsMetaPressed() const { return leftMeta || rightMeta; }
     };
     
-    ModifierState GetModifierState() const;
+    const ModifierState& GetModifierState() const;
     
     // Debugging
     std::string GetModifiersString() const;
@@ -128,6 +128,7 @@ public:
     bool IsX11MonitorRunning() const;
     #endif
     
+    int uinputFd = -1;
 private:
     // Device info
     struct DeviceInfo {
@@ -174,7 +175,6 @@ private:
     
     std::vector<DeviceInfo> devices;
     int shutdownFd = -1; // eventfd for clean shutdown
-    int uinputFd = -1;
     int emergencyShutdownKey = 0;
     
     // State tracking (exact from IO.cpp)

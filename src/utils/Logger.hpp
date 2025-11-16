@@ -3,6 +3,10 @@
 #include <mutex>
 #include <memory>
 #include <fstream>
+#include <filesystem>
+#include <chrono>
+#include <unordered_map>
+#include <sstream>
 
 // Use std::format if C++20, otherwise fallback to fmt library
 #ifdef __cpp_lib_format
@@ -21,8 +25,20 @@ public:
 
     static Logger& getInstance();
 
+    // Initialize logger with timestamped file naming and configurations
+    void initialize(bool useTimestampedFiles = true,
+                   int logMaxPeriod = 3,  // 3 days default
+                   bool coloredOutput = true); // Enable colored output by default
+
+    // Initialize with configuration values from Configs system
+    void initializeWithConfig(); // Uses Configs::Get() to read settings
+
+    // This method is defined in the .cpp file to avoid circular dependency
+    // with ConfigManager.hpp. The implementation includes ConfigManager internally.
+
     void setLogFile(const std::string& filename);
     void setLogLevel(Level level);
+    void setColoredOutput(bool enabled); // Set if console output should be colored
 
     void debug(const std::string& message);
     void info(const std::string& message);
@@ -46,7 +62,7 @@ public:
                 log(LOG_DEBUG, fmt::format(format, std::forward<Args>(args)...));
 #endif
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in debug(): " + std::string(e.what()) + 
+                log(LOG_ERROR, "Logger format error in debug(): " + std::string(e.what()) +
                               " | Original format: " + format);
             }
         }
@@ -64,7 +80,7 @@ public:
                 log(LOG_INFO, fmt::format(format, std::forward<Args>(args)...));
 #endif
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in info(): " + std::string(e.what()) + 
+                log(LOG_ERROR, "Logger format error in info(): " + std::string(e.what()) +
                               " | Original format: " + format);
             }
         }
@@ -82,7 +98,7 @@ public:
                 log(LOG_WARNING, fmt::format(format, std::forward<Args>(args)...));
 #endif
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in warning(): " + std::string(e.what()) + 
+                log(LOG_ERROR, "Logger format error in warning(): " + std::string(e.what()) +
                               " | Original format: " + format);
             }
         }
@@ -100,7 +116,7 @@ public:
                 log(LOG_ERROR, fmt::format(format, std::forward<Args>(args)...));
 #endif
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in error(): " + std::string(e.what()) + 
+                log(LOG_ERROR, "Logger format error in error(): " + std::string(e.what()) +
                               " | Original format: " + format);
                 log(LOG_ERROR, format); // Fallback to unformatted message
             }
@@ -119,7 +135,7 @@ public:
                 log(LOG_FATAL, fmt::format(format, std::forward<Args>(args)...));
 #endif
             } catch (const std::exception& e) {
-                log(LOG_ERROR, "Logger format error in fatal(): " + std::string(e.what()) + 
+                log(LOG_ERROR, "Logger format error in fatal(): " + std::string(e.what()) +
                               " | Original format: " + format);
                 log(LOG_FATAL, format); // Fallback to unformatted message
             }
@@ -135,12 +151,30 @@ private:
     void log(Level level, const std::string& message);
     std::string getLevelString(Level level);
     std::string getCurrentTimestamp();
+    std::string getFormattedTimestamp(); // For use in filename
+    std::string getColorCode(Level level) const;
+    std::string resetColorCode() const;
+    std::string getLogDirectory() const;
+    void cleanupOldLogs();
+    void openNewLogFile();
 
     struct Impl;
     std::unique_ptr<Impl> pImpl;
     std::mutex mutex;
     Level currentLevel;
     bool consoleOutput;
+    bool useTimestampedFiles = true;
+    int logMaxPeriod = 3; // Maximum days to keep logs
+    bool coloredOutput = true;
+
+    // Color codes
+    std::unordered_map<Level, std::string> colorCodes = {
+        {LOG_DEBUG, "\033[36m"},    // Cyan
+        {LOG_INFO, "\033[32m"},     // Green
+        {LOG_WARNING, "\033[33m"},  // Yellow
+        {LOG_ERROR, "\033[31m"},    // Red
+        {LOG_FATAL, "\033[35m"}     // Magenta
+    };
 };
 
 // Move macros outside the class

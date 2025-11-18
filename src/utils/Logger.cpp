@@ -48,16 +48,8 @@ void Logger::initialize(bool useTimestampedFiles, int logMaxPeriod, bool colored
     }
 }
 
-void Logger::initializeWithConfig() {
-    // Include ConfigManager here to avoid circular dependency in header
-    #include "core/ConfigManager.hpp"
-    auto& config = havel::Configs::Get();
-
-    bool useTimestamped = config.Get<bool>("Logger.timestamp", true);
-    int maxPeriod = config.Get<int>("Logger.logMaxPeriod", 3);
-    bool colorsEnabled = config.Get<bool>("Logger.colors", true);
-
-    initialize(useTimestamped, maxPeriod, colorsEnabled);
+void Logger::initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool colorsEnabled) {
+    initialize(useTimestamped, logMaxPeriod, colorsEnabled);
 }
 
 void Logger::setLogFile(const std::string& filename) {

@@ -989,6 +989,40 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
   return true;
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    // Apply speed and acceleration (but NO sensitivity scaling)
+    if (speed <= 0) speed = 1;
+    if (accel <= 0.0f) accel = 1.0f;
+
+    // Apply acceleration curve
+    float acceleratedSpeed = speed * std::pow(accel, 1.5f);
+
+    // Calculate final movement
+    int actualDx = static_cast<int>(dx * acceleratedSpeed);
+    int actualDy = static_cast<int>(dy * acceleratedSpeed);
+
+    // Preserve direction for tiny movements
+    if (actualDx == 0 && dx != 0)
+        actualDx = (dx > 0) ? 1 : -1;
+    if (actualDy == 0 && dy != 0)
+        actualDy = (dy > 0) ? 1 : -1;
+
+    debug("Mouse move: {} {}", actualDx, actualDy);
+
+    // Send using EventListener
+    if (actualDx != 0) {
+        eventListener->SendUinputEvent(EV_REL, REL_X, actualDx);
+    }
+    if (actualDy != 0) {
+        eventListener->SendUinputEvent(EV_REL, REL_Y, actualDy);
+    }
+    // Send sync event
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    return true;
+  }
+
+  // Fallback to old method using mouseUinputFd
   if (mouseUinputFd < 0) {
       error("mouseUinputFd is borked: {}", mouseUinputFd);
       return false;
@@ -1028,7 +1062,7 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
       }
   }
 
-  // Send Y movement  
+  // Send Y movement
   if (actualDy != 0) {
       input_event ev = {};
       ev.type = EV_REL;
@@ -4773,29 +4807,30 @@ bool havel::IO::SetupMouseUinputDevice() {
 }
 
 void havel::IO::SendMouseUInput(const input_event &ev) {
-  if (mouseUinputFd < 0) {
-    return;
-  }
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
+  } else if (mouseUinputFd >= 0) {
+    // Use a mutex to serialize all uinput writes (REL/SYN pairs must be atomic).
+    static std::mutex uinputWriteMutex;
+    std::lock_guard<std::mutex> lk(uinputWriteMutex);
 
-  // Use a mutex to serialize all uinput writes (REL/SYN pairs must be atomic).
-  static std::mutex uinputWriteMutex;
-  std::lock_guard<std::mutex> lk(uinputWriteMutex);
+    ssize_t res = write(mouseUinputFd, &ev, sizeof(ev));
+    if (res != (ssize_t)sizeof(ev)) {
+      error("Failed to write uinput event (type={}, code={}, value={}): {}",
+            ev.type, ev.code, ev.value, strerror(errno));
+      return;
+    }
 
-  ssize_t res = write(mouseUinputFd, &ev, sizeof(ev));
-  if (res != (ssize_t)sizeof(ev)) {
-    error("Failed to write uinput event (type={}, code={}, value={}): {}",
-          ev.type, ev.code, ev.value, strerror(errno));
-    return;
-  }
+    struct input_event syn = {};
+    syn.type = EV_SYN;
+    syn.code = SYN_REPORT;
+    syn.value = 0;
 
-  struct input_event syn = {};
-  syn.type = EV_SYN;
-  syn.code = SYN_REPORT;
-  syn.value = 0;
-
-  res = write(mouseUinputFd, &syn, sizeof(syn));
-  if (res != (ssize_t)sizeof(syn)) {
-    error("Failed to write uinput SYN: {}", strerror(errno));
+    res = write(mouseUinputFd, &syn, sizeof(syn));
+    if (res != (ssize_t)sizeof(syn)) {
+      error("Failed to write uinput SYN: {}", strerror(errno));
+    }
   }
 }
 
@@ -4841,12 +4876,16 @@ void IO::MouseClick(int button) {
 }
 
 void IO::MouseDown(int button) {
-  struct input_event ev = {};
-  ev.type = EV_KEY;
-  ev.code = button;
-  ev.value = 1; // Press
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    eventListener->SendUinputEvent(EV_KEY, button, 1); // Press
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
+  } else if (mouseUinputFd >= 0) {
+    struct input_event ev = {};
+    ev.type = EV_KEY;
+    ev.code = button;
+    ev.value = 1; // Press
 
-  if (mouseUinputFd >= 0) {
     write(mouseUinputFd, &ev, sizeof(ev));
 
     // Sync
@@ -4859,12 +4898,16 @@ void IO::MouseDown(int button) {
 }
 
 void IO::MouseUp(int button) {
-  struct input_event ev = {};
-  ev.type = EV_KEY;
-  ev.code = button;
-  ev.value = 0; // Release
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    eventListener->SendUinputEvent(EV_KEY, button, 0); // Release
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
+  } else if (mouseUinputFd >= 0) {
+    struct input_event ev = {};
+    ev.type = EV_KEY;
+    ev.code = button;
+    ev.value = 0; // Release
 
-  if (mouseUinputFd >= 0) {
     write(mouseUinputFd, &ev, sizeof(ev));
 
     // Sync
@@ -4877,12 +4920,17 @@ void IO::MouseUp(int button) {
 }
 
 void IO::MouseWheel(int amount) {
-  struct input_event ev = {};
-  ev.type = EV_REL;
-  ev.code = REL_WHEEL;
-  ev.value = amount > 0 ? 1 : -1;
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    int wheelValue = amount > 0 ? 1 : -1;
+    eventListener->SendUinputEvent(EV_REL, REL_WHEEL, wheelValue);
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
+  } else if (mouseUinputFd >= 0) {
+    struct input_event ev = {};
+    ev.type = EV_REL;
+    ev.code = REL_WHEEL;
+    ev.value = amount > 0 ? 1 : -1;
 
-  if (mouseUinputFd >= 0) {
     write(mouseUinputFd, &ev, sizeof(ev));
 
     // Sync

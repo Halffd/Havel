@@ -30,11 +30,8 @@ public:
                    int logMaxPeriod = 3,  // 3 days default
                    bool coloredOutput = true); // Enable colored output by default
 
-    // Initialize with configuration values from Configs system
-    void initializeWithConfig(); // Uses Configs::Get() to read settings
-
-    // This method is defined in the .cpp file to avoid circular dependency
-    // with ConfigManager.hpp. The implementation includes ConfigManager internally.
+    // Initialize with configuration values
+    void initializeWithConfig(bool useTimestamped, int logMaxPeriod, bool colorsEnabled);
 
     void setLogFile(const std::string& filename);
     void setLogLevel(Level level);

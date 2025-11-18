@@ -879,9 +879,41 @@ void IO::removeSpecialCharacters(str &keyName) {
                 keyName.end());
 }
 bool IO::EmitClick(int btnCode, int action) {
+  // Use EventListener's uinput if available, otherwise use old method
+  if (eventListener && useNewEventListener) {
+    // Send events through EventListener
+    switch(action) {
+        case 0: // Release
+            eventListener->SendUinputEvent(EV_KEY, btnCode, 0);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            return true;
+
+        case 1: // Hold
+            eventListener->SendUinputEvent(EV_KEY, btnCode, 1);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            return true;
+
+        case 2: // Click (FAST)
+            eventListener->SendUinputEvent(EV_KEY, btnCode, 1);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            eventListener->SendUinputEvent(EV_KEY, btnCode, 0);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            return true;
+
+        default:
+            error("Invalid mouse action: {}", action);
+            return false;
+    }
+  }
+
+  // Fallback to old method using mouseUinputFd
+  if (mouseUinputFd < 0) {
+    return false;
+  }
+
   static std::mutex uinputMutex;
   std::lock_guard<std::mutex> lock(uinputMutex);
-  
+
   auto writeEvent = [&](uint16_t type, uint16_t code, int32_t value) -> bool {
       struct timespec ts;
       clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -893,23 +925,23 @@ bool IO::EmitClick(int btnCode, int action) {
       };
       return write(mouseUinputFd, &ev, sizeof(ev)) == sizeof(ev);
   };
-  
+
   auto sync = [&]() -> bool {
       return writeEvent(EV_SYN, SYN_REPORT, 0);
   };
-  
+
   switch(action) {
       case 0: // Release
           return writeEvent(EV_KEY, btnCode, 0) && sync();
-          
-      case 1: // Hold  
+
+      case 1: // Hold
           return writeEvent(EV_KEY, btnCode, 1) && sync();
-          
+
       case 2: // Click (FAST)
           return writeEvent(EV_KEY, btnCode, 1) && sync() &&
                  writeEvent(EV_KEY, btnCode, 0) && sync();
                  // No delay = instant click ⚡
-          
+
       default:
           error("Invalid mouse action: {}", action);
           return false;

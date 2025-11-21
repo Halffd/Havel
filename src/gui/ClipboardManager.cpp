@@ -384,7 +384,7 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     QApplication::setStyle(QStyleFactory::create("Fusion"));
     
     // Set up the application name and organization for settings
-    QCoreApplication::setOrganizationName("Havel");
+    QCoreApplication::setOrganizationName("havel");
     QCoreApplication::setApplicationName("ClipboardManager");
     
     // Initialize file type filters first

@@ -92,9 +92,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char* argv[]) {
 
 int HavelLauncher::runDaemon(const LaunchConfig& cfg, int argc, char* argv[]) {
     QApplication app(argc, argv);
-    app.setApplicationName("Havel");
+    app.setApplicationName("havel");
     app.setApplicationVersion("1.0");
-    app.setOrganizationName("Havel");
+    app.setOrganizationName("havel");
     app.setQuitOnLastWindowClosed(false);
 
     HavelApp havelApp(cfg.isStartup);

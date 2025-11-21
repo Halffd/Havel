@@ -53,7 +53,7 @@ EventListener::EventListener() { shutdownFd = eventfd(0, EFD_NONBLOCK); }
 
 EventListener::~EventListener() {
   Stop();
-  if (shutdownFd >= 0) {
+ qif (shutdownFd >= 0) {
     close(shutdownFd);
   }
   if (uinputFd >= 0) {

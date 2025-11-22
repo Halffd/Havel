@@ -762,6 +762,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@!-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
+    if(io.mouseSensitivity < 0) io.mouseSensitivity = 0;
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
@@ -769,6 +770,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@!=", [this]() {
     io.mouseSensitivity += std::min(
         1.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
+    if(io.mouseSensitivity > 2.0) io.mouseSensitivity = 2.0;
     info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
   });

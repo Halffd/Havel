@@ -53,7 +53,7 @@ EventListener::EventListener() { shutdownFd = eventfd(0, EFD_NONBLOCK); }
 
 EventListener::~EventListener() {
   Stop();
- qif (shutdownFd >= 0) {
+  if (shutdownFd >= 0) {
     close(shutdownFd);
   }
   if (uinputFd >= 0) {
@@ -511,8 +511,8 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         for (int hotkeyId : it->second) {
           comboPressedCount[hotkeyId]++;
           auto hotkeyIt = hotkeys.find(hotkeyId);
-          if (hotkeyIt != hotkeys.end() && 
-              comboPressedCount[hotkeyId] == hotkeyIt->second.comboSequence.size()) {
+          if (hotkeyIt != hotkeys.end() &&
+              comboPressedCount[hotkeyId] == static_cast<int>(hotkeyIt->second.comboSequence.size())) {
             // All keys in combo are pressed, evaluate it
             if (EvaluateCombo(hotkeyIt->second)) {
               ExecuteHotkeyCallback(hotkeyIt->second);
@@ -738,10 +738,11 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       debug("🖱️  Mouse MOVE: axis={}, value={}, scaled={}, sensitivity={}",
            ev.code == REL_X ? "X" : "Y", 
            ev.value, scaledValue, IO::mouseSensitivity);
-      int32_t scaledInt = static_cast<int32_t>(std::round(scaledValue));
+      int32_t scaledInt = static_cast<int32_t>(scaledValue);
+
       if (scaledInt == 0 && ev.value != 0 && IO::mouseSensitivity >= 1.0) {
-              scaledInt = (ev.value > 0) ? 1 : -1;
-          }
+        scaledInt = (ev.value > 0) ? 1 : -1;
+      }
 
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);

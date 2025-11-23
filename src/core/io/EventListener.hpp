@@ -178,14 +178,14 @@ private:
     int emergencyShutdownKey = 0;
     
     // State tracking (exact from IO.cpp)
-    mutable std::mutex stateMutex;
+    mutable std::shared_mutex stateMutex;
     std::map<int, bool> evdevKeyState;
     std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
     std::unordered_map<int, ActiveInput> activeInputs;  // Maps key code to ActiveInput
     ModifierState modifierState;
     
     // Hotkey management (exact from IO.cpp)
-    mutable std::mutex hotkeyMutex;
+    mutable std::shared_mutex hotkeyMutex;
     std::map<int, HotKey> hotkeys;
     
     // Hotkey optimization data structures
@@ -206,7 +206,11 @@ private:
     
     // Mouse button state tracking
     std::map<int, bool> mouseButtonState;
-    
+
+    // Wheel event tracking for wheel combos
+    std::chrono::steady_clock::time_point lastWheelUpTime{std::chrono::steady_clock::time_point::min()};
+    std::chrono::steady_clock::time_point lastWheelDownTime{std::chrono::steady_clock::time_point::min()};
+
     // Device grabbing
     bool grabDevices = false;
     

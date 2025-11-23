@@ -73,6 +73,7 @@ namespace havel {
         OpenBracket,    // [
         CloseBracket,   // ]
         DotDot,         // ..
+        HotkeyKeyword,  // hotkey keyword (for conditional hotkeys)
         EOF_TOKEN
     };
 

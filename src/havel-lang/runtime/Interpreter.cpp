@@ -2617,4 +2617,31 @@ void Interpreter::InitializeHelpBuiltin() {
     }));
 }
 
+void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
+    // Evaluate the condition to determine if the hotkey should be registered
+    auto conditionResult = Evaluate(*node.condition);
+    if (isError(conditionResult)) {
+        lastResult = conditionResult;
+        return;
+    }
+
+    bool conditionMet = ValueToBool(unwrap(conditionResult));
+
+    if (conditionMet) {
+        // If condition is true, register the hotkey binding normally
+        visitHotkeyBinding(*node.binding);
+    } else {
+        // If condition is false, we don't register the hotkey but still need to validate the action
+        if (node.binding->action) {
+            // Evaluate the action once for validation purposes, but don't register a callback
+            auto actionResult = Evaluate(*node.binding->action);
+            if (isError(actionResult)) {
+                lastResult = actionResult;
+                return;
+            }
+        }
+        lastResult = nullptr;
+    }
+}
+
 } // namespace havel

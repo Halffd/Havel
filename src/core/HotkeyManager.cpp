@@ -1469,52 +1469,74 @@ void HotkeyManager::updateAllConditionalHotkeys() {
 
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   if (verboseConditionLogging) {
-    debug("Updating conditional hotkey - Key: '{}', Condition: '{}', "
-          "CurrentlyGrabbed: {}",
-          hotkey.key, hotkey.condition, hotkey.currentlyGrabbed);
+    if (hotkey.usesFunctionCondition) {
+      debug("Updating conditional hotkey - Key: '{}', Function Condition, "
+            "CurrentlyGrabbed: {}",
+            hotkey.key, hotkey.currentlyGrabbed);
+    } else {
+      debug("Updating conditional hotkey - Key: '{}', Condition: '{}', "
+            "CurrentlyGrabbed: {}",
+            hotkey.key, hotkey.condition, hotkey.currentlyGrabbed);
+    }
   }
 
   bool conditionMet;
   auto now = std::chrono::steady_clock::now();
 
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
+  if (hotkey.usesFunctionCondition) {
+    // Use the function-based condition
+    if (hotkey.conditionFunc) {
+      conditionMet = hotkey.conditionFunc();
+    } else {
+      conditionMet = false; // Default to false if no function
+    }
+  } else {
+    // Use the string-based condition (original behavior)
+    {
+      std::lock_guard<std::mutex> lock(hotkeyMutex);
 
-    // Check cache first
-    auto cacheIt = conditionCache.find(hotkey.condition);
-    if (cacheIt != conditionCache.end()) {
-      auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
-                     now - cacheIt->second.timestamp)
-                     .count();
-      if (age < CACHE_DURATION_MS) {
-        conditionMet = cacheIt->second.result;
+      // Check cache first
+      auto cacheIt = conditionCache.find(hotkey.condition);
+      if (cacheIt != conditionCache.end()) {
+        auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now - cacheIt->second.timestamp)
+                       .count();
+        if (age < CACHE_DURATION_MS) {
+          conditionMet = cacheIt->second.result;
 
-        // Only log when condition changes
-        if (conditionMet != hotkey.lastConditionResult &&
-            verboseConditionLogging) {
-          info("Condition from cache: {} for {} ({}) - was:{} now:{}",
-               conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
-               hotkey.lastConditionResult, conditionMet);
+          // Only log when condition changes
+          if (conditionMet != hotkey.lastConditionResult &&
+              verboseConditionLogging) {
+            info("Condition from cache: {} for {} ({}) - was:{} now:{}",
+                 conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
+                 hotkey.lastConditionResult, conditionMet);
+          }
+
+          // Update hotkey state based on cached condition
+          updateHotkeyState(hotkey, conditionMet);
+          return;
         }
-
-        // Update hotkey state based on cached condition
-        updateHotkeyState(hotkey, conditionMet);
-        return;
       }
     }
+
+    // If we get here, either cache miss or cache expired
+    conditionMet = evaluateCondition(hotkey.condition);
+
+    // Update cache with the new result
+    conditionCache[hotkey.condition] = {conditionMet, now};
   }
-
-  // If we get here, either cache miss or cache expired
-  conditionMet = evaluateCondition(hotkey.condition);
-
-  // Update cache with the new result
-  conditionCache[hotkey.condition] = {conditionMet, now};
 
   // Only log when condition changes
   if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
-    info("Condition changed: {} for {} ({}) - was:{} now:{}",
-         conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
-         hotkey.lastConditionResult, conditionMet);
+    if (hotkey.usesFunctionCondition) {
+      info("Function condition changed: {} for {} - was:{} now:{}",
+           conditionMet ? 1 : 0, hotkey.key,
+           hotkey.lastConditionResult, conditionMet);
+    } else {
+      info("Condition changed: {} for {} ({}) - was:{} now:{}",
+           conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
+           hotkey.lastConditionResult, conditionMet);
+    }
   }
 
   // Update hotkey state based on new condition
@@ -1577,9 +1599,11 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.id = id;
   ch.key = key;
   ch.condition = condition;
+  ch.conditionFunc = nullptr; // No function condition for string-based condition
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
   ch.currentlyGrabbed = false;
+  ch.usesFunctionCondition = false;
 
   conditionalHotkeys.push_back(ch);
   conditionalHotkeyIds.push_back(id);
@@ -1588,6 +1612,52 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   io.Hotkey(key, action, id);
 
   // Initial evaluation and grab if needed
+  updateConditionalHotkey(conditionalHotkeys.back());
+
+  return id;
+}
+
+int HotkeyManager::AddContextualHotkey(const std::string &key,
+                                       std::function<bool()> condition,
+                                       std::function<void()> trueAction,
+                                       std::function<void()> falseAction,
+                                       int id) {
+  debug("Registering contextual hotkey - Key: '{}', Lambda Condition, ID: {}",
+        key, id);
+  if (id == 0) {
+    static int nextId = 1000;
+    id = nextId++;
+  }
+
+  auto action = [condition, trueAction, falseAction]() {
+    if (condition()) {
+      if (trueAction)
+        trueAction();
+    } else {
+      if (falseAction)
+        falseAction();
+    }
+  };
+
+  // Store the conditional hotkey for dynamic management
+  ConditionalHotkey ch;
+  ch.id = id;
+  ch.key = key;
+  ch.condition = ""; // No string condition, using function
+  ch.conditionFunc = condition; // Store the condition function
+  ch.trueAction = trueAction;
+  ch.falseAction = falseAction;
+  ch.currentlyGrabbed = false;
+  ch.usesFunctionCondition = true; // Mark as function-based condition
+
+  conditionalHotkeys.push_back(ch);
+  conditionalHotkeyIds.push_back(id);
+
+  // Register but don't grab yet
+  io.Hotkey(key, action, id);
+
+  // For function-based conditions, we need to update them separately
+  // The conditional hotkey update logic will handle grabbing/ungrabbing
   updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;

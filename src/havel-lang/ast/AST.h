@@ -42,6 +42,8 @@ enum class NodeType {
   OnModeStatement,  // on mode gaming { ... }
   OffModeStatement, // off mode gaming { ... }
   WhenModeExpression, // when mode gaming
+  // Conditional hotkeys
+  ConditionalHotkey, // hotkey "Ctrl+A" if mode == foo then ...
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
@@ -300,10 +302,10 @@ struct HotkeyBinding : public Statement {
   std::vector<std::unique_ptr<Expression>> hotkeys;
   std::unique_ptr<Statement> action;
   // Changed from Expression to Statement
-  
+
   // Conditional support
   std::vector<std::string> conditions;  // e.g., ["mode gaming", "title genshin"]
-  
+
   // Direct key mapping support (e.g., Left => A)
   bool isKeyMapping = false;
   std::string mappedKey;  // Target key for mapping
@@ -335,6 +337,25 @@ struct HotkeyBinding : public Statement {
     }
     result += "}";
     return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Conditional Hotkey - Hotkey binding with an expression-based condition
+struct ConditionalHotkey : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<HotkeyBinding> binding;
+
+  ConditionalHotkey(std::unique_ptr<Expression> cond, std::unique_ptr<HotkeyBinding> bind)
+      : condition(std::move(cond)), binding(std::move(bind)) {
+    kind = NodeType::ConditionalHotkey;
+  }
+
+  std::string toString() const override {
+    return "ConditionalHotkey{condition: " +
+           (condition ? condition->toString() : "nullptr") +
+           ", binding: " + (binding ? binding->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1121,6 +1142,7 @@ public:
   virtual void visitContinueStatement(const ContinueStatement& node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement& node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement& node) = 0;
+  virtual void visitConditionalHotkey(const ConditionalHotkey& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -1292,5 +1314,9 @@ inline void UnaryExpression::accept(ASTVisitor &visitor) const {
 
 inline void ImportStatement::accept(ASTVisitor& visitor) const {
   visitor.visitImportStatement(*this);
+}
+
+inline void ConditionalHotkey::accept(ASTVisitor& visitor) const {
+  visitor.visitConditionalHotkey(*this);
 }
 } // namespace havel::ast

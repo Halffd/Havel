@@ -39,11 +39,13 @@ namespace havel {
     struct ConditionalHotkey {
         int id;
         std::string key;
-        std::string condition;
+        std::string condition;  // String condition (for legacy)
+        std::function<bool()> conditionFunc;  // Function condition (for new functionality)
         std::function<void()> trueAction;
         std::function<void()> falseAction;
         bool currentlyGrabbed = false;
         bool lastConditionResult = false;
+        bool usesFunctionCondition = false;  // Flag to indicate which condition type to use
     };
     class MPVController; // Forward declaration
     class HotkeyManager {
@@ -130,6 +132,10 @@ namespace havel {
         bool RemoveHotkey(const std::string &hotkeyStr);
         // Contextual hotkey support
         int AddContextualHotkey(const std::string& key, const std::string& condition,
+            std::function<void()> trueAction,
+            std::function<void()> falseAction = nullptr,
+            int id = 0);
+        int AddContextualHotkey(const std::string& key, std::function<bool()> condition,
             std::function<void()> trueAction,
             std::function<void()> falseAction = nullptr,
             int id = 0);

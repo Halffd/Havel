@@ -172,7 +172,8 @@ public:
     void visitContinueStatement(const ast::ContinueStatement& node) override;
     void visitOnModeStatement(const ast::OnModeStatement& node) override;
     void visitOffModeStatement(const ast::OffModeStatement& node) override;
-    
+    void visitConditionalHotkey(const ast::ConditionalHotkey& node) override;
+
     // Stubs for unused AST nodes
     void visitWhileStatement(const ast::WhileStatement& node) override;
     void visitTypeDeclaration(const ast::TypeDeclaration& node) override;

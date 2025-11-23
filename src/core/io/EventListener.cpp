@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <sstream>
 #include <cmath>
+#include <shared_mutex>
 #include "utils/Logger.hpp"
 #include <fmt/format.h>
 
@@ -246,11 +247,11 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
 }
 
 void EventListener::RegisterHotkey(int id, const HotKey& hotkey) {
-  std::lock_guard<std::mutex> lock(hotkeyMutex);
-  
+  std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
+
   // Store the hotkey
   hotkeys[id] = hotkey;
-  
+
   // If it's a combo hotkey, build the key index
   if (hotkey.type == HotkeyType::Combo) {
     for (const auto& part : hotkey.comboSequence) {
@@ -263,24 +264,24 @@ void EventListener::RegisterHotkey(int id, const HotKey& hotkey) {
         // Skip wheel parts for now
         continue;
       }
-      
+
       if (keyCode != 0) {
         combosByKey[keyCode].push_back(id);
       }
     }
-    
+
     // Initialize pressed count for this combo
     comboPressedCount[id] = 0;
   }
 }
 
 void EventListener::UnregisterHotkey(int id) {
-  std::lock_guard<std::mutex> lock(hotkeyMutex);
-  
+  std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
+
   // Remove from hotkeys map
   auto it = hotkeys.find(id);
   if (it == hotkeys.end()) return;
-  
+
   // If it's a combo, clean up the key index
   if (it->second.type == HotkeyType::Combo) {
     // Remove from combosByKey
@@ -288,30 +289,30 @@ void EventListener::UnregisterHotkey(int id) {
       auto idIt = std::find(ids.begin(), ids.end(), id);
       if (idIt != ids.end()) {
         ids.erase(idIt);
-        
+
         // If no more combos use this key, remove the entry
         if (ids.empty()) {
           combosByKey.erase(keyCode);
         }
       }
     }
-    
+
     // Remove from comboPressedCount
     comboPressedCount.erase(id);
   }
-  
+
   // Remove the hotkey
   hotkeys.erase(it);
 }
 
 bool EventListener::GetKeyState(int evdevCode) const {
-  std::lock_guard<std::mutex> lock(stateMutex);
+  std::shared_lock<std::shared_mutex> lock(stateMutex);
   auto it = evdevKeyState.find(evdevCode);
   return it != evdevKeyState.end() && it->second;
 }
 
 const EventListener::ModifierState& EventListener::GetModifierState() const {
-  std::lock_guard<std::mutex> lock(stateMutex);
+  std::shared_lock<std::shared_mutex> lock(stateMutex);
   return modifierState;
 }
 
@@ -443,8 +444,19 @@ void EventListener::EventLoop() {
   }
 
   info("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
+
+  auto shutdownStart = std::chrono::steady_clock::now();
+  const auto maxShutdownTime = std::chrono::seconds(5);
+
   while (pendingCallbacks.load() > 0) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - shutdownStart);
+
+    if (elapsed > maxShutdownTime) {
+        error("Shutdown timeout: {} callbacks still pending", pendingCallbacks.load());
+        break;  // Force quit
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
   info("EventListener: Stopped");
@@ -571,13 +583,23 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
 }
 bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection) {
     auto now = std::chrono::steady_clock::now();
-    
+
     debug("🔍 Evaluating wheel combo '{}'", hotkey.alias);
-    
+
+    // Check if the wheel event occurred recently enough
+    auto wheelTime = (wheelDirection > 0) ? lastWheelUpTime : lastWheelDownTime;
+    auto wheelAge = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - wheelTime).count();
+
+    if (wheelAge > comboTimeWindow) {
+        debug("❌ Wheel combo '{}' failed: wheel event too old ({}ms)", hotkey.alias, wheelAge);
+        return false;
+    }
+
     for (const auto& comboKey : hotkey.comboSequence) {
         if (comboKey.type == HotkeyType::MouseWheel) {
             // Check wheel direction matches
-            if (comboKey.wheelDirection != 0 && 
+            if (comboKey.wheelDirection != 0 &&
                 comboKey.wheelDirection != wheelDirection) {
                 debug("❌ Wheel combo '{}' failed: wrong direction", hotkey.alias);
                 return false;
@@ -585,7 +607,7 @@ bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection)
             // Wheel part matched, continue
             continue;
         }
-        
+
         // For keyboard/mouse button parts, check if pressed
         int keyCode;
         if (comboKey.type == HotkeyType::MouseButton) {
@@ -595,35 +617,35 @@ bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection)
         } else {
             return false;
         }
-        
+
         // Check if key is currently pressed
         auto it = activeInputs.find(keyCode);
         if (it == activeInputs.end()) {
-            debug("❌ Wheel combo '{}' failed: key {} not pressed", 
+            debug("❌ Wheel combo '{}' failed: key {} not pressed",
                  hotkey.alias, keyCode);
             return false;
         }
-        
+
         // Check time window
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             now - it->second.timestamp).count();
 
         if (elapsed > comboTimeWindow) {
-            debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)", 
+            debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)",
                  hotkey.alias, keyCode, elapsed);
             return false;
         }
-        
+
         // Check modifiers
         if (comboKey.modifiers != 0) {
             if (!CheckModifierMatch(comboKey.modifiers, comboKey.wildcard)) {
-                debug("❌ Wheel combo '{}' failed: modifiers don't match", 
+                debug("❌ Wheel combo '{}' failed: modifiers don't match",
                      hotkey.alias);
                 return false;
             }
         }
     }
-    
+
     debug("✅ Wheel combo '{}' MATCHED", hotkey.alias);
     return true;
 }
@@ -657,16 +679,16 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       if (down) {
         int currentMods = GetCurrentModifiersMask();
         activeInputs[ev.code] = ActiveInput(currentMods, now);
-        debug("🖱️  Mouse BUTTON DOWN: code={} | Active buttons: {}", 
+        debug("🖱️  Mouse BUTTON DOWN: code={} | Active buttons: {}",
              ev.code, GetActiveInputsString());
       } else {
         activeInputs.erase(ev.code);
-        debug("🖱️  Mouse BUTTON UP: code={} | Active buttons: {}", 
+        debug("🖱️  Mouse BUTTON UP: code={} | Active buttons: {}",
              ev.code, GetActiveInputsString());
       }
-    }
+    }  // stateMutex unlocked here
 
-    // Evaluate hotkeys
+    // Evaluate hotkeys - lock both mutexes
     std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
     std::lock_guard<std::mutex> stateLock(stateMutex);
 
@@ -740,10 +762,6 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
            ev.value, scaledValue, IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(scaledValue);
 
-      if (scaledInt == 0 && ev.value != 0 && IO::mouseSensitivity >= 1.0) {
-        scaledInt = (ev.value > 0) ? 1 : -1;
-      }
-
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
@@ -757,55 +775,66 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
            wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT",
            IO::scrollSpeed);
 
-      std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
-      std::lock_guard<std::mutex> stateLock(stateMutex);
+      // Update the wheel time tracking for combo evaluation and evaluate hotkeys
+      {
+          std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
+          std::lock_guard<std::mutex> stateLock(stateMutex);
 
-      for (auto &[id, hotkey] : hotkeys) {
-        if (!hotkey.enabled)
-            continue;
-        if (hotkey.type == HotkeyType::Combo) {
-            // Check if this combo involves a wheel
-            bool hasWheel = std::any_of(hotkey.comboSequence.begin(),
-                                       hotkey.comboSequence.end(),
-                                       [](const HotKey& k) { 
-                                           return k.type == HotkeyType::MouseWheel; 
-                                       });
-            
-            if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
-                info("Wheel combo: '{}'", hotkey.alias);
-                ExecuteHotkeyCallback(hotkey);
-                if (hotkey.grab) shouldBlock = true;
+          // Update the wheel time tracking for combo evaluation
+          auto now = std::chrono::steady_clock::now();
+          if (wheelDirection > 0) {
+              lastWheelUpTime = now;
+          } else {
+              lastWheelDownTime = now;
+          }
+
+          for (auto &[id, hotkey] : hotkeys) {
+            if (!hotkey.enabled)
+                continue;
+            if (hotkey.type == HotkeyType::Combo) {
+                // Check if this combo involves a wheel
+                bool hasWheel = std::any_of(hotkey.comboSequence.begin(),
+                                           hotkey.comboSequence.end(),
+                                           [](const HotKey& k) {
+                                               return k.type == HotkeyType::MouseWheel;
+                                           });
+
+                if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
+                    info("Wheel combo: '{}'", hotkey.alias);
+                    ExecuteHotkeyCallback(hotkey);
+                    if (hotkey.grab) shouldBlock = true;
+                }
+                continue;
             }
-            continue;
-        }
-        if(hotkey.type != HotkeyType::MouseWheel)
-          continue;
+            if(hotkey.type != HotkeyType::MouseWheel)
+              continue;
 
-        // Match wheel direction (0 = wildcard, matches any)
-        if (hotkey.wheelDirection != 0 &&
-            hotkey.wheelDirection != wheelDirection)
-          continue;
+            // Match wheel direction (0 = wildcard, matches any)
+            if (hotkey.wheelDirection != 0 &&
+                hotkey.wheelDirection != wheelDirection)
+              continue;
 
-        // Modifier matching
-        if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard))
-          continue;
+            // Modifier matching
+            if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard))
+              continue;
 
-        // Context checks (any must pass - OR logic)
-        if (!hotkey.contexts.empty()) {
-          bool contextMatch =
-              std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                          [](auto &ctx) { return ctx(); });
-          if (!contextMatch)
-            continue;
-        }
+            // Context checks (any must pass - OR logic)
+            if (!hotkey.contexts.empty()) {
+              bool contextMatch =
+                  std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
+                              [](auto &ctx) { return ctx(); });
+              if (!contextMatch)
+                continue;
+            }
 
-        // Hotkey matched!
-        info("Wheel hotkey: '{}' dir={}", hotkey.alias, wheelDirection);
-        ExecuteHotkeyCallback(hotkey);
+            // Hotkey matched!
+            info("Wheel hotkey: '{}' dir={}", hotkey.alias, wheelDirection);
+            ExecuteHotkeyCallback(hotkey);
 
-        if (hotkey.grab)
-          shouldBlock = true;
-      }
+            if (hotkey.grab)
+              shouldBlock = true;
+          }
+      }  // Both locks released here
 
       // Apply scroll speed and forward if not blocked
       if (!shouldBlock && !blockInput.load()) {
@@ -816,7 +845,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           scaledInt = (ev.value > 0) ? 1 : -1;
         }
 
-        debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}", 
+        debug("Forwarding wheel: raw={} scaled={} blocked={} scrollSpeed={}",
               ev.value, scaledInt, shouldBlock, IO::scrollSpeed);
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       } else {
@@ -885,8 +914,8 @@ bool EventListener::CheckModifierMatch(int requiredModifiers,
 }
 
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
-  std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
-  std::lock_guard<std::mutex> stateLock(stateMutex);
+  std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
+  std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
   bool shouldBlock = false;
 
@@ -940,12 +969,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
          evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
          evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
 
-    bool modifierMatch;
-    if (isModifierKey && hotkey.modifiers == 0) {
-      modifierMatch = true;
-    } else {
-      modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-    }
+    bool modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
 
     if (!modifierMatch) {
       continue;

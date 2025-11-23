@@ -1,0 +1,53 @@
+hotkeys {
+  // Restart-and-exit hotkey
+  "#!Esc" {
+    when app.focused && !overlay.active
+    action {
+      let pid = app.pid()
+      let exec = app.execPath(pid)
+
+      spawn detached {
+        timeout 600 sh {
+          while true {
+            if process.ppid(pid) != 1 {
+              exec run
+              break
+            }
+            sleep 1
+          }
+        }
+      }
+
+      app.quit()
+    }
+  }
+
+  // Example hotkey pattern for all your others:
+  "Ctrl+Shift+R" {
+    when app.focused
+    action {
+      reload.config()
+    }
+  }
+
+  "Alt+Space" {
+    when !window.fullscreen
+    action {
+      toggle.launcher()
+    }
+  }
+
+  "Super+F12" {
+    when true     // always enabled
+    action {
+      notify("hello world")
+    }
+  }
+
+  "Ctrl+Alt+M" {
+    when mode == "edit"
+    action {
+      tools.openMenu()
+    }
+  }
+}

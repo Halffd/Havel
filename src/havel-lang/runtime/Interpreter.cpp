@@ -2618,29 +2618,71 @@ void Interpreter::InitializeHelpBuiltin() {
 }
 
 void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
-    // Evaluate the condition to determine if the hotkey should be registered
-    auto conditionResult = Evaluate(*node.condition);
-    if (isError(conditionResult)) {
-        lastResult = conditionResult;
+    // Extract the hotkey string for use with HotkeyManager
+    std::string hotkeyStr;
+    if (!node.binding->hotkeys.empty()) {
+        if (auto* hotkeyLit = dynamic_cast<const ast::HotkeyLiteral*>(node.binding->hotkeys[0].get())) {
+            hotkeyStr = hotkeyLit->combination;
+        }
+    }
+
+    if (hotkeyStr.empty()) {
+        lastResult = HavelRuntimeError("Invalid hotkey in conditional hotkey binding");
         return;
     }
 
-    bool conditionMet = ValueToBool(unwrap(conditionResult));
-
-    if (conditionMet) {
-        // If condition is true, register the hotkey binding normally
-        visitHotkeyBinding(*node.binding);
-    } else {
-        // If condition is false, we don't register the hotkey but still need to validate the action
-        if (node.binding->action) {
-            // Evaluate the action once for validation purposes, but don't register a callback
-            auto actionResult = Evaluate(*node.binding->action);
-            if (isError(actionResult)) {
-                lastResult = actionResult;
-                return;
+    if (hotkeyManager) {
+        // Create a lambda that captures the condition expression and re-evaluates it
+        auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
+            auto result = Evaluate(*condExpr);
+            if (isError(result)) {
+                // Log error but return false to prevent the hotkey from triggering
+                // std::cerr << "Conditional hotkey condition evaluation failed: "
+                //           << std::get<HavelRuntimeError>(result).what() << std::endl;
+                return false;
             }
-        }
+            return ValueToBool(unwrap(result));
+        };
+
+        // Create the action callback
+        auto actionFunc = [this, action = node.binding->action.get()]() {
+            if (action) {
+                auto result = Evaluate(*action);
+                if (isError(result)) {
+                    std::cerr << "Conditional hotkey action evaluation failed: "
+                              << std::get<HavelRuntimeError>(result).what() << std::endl;
+                }
+            }
+        };
+
+        // Register as a contextual hotkey with the HotkeyManager using function-based condition
+        hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc, actionFunc);
         lastResult = nullptr;
+    } else {
+        // Fallback: static evaluation if HotkeyManager is not available
+        auto conditionResult = Evaluate(*node.condition);
+        if (isError(conditionResult)) {
+            lastResult = conditionResult;
+            return;
+        }
+
+        bool conditionMet = ValueToBool(unwrap(conditionResult));
+
+        if (conditionMet) {
+            // If condition is true, register the hotkey binding normally
+            visitHotkeyBinding(*node.binding);
+        } else {
+            // If condition is false, we don't register the hotkey but still need to validate the action
+            if (node.binding->action) {
+                // Evaluate the action once for validation purposes, but don't register a callback
+                auto actionResult = Evaluate(*node.binding->action);
+                if (isError(actionResult)) {
+                    lastResult = actionResult;
+                    return;
+                }
+            }
+            lastResult = nullptr;
+        }
     }
 }
 

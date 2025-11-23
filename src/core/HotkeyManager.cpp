@@ -1412,6 +1412,22 @@ void HotkeyManager::ReloadConfigurations() {
   loadVideoSites();
 }
 
+void HotkeyManager::InvalidateConditionalHotkeys() {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    
+    if (verboseConditionLogging) {
+        debug("Invalidating all conditional hotkeys");
+    }
+    
+    // Clear the condition cache to force re-evaluation
+    conditionCache.clear();
+    
+    // Update all conditional hotkeys
+    for (auto& hotkey : conditionalHotkeys) {
+        updateConditionalHotkey(hotkey);
+    }
+}
+
 void HotkeyManager::updateAllConditionalHotkeys() {
   auto now = std::chrono::steady_clock::now();
 
@@ -1563,7 +1579,7 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.condition = condition;
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
-  ch.currentlyGrabbed = true;
+  ch.currentlyGrabbed = false;
 
   conditionalHotkeys.push_back(ch);
   conditionalHotkeyIds.push_back(id);
@@ -2398,51 +2414,23 @@ void HotkeyManager::showBlackOverlay() {
 
   // Set window properties for overlay
   blackOverlay->setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
-                               Qt::WindowStaysOnTopHint |
-                               Qt::X11BypassWindowManagerHint);
+                             Qt::WindowStaysOnTopHint |
+                             Qt::X11BypassWindowManagerHint);
 
   // Make the window transparent for input
   blackOverlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
-  // Set black background
-  QPalette pal = blackOverlay->palette();
-  pal.setColor(QPalette::Window, Qt::black);
-  blackOverlay->setPalette(pal);
-  blackOverlay->setAutoFillBackground(true);
-
-  // Get all available screens
-  QList<QScreen *> screens = QGuiApplication::screens();
-  if (screens.isEmpty()) {
-    error("No screens found");
-    delete blackOverlay;
-    blackOverlay = nullptr;
-    return;
+  // Calculate the combined geometry of all screens
+  QRect combinedGeometry;
+  for (QScreen *screen : QGuiApplication::screens()) {
+    combinedGeometry = combinedGeometry.united(screen->geometry());
   }
 
-  // Create a container widget to hold all screen overlays
-  QWidget *container = new QWidget();
-  QHBoxLayout *layout = new QHBoxLayout(container);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(0);
-
-  // Create a semi-transparent black overlay for each screen
-  for (QScreen *screen : screens) {
-    QRect screenGeometry = screen->geometry();
-
-    QWidget *screenOverlay = new QWidget(container);
-    screenOverlay->setGeometry(screenGeometry);
-    screenOverlay->setStyleSheet("background-color: black;");
-    screenOverlay->setWindowFlags(Qt::FramelessWindowHint |
-                                  Qt::WindowStaysOnTopHint);
-    screenOverlay->setAttribute(Qt::WA_TransparentForMouseEvents);
-    screenOverlay->showFullScreen();
-
-    // Add to layout (though they'll be positioned absolutely)
-    layout->addWidget(screenOverlay);
-  }
-
-  // Set the container as central widget
-  blackOverlay->setCentralWidget(container);
+  // Set the window geometry to cover all screens
+  blackOverlay->setGeometry(combinedGeometry);
+  
+  // Set black background with some transparency (adjust alpha as needed)
+  blackOverlay->setStyleSheet("background-color: rgba(0, 0, 0, 200);");
 
   // Show the overlay
   blackOverlay->showFullScreen();

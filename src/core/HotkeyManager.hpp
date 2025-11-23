@@ -14,6 +14,7 @@
 #include <regex>
 #include <vector>
 #include <ctime>
+#include <atomic>
 #include "qt.hpp"
 #include "media/AudioManager.hpp"
 #include "io/MouseController.hpp"
@@ -24,7 +25,8 @@
 #include "utils/Timer.hpp"
 #include <memory>
 #include "core/io/KeyTap.hpp"
-#include "gui/ScreenshotManager.hpp"   
+#include "gui/ScreenshotManager.hpp"
+#include <mutex>
 
 namespace havel {
     struct HotkeyDefinition {
@@ -139,7 +141,7 @@ namespace havel {
         std::thread monitorThread;
         // Condition evaluation state
         std::chrono::steady_clock::time_point lastConditionCheck = std::chrono::steady_clock::now();
-        static constexpr int CONDITION_CHECK_INTERVAL_MS = 100; // Check every 100ms instead of constantly
+        static constexpr int CONDITION_CHECK_INTERVAL_MS = 16; // Check every ~60fps for more responsive behavior
         std::unique_ptr<KeyTap> lwin;
         // Cached condition results
         struct CachedCondition {
@@ -344,22 +346,23 @@ namespace havel {
 
         void updateLastVideoCheck();
 
-        // Store IDs of MPV hotkeys for grab/ungrab
-        std::vector<int> conditionalHotkeyIds;
-        std::vector<int> gamingHotkeyIds;
-        std::vector<ConditionalHotkey> conditionalHotkeys;
-        std::mutex hotkeyMutex;  // Protects conditionalHotkeys and conditionCache
-        void updateConditionalHotkey(ConditionalHotkey& hotkey);
-        void updateHotkeyState(ConditionalHotkey& hotkey, bool conditionMet);
-        // Window focus tracking
-        bool trackWindowFocus;
-        wID lastActiveWindowId;
+// Store IDs of MPV hotkeys for grab/ungrab
+std::vector<int> conditionalHotkeyIds;
+std::vector<int> gamingHotkeyIds;
+std::vector<ConditionalHotkey> conditionalHotkeys;
+std::mutex hotkeyMutex;  // Protects conditionalHotkeys and conditionCache
+void InvalidateConditionalHotkeys();
+void updateConditionalHotkey(ConditionalHotkey &hotkey);
+void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
+// Window focus tracking
+bool trackWindowFocus;
+wID lastActiveWindowId;
 
-        // Update loop members
-        std::thread updateLoopThread;
-        std::atomic<bool> updateLoopRunning{false};
-        std::condition_variable updateLoopCv;
-        std::mutex updateLoopMutex;
-        void UpdateLoop();
-    };
+// Update loop members
+std::thread updateLoopThread;
+std::atomic<bool> updateLoopRunning{false};
+std::condition_variable updateLoopCv;
+std::mutex updateLoopMutex;
+void UpdateLoop();
+};
 }

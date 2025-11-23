@@ -33,8 +33,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"window", TokenType::Identifier},    // Built-in module
     {"import", TokenType::Import},
     {"from", TokenType::From},
-    {"as", TokenType::As},
-    {"hotkey", TokenType::HotkeyKeyword}
+    {"as", TokenType::As}
 };
 
 const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {

@@ -44,6 +44,7 @@ enum class NodeType {
   WhenModeExpression, // when mode gaming
   // Conditional hotkeys
   ConditionalHotkey, // hotkey "Ctrl+A" if mode == foo then ...
+  WhenBlockStatement, // when condition { ... }
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
@@ -356,6 +357,25 @@ struct ConditionalHotkey : public Statement {
     return "ConditionalHotkey{condition: " +
            (condition ? condition->toString() : "nullptr") +
            ", binding: " + (binding ? binding->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// When Block - Group of hotkeys under a common condition
+struct WhenBlock : public Statement {
+  std::unique_ptr<Expression> condition;
+  std::vector<std::unique_ptr<Statement>> statements;
+
+  WhenBlock(std::unique_ptr<Expression> cond, std::vector<std::unique_ptr<Statement>> stmts)
+      : condition(std::move(cond)), statements(std::move(stmts)) {
+    kind = NodeType::WhenBlockStatement;
+  }
+
+  std::string toString() const override {
+    return "WhenBlock{condition: " +
+           (condition ? condition->toString() : "nullptr") +
+           ", statements: [" + std::to_string(statements.size()) + "]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1143,6 +1163,7 @@ public:
   virtual void visitOnModeStatement(const OnModeStatement& node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement& node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey& node) = 0;
+  virtual void visitWhenBlock(const WhenBlock& node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -1318,5 +1339,9 @@ inline void ImportStatement::accept(ASTVisitor& visitor) const {
 
 inline void ConditionalHotkey::accept(ASTVisitor& visitor) const {
   visitor.visitConditionalHotkey(*this);
+}
+
+inline void WhenBlock::accept(ASTVisitor& visitor) const {
+  visitor.visitWhenBlock(*this);
 }
 } // namespace havel::ast

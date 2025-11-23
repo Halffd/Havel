@@ -507,17 +507,25 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     if (modifierState.IsAltPressed()) currentModifiers |= Modifier::Alt;
     if (modifierState.IsMetaPressed()) currentModifiers |= Modifier::Meta;
 
-    // Track active inputs for combos (Optimization 2: Store modifier state with key)
+    // Track active inputs for combos - store BOTH original and mapped codes for remapping support
     if (down) {
+      // Store mapped code (what the system sees)
       activeInputs[mappedCode] = ActiveInput(currentModifiers);
-      debug("🔑 Key PRESS: code={} (mapped to {}) | Modifiers: {}{}{}{}", 
+
+      // Store original code too (what combo might be registered as)
+      if (mappedCode != originalCode) {
+          activeInputs[originalCode] = ActiveInput(currentModifiers);
+      }
+
+      debug("🔑 Key PRESS: original={} mapped={} | Modifiers: {}{}{}{}",
            originalCode, mappedCode,
            modifierState.IsCtrlPressed() ? "Ctrl+" : "",
            modifierState.IsShiftPressed() ? "Shift+" : "",
            modifierState.IsAltPressed() ? "Alt+" : "",
            modifierState.IsMetaPressed() ? "Meta+" : "");
-      
-      // Optimization 3: Lazy Combo Evaluation - Increment pressed count for combos containing this key
+
+      // Optimization 3: Lazy Combo Evaluation - Increment pressed count for combos containing either code
+      // Check for combos using the mapped code
       auto it = combosByKey.find(mappedCode);
       if (it != combosByKey.end()) {
         for (int hotkeyId : it->second) {
@@ -532,16 +540,49 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
           }
         }
       }
+
+      // Check for combos using the original code (for remapping compatibility)
+      if (mappedCode != originalCode) {
+          auto origIt = combosByKey.find(originalCode);
+          if (origIt != combosByKey.end()) {
+            for (int hotkeyId : origIt->second) {
+              comboPressedCount[hotkeyId]++;
+              auto hotkeyIt = hotkeys.find(hotkeyId);
+              if (hotkeyIt != hotkeys.end() &&
+                  comboPressedCount[hotkeyId] == static_cast<int>(hotkeyIt->second.comboSequence.size())) {
+                // All keys in combo are pressed, evaluate it
+                if (EvaluateCombo(hotkeyIt->second)) {
+                  ExecuteHotkeyCallback(hotkeyIt->second);
+                }
+              }
+            }
+          }
+      }
     } else {
+      // On key release, remove both original and mapped codes
       activeInputs.erase(mappedCode);
-      debug("🔑 Key RELEASE: code={} (mapped to {})", originalCode, mappedCode);
-      
-      // Decrement pressed count for combos containing this key
+      if (mappedCode != originalCode) {
+          activeInputs.erase(originalCode);
+      }
+
+      debug("🔑 Key RELEASE: original={} mapped={}", originalCode, mappedCode);
+
+      // Decrement pressed count for combos containing either code
       auto it = combosByKey.find(mappedCode);
       if (it != combosByKey.end()) {
         for (int hotkeyId : it->second) {
           comboPressedCount[hotkeyId] = std::max(0, comboPressedCount[hotkeyId] - 1);
         }
+      }
+
+      // Also decrement for original code if different
+      if (mappedCode != originalCode) {
+          auto origIt = combosByKey.find(originalCode);
+          if (origIt != combosByKey.end()) {
+            for (int hotkeyId : origIt->second) {
+              comboPressedCount[hotkeyId] = std::max(0, comboPressedCount[hotkeyId] - 1);
+            }
+          }
       }
     }
 
@@ -586,14 +627,16 @@ bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection)
 
     debug("🔍 Evaluating wheel combo '{}'", hotkey.alias);
 
-    // Check if the wheel event occurred recently enough
-    auto wheelTime = (wheelDirection > 0) ? lastWheelUpTime : lastWheelDownTime;
-    auto wheelAge = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - wheelTime).count();
+    // Check if the wheel event occurred recently enough (unless time window is 0 for infinite)
+    if (comboTimeWindow > 0) {
+        auto wheelTime = (wheelDirection > 0) ? lastWheelUpTime : lastWheelDownTime;
+        auto wheelAge = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - wheelTime).count();
 
-    if (wheelAge > comboTimeWindow) {
-        debug("❌ Wheel combo '{}' failed: wheel event too old ({}ms)", hotkey.alias, wheelAge);
-        return false;
+        if (wheelAge > comboTimeWindow) {
+            debug("❌ Wheel combo '{}' failed: wheel event too old ({}ms)", hotkey.alias, wheelAge);
+            return false;
+        }
     }
 
     for (const auto& comboKey : hotkey.comboSequence) {
@@ -626,14 +669,16 @@ bool EventListener::EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection)
             return false;
         }
 
-        // Check time window
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now - it->second.timestamp).count();
+        // Check time window (unless time window is 0 for infinite)
+        if (comboTimeWindow > 0) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - it->second.timestamp).count();
 
-        if (elapsed > comboTimeWindow) {
-            debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)",
-                 hotkey.alias, keyCode, elapsed);
-            return false;
+            if (elapsed > comboTimeWindow) {
+                debug("⏱️  Wheel combo '{}' failed: key {} too old ({}ms)",
+                     hotkey.alias, keyCode, elapsed);
+                return false;
+            }
         }
 
         // Check modifiers
@@ -1058,24 +1103,26 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
       return false;
     }
     
-    // Time window
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now - it->second.timestamp).count();
-    
-    if (elapsed > comboTimeWindow) {
-      info("⏱️  Combo '{}' failed: key {} too old ({}ms > {}ms)", 
-           hotkey.alias, keyCode, elapsed, comboTimeWindow);
-      return false;
+    // Time window (unless time window is 0 for infinite)
+    if (comboTimeWindow > 0) {
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - it->second.timestamp).count();
+
+        if (elapsed > comboTimeWindow) {
+          info("⏱️  Combo '{}' failed: key {} too old ({}ms > {}ms)",
+               hotkey.alias, keyCode, elapsed, comboTimeWindow);
+          return false;
+        }
     }
     
-    // Modifiers
+    // Modifiers - check current state, not state when key was pressed
     if (comboKey.modifiers != 0) {
-      int storedMods = it->second.modifiers;
       int requiredMods = comboKey.modifiers;
-      
-      if ((storedMods & requiredMods) != requiredMods) {
-        info("❌ Combo '{}' failed: key {} modifiers mismatch (have: 0x{:x}, need: 0x{:x})", 
-             hotkey.alias, keyCode, storedMods, requiredMods);
+      int currentMods = GetCurrentModifiersMask();
+
+      if ((currentMods & requiredMods) != requiredMods) {
+        info("❌ Combo '{}' failed: key {} modifiers mismatch (have: 0x{:x}, need: 0x{:x})",
+             hotkey.alias, keyCode, currentMods, requiredMods);
         return false;
       }
     }

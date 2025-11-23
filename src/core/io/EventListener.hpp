@@ -197,8 +197,8 @@ private:
     std::map<int, int> keyRemaps;
     std::map<int, int> activeRemaps;
     
-    // Combo tracking
-    int comboTimeWindow = 500; // milliseconds
+    // Combo tracking - 0 means infinite time window (hold-based combos)
+    int comboTimeWindow = 0; // milliseconds (0 = infinite)
     
     // Mouse and scroll sensitivity
     double mouseSensitivity = 1.0;

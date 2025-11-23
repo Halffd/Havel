@@ -42,11 +42,13 @@ private:
     std::unique_ptr<ast::Statement> parseFunctionDeclaration();
     std::unique_ptr<ast::Statement> parseReturnStatement();
     std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
+    std::unique_ptr<ast::Statement> parseHotkeyWithConditional();
     std::unique_ptr<ast::BlockStatement> parseBlockStatement();
     std::unique_ptr<ast::Statement> parseImportStatement();
     std::unique_ptr<ast::Statement> parseConfigBlock();
     std::unique_ptr<ast::Statement> parseDevicesBlock();
     std::unique_ptr<ast::Statement> parseModesBlock();
+    std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>> parseKeyValueBlock();
     ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
     std::unique_ptr<ast::Expression> parseLogicalOr();
     std::unique_ptr<ast::Expression> parseLogicalAnd();
@@ -62,7 +64,13 @@ private:
     std::unique_ptr<ast::Expression> parseArrayLiteral();
     std::unique_ptr<ast::Expression> parseObjectLiteral();
     std::unique_ptr<ast::Expression> parseLambdaFromParams(std::vector<std::unique_ptr<ast::Identifier>> params);
+    std::unique_ptr<ast::Expression> parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
     TokenType getBinaryOperatorToken(ast::BinaryOperator op);
+
+    // Error recovery methods
+    bool synchronize();
+    bool atStatementStart();
+    bool isAtEndOfBlock();
 public:
     explicit Parser() = default;
 

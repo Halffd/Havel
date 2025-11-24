@@ -758,7 +758,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
   });
-  io.Map("CapsLock", "LAlt");
+  io.Remap("CapsLock", "Esc");
   io.Hotkey("@!-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
@@ -837,10 +837,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     int centerX = monitor.x + (monitor.width - rect.w) / 2;
     int centerY = monitor.y + (monitor.height - rect.h) / 2;
     WindowManager::MoveResize(win.ID(), centerX, centerY, rect.w, rect.h);
-  });
-  AddHotkey("@numpadenter", [this]() {
-    info("NPEnter Click");
-    io.Click(MouseButton::Left, MouseAction::Hold);
   });
   AddHotkey("@!3", []() {
     auto clipboardText = ClipboardManager::clipboard->text();
@@ -971,6 +967,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                      std::to_string(static_cast<int>(vol * 100)) + "%");
     info("Volume for {}: {:.0f}%", app, vol * 100);
   });
+  AddContextualHotkey("Enter", "window.class ~ 'chatterino'", []() {
+    info("Enter pressed in chatterino");
+  });
+
   AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this]() {
     auto winId = WindowManager::GetActiveWindow();
 
@@ -1602,15 +1602,15 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.conditionFunc = nullptr; // No function condition for string-based condition
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
-  ch.currentlyGrabbed = false;
+  ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = false;
 
   conditionalHotkeys.push_back(ch);
   conditionalHotkeyIds.push_back(id);
 
   // Register but don't grab yet
-  io.Hotkey(key, action, id);
-
+  io.Hotkey(key, action, condition, id);
+  
   // Initial evaluation and grab if needed
   updateConditionalHotkey(conditionalHotkeys.back());
 
@@ -1647,14 +1647,14 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.conditionFunc = condition; // Store the condition function
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
-  ch.currentlyGrabbed = false;
+  ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = true; // Mark as function-based condition
 
   conditionalHotkeys.push_back(ch);
   conditionalHotkeyIds.push_back(id);
 
   // Register but don't grab yet
-  io.Hotkey(key, action, id);
+  io.Hotkey(key, action, "<function>", id);
 
   // For function-based conditions, we need to update them separately
   // The conditional hotkey update logic will handle grabbing/ungrabbing
@@ -2736,6 +2736,34 @@ void HotkeyManager::loadDebugSettings() {
   info("Debug settings: KeyLogging=" + std::to_string(verboseKeyLogging) +
        ", WindowLogging=" + std::to_string(verboseWindowLogging) +
        ", ConditionLogging=" + std::to_string(verboseConditionLogging));
+}
+
+void HotkeyManager::RegisterAnyKeyPressCallback(AnyKeyPressCallback callback) {
+    std::lock_guard<std::mutex> lock(callbacksMutex);
+    onAnyKeyPressedCallbacks.push_back(callback);
+
+    // Set up the IO callback only once if not already set
+    if (onAnyKeyPressedCallbacks.size() == 1) {
+        // Register the callback with IO to receive all key press events
+        io.SetAnyKeyPressCallback([this](const std::string& key) {
+            NotifyAnyKeyPressed(key);
+        });
+    }
+}
+
+void HotkeyManager::NotifyAnyKeyPressed(const std::string& key) {
+    std::vector<AnyKeyPressCallback> callbacksCopy;
+    {
+        std::lock_guard<std::mutex> lock(callbacksMutex);
+        callbacksCopy = onAnyKeyPressedCallbacks;
+    }
+
+    // Call all callbacks without holding the lock
+    for (const auto& callback : callbacksCopy) {
+        if (callback) {
+            callback(key);
+        }
+    }
 }
 
 void HotkeyManager::applyDebugSettings() {

@@ -47,6 +47,10 @@ namespace havel {
         bool lastConditionResult = false;
         bool usesFunctionCondition = false;  // Flag to indicate which condition type to use
     };
+
+    // Callback type for any key press
+    using AnyKeyPressCallback = std::function<void(const std::string& key)>;
+
     class MPVController; // Forward declaration
     class HotkeyManager {
     public:
@@ -183,16 +187,20 @@ namespace havel {
         void toggleWindowFocusTracking();
         
         static bool isGamingWindow();
-        
+
         // Clean up resources and release all keys
         void cleanup();;
-        
+
         void PlayPause();
         IO &io;
         std::atomic<bool> winKeyComboDetected{false};
         std::chrono::steady_clock::time_point winKeyPressTime;
         std::atomic<bool> genshinAutomationActive = false;
         std::thread genshinThread;
+
+        // Key tap callback storage
+        std::vector<AnyKeyPressCallback> onAnyKeyPressedCallbacks;
+        mutable std::mutex callbacksMutex;  // Protect callback vector
         
         // Genshin automation timer management
         std::shared_ptr<std::atomic<bool>> fTimer = nullptr;
@@ -352,23 +360,33 @@ namespace havel {
 
         void updateLastVideoCheck();
 
-// Store IDs of MPV hotkeys for grab/ungrab
-std::vector<int> conditionalHotkeyIds;
-std::vector<int> gamingHotkeyIds;
-std::vector<ConditionalHotkey> conditionalHotkeys;
-std::mutex hotkeyMutex;  // Protects conditionalHotkeys and conditionCache
-void InvalidateConditionalHotkeys();
-void updateConditionalHotkey(ConditionalHotkey &hotkey);
-void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
-// Window focus tracking
-bool trackWindowFocus;
-wID lastActiveWindowId;
+    public:
+        // Key tap callback registration
+        void RegisterAnyKeyPressCallback(AnyKeyPressCallback callback);
 
-// Update loop members
-std::thread updateLoopThread;
-std::atomic<bool> updateLoopRunning{false};
-std::condition_variable updateLoopCv;
-std::mutex updateLoopMutex;
-void UpdateLoop();
-};
+        // Internal method to notify all key presses
+        void NotifyAnyKeyPressed(const std::string& key);
+
+    private:
+        // Store IDs of MPV hotkeys for grab/ungrab
+        std::vector<int> conditionalHotkeyIds;
+        std::vector<int> gamingHotkeyIds;
+        std::vector<ConditionalHotkey> conditionalHotkeys;
+        std::vector<HotkeyDefinition> mpvHotkeys;
+        std::mutex hotkeyMutex;  // Protects conditionalHotkeys and conditionCache
+        void InvalidateConditionalHotkeys();
+        void updateConditionalHotkey(ConditionalHotkey &hotkey);
+        void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
+        // Window focus tracking
+        bool trackWindowFocus;
+        wID lastActiveWindowId;
+
+        // Update loop members
+        std::thread updateLoopThread;
+        std::atomic<bool> updateLoopRunning{false};
+        std::condition_variable updateLoopCv;
+        std::mutex updateLoopMutex;
+        void UpdateLoop();
+
+    };
 }

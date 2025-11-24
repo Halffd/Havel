@@ -138,11 +138,10 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
     buffer << file.rdbuf();
     std::string code = buffer.str();
     
-    // QCoreApplication requires valid argc/argv
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
     char* dummy_argv[] = { dummy_name, nullptr };
-    QCoreApplication app(dummy_argc, dummy_argv);
+    QApplication app(dummy_argc, dummy_argv);
     
     HavelApp havelApp(false);  // Don't show GUI
     
@@ -173,6 +172,10 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
 }
 int HavelLauncher::runRepl(const LaunchConfig& cfg) {
     info("Starting Havel REPL...");
+    int dummy_argc = 1;
+    char dummy_name[] = "havel-script";
+    char* dummy_argv[] = { dummy_name, nullptr };
+    QApplication app(dummy_argc, dummy_argv);
     
     HavelApp havelApp(false);  // Don't show GUI
     

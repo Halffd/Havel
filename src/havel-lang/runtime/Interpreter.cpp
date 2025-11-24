@@ -2111,6 +2111,74 @@ if (auto v = environment->Get("audio.getVolume")) (*am)["getVolume"] = *v;
     if (auto v = environment->Get("audio.setMute")) (*am)["setMute"] = *v;
     if (auto v = environment->Get("audio.isMuted")) (*am)["isMuted"] = *v;
     environment->Define("audioManager", HavelValue(am));
+
+    // Add comprehensive help function
+    environment->Define("help", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        std::stringstream help;
+
+        if (args.empty()) {
+            // Show general help
+            help << "\n=== Havel Language Help ===\n\n";
+            help << "Navigation:\n";
+            help << "  - help()           : Show this main help page\n";
+            help << "  - help(\"syntax\")   : Show syntax reference\n";
+            help << "  - help(\"keywords\"): Show all keywords and usage\n";
+            help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
+            help << "  - help(\"modules\")  : Show available modules\n\n";
+            help << "Conditional Hotkeys:\n";
+            help << "  - Basic: hotkey => action\n";
+            help << "  - Postfix: hotkey => action if condition\n";
+            help << "  - Prefix: hotkey if condition => action\n";
+            help << "  - Grouped: when condition { hotkey => action }\n\n";
+            help << "For detailed documentation, see Havel.md\n";
+        } else {
+            std::string topic = ValueToString(args[0]);
+
+            if (topic == "syntax" || topic == "SYNTAX") {
+                help << "\n=== Syntax Reference ===\n\n";
+                help << "Basic Hotkey: hotkey => action\n";
+                help << "Pipeline: data | transform1 | transform2\n";
+                help << "Blocks: { statement1; statement2; }\n";
+                help << "Variables: let name = value\n";
+                help << "Conditionals: if condition { block } else { block }\n";
+                help << "Functions: fn name(param) => { block }\n";
+            } else if (topic == "keywords" || topic == "KEYWORDS") {
+                help << "\n=== Keywords ===\n\n";
+                help << "let    : Variable declaration (let x = 5)\n";
+                help << "if     : Conditional (if x > 0 { ... })\n";
+                help << "else   : Alternative (if x > 0 { ... } else { ... })\n";
+                help << "when   : Conditional block (when condition { ... })\n";
+                help << "fn     : Function definition (fn name() => { ... })\n";
+                help << "return : Function return (return value)\n";
+                help << "import : Module import (import module from \"file\")\n";
+                help << "config : Config block (config { ... })\n";
+                help << "devices: Device config block (devices { ... })\n";
+                help << "modes  : Modes config block (modes { ... })\n";
+            } else if (topic == "hotkeys" || topic == "HOTKEYS") {
+                help << "\n=== Conditional Hotkeys ===\n\n";
+                help << "Postfix: F1 => send(\"hello\") if mode == \"gaming\"\n";
+                help << "Prefix:  F1 if mode == \"gaming\" => send(\"hello\")\n";
+                help << "Grouped: when mode == \"gaming\" { F1 => send(\"hi\"); F2 => send(\"bye\"); }\n";
+                help << "Nested:  when condition1 { F1 if condition2 => action }\n";
+                help << "All conditions are evaluated dynamically at runtime!\n";
+            } else if (topic == "modules" || topic == "MODULES") {
+                help << "\n=== Available Modules ===\n\n";
+                help << "clipboard : Clipboard operations (get, set, clear)\n";
+                help << "window    : Window management (focus, move, resize)\n";
+                help << "io        : Input/output operations (mouse, keyboard)\n";
+                help << "audio     : Audio control (volume, mute, apps)\n";
+                help << "text      : Text processing (upper, lower, trim, etc.)\n";
+                help << "file      : File I/O operations\n";
+                help << "system    : System operations (run, notify, sleep)\n";
+            } else {
+                help << "\nUnknown topic: " << topic << "\n";
+                help << "Use help() to see available topics.\n";
+            }
+        }
+
+        std::cout << help.str();
+        return HavelValue(nullptr);
+    }));
 }
 
 void Interpreter::InitializeBrightnessBuiltins() {
@@ -2684,6 +2752,165 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
             lastResult = nullptr;
         }
     }
+}
+
+void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
+    // For each statement in the when block, wrap it with the shared condition
+    for (const auto& stmt : node.statements) {
+        // Check if it's a hotkey binding
+        if (auto* hotkeyBinding = dynamic_cast<const ast::HotkeyBinding*>(stmt.get())) {
+            // Extract hotkey string
+            std::string hotkeyStr;
+            if (!hotkeyBinding->hotkeys.empty()) {
+                if (auto* hotkeyLit = dynamic_cast<const ast::HotkeyLiteral*>(hotkeyBinding->hotkeys[0].get())) {
+                    hotkeyStr = hotkeyLit->combination;
+                }
+            }
+
+            if (hotkeyStr.empty()) {
+                lastResult = HavelRuntimeError("Invalid hotkey in when block");
+                return;
+            }
+
+            if (hotkeyManager) {
+                // Create a lambda that captures the shared condition
+                auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
+                    auto result = Evaluate(*condExpr);
+                    if (isError(result)) {
+                        // Log error but return false to prevent the hotkey from triggering
+                        return false;
+                    }
+                    return ValueToBool(unwrap(result));
+                };
+
+                // Create the action callback
+                auto actionFunc = [this, action = hotkeyBinding->action.get()]() {
+                    if (action) {
+                        auto result = Evaluate(*action);
+                        if (isError(result)) {
+                            std::cerr << "When block hotkey action failed: "
+                                      << std::get<HavelRuntimeError>(result).what() << std::endl;
+                        }
+                    }
+                };
+
+                // Register as contextual hotkey with shared condition
+                hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc, actionFunc);
+            }
+        } else if (auto* conditionalHotkey = dynamic_cast<const ast::ConditionalHotkey*>(stmt.get())) {
+            // Handle nested conditional hotkeys inside when blocks
+            // Combine the outer condition with the inner condition
+            if (hotkeyManager) {
+                // Extract hotkey string from the nested binding
+                std::string hotkeyStr;
+                if (!conditionalHotkey->binding->hotkeys.empty()) {
+                    if (auto* hotkeyLit = dynamic_cast<const ast::HotkeyLiteral*>(conditionalHotkey->binding->hotkeys[0].get())) {
+                        hotkeyStr = hotkeyLit->combination;
+                    }
+                }
+
+                if (hotkeyStr.empty()) {
+                    lastResult = HavelRuntimeError("Invalid hotkey in conditional hotkey within when block");
+                    return;
+                }
+
+                // Create a combined condition that requires both outer and inner conditions
+                auto combinedConditionFunc = [this, outerCond = node.condition.get(), innerCond = conditionalHotkey->condition.get()]() -> bool {
+                    // Evaluate outer condition
+                    auto outerResult = Evaluate(*outerCond);
+                    if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+                        return false;
+                    }
+
+                    // Evaluate inner condition
+                    auto innerResult = Evaluate(*innerCond);
+                    if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+                        return false;
+                    }
+
+                    return true;
+            };
+
+            // Create the action callback from the inner binding
+            auto actionFunc = [this, action = conditionalHotkey->binding->action.get()]() {
+                if (action) {
+                    auto result = Evaluate(*action);
+                    if (isError(result)) {
+                        std::cerr << "Nested conditional hotkey action failed: "
+                                  << std::get<HavelRuntimeError>(result).what() << std::endl;
+                    }
+                }
+            };
+
+            // Register with combined condition
+            hotkeyManager->AddContextualHotkey(hotkeyStr, combinedConditionFunc, actionFunc);
+        }
+        } else if (auto* whenBlock = dynamic_cast<const ast::WhenBlock*>(stmt.get())) {
+            // Handle nested when blocks - inherit the condition by creating a combined condition
+            if (hotkeyManager) {
+                // Create a combined condition that requires both the outer and inner conditions
+                auto combinedConditionFunc = [this, outerCond = node.condition.get(), innerCond = whenBlock->condition.get()]() -> bool {
+                    // Evaluate outer condition
+                    auto outerResult = Evaluate(*outerCond);
+                    if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+                        return false;
+                    }
+
+                    // Evaluate inner condition
+                    auto innerResult = Evaluate(*innerCond);
+                    if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+                        return false;
+                    }
+
+                    return true;
+                };
+
+                // For nested when blocks, we need to recursively process their statements
+                // with the combined condition. For simplicity, we'll just evaluate inner when blocks
+                // with the combined condition, but a more complete implementation would
+                // recursively process each statement inside the nested when block.
+                for (const auto& innerStmt : whenBlock->statements) {
+                    // Process each statement in the nested when block with the combined condition
+                    if (auto* innerHotkeyBinding = dynamic_cast<const ast::HotkeyBinding*>(innerStmt.get())) {
+                        // Extract hotkey string from the nested statement
+                        std::string innerHotkeyStr;
+                        if (!innerHotkeyBinding->hotkeys.empty()) {
+                            if (auto* hotkeyLit = dynamic_cast<const ast::HotkeyLiteral*>(innerHotkeyBinding->hotkeys[0].get())) {
+                                innerHotkeyStr = hotkeyLit->combination;
+                            }
+                        }
+
+                        if (innerHotkeyStr.empty()) {
+                            continue; // Skip invalid hotkeys
+                        }
+
+                        // Use the same action
+                        auto innerActionFunc = [this, action = innerHotkeyBinding->action.get()]() {
+                            if (action) {
+                                auto result = Evaluate(*action);
+                                if (isError(result)) {
+                                    std::cerr << "Nested when block hotkey action failed: "
+                                              << std::get<HavelRuntimeError>(result).what() << std::endl;
+                                }
+                            }
+                        };
+
+                        // Register with the combined condition (outer && inner)
+                        hotkeyManager->AddContextualHotkey(innerHotkeyStr, combinedConditionFunc, innerActionFunc);
+                    }
+                }
+            }
+        } else {
+            // Non-hotkey statements in when block - evaluate once statically
+            auto result = Evaluate(*stmt);
+            if (isError(result)) {
+                lastResult = result;
+                return;
+            }
+        }
+    }
+
+    lastResult = nullptr;
 }
 
 } // namespace havel

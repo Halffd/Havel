@@ -16,23 +16,19 @@ namespace havel {
             std::function<void()> onCombo;
             std::string tapCondition;
             std::string comboCondition;
-            IO& io;
             HotkeyManager& hotkeyManager;
-            
-            std::atomic<bool> keyComboDetected{false};
-            std::atomic<bool> monitorActive{false};
-            std::thread monitorThread;
-            
-            void startMonitoring();
-            void stopMonitoring();
-        
+
+            // New state variables based on requirements
+            bool keyHeld = false;
+            bool combo = false;
+
         public:
-            KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key, 
-                   std::function<void()> tapAction, 
+            KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key,
+                   std::function<void()> tapAction,
                    const std::string& tapCond = "",
                    std::function<void()> comboAction = nullptr,
                    const std::string& comboCond = "");
-            
+
             ~KeyTap();
             void setup();
     };

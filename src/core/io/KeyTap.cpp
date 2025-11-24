@@ -4,92 +4,67 @@
 
 namespace havel {
 
-KeyTap::KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key, 
-               std::function<void()> tapAction, 
+KeyTap::KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key,
+               std::function<void()> tapAction,
                const std::string& tapCond,
                std::function<void()> comboAction,
-               const std::string& comboCond) 
+               const std::string& comboCond)
     : keyName(key), onTap(tapAction), onCombo(comboAction),
       tapCondition(tapCond), comboCondition(comboCond),
-      io(ioRef), hotkeyManager(hotkeyManagerRef) {}
+      hotkeyManager(hotkeyManagerRef) {}
 
 KeyTap::~KeyTap() {
-    stopMonitoring();
-}
-
-void KeyTap::startMonitoring() {
-    keyComboDetected = false;
-    monitorActive = true;
-    
-    if (monitorThread.joinable()) {
-        monitorThread.join();
-    }
-    
-    monitorThread = std::thread([this]() {
-        while (monitorActive) {
-            if (io.IsAnyKeyPressedExcept(keyName)) {
-                keyComboDetected = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-    });
-}
-
-void KeyTap::stopMonitoring() {
-    monitorActive = false;
-    if (monitorThread.joinable()) {
-        monitorThread.join();
-    }
+    // Destructor implementation can be empty since we don't have threads anymore
 }
 
 void KeyTap::setup() {
-    std::string keyDown = "@~" + keyName;
-    std::string keyUp = "@" + keyName + ":up";
-    
-    // Tap behavior (press)
+    std::string keyDown = "@|~" + keyName;
+    std::string keyUp = "@|" + keyName + ":up";
+
+    // Register callback for any key press event
+    hotkeyManager.RegisterAnyKeyPressCallback([this](const std::string& key) {
+        if (keyHeld && key != keyName) {
+            combo = true;
+        }
+    });
+
+    // Key down behavior (press) - set keyHeld and reset combo
     if (!tapCondition.empty()) {
         hotkeyManager.AddContextualHotkey(keyDown, tapCondition, [this]() {
-            std::cout << "[KeyTap] Starting tap monitoring for " << keyName << std::endl;
-            startMonitoring();
+            keyHeld = true;
+            combo = false;
         });
     } else {
         hotkeyManager.AddContextualHotkey(keyDown, "", [this]() {
-            std::cout << "[KeyTap] Starting tap monitoring for " << keyName << std::endl;
-            startMonitoring();
+            keyHeld = true;
+            combo = false;
         });
     }
-    
+
     // Combo behavior (press) - if different condition
     if (onCombo && !comboCondition.empty()) {
         hotkeyManager.AddContextualHotkey("@" + keyName, comboCondition, [this]() {
-            std::cout << "[KeyTap] Triggering combo action for " << keyName << std::endl;
             onCombo();
         });
     }
-    
-    // Tap behavior (release)
+
+    // Key up behavior (release) - check for clean tap
     if (!tapCondition.empty()) {
         hotkeyManager.AddContextualHotkey(keyUp, tapCondition, [this]() {
-            std::cout << "[KeyTap] " << keyName << " released, checking tap" << std::endl;
-            stopMonitoring();
-            
-            if (!keyComboDetected) {
-                std::cout << "[KeyTap] Clean tap detected!" << std::endl;
-                onTap();
+            if (keyHeld && !combo) {
+                onTap();   // clean tap
             }
+            keyHeld = false;
         });
     } else {
         hotkeyManager.AddContextualHotkey(keyUp, "", [this]() {
-            std::cout << "[KeyTap] " << keyName << " released, checking tap" << std::endl;
-            stopMonitoring();
-            
-            if (!keyComboDetected) {
-                std::cout << "[KeyTap] Clean tap detected!" << std::endl;
-                onTap();
+            if (keyHeld && !combo) {
+                onTap();   // clean tap
             }
+            keyHeld = false;
         });
     }
 }
+
 
 }

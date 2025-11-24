@@ -614,17 +614,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
             auto stmt = parseStatement();
             if (stmt) {
-                // If the statement is a hotkey binding, wrap it in a conditional with the inherited condition
-                if (auto* hotkeyBinding = dynamic_cast<ast::HotkeyBinding*>(stmt.get())) {
-                    // Move the statement out to wrap it
-                    auto bindingStmt = std::move(stmt);
-                    auto inheritedCondition = std::make_unique<ast::Identifier>(condition->toString()); // This won't work as we need to copy the expression
-                    // Actually, I need to pass down the condition for proper inheritance handling
-                    // For now, I'll just handle it at a higher level - this requires more complex changes
-                    statements.push_back(std::move(bindingStmt));
-                } else {
-                    statements.push_back(std::move(stmt));
-                }
+                // Simple version without condition inheritance for now
+                statements.push_back(std::move(stmt));
             }
         }
 
@@ -1545,7 +1536,6 @@ bool Parser::atStatementStart() {
         case havel::TokenType::Devices:
         case havel::TokenType::Modes:
         case havel::TokenType::Hotkey:  // Added the hotkey token
-        case havel::TokenType::HotkeyKeyword:  // Added the hotkey keyword token
         case havel::TokenType::Identifier:  // Could be variable assignment or function call
             return true;
         default:

@@ -173,6 +173,7 @@ public:
     void visitOnModeStatement(const ast::OnModeStatement& node) override;
     void visitOffModeStatement(const ast::OffModeStatement& node) override;
     void visitConditionalHotkey(const ast::ConditionalHotkey& node) override;
+    void visitWhenBlock(const ast::WhenBlock& node) override;
 
     // Stubs for unused AST nodes
     void visitWhileStatement(const ast::WhileStatement& node) override;

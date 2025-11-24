@@ -1,4 +1,5 @@
 #pragma once
+#include <shared_mutex>
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -38,6 +39,7 @@ public:
     
     // Start listening on specified devices
     bool Start(const std::vector<std::string>& devicePaths, bool grabDevices = false);
+    std::map<int, bool> evdevKeyState;
     
     // Stop listening
     void Stop();
@@ -120,15 +122,23 @@ public:
     // Set scroll speed (1.0 = default)
     void SetScrollSpeed(double speed);
     double GetScrollSpeed() const { return scrollSpeed; }
-    
+
     // X11 hotkey monitoring (separate from evdev)
     #ifdef __linux__
     bool StartX11Monitor(Display* display);
     void StopX11Monitor();
     bool IsX11MonitorRunning() const;
     #endif
+
+    // Callback for any key press
+    using AnyKeyPressCallback = std::function<void(const std::string& key)>;
+    void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
     
     int uinputFd = -1;
+
+    // Callback for any key press
+    std::function<void(const std::string& key)> anyKeyPressCallback = nullptr;
+
 private:
     // Device info
     struct DeviceInfo {
@@ -179,14 +189,12 @@ private:
     
     // State tracking (exact from IO.cpp)
     mutable std::shared_mutex stateMutex;
-    std::map<int, bool> evdevKeyState;
     std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
     std::unordered_map<int, ActiveInput> activeInputs;  // Maps key code to ActiveInput
     ModifierState modifierState;
     
     // Hotkey management (exact from IO.cpp)
     mutable std::shared_mutex hotkeyMutex;
-    std::map<int, HotKey> hotkeys;
     
     // Hotkey optimization data structures
     std::unordered_map<int, std::vector<int>> combosByKey;  // keyCode -> hotkey IDs

@@ -209,7 +209,7 @@ public:
 
   HotKey AddHotkey(const std::string &rawInput, std::function<void()> action, int id = 0);
 
-  bool Hotkey(const std::string &hotkeyStr, std::function<void()> action,
+  bool Hotkey(const std::string &hotkeyStr, std::function<void()> action, const std::string &condition = "",
               int id = 0);
   bool Suspend();
   bool Suspend(int id);
@@ -303,6 +303,9 @@ public:
   bool GrabHotkey(int hotkeyId);
 
   bool UngrabHotkey(int hotkeyId);
+
+  // Method to register callback for any key press
+  void SetAnyKeyPressCallback(EventListener::AnyKeyPressCallback callback);
 
   bool GrabHotkeysByPrefix(const std::string &prefix);
 

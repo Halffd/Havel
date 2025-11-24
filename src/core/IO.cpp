@@ -12,6 +12,7 @@
 #include <future>
 #include <linux/input.h>
 #include <linux/uinput.h>
+#include <mutex>
 #include <qapplication.h>
 #include <qtmetamacros.h>
 #include <sys/eventfd.h>
@@ -38,7 +39,7 @@ namespace havel {
 #if defined(WINDOWS)
 HHOOK IO::keyboardHook = NULL;
 #endif
-std::unordered_map<int, HotKey> IO::hotkeys; // Map to store hotkeys by ID
+std::unordered_map<int, HotKey> IO::hotkeys;
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
 bool IO::globalEvdev = true;
@@ -1501,19 +1502,19 @@ void IO::Send(cstr keys) {
   // release all modifiers
   std::set<std::string> toRelease;
   if (IsCtrlPressed()) {
-    toRelease.insert("lctrl");
+    toRelease.insert("ctrl");
     toRelease.insert("rctrl");
   }
   if (IsShiftPressed()) {
-    toRelease.insert("lshift");
+    toRelease.insert("shift");
     toRelease.insert("rshift");
   }
   if (IsAltPressed()) {
-    toRelease.insert("lalt");
+    toRelease.insert("alt");
     toRelease.insert("ralt");
   }
   if (IsWinPressed()) {
-    toRelease.insert("lmeta");
+    toRelease.insert("meta");
     toRelease.insert("rmeta");
   }
   info(toString(toRelease));
@@ -2079,8 +2080,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
 
   return hotkey;
 }
-bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
-                int id) {
+bool IO::Hotkey(const std::string &rawInput, std::function<void()> action, const std::string& condition, int id) {
   bool isMouseHotkey = (toLower(rawInput).find("button") != std::string::npos ||
                         toLower(rawInput).find("wheel") != std::string::npos ||
                         toLower(rawInput).find("scroll") != std::string::npos);
@@ -3411,8 +3411,9 @@ bool IO::GetKeyState(int keycode) {
   return false;
 }
 bool IO::IsAnyKeyPressed() {
-  if (evdevRunning && !evdevKeyState.empty()) {
-    for (const auto &[keycode, isDown] : evdevKeyState) {
+  std::lock_guard<std::mutex> lk(keyStateMutex);
+  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
       if (isDown)
         return true;
     }
@@ -3437,9 +3438,9 @@ bool IO::IsAnyKeyPressed() {
 
 bool IO::IsAnyKeyPressedExcept(const std::string &excludeKey) {
   int excludeKeycode = EvdevNameToKeyCode(excludeKey);
-
-  if (evdevRunning && !evdevKeyState.empty()) {
-    for (const auto &[keycode, isDown] : evdevKeyState) {
+  std::lock_guard<std::mutex> lk(keyStateMutex);
+  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
       if (isDown && keycode != excludeKeycode)
         return true;
     }
@@ -3472,9 +3473,9 @@ bool IO::IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys) {
     if (code != -1)
       excludeCodes.insert(code);
   }
-
-  if (evdevRunning && !evdevKeyState.empty()) {
-    for (const auto &[keycode, isDown] : evdevKeyState) {
+  std::lock_guard<std::mutex> lk(keyStateMutex);
+  if (evdevRunning && !eventListener->evdevKeyState.empty()) {
+    for (const auto &[keycode, isDown] : eventListener->evdevKeyState) {
       if (isDown && excludeCodes.find(keycode) == excludeCodes.end()) {
         return true;
       }
@@ -3564,7 +3565,6 @@ void IO::PressKey(const std::string &keyName, bool press) {
 #endif
 }
 
-// New methods for dynamic hotkey grabbing/ungrabbing
 bool IO::GrabHotkey(int hotkeyId) {
 #ifdef __linux__
   if (!display)
@@ -3650,6 +3650,12 @@ bool IO::UngrabHotkey(int hotkeyId) {
 #else
   return false;
 #endif
+}
+
+void IO::SetAnyKeyPressCallback(EventListener::AnyKeyPressCallback callback) {
+  if (eventListener) {
+    eventListener->SetAnyKeyPressCallback(callback);
+  }
 }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {

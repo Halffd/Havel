@@ -276,11 +276,14 @@ pkg_check_modules(XI REQUIRED xi)
 
 # PulseAudio
 pkg_check_modules(PULSEAUDIO libpulse)
-
+pkg_check_modules(PCRE2_8 REQUIRED libpcre2-8)
+pkg_check_modules(PCRE2_16 REQUIRED libpcre2-16)
 # ALSA
 pkg_check_modules(ALSA alsa)
 set(COMMON_LIBS
     # System libraries
+    ${PCRE2_8_LIBRARIES}
+    ${PCRE2_16_LIBRARIES}
     ${X11_LIBRARIES}
     ${XI_LIBRARIES}
     ${XTEST_LIB}
@@ -294,7 +297,7 @@ set(COMMON_LIBS
     ${LUA_LIBRARIES}
     # Optional Readline
     ${READLINE_LIB}
-    dl crypto zip ssl pthread m pcre2-16
+    dl crypto zip ssl pthread m
     # Qt6 libraries
     Qt6::Core
     Qt6::Widgets

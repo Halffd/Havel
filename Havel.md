@@ -5,6 +5,12 @@ Design Document v1.0
 📋 Summary
 Havel is a declarative automation scripting language designed for hotkey management and workflow automation. Named after the resilient knight from Dark Souls, Havel embodies strength, reliability, and unwavering functionality in automation tasks.
 
+## Navigation
+- [Quick Syntax Reference](#quick-syntax-reference)
+- [Keywords](#keywords)
+- [Conditional Hotkeys](#conditional-hotkeys)
+- [Examples](#examples)
+
 ----
 
 🎯 Language Overview
@@ -13,6 +19,78 @@ Core Philosophy
 	* Functional Flow - Data flows through transformation pipelines
 	* Automation First - Built specifically for hotkeys and workflow automation
 	* Platform Agnostic - Write once, run everywhere
+
+## Quick Syntax Reference
+
+### Basic Hotkey Mapping
+```
+hotkey => action
+```
+
+### Pipeline Transformations
+```
+data | transform1 | transform2
+```
+
+### Blocks
+```
+hotkey => {
+    // multiple statements
+}
+```
+
+### Variables
+```
+let variable_name = value
+```
+
+### Conditional Logic
+```
+if condition { ... } else { ... }
+```
+
+## Keywords
+
+| Keyword | Purpose | Example |
+|---------|---------|---------|
+| `let` | Variable declaration | `let x = 5` |
+| `if/else` | Conditional execution | `if x > 0 { ... } else { ... }` |
+| `when` | Conditional block | `when condition { ... }` |
+| `fn` | Function definition | `fn name(args) => ...` |
+| `return` | Function return | `return value` |
+| `import` | Module import | `import module from "path"` |
+| `config` | Configuration block | `config { ... }` |
+| `devices` | Device configuration | `devices { ... }` |
+| `modes` | Mode configuration | `modes { ... }` |
+
+## Conditional Hotkeys
+
+### Postfix Conditional Syntax
+```
+hotkey => action if condition
+```
+
+### Prefix Conditional Syntax
+```
+hotkey if condition => action
+```
+
+### When Blocks
+```
+when condition {
+    hotkey1 => action1
+    hotkey2 => action2
+}
+```
+
+### Nested Conditions
+```
+when outer_condition {
+    hotkey if inner_condition => action
+}
+```
+
+All conditions are evaluated dynamically at runtime, allowing variables to change and trigger hotkeys accordingly.
 
 Target Use Cases
 	* Hotkey automation and mapping
@@ -59,7 +137,25 @@ F2 => {
     clipbooard.get | send
 }
 
+// Dynamic conditional hotkeys
+F1 if mode == "gaming" => send "Quick attack!"
+^!A if window.title.contains("Chrome") => send "Ctrl+F5"
+
+// When blocks for grouped conditions
+when mode == "gaming" {
+    ^!A => send "Attack!"
+    ^!B => send "Defend!"
+    ^!C => send "Special ability!"
+}
+
+// Prefix conditions
+when mode == "gaming" {
+    F1 if health < 50 => send "Heal potion!"
+    ^!D if ammo == 0 => send "Reload!"
+}
+
 ----
+
 
 🎨 Visual Identity
 Logo Design

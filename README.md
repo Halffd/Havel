@@ -1,74 +1,183 @@
-# HvC - Hotkey and Window Controller
 
-HvC is a powerful utility for managing windows and hotkeys across multiple platforms, with a focus on Linux X11 environments. It allows for complex window management, hotkey configurations, and automated tasks via Lua scripting.
+**Havel** is a powerful utility for managing windows and hotkeys across multiple platforms, with a focus on Linux X11 environments. It allows for complex window management, hotkey configurations, and automated tasks via its own Havel scripting language.
+
+## 📋 Table of Contents
+- [Features](#features)
+- [Installation](#installation)
+- [Syntax Reference](#syntax-reference)
+- [Keywords](#keywords)
+- [Conditional Hotkeys](#conditional-hotkeys)
+- [Examples](#examples)
+- [Building](#building)
+- [Troubleshooting](#troubleshooting)
 
 ## Features
 
 - Global hotkey registration and management
+- Dynamic conditional hotkeys with runtime evaluation
 - Window tracking and manipulation
-- Lua scripting for complex automation
+- Havel scripting language for complex automation (replacing Lua)
 - Configurable via text files
-- Cross-platform support (primarily Linux X11)
+- Cross-platform support
 
-## Directory Structure
-
-- `/src` - Source code
-- `/include` - Header files
-- `/config` - Configuration files
-- `/log` - Log files
-- `/build` - Build directory
-
-## Building HvC
+## Installation
 
 ### Prerequisites
-
 - C++17 compatible compiler (GCC 9+ or Clang 10+)
 - CMake 3.10+
 - X11 development libraries (on Linux)
-- Lua 5.3+ development libraries
+- Qt6 development libraries
 
-### Dependencies
+## Syntax Reference
 
-- X11 libraries: Xlib, Xutil, XTest, XKB, XRandR
-- Sol2 Lua binding library
-- pthread
+### Basic Hotkey Mapping
+```
+hotkey => action
+```
 
-### Quick Build
+### Pipeline Transformations
+```
+data | transform1 | transform2
+```
 
-We provide a helper script to resolve common build issues:
+### Blocks
+```
+hotkey => {
+    // multiple statements
+}
+```
 
+### Variables
+```
+let variable_name = value
+```
+
+### Conditional Logic
+```
+if condition { ... } else { ... }
+```
+
+## Keywords
+
+| Keyword | Purpose | Example |
+|---------|---------|---------|
+| `let` | Variable declaration | `let x = 5` |
+| `if/else` | Conditional execution | `if x > 0 { ... } else { ... }` |
+| `when` | Conditional block | `when condition { ... }` |
+| `fn` | Function definition | `fn name(args) => ...` |
+| `return` | Function return | `return value` |
+| `import` | Module import | `import module from "path"` |
+| `config` | Configuration block | `config { ... }` |
+| `devices` | Device configuration | `devices { ... }` |
+| `modes` | Mode configuration | `modes { ... }` |
+
+## Conditional Hotkeys
+
+### Postfix Conditional Syntax
+```
+hotkey => action if condition
+```
+
+### Prefix Conditional Syntax
+```
+hotkey if condition => action
+```
+
+### When Blocks
+```
+when condition {
+    hotkey1 => action1
+    hotkey2 => action2
+}
+```
+
+### Nested Conditions
+```
+when outer_condition {
+    hotkey if inner_condition => action
+}
+```
+Example:
+```hv
+F1 when mode gaming => { print("Gaming mode active") }
+!C if remapCapslock == false => map("capslock", "esc")
+```
+
+### When Blocks
+Group multiple hotkeys under a shared condition:
+
+```hv
+when mode gaming {
+    ^!A => click()
+    ^!B => click("right")
+    F1 if health < 50 => send("e")
+}
+```
+
+All conditions are evaluated dynamically at runtime, allowing variables to change and trigger hotkeys accordingly.
+
+## Examples
+
+### Basic Hotkey
+```
+F1 => send("Hello World!")
+```
+
+### With Conditional Logic
+```
+^V when title "Discord" => {
+    let clip = clipboard.get
+    if clip | matches("^\d+") || has("secret") {
+        let text = ""
+        let length = len(clip)
+        for i in 1..length {
+            text += "*"
+        }
+        send("$clip")
+    } else {
+        send(clip)
+    }
+}
+```
+
+### Conditional Hotkey
+```
+^!A if window.active.title.contains("Chrome") => send("^F5")
+```
+
+### When Block
+```
+when mode coding {
+    ^!S => send("^s")
+    ^!F => send("^f")
+    ^!G => send("^g")
+}
+```
+
+### With Built-in Help
+The language includes a built-in `help()` function for interactive learning:
+- `help()` - Show main help page
+- `help("syntax")` - Show syntax reference
+- `help("keywords")` - Show all keywords
+- `help("hotkeys")` - Show hotkey features
+- `help("modules")` - Show available modules
+
+## Building the Project
 ```bash
-# Fix common build issues
-./fix_build.sh
+# Build release
+./build.sh 1 build
 
-# Build the project
-mkdir -p build && cd build && cmake .. && cmake --build .
+# Run havel script file
+./build-release/havel script.hv
+
+# Run REPL
+./build-release/havwl
 ```
 
 Alternatively, you can use the Makefile:
-
 ```bash
-# Fix build issues and build
-make rebuild
+make
 ```
-
-### Manual Build
-
-```bash
-mkdir -p build
-cd build
-cmake ..
-cmake --build .
-```
-
-## Configuration
-
-HvC uses several configuration files located in the `config` directory:
-
-- `havel.cfg` - Main configuration file
-- `hotkeys/*.lua` - Lua scripts for hotkey configurations
-
-See the [configuration guide](config/README.md) for more details.
 
 ## Troubleshooting
 
@@ -82,51 +191,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
-# HvC Project Build Fixes
+## Directory Structure
 
-This document outlines the issues fixed to make the HvC project build successfully.
-
-## Fixed Issues
-
-1. **DisplayManager Type References**
-   - Fixed `Display*` and `Window` type reference issues in `DisplayManager.cpp` and `DisplayManager.hpp`
-   - Added proper X11 includes and fixed static member variable definitions
-
-2. **MPVController Method Signatures**
-   - Fixed method signatures in `MPVController.cpp` and `MPVController.hpp` to match
-   - Updated `Initialize()` to return a bool instead of void
-   - Changed `SendCommand` to accept a vector of strings instead of a single string
-
-3. **Window Class X11 Integration**
-   - Fixed `Window` class to properly work with X11 `Window` type
-   - Added proper type casting between `havel::Window`, `havel::wID`, and X11's `Window`
-   - Defined the `display` variable in `Window.cpp`
-
-4. **IO Class Implementation**
-   - Created the missing `IO.cpp` file with implementation of all required methods
-   - Added proper destructor for the `IO` class to fix linker errors
-   - Added stub implementations for all interface methods
-
-## Remaining Issues
-
-The application can now build successfully, but there are still runtime issues:
-
-1. The application crashes when handling Ctrl+C signals
-2. Some hotkey configurations show "Invalid key name" warnings
-3. Missing configuration file: "Could not open config file: config/config.json"
-
-## Project Structure Notes
-
-- All X11 display management is now handled through the `DisplayManager` class
-- The project is designed to work on Linux with X11 (Wayland support is placeholder)
-- The application uses a hotkey system for controlling media playback and window management
-
-## Building the Project
-
-To build the project:
-
-```bash
-mkdir build && cd build
-cmake ..
-cmake --build .
-``` 
+- `/src` - Source code
+- `/include` - Header files
+- `/config` - Configuration files
+- `/log` - Log files
+- `/build` - Build directory
+- `/scripts` - Scripts examples

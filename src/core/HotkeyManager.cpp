@@ -83,8 +83,8 @@ void HotkeyManager::printHotkeys() const {
         hotkey.action + "' " + "enabled=" + (hotkey.enabled ? "Y" : "N") + " " +
         "grab=" + (hotkey.grab ? "Y" : "N") + " " +
         "succ=" + (hotkey.success ? "Y" : "N") + " " +
-        "susp=" + (hotkey.suspend ? "Y" : "N")
-        + " " + "repeat=" + std::to_string(hotkey.repeatInterval) + " " +
+        "susp=" + (hotkey.suspend ? "Y" : "N") + " " +
+        "repeat=" + std::to_string(hotkey.repeatInterval) + " " +
         "combo=" + std::to_string(hotkey.comboTimeWindow) + " " +
         "repeatInterval=" + std::to_string(hotkey.repeatInterval) + " " +
         "comboTimeWindow=" + std::to_string(hotkey.comboTimeWindow);
@@ -259,15 +259,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     // flush logs
     fflush(nullptr);
 
-    std::vector<char*> args;
-    args.push_back(const_cast<char*>(exec.c_str()));
+    std::vector<char *> args;
+    args.push_back(const_cast<char *>(exec.c_str()));
     args.push_back(nullptr);
 
     execvp(exec.c_str(), args.data());
 
     // If we get here, exec failed.
     error("Failed to exec: {}", strerror(errno));
-    if(App::instance()) {
+    if (App::instance()) {
       App::quit();
     }
   });
@@ -749,12 +749,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     info("Right click + wheel down");
     Zoom(0);
   });
-  io.Hotkey("@~^l & g", []() {
-    Launcher::runAsync("/usr/bin/lutris");
-  });
-  io.Hotkey("@~^s & g", []() {
-    Launcher::runAsync("/usr/bin/steam");
-  });
+  io.Hotkey("@~^l & g", []() { Launcher::runAsync("/usr/bin/lutris"); });
+  io.Hotkey("@~^s & g", []() { Launcher::runAsync("/usr/bin/steam"); });
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
   });
@@ -762,7 +758,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@!-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
-    if(io.mouseSensitivity < 0) io.mouseSensitivity = 0;
+    if (io.mouseSensitivity < 0)
+      io.mouseSensitivity = 0;
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
@@ -770,7 +767,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@!=", [this]() {
     io.mouseSensitivity += std::min(
         1.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
-    if(io.mouseSensitivity > 2.0) io.mouseSensitivity = 2.0;
+    if (io.mouseSensitivity > 2.0)
+      io.mouseSensitivity = 2.0;
     info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
   });
@@ -967,9 +965,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                      std::to_string(static_cast<int>(vol * 100)) + "%");
     info("Volume for {}: {:.0f}%", app, vol * 100);
   });
-  AddContextualHotkey("Enter", "window.class ~ 'chatterino'", []() {
-    info("Enter pressed in chatterino");
-  });
+  AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
+                      []() { info("Enter pressed in chatterino"); });
 
   AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this]() {
     auto winId = WindowManager::GetActiveWindow();
@@ -1413,19 +1410,19 @@ void HotkeyManager::ReloadConfigurations() {
 }
 
 void HotkeyManager::InvalidateConditionalHotkeys() {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-    
-    if (verboseConditionLogging) {
-        debug("Invalidating all conditional hotkeys");
-    }
-    
-    // Clear the condition cache to force re-evaluation
-    conditionCache.clear();
-    
-    // Update all conditional hotkeys
-    for (auto& hotkey : conditionalHotkeys) {
-        updateConditionalHotkey(hotkey);
-    }
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+  if (verboseConditionLogging) {
+    debug("Invalidating all conditional hotkeys");
+  }
+
+  // Clear the condition cache to force re-evaluation
+  conditionCache.clear();
+
+  // Update all conditional hotkeys
+  for (auto &hotkey : conditionalHotkeys) {
+    updateConditionalHotkey(hotkey);
+  }
 }
 
 void HotkeyManager::updateAllConditionalHotkeys() {
@@ -1530,8 +1527,8 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
     if (hotkey.usesFunctionCondition) {
       info("Function condition changed: {} for {} - was:{} now:{}",
-           conditionMet ? 1 : 0, hotkey.key,
-           hotkey.lastConditionResult, conditionMet);
+           conditionMet ? 1 : 0, hotkey.key, hotkey.lastConditionResult,
+           conditionMet);
     } else {
       info("Condition changed: {} for {} ({}) - was:{} now:{}",
            conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
@@ -1599,7 +1596,8 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.id = id;
   ch.key = key;
   ch.condition = condition;
-  ch.conditionFunc = nullptr; // No function condition for string-based condition
+  ch.conditionFunc =
+      nullptr; // No function condition for string-based condition
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
   ch.currentlyGrabbed = true;
@@ -1610,7 +1608,7 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
 
   // Register but don't grab yet
   io.Hotkey(key, action, condition, id);
-  
+
   // Initial evaluation and grab if needed
   updateConditionalHotkey(conditionalHotkeys.back());
 
@@ -1643,7 +1641,7 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
-  ch.condition = ""; // No string condition, using function
+  ch.condition = "";            // No string condition, using function
   ch.conditionFunc = condition; // Store the condition function
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
@@ -2484,8 +2482,8 @@ void HotkeyManager::showBlackOverlay() {
 
   // Set window properties for overlay
   blackOverlay->setWindowFlags(Qt::Window | Qt::FramelessWindowHint |
-                             Qt::WindowStaysOnTopHint |
-                             Qt::X11BypassWindowManagerHint);
+                               Qt::WindowStaysOnTopHint |
+                               Qt::X11BypassWindowManagerHint);
 
   // Make the window transparent for input
   blackOverlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
@@ -2498,7 +2496,7 @@ void HotkeyManager::showBlackOverlay() {
 
   // Set the window geometry to cover all screens
   blackOverlay->setGeometry(combinedGeometry);
-  
+
   // Set black background with some transparency (adjust alpha as needed)
   blackOverlay->setStyleSheet("background-color: rgba(0, 0, 0, 200);");
 
@@ -2700,10 +2698,7 @@ void HotkeyManager::UpdateLoop() {
     }
   }
 }
-void HotkeyManager::updateWindowProperties()
-{
-  return;
-}
+void HotkeyManager::updateWindowProperties() { return; }
 void HotkeyManager::toggleWindowFocusTracking() {
   trackWindowFocus = !trackWindowFocus;
   if (trackWindowFocus) {
@@ -2739,31 +2734,30 @@ void HotkeyManager::loadDebugSettings() {
 }
 
 void HotkeyManager::RegisterAnyKeyPressCallback(AnyKeyPressCallback callback) {
-    std::lock_guard<std::mutex> lock(callbacksMutex);
-    onAnyKeyPressedCallbacks.push_back(callback);
+  std::lock_guard<std::mutex> lock(callbacksMutex);
+  onAnyKeyPressedCallbacks.push_back(callback);
 
-    // Set up the IO callback only once if not already set
-    if (onAnyKeyPressedCallbacks.size() == 1) {
-        // Register the callback with IO to receive all key press events
-        io.SetAnyKeyPressCallback([this](const std::string& key) {
-            NotifyAnyKeyPressed(key);
-        });
-    }
+  // Set up the IO callback only once if not already set
+  if (onAnyKeyPressedCallbacks.size() == 1) {
+    // Register the callback with IO to receive all key press events
+    io.SetAnyKeyPressCallback(
+        [this](const std::string &key) { NotifyAnyKeyPressed(key); });
+  }
 }
 
-void HotkeyManager::NotifyAnyKeyPressed(const std::string& key) {
-    std::vector<AnyKeyPressCallback> callbacksCopy;
-    {
-        std::lock_guard<std::mutex> lock(callbacksMutex);
-        callbacksCopy = onAnyKeyPressedCallbacks;
-    }
+void HotkeyManager::NotifyAnyKeyPressed(const std::string &key) {
+  std::vector<AnyKeyPressCallback> callbacksCopy;
+  {
+    std::lock_guard<std::mutex> lock(callbacksMutex);
+    callbacksCopy = onAnyKeyPressedCallbacks;
+  }
 
-    // Call all callbacks without holding the lock
-    for (const auto& callback : callbacksCopy) {
-        if (callback) {
-            callback(key);
-        }
+  // Call all callbacks without holding the lock
+  for (const auto &callback : callbacksCopy) {
+    if (callback) {
+      callback(key);
     }
+  }
 }
 
 void HotkeyManager::applyDebugSettings() {

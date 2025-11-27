@@ -2080,7 +2080,8 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
 
   return hotkey;
 }
-bool IO::Hotkey(const std::string &rawInput, std::function<void()> action, const std::string& condition, int id) {
+bool IO::Hotkey(const std::string &rawInput, std::function<void()> action,
+                const std::string &condition, int id) {
   bool isMouseHotkey = (toLower(rawInput).find("button") != std::string::npos ||
                         toLower(rawInput).find("wheel") != std::string::npos ||
                         toLower(rawInput).find("scroll") != std::string::npos);

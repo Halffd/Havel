@@ -5,26 +5,6 @@
 #include <cstdlib>
 #include <format>
 #include <iostream>
-
-// PulseAudio headers
-#ifdef __linux__
-#include <pulse/pulseaudio.h>
-#include <pulse/thread-mainloop.h>
-#include <pulse/context.h>
-#include <pulse/introspect.h>
-#include <pulse/volume.h>
-#include <pulse/error.h>
-#include <pulse/stream.h>
-#include <pulse/subscribe.h>
-#include <pulse/version.h>
-
-// ALSA headers
-#include <alsa/asoundlib.h>
-#include <alsa/mixer.h>
-#include <alsa/control.h>
-#include <alsa/error.h>
-#include <alsa/version.h>
-#endif
 #include <string>
 #include <vector>
 #include <map>
@@ -34,14 +14,47 @@
 #include <atomic>
 #include <mutex>
 
+// Platform-specific headers
 #ifdef __linux__
-#include <pulse/pulseaudio.h>
-#include <alsa/asoundlib.h>
+
+// PipeWire headers
+#ifdef HAVE_PIPEWIRE
+#include <pipewire/pipewire.h>
+#include <pipewire/core.h>
+#include <spa/param/audio/raw.h>
+#include <spa/param/props.h>
+#include <spa/pod/builder.h>
 #endif
+
+// PulseAudio headers
+#ifdef HAVE_PULSEAUDIO
+#include <pulse/pulseaudio.h>
+#include <pulse/thread-mainloop.h>
+#include <pulse/context.h>
+#include <pulse/introspect.h>
+#include <pulse/volume.h>
+#include <pulse/error.h>
+#include <pulse/stream.h>
+#include <pulse/subscribe.h>
+#include <pulse/version.h>
+#endif
+
+// ALSA headers
+#ifdef HAVE_ALSA
+#include <alsa/asoundlib.h>
+#include <alsa/mixer.h>
+#include <alsa/control.h>
+#include <alsa/error.h>
+#include <alsa/version.h>
+#endif
+
+#endif // __linux__
+
 
 namespace havel {
 
 enum class AudioBackend {
+    PIPEWIRE,
     PULSE,
     ALSA,
     AUTO
@@ -56,6 +69,20 @@ struct AudioDevice {
     double volume = 1.0;  // 0.0 - 1.0
     int channels = 2;
 };
+
+#ifdef HAVE_PIPEWIRE
+struct PipeWireNode {
+    uint32_t id;
+    std::string name;
+    std::string mediaClass;
+    std::string description;
+    double volume = 1.0;
+    bool isMuted = false;
+    pw_proxy* proxy = nullptr;
+    int pending_params = 0;
+    spa_hook node_listener;
+};
+#endif
 
 class AudioManager {
 public:
@@ -82,24 +109,18 @@ public:
     bool isMuted(const std::string& device);
 
     // === DEVICE MANAGEMENT ===
-    // Get all devices
     const std::vector<AudioDevice>& getDevices() const;
-    
-    // Get devices by type
     std::vector<AudioDevice> getOutputDevices() const;
     std::vector<AudioDevice> getInputDevices() const;
     
-    // Device lookup
     AudioDevice* findDeviceByName(const std::string& name);
     const AudioDevice* findDeviceByName(const std::string& name) const;
     AudioDevice* findDeviceByIndex(uint32_t index);
     const AudioDevice* findDeviceByIndex(uint32_t index) const;
     
-    // Device information
     std::string getDefaultOutput() const;
     std::string getDefaultInput() const;
     
-    // Print device information
     void printDevices() const;
     void printDeviceInfo(const AudioDevice& device) const;
     bool setDefaultOutput(const std::string& device);
@@ -120,7 +141,15 @@ public:
     void setDeviceCallback(DeviceCallback callback) { deviceCallback = callback; }
 
     // === APPLICATION VOLUME CONTROL ===
-    // Per-application volume control methods
+    struct ApplicationInfo {
+        uint32_t index;
+        std::string name;
+        std::string icon;
+        double volume;
+        bool isMuted;
+        uint32_t sinkInputIndex; // Used by PulseAudio
+    };
+    
     bool setApplicationVolume(const std::string& applicationName, double volume);
     bool setApplicationVolume(uint32_t applicationIndex, double volume);
     double getApplicationVolume(const std::string& applicationName) const;
@@ -131,21 +160,10 @@ public:
     bool decreaseApplicationVolume(const std::string& applicationName, double amount = 0.05);
     bool decreaseApplicationVolume(uint32_t applicationIndex, double amount = 0.05);
     
-    // Active window application volume control
     bool setActiveApplicationVolume(double volume);
     bool increaseActiveApplicationVolume(double amount = 0.05);
     bool decreaseActiveApplicationVolume(double amount = 0.05);
     double getActiveApplicationVolume() const;
-    
-    // Get list of applications with audio
-    struct ApplicationInfo {
-        uint32_t index;
-        std::string name;
-        std::string icon;
-        double volume;
-        bool isMuted;
-        uint32_t sinkInputIndex;
-    };
     
     std::vector<ApplicationInfo> getApplications() const;
     std::string getActiveApplicationName() const;
@@ -155,87 +173,100 @@ public:
     bool isBackendAvailable(AudioBackend backend);
     std::vector<std::string> getSupportedFormats();
     
-    // Constants
     static constexpr double DEFAULT_VOLUME_STEP = 0.05;
     static constexpr double MIN_VOLUME = 0.0;
-    double MAX_VOLUME = 4.0;
+    double MAX_VOLUME = 1.5; // Allow boosting
 private:
     AudioBackend currentBackend;
-    void* backendData = nullptr;  // Backend-specific data
     
-    // Device cache
     mutable std::vector<AudioDevice> cachedDevices;
     mutable std::mutex deviceMutex;
     
-    // Update device cache
     void updateDeviceCache() const;
     
     std::string defaultOutputDevice;
     std::string defaultInputDevice;
     
-    // PulseAudio specific
 #ifdef __linux__
+    // Friends for PipeWire callbacks - make variables accessible to them
+    friend void on_node_info(void *data, const struct pw_node_info *info);
+    friend void on_registry_global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props);
+    friend void on_registry_global_remove(void *data, uint32_t id);
+    friend void on_core_sync(void *data, uint32_t id, int seq);
+
+    // Public API required for callbacks
+public:
+    void parse_pw_node_info(PipeWireNode& node, const pw_node_info* info);
+
+    // PipeWire specific
+#ifdef HAVE_PIPEWIRE
+    pw_thread_loop* pw_loop = nullptr;
+    pw_context* pw_context = nullptr;
+    pw_core* pw_core = nullptr;
+    pw_registry* pw_registry = nullptr;
+    spa_hook core_listener;
+    spa_hook registry_listener;
+    std::map<uint32_t, PipeWireNode> pw_nodes;
+    mutable std::mutex pw_mutex;
+    bool pw_ready = false;
+    int pw_sync_seq = -1;
+#endif // HAVE_PIPEWIRE
+
+    // PulseAudio specific
+#ifdef HAVE_PULSEAUDIO
     pa_threaded_mainloop* pa_mainloop = nullptr;
-    struct pa_context* pa_context = nullptr;
-    pa_context_state_t pa_state;
+    struct pa_context* pa_ctxt = nullptr;
+#endif
     
-    // ALSA specific  
+    // ALSA specific
+#ifdef HAVE_ALSA
     snd_mixer_t* alsa_mixer = nullptr;
     snd_mixer_elem_t* alsa_elem = nullptr;
-#endif
+#endif // HAVE_ALSA
+#endif // __linux__
 
-    // Callbacks
     VolumeCallback volumeCallback;
     MuteCallback muteCallback; 
     DeviceCallback deviceCallback;
     
-    // Threading
     std::atomic<bool> monitoring{false};
     std::unique_ptr<std::thread> monitorThread;
     
-    // Backend implementations
+    bool initializePipeWire();
     bool initializePulse();
     bool initializeAlsa();
     void cleanup();
     
-    // PulseAudio methods
+#ifdef __linux__
+#ifdef HAVE_PIPEWIRE
+    void setup_pipewire_listeners();
+#endif
+
+#ifdef HAVE_PULSEAUDIO
     bool setPulseVolume(const std::string& device, double volume);
     double getPulseVolume(const std::string& device) const;
     bool setPulseMute(const std::string& device, bool muted);
     bool isPulseMuted(const std::string& device) const;
     std::vector<AudioDevice> getPulseDevices(bool input = false) const;
-    
-    // ALSA methods  
+#endif
+
+#ifdef HAVE_ALSA
     bool setAlsaVolume(double volume);
     double getAlsaVolume();
     bool setAlsaMute(bool muted);
     bool isAlsaMuted();
+    std::vector<AudioDevice> getAlsaDevices(bool input) const;
+#endif
+#endif // __linux__
     
-    // Monitoring thread
     void startMonitoring();
     void stopMonitoring();
     void monitorDevices();
     
-    // Logging helpers
-    template<typename... Args>
-    static void debug(const std::string& format, Args&&... args) {
-        Logger::getInstance().debug("[AudioManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void info(const std::string& format, Args&&... args) {
-        Logger::getInstance().info("[AudioManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void warning(const std::string& format, Args&&... args) {
-        Logger::getInstance().warning("[AudioManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void error(const std::string& format, Args&&... args) {
-        Logger::getInstance().error("[AudioManager] " + format, std::forward<Args>(args)...);
-    }
+    template<typename... Args> static void debug(const std::string& format, Args&&... args) { Logger::getInstance().debug("[AudioManager] " + format, std::forward<Args>(args)...); }
+    template<typename... Args> static void info(const std::string& format, Args&&... args) { Logger::getInstance().info("[AudioManager] " + format, std::forward<Args>(args)...); }
+    template<typename... Args> static void warning(const std::string& format, Args&&... args) { Logger::getInstance().warning("[AudioManager] " + format, std::forward<Args>(args)...); }
+    template<typename... Args> static void error(const std::string& format, Args&&... args) { Logger::getInstance().error("[AudioManager] " + format, std::forward<Args>(args)...); }
 };
 
 } // namespace havel

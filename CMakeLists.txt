@@ -79,6 +79,14 @@ endif()
 # D-Bus
 pkg_check_modules(DBUS REQUIRED dbus-1)
 
+# PipeWire
+pkg_check_modules(PIPEWIRE QUIET libpipewire-0.3)
+if(PIPEWIRE_FOUND)
+    message(STATUS "PipeWire:        ✓ ENABLED (${PIPEWIRE_VERSION})")
+else()
+    message(STATUS "PipeWire:        ✗ NOT FOUND (Falling back to PulseAudio/ALSA)")
+endif()
+
 # Lua (try 5.4 first, fallback to pkg-config)
 find_package(Lua 5.4 QUIET)
 if(NOT Lua_FOUND)
@@ -290,6 +298,7 @@ set(COMMON_LIBS
     ${XRANDR_LIB} 
     ${XINERAMA_LIB}
     ${PULSEAUDIO_LIBRARIES}
+    ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
     Threads::Threads
     ncurses
@@ -340,6 +349,7 @@ target_include_directories(havel PRIVATE
     ${XI_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}
     ${PULSEAUDIO_INCLUDE_DIRS}
+    ${PIPEWIRE_INCLUDE_DIRS}
     ${ALSA_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}
     ${WAYLAND_INCLUDE_DIRS}
@@ -360,6 +370,7 @@ target_compile_definitions(havel PRIVATE
     $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
+    $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
 )
 
 # ==============================================================================
@@ -375,6 +386,7 @@ if(ENABLE_HAVEL_LANG)
         ${XI_INCLUDE_DIR}
         ${DBUS_INCLUDE_DIRS}
         ${PULSEAUDIO_INCLUDE_DIRS}
+        ${PIPEWIRE_INCLUDE_DIRS}
         ${ALSA_INCLUDE_DIRS}
         ${LUA_INCLUDE_DIR}
         ${WAYLAND_INCLUDE_DIRS}
@@ -391,6 +403,7 @@ if(ENABLE_HAVEL_LANG)
     
     target_compile_definitions(havel_lang PRIVATE
         $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+        $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
     )
 endif()
 
@@ -433,6 +446,7 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             RUN_TESTS
             $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
             $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+            $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
         )
         
         # Add to CTest
@@ -490,6 +504,15 @@ message(STATUS "C++ Standard:    C++${CMAKE_CXX_STANDARD}")
 message(STATUS "")
 message(STATUS "=== FEATURES ===")
 message(STATUS "GUI (Qt6):       ✓ ENABLED (${Qt6_VERSION})")
+if(PIPEWIRE_FOUND)
+    message(STATUS "PipeWire:        ✓ ENABLED")
+endif()
+if(PULSEAUDIO_FOUND)
+    message(STATUS "PulseAudio:      ✓ ENABLED")
+endif()
+if(ALSA_FOUND)
+    message(STATUS "ALSA:            ✓ ENABLED")
+endif()
 message(STATUS "Wayland:         ✓ ENABLED")
 message(STATUS "X11:             ✓ ENABLED")
 
@@ -563,4 +586,3 @@ endif()
 if(ALSA_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_ALSA)
 endif()
-    

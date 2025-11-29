@@ -754,8 +754,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
   });
-  io.Remap("CapsLock", "Esc");
-  io.Hotkey("@!-", [this]() {
+  io.Remap("CapsLock", "LAlt");
+  io.Hotkey("@+CapsLock", []() {
+      io.Send("{CapsLock}");
+  });
+  io.Hotkey("@^CapsLock", []() {
+      io.Send("{CapsLock}");
+  });
+  io.Hotkey("@!-", []() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
     if (io.mouseSensitivity < 0)

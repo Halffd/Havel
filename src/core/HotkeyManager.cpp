@@ -754,14 +754,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
   });
-  io.Remap("CapsLock", "LAlt");
-  io.Hotkey("@+CapsLock", []() {
+  io.Map("CapsLock", "LAlt");
+  io.Hotkey("@+CapsLock", [this]() {
       io.Send("{CapsLock}");
   });
-  io.Hotkey("@^CapsLock", []() {
+  io.Hotkey("@^CapsLock", [this]() {
       io.Send("{CapsLock}");
   });
-  io.Hotkey("@!-", []() {
+  io.Hotkey("@!-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
     if (io.mouseSensitivity < 0)
@@ -1739,8 +1739,32 @@ bool HotkeyManager::isGamingWindow() {
   std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(),
                  ::tolower);
 
-  const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
+  // Check for excluded classes first
+  const std::vector<std::string> gamingAppsExclude = Configs::Get().GetGamingAppsExclude();
+  for (const auto &app : gamingAppsExclude) {
+    if (windowClass.find(app) != std::string::npos) {
+      return false; // Explicitly excluded by class
+    }
+  }
 
+  // Check for excluded titles
+  const std::vector<std::string> gamingAppsExcludeTitle = Configs::Get().GetGamingAppsExcludeTitle();
+  for (const auto &app : gamingAppsExcludeTitle) {
+    if (windowTitle.find(app) != std::string::npos) {
+      return false; // Explicitly excluded by title
+    }
+  }
+
+  // Check for specifically included titles
+  const std::vector<std::string> gamingAppsTitle = Configs::Get().GetGamingAppsTitle();
+  for (const auto &app : gamingAppsTitle) {
+    if (windowTitle.find(app) != std::string::npos) {
+      return true; // Explicitly included by title
+    }
+  }
+
+  // Finally check for regular gaming apps by class
+  const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
   for (const auto &app : gamingApps) {
     if (windowClass.find(app) != std::string::npos) {
       return true;

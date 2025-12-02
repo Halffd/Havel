@@ -418,6 +418,36 @@ public:
         }
         return result;
     }
+    std::vector<std::string> GetGamingAppsExclude() const {
+        std::string apps = Get<std::string>("General.GamingAppsExclude", "");
+        std::vector<std::string> result;
+        std::istringstream iss(apps);
+        std::string token;
+        while (std::getline(iss, token, ',')) {
+            if (!token.empty()) result.push_back(token);
+        }
+        return result;
+    }
+    std::vector<std::string> GetGamingAppsExcludeTitle() const {
+        std::string apps = Get<std::string>("General.GamingAppsExcludeTitle", "");
+        std::vector<std::string> result;
+        std::istringstream iss(apps);
+        std::string token;
+        while (std::getline(iss, token, ',')) {
+            if (!token.empty()) result.push_back(token);
+        }
+        return result;
+    }
+    std::vector<std::string> GetGamingAppsTitle() const {
+        std::string apps = Get<std::string>("General.GamingAppsTitle", "");
+        std::vector<std::string> result;
+        std::istringstream iss(apps);
+        std::string token;
+        while (std::getline(iss, token, ',')) {
+            if (!token.empty()) result.push_back(token);
+        }
+        return result;
+    }
     void SetGamingApps(const std::vector<std::string>& apps) {
         std::ostringstream oss;
         for (size_t i = 0; i < apps.size(); ++i) {

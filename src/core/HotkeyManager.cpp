@@ -1464,7 +1464,8 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     setMode("default");
   }
 
-  // Process all conditional hotkeys
+  // Process all conditional hotkeys - protect with mutex
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
   for (auto &hotkey : conditionalHotkeys) {
     updateConditionalHotkey(hotkey);
   }
@@ -1496,8 +1497,6 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   } else {
     // Use the string-based condition (original behavior)
     {
-      std::lock_guard<std::mutex> lock(hotkeyMutex);
-
       // Check cache first
       auto cacheIt = conditionCache.find(hotkey.condition);
       if (cacheIt != conditionCache.end()) {
@@ -1515,7 +1514,11 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
                  hotkey.lastConditionResult, conditionMet);
           }
 
-          // Update hotkey state based on cached condition
+          // Update hotkey state based on cached condition - protect with mutex
+          {
+            hotkey.lastConditionResult = conditionMet;
+          }
+          // Call updateHotkeyState separately and safely
           updateHotkeyState(hotkey, conditionMet);
           return;
         }
@@ -1526,7 +1529,10 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
     conditionMet = evaluateCondition(hotkey.condition);
 
     // Update cache with the new result
-    conditionCache[hotkey.condition] = {conditionMet, now};
+    {
+      std::lock_guard<std::mutex> lock(hotkeyMutex);
+      conditionCache[hotkey.condition] = {conditionMet, now};
+    }
   }
 
   // Only log when condition changes
@@ -1543,6 +1549,7 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   }
 
   // Update hotkey state based on new condition
+  // The hotkey.lastConditionResult will be updated inside updateHotkeyState
   updateHotkeyState(hotkey, conditionMet);
 }
 
@@ -1609,14 +1616,17 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = false;
 
-  conditionalHotkeys.push_back(ch);
-  conditionalHotkeyIds.push_back(id);
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    conditionalHotkeys.push_back(ch);
+    conditionalHotkeyIds.push_back(id);
+
+    // Initial evaluation and grab if needed
+    updateConditionalHotkey(conditionalHotkeys.back());
+  }
 
   // Register but don't grab yet
   io.Hotkey(key, action, condition, id);
-
-  // Initial evaluation and grab if needed
-  updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;
 }
@@ -1654,15 +1664,18 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = true; // Mark as function-based condition
 
-  conditionalHotkeys.push_back(ch);
-  conditionalHotkeyIds.push_back(id);
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    conditionalHotkeys.push_back(ch);
+    conditionalHotkeyIds.push_back(id);
+
+    // For function-based conditions, we need to update them separately
+    // The conditional hotkey update logic will handle grabbing/ungrabbing
+    updateConditionalHotkey(conditionalHotkeys.back());
+  }
 
   // Register but don't grab yet
   io.Hotkey(key, action, "<function>", id);
-
-  // For function-based conditions, we need to update them separately
-  // The conditional hotkey update logic will handle grabbing/ungrabbing
-  updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;
 }

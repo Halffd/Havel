@@ -425,7 +425,11 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             ${CMAKE_SOURCE_DIR}/src
             ${CMAKE_SOURCE_DIR}/include
             ${X11_INCLUDE_DIR}
+            ${XI_INCLUDE_DIR}
             ${DBUS_INCLUDE_DIRS}
+            ${PULSEAUDIO_INCLUDE_DIRS}
+            ${PIPEWIRE_INCLUDE_DIRS}
+            ${ALSA_INCLUDE_DIRS}
             ${LUA_INCLUDE_DIR}
             ${WAYLAND_INCLUDE_DIRS}
             ${GENERATED_PROTO_DIR}
@@ -446,7 +450,10 @@ if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
             RUN_TESTS
             $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
             $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
+            $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>
             $<$<BOOL:${PIPEWIRE_FOUND}>:HAVE_PIPEWIRE>
+            $<$<BOOL:${PULSEAUDIO_FOUND}>:HAVE_PULSEAUDIO>
+            $<$<BOOL:${ALSA_FOUND}>:HAVE_ALSA>
         )
         
         # Add to CTest

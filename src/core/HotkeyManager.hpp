@@ -153,6 +153,7 @@ private:
   static constexpr int CONDITION_CHECK_INTERVAL_MS =
       16; // Check every ~60fps for more responsive behavior
   std::unique_ptr<KeyTap> lwin;
+  std::unique_ptr<KeyTap> ralt;
   // Cached condition results
   struct CachedCondition {
     bool result;
@@ -236,6 +237,7 @@ private:
   std::unique_ptr<automation::AutoRunner> autoRunner;
   std::unique_ptr<automation::AutoKeyPresser> autoKeyPresser;
   wID autoclickerWindowID = 0;
+  double zoomLevel = 1.0;
   // Key name conversion maps
   const std::map<std::string, std::string> keyNameAliases = {
       // Mouse buttons

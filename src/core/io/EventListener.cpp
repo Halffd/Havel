@@ -559,40 +559,31 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
             modifierState.IsAltPressed() ? "Alt+" : "",
             modifierState.IsMetaPressed() ? "Meta+" : "");
 
-      // Optimization 3: Lazy Combo Evaluation - Increment pressed count for
-      // combos containing either code Check for combos using the mapped code
-      auto it = combosByKey.find(mappedCode);
-      if (it != combosByKey.end()) {
-        for (int hotkeyId : it->second) {
-          comboPressedCount[hotkeyId]++;
-          auto hotkeyIt = IO::hotkeys.find(hotkeyId);
-          if (hotkeyIt != IO::hotkeys.end() &&
-              comboPressedCount[hotkeyId] ==
-                  static_cast<int>(hotkeyIt->second.comboSequence.size())) {
-            // All keys in combo are pressed, evaluate it
-            if (EvaluateCombo(hotkeyIt->second)) {
-              ExecuteHotkeyCallback(hotkeyIt->second);
-            }
+      // CHECK ALL COMBOS THAT MIGHT INCLUDE THIS KEY
+      // Loop through ALL hotkeys to find combos (more reliable than indexed lookup)
+      for (auto &[hotkeyId, hotkey] : IO::hotkeys) {
+        if (!hotkey.enabled || hotkey.type != HotkeyType::Combo) {
+          continue;
+        }
+        
+        // Check if this combo includes the pressed key (mapped or original)
+        bool comboIncludesKey = false;
+        for (const auto &comboKey : hotkey.comboSequence) {
+          int comboKeyCode = (comboKey.type == HotkeyType::Keyboard) 
+              ? static_cast<int>(comboKey.key) 
+              : (comboKey.type == HotkeyType::MouseButton) 
+                  ? comboKey.mouseButton : -1;
+          
+          if (comboKeyCode == mappedCode || comboKeyCode == originalCode) {
+            comboIncludesKey = true;
+            break;
           }
         }
-      }
-
-      // Check for combos using the original code (for remapping compatibility)
-      if (mappedCode != originalCode) {
-        auto origIt = combosByKey.find(originalCode);
-        if (origIt != combosByKey.end()) {
-          for (int hotkeyId : origIt->second) {
-            comboPressedCount[hotkeyId]++;
-            auto hotkeyIt = IO::hotkeys.find(hotkeyId);
-            if (hotkeyIt != IO::hotkeys.end() &&
-                comboPressedCount[hotkeyId] ==
-                    static_cast<int>(hotkeyIt->second.comboSequence.size())) {
-              // All keys in combo are pressed, evaluate it
-              if (EvaluateCombo(hotkeyIt->second)) {
-                ExecuteHotkeyCallback(hotkeyIt->second);
-              }
-            }
-          }
+        
+        // If this combo includes the key that was just pressed, evaluate it
+        if (comboIncludesKey && EvaluateCombo(hotkey)) {
+          debug("✅ Combo hotkey '{}' triggered on key press", hotkey.alias);
+          ExecuteHotkeyCallback(hotkey);
         }
       }
     } else {
@@ -603,26 +594,9 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       }
 
       debug("🔑 Key RELEASE: original={} mapped={}", originalCode, mappedCode);
-
-      // Decrement pressed count for combos containing either code
-      auto it = combosByKey.find(mappedCode);
-      if (it != combosByKey.end()) {
-        for (int hotkeyId : it->second) {
-          comboPressedCount[hotkeyId] =
-              std::max(0, comboPressedCount[hotkeyId] - 1);
-        }
-      }
-
-      // Also decrement for original code if different
-      if (mappedCode != originalCode) {
-        auto origIt = combosByKey.find(originalCode);
-        if (origIt != combosByKey.end()) {
-          for (int hotkeyId : origIt->second) {
-            comboPressedCount[hotkeyId] =
-                std::max(0, comboPressedCount[hotkeyId] - 1);
-          }
-        }
-      }
+      
+      // Note: comboPressedCount is removed in favor of activeInputs-based evaluation
+      // EvaluateCombo() uses activeInputs map directly, which is more reliable
     }
     // Modifier state was already updated earlier
   }
@@ -647,10 +621,19 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   if (!hotkey.callback)
     return;
 
+  // Create a copy of the callback and metadata BEFORE releasing locks
+  // This prevents deadlock where callback tries to acquire locks we hold
+  auto callback_copy = hotkey.callback;
+  std::string alias_copy = hotkey.alias;
+  
+  // Increment pending count (must be done before thread spawns)
   pendingCallbacks++;
-  std::thread([callback = hotkey.callback, alias = hotkey.alias, this]() {
+  
+  // Spawn thread - it will have its own independent state
+  std::thread([callback = callback_copy, alias = alias_copy, this]() {
     try {
       if (running.load() && !shutdown.load()) {
+        // Thread runs OUTSIDE of mutex locks
         callback();
       }
     } catch (const std::exception &e) {
@@ -955,22 +938,29 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 }
 void EventListener::UpdateModifierState(int evdevCode, bool down) {
   // This is called with stateMutex already locked
+  
+  // Check if this key is remapped - if so, update modifier state based on target
+  int effectiveCode = evdevCode;
+  auto remapIt = keyRemaps.find(evdevCode);
+  if (remapIt != keyRemaps.end()) {
+    effectiveCode = remapIt->second;
+  }
 
-  if (evdevCode == KEY_LEFTCTRL) {
+  if (effectiveCode == KEY_LEFTCTRL) {
     modifierState.leftCtrl = down;
-  } else if (evdevCode == KEY_RIGHTCTRL) {
+  } else if (effectiveCode == KEY_RIGHTCTRL) {
     modifierState.rightCtrl = down;
-  } else if (evdevCode == KEY_LEFTSHIFT) {
+  } else if (effectiveCode == KEY_LEFTSHIFT) {
     modifierState.leftShift = down;
-  } else if (evdevCode == KEY_RIGHTSHIFT) {
+  } else if (effectiveCode == KEY_RIGHTSHIFT) {
     modifierState.rightShift = down;
-  } else if (evdevCode == KEY_LEFTALT) {
+  } else if (effectiveCode == KEY_LEFTALT) {
     modifierState.leftAlt = down;
-  } else if (evdevCode == KEY_RIGHTALT) {
+  } else if (effectiveCode == KEY_RIGHTALT) {
     modifierState.rightAlt = down;
-  } else if (evdevCode == KEY_LEFTMETA) {
+  } else if (effectiveCode == KEY_LEFTMETA) {
     modifierState.leftMeta = down;
-  } else if (evdevCode == KEY_RIGHTMETA) {
+  } else if (effectiveCode == KEY_RIGHTMETA) {
     modifierState.rightMeta = down;
   }
 }

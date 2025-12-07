@@ -35,7 +35,7 @@ void KeyTap::setup() {
             combo = false;
         });
     } else {
-        hotkeyManager.AddContextualHotkey(keyDown, "", [this]() {
+        hotkeyManager.AddHotkey(keyDown, [this]() {
             keyHeld = true;
             combo = false;
         });
@@ -57,7 +57,7 @@ void KeyTap::setup() {
             keyHeld = false;
         });
     } else {
-        hotkeyManager.AddContextualHotkey(keyUp, "", [this]() {
+        hotkeyManager.AddHotkey(keyUp, [this]() {
             if (keyHeld && !combo) {
                 onTap();   // clean tap
             }

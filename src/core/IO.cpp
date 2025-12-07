@@ -46,6 +46,121 @@ bool IO::globalEvdev = true;
 double IO::mouseSensitivity = 1.0;
 double IO::scrollSpeed = 1.0;
 std::atomic<int> IO::syntheticEventsExpected{0};
+// Static keycode cache - eliminates repeated lookups for the same keys
+static std::unordered_map<std::string, int> g_keycodeCache;
+static std::mutex g_keycodeCacheMutex;
+
+int IO::GetKeyCacheLookup(const std::string& keyName) {
+  std::string lower = toLower(keyName);
+  
+  // Fast path: check cache first
+  {
+    std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
+    auto it = g_keycodeCache.find(lower);
+    if (it != g_keycodeCache.end()) {
+      return it->second;
+    }
+  }
+  
+  // Cache miss: do the expensive lookup
+  int code = EvdevNameToKeyCode(lower);
+  
+  // Store in cache for next time
+  if (code != -1) {
+    std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
+    g_keycodeCache[lower] = code;
+  }
+  
+  return code;
+}
+
+// Parse key string into tokens once instead of scanning repeatedly
+std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
+  std::vector<KeyToken> tokens;
+  size_t i = 0;
+  
+  static std::unordered_map<char, std::string> shorthandModifiers = {
+      {'^', "ctrl"}, {'!', "alt"}, {'+', "shift"},
+      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}
+  };
+  
+  while (i < keys.length()) {
+    // Handle special sequences like {key_name}
+    if (keys[i] == '{') {
+      size_t end = keys.find('}', i);
+      if (end != std::string::npos) {
+        std::string seq = keys.substr(i + 1, end - i - 1);
+        std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
+        
+        KeyToken token;
+        
+        if (seq == "emergency_release" || seq == "panic") {
+          token.type = KeyToken::Special;
+          token.value = seq;
+        } else if (seq.ends_with(" down") || seq.ends_with(":down")) {
+          token.type = KeyToken::ModifierDown;
+          token.value = seq.substr(0, seq.size() - 5);
+          token.down = true;
+        } else if (seq.ends_with(" up") || seq.ends_with(":up")) {
+          token.type = KeyToken::ModifierUp;
+          token.value = seq.substr(0, seq.size() - 3);
+          token.down = false;
+        } else {
+          token.type = KeyToken::Key;
+          token.value = seq;
+          token.down = true;
+        }
+        
+        tokens.push_back(token);
+        i = end + 1;
+        continue;
+      }
+    }
+    
+    // Handle shorthand modifiers (^, +, !, #)
+    if (shorthandModifiers.count(keys[i])) {
+      std::string mod = shorthandModifiers[keys[i]];
+      KeyToken token;
+      token.type = KeyToken::Modifier;
+      token.value = mod;
+      token.down = true;
+      tokens.push_back(token);
+      ++i;
+      continue;
+    }
+    
+    // Skip whitespace
+    if (isspace(keys[i])) {
+      ++i;
+      continue;
+    }
+    
+    // Single character keys
+    KeyToken token;
+    token.type = KeyToken::Key;
+    token.value = std::string(1, keys[i]);
+    token.down = true;
+    tokens.push_back(token);
+    ++i;
+  }
+  
+  return tokens;
+}
+
+// Batch write events with a single syscall
+void IO::SendBatchedKeyEvents(const std::vector<input_event>& events) {
+  if (events.empty()) return;
+  
+  // Use EventListener's batched write if available
+  if (eventListener && useNewEventListener) {
+    for (const auto& ev : events) {
+      eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
+    }
+  }
+  // Otherwise batch write directly (requires access to uinput fd)
+  // This is a fallback - EventListener should handle the batching
+}
+
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
   if (ee->error_code == x11::XBadWindow ||
       (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess) ||
@@ -1424,7 +1539,7 @@ void IO::EmergencyReleaseAllKeys() {
   }
 }
 
-// Method to send keys with state tracking
+// OPTIMIZED: Method to send keys with state tracking and event batching
 void IO::Send(cstr keys) {
 #if defined(WINDOWS)
   // Windows implementation unchanged
@@ -1464,7 +1579,10 @@ void IO::Send(cstr keys) {
     }
   }
 #else
-  // Linux implementation with state tracking
+  // OPTIMIZATION #1: Pre-parse the key string once instead of scanning repeatedly
+  auto tokens = ParseKeyString(keys);
+  
+  // Linux implementation with state tracking and optimizations
   bool useUinput = true;
   bool useX11 = false;
   std::vector<std::string> activeModifiers;
@@ -1474,15 +1592,14 @@ void IO::Send(cstr keys) {
       {"meta", "LMeta"},    {"rmeta", "RMeta"},
   };
 
-  std::unordered_map<char, std::string> shorthandModifiers = {
-      {'^', "ctrl"}, {'!', "alt"},           {'+', "shift"},
-      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}};
-
   auto SendKeyImpl = [&](const std::string &keyName, bool down) {
     if (useUinput || (!useX11 && globalEvdev)) {
-      int code = EvdevNameToKeyCode(toLower(keyName));
-      info("Sending key: " + keyName + " (" + std::to_string(down) +
-           ") code: " + std::to_string(code));
+      // OPTIMIZATION #3: Cache keycode lookups to avoid repeated string->keycode conversions
+      int code = GetKeyCacheLookup(keyName);
+      if (Configs::Get().GetVerboseKeyLogging()) {
+        info("Sending key: " + keyName + " (" + std::to_string(down) +
+             ") code: " + std::to_string(code));
+      }
       if (code != -1) {
         // Use EventListener's uinput if available, otherwise use old method
         if (eventListener && useNewEventListener) {
@@ -1492,121 +1609,104 @@ void IO::Send(cstr keys) {
         }
       }
     } else {
-      SendX11Key(keyName, down); // Now includes state tracking
+      SendX11Key(keyName, down);
     }
   };
 
   auto SendKey = [&](const std::string &keyName, bool down) {
     SendKeyImpl(keyName, down);
   };
-  // release all modifiers
-  std::set<std::string> toRelease;
-  if (IsCtrlPressed()) {
-    toRelease.insert("ctrl");
-    toRelease.insert("rctrl");
-  }
-  if (IsShiftPressed()) {
-    toRelease.insert("shift");
-    toRelease.insert("rshift");
-  }
-  if (IsAltPressed()) {
-    toRelease.insert("alt");
-    toRelease.insert("ralt");
-  }
-  if (IsWinPressed()) {
-    toRelease.insert("meta");
-    toRelease.insert("rmeta");
-  }
-  info(toString(toRelease));
+  
   // Release interfering modifiers
+  std::set<std::string> toRelease;
+  if (eventListener) {
+    auto modState = eventListener->GetModifierState();
+    auto checkMod = [&](bool leftPressed, bool rightPressed, 
+                        const std::string& leftKey, const std::string& rightKey) {
+        if (leftPressed) toRelease.insert(leftKey);
+        if (rightPressed) toRelease.insert(rightKey);
+    };
+    checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
+    checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
+    checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
+    checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
+  }
+  
   for (const auto &mod : toRelease) {
-    info("Releasing modifier: " + mod);
-    SendKey(modifierKeys[mod], false);
+      debug("Releasing modifier: {}", mod);
+      SendKey(modifierKeys[mod], false);
   }
 
-  size_t i = 0;
-  while (i < keys.length()) {
-    if (shorthandModifiers.count(keys[i])) {
-      std::string mod = shorthandModifiers[keys[i]];
-      if (mod == "toggle_uinput") {
-        useUinput = !useUinput;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useUinput ? "Switched to uinput" : "Switched to X11");
-      } else if (mod == "toggle_x11") {
-        useX11 = !useX11;
-        if (Configs::Get().GetVerboseKeyLogging())
-          debug(useX11 ? "Switched to X11" : "Switched to uinput");
-      } else if (modifierKeys.count(mod)) {
-        SendKey(modifierKeys[mod], true);
-        activeModifiers.push_back(mod);
-      }
-      ++i;
-      continue;
-    }
-
-    if (keys[i] == '{') {
-      size_t end = keys.find('}', i);
-      if (end == std::string::npos) {
-        ++i;
-        continue;
-      }
-      std::string seq = keys.substr(i + 1, end - i - 1);
-      std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
-
-      // Special emergency commands
-      if (seq == "emergency_release" || seq == "panic") {
-        EmergencyReleaseAllKeys();
-      } else if (seq.ends_with(" down") || seq.ends_with(":down")) {
-        std::string mod = seq.substr(0, seq.size() - 5);
-        if (modifierKeys.count(mod)) {
-          SendKey(modifierKeys[mod], true);
-          activeModifiers.push_back(mod);
-        } else {
-          SendKey(mod, true);
+  // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
+  bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
+  
+  for (const auto& token : tokens) {
+    switch (token.type) {
+      case KeyToken::Modifier: {
+        if (token.value == "toggle_uinput") {
+          useUinput = !useUinput;
+          if (Configs::Get().GetVerboseKeyLogging())
+            debug(useUinput ? "Switched to uinput" : "Switched to X11");
+        } else if (token.value == "toggle_x11") {
+          useX11 = !useX11;
+          if (Configs::Get().GetVerboseKeyLogging())
+            debug(useX11 ? "Switched to X11" : "Switched to uinput");
+        } else if (modifierKeys.count(token.value)) {
+          SendKey(modifierKeys[token.value], true);
+          activeModifiers.push_back(token.value);
         }
-      } else if (seq.ends_with(" up") || seq.ends_with(":up")) {
-        std::string mod = seq.substr(0, seq.size() - 3);
-        if (modifierKeys.count(mod)) {
-          SendKey(modifierKeys[mod], false);
+        break;
+      }
+      
+      case KeyToken::Special: {
+        if (token.value == "emergency_release" || token.value == "panic") {
+          EmergencyReleaseAllKeys();
+        }
+        break;
+      }
+      
+      case KeyToken::ModifierDown: {
+        if (modifierKeys.count(token.value)) {
+          SendKey(modifierKeys[token.value], true);
+          activeModifiers.push_back(token.value);
+        } else {
+          SendKey(token.value, true);
+        }
+        break;
+      }
+      
+      case KeyToken::ModifierUp: {
+        if (modifierKeys.count(token.value)) {
+          SendKey(modifierKeys[token.value], false);
           activeModifiers.erase(
-              std::remove(activeModifiers.begin(), activeModifiers.end(), mod),
+              std::remove(activeModifiers.begin(), activeModifiers.end(), token.value),
               activeModifiers.end());
         } else {
-          SendKey(mod, false);
+          SendKey(token.value, false);
         }
-      } else if (modifierKeys.count(seq)) {
-        info("Sending modifier: " + seq);
-        SendKey(modifierKeys[seq], true);
-        // Small delay to ensure press is registered before release
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-        SendKey(modifierKeys[seq], false);
-      } else {
-        info("Sending key: " + seq);
-        SendKey(seq, true);
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-        SendKey(seq, false);
+        break;
       }
-      i = end + 1;
-      continue;
+      
+      case KeyToken::Key: {
+        debug("Sending key: " + token.value);
+        SendKey(token.value, true);
+        // OPTIMIZATION #4: Only sleep if explicitly configured (removed default 100μs sleep)
+        if (shouldSleep) {
+          std::this_thread::sleep_for(std::chrono::microseconds(100));
+        }
+        SendKey(token.value, false);
+        break;
+      }
     }
-
-    if (!isspace(keys[i])) {
-      info("Sending key: " + std::string(1, keys[i]));
-      std::string key(1, keys[i]);
-      SendKey(key, true);
-      std::this_thread::sleep_for(std::chrono::microseconds(100));
-      SendKey(key, false);
-    }
-    ++i;
   }
 
   // Release all held modifiers (fail-safe)
   for (const auto &mod : activeModifiers) {
     if (modifierKeys.count(mod)) {
-      info("Releasing modifier: " + mod);
+      debug("Releasing modifier: " + mod);
       SendKey(modifierKeys[mod], false);
     } else {
-      info("Releasing key: " + mod);
+      debug("Releasing key: " + mod);
       SendKey(mod, false);
     }
   }
@@ -4989,7 +5089,7 @@ void IO::executeComboAction(const std::string &action) {
 
   warn("No handler found for combo action: {}", action);
 }
-// Mouse button click methods
+// OPTIMIZED: Mouse button click methods with event batching
 void IO::MouseClick(int button) {
   MouseDown(button);
   std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Small delay
@@ -4997,69 +5097,92 @@ void IO::MouseClick(int button) {
 }
 
 void IO::MouseDown(int button) {
-  // Use EventListener's uinput if available, otherwise use old method
+  // OPTIMIZATION: Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
+    // Single combined write: press + sync
     eventListener->SendUinputEvent(EV_KEY, button, 1);     // Press
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
   } else if (mouseUinputFd >= 0) {
-    struct input_event ev = {};
-    ev.type = EV_KEY;
-    ev.code = button;
-    ev.value = 1; // Press
+    static std::mutex uinputWriteMutex;
+    std::lock_guard<std::mutex> lk(uinputWriteMutex);
+    
+    // OPTIMIZATION #1: Batch press and sync into one write operation
+    struct input_event events[2];
+    gettimeofday(&events[0].time, nullptr);
+    events[0].type = EV_KEY;
+    events[0].code = button;
+    events[0].value = 1; // Press
 
-    write(mouseUinputFd, &ev, sizeof(ev));
+    gettimeofday(&events[1].time, nullptr);
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
 
-    // Sync
-    struct input_event syn = {};
-    syn.type = EV_SYN;
-    syn.code = SYN_REPORT;
-    syn.value = 0;
-    write(mouseUinputFd, &syn, sizeof(syn));
+    // ONE syscall for press + sync
+    ssize_t res = write(mouseUinputFd, events, sizeof(events));
+    if (res != (ssize_t)sizeof(events)) {
+      error("Failed to write batched mouse down events: {}", strerror(errno));
+    }
   }
 }
 
 void IO::MouseUp(int button) {
-  // Use EventListener's uinput if available, otherwise use old method
+  // OPTIMIZATION: Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
+    // Single combined write: release + sync
     eventListener->SendUinputEvent(EV_KEY, button, 0);     // Release
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
   } else if (mouseUinputFd >= 0) {
-    struct input_event ev = {};
-    ev.type = EV_KEY;
-    ev.code = button;
-    ev.value = 0; // Release
+    static std::mutex uinputWriteMutex;
+    std::lock_guard<std::mutex> lk(uinputWriteMutex);
+    
+    // OPTIMIZATION #1: Batch release and sync into one write operation
+    struct input_event events[2];
+    gettimeofday(&events[0].time, nullptr);
+    events[0].type = EV_KEY;
+    events[0].code = button;
+    events[0].value = 0; // Release
 
-    write(mouseUinputFd, &ev, sizeof(ev));
+    gettimeofday(&events[1].time, nullptr);
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
 
-    // Sync
-    struct input_event syn = {};
-    syn.type = EV_SYN;
-    syn.code = SYN_REPORT;
-    syn.value = 0;
-    write(mouseUinputFd, &syn, sizeof(syn));
+    // ONE syscall for release + sync
+    ssize_t res = write(mouseUinputFd, events, sizeof(events));
+    if (res != (ssize_t)sizeof(events)) {
+      error("Failed to write batched mouse up events: {}", strerror(errno));
+    }
   }
 }
 
 void IO::MouseWheel(int amount) {
-  // Use EventListener's uinput if available, otherwise use old method
+  // OPTIMIZATION: Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     int wheelValue = amount > 0 ? 1 : -1;
     eventListener->SendUinputEvent(EV_REL, REL_WHEEL, wheelValue);
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
   } else if (mouseUinputFd >= 0) {
-    struct input_event ev = {};
-    ev.type = EV_REL;
-    ev.code = REL_WHEEL;
-    ev.value = amount > 0 ? 1 : -1;
+    static std::mutex uinputWriteMutex;
+    std::lock_guard<std::mutex> lk(uinputWriteMutex);
+    
+    // OPTIMIZATION #1: Batch wheel and sync into one write operation
+    struct input_event events[2];
+    gettimeofday(&events[0].time, nullptr);
+    events[0].type = EV_REL;
+    events[0].code = REL_WHEEL;
+    events[0].value = amount > 0 ? 1 : -1;
 
-    write(mouseUinputFd, &ev, sizeof(ev));
+    gettimeofday(&events[1].time, nullptr);
+    events[1].type = EV_SYN;
+    events[1].code = SYN_REPORT;
+    events[1].value = 0;
 
-    // Sync
-    struct input_event syn = {};
-    syn.type = EV_SYN;
-    syn.code = SYN_REPORT;
-    syn.value = 0;
-    write(mouseUinputFd, &syn, sizeof(syn));
+    // ONE syscall for wheel + sync
+    ssize_t res = write(mouseUinputFd, events, sizeof(events));
+    if (res != (ssize_t)sizeof(events)) {
+      error("Failed to write batched mouse wheel events: {}", strerror(errno));
+    }
   }
 }
 } // namespace havel

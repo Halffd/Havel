@@ -118,6 +118,29 @@ struct ModifierState {
   bool rightMeta = false;
 };
 
+// Event batching structures for optimization
+struct KeyToken {
+  enum Type { 
+    Modifier,       // ^, +, !, #, etc.
+    Key,            // Regular key or {key_name}
+    ModifierDown,   // {ctrl down}, {shift up}, etc.
+    ModifierUp,
+    Special         // {emergency_release}, {panic}
+  } type;
+  std::string value;
+  bool down = true;
+};
+
+// Helper to create input_event structs efficiently
+inline input_event MakeEvent(uint16_t type, uint16_t code, int32_t value) {
+  struct input_event ev {};
+  gettimeofday(&ev.time, nullptr);
+  ev.type = type;
+  ev.code = code;
+  ev.value = value;
+  return ev;
+}
+
 struct IoEvent {
   Key key;
   int modifiers;
@@ -378,6 +401,11 @@ public:
   static double mouseSensitivity;
   static double scrollSpeed;
   bool shutdown = false;
+
+  // Performance optimization: Keycode caching and batch event helpers
+  static int GetKeyCacheLookup(const std::string& keyName);
+  static std::vector<KeyToken> ParseKeyString(const std::string& keys);
+  void SendBatchedKeyEvents(const std::vector<input_event>& events);
 
 private:
   Display* display;

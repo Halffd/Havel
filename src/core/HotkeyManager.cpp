@@ -46,22 +46,27 @@ std::string HotkeyManager::getMode() const {
 }
 
 void HotkeyManager::Zoom(int zoom) {
-  printStackTrace();
-  info("Ctrl down? {} | Shift down? {} | Alt down? {} | Super down? {}",
-       io.IsCtrlPressed(), io.IsShiftPressed(), io.IsAltPressed(),
-       io.IsWinPressed());
   if (zoom < 0)
     zoom = 0;
   else if (zoom > 3)
     zoom = 3;
   if (zoom == 1) {
     io.Send("@^{Up}");
+    zoomLevel += 0.1;
   } else if (zoom == 0) {
     io.Send("@^{Down}");
+    zoomLevel -= 0.1;
   } else if (zoom == 2) {
     io.Send("@^/");
+    zoomLevel = 1.0;
   } else if (zoom == 3) {
     io.Send("@^+/");
+    zoomLevel = 1.5;
+  }
+  if(zoomLevel < 1.0) {
+    zoomLevel = 1.0;
+  } else if(zoomLevel > 2.0) {
+    zoomLevel = 2.0;
   }
 }
 void HotkeyManager::printHotkeys() const {
@@ -394,7 +399,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
   // Application Shortcuts
   io.Hotkey("@|rwin", [this]() { io.Send("@!{backspace}"); });
-  io.Hotkey("@|ralt", []() { WindowManager::MoveWindowToNextMonitor(); });
   // This should now work correctly
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
@@ -406,6 +410,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       "mode == 'gaming'"         // Combo condition
   );
   lwin->setup();
+  ralt = std::make_unique<KeyTap>(
+      io, *this, "ralt",
+      []() {
+        WindowManager::MoveWindowToNextMonitor();
+      }
+  );
+  ralt->setup();
   AddGamingHotkey(
       "u",
       [this]() {
@@ -464,12 +475,18 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     auto activePid = WindowManager::GetActiveWindowPID();
     ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
   });
-
+  AddHotkey("~^Down", [this]() {
+    if(zoomLevel > 1.0)
+      zoomLevel -= 0.1;
+  });
+  AddHotkey("~^Up", [this]() {
+    if(zoomLevel < 2.0)
+      zoomLevel += 0.1;
+  });
   // Context-sensitive hotkeys
   AddHotkey("@kc89",
             [this]() { // When zooming
-              setZooming(!isZooming());
-              if (isZooming()) {
+              if (zoomLevel <= 1.0) {
                 Zoom(3);
               } else {
                 Zoom(2);
@@ -973,85 +990,92 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
   AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
                       []() { info("Enter pressed in chatterino"); });
-
-  AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this]() {
-    auto winId = WindowManager::GetActiveWindow();
-
-    // if (!fRunning) {
-    //  Start F spamming
-    fRunning = true;
-    fTimer = TimerManager::SetTimer(
-        100,
-        [this, winId]() {
-          if (WindowManager::GetActiveWindow() != winId) {
-            info("Window changed, stopping F timer");
-            if (fTimer) {
+    AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this]() {
+      auto winId = WindowManager::GetActiveWindow();
+      
+      // ✅ CHECK STATE FIRST
+      if (io.GetKeyState("lctrl")) {
+          // Stop mode
+          if (fTimer) {
               TimerManager::StopTimer(fTimer);
               fTimer = nullptr;
-            }
-            fRunning = false;
-            return;
+          }
+          fRunning = false;
+          info("Stopped F spamming");
+          return;  // 👈 EARLY EXIT
+      }
+      
+      if (fRunning) {
+          if (fTimer) {
+              TimerManager::StopTimer(fTimer);
+              fTimer = nullptr;
+          }
+          fRunning = false;
+      }
+      
+      // Now start
+      fRunning = true;
+      fTimer = TimerManager::SetTimer(100, [this, winId]() {
+          if (WindowManager::GetActiveWindow() != winId) {
+              info("Window changed, stopping F timer");
+              if (fTimer) {
+                  TimerManager::StopTimer(fTimer);
+                  fTimer = nullptr;
+              }
+              fRunning = false;
+              return;
           }
           io.Send("f");
-        },
-        true);
-
-    // Auto-stop after 15 seconds
-    SetTimeout(15000, [this]() {
-      if (fRunning) {
-        info("F timer auto-stopped after 15s");
-        if (fTimer) {
-          TimerManager::StopTimer(fTimer);
-          fTimer = nullptr;
-        }
-        fRunning = false;
-      }
-    });
-
-    info("Started F spamming");
-    //}
-    if (io.GetKeyState("lctrl")) {
-      // Stop F spamming
-      if (fTimer) {
-        TimerManager::StopTimer(fTimer);
-        fTimer = nullptr;
-      }
-      fRunning = false;
-      info("Stopped F spamming");
-    }
+      }, true);
+      
+      // Auto-stop after 15 seconds
+      SetTimeout(15000, [this]() {
+          if (fRunning && fTimer) {
+              info("F timer auto-stopped after 15s");
+              TimerManager::StopTimer(fTimer);
+              fTimer = nullptr;
+              fRunning = false;
+          }
+      });
+      
+      info("Started F spamming");
   });
-
   AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
+    // ✅ PREVENT DOUBLE-START
+    if (spaceTimer) {
+        info("Space timer already running");
+        return;
+    }
+    
     info("Space pressed - starting spam");
-    io.Send("{space:up}"); // Release first to ensure clean state
+    io.Send("{space:up}");
     io.DisableHotkey("~space");
-
+    
     auto winId = WindowManager::GetActiveWindow();
-    spaceTimer = TimerManager::SetTimer(
-        100,
-        [this, winId]() {
-          if (WindowManager::GetActiveWindow() != winId) {
+    spaceTimer = TimerManager::SetTimer(100, [this, winId]() {
+        if (WindowManager::GetActiveWindow() != winId) {
             info("Window changed, stopping space timer");
             if (spaceTimer) {
-              TimerManager::StopTimer(spaceTimer);
-              spaceTimer = nullptr;
+                TimerManager::StopTimer(spaceTimer);
+                spaceTimer = nullptr;
             }
+            // ✅ RE-ENABLE THE HOTKEY
+            io.EnableHotkey("~space");
             return;
-          }
-          io.Send("{space}");
-        },
-        true);
-  });
+        }
+        io.Send("{space}");
+    }, true);
+});
 
-  AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
+AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
     info("Space released - stopping spam");
     if (spaceTimer) {
-      TimerManager::StopTimer(spaceTimer);
-      spaceTimer = nullptr;
+        TimerManager::StopTimer(spaceTimer);
+        spaceTimer = nullptr;
     }
     io.Send("{space:up}");
     io.EnableHotkey("~space");
-  });
+});
   AddContextualHotkey(
       "enter", "window.title ~ 'Genshin Impact'",
       [this]() {
@@ -1530,7 +1554,6 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
 
     // Update cache with the new result
     {
-      std::lock_guard<std::mutex> lock(hotkeyMutex);
       conditionCache[hotkey.condition] = {conditionMet, now};
     }
   }
@@ -1726,7 +1749,6 @@ bool HotkeyManager::evaluateCondition(const std::string &condition) {
 
   bool result;
   {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
     conditionEngine->invalidateCache();
     result = conditionEngine->evaluateCondition(condition);
   }

@@ -88,6 +88,7 @@ public:
     static bool Move(const std::string& windowTitle, int x, int y, bool centerOnScreen = false);
     static bool Center(const std::string& windowTitle);
     static bool Center(wID windowId);
+
     static bool MoveToCorner(wID windowId, const std::string& corner);
     static bool MoveToMonitor(wID windowId, int monitorIndex);
     static bool MoveResize(wID windowId, int x, int y, int width, int height);

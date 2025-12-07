@@ -1364,9 +1364,10 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
                 // Only update if both windows are valid and different
                 if (currentActive != x11::XNone && previousActiveWindow !=
                     currentActive) {
+                    wID oldWindow = previousActiveWindow;
                     previousActiveWindow = currentActive;
-                    std::cout << "Updated previous active window to: " <<
-                            previousActiveWindow << "Title: " << GetActiveWindowTitle() << " Class: " << GetActiveWindowClass() << std::endl;
+                    info("Updated previous active window to: {} Title: {} Class: {}",
+                         previousActiveWindow, GetActiveWindowTitle(), GetActiveWindowClass());
                 }
             }
         }

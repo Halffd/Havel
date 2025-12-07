@@ -106,6 +106,10 @@ public:
 
   void updateAllConditionalHotkeys();
 
+  void forceUpdateAllConditionalHotkeys();
+
+  void onActiveWindowChanged(wID newWindow);
+
   void LoadHotkeyConfigurations();
 
   void ReloadConfigurations();
@@ -151,7 +155,10 @@ private:
   std::chrono::steady_clock::time_point lastConditionCheck =
       std::chrono::steady_clock::now();
   static constexpr int CONDITION_CHECK_INTERVAL_MS =
-      16; // Check every ~60fps for more responsive behavior
+      1; // Check every 1ms for immediate response to window changes
+  std::atomic<std::chrono::steady_clock::time_point> lastModeSwitch =
+      std::chrono::steady_clock::now();
+  static constexpr int MODE_SWITCH_DEBOUNCE_MS = 150; // 150ms debounce for mode switching
   std::unique_ptr<KeyTap> lwin;
   std::unique_ptr<KeyTap> ralt;
   // Cached condition results
@@ -380,6 +387,7 @@ private:
   // Window focus tracking
   bool trackWindowFocus;
   wID lastActiveWindowId;
+
 
   // Update loop members
   std::thread updateLoopThread;

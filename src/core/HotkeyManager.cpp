@@ -158,7 +158,16 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
       std::shared_ptr<IO>(&io, [](IO *) {}));
   currentMode = "default";
 
-  // Start the update loop thread
+  // Start the update loop thread - this will handle all condition checking
+  {
+      std::lock_guard<std::mutex> lock(modeMutex);
+      currentMode = "default"; // Start in default mode to prevent all gaming hotkeys from being enabled initially
+  }
+  // Set initial key mappings to default
+  io.Map("Left", "Left");
+  io.Map("Right", "Right");
+  io.Map("Up", "Up");
+  io.Map("Down", "Down");
   updateLoopRunning.store(true);
   updateLoopThread = std::thread(&HotkeyManager::UpdateLoop, this);
 }
@@ -1473,19 +1482,25 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     currentActiveMode = currentMode;
   }
 
-  // Update mode once per batch of hotkey updates
-  if (gamingWindowActive && currentActiveMode != "gaming") {
-    io.Map("Left", "a");
-    io.Map("Right", "d");
-    io.Map("Up", "w");
-    io.Map("Down", "s");
-    setMode("gaming");
-  } else if (!gamingWindowActive && currentActiveMode != "default") {
-    io.Map("Left", "Left");
-    io.Map("Right", "Right");
-    io.Map("Up", "Up");
-    io.Map("Down", "Down");
-    setMode("default");
+  // Debounced mode switching
+  auto lastSwitch = lastModeSwitch.load();
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
+    // Update mode once per batch of hotkey updates
+    if (gamingWindowActive && currentActiveMode != "gaming") {
+      io.Map("Left", "a");
+      io.Map("Right", "d");
+      io.Map("Up", "w");
+      io.Map("Down", "s");
+      setMode("gaming");
+      lastModeSwitch.store(now);
+    } else if (!gamingWindowActive && currentActiveMode != "default") {
+      io.Map("Left", "Left");
+      io.Map("Right", "Right");
+      io.Map("Up", "Up");
+      io.Map("Down", "Down");
+      setMode("default");
+      lastModeSwitch.store(now);
+    }
   }
 
   // Process all conditional hotkeys - protect with mutex
@@ -1493,6 +1508,58 @@ void HotkeyManager::updateAllConditionalHotkeys() {
   for (auto &hotkey : conditionalHotkeys) {
     updateConditionalHotkey(hotkey);
   }
+}
+
+void HotkeyManager::forceUpdateAllConditionalHotkeys() {
+  bool gamingWindowActive = isGamingWindow();
+  std::string currentActiveMode;
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
+    currentActiveMode = currentMode;
+  }
+
+  // Debounced mode switching
+  auto now = std::chrono::steady_clock::now();
+  auto lastSwitch = lastModeSwitch.load();
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
+    // Update mode if needed
+    if (gamingWindowActive && currentActiveMode != "gaming") {
+      io.Map("Left", "a");
+      io.Map("Right", "d");
+      io.Map("Up", "w");
+      io.Map("Down", "s");
+      setMode("gaming");
+      lastModeSwitch.store(now);
+      if (verboseConditionLogging) {
+        info("ForceUpdate: Switched to gaming mode");
+      }
+    } else if (!gamingWindowActive && currentActiveMode != "default") {
+      io.Map("Left", "Left");
+      io.Map("Right", "Right");
+      io.Map("Up", "Up");
+      io.Map("Down", "Down");
+      setMode("default");
+      lastModeSwitch.store(now);
+      if (verboseConditionLogging) {
+        info("ForceUpdate: Switched to default mode");
+      }
+    }
+  }
+
+  // Process all conditional hotkeys - protect with mutex
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
+  for (auto &hotkey : conditionalHotkeys) {
+    updateConditionalHotkey(hotkey);
+  }
+}
+
+void HotkeyManager::onActiveWindowChanged(wID newWindow) {
+  if (verboseConditionLogging) {
+    debug("🪟 Active window changed: {}", newWindow);
+  }
+
+  // Immediately force re-evaluate all conditional hotkeys to prevent desync
+  forceUpdateAllConditionalHotkeys();
 }
 
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
@@ -1639,17 +1706,14 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = false;
 
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-    conditionalHotkeys.push_back(ch);
-    conditionalHotkeyIds.push_back(id);
-
-    // Initial evaluation and grab if needed
-    updateConditionalHotkey(conditionalHotkeys.back());
-  }
-
+  conditionalHotkeys.push_back(ch);
+  conditionalHotkeyIds.push_back(id);
   // Register but don't grab yet
   io.Hotkey(key, action, condition, id);
+  
+  // Initial evaluation and grab if needed
+  updateConditionalHotkey(conditionalHotkeys.back());
+
 
   return id;
 }
@@ -1687,18 +1751,14 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = true; // Mark as function-based condition
 
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-    conditionalHotkeys.push_back(ch);
-    conditionalHotkeyIds.push_back(id);
-
-    // For function-based conditions, we need to update them separately
-    // The conditional hotkey update logic will handle grabbing/ungrabbing
-    updateConditionalHotkey(conditionalHotkeys.back());
-  }
-
+  conditionalHotkeys.push_back(ch);
+  conditionalHotkeyIds.push_back(id);
   // Register but don't grab yet
   io.Hotkey(key, action, "<function>", id);
+
+  // For function-based conditions, we need to update them separately
+  // The conditional hotkey update logic will handle grabbing/ungrabbing
+  updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;
 }
@@ -2701,43 +2761,19 @@ void HotkeyManager::cleanup() {
 
 void HotkeyManager::UpdateLoop() {
   const auto updateInterval =
-      std::chrono::milliseconds(50); // 20 updates per second
+      std::chrono::milliseconds(2); // 500 updates per second for responsive hotkey handling
 
   while (updateLoopRunning) {
     auto startTime = std::chrono::steady_clock::now();
 
     try {
-      // Check for window state changes and update mode if needed
-      bool gamingWindowActive = isGamingWindow();
-      std::string currentActiveMode;
+      // Update conditional hotkeys only (mode switching happens on window events)
       {
-        std::lock_guard<std::mutex> lock(modeMutex);
-        currentActiveMode = currentMode;
-      }
-
-      // Update mode if needed
-      if (gamingWindowActive && currentActiveMode != "gaming") {
-        io.Map("Left", "a");
-        io.Map("Right", "d");
-        io.Map("Up", "w");
-        io.Map("Down", "s");
-        setMode("gaming");
-        if (verboseConditionLogging) {
-          info("UpdateLoop: Switched to gaming mode");
-        }
-      } else if (!gamingWindowActive && currentActiveMode != "default") {
-        io.Map("Left", "Left");
-        io.Map("Right", "Right");
-        io.Map("Up", "Up");
-        io.Map("Down", "Down");
-        setMode("default");
-        if (verboseConditionLogging) {
-          info("UpdateLoop: Switched to default mode");
+        std::lock_guard<std::mutex> lock(hotkeyMutex);
+        for (auto &hotkey : conditionalHotkeys) {
+          updateConditionalHotkey(hotkey);
         }
       }
-
-      // Update conditional hotkeys
-      updateAllConditionalHotkeys();
 
       // Update window properties for condition engine
       updateWindowProperties();

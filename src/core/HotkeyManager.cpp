@@ -939,21 +939,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
-
+  
+  static bool keyDown = false;
   AddGamingHotkey(
-      "@y",
+      "@w:up",
       [this]() {
-        info("Gaming hotkey: Holding 'w' key down");
-        io.Send("{w down}");
-
-        static bool keyDown = false;
-        keyDown = !keyDown;
-
-        if (keyDown) {
-          info("W key pressed and held down");
-        } else {
+        keyDown = false;
+      },
+      nullptr, 0);
+  AddGamingHotkey(
+      "@|y",
+      [this]() {
+        if(io.GetKeyState("w")) {
           io.Send("{w up}");
-          info("W key released");
+        } else {
+          keyDown = !keyDown;
+
+          if (keyDown) {
+            io.Send("{w down}");
+          } else {
+            io.Send("{w up}");
+          }
         }
       },
       nullptr, 0);
@@ -967,7 +973,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       },
       nullptr, 0);
 
-  AddHotkey("!delete", [this]() {
+  AddHotkey("!del", [this]() {
     info("Starting autoclicker");
     startAutoclicker("Button1");
   });
@@ -999,7 +1005,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
   AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
                       []() { info("Enter pressed in chatterino"); });
-    AddContextualHotkey("f", "window.title ~ 'Genshin Impact'", [this]() {
+    AddContextualHotkey("h", "window.title ~ 'Genshin Impact'", [this]() {
       auto winId = WindowManager::GetActiveWindow();
       
       // ✅ CHECK STATE FIRST
@@ -1034,6 +1040,17 @@ void HotkeyManager::RegisterDefaultHotkeys() {
               fRunning = false;
               return;
           }
+
+          if (io.GetKeyState("lctrl")) {
+              // Stop mode
+              if (fTimer) {
+                  TimerManager::StopTimer(fTimer);
+                  fTimer = nullptr;
+              }
+              fRunning = false;
+              info("Stopped F spamming");
+              return;  // 👈 EARLY EXIT
+          }
           io.Send("f");
       }, true);
       
@@ -1058,6 +1075,11 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     
     info("Space pressed - starting spam");
     io.Send("{space:up}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 100ms delay to ensure the keyup is registered
+    if(!io.GetKeyState("space")) {
+        info("Space key is not physically held down, aborting spam");
+        return;
+    }
     io.DisableHotkey("~space");
     
     auto winId = WindowManager::GetActiveWindow();
@@ -1255,8 +1277,6 @@ void HotkeyManager::registerAutomationHotkeys() {
   // Register hotkeys for automation tasks
   AddHotkey("!delete",
             [this]() { toggleAutomationTask("autoclicker", "left"); });
-  AddGamingHotkey("slash",
-                  [this]() { toggleAutomationTask("autorunner", "w"); });
   AddGamingHotkey(
       "@rshift", [this]() { toggleAutomationTask("autokeypresser", "space"); });
 }

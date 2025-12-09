@@ -20,6 +20,7 @@ private:
     void onStart() override;
     void onStop() override;
     void setupDirectionAction();
+    std::shared_ptr<std::atomic<bool>> timer;
 
     std::shared_ptr<IO> io_;
     std::string direction_;

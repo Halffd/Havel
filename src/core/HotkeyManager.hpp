@@ -381,6 +381,7 @@ private:
   std::vector<ConditionalHotkey> conditionalHotkeys;
   std::vector<HotkeyDefinition> mpvHotkeys;
   std::mutex hotkeyMutex; // Protects conditionalHotkeys and conditionCache
+  std::mutex updateMutex; // Global mutex to serialize all conditional hotkey updates
   void InvalidateConditionalHotkeys();
   void updateConditionalHotkey(ConditionalHotkey &hotkey);
   void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);

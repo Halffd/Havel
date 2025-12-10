@@ -1485,6 +1485,9 @@ void HotkeyManager::InvalidateConditionalHotkeys() {
 }
 
 void HotkeyManager::updateAllConditionalHotkeys() {
+  // Use global mutex to prevent race condition with forceUpdateAllConditionalHotkeys
+  std::lock_guard<std::mutex> globalLock(updateMutex);
+
   auto now = std::chrono::steady_clock::now();
 
   // Only check conditions at the specified interval to reduce spam
@@ -1531,6 +1534,9 @@ void HotkeyManager::updateAllConditionalHotkeys() {
 }
 
 void HotkeyManager::forceUpdateAllConditionalHotkeys() {
+  // Use global mutex to prevent race condition with updateAllConditionalHotkeys
+  std::lock_guard<std::mutex> globalLock(updateMutex);
+
   bool gamingWindowActive = isGamingWindow();
   std::string currentActiveMode;
   {
@@ -2788,7 +2794,9 @@ void HotkeyManager::UpdateLoop() {
 
     try {
       // Update conditional hotkeys only (mode switching happens on window events)
+      // Use global mutex to prevent race condition with forceUpdateAllConditionalHotkeys
       {
+        std::lock_guard<std::mutex> globalLock(updateMutex);
         std::lock_guard<std::mutex> lock(hotkeyMutex);
         for (auto &hotkey : conditionalHotkeys) {
           updateConditionalHotkey(hotkey);

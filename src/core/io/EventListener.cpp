@@ -625,10 +625,10 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   // This prevents deadlock where callback tries to acquire locks we hold
   auto callback_copy = hotkey.callback;
   std::string alias_copy = hotkey.alias;
-  
+
   // Increment pending count (must be done before thread spawns)
   pendingCallbacks++;
-  
+
   // Spawn thread - it will have its own independent state
   std::thread([callback = callback_copy, alias = alias_copy, this]() {
     try {
@@ -758,61 +758,81 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       }
     } // stateMutex unlocked here
 
+    // Collect matched hotkeys to avoid holding locks during callback execution
+    std::vector<int> matchedHotkeyIds;
+    bool shouldBlock = false;
+
     // Evaluate hotkeys - lock both mutexes
-    std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
-    std::unique_lock<std::shared_mutex> stateLock(stateMutex);
+    {
+      std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
+      std::unique_lock<std::shared_mutex> stateLock(stateMutex);
 
-    for (auto &[id, hotkey] : IO::hotkeys) {
-      if (!hotkey.enabled)
-        continue;
-
-      // Handle combo hotkeys
-      if (hotkey.type == HotkeyType::Combo) {
-        if (EvaluateCombo(hotkey)) {
-          ExecuteHotkeyCallback(hotkey);
-          if (hotkey.grab)
-            shouldBlock = true;
-        }
-        continue;
-      }
-
-      // Handle mouse button hotkeys
-      if (hotkey.type != HotkeyType::MouseButton)
-        continue;
-      if (hotkey.mouseButton != ev.code)
-        continue;
-
-      // Event type check
-      if (hotkey.eventType == HotkeyEventType::Down && !down)
-        continue;
-      if (hotkey.eventType == HotkeyEventType::Up && down)
-        continue;
-
-      // Modifier matching: ignore modifiers unless explicitly set
-      bool modifierMatch =
-          (hotkey.modifiers == 0)
-              ? true
-              : CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-
-      if (!modifierMatch)
-        continue;
-
-      // Context checks (all must pass)
-      if (!hotkey.contexts.empty()) {
-        bool contextMatch =
-            std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                        [](auto &ctx) { return ctx(); });
-        if (!contextMatch)
+      for (auto &[id, hotkey] : IO::hotkeys) {
+        if (!hotkey.enabled)
           continue;
+
+        // Handle combo hotkeys
+        if (hotkey.type == HotkeyType::Combo) {
+          if (EvaluateCombo(hotkey)) {
+            matchedHotkeyIds.push_back(id);  // Just store ID
+            if (hotkey.grab)
+              shouldBlock = true;
+          }
+          continue;
+        }
+
+        // Handle mouse button hotkeys
+        if (hotkey.type != HotkeyType::MouseButton)
+          continue;
+        if (hotkey.mouseButton != ev.code)
+          continue;
+
+        // Event type check
+        if (hotkey.eventType == HotkeyEventType::Down && !down)
+          continue;
+        if (hotkey.eventType == HotkeyEventType::Up && down)
+          continue;
+
+        // Modifier matching: ignore modifiers unless explicitly set
+        bool modifierMatch =
+            (hotkey.modifiers == 0)
+                ? true
+                : CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+
+        if (!modifierMatch)
+          continue;
+
+        // Context checks (all must pass)
+        if (!hotkey.contexts.empty()) {
+          bool contextMatch =
+              std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
+                          [](auto &ctx) { return ctx(); });
+          if (!contextMatch)
+            continue;
+        }
+
+        // Hotkey matched!
+        info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias, ev.code,
+             down);
+        matchedHotkeyIds.push_back(id);  // Just store ID
+        if (hotkey.grab)
+          shouldBlock = true;
       }
+    } // Both locks released here
 
-      // Hotkey matched!
-      info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias, ev.code,
-           down);
-      ExecuteHotkeyCallback(hotkey);
-
-      if (hotkey.grab)
-        shouldBlock = true;
+    // Execute callbacks outside critical section
+    for (int hotkeyId : matchedHotkeyIds) {
+      std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+      auto it = IO::hotkeys.find(hotkeyId);
+      
+      if (it != IO::hotkeys.end() && it->second.enabled) {
+        auto callback = it->second.callback;  // Copy just the callback
+        lock.unlock();  // Release before executing
+        
+        std::thread([callback]() {
+          callback();
+        }).detach();
+      }
     }
 
     // Forward if not blocked
@@ -838,13 +858,15 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     }
     // Mouse wheel
     else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
-      bool shouldBlock = false; // Local to wheel events
       int wheelDirection = (ev.value > 0) ? 1 : -1;
       debug("🖱️  Mouse WHEEL: axis={}, direction={}, speed={}",
             ev.code == REL_WHEEL ? "VERT" : "HORZ",
             wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT", IO::scrollSpeed);
 
       // Update the wheel time tracking for combo evaluation and evaluate hotkeys
+      std::vector<int> wheelHotkeyIds;
+      bool wheelHotkeyShouldBlock = false;
+
       {
         std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
         std::unique_lock<std::shared_mutex> stateLock(stateMutex);
@@ -870,9 +892,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
             if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
               info("Wheel combo: '{}'", hotkey.alias);
-              ExecuteHotkeyCallback(hotkey);
+              wheelHotkeyIds.push_back(id);  // Store ID
               if (hotkey.grab)
-                shouldBlock = true;
+                wheelHotkeyShouldBlock = true;
             }
             continue;
           }
@@ -899,12 +921,37 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
           // Hotkey matched!
           info("Wheel hotkey: '{}' dir={}", hotkey.alias, wheelDirection);
-          ExecuteHotkeyCallback(hotkey);
+          wheelHotkeyIds.push_back(id);  // Store ID
 
           if (hotkey.grab)
-            shouldBlock = true;
+            wheelHotkeyShouldBlock = true;
         }
       } // Both locks released here
+
+      // Execute callbacks outside critical section
+      for (int hotkeyId : wheelHotkeyIds) {
+        HotKey hotkeyCopy;
+        bool found = false;
+
+        {
+          std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+          auto it = IO::hotkeys.find(hotkeyId);
+
+          if (it != IO::hotkeys.end() && it->second.enabled) {
+            hotkeyCopy = it->second;  // Copy just for execution
+            found = true;
+          }
+        }
+
+        if (found) {
+          ExecuteHotkeyCallback(hotkeyCopy);  // Use existing method
+        }
+      }
+
+      // Update shouldBlock if any hotkey requested to grab
+      if (wheelHotkeyShouldBlock) {
+        shouldBlock = true;
+      }
 
       // Apply scroll speed and forward if not blocked
       if (!shouldBlock && !blockInput.load()) {
@@ -991,9 +1038,7 @@ bool EventListener::CheckModifierMatch(int requiredModifiers,
 }
 
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
-  std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
-  std::shared_lock<std::shared_mutex> stateLock(stateMutex);
-
+  std::vector<int> matchedHotkeyIds;
   bool shouldBlock = false;
 
   // Check emergency shutdown key
@@ -1004,94 +1049,119 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     return true;
   }
 
-  for (auto &[id, hotkey] : IO::hotkeys) {
-    if (!hotkey.enabled || !hotkey.evdev) {
-      continue;
-    }
+  // Evaluate hotkeys with locks held, but collect matches to execute callbacks outside locks
+  {
+    std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
+    std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
-    // Check if this is a combo hotkey
-    if (hotkey.type == HotkeyType::Combo) {
-      if (EvaluateCombo(hotkey)) {
-        // Combo matched, execute callback
-        ExecuteHotkeyCallback(hotkey);
+    for (auto &[id, hotkey] : IO::hotkeys) {
+      if (!hotkey.enabled || !hotkey.evdev) {
+        continue;
+      }
 
-        if (hotkey.grab) {
-          shouldBlock = true;
+      // Check if this is a combo hotkey
+      if (hotkey.type == HotkeyType::Combo) {
+        if (EvaluateCombo(hotkey)) {
+          // Combo matched, collect for execution outside locks
+          matchedHotkeyIds.push_back(id);
+          if (hotkey.grab) {
+            shouldBlock = true;
+          }
+        }
+        continue;
+      }
+
+      // Match against key code
+      if (hotkey.key != static_cast<Key>(evdevCode)) {
+        continue;
+      }
+
+      // Event type check
+      if (!hotkey.repeat && repeat) {
+        continue;
+      }
+
+      if (hotkey.eventType == HotkeyEventType::Down && !down) {
+        continue;
+      }
+      if (hotkey.eventType == HotkeyEventType::Up && down) {
+        continue;
+      }
+      // Modifier matching
+      bool isModifierKey =
+          (evdevCode == KEY_LEFTALT || evdevCode == KEY_RIGHTALT ||
+           evdevCode == KEY_LEFTCTRL || evdevCode == KEY_RIGHTCTRL ||
+           evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
+           evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
+
+      bool modifierMatch;
+
+      // If the HOTKEY itself is a modifier key, skip modifier comparisons.
+      // The pressed modifier should ALWAYS trigger its own hotkey.
+      if (isModifierKey && hotkey.modifiers == 0) {
+        modifierMatch = true;
+      } else {
+        modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+      }
+
+      if (!modifierMatch)
+        continue;
+
+      // Context checks
+      if (!hotkey.contexts.empty()) {
+        bool contextMatch =
+            std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
+                        [](auto &ctx) { return ctx(); });
+        if (!contextMatch) {
+          continue;
         }
       }
-      continue;
+
+      // Check repeat interval
+      if (hotkey.repeatInterval > 0 && repeat) {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                           now - hotkey.lastTriggerTime)
+                           .count();
+
+        if (elapsed < hotkey.repeatInterval) {
+          continue;
+        }
+        hotkey.lastTriggerTime = now;
+      } else if (down && !repeat) {
+        hotkey.lastTriggerTime = std::chrono::steady_clock::now();
+      }
+
+      // Hotkey matched! Collect for execution outside locks
+      hotkey.success = true; // Update the actual hotkey's success status
+      debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}",
+            hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
+
+      matchedHotkeyIds.push_back(id);
+
+      if (hotkey.grab) {
+        shouldBlock = true;
+      }
     }
+  } // Locks released here
 
-    // Match against key code
-    if (hotkey.key != static_cast<Key>(evdevCode)) {
-      continue;
-    }
+  // Execute callbacks outside critical section
+  for (int hotkeyId : matchedHotkeyIds) {
+    HotKey hotkeyCopy;
+    bool found = false;
 
-    // Event type check
-    if (!hotkey.repeat && repeat) {
-      continue;
-    }
+    {
+      std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+      auto it = IO::hotkeys.find(hotkeyId);
 
-    if (hotkey.eventType == HotkeyEventType::Down && !down) {
-      continue;
-    }
-    if (hotkey.eventType == HotkeyEventType::Up && down) {
-      continue;
-    }
-    // Modifier matching
-    bool isModifierKey =
-        (evdevCode == KEY_LEFTALT || evdevCode == KEY_RIGHTALT ||
-         evdevCode == KEY_LEFTCTRL || evdevCode == KEY_RIGHTCTRL ||
-         evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
-         evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
-
-    bool modifierMatch;
-
-    // If the HOTKEY itself is a modifier key, skip modifier comparisons.
-    // The pressed modifier should ALWAYS trigger its own hotkey.
-    if (isModifierKey && hotkey.modifiers == 0) {
-      modifierMatch = true;
-    } else {
-      modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-    }
-
-    if (!modifierMatch)
-      continue;
-
-    // Context checks
-    if (!hotkey.contexts.empty()) {
-      bool contextMatch =
-          std::any_of(hotkey.contexts.begin(), hotkey.contexts.end(),
-                      [](auto &ctx) { return ctx(); });
-      if (!contextMatch) {
-        continue;
+      if (it != IO::hotkeys.end() && it->second.enabled) {
+        hotkeyCopy = it->second;  // Copy just for execution
+        found = true;
       }
     }
 
-    // Check repeat interval
-    if (hotkey.repeatInterval > 0 && repeat) {
-      auto now = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         now - hotkey.lastTriggerTime)
-                         .count();
-
-      if (elapsed < hotkey.repeatInterval) {
-        continue;
-      }
-      hotkey.lastTriggerTime = now;
-    } else if (down && !repeat) {
-      hotkey.lastTriggerTime = std::chrono::steady_clock::now();
-    }
-
-    // Hotkey matched! Execute callback
-    hotkey.success = true;
-    debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}",
-          hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
-
-    ExecuteHotkeyCallback(hotkey);
-
-    if (hotkey.grab) {
-      shouldBlock = true;
+    if (found) {
+      ExecuteHotkeyCallback(hotkeyCopy);  // Use existing method
     }
   }
 

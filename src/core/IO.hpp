@@ -48,6 +48,7 @@ enum class HotkeyType {
 };
 
 struct HotKey {
+    int id = 0;  // Unique identifier for this hotkey
     std::string alias;
     Key key;
     int modifiers;

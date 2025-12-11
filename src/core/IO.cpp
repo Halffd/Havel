@@ -1788,6 +1788,7 @@ bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
   std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
   std::cout << "Adding hotkey: " << alias << std::endl;
   HotKey hotkey;
+  hotkey.id = ++hotkeyCount;
   hotkey.alias = alias;
   hotkey.key = key;
   hotkey.modifiers = modifiers;
@@ -1798,7 +1799,6 @@ bool IO::AddHotkey(const std::string &alias, Key key, int modifiers,
   hotkey.success = true;
   hotkey.type = HotkeyType::Keyboard;
   hotkey.eventType = HotkeyEventType::Down;
-  ++hotkeyCount;
   hotkeys[hotkeyCount] = hotkey;
   return true;
 }
@@ -2049,6 +2049,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
+    hotkey.id = id;  // Set the hotkey's id
     hotkeys[id] = hotkey;
     if (hotkey.x11)
       x11Hotkeys.insert(id);
@@ -2166,6 +2167,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
+    hotkey.id = id;  // Set the hotkey's id
     hotkeys[id] = hotkey;
     if (hotkey.x11)
       x11Hotkeys.insert(id);
@@ -3319,6 +3321,9 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
   if (id == 0) {
     id = ++hotkeyCount;
   }
+
+  // Set the hotkey's id
+  hotkey.id = id;
 
   // Register the hotkey
   hotkeys[id] = hotkey;

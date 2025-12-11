@@ -1485,9 +1485,6 @@ void HotkeyManager::InvalidateConditionalHotkeys() {
 }
 
 void HotkeyManager::updateAllConditionalHotkeys() {
-  // Use global mutex to prevent race condition with forceUpdateAllConditionalHotkeys
-  std::lock_guard<std::mutex> globalLock(updateMutex);
-
   auto now = std::chrono::steady_clock::now();
 
   // Only check conditions at the specified interval to reduce spam
@@ -1534,9 +1531,6 @@ void HotkeyManager::updateAllConditionalHotkeys() {
 }
 
 void HotkeyManager::forceUpdateAllConditionalHotkeys() {
-  // Use global mutex to prevent race condition with updateAllConditionalHotkeys
-  std::lock_guard<std::mutex> globalLock(updateMutex);
-
   bool gamingWindowActive = isGamingWindow();
   std::string currentActiveMode;
   {
@@ -1584,8 +1578,25 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
     debug("🪟 Active window changed: {}", newWindow);
   }
 
-  // Immediately force re-evaluate all conditional hotkeys to prevent desync
+  // Pause the update loop temporarily
+  {
+    std::lock_guard<std::mutex> lock(updateLoopMutex);
+    updateLoopPaused.store(true);
+  }
+
+  // Force update
   forceUpdateAllConditionalHotkeys();
+
+  // Resume update loop after a delay to avoid redundant checks using condition variable
+  std::thread([this]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    {
+      std::lock_guard<std::mutex> lock(updateLoopMutex);
+      updateLoopPaused.store(false);
+    }
+    updateLoopCv.notify_one();  // Wake up the update loop
+  }).detach();
 }
 
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
@@ -2241,7 +2252,6 @@ void HotkeyManager::handleMediaCommand(
     mpv.SendCommand(commandToSend);
   }
 }
-
 void HotkeyManager::setMode(const std::string &newMode) {
   std::string oldMode;
   bool modeChanged = false;
@@ -2273,37 +2283,20 @@ void HotkeyManager::setMode(const std::string &newMode) {
   }
 
   // Force immediate re-evaluation of all conditional hotkeys
-  std::vector<ConditionalHotkey> hotkeysCopy;
-  {
-    std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
-    hotkeysCopy = conditionalHotkeys;
-  }
-
-  // Update hotkeys outside the lock to avoid deadlock
-  for (auto &hotkey : hotkeysCopy) {
+  // Lock once, update all hotkeys in one pass
+  std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
+  
+  for (auto &hotkey : conditionalHotkeys) {
     bool conditionMet = evaluateCondition(hotkey.condition);
-
-    // Acquire lock only for state modification
-    {
-      std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
-
-      // Find the actual hotkey in the list (hotkeysCopy is stale)
-      auto it = std::find_if(
-          conditionalHotkeys.begin(), conditionalHotkeys.end(),
-          [&](const ConditionalHotkey &h) { return h.id == hotkey.id; });
-
-      if (it == conditionalHotkeys.end())
-        continue;
-
-      if (conditionMet && !it->currentlyGrabbed) {
-        io.GrabHotkey(it->id);
-        it->currentlyGrabbed = true;
-      } else if (!conditionMet && it->currentlyGrabbed) {
-        io.UngrabHotkey(it->id);
-        it->currentlyGrabbed = false;
-      }
-      it->lastConditionResult = conditionMet;
+    
+    if (conditionMet && !hotkey.currentlyGrabbed) {
+      io.GrabHotkey(hotkey.id);
+      hotkey.currentlyGrabbed = true;
+    } else if (!conditionMet && hotkey.currentlyGrabbed) {
+      io.UngrabHotkey(hotkey.id);
+      hotkey.currentlyGrabbed = false;
     }
+    hotkey.lastConditionResult = conditionMet;
   }
 }
 void HotkeyManager::printCacheStats() {
@@ -2793,13 +2786,32 @@ void HotkeyManager::UpdateLoop() {
     auto startTime = std::chrono::steady_clock::now();
 
     try {
-      // Update conditional hotkeys only (mode switching happens on window events)
-      // Use global mutex to prevent race condition with forceUpdateAllConditionalHotkeys
-      {
-        std::lock_guard<std::mutex> globalLock(updateMutex);
-        std::lock_guard<std::mutex> lock(hotkeyMutex);
-        for (auto &hotkey : conditionalHotkeys) {
-          updateConditionalHotkey(hotkey);
+      // Wait if paused
+      if (updateLoopPaused.load()) {
+        std::unique_lock<std::mutex> lock(updateLoopMutex);
+        updateLoopCv.wait(lock, [this]() {
+          return !updateLoopPaused.load() || !updateLoopRunning.load();
+        });
+
+        if (!updateLoopRunning.load()) {
+          break;  // Exit if we're shutting down
+        }
+      }
+
+      // Update conditional hotkeys only if not paused
+      if (!updateLoopPaused.load()) {
+        auto now = std::chrono::steady_clock::now();
+
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now -
+                                                                  lastConditionCheck)
+                .count() >= CONDITION_CHECK_INTERVAL_MS) {
+          // Only check conditions without mode switching and without interval restriction
+          std::lock_guard<std::mutex> lock(hotkeyMutex);
+          for (auto &hotkey : conditionalHotkeys) {
+            updateConditionalHotkey(hotkey);
+          }
+
+          lastConditionCheck = now;  // Update the timestamp
         }
       }
 
@@ -2815,15 +2827,17 @@ void HotkeyManager::UpdateLoop() {
       error("Unknown exception in UpdateLoop");
     }
 
-    // Sleep for the remaining time in the update interval
-    auto endTime = std::chrono::steady_clock::now();
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        endTime - startTime);
+    // Sleep for the remaining time in the update interval (only if not paused)
+    if (!updateLoopPaused.load()) {
+      auto endTime = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          endTime - startTime);
 
-    if (elapsed < updateInterval) {
-      std::unique_lock<std::mutex> lock(updateLoopMutex);
-      updateLoopCv.wait_for(lock, updateInterval - elapsed,
-                            [this] { return !updateLoopRunning; });
+      if (elapsed < updateInterval) {
+        std::unique_lock<std::mutex> lock(updateLoopMutex);
+        updateLoopCv.wait_for(lock, updateInterval - elapsed,
+                              [this] { return !updateLoopRunning || updateLoopPaused.load(); });
+      }
     }
   }
 }

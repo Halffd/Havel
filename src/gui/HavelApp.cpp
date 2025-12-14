@@ -357,9 +357,18 @@ void HavelApp::cleanup() noexcept {
         return; // Already cleaning up
     }
 
+    shutdownRequested = true;
+
     // Clean up components in reverse order of initialization
+    // Reset in order to ensure proper cleanup sequence
     clipboardManager.reset();
-    hotkeyManager.reset();
+
+    // Reset hotkey manager safely - this will trigger its cleanup
+    if (hotkeyManager) {
+        hotkeyManager->cleanup(); // Call cleanup directly
+        hotkeyManager.reset();
+    }
+
     scriptEngine.reset();
     mpv.reset();
 
@@ -367,7 +376,12 @@ void HavelApp::cleanup() noexcept {
     WindowManager::ShutdownCompositorBridge();
 
     windowManager.reset();
-    io.reset();
+
+    // Reset IO safely
+    if (io) {
+        io->cleanup();
+        io.reset();
+    }
 
     // Clean up Qt components
     trayMenu.reset();

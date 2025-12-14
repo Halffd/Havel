@@ -42,6 +42,7 @@
 namespace havel {
 std::string HotkeyManager::currentMode = "default";
 std::mutex HotkeyManager::modeMutex;
+std::mutex HotkeyManager::conditionCacheMutex;
 std::vector<ConditionalHotkey> HotkeyManager::conditionalHotkeys;
 std::string HotkeyManager::getMode() const {
   std::lock_guard<std::mutex> lock(modeMutex);
@@ -69,7 +70,7 @@ void HotkeyManager::Zoom(int zoom) {
         break;
       case 3:
         char buffer[128];
-        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", config.Get<double>("Zoom.Zoom3", 1.7));
+        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", config.Get<double>("Zoom.Zoom3", 2.0));
         command = std::string(buffer);
         break;
       case 4: // zoomTo140
@@ -196,8 +197,7 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
     : io(io), windowManager(windowManager), mpv(mpv),
       audioManager(audioManager), scriptEngine(scriptEngine),
       brightnessManager(brightnessManager),
-      screenshotManager(screenshotManager) {
-  config = Configs::Get();
+      screenshotManager(screenshotManager), config(Configs::Get()) {
   mouseController = std::make_unique<MouseController>(io);
   conditionEngine = std::make_unique<ConditionEngine>();
   setupConditionEngine();
@@ -225,6 +225,23 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
   io.Map("Down", "Down");
   updateLoopRunning.store(true);
   updateLoopThread = std::thread(&HotkeyManager::UpdateLoop, this);
+
+  // Initialize lastInputTime to current time
+  lastInputTime.store(std::chrono::steady_clock::now());
+
+  // Load configurable input freeze timeout (default to 300 seconds = 5 minutes)
+  inputFreezeTimeoutSeconds = Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
+
+  // Start the watchdog thread
+  watchdogRunning.store(true);
+  watchdogThread = std::thread(&HotkeyManager::WatchdogLoop, this);
+
+  // Set up input notification callback if using EventListener
+  if (io.GetEventListener() && io.IsUsingNewEventListener()) {
+    io.GetEventListener()->inputNotificationCallback = [this]() {
+      NotifyInputReceived();
+    };
+  }
 }
 
 void HotkeyManager::loadVideoSites() {
@@ -1573,13 +1590,14 @@ void HotkeyManager::InvalidateConditionalHotkeys() {
     debug("Invalidating all conditional hotkeys");
   }
 
-  // Clear the condition cache to force re-evaluation
-  conditionCache.clear();
-
-  // Update all conditional hotkeys
-  for (auto &hotkey : conditionalHotkeys) {
-    updateConditionalHotkey(hotkey);
+  // Clear the condition cache to force re-evaluation with appropriate mutex
+  {
+    std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
+    conditionCache.clear();
   }
+
+  // Process all conditional hotkeys using batch update
+  batchUpdateConditionalHotkeys();
 }
 
 void HotkeyManager::updateAllConditionalHotkeys() {
@@ -1600,32 +1618,39 @@ void HotkeyManager::updateAllConditionalHotkeys() {
     currentActiveMode = currentMode;
   }
 
-  // Debounced mode switching
+  // Debounced mode switching - determine new mode outside hotkey processing
+  bool shouldChangeMode = false;
+  std::string newMode;
   auto lastSwitch = lastModeSwitch.load();
   if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
-    // Update mode once per batch of hotkey updates
     if (gamingWindowActive && currentActiveMode != "gaming") {
+      newMode = "gaming";
+      shouldChangeMode = true;
+    } else if (!gamingWindowActive && currentActiveMode != "default") {
+      newMode = "default";
+      shouldChangeMode = true;
+    }
+  }
+
+  // If mode needs to change, change it first
+  if (shouldChangeMode) {
+    if (newMode == "gaming") {
       io.Map("Left", "a");
       io.Map("Right", "d");
       io.Map("Up", "w");
       io.Map("Down", "s");
-      setMode("gaming");
-      lastModeSwitch.store(now);
-    } else if (!gamingWindowActive && currentActiveMode != "default") {
+    } else {
       io.Map("Left", "Left");
       io.Map("Right", "Right");
       io.Map("Up", "Up");
       io.Map("Down", "Down");
-      setMode("default");
-      lastModeSwitch.store(now);
     }
+    setMode(newMode);
+    lastModeSwitch.store(now);
   }
 
-  // Process all conditional hotkeys - protect with mutex
-  std::lock_guard<std::mutex> lock(hotkeyMutex);
-  for (auto &hotkey : conditionalHotkeys) {
-    updateConditionalHotkey(hotkey);
-  }
+  // Process all conditional hotkeys using batch update
+  batchUpdateConditionalHotkeys();
 }
 
 void HotkeyManager::forceUpdateAllConditionalHotkeys() {
@@ -1636,39 +1661,47 @@ void HotkeyManager::forceUpdateAllConditionalHotkeys() {
     currentActiveMode = currentMode;
   }
 
-  // Debounced mode switching
+  // Debounced mode switching - determine new mode outside hotkey processing
+  bool shouldChangeMode = false;
+  std::string newMode;
+  std::string logMessage;
   auto now = std::chrono::steady_clock::now();
   auto lastSwitch = lastModeSwitch.load();
   if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
     // Update mode if needed
     if (gamingWindowActive && currentActiveMode != "gaming") {
+      newMode = "gaming";
+      shouldChangeMode = true;
+      logMessage = "ForceUpdate: Switched to gaming mode";
+    } else if (!gamingWindowActive && currentActiveMode != "default") {
+      newMode = "default";
+      shouldChangeMode = true;
+      logMessage = "ForceUpdate: Switched to default mode";
+    }
+  }
+
+  // If mode needs to change, change it first
+  if (shouldChangeMode) {
+    if (newMode == "gaming") {
       io.Map("Left", "a");
       io.Map("Right", "d");
       io.Map("Up", "w");
       io.Map("Down", "s");
-      setMode("gaming");
-      lastModeSwitch.store(now);
-      if (verboseConditionLogging) {
-        info("ForceUpdate: Switched to gaming mode");
-      }
-    } else if (!gamingWindowActive && currentActiveMode != "default") {
+    } else {
       io.Map("Left", "Left");
       io.Map("Right", "Right");
       io.Map("Up", "Up");
       io.Map("Down", "Down");
-      setMode("default");
-      lastModeSwitch.store(now);
-      if (verboseConditionLogging) {
-        info("ForceUpdate: Switched to default mode");
-      }
+    }
+    setMode(newMode);
+    lastModeSwitch.store(now);
+    if (verboseConditionLogging) {
+      info(logMessage);
     }
   }
 
-  // Process all conditional hotkeys - protect with mutex
-  std::lock_guard<std::mutex> lock(hotkeyMutex);
-  for (auto &hotkey : conditionalHotkeys) {
-    updateConditionalHotkey(hotkey);
-  }
+  // Process all conditional hotkeys using batch update
+  batchUpdateConditionalHotkeys();
 }
 
 void HotkeyManager::onActiveWindowChanged(wID newWindow) {
@@ -1723,7 +1756,8 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   } else {
     // Use the string-based condition (original behavior)
     {
-      // Check cache first
+      // Check cache first with condition cache mutex
+      std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
       auto cacheIt = conditionCache.find(hotkey.condition);
       if (cacheIt != conditionCache.end()) {
         auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1740,10 +1774,9 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
                  hotkey.lastConditionResult, conditionMet);
           }
 
-          // Update hotkey state based on cached condition - protect with mutex
-          {
-            hotkey.lastConditionResult = conditionMet;
-          }
+          // Update hotkey state based on cached condition
+          // We update lastConditionResult here since we're returning early
+          hotkey.lastConditionResult = conditionMet;
           // Call updateHotkeyState separately and safely
           updateHotkeyState(hotkey, conditionMet);
           return;
@@ -1754,8 +1787,9 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
     // If we get here, either cache miss or cache expired
     conditionMet = evaluateCondition(hotkey.condition);
 
-    // Update cache with the new result
+    // Update cache with the new result with condition cache mutex
     {
+      std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
       conditionCache[hotkey.condition] = {conditionMet, now};
     }
   }
@@ -1799,6 +1833,123 @@ void HotkeyManager::updateHotkeyState(ConditionalHotkey &hotkey,
 
   hotkey.lastConditionResult = conditionMet;
 }
+
+void HotkeyManager::batchUpdateConditionalHotkeys() {
+  // Skip if we're in cleanup mode to prevent deadlocks
+  if (inCleanupMode.load()) {
+    return;
+  }
+
+  std::vector<int> toGrab;
+  std::vector<int> toUngrab;
+  std::vector<ConditionalHotkey*> updatedHotkeys;
+
+  // First pass: determine what needs to change and collect hotkeys to update
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    // Process deferred updates first
+    std::queue<int> localQueue;
+    {
+      std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
+      std::swap(localQueue, deferredUpdateQueue);
+    }
+
+    while (!localQueue.empty()) {
+        int id = localQueue.front();
+        localQueue.pop();
+
+        for (auto& ch : conditionalHotkeys) {
+            if (ch.id == id) {
+                updatedHotkeys.push_back(&ch);
+                break;
+            }
+        }
+    }
+
+    // Process all conditional hotkeys that need evaluation
+    for (auto& ch : conditionalHotkeys) {
+        // If it's not in our update list and doesn't depend on mode, skip it
+        bool needsUpdate = false;
+        for (auto* hotkey : updatedHotkeys) {
+            if (hotkey->id == ch.id) {
+                needsUpdate = true;
+                break;
+            }
+        }
+
+        // Always add hotkeys that have "mode" in their condition to be updated
+        if (!needsUpdate && ch.condition.find("mode") != std::string::npos) {
+            needsUpdate = true;
+            updatedHotkeys.push_back(&ch);
+        }
+
+        if (needsUpdate) {
+            bool shouldGrab = evaluateCondition(ch.condition);
+
+            if (shouldGrab && !ch.currentlyGrabbed) {
+                toGrab.push_back(ch.id);
+            } else if (!shouldGrab && ch.currentlyGrabbed) {
+                toUngrab.push_back(ch.id);
+            }
+        }
+    }
+  }
+
+  // Second pass: actually grab/ungrab (without holding hotkey lock)
+  for (int id : toUngrab) {
+    io.UngrabHotkey(id);
+  }
+
+  for (int id : toGrab) {
+    io.GrabHotkey(id);
+  }
+
+  // Third pass: update state (with minimal locking)
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    for (int id : toUngrab) {
+      for (auto& ch : conditionalHotkeys) {
+        if (ch.id == id) {
+          ch.currentlyGrabbed = false;
+          ch.lastConditionResult = false;
+          break;
+        }
+      }
+    }
+
+    for (int id : toGrab) {
+      for (auto& ch : conditionalHotkeys) {
+        if (ch.id == id) {
+          ch.currentlyGrabbed = true;
+          ch.lastConditionResult = true;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!toGrab.empty() || !toUngrab.empty()) {
+    if (verboseConditionLogging) {
+      debug("Batch hotkey update: grabbed={}, ungrabbed={}",
+            toGrab.size(), toUngrab.size());
+    } else {
+      info("Batch hotkey update: grabbed={}, ungrabbed={}",
+           toGrab.size(), toUngrab.size());
+    }
+  }
+}
+
+ConditionalHotkey* HotkeyManager::findConditionalHotkey(int id) {
+  for (auto& ch : conditionalHotkeys) {
+    if (ch.id == id) {
+      return &ch;
+    }
+  }
+  return nullptr;
+}
+
 int HotkeyManager::AddGamingHotkey(const std::string &key,
                                    std::function<void()> trueAction,
                                    std::function<void()> falseAction, int id) {
@@ -2434,10 +2585,23 @@ void HotkeyManager::handleMediaCommand(
   }
 }
 void HotkeyManager::setMode(const std::string &newMode) {
+  // Check cleanup mode first to prevent deadlocks during shutdown
+  if (inCleanupMode.load()) {
+    // Just set the mode directly during cleanup to avoid complex operations
+    {
+      std::lock_guard<std::mutex> lock(modeMutex);
+      if (currentMode == newMode) {
+        return;
+      }
+      currentMode = newMode;
+    }
+    return;
+  }
+
   std::string oldMode;
   bool modeChanged = false;
 
-  // Update mode with minimal lock scope
+  // Check mode change without holding lock
   {
     std::lock_guard<std::mutex> lock(modeMutex);
     if (currentMode == newMode)
@@ -2451,46 +2615,67 @@ void HotkeyManager::setMode(const std::string &newMode) {
   if (!modeChanged)
     return;
 
+  info("Mode changing: {} → {}", oldMode, newMode);
+
   logModeSwitch(oldMode, newMode);
 
-  // Clear caches without holding locks
-  conditionCache.clear();
+  // Invalidate condition cache for mode-dependent hotkeys
+  {
+    std::lock_guard<std::mutex> lock(hotkeyMutex);
+
+    // Only update hotkeys that actually depend on mode
+    for (auto& ch : conditionalHotkeys) {
+      if (ch.condition.find("mode") != std::string::npos) {
+        // Add to deferred update queue instead of immediate update
+        std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
+        deferredUpdateQueue.push(ch.id);
+      }
+    }
+  }
+
+  // Clear caches separately to avoid locking both mutexes at once
+  {
+    std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
+    conditionCache.clear();
+  }
+
   if (conditionEngine) {
     conditionEngine->invalidateCache();
   }
 
   if (verboseConditionLogging) {
-    debug("Mode changed: {} → {} - Cleared condition cache", oldMode, newMode);
+    debug("Mode changed: {} → {} - Queued deferred updates", oldMode, newMode);
   }
 
-  // Force immediate re-evaluation of all conditional hotkeys
-  // Lock once, update all hotkeys in one pass
-  std::lock_guard<std::mutex> hotkeyLock(hotkeyMutex);
-  
-  for (auto &hotkey : conditionalHotkeys) {
-    bool conditionMet = evaluateCondition(hotkey.condition);
-    
-    if (conditionMet && !hotkey.currentlyGrabbed) {
-      io.GrabHotkey(hotkey.id);
-      hotkey.currentlyGrabbed = true;
-    } else if (!conditionMet && hotkey.currentlyGrabbed) {
-      io.UngrabHotkey(hotkey.id);
-      hotkey.currentlyGrabbed = false;
-    }
-    hotkey.lastConditionResult = conditionMet;
-  }
+  // Process deferred updates in batch
+  batchUpdateConditionalHotkeys();
+
+  info("Mode changed: {} → {}", currentMode, newMode);
 }
 void HotkeyManager::printCacheStats() {
-  info("Condition cache: {} entries", conditionCache.size());
+  size_t cacheSize;
+  std::vector<std::pair<std::string, CachedCondition>> cacheCopy;
 
-  if (conditionCache.empty()) {
+  // Get a copy of the cache with proper locking to avoid deadlocks
+  {
+    std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
+    cacheSize = conditionCache.size();
+    cacheCopy.reserve(conditionCache.size());
+    for (const auto &[condition, cache] : conditionCache) {
+      cacheCopy.push_back({condition, cache});
+    }
+  }
+
+  info("Condition cache: {} entries", cacheSize);
+
+  if (cacheCopy.empty()) {
     return;
   }
 
   auto now = std::chrono::steady_clock::now();
   int expired = 0;
 
-  for (const auto &[condition, cache] : conditionCache) {
+  for (const auto &[condition, cache] : cacheCopy) {
     auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
                    now - cache.timestamp)
                    .count();
@@ -2505,9 +2690,9 @@ void HotkeyManager::printCacheStats() {
   }
 
   info("Cache stats: {} fresh, {} expired ({}% hit rate)",
-       conditionCache.size() - expired, expired,
-       conditionCache.size() > 0
-           ? (100 * (conditionCache.size() - expired) / conditionCache.size())
+       cacheSize - expired, expired,
+       cacheSize > 0
+           ? (100 * (cacheSize - expired) / cacheSize)
            : 0);
 }
 
@@ -2906,6 +3091,9 @@ void HotkeyManager::printActiveWindowInfo() {
 }
 
 void HotkeyManager::cleanup() {
+  // Set cleanup flag first to prevent deadlocks from other threads
+  inCleanupMode.store(true);
+
   // Signal the update loop to stop
   {
     std::lock_guard<std::mutex> lock(updateLoopMutex);
@@ -2920,7 +3108,23 @@ void HotkeyManager::cleanup() {
 
   // Clean up other resources
   stopAllAutoclickers();
-  setMode("default");
+
+  // Safely set mode to default by just setting it directly without complex updates
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
+    currentMode = "default";
+  }
+
+  // Clear caches separately to avoid locking both mutexes at once for long periods
+  {
+    std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
+    conditionCache.clear();
+  }
+
+  if (conditionEngine) {
+    conditionEngine->invalidateCache();
+  }
+
   genshinAutomationActive = false;
   if (monitorThread.joinable()) {
     monitorThread.join();
@@ -2954,16 +3158,26 @@ void HotkeyManager::cleanup() {
     autoKeyPresser.reset();
   }
 
+  // Stop the watchdog thread
+  watchdogRunning = false;
+  if (watchdogThread.joinable()) {
+    watchdogThread.join();
+  }
+
   if (verboseWindowLogging) {
     logWindowEvent("CLEANUP", "HotkeyManager resources cleaned up");
   }
 }
 
 void HotkeyManager::UpdateLoop() {
+  if (inCleanupMode.load()) {
+    return; // Don't start update loop if cleaning up
+  }
+
   const auto updateInterval =
       std::chrono::milliseconds(2); // 500 updates per second for responsive hotkey handling
 
-  while (updateLoopRunning) {
+  while (updateLoopRunning && !inCleanupMode.load()) {
     auto startTime = std::chrono::steady_clock::now();
 
     try {
@@ -2987,11 +3201,7 @@ void HotkeyManager::UpdateLoop() {
                                                                   lastConditionCheck)
                 .count() >= CONDITION_CHECK_INTERVAL_MS) {
           // Only check conditions without mode switching and without interval restriction
-          std::lock_guard<std::mutex> lock(hotkeyMutex);
-          for (auto &hotkey : conditionalHotkeys) {
-            updateConditionalHotkey(hotkey);
-          }
-
+          batchUpdateConditionalHotkeys();
           lastConditionCheck = now;  // Update the timestamp
         }
       }
@@ -3084,6 +3294,76 @@ void HotkeyManager::NotifyAnyKeyPressed(const std::string &key) {
   }
 }
 
+void HotkeyManager::NotifyInputReceived() {
+  lastInputTime.store(std::chrono::steady_clock::now());
+}
+
+void HotkeyManager::WatchdogLoop() {
+  while (watchdogRunning.load()) {
+    // Check if freeze detection should be disabled
+    if (inputFreezeTimeoutSeconds <= 0) {
+      return;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+        now - lastInputTime.load()
+    );
+
+    if (elapsed.count() > inputFreezeTimeoutSeconds) {
+        error("INPUT FREEZE DETECTED! No input for {} seconds (threshold: {}s)",
+              elapsed.count(), inputFreezeTimeoutSeconds);
+
+        // Try non-blocking restart in a separate thread to avoid watchdog blocking
+        std::thread([this]() {
+            error("Emergency restart of input system...");
+
+            try {
+                auto* listener = io.GetEventListener();
+                if (!listener) {
+                    error("EventListener not available");
+                    return;
+                }
+
+                // Stop first
+                listener->Stop();
+
+                // Get devices (cached, no locks)
+                std::vector<std::string> devices = io.GetInputDevices();
+
+                if (devices.empty()) {
+                    error("No input devices found");
+                    return;
+                }
+
+                // Restart
+                listener->Start(devices, true);
+
+                // Re-establish callback
+                if (io.IsUsingNewEventListener()) {
+                    listener->inputNotificationCallback = [this]() {
+                        NotifyInputReceived();
+                    };
+                }
+
+                info("EventListener restarted successfully");
+
+            } catch (const std::exception& e) {
+                error("Failed to restart EventListener: {}", e.what());
+            }
+        }).detach();  // Detach to avoid blocking watchdog
+
+        lastInputTime.store(now);
+    }
+
+    // Use a reasonable sleep interval based on the timeout, but don't make it too long
+    // to allow for responsive timeout changes
+    std::this_thread::sleep_for(std::chrono::seconds(
+        std::min(5, std::max(1, inputFreezeTimeoutSeconds / 10))
+    ));
+  }
+}
+
 void HotkeyManager::applyDebugSettings() {
   if (verboseKeyLogging) {
     info("Verbose key logging is enabled");
@@ -3096,6 +3376,9 @@ void HotkeyManager::applyDebugSettings() {
   if (verboseConditionLogging) {
     info("Verbose condition logging is enabled");
   }
+
+  // Load initial timeout value
+  inputFreezeTimeoutSeconds = Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
 
   Configs::Get().Watch<bool>(
       "Debug.VerboseKeyLogging", [this](bool oldValue, bool newValue) {
@@ -3116,6 +3399,13 @@ void HotkeyManager::applyDebugSettings() {
         info("Condition logging setting changed from " +
              std::to_string(oldValue) + " to " + std::to_string(newValue));
         setVerboseConditionLogging(newValue);
+      });
+
+  // Watch for changes to the freeze timeout configuration
+  Configs::Get().Watch<int>(
+      "Input.FreezeTimeoutSeconds", [this](int oldValue, int newValue) {
+        info("Input freeze timeout changed from {}s to {}s", oldValue, newValue);
+        inputFreezeTimeoutSeconds = newValue;
       });
 }
 

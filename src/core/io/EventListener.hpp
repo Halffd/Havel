@@ -139,6 +139,9 @@ public:
     // Callback for any key press
     std::function<void(const std::string& key)> anyKeyPressCallback = nullptr;
 
+    // Callback for input notification (for watchdog)
+    std::function<void()> inputNotificationCallback = nullptr;
+
 private:
     // Device info
     struct DeviceInfo {

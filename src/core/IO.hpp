@@ -208,6 +208,11 @@ public:
   IO();
   ~IO();
 
+  // Public access methods for EventListener
+  EventListener* GetEventListener() { return eventListener.get(); }
+  bool IsUsingNewEventListener() const { return useNewEventListener; }
+  std::vector<std::string> GetInputDevices(); // We'll implement this method
+
   // Key sending methods
   void Send(Key key, bool down = true);
 
@@ -237,6 +242,9 @@ public:
               int id = 0);
   bool Suspend();
   bool Suspend(int id);
+
+  // Public cleanup method for safe shutdown
+  void cleanup();
 
   bool Resume(int id);
 

@@ -2,6 +2,7 @@
 #include "types.hpp"
 #include "core/DisplayManager.hpp"
 #include "../utils/Logger.hpp"
+#include "CompositorBridge.hpp" // Include CompositorBridge
 #include <iostream>
 #include <sstream>
 #include <cstring>
@@ -742,11 +743,11 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
         return wmSupported;
     }
 
-    bool WindowManager::IsX11() const {
+    bool WindowManager::IsX11() {
         return WindowManagerDetector().IsX11();
     }
 
-    bool WindowManager::IsWayland() const {
+    bool WindowManager::IsWayland() {
         return WindowManagerDetector().IsWayland();
     }
 
@@ -1575,4 +1576,35 @@ bool WindowManager::CreateProcessWrapper(cstr path, cstr command, pID creationFl
     }
 }
 #endif
+
+    // Static member definition
+    std::unique_ptr<CompositorBridge> WindowManager::compositorBridge = nullptr;
+
+    // Initialize the compositor bridge (call this once at startup)
+    void WindowManager::InitializeCompositorBridge() {
+        #ifdef __linux__
+        if (IsWayland()) {
+            compositorBridge = std::make_unique<CompositorBridge>();
+            if (compositorBridge->IsAvailable()) {
+                compositorBridge->Start();
+                info("Compositor bridge initialized and started");
+            } else {
+                compositorBridge.reset();
+                debug("Compositor bridge not available on this Wayland compositor");
+            }
+        }
+        #endif
+    }
+
+    // Shutdown the compositor bridge (call this at shutdown)
+    void WindowManager::ShutdownCompositorBridge() {
+        if (compositorBridge) {
+            compositorBridge->Stop();
+            compositorBridge.reset();
+        }
+    }
+
+    CompositorBridge* WindowManager::GetCompositorBridge() {
+        return compositorBridge.get();
+    }
 }

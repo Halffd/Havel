@@ -1,7 +1,7 @@
 .PHONY: debug release test clean all mode help
 
 SCRIPT_NAME := ./build.sh  # Assuming your script is named 'build.sh' and is executable
-DEFAULT_MODE := 0          # Default mode is 0 (Debug, Tests, Havel Lang, LLVM)
+DEFAULT_MODE := 2
 
 # --- Standard Targets ---
 

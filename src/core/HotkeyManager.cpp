@@ -15,7 +15,10 @@
 #include "process/ProcessManager.hpp"
 #include "utils/Timer.hpp"
 #include "utils/Util.hpp"
+#include "utils/Utils.hpp"
 #include "window/Window.hpp"
+#include "window/WindowManager.hpp"
+#include "window/CompositorBridge.hpp"
 #include <X11/XKBlib.h>
 #include <X11/keysym.h>
 #include <algorithm>
@@ -39,7 +42,7 @@
 namespace havel {
 std::string HotkeyManager::currentMode = "default";
 std::mutex HotkeyManager::modeMutex;
-
+std::vector<ConditionalHotkey> HotkeyManager::conditionalHotkeys;
 std::string HotkeyManager::getMode() const {
   std::lock_guard<std::mutex> lock(modeMutex);
   return currentMode;
@@ -48,25 +51,77 @@ std::string HotkeyManager::getMode() const {
 void HotkeyManager::Zoom(int zoom) {
   if (zoom < 0)
     zoom = 0;
-  else if (zoom > 3)
-    zoom = 3;
-  if (zoom == 1) {
-    io.Send("@^{Up}");
-    zoomLevel += 0.1;
-  } else if (zoom == 0) {
-    io.Send("@^{Down}");
-    zoomLevel -= 0.1;
-  } else if (zoom == 2) {
-    io.Send("@^/");
-    zoomLevel = 1.0;
-  } else if (zoom == 3) {
-    io.Send("@^+/");
-    zoomLevel = 1.5;
+  else if (zoom > 4)
+    zoom = 4;
+
+  // Check if running on KDE/KWin and use qdbus for zoom commands
+  if (CompositorBridge::IsKDERunning()) {
+    std::string command;
+    switch (zoom) {
+      case 0: // zoomOut (from original function: zoom = 0 calls io.Send("@^{Down}"))
+        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus";
+        break;
+      case 1: // zoomIn (from original function: zoom = 1 calls io.Send("@^{Up}"))
+        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus";
+        break;
+      case 2: // resetZoom
+        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus";
+        break;
+      case 3:
+        char buffer[128];
+        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", config.Get<double>("Zoom.Zoom3", 1.7));
+        command = std::string(buffer);
+        break;
+      case 4: // zoomTo140
+        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus";
+        break;
+      default:
+        break;
+    }
+
+    if (!command.empty()) {
+      if (CompositorBridge::SendKWinZoomCommand(command)) {
+        info("KWin zoom command executed: {}", command);
+        zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+      } else {
+        warn("KWin zoom command failed, falling back to hotkeys: {}", command);
+        // Fall back to original hotkey methods
+        if (zoom == 1) {
+          io.Send("@^{Up}");
+          zoomLevel += 0.1;
+        } else if (zoom == 0) {
+          io.Send("@^{Down}");
+          zoomLevel -= 0.1;
+        } else if (zoom == 2) {
+          io.Send("@^/");
+          zoomLevel = 1.0;
+        } else if (zoom == 3) {
+          io.Send("@^+/");
+          zoomLevel = 1.5;
+        }
+      }
+    }
+  } else {
+    // Use original hotkey methods
+    if (zoom == 1) {
+      io.Send("@^{Up}");
+      zoomLevel += 0.1;
+    } else if (zoom == 0) {
+      io.Send("@^{Down}");
+      zoomLevel -= 0.1;
+    } else if (zoom == 2) {
+      io.Send("@^/");
+      zoomLevel = 1.0;
+    } else if (zoom == 3) {
+      io.Send("@^+/");
+      zoomLevel = 1.5;
+    }
   }
+
   if(zoomLevel < 1.0) {
     zoomLevel = 1.0;
-  } else if(zoomLevel > 2.0) {
-    zoomLevel = 2.0;
+  } else if(zoomLevel > 100.0) {
+    zoomLevel = 100.0;
   }
 }
 void HotkeyManager::printHotkeys() const {
@@ -412,18 +467,32 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       []() {
-        Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+        if(!CompositorBridge::IsKDERunning()){
+          Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+        } else {
+          CompositorBridge::SendKWinZoomCommand("org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.activateLauncherMenu");
+        }
       },                         // Tap action
       "mode != 'gaming'",        // Tap condition
       [this]() { PlayPause(); }, // Combo action
-      "mode == 'gaming'"         // Combo condition
+      "mode == 'gaming'",         // Combo condition
+      false, true
   );
   lwin->setup();
   ralt = std::make_unique<KeyTap>(
       io, *this, "ralt",
-      []() {
-        WindowManager::MoveWindowToNextMonitor();
-      }
+      [this]() {
+        if(CompositorBridge::IsKDERunning()){
+          auto win = havel::Window(WindowManager::GetActiveWindow());
+          if(win.Pos().x < 0) {
+            io.Send("#+{Right}");
+          } else {
+            io.Send("#+{Left}");
+          }
+        } else {
+          WindowManager::MoveWindowToNextMonitor();
+        }
+      }, "", nullptr, "", false, true
   );
   ralt->setup();
   AddGamingHotkey(
@@ -484,39 +553,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     auto activePid = WindowManager::GetActiveWindowPID();
     ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
   });
-  AddHotkey("~^Down", [this]() {
-    if(zoomLevel > 1.0)
-      zoomLevel -= 0.1;
-  });
-  AddHotkey("~^Up", [this]() {
-    if(zoomLevel < 2.0)
-      zoomLevel += 0.1;
-  });
   // Context-sensitive hotkeys
   AddHotkey("@kc89",
             [this]() { // When zooming
+              zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
               if (zoomLevel <= 1.0) {
                 Zoom(3);
               } else {
                 Zoom(2);
               }
             });
-  std::string terminal =
-      Configs::Get().Get<std::string>("General.Terminal", "st");
   AddContextualHotkey(
-      "!x", "!(window.title ~ 'emacs' || window.title ~ 'alacritty')",
-      []() { Launcher::runAsync("/bin/alacritty"); }, nullptr, 0);
+    "!x", "!(window.title ~ 'emacs' || window.title ~c 'alacritty')",
+    [=]() { 
+        std::string terminal = Configs::Get().Get<std::string>("General.Terminal", "st");
+                if (terminal == "alacritty") {
+                  Launcher::runShell("alacritty -e sh -c 'cd ~ && exec tmux'");
+                } else {
+                  Launcher::runShell(terminal);
+                }
+      }, nullptr, 0);
 
-  // Window Management
-  io.Hotkey("#left", []() {
-    debug("Moving window left");
-    WindowManager::MoveToCorners(3);
-  });
-
-  io.Hotkey("#right", []() {
-    debug("Moving window right");
-    WindowManager::MoveToCorners(4);
-  });
   io.Hotkey("$f9", [this]() {
     info("Suspending all hotkeys");
     io.Suspend();
@@ -742,44 +799,95 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     info("Current temperature: " +
          std::to_string(brightnessManager.getTemperature(1)));
   });
-  // Mouse wheel + click combinations
-  io.Hotkey("@!WheelUp", [this]() {
-    info("Alt + Wheel up");
-    Zoom(1);
+  
+  AddHotkey("~^Down", [this]() {
+    //if(zoomLevel > 1.0) zoomLevel -= 0.1;
+    zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
   });
-  io.Hotkey("@RShift & WheelUp", [this]() {
-    info("RShift + Wheel up");
-    Zoom(1);
+  AddHotkey("~^Up", [this]() {
+    //if(zoomLevel < 2.0) zoomLevel += 0.1;
+    zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+  });
+  // Mouse wheel + click combinations
+  io.Hotkey("@#WheelUp", [this]() {
+    io.Send("#{PgUp}");
+  });
+  io.Hotkey("@#WheelDown", [this]() {
+    io.Send("#{PgDn}");
+  });
+  io.Hotkey("@#!WheelUp", [this]() {
+    io.Send("!{PgUp}");
+  });
+  io.Hotkey("@#!WheelDown", [this]() {
+    io.Send("!{PgDn}");
+  });
+  io.Hotkey("@#^WheelDown", [this]() {
+    io.Send("!9");
+  });
+  io.Hotkey("@#^WheelUp", [this]() {
+    io.Send("!0");
+  });
+
+  io.Hotkey("@^!WheelDown", [this]() {
+    io.Send("!{Tab}");
+  });
+  io.Hotkey("@^!WheelUp", [this]() {
+    io.Send("!+{Tab}");
+  });
+  io.Hotkey("@^+WheelUp", [this]() {
+    brightnessManager.increaseBrightness(0.05);
+  });
+  io.Hotkey("@^+WheelDown", [this]() {
+    brightnessManager.decreaseBrightness(0.05);
+  });
+  io.Hotkey("@~!Tab", [this]() {
+    altTabPressed = true;
+  });
+  io.Hotkey("@~LAlt:up", [this]() {
+    altTabPressed = false;
+  });
+  io.Hotkey("@~RAlt:up", [this]() {
+    altTabPressed = false;
+  });
+  io.Hotkey("@!WheelUp", [this]() {
+    if(altTabPressed){
+      io.PressKey("Right", true);
+      io.PressKey("Right", false);
+    } else {
+      Zoom(1);
+    }
   });
   io.Hotkey("@!WheelDown", [this]() {
-    info("Alt + Wheel down");
+    if(altTabPressed){
+      io.PressKey("Left", true);
+      io.PressKey("Left", false);
+    } else {
+      Zoom(0);
+    }
+  });
+  /*  io.Hotkey("@RShift & WheelUp", [this]() {
+    Zoom(1);
+  });
+  io.Hotkey("RShift & WheelDown", [this]() {
     Zoom(0);
   });
-  io.Hotkey("@RShift & WheelDown", [this]() {
-    info("RShift + Wheel down");
-    Zoom(0);
-  });
-  io.Hotkey("@LButton & RButton::90000", [this]() {
-    info("Left click + right click");
+  io.Hotkey("@LButton & RButton:", [this]() {
     Zoom(2);
   });
-  io.Hotkey("@RButton & LButton::90000", [this]() {
-    info("Right click + left click");
+  io.Hotkey("@RButton & LButton:", [this]() {
     Zoom(1);
   });
-  io.Hotkey("@RButton & WheelUp::90000", [this]() {
-    info("Right click + wheel up");
+  io.Hotkey("@RButton & WheelUp", [this]() {
     Zoom(1);
   });
-  io.Hotkey("@RButton & WheelDown::90000", [this]() {
-    info("Right click + wheel down");
+  io.Hotkey("@RButton & WheelDown", [this]() {
     Zoom(0);
   });
   io.Hotkey("@~^l & g", []() { Launcher::runAsync("/usr/bin/lutris"); });
   io.Hotkey("@~^s & g", []() { Launcher::runAsync("/usr/bin/steam"); });
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
-  });
+  });*/
   io.Map("CapsLock", "LAlt");
   io.Hotkey("@+CapsLock", [this]() {
       io.Send("{CapsLock}");
@@ -858,16 +966,6 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
   AddHotkey("!+8", [this, WinMove]() { WinMove(0, 0, winOffset, 0); });
 
-  // Center on monitor (Alt+NumPad5)
-  AddHotkey("!9", [this]() { // NumPad5
-    info("Center window on current monitor");
-    auto win = Window(WindowManager::GetActiveWindow());
-    auto rect = win.Pos();
-    auto monitor = DisplayManager::GetMonitorAt(rect.x, rect.y);
-    int centerX = monitor.x + (monitor.width - rect.w) / 2;
-    int centerY = monitor.y + (monitor.height - rect.h) / 2;
-    WindowManager::MoveResize(win.ID(), centerX, centerY, rect.w, rect.h);
-  });
   AddHotkey("@!3", []() {
     auto clipboardText = ClipboardManager::clipboard->text();
     // get first 20000 characters
@@ -1862,48 +1960,131 @@ void HotkeyManager::showNotification(const std::string &title,
   Launcher::runShell(cmd.c_str());
 }
 
+bool HotkeyManager::IsGamingProcess(pid_t pid) {
+    // Check for Steam game ID
+    std::string steamGameId = ProcessManager::getProcessEnvironment(static_cast<int32_t>(pid), "SteamGameId");
+    if (!steamGameId.empty()) {
+        debug("Active process is Steam game: {}", steamGameId);
+        return true;
+    }
+
+    // Check process name/path
+    std::string exe = ProcessManager::getProcessExecutablePath(static_cast<int32_t>(pid));
+    std::string name = ProcessManager::getProcessName(static_cast<int32_t>(pid));
+
+    // Gaming process whitelist
+    static const std::vector<std::string> gamingProcesses = {
+        "steam_app_",     // Steam games
+        "wine",           // Wine games
+        "proton",         // Proton games
+        "lutris",         // Lutris
+        "gamemode",       // GameMode wrapper
+        "minecraft",
+        "factorio",
+        "java",           // Many games use Java (check carefully)
+    };
+
+    for (const auto& pattern : gamingProcesses) {
+        if (exe.find(pattern) != std::string::npos ||
+            name.find(pattern) != std::string::npos) {
+            debug("Gaming process detected: {} (exe: {})", name, exe);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool HotkeyManager::isGamingWindow() {
-  std::string windowClass = WindowManager::GetActiveWindowClass();
-  std::string windowTitle = WindowManager::GetActiveWindowTitle();
+    // Method 1: Compositor bridge (Wayland with KWin/wlroots)
+    auto* bridge = WindowManager::GetCompositorBridge();
+    if (bridge && bridge->IsAvailable()) {
+        auto windowInfo = bridge->GetActiveWindow();
+        if (windowInfo.valid) {
+            // Check window title
+            std::string title = ToLower(windowInfo.title);
+            static const std::vector<std::string> gameTitlePatterns = {
+                "steam", "game", "dota", "counter-strike", "minecraft",
+                "factorio", "terraria", "rimworld", "stardew"
+            };
 
-  std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(),
-                 ::tolower);
-  std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(),
-                 ::tolower);
+            for (const auto& pattern : gameTitlePatterns) {
+                if (title.find(pattern) != std::string::npos) {
+                    debug("Gaming window detected via title: {}", windowInfo.title);
+                    return true;
+                }
+            }
 
-  // Check for excluded classes first
-  const std::vector<std::string> gamingAppsExclude = Configs::Get().GetGamingAppsExclude();
-  for (const auto &app : gamingAppsExclude) {
-    if (windowClass.find(app) != std::string::npos) {
-      return false; // Explicitly excluded by class
+            // Check app ID
+            std::string appId = ToLower(windowInfo.appId);
+            static const std::vector<std::string> gameAppIdPatterns = {
+                "steam_app", "lutris", "wine", "proton"
+            };
+
+            for (const auto& pattern : gameAppIdPatterns) {
+                if (appId.find(pattern) != std::string::npos) {
+                    debug("Gaming window detected via appId: {}", windowInfo.appId);
+                    return true;
+                }
+            }
+
+            // Fall through to PID check with compositor-provided PID
+            if (windowInfo.pid != 0) {
+                if (HotkeyManager::IsGamingProcess(windowInfo.pid)) {
+                    return true;
+                }
+            }
+        }
     }
-  }
 
-  // Check for excluded titles
-  const std::vector<std::string> gamingAppsExcludeTitle = Configs::Get().GetGamingAppsExcludeTitle();
-  for (const auto &app : gamingAppsExcludeTitle) {
-    if (windowTitle.find(app) != std::string::npos) {
-      return false; // Explicitly excluded by title
+    // Method 2: X11 window class/title detection fallback
+    std::string windowClass = WindowManager::GetActiveWindowClass();
+    std::string windowTitle = WindowManager::GetActiveWindowTitle();
+
+    std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(),
+                   ::tolower);
+    std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(),
+                   ::tolower);
+
+    // Check for excluded classes first
+    const std::vector<std::string> gamingAppsExclude = Configs::Get().GetGamingAppsExclude();
+    for (const auto &app : gamingAppsExclude) {
+        if (windowClass.find(app) != std::string::npos) {
+            return false; // Explicitly excluded by class
+        }
     }
-  }
 
-  // Check for specifically included titles
-  const std::vector<std::string> gamingAppsTitle = Configs::Get().GetGamingAppsTitle();
-  for (const auto &app : gamingAppsTitle) {
-    if (windowTitle.find(app) != std::string::npos) {
-      return true; // Explicitly included by title
+    // Check for excluded titles
+    const std::vector<std::string> gamingAppsExcludeTitle = Configs::Get().GetGamingAppsExcludeTitle();
+    for (const auto &app : gamingAppsExcludeTitle) {
+        if (windowTitle.find(app) != std::string::npos) {
+            return false; // Explicitly excluded by title
+        }
     }
-  }
 
-  // Finally check for regular gaming apps by class
-  const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
-  for (const auto &app : gamingApps) {
-    if (windowClass.find(app) != std::string::npos) {
-      return true;
+    // Check for specifically included titles
+    const std::vector<std::string> gamingAppsTitle = Configs::Get().GetGamingAppsTitle();
+    for (const auto &app : gamingAppsTitle) {
+        if (windowTitle.find(app) != std::string::npos) {
+            return true; // Explicitly included by title
+        }
     }
-  }
 
-  return false;
+    // Finally check for regular gaming apps by class
+    const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
+    for (const auto &app : gamingApps) {
+        if (windowClass.find(app) != std::string::npos) {
+            return true;
+        }
+    }
+
+    // Method 3: PID-based gaming process detection (universal fallback)
+    pid_t activePid = WindowManager::GetActiveWindowPID();
+    if (activePid != 0) {
+        return HotkeyManager::IsGamingProcess(activePid);
+    }
+
+    return false;
 }
 void HotkeyManager::startAutoclicker(const std::string &button) {
   // Stop if already running

@@ -1,6 +1,12 @@
 /*
  * ConfigManager.hpp
- * 
+ *
+ * Features:
+ * 1. File watching: Automatically detects config file changes and reloads
+ * 2. Dynamic saving: Settings are saved automatically when changed via Set()
+ * 3. Global access: Use g_Configs or havel::GlobalConfig() for easy access
+ * 4. Hot reloading: Changes to config file are applied without restart
+ *
  * Fixed template issues by:
  * 1. Moving the Configs class definition before the Mappings class
  * 2. Ensuring there are no duplicate template implementations
@@ -143,6 +149,39 @@ public:
         return instance;
     }
     std::string path = "";
+
+    // File watching functionality
+    void StartFileWatching(const std::string& filename = "havel.cfg") {
+        if (watchingThread.joinable()) {
+            watchingThread.join();
+        }
+
+        EnsureConfigFile(filename);
+        watching = true;
+        watchingThread = std::thread([this, filename]() {
+            auto lastModified = GetLastModified(path);
+            while (watching.load()) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                try {
+                    auto currentModified = GetLastModified(path);
+                    if (currentModified > lastModified) {
+                        lastModified = currentModified;
+                        Reload();
+                        std::cout << "Config file changed, reloaded: " << path << std::endl;
+                    }
+                } catch (...) {
+                    // Silently continue
+                }
+            }
+        });
+    }
+
+    void StopFileWatching() {
+        watching = false;
+        if (watchingThread.joinable()) {
+            watchingThread.join();
+        }
+    }
 
     void EnsureConfigFile(const std::string& filename = "havel.cfg") {
         path = ConfigPaths::GetConfigPath(filename);
@@ -350,12 +389,17 @@ public:
         oss << value;
         std::string oldValue = settings[key];
         settings[key] = oss.str();
-        
+
         // Notify watchers
         if (watchers.find(key) != watchers.end()) {
             for (auto& watcher : watchers[key]) {
                 watcher(oldValue, settings[key]);
             }
+        }
+
+        // Automatically save the config when a setting is changed
+        if (!path.empty()) {
+            Save();
         }
     }
 
@@ -480,12 +524,28 @@ private:
     std::unordered_map<std::string, std::string> settings;
     std::unordered_map<std::string, std::vector<std::function<void(std::string, std::string)>>> watchers;
 
+    // File watching members
+    std::atomic<bool> watching{false};
+    std::thread watchingThread;
+
     template<typename T>
     static T Convert(const std::string& val) {
         std::istringstream iss(val);
         T result;
         iss >> result;
         return result;
+    }
+
+    // Get last modified time of the config file
+    std::filesystem::file_time_type GetLastModified(const std::string& filepath) const {
+        try {
+            if (std::filesystem::exists(filepath)) {
+                return std::filesystem::last_write_time(filepath);
+            }
+        } catch (const std::filesystem::filesystem_error& e) {
+            // Handle error as needed
+        }
+        return std::filesystem::file_time_type::min();
     }
 };
 
@@ -688,4 +748,14 @@ inline void RestoreConfig(const std::string& path = "havel.cfg") {
     }
 }
 
-} // namespace havel 
+} // namespace havel
+
+// Global extern variable for easy access to config
+extern havel::Configs& g_Configs;
+
+namespace havel {
+    // Inline function to access the global config instance
+    inline Configs& GlobalConfig() {
+        return Configs::Get();
+    }
+} 

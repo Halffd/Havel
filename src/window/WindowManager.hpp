@@ -38,6 +38,8 @@ namespace havel {
         int x, y, width, height;
     };
 
+class CompositorBridge;
+
 class WindowManager {
 public:
     WindowManager();
@@ -63,8 +65,8 @@ public:
     // Window manager info
     std::string GetCurrentWMName() const;
     bool IsWMSupported() const;
-    bool IsX11() const;
-    bool IsWayland() const;
+    static bool IsX11();
+    static bool IsWayland();
     void All();
 
     // Group management
@@ -117,6 +119,18 @@ public:
     static void MoveWindowToNextMonitor();
     static void ToggleFullscreen(wID windowId);
     static bool IsWindowFullscreen(wID windowId);
+
+    /**
+     * @brief Get compositor bridge instance (Wayland only)
+     *
+     * @return Compositor bridge if available, nullptr on X11 or unsupported compositors
+     */
+    static CompositorBridge* GetCompositorBridge();
+
+    // Compositor bridge management
+    static void InitializeCompositorBridge();
+    static void ShutdownCompositorBridge();
+
 private:
     static bool InitializeX11();
     std::string DetectWindowManager() const;
@@ -137,5 +151,8 @@ private:
 
     // Static member to track previous active window
     static XWindow previousActiveWindow;
+
+    // Compositor bridge
+    static std::unique_ptr<CompositorBridge> compositorBridge;
 };
 } // namespace havel

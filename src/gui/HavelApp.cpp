@@ -13,6 +13,7 @@
 #include "core/DisplayManager.hpp"
 #include "gui/GUIManager.hpp"
 #include "utils/Logger.hpp"
+#include "window/CompositorBridge.hpp"
 
 namespace havel {
 HavelApp::HavelApp(bool isStartup, QObject* parent) 
@@ -93,7 +94,10 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!windowManager) {
         throw std::runtime_error("Failed to create WindowManager");
     }
-    
+
+    // Initialize compositor bridge
+    WindowManager::InitializeCompositorBridge();
+
     mpv = std::make_unique<MPVController>();
     if (!mpv) {
         throw std::runtime_error("Failed to create MPVController");
@@ -122,9 +126,11 @@ void HavelApp::initializeComponents(bool isStartup) {
     hotkeyManager->applyDebugSettings();
 
     if (isStartup) {
-        info("Setting startup brightness and gamma values");
-        brightnessManager->setBrightness(Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
-        brightnessManager->setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
+        TimerManager::SetTimer(Configs::Get().Get<int>("Display.StartupDelayMs", 10000), [this]() {
+            info("Setting startup brightness and gamma values");
+            brightnessManager->setBrightness(Configs::Get().Get<double>("Display.StartupBrightness", 0.4));
+            brightnessManager->setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
+        }, false);
     }
 
     // Register all hotkeys
@@ -350,19 +356,23 @@ void HavelApp::cleanup() noexcept {
     if (shutdownRequested) {
         return; // Already cleaning up
     }
-    
+
     // Clean up components in reverse order of initialization
     clipboardManager.reset();
     hotkeyManager.reset();
     scriptEngine.reset();
     mpv.reset();
+
+    // Shutdown compositor bridge before window manager
+    WindowManager::ShutdownCompositorBridge();
+
     windowManager.reset();
     io.reset();
-    
+
     // Clean up Qt components
     trayMenu.reset();
     trayIcon.reset();
-    
+
     info("HavelApp cleanup complete");
 }
 void HavelApp::showTextChunker() {

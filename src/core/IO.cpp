@@ -1,6 +1,7 @@
 #include "core/IO.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "core/HotkeyManager.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
@@ -1725,6 +1726,9 @@ bool IO::Suspend() {
           hotkey.enabled = true;
         }
       }
+      for (auto &ch : HotkeyManager::conditionalHotkeys) {
+          ch.currentlyGrabbed = true;
+      }
       isSuspended = false;
       return true;
     }
@@ -1735,6 +1739,9 @@ bool IO::Suspend() {
         }
         hotkey.enabled = false;
       }
+    }
+    for (auto &ch : HotkeyManager::conditionalHotkeys) {
+      ch.currentlyGrabbed = false;
     }
     isSuspended = true;
     return true;

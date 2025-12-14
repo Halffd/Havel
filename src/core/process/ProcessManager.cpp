@@ -426,6 +426,43 @@ std::string ProcessManager::getProcessExecutablePath(int32_t pid) {
     return "";
 }
 
+std::string ProcessManager::getProcessEnvironment(int32_t pid, const std::string& envVar) {
+    std::string environ_path = "/proc/" + std::to_string(pid) + "/environ";
+    std::ifstream environ_file(environ_path, std::ios::binary);
+    if (!environ_file.is_open()) {
+        return "";
+    }
+
+    // Read the entire environment data
+    std::string environ_data((std::istreambuf_iterator<char>(environ_file)),
+                              std::istreambuf_iterator<char>());
+
+    // Environment variables are null-terminated, separated by null characters
+    size_t pos = 0;
+    while (pos < environ_data.length()) {
+        size_t end_pos = environ_data.find('\0', pos);
+        if (end_pos == std::string::npos) {
+            end_pos = environ_data.length();
+        }
+
+        std::string env_entry = environ_data.substr(pos, end_pos - pos);
+        pos = end_pos + 1;
+
+        // Find the equals sign to separate key from value
+        size_t equals_pos = env_entry.find('=');
+        if (equals_pos != std::string::npos) {
+            std::string key = env_entry.substr(0, equals_pos);
+            std::string value = env_entry.substr(equals_pos + 1);
+
+            if (key == envVar) {
+                return value;
+            }
+        }
+    }
+
+    return "";
+}
+
 std::chrono::system_clock::time_point ProcessManager::getProcessStartTime(int32_t pid) {
     std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
     std::ifstream stat_file(stat_path);
@@ -442,17 +479,17 @@ std::chrono::system_clock::time_point ProcessManager::getProcessStartTime(int32_
     if (fields.size() < 22) {
         return std::chrono::system_clock::time_point{};
     }
-    
+
     try {
         // starttime is field 21 (0-indexed)
         unsigned long long starttime = std::stoull(fields[21]);
-        
+
         // Get system boot time
         std::ifstream stat_file("/proc/stat");
         if (!stat_file.is_open()) {
             return std::chrono::system_clock::time_point{};
         }
-        
+
         std::string stat_line;
         unsigned long long btime = 0;
         while (std::getline(stat_file, stat_line)) {
@@ -462,17 +499,17 @@ std::chrono::system_clock::time_point ProcessManager::getProcessStartTime(int32_
                 break;
             }
         }
-        
+
         if (btime == 0) {
             return std::chrono::system_clock::time_point{};
         }
-        
+
         // Calculate process start time
         long hz = sysconf(_SC_CLK_TCK);
         time_t start_time_sec = btime + (starttime / hz);
-        
+
         return std::chrono::system_clock::from_time_t(start_time_sec);
-        
+
     } catch (const std::exception&) {
         return std::chrono::system_clock::time_point{};
     }

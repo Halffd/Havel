@@ -8,18 +8,26 @@ KeyTap::KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& ke
                std::function<void()> tapAction,
                const std::string& tapCond,
                std::function<void()> comboAction,
-               const std::string& comboCond)
+               const std::string& comboCond, bool grabDown, bool grabUp)
     : keyName(key), onTap(tapAction), onCombo(comboAction),
       tapCondition(tapCond), comboCondition(comboCond),
-      hotkeyManager(hotkeyManagerRef) {}
+      hotkeyManager(hotkeyManagerRef), grabDown(grabDown), grabUp(grabUp) {}
 
 KeyTap::~KeyTap() {
     // Destructor implementation can be empty since we don't have threads anymore
 }
 
 void KeyTap::setup() {
-    std::string keyDown = "@|~" + keyName;
-    std::string keyUp = "@|" + keyName + ":up";
+    std::string downPrefix = "@|";
+    if(!grabDown) {
+        downPrefix += "~";
+    }
+    std::string upPrefix = "@|";
+    if(!grabUp) {
+        upPrefix += "~";
+    }
+    std::string keyDown = downPrefix + keyName;
+    std::string keyUp = upPrefix + keyName + ":up";
 
     // Register callback for any key press event
     hotkeyManager.RegisterAnyKeyPressCallback([this](const std::string& key) {
@@ -53,7 +61,7 @@ void KeyTap::setup() {
         hotkeyManager.AddContextualHotkey(keyUp, tapCondition, [this]() {
             if (keyHeld && !combo) {
                 onTap();   // clean tap
-            }
+            } 
             keyHeld = false;
         });
     } else {

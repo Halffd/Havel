@@ -119,6 +119,9 @@ public:
 
   std::string getMode() const;
 
+  // Public cleanup for safe shutdown
+  void cleanup();
+
   // Automation
   std::shared_ptr<automation::AutomationManager> automationManager_;
   std::unordered_map<std::string, automation::TaskPtr> automationTasks_;
@@ -163,6 +166,23 @@ private:
   static constexpr int MODE_SWITCH_DEBOUNCE_MS = 150; // 150ms debounce for mode switching
   std::unique_ptr<KeyTap> lwin;
   std::unique_ptr<KeyTap> ralt;
+
+  // Watchdog for detecting input freezes
+  std::atomic<std::chrono::steady_clock::time_point> lastInputTime{
+      std::chrono::steady_clock::now()
+  };
+  std::thread watchdogThread;
+  std::atomic<bool> watchdogRunning{true};
+
+  // Configurable timeout for input freeze detection (in seconds)
+  int inputFreezeTimeoutSeconds{300}; // Default to 5 minutes
+
+  // Deferred update queue for conditional hotkeys
+  std::queue<int> deferredUpdateQueue;
+  std::mutex deferredUpdateMutex;
+
+  // Flag to indicate we're in cleanup mode to prevent deadlocks
+  std::atomic<bool> inCleanupMode{false};
   // Cached condition results
   struct CachedCondition {
     bool result;
@@ -173,6 +193,7 @@ private:
 
   static std::mutex modeMutex;
   static std::string currentMode;
+  static std::mutex conditionCacheMutex; // Protects conditionCache
   bool isZooming() const { return m_isZooming; }
   void setZooming(bool zooming) { m_isZooming = zooming; }
 
@@ -201,10 +222,6 @@ private:
 
   static bool isGamingWindow();
 
-  // Clean up resources and release all keys
-  void cleanup();
-  ;
-
   void PlayPause();
   std::atomic<bool> winKeyComboDetected{false};
   std::chrono::steady_clock::time_point winKeyPressTime;
@@ -225,7 +242,7 @@ private:
   ScriptEngine &scriptEngine;
   ScreenshotManager &screenshotManager;
   BrightnessManager &brightnessManager;
-  Configs config;
+  Configs& config;
 
   // Mode management
   bool m_isZooming{false};
@@ -378,6 +395,9 @@ public:
   // Internal method to notify all key presses
   void NotifyAnyKeyPressed(const std::string &key);
 
+  // Method to notify that input was received (for watchdog)
+  void NotifyInputReceived();
+
   static std::vector<ConditionalHotkey> conditionalHotkeys;
 private:
   // Store IDs of MPV hotkeys for grab/ungrab
@@ -389,6 +409,8 @@ private:
   void InvalidateConditionalHotkeys();
   void updateConditionalHotkey(ConditionalHotkey &hotkey);
   void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
+  void batchUpdateConditionalHotkeys();
+  ConditionalHotkey* findConditionalHotkey(int id);
   // Window focus tracking
   bool trackWindowFocus;
   wID lastActiveWindowId;
@@ -400,5 +422,6 @@ private:
   std::condition_variable updateLoopCv;
   std::mutex updateLoopMutex;
   void UpdateLoop();
+  void WatchdogLoop();
 };
 } // namespace havel

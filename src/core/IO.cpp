@@ -293,6 +293,32 @@ std::string IO::getGamepadDevice() {
   return "";
 }
 
+std::vector<std::string> IO::GetInputDevices() {
+  std::vector<std::string> devices;
+  std::string keyboardDevice = getKeyboardDevice();
+  std::string mouseDevice = getMouseDevice();
+  std::string gamepadDevice;
+
+  if (!keyboardDevice.empty()) {
+    devices.push_back(keyboardDevice);
+  }
+
+  if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+      !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+    devices.push_back(mouseDevice);
+  }
+
+  bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
+  if (enableGamepad) {
+    gamepadDevice = getGamepadDevice();
+    if (!gamepadDevice.empty()) {
+      devices.push_back(gamepadDevice);
+    }
+  }
+
+  return devices;
+}
+
 void IO::listInputDevices() {
   auto devices = Device::getAllDevices();
 
@@ -476,8 +502,10 @@ IO::IO() {
 #endif
 }
 IO::~IO() {
-  std::cout << "IO destructor called" << std::endl;
+  cleanup();
+}
 
+void IO::cleanup() {
   // Stop the hotkey monitoring thread
   if (timerRunning && timerThread.joinable()) {
     timerRunning = false;
@@ -487,6 +515,11 @@ IO::~IO() {
   // Stop the evdev listener if it's running
   StopEvdevHotkeyListener();
   StopEvdevMouseListener();
+
+  // Stop EventListener if using new event system
+  if (eventListener) {
+    eventListener->Stop();
+  }
 
   // Ungrab all hotkeys before closing
 #ifdef __linux__
@@ -521,7 +554,7 @@ IO::~IO() {
   // Don't close the display here, it's managed by DisplayManager
   display = nullptr;
 
-  std::cout << "IO cleanup completed" << std::endl;
+  std::cout << "IO public cleanup completed" << std::endl;
 }
 
 bool IO::SetupUinputDevice() {

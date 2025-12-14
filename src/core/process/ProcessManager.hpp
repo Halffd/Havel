@@ -73,6 +73,7 @@ public:
     static std::string getProcessCommand(int32_t pid);
     static std::string getProcessWorkingDirectory(int32_t pid);
     static std::string getProcessExecutablePath(int32_t pid);
+    static std::string getProcessEnvironment(int32_t pid, const std::string& envVar);
     static std::chrono::system_clock::time_point getProcessStartTime(int32_t pid);
 
     // Utility

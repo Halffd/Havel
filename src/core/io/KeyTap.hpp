@@ -21,13 +21,15 @@ namespace havel {
             // New state variables based on requirements
             bool keyHeld = false;
             bool combo = false;
+            bool grabDown = true;
+            bool grabUp = true;
 
         public:
             KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key,
                    std::function<void()> tapAction,
                    const std::string& tapCond = "",
                    std::function<void()> comboAction = nullptr,
-                   const std::string& comboCond = "");
+                   const std::string& comboCond = "", bool grabDown = true, bool grabUp = true);
 
             ~KeyTap();
             void setup();

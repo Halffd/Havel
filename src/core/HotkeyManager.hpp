@@ -148,8 +148,10 @@ public:
                           int id = 0);
   int AddGamingHotkey(const std::string &key, std::function<void()> trueAction,
                       std::function<void()> falseAction = nullptr, int id = 0);
+  IO &io;
 
 private:
+  bool altTabPressed = false;
   std::thread monitorThread;
   // Condition evaluation state
   std::chrono::steady_clock::time_point lastConditionCheck =
@@ -173,6 +175,9 @@ private:
   static std::string currentMode;
   bool isZooming() const { return m_isZooming; }
   void setZooming(bool zooming) { m_isZooming = zooming; }
+
+  // Helper method for gaming process detection
+  static bool IsGamingProcess(pid_t pid);
 
   // Overlay functionality
   void toggleFakeDesktopOverlay();
@@ -201,7 +206,6 @@ private:
   ;
 
   void PlayPause();
-  IO &io;
   std::atomic<bool> winKeyComboDetected{false};
   std::chrono::steady_clock::time_point winKeyPressTime;
   std::atomic<bool> genshinAutomationActive = false;
@@ -374,11 +378,11 @@ public:
   // Internal method to notify all key presses
   void NotifyAnyKeyPressed(const std::string &key);
 
+  static std::vector<ConditionalHotkey> conditionalHotkeys;
 private:
   // Store IDs of MPV hotkeys for grab/ungrab
   std::vector<int> conditionalHotkeyIds;
   std::vector<int> gamingHotkeyIds;
-  std::vector<ConditionalHotkey> conditionalHotkeys;
   std::vector<HotkeyDefinition> mpvHotkeys;
   std::mutex hotkeyMutex; // Protects conditionalHotkeys and conditionCache
   std::atomic<bool> updateLoopPaused{false}; // Flag to pause update loop when window changes

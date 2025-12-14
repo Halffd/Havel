@@ -477,6 +477,11 @@ void EventListener::EventLoop() {
   info("EventListener: Stopped");
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
+  // Notify that input was received (for watchdog)
+  if (inputNotificationCallback) {
+    inputNotificationCallback();
+  }
+
   int originalCode = ev.code;
   int mappedCode = originalCode;
   bool repeat = (ev.value == 2);
@@ -734,6 +739,11 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
  * 4. Forwards events to uinput (unless blocked by a grabbed hotkey)
  */
 void EventListener::ProcessMouseEvent(const input_event &ev) {
+  // Notify that input was received (for watchdog)
+  if (inputNotificationCallback) {
+    inputNotificationCallback();
+  }
+
   bool shouldBlock = false;
   auto now = std::chrono::steady_clock::now();
 

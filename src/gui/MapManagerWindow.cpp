@@ -81,6 +81,31 @@ void MapManagerWindow::onActivateProfile() {
     }
 }
 
-// Additional implementations...
+void MapManagerWindow::setupProfilePanel() {}
+void MapManagerWindow::setupMappingPanel() {}
+void MapManagerWindow::setupEditorPanel() {}
+void MapManagerWindow::setupToolbar() {}
+void MapManagerWindow::setupStatusBar() {}
+void MapManagerWindow::onDeleteProfile() {}
+void MapManagerWindow::onDuplicateProfile() {}
+void MapManagerWindow::onRenameProfile() {}
+void MapManagerWindow::onProfileSelected(QListWidgetItem*) {}
+void MapManagerWindow::onNewMapping() {}
+void MapManagerWindow::onEditMapping() {}
+void MapManagerWindow::onDeleteMapping() {}
+void MapManagerWindow::onDuplicateMapping() {}
+void MapManagerWindow::onMappingSelected(int, int) {}
+void MapManagerWindow::onMappingDoubleClicked(int, int) {}
+void MapManagerWindow::onImportProfile() {}
+void MapManagerWindow::onExportProfile() {}
+void MapManagerWindow::onSaveAll() {}
+void MapManagerWindow::onLoadAll() {}
+void MapManagerWindow::onStartMacroRecording() {}
+void MapManagerWindow::onStopMacroRecording() {}
+void MapManagerWindow::onApplyChanges() {}
+void MapManagerWindow::onRevertChanges() {}
+void MapManagerWindow::onCaptureHotkey() {}
+void MapManagerWindow::onCaptureSourceKey() {}
+void MapManagerWindow::onCaptureTargetKey() {}
 
 } // namespace havel

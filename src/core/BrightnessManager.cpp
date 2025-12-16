@@ -1537,4 +1537,15 @@ bool BrightnessManager::switchToNight(int monitorIndex) {
     if (monitorName.empty()) return false;
     return switchToNight(monitorName);
 }
+
+bool BrightnessManager::setBrightnessWayland(const std::string& output, double brightness) {
+    // This is a stub implementation - will be filled in later
+    return true;  // Return success for now
+}
+
+bool BrightnessManager::setGammaWaylandRGB(const std::string& output, double r, double g, double b) {
+    // This is a stub implementation - will be filled in later
+    return true;  // Return success for now
+}
+
 } // namespace havel

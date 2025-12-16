@@ -283,9 +283,20 @@ void AudioManager::updateDeviceCache() const {
 }
 
 const std::vector<AudioDevice>& AudioManager::getDevices() const {
-    if (cachedDevices.empty()) {
-        updateDeviceCache();
+    // Check if cache is empty, and if so, populate it
+    // Since updateDeviceCache() needs to lock internally,
+    // we need to handle the cache check and update carefully
+    {
+        std::lock_guard<std::mutex> lock(deviceMutex);
+        if (!cachedDevices.empty()) {
+            // If we have devices, return them directly
+            return cachedDevices;
+        }
     }
+    // Cache was empty, so update it (this will lock internally)
+    updateDeviceCache();
+    // Now return with proper lock
+    std::lock_guard<std::mutex> lock(deviceMutex);
     return cachedDevices;
 }
 
@@ -333,32 +344,34 @@ std::vector<AudioDevice> AudioManager::getInputDevices() const {
 
 AudioDevice* AudioManager::findDeviceByName(const std::string& name) {
     updateDeviceCache();
+    std::lock_guard<std::mutex> lock(deviceMutex);
     auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
         [&name](const AudioDevice& dev) { return dev.name == name || dev.description == name; });
     return it != cachedDevices.end() ? &(*it) : nullptr;
 }
 
 const AudioDevice* AudioManager::findDeviceByName(const std::string& name) const {
-    const auto& devices = getDevices();
-    auto it = std::find_if(devices.begin(), devices.end(),
-        [&name](const AudioDevice& dev) { 
-            return dev.name == name || dev.description == name; 
+    std::lock_guard<std::mutex> lock(deviceMutex);
+    auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
+        [&name](const AudioDevice& dev) {
+            return dev.name == name || dev.description == name;
         });
-    return it != devices.end() ? &(*it) : nullptr;
+    return it != cachedDevices.end() ? &(*it) : nullptr;
 }
 
 AudioDevice* AudioManager::findDeviceByIndex(uint32_t index) {
     updateDeviceCache();
+    std::lock_guard<std::mutex> lock(deviceMutex);
     auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
         [index](const AudioDevice& dev) { return dev.index == index; });
     return it != cachedDevices.end() ? &(*it) : nullptr;
 }
 
 const AudioDevice* AudioManager::findDeviceByIndex(uint32_t index) const {
-    const auto& devices = getDevices();
-    auto it = std::find_if(devices.begin(), devices.end(),
+    std::lock_guard<std::mutex> lock(deviceMutex);
+    auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
         [index](const AudioDevice& dev) { return dev.index == index; });
-    return it != devices.end() ? &(*it) : nullptr;
+    return it != cachedDevices.end() ? &(*it) : nullptr;
 }
 
 

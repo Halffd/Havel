@@ -100,4 +100,6 @@ private:
     static std::string unixExpandPath(const std::string& path);
     static std::vector<std::string> splitPath(const std::string& pathStr);
 };
+
+extern char** environ;
 }

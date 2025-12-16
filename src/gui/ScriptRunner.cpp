@@ -40,3 +40,8 @@ void ScriptRunner::setupUI() {
 
     mainSplitter->setSizes({200, 600});
 }
+
+void ScriptRunner::runScript() {}
+void ScriptRunner::scriptFinished(int, QProcess::ExitStatus) {}
+void ScriptRunner::onReadyReadStandardOutput() {}
+void ScriptRunner::onReadyReadStandardError() {}

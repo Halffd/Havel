@@ -778,5 +778,15 @@ namespace havel::compiler {
     void Compiler::DumpModule() const {
         module->print(llvm::outs(), nullptr);
     }
+
+    llvm::Function* Compiler::CompileHotkeyAction(const ast::Expression& expr) {
+        // This is a stub implementation - will be filled in later
+        return nullptr;  // Return null for now
+    }
+
+    Compiler::HotkeyActionFunc Compiler::GetCompiledFunction(const std::string& name) {
+        // This is a stub implementation - will be filled in later
+        return nullptr;  // Return null function pointer for now
+    }
 } // namespace havel::compiler
 #endif // HAVEL_ENABLE_LLVM

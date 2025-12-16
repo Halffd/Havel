@@ -738,4 +738,7 @@ std::vector<std::string> Env::splitPath(const std::string &pathStr) {
 
   return paths;
 }
+
+char** environ = ::environ;
+
 } // namespace havel

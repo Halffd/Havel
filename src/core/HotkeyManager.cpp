@@ -882,7 +882,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       Zoom(0);
     }
   });
-  /*  io.Hotkey("@RShift & WheelUp", [this]() {
+  io.Hotkey("@RShift & WheelUp", [this]() {
     Zoom(1);
   });
   io.Hotkey("RShift & WheelDown", [this]() {
@@ -904,7 +904,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@~^s & g", []() { Launcher::runAsync("/usr/bin/steam"); });
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
-  });*/
+  });
   io.Map("CapsLock", "LAlt");
   io.Hotkey("@+CapsLock", [this]() {
       io.Send("{CapsLock}");

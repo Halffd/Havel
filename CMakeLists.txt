@@ -288,6 +288,8 @@ pkg_check_modules(PCRE2_8 REQUIRED libpcre2-8)
 pkg_check_modules(PCRE2_16 REQUIRED libpcre2-16)
 # ALSA
 pkg_check_modules(ALSA alsa)
+# Minizip for ZIP functionality
+pkg_check_modules(MINIZIP minizip)
 set(COMMON_LIBS
     # System libraries
     ${PCRE2_8_LIBRARIES}
@@ -306,7 +308,10 @@ set(COMMON_LIBS
     ${LUA_LIBRARIES}
     # Optional Readline
     ${READLINE_LIB}
-    dl crypto zip ssl pthread m
+    dl crypto ssl pthread m
+    # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
+    $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
+    $<$<NOT:$<BOOL:${MINIZIP_FOUND}>>:zip>
     # Qt6 libraries
     Qt6::Core
     Qt6::Widgets

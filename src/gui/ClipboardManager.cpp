@@ -1,6 +1,7 @@
 #include "ClipboardManager.hpp"
 #include "core/ConfigManager.hpp"
 #include <QApplication>
+#include <QThread>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStandardPaths>
@@ -463,8 +464,15 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     }
     setupShortcuts();
     
-    windowSize = QSize(Configs::Get().Get<int>("ClipboardManager.Width", 900), 
+    windowSize = QSize(Configs::Get().Get<int>("ClipboardManager.Width", 900),
                       Configs::Get().Get<int>("ClipboardManager.Height", 1000));
+
+    // Connect the pasteRequested signal to the slot with queued connection
+    // This ensures the slot runs on the main thread even when signal is emitted from other threads
+    connect(this, &ClipboardManager::pasteRequested,
+            this, &ClipboardManager::onPasteRequested,
+            Qt::QueuedConnection);
+
     // Hide by default - show only when needed
     hide();
 }
@@ -1733,11 +1741,17 @@ void ClipboardManager::toggleVisibility() {
 }
 
 void ClipboardManager::pasteHistoryItem(int index) {
+    // Always send the request to the main thread through signal-slot
+    emit pasteRequested(index);
+}
+
+void ClipboardManager::onPasteRequested(int index) {
+    // This will always run on the main thread thanks to queued connection
     if (index < 0 || index >= historyList->count()) {
         qWarning() << "Invalid history index:" << index;
         return;
     }
-    
+
     QListWidgetItem* item = historyList->item(index);
     if (!item) {
         qWarning() << "Failed to get history item at index:" << index;

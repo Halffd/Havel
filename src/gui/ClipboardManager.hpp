@@ -68,6 +68,12 @@ public:
 
     QClipboard* getClipboard() const { return clipboard; }
 
+signals:
+    void pasteRequested(int index);
+
+private slots:
+    void onPasteRequested(int index);
+
 public slots:
     void showAndFocus();
 

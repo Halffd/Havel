@@ -237,7 +237,12 @@ bool AudioManager::setDefaultInput(const std::string& device) {
 
 
 void AudioManager::updateDeviceCache() const {
+    // Need to maintain locking for the main thread usage
     std::lock_guard<std::mutex> lock(deviceMutex);
+    internalUpdateDeviceCache();
+}
+
+void AudioManager::internalUpdateDeviceCache() const {
     cachedDevices.clear();
     std::vector<AudioDevice> devices;
 
@@ -278,7 +283,7 @@ void AudioManager::updateDeviceCache() const {
         default:
             break;
     }
-    
+
     cachedDevices = std::move(devices);
 }
 
@@ -343,8 +348,11 @@ std::vector<AudioDevice> AudioManager::getInputDevices() const {
 }
 
 AudioDevice* AudioManager::findDeviceByName(const std::string& name) {
-    updateDeviceCache();
+    // Lock once to update cache and perform the search
     std::lock_guard<std::mutex> lock(deviceMutex);
+    internalUpdateDeviceCache();
+
+    // Now search in the updated cache
     auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
         [&name](const AudioDevice& dev) { return dev.name == name || dev.description == name; });
     return it != cachedDevices.end() ? &(*it) : nullptr;
@@ -360,8 +368,11 @@ const AudioDevice* AudioManager::findDeviceByName(const std::string& name) const
 }
 
 AudioDevice* AudioManager::findDeviceByIndex(uint32_t index) {
-    updateDeviceCache();
+    // Lock once to update cache and perform the search
     std::lock_guard<std::mutex> lock(deviceMutex);
+    internalUpdateDeviceCache();
+
+    // Now search in the updated cache
     auto it = std::find_if(cachedDevices.begin(), cachedDevices.end(),
         [index](const AudioDevice& dev) { return dev.index == index; });
     return it != cachedDevices.end() ? &(*it) : nullptr;

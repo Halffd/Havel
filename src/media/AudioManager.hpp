@@ -181,8 +181,9 @@ private:
     
     mutable std::vector<AudioDevice> cachedDevices;
     mutable std::mutex deviceMutex;
-    
+
     void updateDeviceCache() const;
+    void internalUpdateDeviceCache() const;
     
     std::string defaultOutputDevice;
     std::string defaultInputDevice;

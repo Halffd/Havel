@@ -1750,8 +1750,9 @@ void IO::Send(cstr keys) {
 bool IO::Suspend() {
   try {
     if (isSuspended) {
+      // Resume (was suspended, now resuming)
       for (auto &[id, hotkey] : hotkeys) {
-        if (!hotkey.suspend) {
+        if (!hotkey.enabled && !hotkey.suspend) {
           if (!hotkey.evdev) {
             Grab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow(),
                  hotkey.grab);
@@ -1759,79 +1760,36 @@ bool IO::Suspend() {
           hotkey.enabled = true;
         }
       }
-      // When resuming from suspended state, properly re-evaluate conditional hotkeys
-      // Loop through all conditional hotkeys and update their grab state based on conditions
+
       if (hotkeyManager) {
-        // Use the hotkeyManager to handle reevaluation of conditional hotkeys
         hotkeyManager->reevaluateConditionalHotkeys(*this);
-      } else {
-        // Fall back to static access if hotkeyManager not available (backward compatibility)
-        for (auto &ch : HotkeyManager::conditionalHotkeys) {
-          // Evaluate condition based on common patterns
-          bool shouldGrab = false;
-
-          // For function-based conditions, use the function directly
-          if (ch.usesFunctionCondition) {
-            if (ch.conditionFunc) {
-              shouldGrab = ch.conditionFunc();
-            }
-          } else {
-            // For mode-based conditions
-            std::string currentActiveMode = HotkeyManager::getCurrentMode();
-            if (ch.condition.find("mode == 'gaming'") != std::string::npos) {
-              shouldGrab = (currentActiveMode == "gaming");
-            } else if (ch.condition.find("mode != 'gaming'") != std::string::npos) {
-              shouldGrab = (currentActiveMode != "gaming");
-            } else {
-              // For other conditions, default to checking gaming window state
-              shouldGrab = HotkeyManager::getCurrentGamingWindowStatusStatic();
-            }
-          }
-
-          // Update grab state based on condition evaluation
-          if (shouldGrab && !ch.currentlyGrabbed) {
-            this->GrabHotkey(ch.id);
-            ch.currentlyGrabbed = true;
-            ch.lastConditionResult = true;
-          } else if (!shouldGrab && ch.currentlyGrabbed) {
-            this->UngrabHotkey(ch.id);
-            ch.currentlyGrabbed = false;
-            ch.lastConditionResult = false;
-          }
-        }
       }
+
       isSuspended = false;
       return true;
-    }
-    for (auto &[id, hotkey] : hotkeys) {
-      if (!hotkey.suspend) {
-        if (!hotkey.evdev) {
-          Ungrab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow());
-        }
-        hotkey.enabled = false;
-      }
-    }
-    // When suspending, ensure all conditional hotkeys are ungrabbed
-    if (hotkeyManager) {
-      for (auto &ch : hotkeyManager->conditionalHotkeys) {
-        if (ch.currentlyGrabbed) {
-          // Ungrab the hotkey if it's currently grabbed
-          UngrabHotkey(ch.id);
-          ch.currentlyGrabbed = false;
-        }
-      }
     } else {
-      // Fall back to static access if hotkeyManager not available (backward compatibility)
-      for (auto &ch : HotkeyManager::conditionalHotkeys) {
-        if (ch.currentlyGrabbed) {
-          // Ungrab the hotkey if it's currently grabbed
-          UngrabHotkey(ch.id);
-          ch.currentlyGrabbed = false;
+      // Suspend (was active, now suspending)
+      for (auto &[id, hotkey] : hotkeys) {
+        if (hotkey.enabled && !hotkey.suspend) {
+          if (!hotkey.evdev) {
+            Ungrab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow());
+          }
+          hotkey.enabled = false;
         }
       }
+
+      if (hotkeyManager) {
+        for (auto &ch : hotkeyManager->conditionalHotkeys) {
+          if (ch.currentlyGrabbed) {
+            UngrabHotkey(ch.id);
+            ch.currentlyGrabbed = false;
+          }
+        }
+      }
+
+      isSuspended = true;
+      return true;
     }
-    isSuspended = true;
-    return true;
   } catch (const std::exception &e) {
     std::cerr << "Error in IO::Suspend: " << e.what() << std::endl;
     return false;

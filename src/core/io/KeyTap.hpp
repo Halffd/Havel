@@ -16,6 +16,8 @@ namespace havel {
             std::function<void()> onCombo;
             std::string tapCondition;
             std::string comboCondition;
+            std::function<bool()> tapConditionFunc;
+            std::function<bool()> comboConditionFunc;
             HotkeyManager& hotkeyManager;
 
             // New state variables based on requirements
@@ -30,6 +32,11 @@ namespace havel {
                    const std::string& tapCond = "",
                    std::function<void()> comboAction = nullptr,
                    const std::string& comboCond = "", bool grabDown = true, bool grabUp = true);
+            KeyTap(IO& ioRef, HotkeyManager& hotkeyManagerRef, const std::string& key,
+                   std::function<void()> tapAction,
+                   std::function<bool()> tapCondFunc,
+                   std::function<void()> comboAction = nullptr,
+                   std::function<bool()> comboCondFunc = nullptr, bool grabDown = true, bool grabUp = true);
 
             ~KeyTap();
             void setup();

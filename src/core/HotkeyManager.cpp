@@ -54,10 +54,6 @@ bool HotkeyManager::getCurrentGamingWindowStatus() const {
   return isGamingWindow();
 }
 
-bool HotkeyManager::getCurrentGamingWindowStatusStatic() {
-  return HotkeyManager::isGamingWindow();
-}
-
 void HotkeyManager::reevaluateConditionalHotkeys(IO& io) {
   std::lock_guard<std::mutex> lock(hotkeyMutex);
   for (auto &ch : conditionalHotkeys) {
@@ -95,10 +91,6 @@ void HotkeyManager::reevaluateConditionalHotkeys(IO& io) {
   }
 }
 
-std::string HotkeyManager::getCurrentMode() {
-  std::lock_guard<std::mutex> lock(modeMutex);
-  return currentMode;
-}
 
 void HotkeyManager::Zoom(int zoom) {
   if (zoom < 0)
@@ -531,69 +523,44 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
   // Application Shortcuts
   io.Hotkey("@|rwin", [this]() { io.Send("@!{backspace}"); });
-  // Create a helper method to build the condition string dynamically
-  auto buildLWinCondition = [this]() -> std::string {
-      // Get the disabled classes from config
-      std::string disabledClasses = Configs::Get().Get<std::string>("General.LWinDisabledClasses", "remote-viewer,virt-viewer,gnome-boxes");
-      if (disabledClasses.empty()) {
-          return "mode != 'gaming'";
-      }
 
-      // Build a condition string that checks for gaming mode AND each disabled class
-      std::string condition = "mode != 'gaming' && !(";
-
-      // Split the comma-separated list
-      size_t start = 0;
-      size_t end = disabledClasses.find(',');
-      bool first = true;
-      while (end != std::string::npos) {
-          std::string cls = disabledClasses.substr(start, end - start);
-          // Remove leading/trailing spaces
-          cls.erase(0, cls.find_first_not_of(" \t"));
-          cls.erase(cls.find_last_not_of(" \t") + 1);
-
-          if (!cls.empty()) {
-              if (!first) {
-                  condition += " || ";
-              }
-              condition += "window.class ~ '" + cls + "'";
-              first = false;
-          }
-          start = end + 1;
-          end = disabledClasses.find(',', start);
-      }
-      // Check the last part
-      std::string cls = disabledClasses.substr(start);
-      cls.erase(0, cls.find_first_not_of(" \t"));
-      cls.erase(cls.find_last_not_of(" \t") + 1);
-
-      if (!cls.empty()) {
-          if (!first) {
-              condition += " || ";
-          }
-          condition += "window.class ~ '" + cls + "'";
-      }
-
-      condition += ")";
-      return condition;
-  };
-
-  // This should now work correctly
+  // LWin key handling using KeyTap with function-based conditions instead of complex condition strings
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
-      []() {
+      [this]() {
         if(!CompositorBridge::IsKDERunning()){
           Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
         } else {
           CompositorBridge::SendKWinZoomCommand("org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.activateLauncherMenu");
         }
       },                         // Tap action
-      buildLWinCondition(),        // Tap condition string
+      [this]() -> bool {         // Tap condition function
+        // Don't trigger in gaming mode
+        if (getMode() == "gaming") {
+            return false;
+        }
+
+        // Don't trigger in disabled window classes
+        std::string currentWindowClass = WindowManager::GetActiveWindowClass();
+        std::string disabledClasses = Configs::Get().Get<std::string>(
+            "General.LWinDisabledClasses",
+            "remote-viewer,virt-viewer,gnome-boxes"
+        );
+
+        if (isWindowClassInList(currentWindowClass, disabledClasses)) {
+            return false;
+        }
+
+        return true;  // Allow tap
+      },
       [this]() { PlayPause(); }, // Combo action
-      "mode == 'gaming'",         // Combo condition
+      [this]() -> bool {         // Combo condition function
+          return getMode() == "gaming";  // Only in gaming mode
+      },
       false, true
   );
   lwin->setup();
+
   ralt = std::make_unique<KeyTap>(
       io, *this, "ralt",
       [this]() {
@@ -3505,6 +3472,38 @@ void HotkeyManager::applyDebugSettings() {
         info("Input freeze timeout changed from {}s to {}s", oldValue, newValue);
         inputFreezeTimeoutSeconds = newValue;
       });
+}
+
+bool HotkeyManager::isWindowClassInList(const std::string& windowClass, const std::string& classList) {
+  if (classList.empty()) {
+    return false;
+  }
+
+  // Split the comma-separated list
+  size_t start = 0;
+  size_t end = classList.find(',');
+  while (end != std::string::npos) {
+      std::string cls = classList.substr(start, end - start);
+      // Remove leading/trailing spaces
+      cls.erase(0, cls.find_first_not_of(" \t"));
+      cls.erase(cls.find_last_not_of(" \t") + 1);
+
+      if (!cls.empty() && windowClass.find(cls) != std::string::npos) {
+          return true;
+      }
+      start = end + 1;
+      end = classList.find(',', start);
+  }
+  // Check the last part
+  std::string cls = classList.substr(start);
+  cls.erase(0, cls.find_first_not_of(" \t"));
+  cls.erase(cls.find_last_not_of(" \t") + 1);
+
+  if (!cls.empty() && windowClass.find(cls) != std::string::npos) {
+      return true;
+  }
+
+  return false;
 }
 
 } // namespace havel

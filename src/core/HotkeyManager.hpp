@@ -400,10 +400,6 @@ public:
 
   static std::vector<ConditionalHotkey> conditionalHotkeys;
 
-  // Static accessors (for backward compatibility)
-  static std::string getCurrentMode();
-  static bool getCurrentGamingWindowStatusStatic();
-
   // Instance accessors for IO suspend functionality
   bool getCurrentGamingWindowStatus() const;
   void reevaluateConditionalHotkeys(IO& io);
@@ -421,6 +417,10 @@ private:
   void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
   void batchUpdateConditionalHotkeys();
   ConditionalHotkey* findConditionalHotkey(int id);
+
+  // Helper function to check if window class is in a comma-separated list
+  bool isWindowClassInList(const std::string& windowClass, const std::string& classList);
+
   // Window focus tracking
   bool trackWindowFocus;
   wID lastActiveWindowId;

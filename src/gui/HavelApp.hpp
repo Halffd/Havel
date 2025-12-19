@@ -48,16 +48,16 @@ public:
     
     // Components
     Interpreter* getInterpreter() { return interpreter.get(); }
-    std::unique_ptr<IO> io;
-    std::unique_ptr<WindowManager> windowManager;
-    std::unique_ptr<MPVController> mpv;
-    std::unique_ptr<ScriptEngine> scriptEngine;
-    std::unique_ptr<HotkeyManager> hotkeyManager;
-    std::unique_ptr<ClipboardManager> clipboardManager;
-    std::unique_ptr<AudioManager> audioManager;
-    std::unique_ptr<BrightnessManager> brightnessManager;
-    std::unique_ptr<GUIManager> guiManager;
-    std::unique_ptr<QMenu> trayMenu;
+    std::shared_ptr<IO> io;
+    std::shared_ptr<WindowManager> windowManager;
+    std::shared_ptr<MPVController> mpv;
+    std::shared_ptr<ScriptEngine> scriptEngine;
+    std::shared_ptr<HotkeyManager> hotkeyManager;
+    std::shared_ptr<ClipboardManager> clipboardManager;
+    std::shared_ptr<AudioManager> audioManager;
+    std::shared_ptr<BrightnessManager> brightnessManager;
+    std::shared_ptr<GUIManager> guiManager;
+    std::shared_ptr<QMenu> trayMenu;
     
 private slots:
     void showTextChunker();

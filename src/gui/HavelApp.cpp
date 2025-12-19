@@ -85,12 +85,12 @@ void HavelApp::initializeComponents(bool isStartup) {
     info("Initializing HvC components...");
 
     // Initialize in dependency order
-    io = std::make_unique<IO>();
+    io = std::make_shared<IO>();
     if (!io) {
         throw std::runtime_error("Failed to create IO manager");
     }
 
-    windowManager = std::make_unique<WindowManager>();
+    windowManager = std::make_shared<WindowManager>();
     if (!windowManager) {
         throw std::runtime_error("Failed to create WindowManager");
     }
@@ -98,28 +98,31 @@ void HavelApp::initializeComponents(bool isStartup) {
     // Initialize compositor bridge
     WindowManager::InitializeCompositorBridge();
 
-    mpv = std::make_unique<MPVController>();
+    mpv = std::make_shared<MPVController>();
     if (!mpv) {
         throw std::runtime_error("Failed to create MPVController");
     }
     mpv->Initialize();
-    
-    scriptEngine = std::make_unique<ScriptEngine>(*io, *windowManager);
+
+    scriptEngine = std::make_shared<ScriptEngine>(*io, *windowManager);
     if (!scriptEngine) {
         throw std::runtime_error("Failed to create ScriptEngine");
     }
-    audioManager = std::make_unique<AudioManager>(AudioBackend::AUTO);
+    audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
     if (!audioManager) {
         throw std::runtime_error("Failed to create AudioManager");
     }
-    brightnessManager = std::make_unique<BrightnessManager>();
+    brightnessManager = std::make_shared<BrightnessManager>();
     if (!brightnessManager) {
         throw std::runtime_error("Failed to create BrightnessManager");
     }
-    hotkeyManager = std::make_unique<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine, *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager);
+    hotkeyManager = std::make_shared<HotkeyManager>(*io, *windowManager, *mpv, *audioManager, *scriptEngine, *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager);
     if (!hotkeyManager) {
         throw std::runtime_error("Failed to create HotkeyManager");
     }
+
+    // Set the hotkeyManager on the IO instance so it can access it during suspend/resume operations
+    io->setHotkeyManager(hotkeyManager);
 
     // Initialize hotkey manager
     hotkeyManager->loadDebugSettings();
@@ -140,6 +143,8 @@ void HavelApp::initializeComponents(bool isStartup) {
     hotkeyManager->RegisterSystemHotkeys();
     hotkeyManager->registerAutomationHotkeys();
     hotkeyManager->LoadHotkeyConfigurations();
+
+    // The hotkey manager has already been set above with shared_ptr
     
 
     // Toggle visibility

@@ -1759,8 +1759,46 @@ bool IO::Suspend() {
           hotkey.enabled = true;
         }
       }
-      for (auto &ch : HotkeyManager::conditionalHotkeys) {
-          ch.currentlyGrabbed = true;
+      // When resuming from suspended state, properly re-evaluate conditional hotkeys
+      // Loop through all conditional hotkeys and update their grab state based on conditions
+      if (hotkeyManager) {
+        // Use the hotkeyManager to handle reevaluation of conditional hotkeys
+        hotkeyManager->reevaluateConditionalHotkeys(*this);
+      } else {
+        // Fall back to static access if hotkeyManager not available (backward compatibility)
+        for (auto &ch : HotkeyManager::conditionalHotkeys) {
+          // Evaluate condition based on common patterns
+          bool shouldGrab = false;
+
+          // For function-based conditions, use the function directly
+          if (ch.usesFunctionCondition) {
+            if (ch.conditionFunc) {
+              shouldGrab = ch.conditionFunc();
+            }
+          } else {
+            // For mode-based conditions
+            std::string currentActiveMode = HotkeyManager::getCurrentMode();
+            if (ch.condition.find("mode == 'gaming'") != std::string::npos) {
+              shouldGrab = (currentActiveMode == "gaming");
+            } else if (ch.condition.find("mode != 'gaming'") != std::string::npos) {
+              shouldGrab = (currentActiveMode != "gaming");
+            } else {
+              // For other conditions, default to checking gaming window state
+              shouldGrab = HotkeyManager::getCurrentGamingWindowStatusStatic();
+            }
+          }
+
+          // Update grab state based on condition evaluation
+          if (shouldGrab && !ch.currentlyGrabbed) {
+            this->GrabHotkey(ch.id);
+            ch.currentlyGrabbed = true;
+            ch.lastConditionResult = true;
+          } else if (!shouldGrab && ch.currentlyGrabbed) {
+            this->UngrabHotkey(ch.id);
+            ch.currentlyGrabbed = false;
+            ch.lastConditionResult = false;
+          }
+        }
       }
       isSuspended = false;
       return true;
@@ -1773,8 +1811,24 @@ bool IO::Suspend() {
         hotkey.enabled = false;
       }
     }
-    for (auto &ch : HotkeyManager::conditionalHotkeys) {
-      ch.currentlyGrabbed = false;
+    // When suspending, ensure all conditional hotkeys are ungrabbed
+    if (hotkeyManager) {
+      for (auto &ch : hotkeyManager->conditionalHotkeys) {
+        if (ch.currentlyGrabbed) {
+          // Ungrab the hotkey if it's currently grabbed
+          UngrabHotkey(ch.id);
+          ch.currentlyGrabbed = false;
+        }
+      }
+    } else {
+      // Fall back to static access if hotkeyManager not available (backward compatibility)
+      for (auto &ch : HotkeyManager::conditionalHotkeys) {
+        if (ch.currentlyGrabbed) {
+          // Ungrab the hotkey if it's currently grabbed
+          UngrabHotkey(ch.id);
+          ch.currentlyGrabbed = false;
+        }
+      }
     }
     isSuspended = true;
     return true;

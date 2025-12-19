@@ -44,7 +44,58 @@ std::string HotkeyManager::currentMode = "default";
 std::mutex HotkeyManager::modeMutex;
 std::mutex HotkeyManager::conditionCacheMutex;
 std::vector<ConditionalHotkey> HotkeyManager::conditionalHotkeys;
+
 std::string HotkeyManager::getMode() const {
+  std::lock_guard<std::mutex> lock(modeMutex);
+  return currentMode;
+}
+
+bool HotkeyManager::getCurrentGamingWindowStatus() const {
+  return isGamingWindow();
+}
+
+bool HotkeyManager::getCurrentGamingWindowStatusStatic() {
+  return HotkeyManager::isGamingWindow();
+}
+
+void HotkeyManager::reevaluateConditionalHotkeys(IO& io) {
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
+  for (auto &ch : conditionalHotkeys) {
+    // Evaluate condition based on common patterns
+    bool shouldGrab = false;
+
+    // For function-based conditions, use the function directly
+    if (ch.usesFunctionCondition) {
+      if (ch.conditionFunc) {
+        shouldGrab = ch.conditionFunc();
+      }
+    } else {
+      // For mode-based conditions
+      std::string currentActiveMode = getMode();
+      if (ch.condition.find("mode == 'gaming'") != std::string::npos) {
+        shouldGrab = (currentActiveMode == "gaming");
+      } else if (ch.condition.find("mode != 'gaming'") != std::string::npos) {
+        shouldGrab = (currentActiveMode != "gaming");
+      } else {
+        // For other conditions, default to checking gaming window state
+        shouldGrab = getCurrentGamingWindowStatus();
+      }
+    }
+
+    // Update grab state based on condition evaluation
+    if (shouldGrab && !ch.currentlyGrabbed) {
+      io.GrabHotkey(ch.id);
+      ch.currentlyGrabbed = true;
+      ch.lastConditionResult = true;
+    } else if (!shouldGrab && ch.currentlyGrabbed) {
+      io.UngrabHotkey(ch.id);
+      ch.currentlyGrabbed = false;
+      ch.lastConditionResult = false;
+    }
+  }
+}
+
+std::string HotkeyManager::getCurrentMode() {
   std::lock_guard<std::mutex> lock(modeMutex);
   return currentMode;
 }
@@ -70,7 +121,7 @@ void HotkeyManager::Zoom(int zoom) {
         break;
       case 3:
         char buffer[128];
-        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", config.Get<double>("Zoom.Zoom3", 2.0));
+        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", Configs::Get().Get<double>("Zoom.Zoom3", 2.0));
         command = std::string(buffer);
         break;
       case 4: // zoomTo140
@@ -197,7 +248,7 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
     : io(io), windowManager(windowManager), mpv(mpv),
       audioManager(audioManager), scriptEngine(scriptEngine),
       brightnessManager(brightnessManager),
-      screenshotManager(screenshotManager), config(Configs::Get()) {
+      screenshotManager(screenshotManager) {
   mouseController = std::make_unique<MouseController>(io);
   conditionEngine = std::make_unique<ConditionEngine>();
   setupConditionEngine();
@@ -480,6 +531,53 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
   // Application Shortcuts
   io.Hotkey("@|rwin", [this]() { io.Send("@!{backspace}"); });
+  // Create a helper method to build the condition string dynamically
+  auto buildLWinCondition = [this]() -> std::string {
+      // Get the disabled classes from config
+      std::string disabledClasses = Configs::Get().Get<std::string>("General.LWinDisabledClasses", "remote-viewer,virt-viewer,gnome-boxes");
+      if (disabledClasses.empty()) {
+          return "mode != 'gaming'";
+      }
+
+      // Build a condition string that checks for gaming mode AND each disabled class
+      std::string condition = "mode != 'gaming' && !(";
+
+      // Split the comma-separated list
+      size_t start = 0;
+      size_t end = disabledClasses.find(',');
+      bool first = true;
+      while (end != std::string::npos) {
+          std::string cls = disabledClasses.substr(start, end - start);
+          // Remove leading/trailing spaces
+          cls.erase(0, cls.find_first_not_of(" \t"));
+          cls.erase(cls.find_last_not_of(" \t") + 1);
+
+          if (!cls.empty()) {
+              if (!first) {
+                  condition += " || ";
+              }
+              condition += "window.class ~ '" + cls + "'";
+              first = false;
+          }
+          start = end + 1;
+          end = disabledClasses.find(',', start);
+      }
+      // Check the last part
+      std::string cls = disabledClasses.substr(start);
+      cls.erase(0, cls.find_first_not_of(" \t"));
+      cls.erase(cls.find_last_not_of(" \t") + 1);
+
+      if (!cls.empty()) {
+          if (!first) {
+              condition += " || ";
+          }
+          condition += "window.class ~ '" + cls + "'";
+      }
+
+      condition += ")";
+      return condition;
+  };
+
   // This should now work correctly
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
@@ -490,7 +588,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
           CompositorBridge::SendKWinZoomCommand("org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.activateLauncherMenu");
         }
       },                         // Tap action
-      "mode != 'gaming'",        // Tap condition
+      buildLWinCondition(),        // Tap condition string
       [this]() { PlayPause(); }, // Combo action
       "mode == 'gaming'",         // Combo condition
       false, true

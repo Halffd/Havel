@@ -27,6 +27,9 @@
 
 namespace havel {
 
+// Forward declarations
+class HotkeyManager;
+
 enum class MouseButton {
   Left = BTN_LEFT,
   Right = BTN_RIGHT,
@@ -197,7 +200,7 @@ class IO {
   // New unified event listener
   std::unique_ptr<EventListener> eventListener;
   bool useNewEventListener = false;
-  
+  std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
@@ -212,6 +215,7 @@ public:
   EventListener* GetEventListener() { return eventListener.get(); }
   bool IsUsingNewEventListener() const { return useNewEventListener; }
   std::vector<std::string> GetInputDevices(); // We'll implement this method
+  void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager){ this->hotkeyManager = hotkeyManager; }
 
   // Key sending methods
   void Send(Key key, bool down = true);

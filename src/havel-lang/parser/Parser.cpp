@@ -176,8 +176,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                         throw std::runtime_error("Expected '=>' after identifier hotkey");
                     }
                 }
-                // Fallthrough to expression if not a hotkey binding
-                [[fallthrough]];
+                
+                // Not a hotkey binding, parse as expression
+                auto expr = parseExpression();
+                return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
             }
             case havel::TokenType::Let:
                 return parseLetDeclaration();

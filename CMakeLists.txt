@@ -277,8 +277,9 @@ if(ENABLE_TESTS)
     file(GLOB_RECURSE TEST_SOURCES "src/tests/*.cpp")
 endif()
 
-# ==============================================================================
-# LIBRARY CONFIGURATION
+
+
+
 # ==============================================================================
 pkg_check_modules(XI REQUIRED xi)
 

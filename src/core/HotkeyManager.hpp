@@ -194,6 +194,7 @@ private:
   static std::mutex modeMutex;
   static std::string currentMode;
   static std::mutex conditionCacheMutex; // Protects conditionCache
+
   bool isZooming() const { return m_isZooming; }
   void setZooming(bool zooming) { m_isZooming = zooming; }
 
@@ -242,7 +243,6 @@ private:
   ScriptEngine &scriptEngine;
   ScreenshotManager &screenshotManager;
   BrightnessManager &brightnessManager;
-  Configs& config;
 
   // Mode management
   bool m_isZooming{false};
@@ -399,6 +399,16 @@ public:
   void NotifyInputReceived();
 
   static std::vector<ConditionalHotkey> conditionalHotkeys;
+
+  // Static accessors (for backward compatibility)
+  static std::string getCurrentMode();
+  static bool getCurrentGamingWindowStatusStatic();
+
+  // Instance accessors for IO suspend functionality
+  bool getCurrentGamingWindowStatus() const;
+  void reevaluateConditionalHotkeys(IO& io);
+  void reevaluateConditionalHotkeysInstance(IO& io); // For use with shared_ptr
+
 private:
   // Store IDs of MPV hotkeys for grab/ungrab
   std::vector<int> conditionalHotkeyIds;

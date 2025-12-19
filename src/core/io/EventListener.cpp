@@ -586,9 +586,19 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         }
 
         // If this combo includes the key that was just pressed, evaluate it
-        if (comboIncludesKey && EvaluateCombo(hotkey)) {
-          debug("✅ Combo hotkey '{}' triggered on key press", hotkey.alias);
-          ExecuteHotkeyCallback(hotkey);
+        try {
+          if (comboIncludesKey && EvaluateCombo(hotkey)) {
+            debug("✅ Combo hotkey '{}' triggered on key press", hotkey.alias);
+            ExecuteHotkeyCallback(hotkey);
+          }
+        } catch (const std::system_error& e) {
+          error("System error evaluating combo '{}': {}", hotkey.alias, e.what());
+          // Continue with other hotkeys instead of crashing
+          continue;
+        } catch (const std::exception& e) {
+          error("Exception evaluating combo '{}': {}", hotkey.alias, e.what());
+          // Continue with other hotkeys instead of crashing
+          continue;
         }
       }
     } else {
@@ -781,10 +791,20 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
         // Handle combo hotkeys
         if (hotkey.type == HotkeyType::Combo) {
-          if (EvaluateCombo(hotkey)) {
-            matchedHotkeyIds.push_back(id);  // Just store ID
-            if (hotkey.grab)
-              shouldBlock = true;
+          try {
+            if (EvaluateCombo(hotkey)) {
+              matchedHotkeyIds.push_back(id);  // Just store ID
+              if (hotkey.grab)
+                shouldBlock = true;
+            }
+          } catch (const std::system_error& e) {
+            error("System error evaluating mouse combo '{}': {}", hotkey.alias, e.what());
+            // Continue with other hotkeys instead of crashing
+            continue;
+          } catch (const std::exception& e) {
+            error("Exception evaluating mouse combo '{}': {}", hotkey.alias, e.what());
+            // Continue with other hotkeys instead of crashing
+            continue;
           }
           continue;
         }
@@ -1069,12 +1089,22 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Check if this is a combo hotkey
       if (hotkey.type == HotkeyType::Combo) {
-        if (EvaluateCombo(hotkey)) {
-          // Combo matched, collect for execution outside locks
-          matchedHotkeyIds.push_back(id);
-          if (hotkey.grab) {
-            shouldBlock = true;
+        try {
+          if (EvaluateCombo(hotkey)) {
+            // Combo matched, collect for execution outside locks
+            matchedHotkeyIds.push_back(id);
+            if (hotkey.grab) {
+              shouldBlock = true;
+            }
           }
+        } catch (const std::system_error& e) {
+          error("System error evaluating hotkey combo '{}': {}", hotkey.alias, e.what());
+          // Continue with other hotkeys instead of crashing
+          continue;
+        } catch (const std::exception& e) {
+          error("Exception evaluating hotkey combo '{}': {}", hotkey.alias, e.what());
+          // Continue with other hotkeys instead of crashing
+          continue;
         }
         continue;
       }
@@ -1193,130 +1223,136 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
  * at exactly the same instant, but within a short time window.
  */
 bool EventListener::EvaluateCombo(const HotKey &hotkey) {
-    std::shared_lock<std::shared_mutex> stateLock(stateMutex);  // ← Lock state with shared lock
+    try {
+        std::shared_lock<std::shared_mutex> stateLock(stateMutex);  // ← Lock state with shared lock
 
-    auto now = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
 
-    debug("🔍 Evaluating combo '{}' | Active inputs: {}",
-          hotkey.alias, GetActiveInputsString());
+        debug("🔍 Evaluating combo '{}' | Active inputs: {}",
+              hotkey.alias, GetActiveInputsString());
 
-    // Build a set of required keys for this combo
-    std::set<int> requiredKeys;
-    int requiredModifiers = 0;
-    bool hasWheelEvent = false;
+        // Build a set of required keys for this combo
+        std::set<int> requiredKeys;
+        int requiredModifiers = 0;
 
-    for (const auto &comboKey : hotkey.comboSequence) {
-        if (comboKey.type == HotkeyType::Keyboard) {
-            int keyCode = static_cast<int>(comboKey.key);
+        for (const auto &comboKey : hotkey.comboSequence) {
+            if (comboKey.type == HotkeyType::Keyboard) {
+                int keyCode = static_cast<int>(comboKey.key);
 
-            // Check if this is a modifier
-            if (KeyMap::IsModifier(keyCode)) {
-                // Track as modifier using the EventListener's Modifier enum
-                if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL) {
-                    requiredModifiers |= Modifier::Ctrl;
-                } else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT) {
-                    requiredModifiers |= Modifier::Shift;
-                } else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT) {
-                    requiredModifiers |= Modifier::Alt;
-                } else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
-                    requiredModifiers |= Modifier::Meta;
+                // Check if this is a modifier
+                if (KeyMap::IsModifier(keyCode)) {
+                    // Track as modifier using the EventListener's Modifier enum
+                    if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL) {
+                        requiredModifiers |= Modifier::Ctrl;
+                    } else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT) {
+                        requiredModifiers |= Modifier::Shift;
+                    } else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT) {
+                        requiredModifiers |= Modifier::Alt;
+                    } else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+                        requiredModifiers |= Modifier::Meta;
+                    }
+                } else {
+                    // Regular key
+                    requiredKeys.insert(keyCode);
                 }
+            } else if (comboKey.type == HotkeyType::MouseButton) {
+                requiredKeys.insert(comboKey.mouseButton);
+            } else if (comboKey.type == HotkeyType::MouseWheel) {
+                // ← ADD THIS CASE
+                // Wheel events are TRANSIENT - they don't stay in activeInputs
+                // They only trigger DURING the wheel event itself
+                // So we just skip them in the activeInputs check
+                // The wheel direction matching happens in ProcessMouseEvent
+                debug("Combo includes wheel event, skipping activeInputs check for it");
+                continue;
             } else {
-                // Regular key
-                requiredKeys.insert(keyCode);
-            }
-        } else if (comboKey.type == HotkeyType::MouseButton) {
-            requiredKeys.insert(comboKey.mouseButton);
-        } else if (comboKey.type == HotkeyType::MouseWheel) {
-            // ← ADD THIS CASE
-            // Wheel events are TRANSIENT - they don't stay in activeInputs
-            // They only trigger DURING the wheel event itself
-            // So we just skip them in the activeInputs check
-            // The wheel direction matching happens in ProcessMouseEvent
-            debug("Combo includes wheel event, skipping activeInputs check for it");
-            hasWheelEvent = true;
-            continue;
-        } else {
-            debug("❌ Combo '{}' has unsupported type {}",
-                  hotkey.alias, static_cast<int>(comboKey.type));
-            return false;
-        }
-    }
-
-    // Check if EXACTLY the required keys are active (no more, no less)
-    // unless wildcard is enabled
-    int activeCount = activeInputs.size();
-    int requiredCount = requiredKeys.size();
-
-    // Count how many modifier keys are active
-    int activeModifierKeys = 0;
-    for (const auto &[code, input] : activeInputs) {
-        if (KeyMap::IsModifier(code)) {
-            activeModifierKeys++;
-        }
-    }
-
-    if (!hotkey.wildcard) {
-        // Strict matching: active inputs must equal required inputs
-        // (accounting for modifier keys separately)
-        int expectedTotal = requiredCount + activeModifierKeys;
-
-        if (activeCount != expectedTotal) {
-            debug("❌ Combo '{}' rejected: wrong number of active inputs "
-                  "(have {}, need {})",
-                  hotkey.alias, activeCount, expectedTotal);
-            return false;
-        }
-    }
-
-    // Check each required key is actually active
-    for (int requiredKey : requiredKeys) {
-        auto it = activeInputs.find(requiredKey);
-
-        if (it == activeInputs.end()) {
-            debug("❌ Combo '{}' rejected: required key {} not active",
-                  hotkey.alias, requiredKey);
-            return false;
-        }
-
-        // Check timing if time window is set
-        if (comboTimeWindow > 0) {
-            auto keyAge = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - it->second.timestamp
-            );
-
-            if (keyAge.count() > comboTimeWindow) {
-                debug("❌ Combo '{}' rejected: key {} too old ({}ms > {}ms)",
-                      hotkey.alias, requiredKey, keyAge.count(), comboTimeWindow);
+                debug("❌ Combo '{}' has unsupported type {}",
+                      hotkey.alias, static_cast<int>(comboKey.type));
                 return false;
             }
         }
-    }
 
-    // Check modifiers if required
-    if (requiredModifiers != 0) {
-        int currentMods = GetCurrentModifiersMask();
+        // Check if EXACTLY the required keys are active (no more, no less)
+        // unless wildcard is enabled
+        int activeCount = activeInputs.size();
+        int requiredCount = requiredKeys.size();
+
+        // Count how many modifier keys are active
+        int activeModifierKeys = 0;
+        for (const auto &[code, input] : activeInputs) {
+            if (KeyMap::IsModifier(code)) {
+                activeModifierKeys++;
+            }
+        }
 
         if (!hotkey.wildcard) {
-            // Strict: must match exactly
-            if (currentMods != requiredModifiers) {
-                debug("❌ Combo '{}' rejected: wrong modifiers "
-                      "(have {:#x}, need {:#x})",
-                      hotkey.alias, currentMods, requiredModifiers);
-                return false;
-            }
-        } else {
-            // Wildcard: required mods must be present (can have extras)
-            if ((currentMods & requiredModifiers) != requiredModifiers) {
-                debug("❌ Combo '{}' rejected: missing required modifiers "
-                      "(have {:#x}, need {:#x})",
-                      hotkey.alias, currentMods, requiredModifiers);
+            // Strict matching: active inputs must equal required inputs
+            // (accounting for modifier keys separately)
+            int expectedTotal = requiredCount + activeModifierKeys;
+
+            if (activeCount != expectedTotal) {
+                debug("❌ Combo '{}' rejected: wrong number of active inputs "
+                      "(have {}, need {})",
+                      hotkey.alias, activeCount, expectedTotal);
                 return false;
             }
         }
-    }
 
-    debug("✅ Combo '{}' matched!", hotkey.alias);
-    return true;
+        // Check each required key is actually active
+        for (int requiredKey : requiredKeys) {
+            auto it = activeInputs.find(requiredKey);
+
+            if (it == activeInputs.end()) {
+                debug("❌ Combo '{}' rejected: required key {} not active",
+                      hotkey.alias, requiredKey);
+                return false;
+            }
+
+            // Check timing if time window is set
+            if (comboTimeWindow > 0) {
+                auto keyAge = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - it->second.timestamp
+                );
+
+                if (keyAge.count() > comboTimeWindow) {
+                    debug("❌ Combo '{}' rejected: key {} too old ({}ms > {}ms)",
+                          hotkey.alias, requiredKey, keyAge.count(), comboTimeWindow);
+                    return false;
+                }
+            }
+        }
+
+        // Check modifiers if required
+        if (requiredModifiers != 0) {
+            int currentMods = GetCurrentModifiersMask();
+
+            if (!hotkey.wildcard) {
+                // Strict: must match exactly
+                if (currentMods != requiredModifiers) {
+                    debug("❌ Combo '{}' rejected: wrong modifiers "
+                          "(have {:#x}, need {:#x})",
+                          hotkey.alias, currentMods, requiredModifiers);
+                    return false;
+                }
+            } else {
+                // Wildcard: required mods must be present (can have extras)
+                if ((currentMods & requiredModifiers) != requiredModifiers) {
+                    debug("❌ Combo '{}' rejected: missing required modifiers "
+                          "(have {:#x}, need {:#x})",
+                          hotkey.alias, currentMods, requiredModifiers);
+                    return false;
+                }
+            }
+        }
+
+        debug("✅ Combo '{}' matched!", hotkey.alias);
+        return true;
+    } catch (const std::system_error& e) {
+        error("System error in EvaluateCombo for hotkey '{}': {}", hotkey.alias, e.what());
+        return false;  // Return false instead of crashing
+    } catch (const std::exception& e) {
+        error("Exception in EvaluateCombo for hotkey '{}': {}", hotkey.alias, e.what());
+        return false;  // Return false instead of crashing
+    }
 }
 } // namespace havel

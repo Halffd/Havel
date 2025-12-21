@@ -43,25 +43,12 @@ namespace havel {
         Dot,
         Comma,
         Semicolon,
-        Plus,           // +
-        Minus,          // -
-        Multiply,       // *
-        Divide,         // /
-        Modulo,         // %
-        Equals,         // ==
-        NotEquals,      // !=
-        Less,           // <
-        Greater,        // >
-        LessEquals,     // <=
-        GreaterEquals,  // >=
-        And,            // &&
-        Or,             // ||
-        Not,            // !
-        Assign,         // =
-        PlusAssign,     // +=
-        MinusAssign,    // -=
-        MultiplyAssign, // *=
-        DivideAssign,   // /=
+        // Operators
+        Plus, Minus, Multiply, Divide, Modulo,
+        PlusPlus, MinusMinus, // Increment/Decrement
+        Equals, NotEquals, Less, Greater, LessEquals, GreaterEquals,
+        And, Or, Not,
+        Assign, PlusAssign, MinusAssign, MultiplyAssign, DivideAssign,
         Pipe,
         Comment,
         NewLine,

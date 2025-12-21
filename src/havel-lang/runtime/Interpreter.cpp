@@ -36,11 +36,20 @@ static HavelValue unwrap(HavelResult& result) {
 }
 
 std::string Interpreter::ValueToString(const HavelValue& value) {
-    return std::visit([](auto&& arg) -> std::string {
+    // Helper to format numbers nicely (remove trailing zeros)
+    auto formatNumber = [](double d) -> std::string {
+        std::string s = std::to_string(d);
+        s.erase(s.find_last_not_of('0') + 1, std::string::npos);
+        if (s.back() == '.') s.pop_back();
+        return s;
+    };
+
+    return std::visit([&](auto&& arg) -> std::string {
         using T = std::decay_t<decltype(arg)>;
         if constexpr (std::is_same_v<T, std::nullptr_t>) return "null";
         else if constexpr (std::is_same_v<T, bool>) return arg ? "true" : "false";
-        else if constexpr (std::is_same_v<T, int> || std::is_same_v<T, double>) return std::to_string(arg);
+        else if constexpr (std::is_same_v<T, int>) return std::to_string(arg);
+        else if constexpr (std::is_same_v<T, double>) return formatNumber(arg);
         else if constexpr (std::is_same_v<T, std::string>) return arg;
         else if constexpr (std::is_same_v<T, std::shared_ptr<HavelFunction>>) return "<function>";
         else if constexpr (std::is_same_v<T, BuiltinFunction>) return "<builtin_function>";
@@ -377,6 +386,62 @@ void Interpreter::visitUnaryExpression(const ast::UnaryExpression& node) {
         case ast::UnaryExpression::UnaryOperator::Plus: lastResult = ValueToNumber(operand); break;
         default: lastResult = HavelRuntimeError("Unsupported unary operator");
     }
+}
+
+void Interpreter::visitUpdateExpression(const ast::UpdateExpression& node) {
+    // Determine the variable or property being updated
+    if (auto* id = dynamic_cast<const ast::Identifier*>(node.argument.get())) {
+        auto currentValOpt = environment->Get(id->symbol);
+        if (!currentValOpt) {
+            lastResult = HavelRuntimeError("Undefined variable: " + id->symbol);
+            return;
+        }
+        
+        double currentNum = ValueToNumber(*currentValOpt);
+        double newNum = (node.operator_ == ast::UpdateExpression::Operator::Increment) 
+                        ? currentNum + 1.0 : currentNum - 1.0;
+        
+        environment->Assign(id->symbol, newNum);
+        
+        lastResult = node.isPrefix ? newNum : currentNum;
+        return;
+    }
+    
+    // Member expression (obj.prop++)
+    if (auto* member = dynamic_cast<const ast::MemberExpression*>(node.argument.get())) {
+         auto objectResult = Evaluate(*member->object);
+         if (isError(objectResult)) { lastResult = objectResult; return; }
+         HavelValue objectValue = unwrap(objectResult);
+         
+         auto* propId = dynamic_cast<const ast::Identifier*>(member->property.get());
+         if (!propId) {
+             lastResult = HavelRuntimeError("Invalid property access in update expression");
+             return;
+         }
+         std::string propName = propId->symbol;
+         
+         if (auto* objPtr = std::get_if<HavelObject>(&objectValue)) {
+             if (*objPtr) {
+                 auto& obj = **objPtr;
+                 auto it = obj.find(propName);
+                 double currentNum = 0.0;
+                 if (it != obj.end()) {
+                     currentNum = ValueToNumber(it->second);
+                 }
+                 
+                 double newNum = (node.operator_ == ast::UpdateExpression::Operator::Increment) 
+                                 ? currentNum + 1.0 : currentNum - 1.0;
+                                 
+                 obj[propName] = newNum;
+                 lastResult = node.isPrefix ? newNum : currentNum;
+                 return;
+             }
+         }
+         lastResult = HavelRuntimeError("Cannot update property of non-object");
+         return;
+    }
+
+    lastResult = HavelRuntimeError("Invalid update target");
 }
 
 void Interpreter::visitCallExpression(const ast::CallExpression& node) {

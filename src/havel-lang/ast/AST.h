@@ -19,6 +19,7 @@ enum class NodeType {
   PipelineExpression,    // data | map(f) | filter(g) | reduce(h)
   BinaryExpression,      // 10 + 5, a && b
   UnaryExpression,       // not flag, -number
+  UpdateExpression,      // i++, --i
   CallExpression,        // map(f, list)
   MemberExpression,      // record.field
   LambdaExpression,      // fn(x) -> x * 2, |x| x + 1
@@ -962,6 +963,26 @@ struct ModesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Update Expression (i++, --i)
+struct UpdateExpression : public Expression {
+    std::unique_ptr<Expression> argument;
+    bool isPrefix;
+    enum class Operator { Increment, Decrement } operator_;
+
+    UpdateExpression(std::unique_ptr<Expression> arg, Operator op, bool prefix)
+        : argument(std::move(arg)), operator_(op), isPrefix(prefix) {
+        kind = NodeType::UpdateExpression;
+    }
+
+    std::string toString() const override {
+        std::string opStr = (operator_ == Operator::Increment) ? "++" : "--";
+        if (isPrefix) return "UpdateExpr{" + opStr + (argument ? argument->toString() : "nullptr") + "}";
+        else return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") + opStr + "}";
+    }
+
+    void accept(ASTVisitor &visitor) const override;
+};
+
 // Lambda (arrow) Function Expression (() => { ... } or x => expr)
 struct LambdaExpression : public Expression {
   std::vector<std::unique_ptr<Identifier>> parameters;
@@ -1146,6 +1167,7 @@ public:
   virtual void visitTypeReference(const TypeReference &node) = 0;
   virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
+  virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
   virtual void visitImportStatement(const ImportStatement& node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral& node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
@@ -1331,6 +1353,10 @@ inline void TryExpression::accept(ASTVisitor& visitor) const {
 
 inline void UnaryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitUnaryExpression(*this);
+}
+
+inline void UpdateExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitUpdateExpression(*this);
 }
 
 inline void ImportStatement::accept(ASTVisitor& visitor) const {

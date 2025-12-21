@@ -237,17 +237,10 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
         return;
     }
 
-    // Evaluate the action once (for testing/validation)
-    HavelResult actionEval = Evaluate(*node.action);
-    if (isError(actionEval)) { 
-        lastResult = actionEval; 
-        return; 
-    }
-    lastResult = actionEval;
-
+    // Do NOT evaluate the action immediately - only register it for later execution
     // Keep the action node alive for runtime hotkey execution
     auto action = node.action.get();
-    
+
     // Build condition lambdas from the conditions vector
     std::vector<std::function<bool()>> contextChecks;
     for (const auto& condition : node.conditions) {
@@ -255,7 +248,7 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
         if (spacePos != std::string::npos) {
             std::string condType = condition.substr(0, spacePos);
             std::string condValue = condition.substr(spacePos + 1);
-            
+
             if (condType == "mode") {
                 contextChecks.push_back([this, condValue]() {
                     // TODO: Implement mode system
@@ -289,7 +282,7 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
                 return; // Condition not met
             }
         }
-        
+
         if (action) {
             auto result = this->Evaluate(*action);
             if (isError(result)) {
@@ -310,6 +303,9 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
         std::string hotkey = hotkeyLiteral->combination;
         io.Hotkey(hotkey, actionHandler);
     }
+
+    // Return null after registering the hotkey
+    lastResult = nullptr;
 }
 void Interpreter::visitExpressionStatement(const ast::ExpressionStatement& node) {
     lastResult = Evaluate(*node.expression);
@@ -2883,15 +2879,8 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
             // If condition is true, register the hotkey binding normally
             visitHotkeyBinding(*node.binding);
         } else {
-            // If condition is false, we don't register the hotkey but still need to validate the action
-            if (node.binding->action) {
-                // Evaluate the action once for validation purposes, but don't register a callback
-                auto actionResult = Evaluate(*node.binding->action);
-                if (isError(actionResult)) {
-                    lastResult = actionResult;
-                    return;
-                }
-            }
+            // If condition is false, we don't register the hotkey, and we don't evaluate the action
+            // Only register the hotkey if the condition is initially true
             lastResult = nullptr;
         }
     }

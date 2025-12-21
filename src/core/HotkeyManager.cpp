@@ -579,9 +579,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   ralt->setup();
 
   // Browser navigation hotkeys
-  io.Hotkey("@+Rshift", [this]() { io.Send("{back}"); });      // +Rshift sends browser back
-  io.Hotkey("^RCtrl", [this]() { io.Send("{forward}"); });     
-  io.Hotkey("#^+Rshift", [this]() { io.Send("{homepage}"); });     // #^+Rshift sends browser home
+//  io.Hotkey("@+Rshift", [this]() { io.Send("{back}"); });      // +Rshift sends browser back
+//  io.Hotkey("^RCtrl", [this]() { io.Send("{forward}"); });     
+//  io.Hotkey("#^+Rshift", [this]() { io.Send("{homepage}"); });     // #^+Rshift sends browser home
   io.Hotkey("#b", []() { Launcher::runShell("brave --new-window"); });              // #b opens a new browser window
   io.Hotkey("#!b", []() { Launcher::runShell("brave --new-tab"); });             // #!b opens a new browser tab
   io.Hotkey("#c", []() { Launcher::runShell("/bin/livecaptions"); });               // #c runs /bin/livecaptions

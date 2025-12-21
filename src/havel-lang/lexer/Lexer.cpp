@@ -352,6 +352,10 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
+        // Handle ++ and --
+        if (c == '+' && peek() == '+') { advance(); tokens.push_back(makeToken("++", TokenType::PlusPlus)); continue; }
+        if (c == '-' && peek() == '-') { advance(); tokens.push_back(makeToken("--", TokenType::MinusMinus)); continue; }
+
         // Handle compound assignments first: +=, -=, *=, /=
         if (c == '+' && peek() == '=') { advance(); tokens.push_back(makeToken("+=", TokenType::PlusAssign)); continue; }
         if (c == '-' && peek() == '=') { advance(); tokens.push_back(makeToken("-=", TokenType::MinusAssign)); continue; }

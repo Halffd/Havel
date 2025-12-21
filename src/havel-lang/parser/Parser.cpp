@@ -914,6 +914,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         return left;
     }
     std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
+        if (at().type == havel::TokenType::PlusPlus || at().type == havel::TokenType::MinusMinus) {
+            auto op = (at().type == havel::TokenType::PlusPlus) ? 
+                      havel::ast::UpdateExpression::Operator::Increment : 
+                      havel::ast::UpdateExpression::Operator::Decrement;
+            advance();
+            auto operand = parseUnary();
+            return std::make_unique<havel::ast::UpdateExpression>(std::move(operand), op, true);
+        }
+
         if (at().type == havel::TokenType::Not || 
             at().type == havel::TokenType::Minus ||
             at().type == havel::TokenType::Plus) {

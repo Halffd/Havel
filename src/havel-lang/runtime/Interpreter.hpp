@@ -148,6 +148,7 @@ public:
     void visitPipelineExpression(const ast::PipelineExpression& node) override;
     void visitBinaryExpression(const ast::BinaryExpression& node) override;
     void visitUnaryExpression(const ast::UnaryExpression& node) override;
+    void visitUpdateExpression(const ast::UpdateExpression& node) override;
     void visitCallExpression(const ast::CallExpression& node) override;
     void visitMemberExpression(const ast::MemberExpression& node) override;
     void visitLambdaExpression(const ast::LambdaExpression& node) override;

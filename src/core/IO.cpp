@@ -1917,6 +1917,45 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
   result.isEvdev = isEvdev;
 
   size_t i = 0;
+  
+  // Parse text-based modifiers (loop until no more found)
+  std::vector<std::string> textModifiers = {"ctrl", "shift", "alt", "meta", "win"};
+  bool foundTextModifier = false;
+  
+  do {
+    foundTextModifier = false;
+    
+    for (const auto& mod : textModifiers) {
+      if (i + mod.size() <= input.size() && 
+          input.substr(i, mod.size()) == mod) {
+        // Check if this is followed by '+' or end of string
+        if (i + mod.size() == input.size() || 
+            input[i + mod.size()] == '+') {
+          // Found text modifier
+          if (mod == "ctrl") {
+            result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+          } else if (mod == "shift") {
+            result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+          } else if (mod == "alt") {
+            result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+          } else if (mod == "meta" || mod == "win") {
+            result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+          }
+          
+          i += mod.size();
+          foundTextModifier = true;
+          
+          // Skip the '+' if present
+          if (i < input.size() && input[i] == '+') {
+            ++i;
+          }
+          
+          break; // Break inner for loop to restart with new position
+        }
+      }
+    }
+  } while (foundTextModifier);
+  
   while (i < input.size()) {
     char c = input[i];
 

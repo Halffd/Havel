@@ -1651,24 +1651,31 @@ void IO::Send(cstr keys) {
     SendKeyImpl(keyName, down);
   };
   
-  // Release interfering modifiers
+  // Release interfering modifiers - only release the specific physical keys that are pressed
   std::set<std::string> toRelease;
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
-    auto checkMod = [&](bool leftPressed, bool rightPressed, 
-                        const std::string& leftKey, const std::string& rightKey) {
-        if (leftPressed) toRelease.insert(leftKey);
-        if (rightPressed) toRelease.insert(rightKey);
-    };
-    checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
-    checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
-    checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
-    checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
+
+    // Only release the specific modifier keys that are currently pressed
+    if (modState.leftCtrl) toRelease.insert("ctrl");   // Left control
+    if (modState.rightCtrl) toRelease.insert("rctrl"); // Right control
+    if (modState.leftShift) toRelease.insert("shift"); // Left shift
+    if (modState.rightShift) toRelease.insert("rshift"); // Right shift
+    if (modState.leftAlt) toRelease.insert("alt");     // Left Alt
+    if (modState.rightAlt) toRelease.insert("ralt");   // Right Alt
+    if (modState.leftMeta) toRelease.insert("meta");   // Left Meta
+    if (modState.rightMeta) toRelease.insert("rmeta"); // Right Meta
   }
-  
+
   for (const auto &mod : toRelease) {
       debug("Releasing modifier: {}", mod);
-      SendKey(modifierKeys[mod], false);
+      // Use the modifierKeys mapping to get the correct internal key name
+      auto it = modifierKeys.find(mod);
+      if (it != modifierKeys.end()) {
+          SendKey(it->second, false);
+      } else {
+          SendKey(mod, false);
+      }
   }
 
   // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
@@ -1919,7 +1926,13 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
   size_t i = 0;
   
   // Parse text-based modifiers (loop until no more found)
-  std::vector<std::string> textModifiers = {"ctrl", "shift", "alt", "meta", "win"};
+  // Include both generic and side-specific modifiers
+  std::vector<std::string> textModifiers = {
+    "lctrl", "rctrl", "ctrl",      // Control modifiers
+    "lshift", "rshift", "shift",  // Shift modifiers  
+    "lalt", "ralt", "alt",        // Alt modifiers
+    "lmeta", "rmeta", "meta", "lwin", "rwin", "win" // Meta/Win modifiers
+  };
   bool foundTextModifier = false;
   
   do {
@@ -1931,15 +1944,31 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
         // Check if this is followed by '+' or end of string
         if (i + mod.size() == input.size() || 
             input[i + mod.size()] == '+') {
-          // Found text modifier
-          if (mod == "ctrl") {
-            result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+          // Found text modifier - set appropriate bits to match EventListener::Modifier enum
+          if (mod == "lctrl") {
+            result.modifiers |= (1 << 0);  // Left Control (LCtrl)
+          } else if (mod == "rctrl") {
+            result.modifiers |= (1 << 1);  // Right Control (RCtrl)
+          } else if (mod == "ctrl") {
+            result.modifiers |= (1 << 0) | (1 << 1);  // Any Control (LCtrl | RCtrl)
+          } else if (mod == "lshift") {
+            result.modifiers |= (1 << 2);  // Left Shift (LShift)
+          } else if (mod == "rshift") {
+            result.modifiers |= (1 << 3);  // Right Shift (RShift)
           } else if (mod == "shift") {
-            result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+            result.modifiers |= (1 << 2) | (1 << 3);  // Any Shift (LShift | RShift)
+          } else if (mod == "lalt") {
+            result.modifiers |= (1 << 4);  // Left Alt (LAlt)
+          } else if (mod == "ralt") {
+            result.modifiers |= (1 << 5);  // Right Alt (RAlt)
           } else if (mod == "alt") {
-            result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+            result.modifiers |= (1 << 4) | (1 << 5);  // Any Alt (LAlt | RAlt)
+          } else if (mod == "lmeta" || mod == "lwin") {
+            result.modifiers |= (1 << 6);  // Left Meta/Win (LMeta)
+          } else if (mod == "rmeta" || mod == "rwin") {
+            result.modifiers |= (1 << 7);  // Right Meta/Win (RMeta)
           } else if (mod == "meta" || mod == "win") {
-            result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+            result.modifiers |= (1 << 6) | (1 << 7);  // Any Meta/Win (LMeta | RMeta)
           }
           
           i += mod.size();
@@ -1975,16 +2004,16 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
       result.isX11 = true;
       break;
     case '^':
-      result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
+      result.wantCtrl = true;   // Any Ctrl key (set by ^)
       break;
     case '+':
-      result.modifiers |= isEvdev ? (1 << 1) : ShiftMask;
+      result.wantShift = true;  // Any Shift key (set by +)
       break;
     case '!':
-      result.modifiers |= isEvdev ? (1 << 2) : Mod1Mask;
+      result.wantAlt = true;    // Any Alt key (set by !)
       break;
     case '#':
-      result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
+      result.wantMeta = true;   // Any Meta key (set by #)
       break;
     case '*':
       // Wildcard - ignore all current modifiers but don't set repeat=false
@@ -2074,6 +2103,10 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   HotKey hotkey;
   hotkey.comboTimeWindow = comboTimeWindow;
   hotkey.modifiers = parsed.modifiers;
+  hotkey.wantCtrl = parsed.wantCtrl;
+  hotkey.wantShift = parsed.wantShift;
+  hotkey.wantAlt = parsed.wantAlt;
+  hotkey.wantMeta = parsed.wantMeta;
   hotkey.eventType = parsed.eventType;
   hotkey.evdev = parsed.isEvdev;
   hotkey.x11 = parsed.isX11;
@@ -4316,24 +4349,24 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             if (isModifierKey && hotkey.modifiers == 0) {
               modifierMatch = true;
             } else {
-              bool ctrlRequired = (hotkey.modifiers & (1 << 0)) != 0;
-              bool shiftRequired = (hotkey.modifiers & (1 << 1)) != 0;
-              bool altRequired = (hotkey.modifiers & (1 << 2)) != 0;
-              bool metaRequired = (hotkey.modifiers & (1 << 3)) != 0;
+              // Use group modifier flags for logical modifier matching (AHK-style)
+              bool ctrlRequired = hotkey.wantCtrl;
+              bool shiftRequired = hotkey.wantShift;
+              bool altRequired = hotkey.wantAlt;
+              bool metaRequired = hotkey.wantMeta;
 
               bool ctrlPressed = modState[ControlMask];
               bool shiftPressed = modState[ShiftMask];
               bool altPressed = modState[Mod1Mask];
               bool metaPressed = modState[Mod4Mask];
               if (hotkey.wildcard) {
-                // Wildcard: only check that REQUIRED modifiers are pressed
-                // (ignore extra modifiers)
+                // Wildcard: only check that REQUIRED modifiers are pressed (ignore extra modifiers)
                 modifierMatch = (!ctrlRequired || ctrlPressed) &&
                                 (!shiftRequired || shiftPressed) &&
                                 (!altRequired || altPressed) &&
                                 (!metaRequired || metaPressed);
               } else {
-                // Normal: exact modifier match
+                // Normal: all required modifiers must be pressed (bitwise AND matching)
                 modifierMatch = (ctrlRequired == ctrlPressed) &&
                                 (shiftRequired == shiftPressed) &&
                                 (altRequired == altPressed) &&
@@ -4858,16 +4891,25 @@ bool IO::handleMouseRelative(const input_event &ev) {
   // Current modifiers in X11 mask form (ShiftMask, ControlMask, Mod1Mask,
   // Mod4Mask)
   int currentModifiersX11 = GetCurrentModifiers();
-  // Build evdev-style bitmask: bit0=Ctrl, bit1=Shift, bit2=Alt, bit3=Meta
+  // Build evdev-style bitmask: bit0=LCtrl, bit1=RCtrl, bit2=LShift, bit3=RShift,
+  // bit4=LAlt, bit5=RAlt, bit6=LMeta, bit7=RMeta
   int currentModifiersEvdev = 0;
-  if (currentModifierState.leftCtrl || currentModifierState.rightCtrl)
-    currentModifiersEvdev |= (1 << 0);
-  if (currentModifierState.leftShift || currentModifierState.rightShift)
-    currentModifiersEvdev |= (1 << 1);
-  if (currentModifierState.leftAlt || currentModifierState.rightAlt)
-    currentModifiersEvdev |= (1 << 2);
-  if (currentModifierState.leftMeta || currentModifierState.rightMeta)
-    currentModifiersEvdev |= (1 << 3);
+  if (currentModifierState.leftCtrl)
+    currentModifiersEvdev |= (1 << 0);  // Left control
+  if (currentModifierState.rightCtrl)
+    currentModifiersEvdev |= (1 << 1);  // Right control
+  if (currentModifierState.leftShift)
+    currentModifiersEvdev |= (1 << 2);  // Left shift
+  if (currentModifierState.rightShift)
+    currentModifiersEvdev |= (1 << 3);  // Right shift
+  if (currentModifierState.leftAlt)
+    currentModifiersEvdev |= (1 << 4);  // Left alt
+  if (currentModifierState.rightAlt)
+    currentModifiersEvdev |= (1 << 5);  // Right alt
+  if (currentModifierState.leftMeta)
+    currentModifiersEvdev |= (1 << 6);  // Left meta
+  if (currentModifierState.rightMeta)
+    currentModifiersEvdev |= (1 << 7);  // Right meta
 
   if (ev.code == REL_WHEEL) {
     debug("WHEEL: X11Mods=0x{:x}, EvdevMods=0x{:x} | ctrl(L/R)={}{} "

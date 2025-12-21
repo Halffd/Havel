@@ -26,13 +26,17 @@ struct HotKey;
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {
 public:
-    // Modifier keys bitmask
+    // Side-aware modifier keys bitmask
     enum Modifier {
-        Null = 0,
-        Ctrl = 1 << 0,
-        Shift = 1 << 1,
-        Alt = 1 << 2,
-        Meta = 1 << 3
+        Null    = 0,
+        LCtrl   = 1 << 0,
+        RCtrl   = 1 << 1,
+        LShift  = 1 << 2,
+        RShift  = 1 << 3,
+        LAlt    = 1 << 4,
+        RAlt    = 1 << 5,
+        LMeta   = 1 << 6,
+        RMeta   = 1 << 7
     };
     EventListener();
     ~EventListener();
@@ -74,6 +78,30 @@ public:
         bool IsShiftPressed() const { return leftShift || rightShift; }
         bool IsAltPressed() const { return leftAlt || rightAlt; }
         bool IsMetaPressed() const { return leftMeta || rightMeta; }
+        
+        // Convert to side-aware bitmask for precise modifier matching
+        int ToBitmask() const {
+            int mask = 0;
+            if (leftCtrl) mask |= Modifier::LCtrl;
+            if (rightCtrl) mask |= Modifier::RCtrl;
+            if (leftShift) mask |= Modifier::LShift;
+            if (rightShift) mask |= Modifier::RShift;
+            if (leftAlt) mask |= Modifier::LAlt;
+            if (rightAlt) mask |= Modifier::RAlt;
+            if (leftMeta) mask |= Modifier::LMeta;
+            if (rightMeta) mask |= Modifier::RMeta;
+            return mask;
+        }
+
+        // Convert to logical bitmask for compatibility with legacy code
+        int ToLogicalBitmask() const {
+            int mask = 0;
+            if (IsCtrlPressed()) mask |= (Modifier::LCtrl | Modifier::RCtrl);   // Use both bits to represent "any Ctrl"
+            if (IsShiftPressed()) mask |= (Modifier::LShift | Modifier::RShift); // Use both bits to represent "any Shift"
+            if (IsAltPressed()) mask |= (Modifier::LAlt | Modifier::RAlt);     // Use both bits to represent "any Alt"
+            if (IsMetaPressed()) mask |= (Modifier::LMeta | Modifier::RMeta);   // Use both bits to represent "any Meta"
+            return mask;
+        }
     };
     
     const ModifierState& GetModifierState() const;
@@ -168,7 +196,7 @@ private:
     bool EvaluateCombo(const HotKey& hotkey);
     
     // Check modifier match (exact logic from IO.cpp)
-    bool CheckModifierMatch(int requiredModifiers, bool wildcard) const;
+    bool CheckModifierMatch(const HotKey& hotkey) const;
     
     // Update modifier state
     void UpdateModifierState(int evdevCode, bool down);

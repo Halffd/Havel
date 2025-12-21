@@ -385,16 +385,7 @@ bool EventListener::IsX11MonitorRunning() const {
 #endif
 int EventListener::GetCurrentModifiersMask() const {
   // This is called with stateMutex already locked
-  int mask = 0;
-  if (modifierState.IsCtrlPressed())
-    mask |= Modifier::Ctrl;
-  if (modifierState.IsShiftPressed())
-    mask |= Modifier::Shift;
-  if (modifierState.IsAltPressed())
-    mask |= Modifier::Alt;
-  if (modifierState.IsMetaPressed())
-    mask |= Modifier::Meta;
-  return mask;
+  return modifierState.ToBitmask();
 }
 void EventListener::EventLoop() {
   info("EventListener: Starting event loop");
@@ -499,7 +490,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     anyKeyPressCallback(keyName);
   }
 
-  // Handle key remapping
+  // Handle key remapping - preserve physical code for hotkey matching
   {
     std::lock_guard<std::mutex> lock(remapMutex);
     if (down && !repeat) {
@@ -533,36 +524,27 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     evdevKeyState[originalCode] = down;
 
     // Update modifier state FIRST (before calculating currentModifiers)
+    // Use originalCode for modifier state to preserve physical semantics
     UpdateModifierState(originalCode, down);
 
     // NOW calculate modifiers (ModifierState is already updated)
-    int currentModifiers = 0;
-    if (modifierState.IsCtrlPressed())
-      currentModifiers |= Modifier::Ctrl;
-    if (modifierState.IsShiftPressed())
-      currentModifiers |= Modifier::Shift;
-    if (modifierState.IsAltPressed())
-      currentModifiers |= Modifier::Alt;
-    if (modifierState.IsMetaPressed())
-      currentModifiers |= Modifier::Meta;
+    int currentModifiers = GetCurrentModifiersMask();
 
     // Track active inputs for combos - store BOTH original and mapped codes for
     // remapping support
     if (down) {
       // Store mapped code (what the system sees)
-      activeInputs[mappedCode] = ActiveInput(currentModifiers);
+      // Use logical bitmask for ActiveInput to maintain compatibility with legacy logic
+      int logicalModifiers = modifierState.ToLogicalBitmask();
+      activeInputs[mappedCode] = ActiveInput(logicalModifiers);
 
       // Store original code too (what combo might be registered as)
       if (mappedCode != originalCode) {
-        activeInputs[originalCode] = ActiveInput(currentModifiers);
+        activeInputs[originalCode] = ActiveInput(logicalModifiers);
       }
 
-      debug("🔑 Key PRESS: original={} mapped={} | Modifiers: {}{}{}{}",
-            originalCode, mappedCode,
-            modifierState.IsCtrlPressed() ? "Ctrl+" : "",
-            modifierState.IsShiftPressed() ? "Shift+" : "",
-            modifierState.IsAltPressed() ? "Alt+" : "",
-            modifierState.IsMetaPressed() ? "Meta+" : "");
+      debug("🔑 Key PRESS: original={} mapped={} | Modifiers: {:#x}",
+            originalCode, mappedCode, currentModifiers);
 
       // CHECK ALL COMBOS THAT MIGHT INCLUDE THIS KEY
       // Loop through ALL hotkeys to find combos (more reliable than indexed lookup)
@@ -614,7 +596,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     // Modifier state was already updated earlier
   }
 
-  // Evaluate hotkeys
+  // Evaluate hotkeys - use ORIGINAL code for matching, mapped code for forwarding
   bool shouldBlock = EvaluateHotkeys(originalCode, down, repeat);
 
   if (shouldBlock) {
@@ -721,7 +703,7 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
 
     // Check modifiers
     if (comboKey.modifiers != 0) {
-      if (!CheckModifierMatch(comboKey.modifiers, comboKey.wildcard)) {
+      if (!CheckModifierMatch(comboKey)) {
         debug("❌ Wheel combo '{}' failed: modifiers don't match",
               hotkey.alias);
         return false;
@@ -825,7 +807,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         bool modifierMatch =
             (hotkey.modifiers == 0)
                 ? true
-                : CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+                : CheckModifierMatch(hotkey);
 
         if (!modifierMatch)
           continue;
@@ -935,7 +917,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             continue;
 
           // Modifier matching
-          if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard))
+          if (!CheckModifierMatch(hotkey))
             continue;
 
           // Context checks (any must pass - OR logic)
@@ -1039,30 +1021,83 @@ void EventListener::UpdateModifierState(int evdevCode, bool down) {
     modifierState.rightMeta = down;
   }
 }
+bool EventListener::CheckModifierMatch(const HotKey& hk) const {
+    // Special case for mouse wheel hotkeys - they should only match if expected modifiers are present and no extra
+    if (hk.type == HotkeyType::MouseWheel) {
+        int cur = modifierState.ToBitmask();
 
-bool EventListener::CheckModifierMatch(int requiredModifiers,
-                                       bool wildcard) const {
-  // This is called with stateMutex already locked
+        // Side-specific requirements - ALL specified side-specific bits must match
+        if ((hk.modifiers & EventListener::Modifier::LCtrl)  && !(cur & EventListener::Modifier::LCtrl))  return false;
+        if ((hk.modifiers & EventListener::Modifier::RCtrl)  && !(cur & EventListener::Modifier::RCtrl))  return false;
+        if ((hk.modifiers & EventListener::Modifier::LShift) && !(cur & EventListener::Modifier::LShift)) return false;
+        if ((hk.modifiers & EventListener::Modifier::RShift) && !(cur & EventListener::Modifier::RShift)) return false;
+        if ((hk.modifiers & EventListener::Modifier::LAlt)   && !(cur & EventListener::Modifier::LAlt))   return false;
+        if ((hk.modifiers & EventListener::Modifier::RAlt)   && !(cur & EventListener::Modifier::RAlt))   return false;
+        if ((hk.modifiers & EventListener::Modifier::LMeta)  && !(cur & EventListener::Modifier::LMeta))  return false;
+        if ((hk.modifiers & EventListener::Modifier::RMeta)  && !(cur & EventListener::Modifier::RMeta))  return false;
 
-  bool ctrlRequired = (requiredModifiers & (1 << 0)) != 0;
-  bool shiftRequired = (requiredModifiers & (1 << 1)) != 0;
-  bool altRequired = (requiredModifiers & (1 << 2)) != 0;
-  bool metaRequired = (requiredModifiers & (1 << 3)) != 0;
+        // Any-side requirements - AT LEAST one side of each logical modifier must be pressed if specified
+        if (hk.wantCtrl  && !(cur & (EventListener::Modifier::LCtrl  | EventListener::Modifier::RCtrl)))  return false;
+        if (hk.wantShift && !(cur & (EventListener::Modifier::LShift | EventListener::Modifier::RShift))) return false;
+        if (hk.wantAlt   && !(cur & (EventListener::Modifier::LAlt   | EventListener::Modifier::RAlt)))   return false;
+        if (hk.wantMeta  && !(cur & (EventListener::Modifier::LMeta  | EventListener::Modifier::RMeta)))  return false;
 
-  bool ctrlPressed = modifierState.IsCtrlPressed();
-  bool shiftPressed = modifierState.IsShiftPressed();
-  bool altPressed = modifierState.IsAltPressed();
-  bool metaPressed = modifierState.IsMetaPressed();
+        // Wheel hotkeys: ensure no extra modifiers are present beyond what's required
+        if (!hk.wildcard) {
+            int requiredMask = hk.modifiers;
+            if (hk.wantCtrl)  requiredMask |= (EventListener::Modifier::LCtrl  | EventListener::Modifier::RCtrl);
+            if (hk.wantShift) requiredMask |= (EventListener::Modifier::LShift | EventListener::Modifier::RShift);
+            if (hk.wantAlt)   requiredMask |= (EventListener::Modifier::LAlt   | EventListener::Modifier::RAlt);
+            if (hk.wantMeta)  requiredMask |= (EventListener::Modifier::LMeta  | EventListener::Modifier::RMeta);
 
-  if (wildcard) {
-    // Wildcard: only check that REQUIRED modifiers are pressed
-    return (!ctrlRequired || ctrlPressed) && (!shiftRequired || shiftPressed) &&
-           (!altRequired || altPressed) && (!metaRequired || metaPressed);
-  } else {
-    // Normal: exact modifier match
-    return (ctrlRequired == ctrlPressed) && (shiftRequired == shiftPressed) &&
-           (altRequired == altPressed) && (metaRequired == metaPressed);
-  }
+            // Check that no extra (unwanted) modifiers are pressed
+            if ((cur & ~requiredMask) != 0) {
+                return false;  // Extra modifiers present
+            }
+        }
+
+        return true;
+    }
+
+    int cur = modifierState.ToBitmask();
+
+    // 1. Side-specific requirements - ALL specified side-specific bits must match
+    if ((hk.modifiers & EventListener::Modifier::LCtrl)  && !(cur & EventListener::Modifier::LCtrl))  return false;
+    if ((hk.modifiers & EventListener::Modifier::RCtrl)  && !(cur & EventListener::Modifier::RCtrl))  return false;
+    if ((hk.modifiers & EventListener::Modifier::LShift) && !(cur & EventListener::Modifier::LShift)) return false;
+    if ((hk.modifiers & EventListener::Modifier::RShift) && !(cur & EventListener::Modifier::RShift)) return false;
+    if ((hk.modifiers & EventListener::Modifier::LAlt)   && !(cur & EventListener::Modifier::LAlt))   return false;
+    if ((hk.modifiers & EventListener::Modifier::RAlt)   && !(cur & EventListener::Modifier::RAlt))   return false;
+    if ((hk.modifiers & EventListener::Modifier::LMeta)  && !(cur & EventListener::Modifier::LMeta))  return false;
+    if ((hk.modifiers & EventListener::Modifier::RMeta)  && !(cur & EventListener::Modifier::RMeta))  return false;
+
+    // 2. Any-side requirements - AT LEAST one side of each logical modifier must be pressed if specified
+    if (hk.wantCtrl  && !(cur & (EventListener::Modifier::LCtrl  | EventListener::Modifier::RCtrl)))  return false;
+    if (hk.wantShift && !(cur & (EventListener::Modifier::LShift | EventListener::Modifier::RShift))) return false;
+    if (hk.wantAlt   && !(cur & (EventListener::Modifier::LAlt   | EventListener::Modifier::RAlt)))   return false;
+    if (hk.wantMeta  && !(cur & (EventListener::Modifier::LMeta  | EventListener::Modifier::RMeta)))  return false;
+
+    // 3. Strict mode - check both required and forbidden modifiers
+    if (!hk.wildcard) {
+        // Calculate what modifiers are required (both side-specific and logical)
+        int requiredMask = hk.modifiers;  // Required side-specific modifiers
+        if (hk.wantCtrl)  requiredMask |= (EventListener::Modifier::LCtrl  | EventListener::Modifier::RCtrl);
+        if (hk.wantShift) requiredMask |= (EventListener::Modifier::LShift | EventListener::Modifier::RShift);
+        if (hk.wantAlt)   requiredMask |= (EventListener::Modifier::LAlt   | EventListener::Modifier::RAlt);
+        if (hk.wantMeta)  requiredMask |= (EventListener::Modifier::LMeta  | EventListener::Modifier::RMeta);
+
+        // Check that all required modifiers are pressed
+        if ((cur & requiredMask) != requiredMask) {
+            return false;  // Missing required modifier
+        }
+
+        // Check that no extra (unwanted) modifiers are pressed
+        if ((cur & ~requiredMask) != 0) {
+            return false;  // Extra modifiers present
+        }
+    }
+
+    return true;
 }
 
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
@@ -1109,7 +1144,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         continue;
       }
 
-      // Match against key code
+      // Match against key code - use PHYSICAL code for matching
       if (hotkey.key != static_cast<Key>(evdevCode)) {
         continue;
       }
@@ -1125,6 +1160,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
       if (hotkey.eventType == HotkeyEventType::Up && down) {
         continue;
       }
+      
       // Modifier matching
       bool isModifierKey =
           (evdevCode == KEY_LEFTALT || evdevCode == KEY_RIGHTALT ||
@@ -1132,15 +1168,9 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
            evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
            evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
 
-      bool modifierMatch;
-
-      // If the HOTKEY itself is a modifier key, skip modifier comparisons.
-      // The pressed modifier should ALWAYS trigger its own hotkey.
-      if (isModifierKey && hotkey.modifiers == 0) {
-        modifierMatch = true;
-      } else {
-        modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
-      }
+      bool modifierMatch = CheckModifierMatch(hotkey);
+      info("ModifierState Bitmask: " + std::to_string(modifierState.ToBitmask()));
+      info("Modifiers: " + std::to_string(hotkey.modifiers) + " Wildcard: " + (hotkey.wildcard ? "T" : "F") + " modifierMatch: " + (modifierMatch ? "T" : "F") + " isModifierKey: " + (isModifierKey ? "T" : "F") + " Key: " + std::to_string(hotkey.key) + " Alias: " + hotkey.alias);
 
       if (!modifierMatch)
         continue;
@@ -1172,7 +1202,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Hotkey matched! Collect for execution outside locks
       hotkey.success = true; // Update the actual hotkey's success status
-      debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, repeat: {}",
+      debug("Hotkey {} triggered, key: {}, modifiers: {:#x}, down: {}, repeat: {}",
             hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
 
       matchedHotkeyIds.push_back(id);
@@ -1235,6 +1265,10 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         // Build a set of required keys for this combo
         std::set<int> requiredKeys;
         int requiredModifiers = 0;
+        bool hasNonModifierKeys = false;
+        
+        // Track individual modifier keys separately
+        std::set<int> requiredModifierKeys;
 
         for (const auto &comboKey : hotkey.comboSequence) {
             if (comboKey.type == HotkeyType::Keyboard) {
@@ -1242,28 +1276,38 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
 
                 // Check if this is a modifier
                 if (KeyMap::IsModifier(keyCode)) {
-                    // Track as modifier using the EventListener's Modifier enum
-                    if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL) {
-                        requiredModifiers |= Modifier::Ctrl;
-                    } else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT) {
-                        requiredModifiers |= Modifier::Shift;
-                    } else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT) {
-                        requiredModifiers |= Modifier::Alt;
-                    } else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
-                        requiredModifiers |= Modifier::Meta;
+                    // Track individual modifier key for precise combo matching
+                    requiredModifierKeys.insert(keyCode);
+                    
+                    // Also track as modifier using the EventListener's side-aware Modifier enum
+                    // But only for validation when there are non-modifier keys
+                    if (keyCode == KEY_LEFTCTRL) {
+                        requiredModifiers |= Modifier::LCtrl;
+                    } else if (keyCode == KEY_RIGHTCTRL) {
+                        requiredModifiers |= Modifier::RCtrl;
+                    } else if (keyCode == KEY_LEFTSHIFT) {
+                        requiredModifiers |= Modifier::LShift;
+                    } else if (keyCode == KEY_RIGHTSHIFT) {
+                        requiredModifiers |= Modifier::RShift;
+                    } else if (keyCode == KEY_LEFTALT) {
+                        requiredModifiers |= Modifier::LAlt;
+                    } else if (keyCode == KEY_RIGHTALT) {
+                        requiredModifiers |= Modifier::RAlt;
+                    } else if (keyCode == KEY_LEFTMETA) {
+                        requiredModifiers |= Modifier::LMeta;
+                    } else if (keyCode == KEY_RIGHTMETA) {
+                        requiredModifiers |= Modifier::RMeta;
                     }
                 } else {
-                    // Regular key
+                    // Regular key - mark that we have non-modifier keys
+                    hasNonModifierKeys = true;
                     requiredKeys.insert(keyCode);
                 }
             } else if (comboKey.type == HotkeyType::MouseButton) {
                 requiredKeys.insert(comboKey.mouseButton);
             } else if (comboKey.type == HotkeyType::MouseWheel) {
-                // ← ADD THIS CASE
                 // Wheel events are TRANSIENT - they don't stay in activeInputs
                 // They only trigger DURING the wheel event itself
-                // So we just skip them in the activeInputs check
-                // The wheel direction matching happens in ProcessMouseEvent
                 debug("Combo includes wheel event, skipping activeInputs check for it");
                 continue;
             } else {
@@ -1278,13 +1322,16 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         int activeCount = activeInputs.size();
         int requiredCount = requiredKeys.size();
 
-        // Count how many modifier keys are active
+        // Count how many modifier keys are active (for debugging)
         int activeModifierKeys = 0;
         for (const auto &[code, input] : activeInputs) {
             if (KeyMap::IsModifier(code)) {
                 activeModifierKeys++;
             }
         }
+
+        debug("Combo '{}' - Active keys: {} ({} modifier keys)", 
+              hotkey.alias, activeInputs.size(), activeModifierKeys);
 
         if (!hotkey.wildcard) {
             // Strict matching: ensure no unauthorized keys are pressed
@@ -1375,6 +1422,34 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
                     return false;
                 }
             }
+        }
+        
+        // Special handling for modifier-only combos
+        // If combo has ONLY modifier keys, verify ALL specific modifier keys are pressed
+        if (!hasNonModifierKeys && !requiredModifierKeys.empty()) {
+            debug("🔍 Combo '{}' is modifier-only, checking individual modifier keys...", hotkey.alias);
+            for (int requiredModKey : requiredModifierKeys) {
+                auto it = activeInputs.find(requiredModKey);
+                if (it == activeInputs.end()) {
+                    debug("❌ Combo '{}' rejected: required modifier key {} not pressed",
+                          hotkey.alias, requiredModKey);
+                    return false;
+                }
+                
+                // Check timing if time window is set
+                if (comboTimeWindow > 0) {
+                    auto keyAge = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        now - it->second.timestamp
+                    );
+
+                    if (keyAge.count() > comboTimeWindow) {
+                        debug("❌ Combo '{}' rejected: modifier key {} too old ({}ms > {}ms)",
+                              hotkey.alias, requiredModKey, keyAge.count(), comboTimeWindow);
+                        return false;
+                    }
+                }
+            }
+            debug("✅ All required modifier keys pressed for combo '{}'", hotkey.alias);
         }
 
         debug("✅ Combo '{}' matched!", hotkey.alias);

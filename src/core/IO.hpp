@@ -54,7 +54,11 @@ struct HotKey {
     int id = 0;  // Unique identifier for this hotkey
     std::string alias;
     Key key;
-    int modifiers;
+    int modifiers;  // Side-specific bits only (LCtrl, RCtrl, LShift, etc.)
+    bool wantCtrl = false;   // Any Ctrl key (set by ^)
+    bool wantShift = false;  // Any Shift key (set by +)
+    bool wantAlt = false;    // Any Alt key (set by !)
+    bool wantMeta = false;   // Any Meta key (set by #)
     std::function<void()> callback;
     std::string action;
     std::vector<std::function<bool()>> contexts;
@@ -85,6 +89,10 @@ struct HotKey {
 struct ParsedHotkey {
   std::string keyPart;
   int modifiers = 0;
+  bool wantCtrl = false;   // Any Ctrl key (set by ^)
+  bool wantShift = false;  // Any Shift key (set by +)
+  bool wantAlt = false;    // Any Alt key (set by !)
+  bool wantMeta = false;   // Any Meta key (set by #)
   bool isEvdev = false;
   bool isX11 = false;
   bool grab = true;

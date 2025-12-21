@@ -515,7 +515,6 @@ message(STATUS "C++ Standard:    C++${CMAKE_CXX_STANDARD}")
 
 # Feature status
 message(STATUS "")
-message(STATUS "=== FEATURES ===")
 message(STATUS "GUI (Qt6):       ✓ ENABLED (${Qt6_VERSION})")
 if(PIPEWIRE_FOUND)
     message(STATUS "PipeWire:        ✓ ENABLED")

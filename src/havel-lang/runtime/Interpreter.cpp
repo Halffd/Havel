@@ -1440,6 +1440,70 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(nullptr);
     }));
     
+    // === MODE SYSTEM FUNCTIONS ===
+    // Get current mode
+    environment->Define("mode.get", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        auto currentModeOpt = environment->Get("__current_mode__");
+        std::string currentMode = "default";
+        if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
+            currentMode = std::get<std::string>(*currentModeOpt);
+        }
+        return HavelValue(currentMode);
+    }));
+    
+    // Set current mode
+    environment->Define("mode.set", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("mode.set() requires mode name");
+        std::string newMode = this->ValueToString(args[0]);
+        
+        // Store previous mode
+        auto currentModeOpt = environment->Get("__current_mode__");
+        if (currentModeOpt) {
+            environment->Define("__previous_mode__", *currentModeOpt);
+        } else {
+            environment->Define("__previous_mode__", HavelValue(std::string("default")));
+        }
+        
+        // Set new current mode
+        environment->Define("__current_mode__", HavelValue(newMode));
+        return HavelValue(nullptr);
+    }));
+    
+    // Switch to previous mode
+    environment->Define("mode.toggle", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        auto currentModeOpt = environment->Get("__current_mode__");
+        auto previousModeOpt = environment->Get("__previous_mode__");
+        
+        std::string currentMode = "default";
+        std::string previousMode = "default";
+        
+        if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
+            currentMode = std::get<std::string>(*currentModeOpt);
+        }
+        if (previousModeOpt && std::holds_alternative<std::string>(*previousModeOpt)) {
+            previousMode = std::get<std::string>(*previousModeOpt);
+        }
+        
+        // Swap modes
+        environment->Define("__previous_mode__", HavelValue(currentMode));
+        environment->Define("__current_mode__", HavelValue(previousMode));
+        return HavelValue(nullptr);
+    }));
+    
+    // Check if in specific mode
+    environment->Define("mode.is", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("mode.is() requires mode name");
+        std::string checkMode = this->ValueToString(args[0]);
+        
+        auto currentModeOpt = environment->Get("__current_mode__");
+        std::string currentMode = "default";
+        if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
+            currentMode = std::get<std::string>(*currentModeOpt);
+        }
+        
+        return HavelValue(currentMode == checkMode);
+    }));
+    
     // === IO METHODS ===
     // Mouse methods
     environment->Define("io.mouseMove", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {

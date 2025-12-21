@@ -460,8 +460,13 @@ void KeyMap::Initialize() {
     
     // Browser keys
     AddKey("homepage", KEY_HOMEPAGE, XF86XK_HomePage, VK_BROWSER_HOME);
+    AddAlias("Browser_Home", "homepage");
+
     AddKey("back", KEY_BACK, XF86XK_Back, VK_BROWSER_BACK);
+    AddAlias("Browser_Back", "back");
     AddKey("forward", KEY_FORWARD, XF86XK_Forward, VK_BROWSER_FORWARD);
+    AddAlias("Browser_Forward", "forward");
+
     AddKey("search", KEY_SEARCH, XF86XK_Search, VK_BROWSER_SEARCH);
     AddKey("bookmarks", KEY_BOOKMARKS, XF86XK_Favorites, VK_BROWSER_FAVORITES);
     AddKey("refresh", KEY_REFRESH, XF86XK_Refresh, VK_BROWSER_REFRESH);

@@ -577,6 +577,23 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       }, "", nullptr, "", false, true
   );
   ralt->setup();
+
+  // Browser navigation hotkeys
+  io.Hotkey("@+Rshift", []() { Launcher::runShell("xdotool key alt+Left"); });      // +Rshift sends browser back
+  io.Hotkey("!+Rshift", []() { Launcher::runShell("xdotool key alt+Right"); });     // !+Rshift sends browser forward
+  io.Hotkey("#^+Rshift", []() { Launcher::runShell("xdotool key alt+Home"); });     // #^+Rshift sends browser home
+  io.Hotkey("#b", []() { Launcher::runShell("xdotool key ctrl+n"); });              // #b opens a new browser window
+  io.Hotkey("#!b", []() { Launcher::runShell("xdotool key ctrl+t"); });             // #!b opens a new browser tab
+  io.Hotkey("#c", []() { Launcher::runShell("/bin/livecaptions"); });               // #c runs /bin/livecaptions
+  io.Hotkey("#!c", []() { Launcher::runShell("~/scripts/caption.sh 9 en"); });      // #!c runs ~/scripts/caption.sh 9 en
+  io.Hotkey("#^c", []() { Launcher::runShell("~/scripts/caption.sh 3 auto"); });    // #^c runs ~/scripts/caption.sh 3 auto
+  io.Hotkey("#+c", []() { Launcher::runShell("~/scripts/mimi.sh"); });               // #+c runs ~/scripts/mimi.sh
+  io.Hotkey("^!P", [this]() {                                                        // ^!P toggles capslock
+      // Toggle capslock by sending the CapsLock key, which will toggle the state
+      io.Send("{CapsLock}");
+      showNotification("Caps Lock", "Toggled");
+  });
+
   AddGamingHotkey(
       "u",
       [this]() {

@@ -61,6 +61,8 @@ struct ProcessResult {
     bool success = false;
     std::string error = "";
     uint32_t executionTimeMs = 0;
+    std::string stdout = "";
+    std::string stderr = "";
 };
 
 class Launcher {

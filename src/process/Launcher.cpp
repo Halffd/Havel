@@ -80,7 +80,9 @@ ProcessResult Launcher::run(const std::string& commandLine, const LaunchParams& 
 }
 
 ProcessResult Launcher::runSync(const std::string& cmd) {
-    return run(cmd, {Method::Sync});
+    LaunchParams params;
+    params.method = Method::Shell;  // Use shell method to capture output properly
+    return run(cmd, params);
 }
 
 ProcessResult Launcher::runAsync(const std::string& cmd) {
@@ -282,16 +284,31 @@ ProcessResult Launcher::executeUnix(const std::string& executable,
                                   const LaunchParams& params) {
     // Resolve the executable path and working directory
     std::string resolvedExe = resolveExecutable(executable);
-    std::string workingDir = params.workingDir.empty() ? 
-        Env::current() : 
+    std::string workingDir = params.workingDir.empty() ?
+        Env::current() :
         Env::expand(params.workingDir);
-        
-    pid_t pid = fork();
-    
-    if (pid == -1) {
-        return {-1, -1, false, "Fork failed"};
+
+    // Create pipes for output capture when not detaching
+    int pipe_stdout[2] = {-1, -1};
+    int pipe_stderr[2] = {-1, -1};
+
+    // Create pipes for output capture unless detaching
+    if (!params.detachFromParent && params.method == Method::Sync) {
+        if (pipe(pipe_stdout) == -1 || pipe(pipe_stderr) == -1) {
+            return {-1, -1, false, "Failed to create pipes: " + std::string(strerror(errno))};
+        }
     }
-    
+
+    pid_t pid = fork();
+
+    if (pid == -1) {
+        if (!params.detachFromParent && params.method == Method::Sync) {
+            close(pipe_stdout[0]); close(pipe_stdout[1]);
+            close(pipe_stderr[0]); close(pipe_stderr[1]);
+        }
+        return {-1, -1, false, "Fork failed: " + std::string(strerror(errno))};
+    }
+
     if (pid == 0) {
         // Child process
         if (params.detachFromParent) {
@@ -299,12 +316,12 @@ ProcessResult Launcher::executeUnix(const std::string& executable,
             if (setsid() < 0) {
                 _exit(127);
             }
-            
+
             // Close all inherited file descriptors to prevent leaks
             for (int fd = 3; fd < 256; ++fd) {
                 close(fd);
             }
-            
+
             // Redirect standard I/O to /dev/null if window is hidden
             if (params.windowState == WindowState::Hidden) {
                 int devnull = open("/dev/null", O_RDWR);
@@ -315,20 +332,32 @@ ProcessResult Launcher::executeUnix(const std::string& executable,
                     if (devnull > 2) close(devnull);
                 }
             }
+        } else {
+            // Redirect stdout and stderr to pipes if not detaching
+            if (pipe_stdout[1] != -1) {
+                close(pipe_stdout[0]); // Close read end in child
+                dup2(pipe_stdout[1], STDOUT_FILENO);
+                close(pipe_stdout[1]);
+            }
+            if (pipe_stderr[1] != -1) {
+                close(pipe_stderr[0]); // Close read end in child
+                dup2(pipe_stderr[1], STDERR_FILENO);
+                close(pipe_stderr[1]);
+            }
         }
-        
+
         setupUnixEnvironment(params);
-        
+
         // Set priority
         if (params.priority != Priority::Normal) {
             setpriority(PRIO_PROCESS, 0, getUnixNiceValue(params.priority));
         }
-        
+
         // Change working directory
         if (!params.workingDir.empty()) {
             chdir(params.workingDir.c_str());
         }
-        
+
         // Build argv
         std::vector<char*> argv;
         argv.push_back(const_cast<char*>(executable.c_str()));
@@ -336,43 +365,165 @@ ProcessResult Launcher::executeUnix(const std::string& executable,
             argv.push_back(const_cast<char*>(arg.c_str()));
         }
         argv.push_back(nullptr);
-        
+
         execvp(executable.c_str(), argv.data());
         _exit(127); // execvp failed
     }
-    
+
     // Parent process
     ProcessResult result;
     result.pid = pid;
     result.success = true;
-    
+
+    // Close write ends of pipes in parent
+    if (!params.detachFromParent && params.method == Method::Sync) {
+        close(pipe_stdout[1]);
+        close(pipe_stderr[1]);
+    }
+
     if (params.method == Method::Sync) {
         int status;
         pid_t waitResult;
-        
-        if (params.timeoutMs > 0) {
-            // Implement timeout using signals (simplified)
-            waitResult = waitpid(pid, &status, WNOHANG);
-            if (waitResult == 0) {
-                // Still running, kill after timeout
-                std::this_thread::sleep_for(std::chrono::milliseconds(params.timeoutMs));
-                kill(pid, SIGTERM);
-                waitpid(pid, &status, 0);
-                result.error = "Process timed out";
+
+        if (!params.detachFromParent) {
+            // Capture output if we're not detaching
+            std::string stdout_data, stderr_data;
+
+            if (params.timeoutMs > 0) {
+                // Implement timeout with output reading
+                auto start = std::chrono::steady_clock::now();
+                bool timed_out = false;
+
+                while (true) {
+                    waitResult = waitpid(pid, &status, WNOHANG);
+
+                    if (waitResult == -1) {
+                        timed_out = true;
+                        result.error = "waitpid failed: " + std::string(strerror(errno));
+                        result.success = false;
+                        break;
+                    } else if (waitResult > 0) {
+                        // Process completed
+                        if (WIFEXITED(status)) {
+                            result.exitCode = WEXITSTATUS(status);
+                        } else if (WIFSIGNALED(status)) {
+                            result.exitCode = -WTERMSIG(status);
+                        }
+                        break;
+                    } else {
+                        // Process still running, check timeout and read available output
+                        if (params.timeoutMs > 0) {
+                            auto now = std::chrono::steady_clock::now();
+                            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                now - start).count();
+
+                            if (elapsed >= params.timeoutMs) {
+                                // Timeout reached, kill the process
+                                kill(pid, SIGTERM);
+                                timed_out = true;
+                                result.error = "Process timed out";
+                                result.success = false;
+                                break;
+                            }
+                        }
+
+                        // Read any available output from stdout pipe
+                        char buffer[1024];
+                        ssize_t stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1);
+                        if (stdout_bytes > 0) {
+                            buffer[stdout_bytes] = '\0';
+                            stdout_data += std::string(buffer, stdout_bytes);
+                        }
+
+                        // Read any available output from stderr pipe
+                        ssize_t stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1);
+                        if (stderr_bytes > 0) {
+                            buffer[stderr_bytes] = '\0';
+                            stderr_data += std::string(buffer, stderr_bytes);
+                        }
+
+                        // Sleep briefly to avoid busy waiting
+                        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                    }
+                }
+
+                // Read any remaining output after the process has terminated
+                char buffer[1024];
+                ssize_t stdout_bytes;
+                while ((stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
+                    buffer[stdout_bytes] = '\0';
+                    stdout_data += std::string(buffer, stdout_bytes);
+                }
+
+                ssize_t stderr_bytes;
+                while ((stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
+                    buffer[stderr_bytes] = '\0';
+                    stderr_data += std::string(buffer, stderr_bytes);
+                }
+            } else {
+                // No timeout, just wait for process completion
+                waitResult = waitpid(pid, &status, 0);
+
+                if (waitResult > 0) {
+                    if (WIFEXITED(status)) {
+                        result.exitCode = WEXITSTATUS(status);
+                    } else if (WIFSIGNALED(status)) {
+                        result.exitCode = -WTERMSIG(status);
+                    }
+                }
+
+                // Read all output after process completion
+                char buffer[1024];
+                ssize_t stdout_bytes;
+                std::string stdout_data, stderr_data;
+
+                while ((stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
+                    buffer[stdout_bytes] = '\0';
+                    stdout_data += std::string(buffer, stdout_bytes);
+                }
+
+                ssize_t stderr_bytes;
+                while ((stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
+                    buffer[stderr_bytes] = '\0';
+                    stderr_data += std::string(buffer, stderr_bytes);
+                }
             }
+
+            // Store the captured output
+            result.stdout = stdout_data;
+            result.stderr = stderr_data;
         } else {
-            waitResult = waitpid(pid, &status, 0);
-        }
-        
-        if (waitResult > 0) {
-            if (WIFEXITED(status)) {
-                result.exitCode = WEXITSTATUS(status);
-            } else if (WIFSIGNALED(status)) {
-                result.exitCode = -WTERMSIG(status);
+            // For detached processes, just wait normally
+            if (params.timeoutMs > 0) {
+                // Implement timeout using signals (simplified)
+                waitResult = waitpid(pid, &status, WNOHANG);
+                if (waitResult == 0) {
+                    // Still running, kill after timeout
+                    std::this_thread::sleep_for(std::chrono::milliseconds(params.timeoutMs));
+                    kill(pid, SIGTERM);
+                    waitpid(pid, &status, 0);
+                    result.error = "Process timed out";
+                }
+            } else {
+                waitResult = waitpid(pid, &status, 0);
+            }
+
+            if (waitResult > 0) {
+                if (WIFEXITED(status)) {
+                    result.exitCode = WEXITSTATUS(status);
+                } else if (WIFSIGNALED(status)) {
+                    result.exitCode = -WTERMSIG(status);
+                }
             }
         }
     }
-    
+
+    // Clean up pipes
+    if (!params.detachFromParent && params.method == Method::Sync) {
+        close(pipe_stdout[0]);
+        close(pipe_stderr[0]);
+    }
+
     return result;
 }
 
@@ -441,23 +592,25 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
     ProcessResult result;
     
     #ifdef _WIN32
+        // For Windows, we'll create a simple process without stdout capture for now
+        // Windows stdout capture would require more complex pipe handling
         STARTUPINFOA si = { sizeof(STARTUPINFOA) };
         PROCESS_INFORMATION pi = {0};
-        
+
         // Prepare command line
         std::string cmd = "cmd.exe /c " + command;
-        
+
         // Set up process creation flags
         DWORD creationFlags = 0;
         if (params.windowState == WindowState::Hidden) {
             creationFlags |= CREATE_NO_WINDOW;
         }
-        
+
         // Add process group and detach flags if requested
         if (params.detachFromParent) {
             creationFlags |= CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS;
         }
-        
+
         // Create the process
         if (!CreateProcessA(
             NULL,                   // No module name (use command line)
@@ -475,19 +628,19 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
             result.success = false;
             return result;
         }
-        
+
         result.pid = static_cast<int64_t>(pi.dwProcessId);
-        
+
         if (params.method == Method::Async) {
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
             result.success = true;
             return result;
         }
-        
+
         // Wait for the process to complete or timeout
         DWORD waitResult = WaitForSingleObject(pi.hProcess, params.timeoutMs > 0 ? params.timeoutMs : INFINITE);
-        
+
         if (waitResult == WAIT_TIMEOUT) {
             // Process timed out, terminate it
             TerminateProcess(pi.hProcess, 1);
@@ -504,9 +657,14 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
             result.error = "WaitForSingleObject failed: " + std::to_string(GetLastError());
             result.success = false;
         }
-        
+
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+
+        // For Windows, we currently don't capture stdout/stderr
+        // Future implementation would need to use CreatePipe and redirect handles
+        result.stdout = "";
+        result.stderr = "";
         
     #else
         // Unix implementation with detach support
@@ -611,15 +769,18 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
             // Set non-blocking mode for pipes
             fcntl(pipe_stdout[0], F_SETFL, O_NONBLOCK);
             fcntl(pipe_stderr[0], F_SETFL, O_NONBLOCK);
-            
+
             // Wait for process completion with timeout
             int status;
             auto start = std::chrono::steady_clock::now();
             bool timed_out = false;
-            
+
+            // Read output from pipes while waiting for the process to complete
+            std::string stdout_data, stderr_data;
+
             while (true) {
                 pid_t w = waitpid(pid, &status, WNOHANG);
-                
+
                 if (w == -1) {
                     // Error
                     result.error = "waitpid failed: " + std::string(strerror(errno));
@@ -635,12 +796,12 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
                     result.success = true;
                     break;
                 } else {
-                    // Process still running, check timeout
+                    // Process still running, check timeout and read available output
                     if (params.timeoutMs > 0) {
                         auto now = std::chrono::steady_clock::now();
                         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                             now - start).count();
-                        
+
                         if (elapsed >= params.timeoutMs) {
                             // Timeout reached, kill the process
                             kill(pid, SIGTERM);
@@ -650,17 +811,50 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
                             break;
                         }
                     }
-                    
+
+                    // Read any available output from stdout pipe
+                    char buffer[1024];
+                    ssize_t stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1);
+                    if (stdout_bytes > 0) {
+                        buffer[stdout_bytes] = '\0';
+                        stdout_data += std::string(buffer, stdout_bytes);
+                    }
+
+                    // Read any available output from stderr pipe
+                    ssize_t stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1);
+                    if (stderr_bytes > 0) {
+                        buffer[stderr_bytes] = '\0';
+                        stderr_data += std::string(buffer, stderr_bytes);
+                    }
+
                     // Sleep for a short time before checking again
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 }
             }
-            
+
+            // Read any remaining output after the process has terminated
+            char buffer[1024];
+            ssize_t stdout_bytes;
+            while ((stdout_bytes = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
+                buffer[stdout_bytes] = '\0';
+                stdout_data += std::string(buffer, stdout_bytes);
+            }
+
+            ssize_t stderr_bytes;
+            while ((stderr_bytes = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
+                buffer[stderr_bytes] = '\0';
+                stderr_data += std::string(buffer, stderr_bytes);
+            }
+
+            // Store the captured output
+            result.stdout = stdout_data;
+            result.stderr = stderr_data;
+
             // Clean up pipes
             close(pipe_stdin[1]);
             close(pipe_stdout[0]);
             close(pipe_stderr[0]);
-            
+
             if (timed_out) {
                 // Wait a bit for the process to terminate
                 int status;
@@ -670,7 +864,7 @@ ProcessResult Launcher::executeShell(const std::string& command, const LaunchPar
                     }
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
-                
+
                 // If still running, force kill it
                 if (waitpid(pid, &status, WNOHANG) != pid) {
                     kill(pid, SIGKILL);

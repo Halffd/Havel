@@ -1,0 +1,22 @@
+// Hotkey Conversion Test - Batch 1 (Corrected)
+// Converting first 3 hotkeys from HotkeyManager.cpp
+
+// 1. Mode toggle (^!g)
+^!g => {
+    let currentMode = mode.get()
+    let newMode = currentMode == "gaming" ? "default" : "gaming"
+    mode.set(newMode)
+    print "Mode changed to: " + newMode
+}
+
+// 2. Reload configuration (^!r)  
+^!r => {
+    print "Reloading configuration"
+    // This would need a config.reload() function - to be added to interpreter
+}
+
+// 3. Quit application (!Esc)
+!Esc => {
+    print "Quitting application"
+    exit(0)
+}

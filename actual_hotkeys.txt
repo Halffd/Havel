@@ -1,0 +1,192 @@
+  io.Hotkey("^!g", [this]() {
+  io.Hotkey("^!r", [this]() {
+  io.Hotkey("!Esc", [this]() {
+  io.Hotkey("#!Esc", [this]() {
+  io.Hotkey("#f1", []() { Launcher::runShell("playerctl previous"); });
+  io.Hotkey("#f2", []() { Launcher::runShell("playerctl play-pause"); });
+  io.Hotkey("#f3", []() { Launcher::runShell("playerctl next"); });
+  io.Hotkey("numpaddiv", [this]() {
+  io.Hotkey("^+!a", [this]() {
+  io.Hotkey("^+a", [this]() {
+  io.Hotkey("^+s", [this]() {
+  io.Hotkey("^+d", [this]() {
+  io.Hotkey("^+!a", [this]() {
+  io.Hotkey("^numpadsub", [this]() {
+  io.Hotkey("^numpadadd", [this]() {
+  io.Hotkey("^numpad0", [this]() {
+  io.Hotkey("+numpadsub", [this]() {
+  io.Hotkey("+numpadadd", [this]() {
+  io.Hotkey("+numpad0", [this]() {
+  io.Hotkey("@numpadsub", [this]() {
+  io.Hotkey("@numpadadd", [this]() {
+  io.Hotkey("f6", [this]() { PlayPause(); });
+  io.Hotkey("@|rwin", [this]() { io.Send("@!{backspace}"); });
+//  io.Hotkey("@+Rshift", [this]() { io.Send("{back}"); });      // +Rshift sends browser back
+//  io.Hotkey("^RCtrl", [this]() { io.Send("{forward}"); });     
+//  io.Hotkey("#^+Rshift", [this]() { io.Send("{homepage}"); });     // #^+Rshift sends browser home
+  io.Hotkey("#b", []() { Launcher::runShell("brave --new-window"); });              // #b opens a new browser window
+  io.Hotkey("#!b", []() { Launcher::runShell("brave --new-tab"); });             // #!b opens a new browser tab
+  io.Hotkey("#c", []() { Launcher::runShell("/bin/livecaptions"); });               // #c runs /bin/livecaptions
+  io.Hotkey("#!c", []() { Launcher::runShell("~/scripts/caption.sh 9 en"); });      // #!c runs ~/scripts/caption.sh 9 en
+  io.Hotkey("#^c", []() { Launcher::runShell("~/scripts/caption.sh 3 auto"); });    // #^c runs ~/scripts/caption.sh 3 auto
+  io.Hotkey("#+c", []() { Launcher::runShell("~/scripts/mimi.sh"); });               // #+c runs ~/scripts/mimi.sh
+  io.Hotkey("^!P", [this]() {                                                        // ^!P toggles capslock
+  io.Hotkey("~Button1", [this]() {
+  io.Hotkey("~Button2", [this]() {
+  io.Hotkey("@+numpad7", [this]() {
+  io.Hotkey("@+numpad1", [this]() {
+  io.Hotkey("@+numpad5", [this]() {
+  AddHotkey("^f1", "~/scripts/f1.sh -1");
+  AddHotkey("+f1", "~/scripts/f1.sh 0");
+  AddHotkey("!l", "~/scripts/livelink.sh");
+  AddHotkey("+!l", "livelink screen toggle 1");
+  AddHotkey("!f10", "~/scripts/str");
+  AddHotkey("+!k", "livelink screen toggle 2");
+  AddHotkey("^f10", "~/scripts/mpvv");
+  AddHotkey("!^f", "~/scripts/freeze.sh thorium");
+  AddHotkey("!f", [] {
+  AddHotkey("!^k", [] {
+  AddHotkey("@kc89",
+  AddContextualHotkey(
+  io.Hotkey("$f9", [this]() {
+  io.Hotkey("^!t", switchToLastWindow);
+    io.Hotkey(key, [description, action]() {
+  io.Hotkey("f3", [this]() {
+  io.Hotkey("+f3", [this]() {
+  io.Hotkey("^f3", [this]() {
+  io.Hotkey("f7", [this]() {
+  io.Hotkey("^f7", [this]() {
+  io.Hotkey("f8", [this]() {
+  io.Hotkey("^f8", [this]() {
+  io.Hotkey("^!f8", [this]() {
+  io.Hotkey("^!f7", [this]() {
+  io.Hotkey("@!f7", [this]() {
+  io.Hotkey("@!f8", [this]() {
+  io.Hotkey("@^f9", [this]() {
+  io.Hotkey("@^f10", [this]() {
+  io.Hotkey("@^+f9", [this]() {
+  io.Hotkey("@^+f10", [this]() {
+  io.Hotkey("@#f7", [this]() {
+  io.Hotkey("@#f8", [this]() {
+  io.Hotkey("@+f9", [this]() {
+  io.Hotkey("@+f10", [this]() {
+  io.Hotkey("@!+f10", [this]() {
+  io.Hotkey("!+f9", [this]() {
+  io.Hotkey("+f7", [this]() {
+  io.Hotkey("^+f7", [this]() {
+  io.Hotkey("^!+f7", [this]() {
+  io.Hotkey("+f8", [this]() {
+  io.Hotkey("^+f8", [this]() {
+  io.Hotkey("^!+f8", [this]() {
+  AddHotkey("~^Down", [this]() {
+  AddHotkey("~^Up", [this]() {
+  io.Hotkey("@#WheelUp", [this]() {
+  io.Hotkey("@#WheelDown", [this]() {
+  io.Hotkey("@#!WheelUp", [this]() {
+  io.Hotkey("@#!WheelDown", [this]() {
+  io.Hotkey("@#^WheelDown", [this]() {
+  io.Hotkey("@#^WheelUp", [this]() {
+  io.Hotkey("@^!WheelDown", [this]() {
+  io.Hotkey("@^!WheelUp", [this]() {
+  io.Hotkey("@^+WheelUp", [this]() {
+  io.Hotkey("@^+WheelDown", [this]() {
+  io.Hotkey("@~!Tab", [this]() {
+  io.Hotkey("@~LAlt:up", [this]() {
+  io.Hotkey("@~RAlt:up", [this]() {
+  io.Hotkey("@!WheelUp", [this]() {
+  io.Hotkey("@!WheelDown", [this]() {
+  io.Hotkey("@RShift & WheelUp", [this]() {
+  io.Hotkey("RShift & WheelDown", [this]() {
+  io.Hotkey("@LButton & RButton:", [this]() {
+  io.Hotkey("@RButton & LButton:", [this]() {
+  io.Hotkey("@RButton & WheelUp", [this]() {
+  io.Hotkey("@RButton & WheelDown", [this]() {
+  io.Hotkey("@~^l & g", []() { Launcher::runAsync("/usr/bin/lutris"); });
+  io.Hotkey("@~^s & g", []() { Launcher::runAsync("/usr/bin/steam"); });
+  io.Hotkey("@~^h & g", []() {
+  io.Hotkey("@+CapsLock", [this]() {
+  io.Hotkey("@^CapsLock", [this]() {
+  io.Hotkey("@!-", [this]() {
+  io.Hotkey("@!=", [this]() {
+  AddHotkey("#a", []() { Launcher::runAsync("/bin/pavucontrol"); });
+  AddHotkey("@^!+#Esc", [this]() {
+  AddHotkey("@+#Esc", [this]() {
+  AddHotkey("@!Home", [this]() {
+  AddHotkey("@^!Home", [WinMove]() {
+  AddHotkey("!5", [this, WinMove]() {
+  AddHotkey("!6", [this, WinMove]() {
+  AddHotkey("!7", [this, WinMove]() { WinMove(-winOffset, 0, 0, 0); });
+  AddHotkey("!8", [this, WinMove]() { WinMove(winOffset, 0, 0, 0); });
+  AddHotkey("!+5", [this, WinMove]() { WinMove(0, 0, 0, -winOffset); });
+  AddHotkey("!+6", [this, WinMove]() { WinMove(0, 0, 0, winOffset); });
+  AddHotkey("!+7", [this, WinMove]() { WinMove(0, 0, -winOffset, 0); });
+  AddHotkey("!+8", [this, WinMove]() { WinMove(0, 0, winOffset, 0); });
+  AddHotkey("@!3", []() {
+  AddHotkey("@!4", []() {
+  io.Hotkey("@^Print", [this]() { screenshotManager.takeScreenshot(); });
+  io.Hotkey("@Print", [this]() { screenshotManager.takeRegionScreenshot(); });
+  io.Hotkey("@Pause",
+  AddHotkey("@|numpad5",
+  AddHotkey("@numpad5:up",
+  AddHotkey("@numpadmult",
+  AddHotkey("@numpadmult:up",
+  AddHotkey("@numpadenter+",
+  AddHotkey("@numpadenter:up",
+  AddHotkey("@numpad0", [this]() { io.Scroll(-2, 0); });
+  AddHotkey("@numpaddec", [this]() { io.Scroll(2, 0); });
+  AddHotkey("@!numpad0", [this]() { io.Scroll(1, 0); });
+  AddHotkey("@+numpaddec", [this]() { io.Scroll(0, 2); });
+  AddHotkey("@+numpad0", [this]() { io.Scroll(0, -2); });
+  AddHotkey("@numpad1", [&]() { mouseController->move(-1, 1); });
+  AddHotkey("@numpad2", [&]() { mouseController->move(0, 1); });
+  AddHotkey("@numpad3", [&]() { mouseController->move(1, 1); });
+  AddHotkey("@numpad4", [&]() { mouseController->move(-1, 0); });
+  AddHotkey("@numpad6", [&]() { mouseController->move(1, 0); });
+  AddHotkey("@numpad7", [&]() { mouseController->move(-1, -1); });
+  AddHotkey("@numpad8", [&]() { mouseController->move(0, -1); });
+  AddHotkey("@numpad9", [&]() { mouseController->move(1, -1); });
+  AddHotkey("@numpad1:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad2:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad3:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad4:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad6:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad7:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
+  AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
+  AddHotkey("!del", [this]() {
+  AddHotkey("^.", [this]() {
+  AddHotkey("^,", [this]() {
+  AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
+    AddContextualHotkey("h", "window.title ~ 'Genshin Impact'", [this]() {
+  AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
+AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
+  AddContextualHotkey(
+  AddContextualHotkey(
+  AddHotkey("!+g", [this]() {
+  io.Hotkey("^!Up", []() { WindowManager::MoveToCorners(1); });
+  io.Hotkey("^!Down", []() { WindowManager::MoveToCorners(2); });
+  io.Hotkey("^!Left", []() { WindowManager::MoveToCorners(3); });
+  io.Hotkey("^!Right", []() { WindowManager::MoveToCorners(4); });
+  io.Hotkey("+!Up", []() { WindowManager::ResizeToCorner(1); });
+  io.Hotkey("!+Down", []() { WindowManager::ResizeToCorner(2); });
+  io.Hotkey("!+Left", []() { WindowManager::ResizeToCorner(3); });
+  io.Hotkey("!+Right", []() { WindowManager::ResizeToCorner(4); });
+  io.Hotkey("!a", []() { WindowManager::ToggleAlwaysOnTop(); });
+void HotkeyManager::registerAutomationHotkeys() {
+  AddHotkey("!delete",
+  io.Hotkey("#l", []() { Launcher::runShell("xdg-screensaver lock"); });
+  io.Hotkey("+!Esc", []() { Launcher::runShell("gnome-system-monitor &"); });
+  AddHotkey("#!d", [this]() {
+  AddHotkey("#2", [this]() { printActiveWindowInfo(); });
+  AddHotkey("!+i", [this]() { toggleWindowFocusTracking(); });
+  AddHotkey("^!d", [this]() {
+bool HotkeyManager::AddHotkey(const std::string &hotkeyStr,
+  return io.Hotkey(hotkeyStr, [this, hotkeyStr, callback]() {
+bool HotkeyManager::AddHotkey(const std::string &hotkeyStr,
+  return io.Hotkey(hotkeyStr,
+      AddContextualHotkey(key, "mode == 'gaming'", trueAction, falseAction, id);
+int HotkeyManager::AddContextualHotkey(const std::string &key,
+  io.Hotkey(key, action, condition, id);
+int HotkeyManager::AddContextualHotkey(const std::string &key,
+  io.Hotkey(key, action, "<function>", id);

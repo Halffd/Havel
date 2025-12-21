@@ -1265,8 +1265,6 @@ void ClipboardManager::processClipboardContent() {
         // Store both HTML and plain text
         item.type = ContentType::Html;
         item.data = html;  // Store original HTML
-        // Store plain text for pasting
-        item.data = plainText;
         
         // Create a preview with HTML formatting
         QTextDocument previewDoc;
@@ -1526,9 +1524,21 @@ void ClipboardManager::onItemSelectionChanged() {
     }
 
     switch (clipboardItem.type) {
-        case ContentType::Text:
-        case ContentType::Html:
+        case ContentType::Html: {
+            QString html = clipboardItem.data.toString();
+            previewPane->setHtml(html);
+            statusBar()->showMessage(QString("Selected: HTML content"));
+            break;
+        }
+
         case ContentType::Markdown: {
+            QString text = clipboardItem.data.toString();
+            previewPane->setMarkdown(text);
+            statusBar()->showMessage(QString("Selected: Markdown content"));
+            break;
+        }
+
+        case ContentType::Text: {
             QString text = clipboardItem.data.toString();
             if (text.length() > 200) {
                 text = text.left(200) + "...";
@@ -1629,9 +1639,21 @@ void ClipboardManager::copySelectedItem() {
     
     try {
         switch (clipboardItem.type) {
+            case ContentType::Html: {
+                QMimeData* mimeData = new QMimeData();
+                QString html = clipboardItem.data.toString();
+                mimeData->setHtml(html);
+                
+                QTextDocument doc;
+                doc.setHtml(html);
+                mimeData->setText(doc.toPlainText());
+                
+                clipboard->setMimeData(mimeData);
+                break;
+            }
+                
             case ContentType::Text:
             case ContentType::Markdown:
-            case ContentType::Html:
                 clipboard->setText(clipboardItem.data.toString());
                 break;
                 
@@ -1799,9 +1821,21 @@ void ClipboardManager::onPasteRequested(int index) {
             }
             
             switch (clipboardItem.type) {
+                case ContentType::Html: {
+                    QMimeData* mimeData = new QMimeData();
+                    QString html = clipboardItem.data.toString();
+                    mimeData->setHtml(html);
+                    
+                    QTextDocument doc;
+                    doc.setHtml(html);
+                    mimeData->setText(doc.toPlainText());
+                    
+                    clipboard->setMimeData(mimeData);
+                    break;
+                }
+
                 case ContentType::Text:
                 case ContentType::Markdown:
-                case ContentType::Html:
                     clipboard->setText(clipboardItem.data.toString());
                     break;
                     

@@ -1224,7 +1224,8 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
  */
 bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     try {
-        std::shared_lock<std::shared_mutex> stateLock(stateMutex);  // ← Lock state with shared lock
+        // stateMutex is already locked by the caller (ProcessMouseEvent or ProcessKeyboardEvent)
+        // std::shared_lock<std::shared_mutex> stateLock(stateMutex); 
 
         auto now = std::chrono::steady_clock::now();
 
@@ -1286,16 +1287,47 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         }
 
         if (!hotkey.wildcard) {
-            // Strict matching: active inputs must equal required inputs
-            // (accounting for modifier keys separately)
-            int expectedTotal = requiredCount + activeModifierKeys;
-
-            if (activeCount != expectedTotal) {
-                debug("❌ Combo '{}' rejected: wrong number of active inputs "
-                      "(have {}, need {})",
-                      hotkey.alias, activeCount, expectedTotal);
+            // Strict matching: ensure no unauthorized keys are pressed
+            // We iterate active inputs and verify each one is allowed
+            // (either required, a modifier, or a shadow/phantom of a required key)
+            
+            std::unique_lock<std::mutex> remapLock(remapMutex); // Lock for keyRemaps access
+            
+            for (const auto& [code, input] : activeInputs) {
+                // 1. Modifiers are handled by modifier matching logic, so we ignore them here
+                // (Assuming modifier check logic handles strictness if needed)
+                if (KeyMap::IsModifier(code)) continue;
+                
+                // 2. If it's explicitly required, it's allowed
+                if (requiredKeys.count(code)) continue;
+                
+                // 3. Check for phantom/shadow keys due to remapping
+                // Case A: 'code' is a mapped version of a required key (original -> code)
+                bool isShadow = false;
+                for (int reqKey : requiredKeys) {
+                    auto it = keyRemaps.find(reqKey);
+                    if (it != keyRemaps.end() && it->second == code) {
+                        isShadow = true;
+                        break;
+                    }
+                }
+                if (isShadow) continue;
+                
+                // Case B: 'code' is the original version of a required key (code -> mapped)
+                // (i.e. we matched on the mapped key, but the original is also in activeInputs)
+                auto it = keyRemaps.find(code);
+                if (it != keyRemaps.end()) {
+                    if (requiredKeys.count(it->second)) {
+                        continue; // It's the original source of a required key
+                    }
+                }
+                
+                // If we get here, 'code' is an extra key that is not allowed
+                debug("❌ Combo '{}' rejected: unauthorized key {} active",
+                      hotkey.alias, code);
                 return false;
             }
+            // If we passed the loop, all active keys are allowed
         }
 
         // Check each required key is actually active

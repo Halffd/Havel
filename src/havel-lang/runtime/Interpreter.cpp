@@ -251,8 +251,13 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding& node) {
 
             if (condType == "mode") {
                 contextChecks.push_back([this, condValue]() {
-                    // TODO: Implement mode system
-                    return true;
+                    // Check if the current mode matches the condition value
+                    auto modeVal = environment->Get("mode");
+                    if (modeVal && std::holds_alternative<std::string>(*modeVal)) {
+                        return std::get<std::string>(*modeVal) == condValue;
+                    }
+                    // If mode is not set or is not a string, default to false
+                    return false;
                 });
             } else if (condType == "title") {
                 contextChecks.push_back([this, condValue]() {
@@ -921,9 +926,11 @@ if (std::holds_alternative<HavelObject>(value)) {
     if (modesObject && !modesObject->empty()) {
         std::string initialMode = modesObject->begin()->first;
         environment->Define("__current_mode__", HavelValue(initialMode));
+        environment->Define("mode", HavelValue(initialMode));  // Also update the mode variable
         environment->Define("__previous_mode__", HavelValue(std::string("default")));
     } else {
         environment->Define("__current_mode__", HavelValue(std::string("default")));
+        environment->Define("mode", HavelValue(std::string("default")));  // Also update the mode variable
         environment->Define("__previous_mode__", HavelValue(std::string("default")));
     }
     
@@ -1378,6 +1385,10 @@ void Interpreter::InitializeSystemBuiltins() {
         std::cerr.flush();
         return HavelValue(nullptr);
     }));
+
+    // Expose mode variable for conditional hotkeys
+    // Set default mode value
+    environment->Define("mode", HavelValue(std::string("default")));
     
     environment->Define("error", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         std::cerr << "[ERROR] ";

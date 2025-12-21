@@ -1,6 +1,7 @@
 #include "ScreenshotManager.hpp"
 #include "ScreenRegionSelector.hpp"
 #include <QApplication>
+#include <QProcess>
 #include <QScreen>
 #include <QPixmap>
 #include <QDateTime>
@@ -51,16 +52,70 @@ void ScreenshotManager::setupUI() {
 }
 
 void ScreenshotManager::takeScreenshot() {
-    auto screen = QApplication::primaryScreen();
-    auto pixmap = screen->grabWindow(0);
-
     QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
-    pixmap.save(screenshotDir + "/" + filename);
+    QString fullPath = screenshotDir + "/" + filename;
+    
+    // Check for Wayland
+    if (QApplication::platformName().contains("wayland", Qt::CaseInsensitive) || 
+        qgetenv("XDG_SESSION_TYPE") == "wayland") {
+        
+        bool success = false;
+        
+        // Try grim (wlroots-based: Sway, Hyprland, etc.)
+        if (QProcess::execute("grim", {fullPath}) == 0) success = true;
+        
+        // Try spectacle (KDE)
+        else if (QProcess::execute("spectacle", {"-b", "-n", "-o", fullPath}) == 0) success = true;
+        
+        // Try gnome-screenshot (GNOME)
+        else if (QProcess::execute("gnome-screenshot", {"-f", fullPath}) == 0) success = true;
+        
+        if (success) {
+            addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
+            return;
+        }
+    }
 
-    addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
+    auto screen = QApplication::primaryScreen();
+    if (!screen) return;
+    
+    auto pixmap = screen->grabWindow(0);
+    if (pixmap.isNull()) {
+        qWarning() << "Failed to grab screen";
+        return;
+    }
+
+    if (pixmap.save(fullPath)) {
+        addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
+    }
 }
 
 void ScreenshotManager::takeRegionScreenshot() {
+    // Check for Wayland
+    if (QApplication::platformName().contains("wayland", Qt::CaseInsensitive) || 
+        qgetenv("XDG_SESSION_TYPE") == "wayland") {
+        
+        QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
+        QString fullPath = screenshotDir + "/" + filename;
+        bool success = false;
+        
+        // Try slurp | grim
+        // We need to use sh -c to pipe
+        QString command = QString("slurp | grim -g - %1").arg(fullPath);
+        if (QProcess::execute("sh", {"-c", command}) == 0) success = true;
+        
+        // Try spectacle (KDE)
+        else if (QProcess::execute("spectacle", {"-r", "-b", "-n", "-o", fullPath}) == 0) success = true;
+        
+        // Try gnome-screenshot (GNOME)
+        else if (QProcess::execute("gnome-screenshot", {"-a", "-f", fullPath}) == 0) success = true;
+        
+        if (success) {
+             addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
+             return;
+        }
+    }
+
     hide();
     QTimer::singleShot(200, [this]() {
         auto selector = new ScreenRegionSelector;
@@ -70,16 +125,39 @@ void ScreenshotManager::takeRegionScreenshot() {
 }
 
 void ScreenshotManager::takeScreenshotOfCurrentMonitor() {
+    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
+    QString fullPath = screenshotDir + "/" + filename;
+
+    // Check for Wayland
+    if (QApplication::platformName().contains("wayland", Qt::CaseInsensitive) || 
+        qgetenv("XDG_SESSION_TYPE") == "wayland") {
+        
+        bool success = false;
+        
+        // Try spectacle (KDE) -m for current monitor
+        if (QProcess::execute("spectacle", {"-m", "-b", "-n", "-o", fullPath}) == 0) success = true;
+        
+        if (success) {
+             addToGrid(filename, QPixmap(fullPath).scaled(200, 150, Qt::KeepAspectRatio));
+             return;
+        }
+    }
+
     auto screen = QGuiApplication::screenAt(QCursor::pos());
     if (!screen) {
         screen = QGuiApplication::primaryScreen();
     }
+    if (!screen) return;
+
     auto pixmap = screen->grabWindow(0, screen->geometry().x(), screen->geometry().y(), screen->geometry().width(), screen->geometry().height());
+    if (pixmap.isNull()) {
+        qWarning() << "Failed to grab screen";
+        return;
+    }
 
-    QString filename = QString("screenshot_%1.png").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd_hh-mm-ss-zzz"));
-    pixmap.save(screenshotDir + "/" + filename);
-
-    addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
+    if (pixmap.save(fullPath)) {
+        addToGrid(filename, pixmap.scaled(200, 150, Qt::KeepAspectRatio));
+    }
 }
 
 void ScreenshotManager::captureRegion(const QRect &region) {

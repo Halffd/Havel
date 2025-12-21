@@ -2401,9 +2401,20 @@ void Interpreter::InitializeLauncherBuiltins() {
     environment->Define("run", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("run() requires command");
         std::string command = ValueToString(args[0]);
-        
+
         auto result = Launcher::runSync(command);
-        return HavelValue(result.success);
+
+        // Create result object with all available information
+        auto resultObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*resultObj)["success"] = HavelValue(result.success);
+        (*resultObj)["exitCode"] = HavelValue(static_cast<double>(result.exitCode));
+        (*resultObj)["pid"] = HavelValue(static_cast<double>(result.pid));
+        (*resultObj)["stdout"] = HavelValue(result.stdout);
+        (*resultObj)["stderr"] = HavelValue(result.stderr);
+        (*resultObj)["error"] = HavelValue(result.error);
+        (*resultObj)["executionTimeMs"] = HavelValue(static_cast<double>(result.executionTimeMs));
+
+        return HavelValue(resultObj);
     }));
     
     environment->Define("runAsync", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
@@ -2720,7 +2731,10 @@ void Interpreter::InitializeHelpBuiltin() {
             } else if (module == "launcher") {
                 help << "\n=== Launcher Module ===\n\n";
                 help << "Functions:\n";
-                help << "  run(command, [args])   - Run command\n";
+                help << "  run(command)           - Run command and return result object {success, exitCode, stdout, stderr, pid, error, executionTimeMs\n";
+                help << "  runAsync(command)      - Run command asynchronously\n";
+                help << "  runDetached(command)   - Run command detached from parent\n";
+                help << "  terminal(command)      - Run command in terminal\n";
                 help << "  kill(pid)              - Kill process by PID\n";
                 help << "  killByName(name)       - Kill process by name\n";
             } else if (module == "gui") {

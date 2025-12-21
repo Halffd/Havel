@@ -101,10 +101,13 @@ private:
     
     MapManager* mapManager;
     IO* io;
-    
+
     // Current selection
     std::string currentProfileId;
     std::string currentMappingId;
+
+    // Cached mappings
+    std::vector<Mapping*> autoMappings;
     
     // UI Components
     QSplitter* mainSplitter;

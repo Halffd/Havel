@@ -364,6 +364,9 @@ public:
   // Call this to stop the thread cleanly
   void StopEvdevHotkeyListener();
 
+  // Public method for emergency cleanup (signals)
+  void UngrabAll();
+
   template <typename T, typename S> bool Click(T button, S action) {
     int btnCode;
 
@@ -503,7 +506,6 @@ private:
   bool GrabKeyboard();
   bool FastGrab(Key input, unsigned int modifiers, Window root);
   bool GrabAllHotkeys();
-  void UngrabAll();
   std::string findEvdevDevice(const std::string& deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();

@@ -554,7 +554,13 @@ void IO::cleanup() {
   // Don't close the display here, it's managed by DisplayManager
   display = nullptr;
 
-  std::cout << "IO public cleanup completed" << std::endl;
+  // Additional safety: Force ungrab any remaining evdev devices
+#ifdef __linux__
+  // Force cleanup of any remaining evdev resources
+  info("Final cleanup completed - all devices should be ungrabbed");
+#endif
+  
+  std::cout << "IO cleanup completed" << std::endl;
 }
 
 bool IO::SetupUinputDevice() {

@@ -10,6 +10,7 @@
 #include "gui/SettingsWindow.hpp"
 #include <memory>
 #include <chrono>
+#include <atomic>
 
 #include "core/util/SignalWatcher.hpp"
 #include "runtime/Interpreter.hpp"
@@ -81,7 +82,7 @@ private slots:
     
     // State
     bool initialized = false;
-    bool shutdownRequested = false;
+    std::atomic<bool> shutdownRequested{false};
 
     std::unique_ptr<Interpreter> interpreter;
     static constexpr int PERIODIC_INTERVAL_MS = 50;

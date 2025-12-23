@@ -1,0 +1,2 @@
+// Simple test to check hotkey parsing
+F1 => send "hello"

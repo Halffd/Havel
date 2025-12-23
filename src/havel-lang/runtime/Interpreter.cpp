@@ -1511,6 +1511,19 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(currentMode == checkMode);
     }));
     
+    // Configuration reload
+    environment->Define("config.reload", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        try {
+            auto& config = Configs::Get();
+            config.Reload();
+            std::cout << "[INFO] Configuration reloaded successfully" << std::endl;
+            return HavelValue(true);
+        } catch (const std::exception& e) {
+            std::cerr << "[ERROR] Failed to reload configuration: " << e.what() << std::endl;
+            return HavelValue(false);
+        }
+    }));
+    
     // === IO METHODS ===
     // Mouse methods
     environment->Define("io.mouseMove", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {

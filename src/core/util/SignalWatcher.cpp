@@ -45,6 +45,17 @@ void SignalWatcher::start() {
                 logSignal(sig);
                 if (sig == SIGINT || sig == SIGTERM) {
                     shouldExit.store(true, std::memory_order_relaxed);
+                    
+                    // Trigger cleanup callback if set
+                    if (cleanupCallback) {
+                        try {
+                            cleanupCallback();
+                        } catch (const std::exception& e) {
+                            std::cerr << "[SignalWatcher] Error in cleanup callback: " << e.what() << "\n";
+                        } catch (...) {
+                            std::cerr << "[SignalWatcher] Unknown error in cleanup callback\n";
+                        }
+                    }
                     break;
                 }
             } else if (errno != EINTR) {
@@ -62,6 +73,9 @@ void SignalWatcher::stop() {
         pthread_kill(watcherThread.native_handle(), SIGTERM);
         watcherThread.join();
     }
+    
+    // Ensure cleanup callback is cleared to prevent dangling references
+    cleanupCallback = nullptr;
 }
 
 void blockAllSignals() {

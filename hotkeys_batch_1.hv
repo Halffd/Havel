@@ -1,0 +1,14 @@
+// Hotkey Conversion Batch 1
+// Converting first 3 hotkeys from HotkeyManager.cpp to Havel language scripts
+
+// 1. Mode toggle (Ctrl+Alt+G)
+// Original: ^!g => mode.toggle()
+^!g => mode.toggle()
+
+// 2. Reload configuration (Ctrl+Alt+R)  
+// Original: ^!r => config.reload()
+^!r => config.reload()
+
+// 3. Quit application (Alt+Esc)
+// Original: !Esc => exit()
+!Esc => exit()

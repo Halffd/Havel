@@ -554,9 +554,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         return true;  // Allow tap
       },
       [this]() { PlayPause(); }, // Combo action
-      [this]() -> bool {         // Combo condition function
-          return getMode() == "gaming";  // Only in gaming mode
-      },
+      "mode == 'gaming'",
       false, true
   );
   lwin->setup();
@@ -907,10 +905,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
   });
   // Mouse wheel + click combinations
-  io.Hotkey("@#WheelUp", [this]() {
+  io.Hotkey("@^#WheelUp", [this]() {
     io.Send("#{PgUp}");
   });
-  io.Hotkey("@#WheelDown", [this]() {
+  io.Hotkey("@^#WheelDown", [this]() {
     io.Send("#{PgDn}");
   });
   io.Hotkey("@#!WheelUp", [this]() {
@@ -919,10 +917,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@#!WheelDown", [this]() {
     io.Send("!{PgDn}");
   });
-  io.Hotkey("@#^WheelDown", [this]() {
+  io.Hotkey("@#+WheelDown", [this]() {
     io.Send("!9");
   });
-  io.Hotkey("@#^WheelUp", [this]() {
+  io.Hotkey("@#+WheelUp", [this]() {
     io.Send("!0");
   });
 
@@ -954,6 +952,12 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     } else {
       Zoom(1);
     }
+  });
+  io.Hotkey("@#WheelUp", [this]() {
+      Zoom(1);
+  });
+  io.Hotkey("@#WheelDown", [this]() {
+      Zoom(0);
   });
   io.Hotkey("@!WheelDown", [this]() {
     if(altTabPressed){

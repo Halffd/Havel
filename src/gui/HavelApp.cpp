@@ -287,6 +287,64 @@ void HavelApp::setupSignalHandling() {
         havel::util::blockAllSignals();
         signalWatcher.start();
         info("Signal handling initialized");
+        
+        // Set up immediate cleanup on signal reception - prioritize evdev ungrabbing
+        signalWatcher.setCleanupCallback([this]() {
+            info("Signal received - EMERGENCY SHUTDOWN (evdev ungrab first)");
+            // Force immediate cleanup on signal
+            if (!shutdownRequested.load()) {
+                shutdownRequested = true;
+                
+                // EMERGENCY: Ungrab evdev devices IMMEDIATELY - highest priority
+                if (io) {
+                    info("EMERGENCY: Forcing immediate evdev ungrab...");
+                    
+                    // Stop evdev listeners immediately to ungrab devices
+                    io->StopEvdevHotkeyListener();
+                    io->StopEvdevMouseListener();
+                    
+                    // Stop EventListener if using new event system
+                    if (io->GetEventListener()) {
+                        io->GetEventListener()->Stop();
+                    }
+                    
+                    // Ungrab all X11 hotkeys immediately
+                    io->UngrabAll();
+                    
+                    info("Evdev devices successfully ungrabbed - system should be responsive now");
+                }
+                
+                // Fast cleanup of other components (skip slow operations)
+                clipboardManager.reset();
+                
+                if (hotkeyManager) {
+                    hotkeyManager->cleanup();
+                    hotkeyManager.reset();
+                }
+
+                scriptEngine.reset();
+                mpv.reset();
+                
+                // Skip compositor and window manager cleanup for speed
+                // WindowManager::ShutdownCompositorBridge();
+                windowManager.reset();
+                
+                // Don't call full io->cleanup() since we already did emergency cleanup
+                io.reset();
+                
+                // Minimal Qt cleanup
+                trayMenu.reset();
+                trayIcon.reset();
+                
+                info("Emergency shutdown complete - exiting now");
+                
+                // Force immediate exit
+                if (QApplication::instance()) {
+                    QApplication::quit();
+                }
+                std::exit(0);
+            }
+        });
     } catch (const std::exception& e) {
         throw std::runtime_error("Failed to set up signal handling: " + std::string(e.what()));
     }

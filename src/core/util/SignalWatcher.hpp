@@ -4,6 +4,7 @@
 #include <thread>
 #include <atomic>
 #include <string>
+#include <functional>
 
 namespace havel::util {
 
@@ -11,6 +12,7 @@ class SignalWatcher {
 private:
     std::atomic<bool> shouldExit{false};
     std::thread watcherThread;
+    std::function<void()> cleanupCallback;
     
     static void logSignal(int sig);
     
@@ -28,6 +30,10 @@ public:
     
     void start();
     void stop();
+    
+    void setCleanupCallback(std::function<void()> callback) {
+        cleanupCallback = std::move(callback);
+    }
     
     bool shouldExitNow() const { 
         return shouldExit.load(std::memory_order_relaxed);

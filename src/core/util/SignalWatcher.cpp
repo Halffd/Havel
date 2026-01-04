@@ -73,7 +73,7 @@ void SignalWatcher::stop() {
         pthread_kill(watcherThread.native_handle(), SIGTERM);
         watcherThread.join();
     }
-    
+
     // Ensure cleanup callback is cleared to prevent dangling references
     cleanupCallback = nullptr;
 }

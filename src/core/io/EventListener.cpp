@@ -1,5 +1,6 @@
 #include "EventListener.hpp"
 #include "../IO.hpp"
+#include "core/MouseGestureTypes.hpp"  // Include mouse gesture types
 #include "utils/Logger.hpp"
 #include <algorithm>
 #include <cmath>
@@ -11,7 +12,13 @@
 #include <sstream>
 #include <sys/ioctl.h>
 #include <sys/select.h>
+#include <sys/signalfd.h>
 #include <unistd.h>
+#include <sstream>  // for istringstream
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 namespace havel {
 std::string EventListener::GetActiveInputsString() const {
@@ -53,7 +60,10 @@ std::string EventListener::GetActiveInputsString() const {
  * 5. Supports key remapping (e.g., CapsLock -> Ctrl)
  * 6. Forwards events through uinput (with optional blocking)
  */
-EventListener::EventListener() { shutdownFd = eventfd(0, EFD_NONBLOCK); }
+EventListener::EventListener() {
+    shutdownFd = eventfd(0, EFD_NONBLOCK);
+    gestureLastTime = std::chrono::steady_clock::now();
+}
 
 EventListener::~EventListener() {
   Stop();
@@ -154,6 +164,12 @@ void EventListener::Stop() {
     }
   }
   devices.clear();
+
+  // Close the signal file descriptor if it was created
+  if (signalFd >= 0) {
+    close(signalFd);
+    signalFd = -1;
+  }
 }
 
 bool EventListener::SetupUinput() {
@@ -275,6 +291,18 @@ void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
     // Initialize pressed count for this combo
     comboPressedCount[id] = 0;
   }
+  // Handle mouse gesture hotkeys
+  else if (hotkey.type == HotkeyType::MouseGesture) {
+    // Parse the gesture pattern and register it
+    std::vector<MouseGestureDirection> directions;
+
+    // Parse directions from the gesture pattern string
+    directions = ParseGesturePattern(hotkey);
+
+    if (!directions.empty()) {
+      RegisterGestureHotkey(id, directions);
+    }
+  }
 }
 
 void EventListener::UnregisterHotkey(int id) {
@@ -302,6 +330,11 @@ void EventListener::UnregisterHotkey(int id) {
 
     // Remove from comboPressedCount
     comboPressedCount.erase(id);
+  }
+  // Handle mouse gesture hotkeys
+  else if (it->second.type == HotkeyType::MouseGesture) {
+    // Remove from gesture hotkeys
+    gestureHotkeys.erase(id);
   }
 
   // Remove the hotkey
@@ -399,12 +432,24 @@ int EventListener::GetCurrentModifiersMask() const {
 void EventListener::EventLoop() {
   info("EventListener: Starting event loop");
 
+  // Setup signal handling
+  SetupSignalHandling();
+
   while (running.load() && !shutdown.load()) {
     fd_set readfds;
     FD_ZERO(&readfds);
 
     int maxFd = shutdownFd;
     FD_SET(shutdownFd, &readfds);
+
+    // Add signal fd if available
+    int signalFdToUse = signalFd;
+    if (signalFdToUse >= 0) {
+        FD_SET(signalFdToUse, &readfds);
+        if (signalFdToUse > maxFd) {
+            maxFd = signalFdToUse;
+        }
+    }
 
     for (const auto &device : devices) {
       FD_SET(device.fd, &readfds);
@@ -431,6 +476,12 @@ void EventListener::EventLoop() {
 
     if (FD_ISSET(shutdownFd, &readfds))
       break;
+
+    // Check for signal
+    if (signalFdToUse >= 0 && FD_ISSET(signalFdToUse, &readfds)) {
+        ProcessSignal();
+        continue;
+    }
 
     // Process events from all devices
     for (const auto &device : devices) {
@@ -879,6 +930,50 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             ev.code == REL_X ? "X" : "Y", ev.value, scaledValue,
             IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(scaledValue);
+
+      // Process mouse gesture if we have gesture hotkeys registered
+      if (!gestureHotkeys.empty()) {
+        auto now = std::chrono::steady_clock::now();
+
+        // Add movement to the gesture buffer
+        MouseMovement movement;
+        movement.time = now;
+
+        if (ev.code == REL_X) {
+          movement.dx = scaledInt;
+          movement.dy = 0;
+        } else if (ev.code == REL_Y) {
+          movement.dx = 0;
+          movement.dy = scaledInt;
+        }
+
+        // Add movement to buffer
+        gestureBuffer.push_back(movement);
+
+        // Keep only recent movements (in the last 50ms)
+        auto cutoffTime = now - std::chrono::milliseconds(50);
+        gestureBuffer.erase(
+            std::remove_if(gestureBuffer.begin(), gestureBuffer.end(),
+                          [cutoffTime](const MouseMovement& m) {
+                              return m.time < cutoffTime;
+                          }),
+            gestureBuffer.end());
+
+        // If we have a recent X and Y movement, combine them for gesture processing
+        int combinedX = 0, combinedY = 0;
+        for (const auto& m : gestureBuffer) {
+            combinedX += m.dx;
+            combinedY += m.dy;
+        }
+
+        // Process the combined movement if it's significant enough
+        if (std::abs(combinedX) > 5 || std::abs(combinedY) > 5) {
+            ProcessMouseGesture(combinedX, combinedY);
+
+            // Clear the buffer after processing
+            gestureBuffer.clear();
+        }
+      }
 
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
@@ -1387,4 +1482,281 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         return false;  // Return false instead of crashing
     }
 }
+
+void EventListener::ProcessMouseGesture(int dx, int dy) {
+    auto now = std::chrono::steady_clock::now();
+
+    // If we don't have an active gesture, start one if movement is significant enough
+    if (!currentMouseGesture.isActive) {
+        // Check if the movement is large enough to start a gesture
+        double distance = std::sqrt(dx * dx + dy * dy);
+        if (distance >= currentMouseGesture.minDistance) {
+            currentMouseGesture.isActive = true;
+            currentMouseGesture.startTime = now;
+            currentMouseGesture.lastMoveTime = now;
+            currentMouseGesture.totalDistance = 0;
+
+            // Calculate the direction of this movement
+            MouseGestureDirection direction = GetGestureDirection(dx, dy);
+            currentMouseGesture.directions.push_back(direction);
+
+            // Update the total distance
+            currentMouseGesture.totalDistance += static_cast<int>(distance);
+        }
+    } else {
+        // We have an active gesture, check for timeout
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - currentMouseGesture.startTime).count();
+
+        if (elapsed > currentMouseGesture.timeout) {
+            // Reset gesture due to timeout
+            ResetMouseGesture();
+            return;
+        }
+
+        // Calculate the direction of this movement
+        MouseGestureDirection direction = GetGestureDirection(dx, dy);
+
+        // Check if this direction is different from the last one
+        if (!currentMouseGesture.directions.empty() &&
+            currentMouseGesture.directions.back() != direction) {
+            currentMouseGesture.directions.push_back(direction);
+        }
+
+        // Update the total distance and last move time
+        double distance = std::sqrt(dx * dx + dy * dy);
+        currentMouseGesture.totalDistance += static_cast<int>(distance);
+        currentMouseGesture.lastMoveTime = now;
+
+        // Check for matching gestures
+        for (const auto& [id, expectedDirections] : gestureHotkeys) {
+            // Check if the current gesture matches any registered gesture
+            if (MatchGesturePattern(expectedDirections, currentMouseGesture.directions)) {
+                // Find the hotkey and execute its callback
+                std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+                auto hotkeyIt = IO::hotkeys.find(id);
+                if (hotkeyIt != IO::hotkeys.end()) {
+                    const auto& hotkey = hotkeyIt->second;
+                    if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
+                        ExecuteHotkeyCallback(hotkey);
+
+                        // Reset the gesture after successful match
+                        ResetMouseGesture();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+MouseGestureDirection EventListener::GetGestureDirection(int dx, int dy) const {
+    // Calculate angle in degrees
+    double angle = std::atan2(dy, dx) * (180.0 / M_PI);
+    if (angle < 0) angle += 360.0;
+
+    // Determine direction based on angle
+    if (angle >= 337.5 || angle < 22.5) return MouseGestureDirection::Right;      // 0°: Right
+    if (angle >= 22.5 && angle < 67.5) return MouseGestureDirection::DownRight;   // 45°: Down-Right
+    if (angle >= 67.5 && angle < 112.5) return MouseGestureDirection::Down;       // 90°: Down
+    if (angle >= 112.5 && angle < 157.5) return MouseGestureDirection::DownLeft;  // 135°: Down-Left
+    if (angle >= 157.5 && angle < 202.5) return MouseGestureDirection::Left;      // 180°: Left
+    if (angle >= 202.5 && angle < 247.5) return MouseGestureDirection::UpLeft;    // 225°: Up-Left
+    if (angle >= 247.5 && angle < 292.5) return MouseGestureDirection::Up;        // 270°: Up
+    if (angle >= 292.5 && angle < 337.5) return MouseGestureDirection::UpRight;   // 315°: Up-Right
+
+    return MouseGestureDirection::Right; // Default fallback
+}
+
+bool EventListener::MatchGesturePattern(const std::vector<MouseGestureDirection>& expected,
+                                       const std::vector<MouseGestureDirection>& actual) const {
+    if (actual.size() < expected.size()) {
+        return false; // Not enough directions yet
+    }
+
+    // Check if the end of actual matches the expected pattern
+    size_t startIdx = actual.size() - expected.size();
+    for (size_t i = 0; i < expected.size(); ++i) {
+        if (actual[startIdx + i] != expected[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Helper function to convert gesture pattern string to directions
+std::vector<MouseGestureDirection> EventListener::ParseGesturePattern(const std::string& patternStr) const {
+    std::vector<MouseGestureDirection> directions;
+
+    // Check if it's a predefined shape
+    if (patternStr == "circle") {
+        // A circle could be represented as: right, down, left, up (clockwise)
+        directions = {MouseGestureDirection::Right, MouseGestureDirection::Down,
+                     MouseGestureDirection::Left, MouseGestureDirection::Up};
+    } else if (patternStr == "square") {
+        // A square: right, down, left, up
+        directions = {MouseGestureDirection::Right, MouseGestureDirection::Down,
+                     MouseGestureDirection::Left, MouseGestureDirection::Up};
+    } else if (patternStr == "triangle") {
+        // A triangle: up-right, down-left, down
+        directions = {MouseGestureDirection::UpRight, MouseGestureDirection::DownLeft,
+                     MouseGestureDirection::Down};
+    } else if (patternStr == "zigzag") {
+        // A zigzag: right, down-left, right, up-left
+        directions = {MouseGestureDirection::Right, MouseGestureDirection::DownLeft,
+                     MouseGestureDirection::Right, MouseGestureDirection::UpLeft};
+    } else if (patternStr == "check") {
+        // A check mark: down-right, up-left
+        directions = {MouseGestureDirection::DownRight, MouseGestureDirection::UpRight};
+    } else {
+        // Parse comma-separated direction pattern
+        std::string dir;
+        std::istringstream iss(patternStr);
+
+        while (std::getline(iss, dir, ',')) {
+            // Remove leading/trailing whitespace
+            dir.erase(0, dir.find_first_not_of(" \t\n\r"));
+            dir.erase(dir.find_last_not_of(" \t\n\r") + 1);
+
+            // Mouse-specific directions (to avoid conflicts with arrow keys)
+            if (dir == "mouseup") {
+                directions.push_back(MouseGestureDirection::Up);
+            } else if (dir == "mousedown") {
+                directions.push_back(MouseGestureDirection::Down);
+            } else if (dir == "mouseleft") {
+                directions.push_back(MouseGestureDirection::Left);
+            } else if (dir == "mouseright") {
+                directions.push_back(MouseGestureDirection::Right);
+            }
+            // Corner directions with mouse prefix
+            else if (dir == "mouseupleft") {
+                directions.push_back(MouseGestureDirection::UpLeft);
+            } else if (dir == "mouseupright") {
+                directions.push_back(MouseGestureDirection::UpRight);
+            } else if (dir == "mousedownleft") {
+                directions.push_back(MouseGestureDirection::DownLeft);
+            } else if (dir == "mousedownright") {
+                directions.push_back(MouseGestureDirection::DownRight);
+            }
+            // For backward compatibility, also support generic directions but only in gesture contexts
+            else if (dir == "up") {
+                directions.push_back(MouseGestureDirection::Up);
+            } else if (dir == "down") {
+                directions.push_back(MouseGestureDirection::Down);
+            } else if (dir == "left") {
+                directions.push_back(MouseGestureDirection::Left);
+            } else if (dir == "right") {
+                directions.push_back(MouseGestureDirection::Right);
+            }
+            // Generic corner directions (for backward compatibility)
+            else if (dir == "up-left" || dir == "upleft") {
+                directions.push_back(MouseGestureDirection::UpLeft);
+            } else if (dir == "up-right" || dir == "upright") {
+                directions.push_back(MouseGestureDirection::UpRight);
+            } else if (dir == "down-left" || dir == "downleft") {
+                directions.push_back(MouseGestureDirection::DownLeft);
+            } else if (dir == "down-right" || dir == "downright") {
+                directions.push_back(MouseGestureDirection::DownRight);
+            }
+        }
+    }
+
+    return directions;
+}
+
+// Overloaded method that takes a HotKey and gets its pattern
+std::vector<MouseGestureDirection> EventListener::ParseGesturePattern(const HotKey& hotkey) const {
+    return ParseGesturePattern(hotkey.gesturePattern);
+}
+
+// Helper function to validate gesture with tolerance
+bool EventListener::IsGestureValid(const std::vector<MouseGestureDirection>& pattern,
+                                  int minDistance) const {
+    // For now, just check if we have any movement that meets the minimum distance
+    return currentMouseGesture.totalDistance >= minDistance;
+}
+
+void EventListener::ResetMouseGesture() {
+    currentMouseGesture.isActive = false;
+    currentMouseGesture.directions.clear();
+    currentMouseGesture.xPositions.clear();
+    currentMouseGesture.yPositions.clear();
+    currentMouseGesture.totalDistance = 0;
+}
+
+void EventListener::RegisterGestureHotkey(int id, const std::vector<MouseGestureDirection>& directions) {
+    gestureHotkeys[id] = directions;
+}
+
+void EventListener::SetupSignalHandling() {
+    // Initialize signal mask to block the signals we want to handle via signalfd
+    sigemptyset(&signalMask);
+    sigaddset(&signalMask, SIGTERM);
+    sigaddset(&signalMask, SIGINT);
+    sigaddset(&signalMask, SIGHUP);
+    sigaddset(&signalMask, SIGQUIT);
+
+    // Block these signals for all threads in the process
+    if (pthread_sigmask(SIG_BLOCK, &signalMask, nullptr) != 0) {
+        error("Failed to block signals for signalfd");
+        return;
+    }
+
+    // Create the signalfd
+    signalFd = signalfd(-1, &signalMask, SFD_CLOEXEC);
+    if (signalFd == -1) {
+        error("Failed to create signalfd: {}", strerror(errno));
+        return;
+    }
+
+    info("Signal handling set up with signalfd");
+}
+
+void EventListener::ProcessSignal() {
+    if (signalFd < 0) return;
+
+    struct signalfd_siginfo si;
+    ssize_t s = read(signalFd, &si, sizeof(si));
+    if (s != sizeof(si)) {
+        error("Failed to read from signalfd: {}", strerror(errno));
+        return;
+    }
+
+    int sig = si.ssi_signo;
+    info("EventListener received signal: {}", sig);
+
+    // Handle emergency cleanup immediately in the same thread
+    switch (sig) {
+        case SIGTERM:
+        case SIGINT:
+        case SIGHUP:
+        case SIGQUIT:
+            info("Emergency shutdown: Ungrabbing all devices immediately in EventListener thread");
+
+            // Ungrab all input devices to release grabs
+            for (auto &device : devices) {
+                if (grabDevices && device.fd >= 0) {
+                    ioctl(device.fd, EVIOCGRAB, 0); // Ungrab device
+                }
+            }
+
+            // Stop the event listener
+            running.store(false);
+            shutdown.store(true);
+
+            // Signal shutdown
+            if (shutdownFd >= 0) {
+                uint64_t val = 1;
+                write(shutdownFd, &val, sizeof(val));
+            }
+
+            info("Emergency shutdown complete in EventListener thread");
+            break;
+        default:
+            // Other signals, just log
+            info("Received unhandled signal: {}", sig);
+            break;
+    }
+}
+
 } // namespace havel

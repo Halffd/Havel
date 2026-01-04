@@ -21,13 +21,15 @@
 #include "core/io/HotkeyExecutor.hpp"
 #include "core/io/Device.hpp"
 #include "core/io/KeyMap.hpp"
-#include "core/io/EventListener.hpp"
+#include "core/MouseGestureTypes.hpp"  // Include the mouse gesture types
+#include "core/CallbackTypes.hpp"      // Include callback types
 #include "x11.h"
 #define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
 
 namespace havel {
 
 // Forward declarations
+class EventListener;  // Add forward declaration for EventListener
 class HotkeyManager;
 
 enum class MouseButton {
@@ -47,6 +49,7 @@ enum class HotkeyType {
     MouseButton,
     MouseWheel,
     MouseMove,
+    MouseGesture,  // New type for mouse gestures
     Combo
 };
 
@@ -78,6 +81,10 @@ struct HotKey {
     // Time window for combo in milliseconds
     int comboTimeWindow = 500;
     
+    // For mouse gestures
+    MouseGesture gestureConfig;
+    std::string gesturePattern;  // Pattern string (e.g., "up,down,left,right" or predefined names like "circle")
+
     // Repeat interval in milliseconds (0 = use default key repeat)
     int repeatInterval = 0;
     std::chrono::steady_clock::time_point lastTriggerTime;
@@ -252,6 +259,9 @@ public:
 
   bool Resume(int id);
 
+  // Static method for application exit
+  static void ExitApp();
+
   // Mouse methods
   bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
   bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
@@ -341,7 +351,7 @@ public:
   bool UngrabHotkey(int hotkeyId);
 
   // Method to register callback for any key press
-  void SetAnyKeyPressCallback(EventListener::AnyKeyPressCallback callback);
+  void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
 
   bool GrabHotkeysByPrefix(const std::string &prefix);
 
@@ -439,7 +449,15 @@ private:
   std::mutex grabbedKeysMutex;
   bool blockAllInput = false;  // Emergency block all input
   static int XErrorHandler(Display *dpy, XErrorEvent *ee);
-  
+
+  // Track the original state of conditional hotkeys during suspend
+  struct ConditionalHotkeyState {
+      int id;
+      bool wasGrabbed;
+  };
+  std::vector<ConditionalHotkeyState> suspendedConditionalHotkeyStates;
+  bool wasSuspended = false;
+
   void UpdateNumLockMask();
   bool ModifierMatch(unsigned int expected, unsigned int actual);
   bool EmitClick(int btnCode, int action);

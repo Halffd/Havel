@@ -2,6 +2,7 @@
 #include "../process/Launcher.hpp"
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
+#include "core/io/EventListener.hpp"  // Include EventListener for access to its members
 #include "automation/AutoRunner.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
@@ -126,7 +127,14 @@ void HotkeyManager::Zoom(int zoom) {
     if (!command.empty()) {
       if (CompositorBridge::SendKWinZoomCommand(command)) {
         info("KWin zoom command executed: {}", command);
-        zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+        try {
+          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+          if (!result.empty()) {
+            zoomLevel = std::stod(result);
+          }
+        } catch (const std::exception& e) {
+          warn("Failed to parse zoom level after zoom command: {}", e.what());
+        }
       } else {
         warn("KWin zoom command failed, falling back to hotkeys: {}", command);
         // Fall back to original hotkey methods
@@ -652,7 +660,14 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   // Context-sensitive hotkeys
   AddHotkey("@kc89",
             [this]() { // When zooming
-              zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+              try {
+                std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+                if (!result.empty()) {
+                  zoomLevel = std::stod(result);
+                }
+              } catch (const std::exception& e) {
+                warn("Failed to parse zoom level for @kc89: {}", e.what());
+              }
               if (zoomLevel <= 1.0) {
                 Zoom(3);
               } else {
@@ -898,11 +913,27 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   
   AddHotkey("~^Down", [this]() {
     //if(zoomLevel > 1.0) zoomLevel -= 0.1;
-    zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception& e) {
+      // Handle the exception gracefully - use default zoom level or keep current
+      warn("Failed to parse zoom level for ~^Down: {}", e.what());
+    }
   });
   AddHotkey("~^Up", [this]() {
     //if(zoomLevel < 2.0) zoomLevel += 0.1;
-    zoomLevel = std::stod(CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus"));
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception& e) {
+      // Handle the exception gracefully - use default zoom level or keep current
+      warn("Failed to parse zoom level for ~^Up: {}", e.what());
+    }
   });
   // Mouse wheel + click combinations
   io.Hotkey("@^#WheelUp", [this]() {

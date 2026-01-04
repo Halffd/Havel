@@ -1768,9 +1768,35 @@ bool IO::Suspend() {
       }
 
       if (hotkeyManager) {
-        hotkeyManager->reevaluateConditionalHotkeys(*this);
+        // Restore conditional hotkeys to their original state before suspension
+        if (!suspendedConditionalHotkeyStates.empty()) {
+          // Restore to the original state before suspension
+          for (const auto& state : suspendedConditionalHotkeyStates) {
+            auto& ch = hotkeyManager->conditionalHotkeys;
+            auto it = std::find_if(ch.begin(), ch.end(),
+                                   [state](const auto& ch_item) {
+                                     return ch_item.id == state.id;
+                                   });
+            if (it != ch.end()) {
+              if (state.wasGrabbed && !it->currentlyGrabbed) {
+                // Previously grabbed, now restore
+                GrabHotkey(state.id);
+                it->currentlyGrabbed = true;
+              } else if (!state.wasGrabbed && it->currentlyGrabbed) {
+                // Previously not grabbed, now ungrab
+                UngrabHotkey(state.id);
+                it->currentlyGrabbed = false;
+              }
+            }
+          }
+          suspendedConditionalHotkeyStates.clear();
+        } else {
+          // No saved state, reevaluate as before
+          hotkeyManager->reevaluateConditionalHotkeys(*this);
+        }
       }
 
+      wasSuspended = false;
       isSuspended = false;
       return true;
     } else {
@@ -1785,14 +1811,23 @@ bool IO::Suspend() {
       }
 
       if (hotkeyManager) {
-        for (auto &ch : hotkeyManager->conditionalHotkeys) {
+        // Track the original state of conditional hotkeys before suspension
+        suspendedConditionalHotkeyStates.clear();
+        for (const auto& ch : hotkeyManager->conditionalHotkeys) {
+          ConditionalHotkeyState state;
+          state.id = ch.id;
+          state.wasGrabbed = ch.currentlyGrabbed;
+          suspendedConditionalHotkeyStates.push_back(state);
+
+          // Ungrab during suspension
           if (ch.currentlyGrabbed) {
             UngrabHotkey(ch.id);
-            ch.currentlyGrabbed = false;
+            // Note: We don't change ch.currentlyGrabbed here because we want to remember the original state
           }
         }
       }
 
+      wasSuspended = true;
       isSuspended = true;
       return true;
     }
@@ -1822,6 +1857,16 @@ bool IO::Resume(int id) {
   }
   return false;
 }
+
+// Static method to exit the application
+void IO::ExitApp() {
+  info("Static ExitApp called - initiating emergency shutdown sequence");
+
+  // This is a static method, so we can't access instance members directly
+  // However, we can use std::exit to ensure immediate termination
+  std::exit(0);
+}
+
 // Helper function to parse mouse button from string
 int IO::ParseMouseButton(const std::string &str) {
   if (str == "LButton" || str == "Button1")
@@ -2094,50 +2139,127 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   hotkey.success = false;
   hotkey.repeatInterval = parsed.repeatInterval;
 
-  // Check for mouse button or wheel
-  int mouseButton = ParseMouseButton(parsed.keyPart);
-  if (mouseButton != 0) {
-    hotkey.type = (mouseButton == 1 || mouseButton == -1)
-                      ? HotkeyType::MouseWheel
-                      : HotkeyType::MouseButton;
-    hotkey.wheelDirection =
-        (mouseButton == 1 || mouseButton == -1) ? mouseButton : 0;
-    hotkey.mouseButton =
-        (mouseButton == 1 || mouseButton == -1) ? 0 : mouseButton;
-    hotkey.key = static_cast<Key>(mouseButton);
-    hotkey.success = true;
-  } else {
-    // Check for combo
-    size_t ampPos = parsed.keyPart.find('&');
-    if (ampPos != std::string::npos) {
-      std::vector<std::string> parts;
-      size_t start = 0;
-      while (ampPos != std::string::npos) {
-        parts.push_back(parsed.keyPart.substr(start, ampPos - start));
-        start = ampPos + 1;
-        ampPos = parsed.keyPart.find('&', start);
-      }
-      parts.push_back(parsed.keyPart.substr(start));
+  // Check for mouse gesture pattern
+  bool isGesture = false;
 
-      hotkey.type = HotkeyType::Combo;
-      for (const auto &part : parts) {
-        auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
-        hotkey.comboSequence.push_back(subHotkey);
+  // Check if the key part looks like a gesture pattern
+  // This could be predefined gestures like "circle", "square", "triangle", etc.
+  // or mouse-specific direction patterns like "mouseleft,mouseright,mouseup,mousedown"
+  std::string keyLower = toLower(parsed.keyPart);
+  bool isPredefinedGesture = (keyLower == "circle" || keyLower == "square" || keyLower == "triangle" ||
+                             keyLower == "zigzag" || keyLower == "check");
+
+  // Check if it's a comma-separated direction pattern (may include mouse directions)
+  bool hasComma = parsed.keyPart.find(',') != std::string::npos;
+
+  // Check if it's a single mouse direction (using the new mouse-specific names)
+  bool isMouseDirection = (keyLower == "mouseleft" || keyLower == "mouseright" ||
+                          keyLower == "mouseup" || keyLower == "mousedown" ||
+                          keyLower == "mouseupleft" || keyLower == "mouseupright" ||
+                          keyLower == "mousedownleft" || keyLower == "mousedownright");
+
+  // Check if it's a comma-separated pattern that looks like a gesture pattern
+  bool isGesturePattern = false;
+  if (hasComma) {
+      // Parse the comma-separated values to see if they look like gesture directions
+      std::string tempPattern = parsed.keyPart; // Don't convert to lower yet, to check original
+      std::istringstream iss(tempPattern);
+      std::string part;
+      bool allPartsAreMouseDirections = true;
+
+      while (std::getline(iss, part, ',')) {
+          // Remove leading/trailing whitespace
+          part.erase(0, part.find_first_not_of(" \t\n\r"));
+          part.erase(part.find_last_not_of(" \t\n\r") + 1);
+
+          std::string lowerPart = toLower(part);
+
+          // Check if this part is a mouse direction
+          bool isMouseDir = (lowerPart == "mouseleft" || lowerPart == "mouseright" ||
+                           lowerPart == "mouseup" || lowerPart == "mousedown" ||
+                           lowerPart == "mouseupleft" || lowerPart == "mouseupright" ||
+                           lowerPart == "mousedownleft" || lowerPart == "mousedownright" ||
+                           // Corner directions without mouse prefix (for backward compatibility)
+                           lowerPart == "up-left" || lowerPart == "upleft" ||
+                           lowerPart == "up-right" || lowerPart == "upright" ||
+                           lowerPart == "down-left" || lowerPart == "downleft" ||
+                           lowerPart == "down-right" || lowerPart == "downright");
+
+          if (!isMouseDir) {
+              allPartsAreMouseDirections = false;
+              break;
+          }
       }
-      hotkey.success = !hotkey.comboSequence.empty();
+
+      isGesturePattern = allPartsAreMouseDirections;
+  }
+
+  // Only treat as gesture if it's a predefined gesture, contains mouse-specific directions in comma pattern, or is a single mouse direction
+  // This avoids conflicting with regular arrow keys like "up", "down", "left", "right"
+  if (isPredefinedGesture || isGesturePattern || isMouseDirection) {
+    hotkey.type = HotkeyType::MouseGesture;
+    hotkey.gesturePattern = parsed.keyPart; // Store the gesture pattern string
+
+    // Determine gesture type and set up configuration based on the pattern
+    if (isPredefinedGesture) {
+        hotkey.gestureConfig.type = MouseGestureType::Shape;
+    } else if (isMouseDirection) {
+        hotkey.gestureConfig.type = MouseGestureType::Direction;
     } else {
-      // Regular keyboard hotkey
-      KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+        // It's a custom direction pattern
+        hotkey.gestureConfig.type = MouseGestureType::Freeform;
+    }
 
-      if (keycode == 0) {
-        std::cerr << "Invalid key: '" << parsed.keyPart
-                  << "' in hotkey: " << rawInput << "\n";
-        return {};
-      }
+    hotkey.success = true;
+    isGesture = true;
+  }
 
-      hotkey.type = HotkeyType::Keyboard;
-      hotkey.key = static_cast<Key>(keycode);
+  if (!isGesture) {
+    // Check for mouse button or wheel
+    int mouseButton = ParseMouseButton(parsed.keyPart);
+    if (mouseButton != 0) {
+      hotkey.type = (mouseButton == 1 || mouseButton == -1)
+                        ? HotkeyType::MouseWheel
+                        : HotkeyType::MouseButton;
+      hotkey.wheelDirection =
+          (mouseButton == 1 || mouseButton == -1) ? mouseButton : 0;
+      hotkey.mouseButton =
+          (mouseButton == 1 || mouseButton == -1) ? 0 : mouseButton;
+      hotkey.key = static_cast<Key>(mouseButton);
       hotkey.success = true;
+    } else {
+      // Check for combo
+      size_t ampPos = parsed.keyPart.find('&');
+      if (ampPos != std::string::npos) {
+        std::vector<std::string> parts;
+        size_t start = 0;
+        while (ampPos != std::string::npos) {
+          parts.push_back(parsed.keyPart.substr(start, ampPos - start));
+          start = ampPos + 1;
+          ampPos = parsed.keyPart.find('&', start);
+        }
+        parts.push_back(parsed.keyPart.substr(start));
+
+        hotkey.type = HotkeyType::Combo;
+        for (const auto &part : parts) {
+          auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
+          hotkey.comboSequence.push_back(subHotkey);
+        }
+        hotkey.success = !hotkey.comboSequence.empty();
+      } else {
+        // Regular keyboard hotkey
+        KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+
+        if (keycode == 0) {
+          std::cerr << "Invalid key: '" << parsed.keyPart
+                    << "' in hotkey: " << rawInput << "\n";
+          return {};
+        }
+
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = static_cast<Key>(keycode);
+        hotkey.success = true;
+      }
     }
   }
 
@@ -3855,7 +3977,7 @@ bool IO::UngrabHotkey(int hotkeyId) {
 #endif
 }
 
-void IO::SetAnyKeyPressCallback(EventListener::AnyKeyPressCallback callback) {
+void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
   if (eventListener) {
     eventListener->SetAnyKeyPressCallback(callback);
   }

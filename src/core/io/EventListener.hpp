@@ -12,7 +12,10 @@
 #include <vector>
 #include <linux/input.h>
 #include <sys/eventfd.h>
+#include <signal.h>
 #include "KeyMap.hpp"
+#include "core/MouseGestureTypes.hpp"  // Include the mouse gesture types
+#include "core/CallbackTypes.hpp"      // Include callback types
 
 #ifdef __linux__
 #include "X11HotkeyMonitor.hpp"
@@ -131,7 +134,6 @@ public:
     #endif
 
     // Callback for any key press
-    using AnyKeyPressCallback = std::function<void(const std::string& key)>;
     void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
     
     int uinputFd = -1;
@@ -141,6 +143,32 @@ public:
 
     // Callback for input notification (for watchdog)
     std::function<void()> inputNotificationCallback = nullptr;
+
+    // Mouse gesture methods
+    void ProcessMouseGesture(int dx, int dy);
+    MouseGestureDirection GetGestureDirection(int dx, int dy) const;
+    bool MatchGesturePattern(const std::vector<MouseGestureDirection>& expected,
+                            const std::vector<MouseGestureDirection>& actual) const;
+    void ResetMouseGesture();
+    void RegisterGestureHotkey(int id, const std::vector<MouseGestureDirection>& directions);
+    bool IsGestureValid(const std::vector<MouseGestureDirection>& pattern,
+                       int minDistance) const;
+    std::vector<MouseGestureDirection> ParseGesturePattern(const std::string& patternStr) const;
+    std::vector<MouseGestureDirection> ParseGesturePattern(const HotKey& hotkey) const;
+
+    // Signal handling methods
+    void SetupSignalHandling();
+    void HandleSignal(int sig);
+    void ProcessSignal();
+
+private:
+    // Signal handling members
+    std::atomic<bool> signalReceived{false};
+    int signalFd = -1;  // fd for signalfd to integrate with select loop
+    sigset_t signalMask{};
+
+    // Signal handling for device cleanup
+    std::atomic<int> pendingSignal{0};
 
 private:
     // Device info
@@ -222,9 +250,28 @@ private:
     std::chrono::steady_clock::time_point lastWheelUpTime{std::chrono::steady_clock::time_point::min()};
     std::chrono::steady_clock::time_point lastWheelDownTime{std::chrono::steady_clock::time_point::min()};
 
+    // Mouse gesture tracking
+    MouseGesture currentMouseGesture;
+
+    // Registered gesture hotkeys (ID -> vector of gesture directions)
+    std::unordered_map<int, std::vector<MouseGestureDirection>> gestureHotkeys;
+
+    // Mouse gesture tracking variables
+    int gestureLastX = 0;
+    int gestureLastY = 0;
+    std::chrono::steady_clock::time_point gestureLastTime;
+
+    // Buffer for recent mouse movements for gesture detection
+    struct MouseMovement {
+        int dx, dy;
+        std::chrono::steady_clock::time_point time;
+    };
+    std::vector<MouseMovement> gestureBuffer;
+    static const size_t GESTURE_BUFFER_SIZE = 10;  // Store last 10 movements
+
     // Device grabbing
     bool grabDevices = false;
-    
+
     // X11 hotkey monitor (separate component)
     #ifdef __linux__
     std::unique_ptr<X11HotkeyMonitor> x11Monitor;

@@ -11,6 +11,7 @@
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "core/io/EventListener.hpp"  // Include EventListener for access to its members
 #include "gui/GUIManager.hpp"
 #include "utils/Logger.hpp"
 #include "window/CompositorBridge.hpp"

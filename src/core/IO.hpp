@@ -37,7 +37,9 @@ enum class MouseButton {
   Right = BTN_RIGHT,
   Middle = BTN_MIDDLE,
   Side1 = BTN_SIDE,
-  Side2 = BTN_EXTRA
+  Side2 = BTN_EXTRA,
+  Side3 = BTN_FORWARD,
+  Side4 = BTN_BACK
 };
 
 enum class MouseAction { Hold = 1, Release = 0, Click = 2 };
@@ -393,6 +395,12 @@ public:
         btnCode = BTN_SIDE;
       else if (button == "side2")
         btnCode = BTN_EXTRA;
+      else if (button == "side3")
+        btnCode = BTN_FORWARD;
+      else if (button == "side4")
+        btnCode = BTN_BACK;
+      else if (button == "back")
+        btnCode = BTN_BACK;
       else {
         std::cerr << "Unknown button string: " << button << "\n";
         return false;

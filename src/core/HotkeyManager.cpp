@@ -2,12 +2,12 @@
 #include "../process/Launcher.hpp"
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
-#include "core/io/EventListener.hpp"  // Include EventListener for access to its members
 #include "automation/AutoRunner.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "core/io/EventListener.hpp" // Include EventListener for access to its members
 #include "core/io/KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "gui/AutomationSuite.hpp"
@@ -17,9 +17,9 @@
 #include "utils/Timer.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
+#include "window/CompositorBridge.hpp"
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
-#include "window/CompositorBridge.hpp"
 #include <X11/XKBlib.h>
 #include <X11/keysym.h>
 #include <algorithm>
@@ -55,7 +55,7 @@ bool HotkeyManager::getCurrentGamingWindowStatus() const {
   return isGamingWindow();
 }
 
-void HotkeyManager::reevaluateConditionalHotkeys(IO& io) {
+void HotkeyManager::reevaluateConditionalHotkeys(IO &io) {
   std::lock_guard<std::mutex> lock(hotkeyMutex);
   for (auto &ch : conditionalHotkeys) {
     // Evaluate condition based on common patterns
@@ -92,7 +92,6 @@ void HotkeyManager::reevaluateConditionalHotkeys(IO& io) {
   }
 }
 
-
 void HotkeyManager::Zoom(int zoom) {
   if (zoom < 0)
     zoom = 0;
@@ -103,36 +102,41 @@ void HotkeyManager::Zoom(int zoom) {
   if (CompositorBridge::IsKDERunning()) {
     std::string command;
     switch (zoom) {
-      case 0: // zoomOut (from original function: zoom = 0 calls io.Send("@^{Down}"))
-        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus";
-        break;
-      case 1: // zoomIn (from original function: zoom = 1 calls io.Send("@^{Up}"))
-        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus";
-        break;
-      case 2: // resetZoom
-        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus";
-        break;
-      case 3:
-        char buffer[128];
-        std::snprintf(buffer, sizeof(buffer), "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f", Configs::Get().Get<double>("Zoom.Zoom3", 2.0));
-        command = std::string(buffer);
-        break;
-      case 4: // zoomTo140
-        command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus";
-        break;
-      default:
-        break;
+    case 0: // zoomOut (from original function: zoom = 0 calls
+            // io.Send("@^{Down}"))
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus";
+      break;
+    case 1: // zoomIn (from original function: zoom = 1 calls io.Send("@^{Up}"))
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus";
+      break;
+    case 2: // resetZoom
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus";
+      break;
+    case 3:
+      char buffer[128];
+      std::snprintf(
+          buffer, sizeof(buffer),
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f",
+          Configs::Get().Get<double>("Zoom.Zoom3", 2.0));
+      command = std::string(buffer);
+      break;
+    case 4: // zoomTo140
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus";
+      break;
+    default:
+      break;
     }
 
     if (!command.empty()) {
       if (CompositorBridge::SendKWinZoomCommand(command)) {
         info("KWin zoom command executed: {}", command);
         try {
-          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+              "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
           if (!result.empty()) {
             zoomLevel = std::stod(result);
           }
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
           warn("Failed to parse zoom level after zoom command: {}", e.what());
         }
       } else {
@@ -170,9 +174,9 @@ void HotkeyManager::Zoom(int zoom) {
     }
   }
 
-  if(zoomLevel < 1.0) {
+  if (zoomLevel < 1.0) {
     zoomLevel = 1.0;
-  } else if(zoomLevel > 100.0) {
+  } else if (zoomLevel > 100.0) {
     zoomLevel = 100.0;
   }
 }
@@ -266,8 +270,9 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
 
   // Start the update loop thread - this will handle all condition checking
   {
-      std::lock_guard<std::mutex> lock(modeMutex);
-      currentMode = "default"; // Start in default mode to prevent all gaming hotkeys from being enabled initially
+    std::lock_guard<std::mutex> lock(modeMutex);
+    currentMode = "default"; // Start in default mode to prevent all gaming
+                             // hotkeys from being enabled initially
   }
   // Set initial key mappings to default
   io.Map("Left", "Left");
@@ -281,7 +286,8 @@ HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
   lastInputTime.store(std::chrono::steady_clock::now());
 
   // Load configurable input freeze timeout (default to 300 seconds = 5 minutes)
-  inputFreezeTimeoutSeconds = Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
+  inputFreezeTimeoutSeconds =
+      Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
 
   // Start the watchdog thread
   watchdogRunning.store(true);
@@ -427,33 +433,41 @@ void HotkeyManager::RegisterDefaultHotkeys() {
            device.volume * 100);
     }
   });
-  io.Hotkey("^+a", [this]() {
+  io.Hotkey("^+#a", [this]() {
     auto device = audioManager.findDeviceByIndex(0);
-    audioManager.setDefaultOutput(device->name);
-    info("Current device: {}", audioManager.getDefaultOutput());
-    // play audio
-    audioManager.playTestSound();
+    if (device) {
+      audioManager.setDefaultOutput(device->name);
+      info("Current device: {}", audioManager.getDefaultOutput());
+      // play audio
+      audioManager.playTestSound();
+    }
   });
   io.Hotkey("^+s", [this]() {
     auto device = audioManager.findDeviceByIndex(1);
-    audioManager.setDefaultOutput(device->name);
-    info("Current device: {}", audioManager.getDefaultOutput());
-    // play audio
-    audioManager.playTestSound();
+    if (device) {
+      audioManager.setDefaultOutput(device->name);
+      info("Current device: {}", audioManager.getDefaultOutput());
+      // play audio
+      audioManager.playTestSound();
+    }
   });
   io.Hotkey("^+d", [this]() {
     auto device = audioManager.findDeviceByIndex(2);
-    audioManager.setDefaultOutput(device->name);
-    info("Current device: {}", audioManager.getDefaultOutput());
-    // play audio
-    audioManager.playTestSound();
+    if (device) {
+      audioManager.setDefaultOutput(device->name);
+      info("Current device: {}", audioManager.getDefaultOutput());
+      // play audio
+      audioManager.playTestSound();
+    }
   });
   io.Hotkey("^+!a", [this]() {
     auto device = audioManager.findDeviceByIndex(3);
-    audioManager.setDefaultOutput(device->name);
-    info("Current device: {}", audioManager.getDefaultOutput());
-    // play audio
-    audioManager.playTestSound();
+    if (device) {
+      audioManager.setDefaultOutput(device->name);
+      info("Current device: {}", audioManager.getDefaultOutput());
+      // play audio
+      audioManager.playTestSound();
+    }
   });
   io.Hotkey("^numpadsub", [this]() {
     auto phone = audioManager.findDeviceByName("G30");
@@ -461,11 +475,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     if (bt) {
       audioManager.increaseVolume(bt->name, 0.05);
     }
-    audioManager.increaseVolume(phone->name, 0.05);
-    double vol = audioManager.getVolume(phone->name);
-    showNotification("Volume (G30)",
-                     std::to_string(static_cast<int>(vol * 100)) + "%");
-    info("Current volume (G30): {:.0f}%", vol * 100);
+    if (phone) {
+      audioManager.increaseVolume(phone->name, 0.05);
+      double vol = audioManager.getVolume(phone->name);
+      showNotification("Volume (G30)",
+                       std::to_string(static_cast<int>(vol * 100)) + "%");
+      info("Current volume (G30): {:.0f}%", vol * 100);
+    }
   });
   io.Hotkey("^numpadadd", [this]() {
     auto phone = audioManager.findDeviceByName("G30");
@@ -473,11 +489,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     if (bt) {
       audioManager.decreaseVolume(bt->name, 0.05);
     }
-    audioManager.decreaseVolume(phone->name, 0.05);
-    double vol = audioManager.getVolume(phone->name);
-    showNotification("Volume (G30)",
-                     std::to_string(static_cast<int>(vol * 100)) + "%");
-    info("Current volume (G30): {:.0f}%", vol * 100);
+    if (phone) {
+      audioManager.decreaseVolume(phone->name, 0.05);
+      double vol = audioManager.getVolume(phone->name);
+      showNotification("Volume (G30)",
+                       std::to_string(static_cast<int>(vol * 100)) + "%");
+      info("Current volume (G30): {:.0f}%", vol * 100);
+    }
   });
   io.Hotkey("^numpad0", [this]() {
     auto phone = audioManager.findDeviceByName("G30");
@@ -485,31 +503,39 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     if (bt) {
       audioManager.setVolume(bt->name, 0);
     }
-    audioManager.setVolume(phone->name, 0);
+    if (phone) {
+      audioManager.setVolume(phone->name, 0);
+    }
     showNotification("Volume (G30)", "0%");
     info("Current volume (G30): 0%");
   });
   io.Hotkey("+numpadsub", [this]() {
     auto builtIn = audioManager.findDeviceByName("Built-in Audio");
-    audioManager.increaseVolume(builtIn->name, 0.05);
-    double vol = audioManager.getVolume(builtIn->name);
-    showNotification("Volume (Built-in)",
-                     std::to_string(static_cast<int>(vol * 100)) + "%");
-    info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
+    if (builtIn) {
+      audioManager.increaseVolume(builtIn->name, 0.05);
+      double vol = audioManager.getVolume(builtIn->name);
+      showNotification("Volume (Built-in)",
+                       std::to_string(static_cast<int>(vol * 100)) + "%");
+      info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
+    }
   });
   io.Hotkey("+numpadadd", [this]() {
     auto builtIn = audioManager.findDeviceByName("Built-in Audio");
-    audioManager.decreaseVolume(builtIn->name, 0.05);
-    double vol = audioManager.getVolume(builtIn->name);
-    showNotification("Volume (Built-in)",
-                     std::to_string(static_cast<int>(vol * 100)) + "%");
-    info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
+    if (builtIn) {
+      audioManager.decreaseVolume(builtIn->name, 0.05);
+      double vol = audioManager.getVolume(builtIn->name);
+      showNotification("Volume (Built-in)",
+                       std::to_string(static_cast<int>(vol * 100)) + "%");
+      info("Current volume (Built-in Audio): {:.0f}%", vol * 100);
+    }
   });
   io.Hotkey("+numpad0", [this]() {
     auto builtIn = audioManager.findDeviceByName("Built-in Audio");
-    audioManager.setVolume(builtIn->name, 0);
-    showNotification("Volume (Built-in)", "0%");
-    info("Current volume (Built-in Audio): 0%");
+    if (builtIn) {
+      audioManager.setVolume(builtIn->name, 0);
+      showNotification("Volume (Built-in)", "0%");
+      info("Current volume (Built-in Audio): 0%");
+    }
   });
   io.Hotkey("@numpadsub", [this]() {
     audioManager.increaseVolume(0.05);
@@ -532,47 +558,47 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   // Application Shortcuts
   io.Hotkey("@|rwin", [this]() { io.Send("@!{backspace}"); });
 
-  // LWin key handling using KeyTap with function-based conditions instead of complex condition strings
+  // LWin key handling using KeyTap with function-based conditions instead of
+  // complex condition strings
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       [this]() {
-        if(!CompositorBridge::IsKDERunning()){
+        if (!CompositorBridge::IsKDERunning()) {
           Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
         } else {
-          CompositorBridge::SendKWinZoomCommand("org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.activateLauncherMenu");
+          CompositorBridge::SendKWinZoomCommand(
+              "org.kde.plasmashell /PlasmaShell "
+              "org.kde.PlasmaShell.activateLauncherMenu");
         }
-      },                         // Tap action
-      [this]() -> bool {         // Tap condition function
+      },                 // Tap action
+      [this]() -> bool { // Tap condition function
         // Don't trigger in gaming mode
         if (getMode() == "gaming") {
-            return false;
+          return false;
         }
 
         // Don't trigger in disabled window classes
         std::string currentWindowClass = WindowManager::GetActiveWindowClass();
         std::string disabledClasses = Configs::Get().Get<std::string>(
             "General.LWinDisabledClasses",
-            "remote-viewer,virt-viewer,gnome-boxes"
-        );
+            "remote-viewer,virt-viewer,gnome-boxes");
 
         if (isWindowClassInList(currentWindowClass, disabledClasses)) {
-            return false;
+          return false;
         }
 
-        return true;  // Allow tap
+        return true; // Allow tap
       },
       [this]() { PlayPause(); }, // Combo action
-      "mode == 'gaming'",
-      false, true
-  );
+      "mode == 'gaming'", false, true);
   lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
       io, *this, "ralt",
       [this]() {
-        if(CompositorBridge::IsKDERunning()){
+        if (CompositorBridge::IsKDERunning()) {
           auto win = havel::Window(WindowManager::GetActiveWindow());
-          if(win.Pos().x < 0) {
+          if (win.Pos().x < 0) {
             io.Send("#+{Right}");
           } else {
             io.Send("#+{Left}");
@@ -580,23 +606,36 @@ void HotkeyManager::RegisterDefaultHotkeys() {
         } else {
           WindowManager::MoveWindowToNextMonitor();
         }
-      }, "", nullptr, "", false, true
-  );
+      },
+      "", nullptr, "", false, true);
   ralt->setup();
 
   // Browser navigation hotkeys
-//  io.Hotkey("@+Rshift", [this]() { io.Send("{back}"); });      // +Rshift sends browser back
-//  io.Hotkey("^RCtrl", [this]() { io.Send("{forward}"); });     
-//  io.Hotkey("#^+Rshift", [this]() { io.Send("{homepage}"); });     // #^+Rshift sends browser home
-  io.Hotkey("#b", []() { Launcher::runShell("brave --new-window"); });              // #b opens a new browser window
-  io.Hotkey("#!b", []() { Launcher::runShell("brave --new-tab"); });             // #!b opens a new browser tab
-  io.Hotkey("#c", []() { Launcher::runShell("/bin/livecaptions"); });               // #c runs /bin/livecaptions
-  io.Hotkey("#!c", []() { Launcher::runShell("~/scripts/caption.sh 9 en"); });      // #!c runs ~/scripts/caption.sh 9 en
-  io.Hotkey("#^c", []() { Launcher::runShell("~/scripts/caption.sh 3 auto"); });    // #^c runs ~/scripts/caption.sh 3 auto
-  io.Hotkey("#+c", []() { Launcher::runShell("~/scripts/mimi.sh"); });               // #+c runs ~/scripts/mimi.sh
-  io.Hotkey("^!P", [this]() {                                                        // ^!P toggles capslock
-      // Toggle capslock by sending the CapsLock key, which will toggle the state
-      io.Send("{CapsLock}");
+  //  io.Hotkey("@+Rshift", [this]() { io.Send("{back}"); });      // +Rshift
+  //  sends browser back io.Hotkey("^RCtrl", [this]() { io.Send("{forward}");
+  //  }); io.Hotkey("#^+Rshift", [this]() { io.Send("{homepage}"); });     //
+  //  #^+Rshift sends browser home
+  io.Hotkey("#b", []() {
+    Launcher::runShell("brave --new-window");
+  }); // #b opens a new browser window
+  io.Hotkey("#!b", []() {
+    Launcher::runShell("brave --new-tab");
+  }); // #!b opens a new browser tab
+  io.Hotkey("#c", []() {
+    Launcher::runShell("/bin/livecaptions");
+  }); // #c runs /bin/livecaptions
+  io.Hotkey("#!c", []() {
+    Launcher::runShell("~/scripts/caption.sh 9 en");
+  }); // #!c runs ~/scripts/caption.sh 9 en
+  io.Hotkey("#^c", []() {
+    Launcher::runShell("~/scripts/caption.sh 3 auto");
+  }); // #^c runs ~/scripts/caption.sh 3 auto
+  io.Hotkey("#+c", []() {
+    Launcher::runShell("~/scripts/mimi.sh");
+  });                         // #+c runs ~/scripts/mimi.sh
+  io.Hotkey("^!P", [this]() { // ^!P toggles capslock
+    // Toggle capslock by sending the CapsLock key, which will toggle the state
+    io.Send("{CapsLock}");
   });
 
   AddGamingHotkey(
@@ -619,6 +658,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("~Button2", [this]() {
     info("Button2");
     mouse2Pressed = true;
+  });
+
+  // Mouse forward button to reset zoom
+  io.Hotkey("@|*f13", [this]() { // When zooming
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception &e) {
+      warn("Failed to parse zoom level for @kc89: {}", e.what());
+    }
+    if (zoomLevel <= 1.0) {
+      Zoom(3);
+    } else {
+      Zoom(2);
+    }
   });
 
   io.Hotkey("@+numpad7", [this]() {
@@ -658,32 +715,36 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
   });
   // Context-sensitive hotkeys
-  AddHotkey("@kc89",
-            [this]() { // When zooming
-              try {
-                std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
-                if (!result.empty()) {
-                  zoomLevel = std::stod(result);
-                }
-              } catch (const std::exception& e) {
-                warn("Failed to parse zoom level for @kc89: {}", e.what());
-              }
-              if (zoomLevel <= 1.0) {
-                Zoom(3);
-              } else {
-                Zoom(2);
-              }
-            });
+  AddHotkey(
+      "@|kc89",
+      [this]() { // When zooming
+        try {
+          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+              "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+          if (!result.empty()) {
+            zoomLevel = std::stod(result);
+          }
+        } catch (const std::exception &e) {
+          warn("Failed to parse zoom level for @kc89: {}", e.what());
+        }
+        if (zoomLevel <= 1.0) {
+          Zoom(3);
+        } else {
+          Zoom(2);
+        }
+      });
   AddContextualHotkey(
-    "!x", "!(window.title ~ 'emacs' || window.title ~c 'alacritty')",
-    [=]() { 
-        std::string terminal = Configs::Get().Get<std::string>("General.Terminal", "st");
-                if (terminal == "alacritty") {
-                  Launcher::runShell("alacritty -e sh -c 'cd ~ && exec tmux'");
-                } else {
-                  Launcher::runShell(terminal);
-                }
-      }, nullptr, 0);
+      "!x", "!(window.title ~ 'emacs' || window.title ~c 'alacritty')",
+      [=]() {
+        std::string terminal =
+            Configs::Get().Get<std::string>("General.Terminal", "st");
+        if (terminal == "alacritty") {
+          Launcher::runShell("alacritty -e sh -c 'cd ~ && exec tmux'");
+        } else {
+          Launcher::runShell(terminal);
+        }
+      },
+      nullptr, 0);
 
   io.Hotkey("$f9", [this]() {
     info("Suspending all hotkeys");
@@ -910,134 +971,125 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     info("Current temperature: " +
          std::to_string(brightnessManager.getTemperature(1)));
   });
-  
+
   AddHotkey("~^Down", [this]() {
-    //if(zoomLevel > 1.0) zoomLevel -= 0.1;
+    // if(zoomLevel > 1.0) zoomLevel -= 0.1;
     try {
-      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
       if (!result.empty()) {
         zoomLevel = std::stod(result);
       }
-    } catch (const std::exception& e) {
-      // Handle the exception gracefully - use default zoom level or keep current
+    } catch (const std::exception &e) {
+      // Handle the exception gracefully - use default zoom level or keep
+      // current
       warn("Failed to parse zoom level for ~^Down: {}", e.what());
     }
   });
   AddHotkey("~^Up", [this]() {
-    //if(zoomLevel < 2.0) zoomLevel += 0.1;
+    // if(zoomLevel < 2.0) zoomLevel += 0.1;
     try {
-      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
       if (!result.empty()) {
         zoomLevel = std::stod(result);
       }
-    } catch (const std::exception& e) {
-      // Handle the exception gracefully - use default zoom level or keep current
+    } catch (const std::exception &e) {
+      // Handle the exception gracefully - use default zoom level or keep
+      // current
       warn("Failed to parse zoom level for ~^Up: {}", e.what());
     }
   });
   // Mouse wheel + click combinations
-  io.Hotkey("@^#WheelUp", [this]() {
-    io.Send("#{PgUp}");
-  });
-  io.Hotkey("@^#WheelDown", [this]() {
-    io.Send("#{PgDn}");
-  });
-  io.Hotkey("@#!WheelUp", [this]() {
+  io.Hotkey("@^#WheelUp", [this]() { io.Send("#{PgUp}"); });
+  io.Hotkey("@^#WheelDown", [this]() { io.Send("#{PgDn}"); });
+  /*io.Hotkey("@#!WheelUp", [this]() {
     io.Send("!{PgUp}");
   });
   io.Hotkey("@#!WheelDown", [this]() {
     io.Send("!{PgDn}");
-  });
-  io.Hotkey("@#+WheelDown", [this]() {
-    io.Send("!9");
-  });
-  io.Hotkey("@#+WheelUp", [this]() {
-    io.Send("!0");
-  });
+  });*/
+  io.Hotkey("@#+WheelDown", [this]() { io.Send("!9"); });
+  io.Hotkey("@#+WheelUp", [this]() { io.Send("!0"); });
 
-  io.Hotkey("@^!WheelDown", [this]() {
-    io.Send("!{Tab}");
+  /*io.Hotkey("@^!WheelDown", [this]() {
+    if(!altTabPressed){
+      io.Send("{LAlt:down}{Tab}");
+    } else {
+      io.Send("{Tab}");
+    }
   });
   io.Hotkey("@^!WheelUp", [this]() {
-    io.Send("!+{Tab}");
-  });
-  io.Hotkey("@^+WheelUp", [this]() {
-    brightnessManager.increaseBrightness(0.05);
-  });
-  io.Hotkey("@^+WheelDown", [this]() {
-    brightnessManager.decreaseBrightness(0.05);
-  });
-  io.Hotkey("@~!Tab", [this]() {
-    altTabPressed = true;
-  });
-  io.Hotkey("@~LAlt:up", [this]() {
-    altTabPressed = false;
-  });
-  io.Hotkey("@~RAlt:up", [this]() {
-    altTabPressed = false;
-  });
+    if(!altTabPressed){
+      io.Send("+{LAlt:down}{Tab}");
+    } else {
+      io.Send("+{Tab}");
+    }
+  });*/
+  io.Hotkey("@^+WheelUp",
+            [this]() { brightnessManager.increaseBrightness(0.05); });
+  io.Hotkey("@^+WheelDown",
+            [this]() { brightnessManager.decreaseBrightness(0.05); });
+  io.Hotkey("@~!Tab", [this]() { altTabPressed = true; });
+  io.Hotkey("@~LAlt:up", [this]() { altTabPressed = false; });
+  io.Hotkey("@~RAlt:up", [this]() { altTabPressed = false; });
   io.Hotkey("@!WheelUp", [this]() {
-    if(altTabPressed){
-      io.PressKey("Right", true);
-      io.PressKey("Right", false);
+    if (altTabPressed) {
+      io.PressKey("Tab", true);
+      io.PressKey("Tab", false);
     } else {
       Zoom(1);
     }
   });
-  io.Hotkey("@#WheelUp", [this]() {
-      Zoom(1);
-  });
-  io.Hotkey("@#WheelDown", [this]() {
-      Zoom(0);
-  });
+  io.Hotkey("@#WheelUp", [this]() { Zoom(1); });
+  io.Hotkey("@#WheelDown", [this]() { Zoom(0); });
   io.Hotkey("@!WheelDown", [this]() {
-    if(altTabPressed){
-      io.PressKey("Left", true);
-      io.PressKey("Left", false);
+    if (altTabPressed) {
+      io.PressKey("LShift", true);
+      io.PressKey("Tab", true);
+      io.PressKey("Tab", false);
+      io.PressKey("LShift", false);
     } else {
       Zoom(0);
     }
   });
-  io.Hotkey("@RShift & WheelUp", [this]() {
-    Zoom(1);
-  });
-  io.Hotkey("RShift & WheelDown", [this]() {
-    Zoom(0);
-  });
-  io.Hotkey("@LButton & RButton:", [this]() {
-    Zoom(2);
-  });
-  io.Hotkey("@RButton & LButton:", [this]() {
-    Zoom(1);
-  });
-  io.Hotkey("@RButton & WheelUp", [this]() {
-    Zoom(1);
-  });
-  io.Hotkey("@RButton & WheelDown", [this]() {
-    Zoom(0);
-  });
+  io.Hotkey("@RShift & WheelUp", [this]() { Zoom(1); });
+  io.Hotkey("RShift & WheelDown", [this]() { Zoom(0); });
+  io.Hotkey("@LButton & RButton:", [this]() { Zoom(2); });
+  io.Hotkey("@RButton & LButton:", [this]() { Zoom(1); });
+  io.Hotkey("@RButton & WheelUp", [this]() { Zoom(1); });
+  io.Hotkey("@RButton & WheelDown", [this]() { Zoom(0); });
   io.Hotkey("@~^l & g", []() { Launcher::runAsync("/usr/bin/lutris"); });
   io.Hotkey("@~^s & g", []() { Launcher::runAsync("/usr/bin/steam"); });
   io.Hotkey("@~^h & g", []() {
     Launcher::runAsync("flatpak run com.heroicgameslauncher.hgl");
   });
   io.Map("CapsLock", "LAlt");
-  io.Hotkey("@+CapsLock", [this]() {
-      io.Send("{CapsLock}");
-  });
-  io.Hotkey("@^CapsLock", [this]() {
-      io.Send("{CapsLock}");
-  });
+  io.Hotkey("@+CapsLock", [this]() { io.Send("{CapsLock}"); });
+  io.Hotkey("@^CapsLock", [this]() { io.Send("{CapsLock}"); });
+  dpi = Configs::Get().Get<int>("Mouse.DPI", 400);
   io.Hotkey("@!-", [this]() {
+    dpi -= 5;
+    Launcher::runShell("~/scripts/dpi.sh " + std::to_string(dpi));
+    info("Mouse DPI: {}", dpi); // ✅ Use format string
+    Configs::Get().Set("Mouse.DPI", dpi);
+  });
+
+  io.Hotkey("@!=", [this]() {
+    dpi += 5;
+    Launcher::runShell("~/scripts/dpi.sh " + std::to_string(dpi));
+    info("Mouse DPI: {}", dpi); // ✅ Use format string
+    Configs::Get().Set("Mouse.DPI", dpi);
+  });
+  io.Hotkey("@!#-", [this]() {
     io.mouseSensitivity -= std::max(
         0.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
     if (io.mouseSensitivity < 0)
       io.mouseSensitivity = 0;
     Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
     info("Mouse sensitivity: " + std::to_string(io.mouseSensitivity));
-    Configs::Get().Set("Mouse.Sensitivity", io.mouseSensitivity);
   });
-  io.Hotkey("@!=", [this]() {
+  io.Hotkey("@!#=", [this]() {
     io.mouseSensitivity += std::min(
         1.0, Configs::Get().Get<double>("Mouse.SensitivityIncrement", 0.02));
     if (io.mouseSensitivity > 2.0)
@@ -1112,11 +1164,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     ClipboardManager::clipboard->setText(clipboardText);
   });
   // Register screenshot hotkeys
-  io.Hotkey("@^Print", [this]() { screenshotManager.takeScreenshot(); });
+  AddHotkey("@#|Print", "~/scripts/ocrs.sh");
 
-  io.Hotkey("@Print", [this]() { screenshotManager.takeRegionScreenshot(); });
+  io.Hotkey("@^+Print", [this]() { screenshotManager.takeScreenshot(); });
 
-  io.Hotkey("@Pause",
+  io.Hotkey("@!+Print", [this]() { screenshotManager.takeRegionScreenshot(); });
+
+  io.Hotkey("@!Pause",
             [this]() { screenshotManager.takeScreenshotOfCurrentMonitor(); });
   AddHotkey("@|numpad5",
             [this]() { io.Click(MouseButton::Left, MouseAction::Hold); });
@@ -1141,9 +1195,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("@numpaddec", [this]() { io.Scroll(2, 0); });
   AddHotkey("@!numpad0", [this]() { io.Scroll(1, 0); });
 
-  AddHotkey("@+numpaddec", [this]() { io.Scroll(0, 2); });
+  AddHotkey("@+numpaddec", [this]() { io.Scroll(0, 1); });
 
-  AddHotkey("@+numpad0", [this]() { io.Scroll(0, -2); });
+  AddHotkey("@+numpad0", [this]() { io.Scroll(0, -1); });
 
   AddHotkey("@numpad1", [&]() { mouseController->move(-1, 1); });
 
@@ -1170,18 +1224,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
-  
+
   static bool keyDown = false;
-  AddGamingHotkey(
-      "@w:up",
-      [this]() {
-        keyDown = false;
-      },
-      nullptr, 0);
+  AddGamingHotkey("@w:up", [this]() { keyDown = false; }, nullptr, 0);
   AddGamingHotkey(
       "@|y",
       [this]() {
-        if(io.GetKeyState("w")) {
+        if (io.GetKeyState("w")) {
           io.Send("{w up}");
         } else {
           keyDown = !keyDown;
@@ -1236,108 +1285,115 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
   AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
                       []() { info("Enter pressed in chatterino"); });
-    AddContextualHotkey("h", "window.title ~ 'Genshin Impact'", [this]() {
-      auto winId = WindowManager::GetActiveWindow();
-      
-      // ✅ CHECK STATE FIRST
-      if (io.GetKeyState("lctrl")) {
-          // Stop mode
-          if (fTimer) {
-              TimerManager::StopTimer(fTimer);
-              fTimer = nullptr;
-          }
-          fRunning = false;
-          info("Stopped F spamming");
-          return;  // 👈 EARLY EXIT
+  AddContextualHotkey("h", "window.title ~ 'Genshin Impact'", [this]() {
+    auto winId = WindowManager::GetActiveWindow();
+
+    // ✅ CHECK STATE FIRST
+    if (io.GetKeyState("lctrl")) {
+      // Stop mode
+      if (fTimer) {
+        TimerManager::StopTimer(fTimer);
+        fTimer = nullptr;
       }
-      
-      if (fRunning) {
-          if (fTimer) {
-              TimerManager::StopTimer(fTimer);
-              fTimer = nullptr;
-          }
-          fRunning = false;
+      fRunning = false;
+      info("Stopped F spamming");
+      return; // 👈 EARLY EXIT
+    }
+
+    if (fRunning) {
+      if (fTimer) {
+        TimerManager::StopTimer(fTimer);
+        fTimer = nullptr;
       }
-      
-      // Now start
-      fRunning = true;
-      fTimer = TimerManager::SetTimer(100, [this, winId]() {
+      fRunning = false;
+    }
+
+    // Now start
+    fRunning = true;
+    fTimer = TimerManager::SetTimer(
+        100,
+        [this, winId]() {
           if (WindowManager::GetActiveWindow() != winId) {
-              info("Window changed, stopping F timer");
-              if (fTimer) {
-                  TimerManager::StopTimer(fTimer);
-                  fTimer = nullptr;
-              }
-              fRunning = false;
-              return;
+            info("Window changed, stopping F timer");
+            if (fTimer) {
+              TimerManager::StopTimer(fTimer);
+              fTimer = nullptr;
+            }
+            fRunning = false;
+            return;
           }
 
           if (io.GetKeyState("lctrl")) {
-              // Stop mode
-              if (fTimer) {
-                  TimerManager::StopTimer(fTimer);
-                  fTimer = nullptr;
-              }
-              fRunning = false;
-              info("Stopped F spamming");
-              return;  // 👈 EARLY EXIT
-          }
-          io.Send("f");
-      }, true);
-      
-      // Auto-stop after 15 seconds
-      SetTimeout(15000, [this]() {
-          if (fRunning && fTimer) {
-              info("F timer auto-stopped after 15s");
+            // Stop mode
+            if (fTimer) {
               TimerManager::StopTimer(fTimer);
               fTimer = nullptr;
-              fRunning = false;
+            }
+            fRunning = false;
+            info("Stopped F spamming");
+            return; // 👈 EARLY EXIT
           }
-      });
-      
-      info("Started F spamming");
+          io.Send("f");
+        },
+        true);
+
+    // Auto-stop after 15 seconds
+    SetTimeout(15000, [this]() {
+      if (fRunning && fTimer) {
+        info("F timer auto-stopped after 15s");
+        TimerManager::StopTimer(fTimer);
+        fTimer = nullptr;
+        fRunning = false;
+      }
+    });
+
+    info("Started F spamming");
   });
   AddContextualHotkey("~space", "window.title ~ 'Genshin Impact'", [this]() {
     // ✅ PREVENT DOUBLE-START
     if (spaceTimer) {
-        info("Space timer already running");
-        return;
+      info("Space timer already running");
+      return;
     }
-    
+
     info("Space pressed - starting spam");
     io.Send("{space:up}");
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // 100ms delay to ensure the keyup is registered
-    if(!io.GetKeyState("space")) {
-        info("Space key is not physically held down, aborting spam");
-        return;
+    std::this_thread::sleep_for(std::chrono::milliseconds(
+        100)); // 100ms delay to ensure the keyup is registered
+    if (!io.GetKeyState("space")) {
+      info("Space key is not physically held down, aborting spam");
+      return;
     }
     io.DisableHotkey("~space");
-    
+
     auto winId = WindowManager::GetActiveWindow();
-    spaceTimer = TimerManager::SetTimer(100, [this, winId]() {
-        if (WindowManager::GetActiveWindow() != winId) {
+    spaceTimer = TimerManager::SetTimer(
+        100,
+        [this, winId]() {
+          if (WindowManager::GetActiveWindow() != winId) {
             info("Window changed, stopping space timer");
             if (spaceTimer) {
-                TimerManager::StopTimer(spaceTimer);
-                spaceTimer = nullptr;
+              TimerManager::StopTimer(spaceTimer);
+              spaceTimer = nullptr;
             }
             // ✅ RE-ENABLE THE HOTKEY
             io.EnableHotkey("~space");
             return;
-        }
-        io.Send("{space}");
-    }, true);
-});
+          }
+          io.Send("{space}");
+        },
+        true);
+  });
 
-AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
+  AddContextualHotkey("~space:up", "window.title ~ 'Genshin Impact'", [this]() {
     info("Space released - stopping spam");
     if (spaceTimer) {
-        TimerManager::StopTimer(spaceTimer);
-        spaceTimer = nullptr;
+      TimerManager::StopTimer(spaceTimer);
+      spaceTimer = nullptr;
     }
     io.Send("{space:up}");
     io.EnableHotkey("~space");
-});
+  });
   AddContextualHotkey(
       "enter", "window.title ~ 'Genshin Impact'",
       [this]() {
@@ -1738,7 +1794,8 @@ void HotkeyManager::updateAllConditionalHotkeys() {
   bool shouldChangeMode = false;
   std::string newMode;
   auto lastSwitch = lastModeSwitch.load();
-  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch)
+          .count() >= MODE_SWITCH_DEBOUNCE_MS) {
     if (gamingWindowActive && currentActiveMode != "gaming") {
       newMode = "gaming";
       shouldChangeMode = true;
@@ -1783,7 +1840,8 @@ void HotkeyManager::forceUpdateAllConditionalHotkeys() {
   std::string logMessage;
   auto now = std::chrono::steady_clock::now();
   auto lastSwitch = lastModeSwitch.load();
-  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch).count() >= MODE_SWITCH_DEBOUNCE_MS) {
+  if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastSwitch)
+          .count() >= MODE_SWITCH_DEBOUNCE_MS) {
     // Update mode if needed
     if (gamingWindowActive && currentActiveMode != "gaming") {
       newMode = "gaming";
@@ -1834,7 +1892,8 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
   // Force update
   forceUpdateAllConditionalHotkeys();
 
-  // Resume update loop after a delay to avoid redundant checks using condition variable
+  // Resume update loop after a delay to avoid redundant checks using condition
+  // variable
   std::thread([this]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -1842,7 +1901,7 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
       std::lock_guard<std::mutex> lock(updateLoopMutex);
       updateLoopPaused.store(false);
     }
-    updateLoopCv.notify_one();  // Wake up the update loop
+    updateLoopCv.notify_one(); // Wake up the update loop
   }).detach();
 }
 
@@ -1958,7 +2017,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
 
   std::vector<int> toGrab;
   std::vector<int> toUngrab;
-  std::vector<ConditionalHotkey*> updatedHotkeys;
+  std::vector<ConditionalHotkey *> updatedHotkeys;
 
   // First pass: determine what needs to change and collect hotkeys to update
   {
@@ -1972,43 +2031,43 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     }
 
     while (!localQueue.empty()) {
-        int id = localQueue.front();
-        localQueue.pop();
+      int id = localQueue.front();
+      localQueue.pop();
 
-        for (auto& ch : conditionalHotkeys) {
-            if (ch.id == id) {
-                updatedHotkeys.push_back(&ch);
-                break;
-            }
+      for (auto &ch : conditionalHotkeys) {
+        if (ch.id == id) {
+          updatedHotkeys.push_back(&ch);
+          break;
         }
+      }
     }
 
     // Process all conditional hotkeys that need evaluation
-    for (auto& ch : conditionalHotkeys) {
-        // If it's not in our update list and doesn't depend on mode, skip it
-        bool needsUpdate = false;
-        for (auto* hotkey : updatedHotkeys) {
-            if (hotkey->id == ch.id) {
-                needsUpdate = true;
-                break;
-            }
+    for (auto &ch : conditionalHotkeys) {
+      // If it's not in our update list and doesn't depend on mode, skip it
+      bool needsUpdate = false;
+      for (auto *hotkey : updatedHotkeys) {
+        if (hotkey->id == ch.id) {
+          needsUpdate = true;
+          break;
         }
+      }
 
-        // Always add hotkeys that have "mode" in their condition to be updated
-        if (!needsUpdate && ch.condition.find("mode") != std::string::npos) {
-            needsUpdate = true;
-            updatedHotkeys.push_back(&ch);
+      // Always add hotkeys that have "mode" in their condition to be updated
+      if (!needsUpdate && ch.condition.find("mode") != std::string::npos) {
+        needsUpdate = true;
+        updatedHotkeys.push_back(&ch);
+      }
+
+      if (needsUpdate) {
+        bool shouldGrab = evaluateCondition(ch.condition);
+
+        if (shouldGrab && !ch.currentlyGrabbed) {
+          toGrab.push_back(ch.id);
+        } else if (!shouldGrab && ch.currentlyGrabbed) {
+          toUngrab.push_back(ch.id);
         }
-
-        if (needsUpdate) {
-            bool shouldGrab = evaluateCondition(ch.condition);
-
-            if (shouldGrab && !ch.currentlyGrabbed) {
-                toGrab.push_back(ch.id);
-            } else if (!shouldGrab && ch.currentlyGrabbed) {
-                toUngrab.push_back(ch.id);
-            }
-        }
+      }
     }
   }
 
@@ -2026,7 +2085,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
 
     for (int id : toUngrab) {
-      for (auto& ch : conditionalHotkeys) {
+      for (auto &ch : conditionalHotkeys) {
         if (ch.id == id) {
           ch.currentlyGrabbed = false;
           ch.lastConditionResult = false;
@@ -2036,7 +2095,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     }
 
     for (int id : toGrab) {
-      for (auto& ch : conditionalHotkeys) {
+      for (auto &ch : conditionalHotkeys) {
         if (ch.id == id) {
           ch.currentlyGrabbed = true;
           ch.lastConditionResult = true;
@@ -2048,17 +2107,17 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
 
   if (!toGrab.empty() || !toUngrab.empty()) {
     if (verboseConditionLogging) {
-      debug("Batch hotkey update: grabbed={}, ungrabbed={}",
-            toGrab.size(), toUngrab.size());
+      debug("Batch hotkey update: grabbed={}, ungrabbed={}", toGrab.size(),
+            toUngrab.size());
     } else {
-      info("Batch hotkey update: grabbed={}, ungrabbed={}",
-           toGrab.size(), toUngrab.size());
+      info("Batch hotkey update: grabbed={}, ungrabbed={}", toGrab.size(),
+           toUngrab.size());
     }
   }
 }
 
-ConditionalHotkey* HotkeyManager::findConditionalHotkey(int id) {
-  for (auto& ch : conditionalHotkeys) {
+ConditionalHotkey *HotkeyManager::findConditionalHotkey(int id) {
+  for (auto &ch : conditionalHotkeys) {
     if (ch.id == id) {
       return &ch;
     }
@@ -2112,10 +2171,9 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   conditionalHotkeyIds.push_back(id);
   // Register but don't grab yet
   io.Hotkey(key, action, condition, id);
-  
+
   // Initial evaluation and grab if needed
   updateConditionalHotkey(conditionalHotkeys.back());
-
 
   return id;
 }
@@ -2228,130 +2286,132 @@ void HotkeyManager::showNotification(const std::string &title,
 }
 
 bool HotkeyManager::IsGamingProcess(pid_t pid) {
-    // Check for Steam game ID
-    std::string steamGameId = ProcessManager::getProcessEnvironment(static_cast<int32_t>(pid), "SteamGameId");
-    if (!steamGameId.empty()) {
-        debug("Active process is Steam game: {}", steamGameId);
-        return true;
+  // Check for Steam game ID
+  std::string steamGameId = ProcessManager::getProcessEnvironment(
+      static_cast<int32_t>(pid), "SteamGameId");
+  if (!steamGameId.empty()) {
+    debug("Active process is Steam game: {}", steamGameId);
+    return true;
+  }
+
+  // Check process name/path
+  std::string exe =
+      ProcessManager::getProcessExecutablePath(static_cast<int32_t>(pid));
+  std::string name = ProcessManager::getProcessName(static_cast<int32_t>(pid));
+
+  // Gaming process whitelist
+  static const std::vector<std::string> gamingProcesses = {
+      "steam_app_", // Steam games
+      "wine",       // Wine games
+      "proton",     // Proton games
+      "lutris",     // Lutris
+      "gamemode",   // GameMode wrapper
+      "minecraft",  "factorio",
+      "java", // Many games use Java (check carefully)
+  };
+
+  for (const auto &pattern : gamingProcesses) {
+    if (exe.find(pattern) != std::string::npos ||
+        name.find(pattern) != std::string::npos) {
+      debug("Gaming process detected: {} (exe: {})", name, exe);
+      return true;
     }
+  }
 
-    // Check process name/path
-    std::string exe = ProcessManager::getProcessExecutablePath(static_cast<int32_t>(pid));
-    std::string name = ProcessManager::getProcessName(static_cast<int32_t>(pid));
-
-    // Gaming process whitelist
-    static const std::vector<std::string> gamingProcesses = {
-        "steam_app_",     // Steam games
-        "wine",           // Wine games
-        "proton",         // Proton games
-        "lutris",         // Lutris
-        "gamemode",       // GameMode wrapper
-        "minecraft",
-        "factorio",
-        "java",           // Many games use Java (check carefully)
-    };
-
-    for (const auto& pattern : gamingProcesses) {
-        if (exe.find(pattern) != std::string::npos ||
-            name.find(pattern) != std::string::npos) {
-            debug("Gaming process detected: {} (exe: {})", name, exe);
-            return true;
-        }
-    }
-
-    return false;
+  return false;
 }
 
 bool HotkeyManager::isGamingWindow() {
-    // Method 1: Compositor bridge (Wayland with KWin/wlroots)
-    auto* bridge = WindowManager::GetCompositorBridge();
-    if (bridge && bridge->IsAvailable()) {
-        auto windowInfo = bridge->GetActiveWindow();
-        if (windowInfo.valid) {
-            // Check window title
-            std::string title = ToLower(windowInfo.title);
-            static const std::vector<std::string> gameTitlePatterns = {
-                "steam", "game", "dota", "counter-strike", "minecraft",
-                "factorio", "terraria", "rimworld", "stardew"
-            };
+  // Method 1: Compositor bridge (Wayland with KWin/wlroots)
+  auto *bridge = WindowManager::GetCompositorBridge();
+  if (bridge && bridge->IsAvailable()) {
+    auto windowInfo = bridge->GetActiveWindow();
+    if (windowInfo.valid) {
+      // Check window title
+      std::string title = ToLower(windowInfo.title);
+      static const std::vector<std::string> gameTitlePatterns = {
+          "steam",    "game",     "dota",     "counter-strike", "minecraft",
+          "factorio", "terraria", "rimworld", "stardew"};
 
-            for (const auto& pattern : gameTitlePatterns) {
-                if (title.find(pattern) != std::string::npos) {
-                    debug("Gaming window detected via title: {}", windowInfo.title);
-                    return true;
-                }
-            }
-
-            // Check app ID
-            std::string appId = ToLower(windowInfo.appId);
-            static const std::vector<std::string> gameAppIdPatterns = {
-                "steam_app", "lutris", "wine", "proton"
-            };
-
-            for (const auto& pattern : gameAppIdPatterns) {
-                if (appId.find(pattern) != std::string::npos) {
-                    debug("Gaming window detected via appId: {}", windowInfo.appId);
-                    return true;
-                }
-            }
-
-            // Fall through to PID check with compositor-provided PID
-            if (windowInfo.pid != 0) {
-                if (HotkeyManager::IsGamingProcess(windowInfo.pid)) {
-                    return true;
-                }
-            }
+      for (const auto &pattern : gameTitlePatterns) {
+        if (title.find(pattern) != std::string::npos) {
+          debug("Gaming window detected via title: {}", windowInfo.title);
+          return true;
         }
-    }
+      }
 
-    // Method 2: X11 window class/title detection fallback
-    std::string windowClass = WindowManager::GetActiveWindowClass();
-    std::string windowTitle = WindowManager::GetActiveWindowTitle();
+      // Check app ID
+      std::string appId = ToLower(windowInfo.appId);
+      static const std::vector<std::string> gameAppIdPatterns = {
+          "steam_app", "lutris", "wine", "proton"};
 
-    std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(),
-                   ::tolower);
-    std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(),
-                   ::tolower);
-
-    // Check for excluded classes first
-    const std::vector<std::string> gamingAppsExclude = Configs::Get().GetGamingAppsExclude();
-    for (const auto &app : gamingAppsExclude) {
-        if (windowClass.find(app) != std::string::npos) {
-            return false; // Explicitly excluded by class
+      for (const auto &pattern : gameAppIdPatterns) {
+        if (appId.find(pattern) != std::string::npos) {
+          debug("Gaming window detected via appId: {}", windowInfo.appId);
+          return true;
         }
-    }
+      }
 
-    // Check for excluded titles
-    const std::vector<std::string> gamingAppsExcludeTitle = Configs::Get().GetGamingAppsExcludeTitle();
-    for (const auto &app : gamingAppsExcludeTitle) {
-        if (windowTitle.find(app) != std::string::npos) {
-            return false; // Explicitly excluded by title
+      // Fall through to PID check with compositor-provided PID
+      if (windowInfo.pid != 0) {
+        if (HotkeyManager::IsGamingProcess(windowInfo.pid)) {
+          return true;
         }
+      }
     }
+  }
 
-    // Check for specifically included titles
-    const std::vector<std::string> gamingAppsTitle = Configs::Get().GetGamingAppsTitle();
-    for (const auto &app : gamingAppsTitle) {
-        if (windowTitle.find(app) != std::string::npos) {
-            return true; // Explicitly included by title
-        }
+  // Method 2: X11 window class/title detection fallback
+  std::string windowClass = WindowManager::GetActiveWindowClass();
+  std::string windowTitle = WindowManager::GetActiveWindowTitle();
+
+  std::transform(windowClass.begin(), windowClass.end(), windowClass.begin(),
+                 ::tolower);
+  std::transform(windowTitle.begin(), windowTitle.end(), windowTitle.begin(),
+                 ::tolower);
+
+  // Check for excluded classes first
+  const std::vector<std::string> gamingAppsExclude =
+      Configs::Get().GetGamingAppsExclude();
+  for (const auto &app : gamingAppsExclude) {
+    if (windowClass.find(app) != std::string::npos) {
+      return false; // Explicitly excluded by class
     }
+  }
 
-    // Finally check for regular gaming apps by class
-    const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
-    for (const auto &app : gamingApps) {
-        if (windowClass.find(app) != std::string::npos) {
-            return true;
-        }
+  // Check for excluded titles
+  const std::vector<std::string> gamingAppsExcludeTitle =
+      Configs::Get().GetGamingAppsExcludeTitle();
+  for (const auto &app : gamingAppsExcludeTitle) {
+    if (windowTitle.find(app) != std::string::npos) {
+      return false; // Explicitly excluded by title
     }
+  }
 
-    // Method 3: PID-based gaming process detection (universal fallback)
-    pid_t activePid = WindowManager::GetActiveWindowPID();
-    if (activePid != 0) {
-        return HotkeyManager::IsGamingProcess(activePid);
+  // Check for specifically included titles
+  const std::vector<std::string> gamingAppsTitle =
+      Configs::Get().GetGamingAppsTitle();
+  for (const auto &app : gamingAppsTitle) {
+    if (windowTitle.find(app) != std::string::npos) {
+      return true; // Explicitly included by title
     }
+  }
 
-    return false;
+  // Finally check for regular gaming apps by class
+  const std::vector<std::string> gamingApps = Configs::Get().GetGamingApps();
+  for (const auto &app : gamingApps) {
+    if (windowClass.find(app) != std::string::npos) {
+      return true;
+    }
+  }
+
+  // Method 3: PID-based gaming process detection (universal fallback)
+  pid_t activePid = WindowManager::GetActiveWindowPID();
+  if (activePid != 0) {
+    return HotkeyManager::IsGamingProcess(activePid);
+  }
+
+  return false;
 }
 void HotkeyManager::startAutoclicker(const std::string &button) {
   // Stop if already running
@@ -2740,7 +2800,7 @@ void HotkeyManager::setMode(const std::string &newMode) {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
 
     // Only update hotkeys that actually depend on mode
-    for (auto& ch : conditionalHotkeys) {
+    for (auto &ch : conditionalHotkeys) {
       if (ch.condition.find("mode") != std::string::npos) {
         // Add to deferred update queue instead of immediate update
         std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
@@ -2805,11 +2865,8 @@ void HotkeyManager::printCacheStats() {
     }
   }
 
-  info("Cache stats: {} fresh, {} expired ({}% hit rate)",
-       cacheSize - expired, expired,
-       cacheSize > 0
-           ? (100 * (cacheSize - expired) / cacheSize)
-           : 0);
+  info("Cache stats: {} fresh, {} expired ({}% hit rate)", cacheSize - expired,
+       expired, cacheSize > 0 ? (100 * (cacheSize - expired) / cacheSize) : 0);
 }
 
 void HotkeyManager::toggleFakeDesktopOverlay() {
@@ -3225,13 +3282,15 @@ void HotkeyManager::cleanup() {
   // Clean up other resources
   stopAllAutoclickers();
 
-  // Safely set mode to default by just setting it directly without complex updates
+  // Safely set mode to default by just setting it directly without complex
+  // updates
   {
     std::lock_guard<std::mutex> lock(modeMutex);
     currentMode = "default";
   }
 
-  // Clear caches separately to avoid locking both mutexes at once for long periods
+  // Clear caches separately to avoid locking both mutexes at once for long
+  // periods
   {
     std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
     conditionCache.clear();
@@ -3290,8 +3349,8 @@ void HotkeyManager::UpdateLoop() {
     return; // Don't start update loop if cleaning up
   }
 
-  const auto updateInterval =
-      std::chrono::milliseconds(2); // 500 updates per second for responsive hotkey handling
+  const auto updateInterval = std::chrono::milliseconds(
+      2); // 500 updates per second for responsive hotkey handling
 
   while (updateLoopRunning && !inCleanupMode.load()) {
     auto startTime = std::chrono::steady_clock::now();
@@ -3305,7 +3364,7 @@ void HotkeyManager::UpdateLoop() {
         });
 
         if (!updateLoopRunning.load()) {
-          break;  // Exit if we're shutting down
+          break; // Exit if we're shutting down
         }
       }
 
@@ -3313,12 +3372,13 @@ void HotkeyManager::UpdateLoop() {
       if (!updateLoopPaused.load()) {
         auto now = std::chrono::steady_clock::now();
 
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now -
-                                                                  lastConditionCheck)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - lastConditionCheck)
                 .count() >= CONDITION_CHECK_INTERVAL_MS) {
-          // Only check conditions without mode switching and without interval restriction
+          // Only check conditions without mode switching and without interval
+          // restriction
           batchUpdateConditionalHotkeys();
-          lastConditionCheck = now;  // Update the timestamp
+          lastConditionCheck = now; // Update the timestamp
         }
       }
 
@@ -3342,8 +3402,9 @@ void HotkeyManager::UpdateLoop() {
 
       if (elapsed < updateInterval) {
         std::unique_lock<std::mutex> lock(updateLoopMutex);
-        updateLoopCv.wait_for(lock, updateInterval - elapsed,
-                              [this] { return !updateLoopRunning || updateLoopPaused.load(); });
+        updateLoopCv.wait_for(lock, updateInterval - elapsed, [this] {
+          return !updateLoopRunning || updateLoopPaused.load();
+        });
       }
     }
   }
@@ -3423,60 +3484,59 @@ void HotkeyManager::WatchdogLoop() {
 
     auto now = std::chrono::steady_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
-        now - lastInputTime.load()
-    );
+        now - lastInputTime.load());
 
     if (elapsed.count() > inputFreezeTimeoutSeconds) {
-        error("INPUT FREEZE DETECTED! No input for {} seconds (threshold: {}s)",
-              elapsed.count(), inputFreezeTimeoutSeconds);
+      error("INPUT FREEZE DETECTED! No input for {} seconds (threshold: {}s)",
+            elapsed.count(), inputFreezeTimeoutSeconds);
 
-        // Try non-blocking restart in a separate thread to avoid watchdog blocking
-        std::thread([this]() {
-            error("Emergency restart of input system...");
+      // Try non-blocking restart in a separate thread to avoid watchdog
+      // blocking
+      std::thread([this]() {
+        error("Emergency restart of input system...");
 
-            try {
-                auto* listener = io.GetEventListener();
-                if (!listener) {
-                    error("EventListener not available");
-                    return;
-                }
+        try {
+          auto *listener = io.GetEventListener();
+          if (!listener) {
+            error("EventListener not available");
+            return;
+          }
 
-                // Stop first
-                listener->Stop();
+          // Stop first
+          listener->Stop();
 
-                // Get devices (cached, no locks)
-                std::vector<std::string> devices = io.GetInputDevices();
+          // Get devices (cached, no locks)
+          std::vector<std::string> devices = io.GetInputDevices();
 
-                if (devices.empty()) {
-                    error("No input devices found");
-                    return;
-                }
+          if (devices.empty()) {
+            error("No input devices found");
+            return;
+          }
 
-                // Restart
-                listener->Start(devices, true);
+          // Restart
+          listener->Start(devices, true);
 
-                // Re-establish callback
-                if (io.IsUsingNewEventListener()) {
-                    listener->inputNotificationCallback = [this]() {
-                        NotifyInputReceived();
-                    };
-                }
+          // Re-establish callback
+          if (io.IsUsingNewEventListener()) {
+            listener->inputNotificationCallback = [this]() {
+              NotifyInputReceived();
+            };
+          }
 
-                info("EventListener restarted successfully");
+          info("EventListener restarted successfully");
 
-            } catch (const std::exception& e) {
-                error("Failed to restart EventListener: {}", e.what());
-            }
-        }).detach();  // Detach to avoid blocking watchdog
+        } catch (const std::exception &e) {
+          error("Failed to restart EventListener: {}", e.what());
+        }
+      }).detach(); // Detach to avoid blocking watchdog
 
-        lastInputTime.store(now);
+      lastInputTime.store(now);
     }
 
-    // Use a reasonable sleep interval based on the timeout, but don't make it too long
-    // to allow for responsive timeout changes
+    // Use a reasonable sleep interval based on the timeout, but don't make it
+    // too long to allow for responsive timeout changes
     std::this_thread::sleep_for(std::chrono::seconds(
-        std::min(5, std::max(1, inputFreezeTimeoutSeconds / 10))
-    ));
+        std::min(5, std::max(1, inputFreezeTimeoutSeconds / 10))));
   }
 }
 
@@ -3494,7 +3554,8 @@ void HotkeyManager::applyDebugSettings() {
   }
 
   // Load initial timeout value
-  inputFreezeTimeoutSeconds = Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
+  inputFreezeTimeoutSeconds =
+      Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
 
   Configs::Get().Watch<bool>(
       "Debug.VerboseKeyLogging", [this](bool oldValue, bool newValue) {
@@ -3518,14 +3579,15 @@ void HotkeyManager::applyDebugSettings() {
       });
 
   // Watch for changes to the freeze timeout configuration
-  Configs::Get().Watch<int>(
-      "Input.FreezeTimeoutSeconds", [this](int oldValue, int newValue) {
-        info("Input freeze timeout changed from {}s to {}s", oldValue, newValue);
-        inputFreezeTimeoutSeconds = newValue;
-      });
+  Configs::Get().Watch<int>("Input.FreezeTimeoutSeconds", [this](int oldValue,
+                                                                 int newValue) {
+    info("Input freeze timeout changed from {}s to {}s", oldValue, newValue);
+    inputFreezeTimeoutSeconds = newValue;
+  });
 }
 
-bool HotkeyManager::isWindowClassInList(const std::string& windowClass, const std::string& classList) {
+bool HotkeyManager::isWindowClassInList(const std::string &windowClass,
+                                        const std::string &classList) {
   if (classList.empty()) {
     return false;
   }
@@ -3534,16 +3596,16 @@ bool HotkeyManager::isWindowClassInList(const std::string& windowClass, const st
   size_t start = 0;
   size_t end = classList.find(',');
   while (end != std::string::npos) {
-      std::string cls = classList.substr(start, end - start);
-      // Remove leading/trailing spaces
-      cls.erase(0, cls.find_first_not_of(" \t"));
-      cls.erase(cls.find_last_not_of(" \t") + 1);
+    std::string cls = classList.substr(start, end - start);
+    // Remove leading/trailing spaces
+    cls.erase(0, cls.find_first_not_of(" \t"));
+    cls.erase(cls.find_last_not_of(" \t") + 1);
 
-      if (!cls.empty() && windowClass.find(cls) != std::string::npos) {
-          return true;
-      }
-      start = end + 1;
-      end = classList.find(',', start);
+    if (!cls.empty() && windowClass.find(cls) != std::string::npos) {
+      return true;
+    }
+    start = end + 1;
+    end = classList.find(',', start);
   }
   // Check the last part
   std::string cls = classList.substr(start);
@@ -3551,7 +3613,7 @@ bool HotkeyManager::isWindowClassInList(const std::string& windowClass, const st
   cls.erase(cls.find_last_not_of(" \t") + 1);
 
   if (!cls.empty() && windowClass.find(cls) != std::string::npos) {
-      return true;
+    return true;
   }
 
   return false;

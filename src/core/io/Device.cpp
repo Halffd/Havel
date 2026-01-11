@@ -175,6 +175,8 @@ DeviceCapabilities Device::analyzeCapabilities() {
     if (hasKey(BTN_MIDDLE)) caps.mouseButtons++;
     if (hasKey(BTN_SIDE)) caps.mouseButtons++;
     if (hasKey(BTN_EXTRA)) caps.mouseButtons++;
+    if (hasKey(BTN_FORWARD)) caps.mouseButtons++;
+    if (hasKey(BTN_BACK)) caps.mouseButtons++;
     
     // Count gamepad buttons
     caps.gamepadButtons = countKeysInRange(BTN_GAMEPAD, BTN_GAMEPAD + 16);
@@ -274,7 +276,23 @@ DeviceType Device::detectType() {
         classificationReason = "Has letters, numbers, modifiers, and essential keys";
         return DeviceType::Keyboard;
     }
-    
+
+    // Try auxiliary keyboard detection (function keys only, macro keys, etc.)
+    bool isAuxKeyboard =
+        hasEventType(EV_KEY) &&
+        caps.totalKeys >= 3 &&
+        caps.totalKeys <= 40 &&
+        caps.letterKeys == 0 &&
+        caps.numberKeys == 0 &&
+        !caps.hasMovement &&
+        caps.mouseButtons == 0;
+
+    if (isAuxKeyboard) {
+        confidence = 0.85;
+        classificationReason = "Key-only auxiliary keyboard (F13+ / macro keys)";
+        return DeviceType::Keyboard; // Use Keyboard type to ensure it gets opened
+    }
+
     // Try mouse detection
     if (isRealMouse()) {
         confidence = 0.9;

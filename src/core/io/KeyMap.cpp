@@ -590,6 +590,14 @@ void KeyMap::Initialize() {
     AddAlias("side1", "xbutton1");
     AddKey("xbutton2", BTN_EXTRA, Button5, 0);
     AddAlias("side2", "xbutton2");
+    AddKey("xbutton3", BTN_FORWARD, 7, 0);
+    AddAlias("side3", "xbutton3");
+    AddAlias("buttonforward", "xbutton3");
+    AddAlias("mouse5", "xbutton3");
+    AddKey("xbutton4", BTN_BACK, 6, 0);
+    AddAlias("side4", "xbutton4");
+    AddAlias("mouse4", "xbutton4");
+    AddAlias("button4", "xbutton4");
     
     // Mouse wheel (special handling, no direct evdev code)
     AddKey("wheelup", 0, Button4, 0);

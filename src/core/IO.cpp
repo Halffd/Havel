@@ -379,19 +379,32 @@ IO::IO() {
       info("Using new unified EventListener");
 
       std::vector<std::string> devices;
-      std::string keyboardDevice = getKeyboardDevice();
+
+      // Get all keyboard devices (including auxiliary keyboards)
+      auto keyboardDevices = Device::findKeyboards();
+      for (const auto& kb : keyboardDevices) {
+        devices.push_back(kb.eventPath);
+        info("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)",
+             kb.name, kb.eventPath, kb.confidence * 100);
+      }
+
       std::string mouseDevice = getMouseDevice();
       std::string gamepadDevice;
 
-      if (!keyboardDevice.empty()) {
-        devices.push_back(keyboardDevice);
-        info("Adding keyboard device: {}", keyboardDevice);
-      }
-
-      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
+      if (!mouseDevice.empty() &&
           !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        devices.push_back(mouseDevice);
-        info("Adding mouse device: {}", mouseDevice);
+        // Only add mouse device if it's not already in the keyboard devices list
+        bool alreadyAdded = false;
+        for (const auto& kb_device : keyboardDevices) {
+          if (kb_device.eventPath == mouseDevice) {
+            alreadyAdded = true;
+            break;
+          }
+        }
+        if (!alreadyAdded) {
+          devices.push_back(mouseDevice);
+          info("Adding mouse device: {}", mouseDevice);
+        }
       }
 
       bool enableGamepad =
@@ -586,6 +599,8 @@ bool IO::SetupUinputDevice() {
   ioctl(uinputFd, UI_SET_KEYBIT, BTN_RIGHT);
   ioctl(uinputFd, UI_SET_KEYBIT, BTN_SIDE);
   ioctl(uinputFd, UI_SET_KEYBIT, BTN_EXTRA);
+  ioctl(uinputFd, UI_SET_KEYBIT, BTN_FORWARD);
+  ioctl(uinputFd, UI_SET_KEYBIT, BTN_BACK);
   ioctl(uinputFd, UI_SET_EVBIT, EV_REL);
   ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL);
   ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL);
@@ -1770,6 +1785,7 @@ bool IO::Suspend() {
       if (hotkeyManager) {
         // Restore conditional hotkeys to their original state before suspension
         if (!suspendedConditionalHotkeyStates.empty()) {
+          std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
           // Restore to the original state before suspension
           for (const auto& state : suspendedConditionalHotkeyStates) {
             auto& ch = hotkeyManager->conditionalHotkeys;
@@ -1811,18 +1827,19 @@ bool IO::Suspend() {
       }
 
       if (hotkeyManager) {
-        // Track the original state of conditional hotkeys before suspension
+        // Track the original state of conditional hotkeys before suspension and update their states
+        std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
-        for (const auto& ch : hotkeyManager->conditionalHotkeys) {
+        for (auto& ch : hotkeyManager->conditionalHotkeys) {
           ConditionalHotkeyState state;
           state.id = ch.id;
           state.wasGrabbed = ch.currentlyGrabbed;
           suspendedConditionalHotkeyStates.push_back(state);
 
-          // Ungrab during suspension
+          // Ungrab during suspension and update the state
           if (ch.currentlyGrabbed) {
             UngrabHotkey(ch.id);
-            // Note: We don't change ch.currentlyGrabbed here because we want to remember the original state
+            ch.currentlyGrabbed = false;
           }
         }
       }
@@ -4873,6 +4890,12 @@ bool IO::handleMouseButton(const input_event &ev) {
     case BTN_EXTRA:
       isButtonMatch = (hotkey.mouseButton == BTN_EXTRA);
       break;
+    case BTN_FORWARD:
+      isButtonMatch = (hotkey.mouseButton == BTN_FORWARD);
+      break;
+    case BTN_BACK:
+      isButtonMatch = (hotkey.mouseButton == BTN_BACK);
+      break;
     }
 
     if (isButtonMatch &&
@@ -4959,6 +4982,28 @@ bool IO::handleMouseButton(const input_event &ev) {
       evdevMouseButtonState[BTN_EXTRA] = false;
       std::lock_guard<std::mutex> lk(activeInputsMutex);
       activeInputs.erase(BTN_EXTRA);
+    }
+    break;
+  case BTN_FORWARD:
+    if (ev.value == 1) {
+      evdevMouseButtonState[BTN_FORWARD] = true;
+      std::lock_guard<std::mutex> lk(activeInputsMutex);
+      activeInputs[BTN_FORWARD] = now;
+    } else if (ev.value == 0) {
+      evdevMouseButtonState[BTN_FORWARD] = false;
+      std::lock_guard<std::mutex> lk(activeInputsMutex);
+      activeInputs.erase(BTN_FORWARD);
+    }
+    break;
+  case BTN_BACK:
+    if (ev.value == 1) {
+      evdevMouseButtonState[BTN_BACK] = true;
+      std::lock_guard<std::mutex> lk(activeInputsMutex);
+      activeInputs[BTN_BACK] = now;
+    } else if (ev.value == 0) {
+      evdevMouseButtonState[BTN_BACK] = false;
+      std::lock_guard<std::mutex> lk(activeInputsMutex);
+      activeInputs.erase(BTN_BACK);
     }
     break;
   }
@@ -5220,6 +5265,8 @@ bool havel::IO::SetupMouseUinputDevice() {
   ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_MIDDLE);
   ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_SIDE);
   ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_EXTRA);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_FORWARD);
+  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_BACK);
 
   // Enable mouse movement and scroll
   ioctl(mouseUinputFd, UI_SET_RELBIT, REL_X);

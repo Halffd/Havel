@@ -72,7 +72,8 @@ public:
 
   int speed = 5;
   float acc = 1.0f;
-
+  int dpi = 400;
+  
   bool evaluateCondition(const std::string &condition);
 
   std::unique_ptr<ConditionEngine> conditionEngine;
@@ -404,6 +405,9 @@ public:
   bool getCurrentGamingWindowStatus() const;
   void reevaluateConditionalHotkeys(IO& io);
   void reevaluateConditionalHotkeysInstance(IO& io); // For use with shared_ptr
+
+  // Mutex access for IO operations
+  std::mutex& getHotkeyMutex() { return hotkeyMutex; }
 
 private:
   // Store IDs of MPV hotkeys for grab/ungrab

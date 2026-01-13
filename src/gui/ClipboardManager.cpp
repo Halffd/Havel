@@ -37,6 +37,7 @@
 
 namespace havel {
     QClipboard* ClipboardManager::clipboard = nullptr;
+
 // File system operations
 QString ClipboardManager::getHistoryBasePath() const {
     return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/clipboard_history";
@@ -477,6 +478,7 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     hide();
 }
 
+
 void ClipboardManager::setupFonts() {
     // Get system default font
     QFont appFont = QApplication::font();
@@ -703,14 +705,14 @@ void ClipboardManager::setupUI() {
     setStyleSheet(styleSheet);
 
     QVBoxLayout* mainLayout = new QVBoxLayout(centralWidget);
-    mainLayout->setContentsMargins(8, 8, 8, 8);
-    mainLayout->setSpacing(8);
+    mainLayout->setContentsMargins(2, 2, 2, 2);  // Reduced margins
+    mainLayout->setSpacing(2);                   // Reduced spacing
     mainLayout->setAlignment(Qt::AlignTop);
 
     using namespace UIConfig;
-    
-    // Set up application font
-    QFont appFont(FONT_FAMILY, BASE_FONT_SIZE);
+
+    // Set up application font with configurable size
+    QFont appFont(FONT_FAMILY, fontSize);  // Use configurable font size instead of BASE_FONT_SIZE
     appFont.setStyleHint(QFont::SansSerif);
     qApp->setFont(appFont);
     setFont(appFont);
@@ -740,9 +742,11 @@ void ClipboardManager::setupUI() {
     // Search box with improved styling
     searchBox = new QLineEdit(this);
     searchBox->setPlaceholderText("Search clipboard history...");
-    searchBox->setFont(appFont);
+    QFont searchFont = appFont;
+    searchFont.setPointSize(fontSize + 2);  // Slightly larger font for search
+    searchBox->setFont(searchFont);
     searchBox->setClearButtonEnabled(true);
-    searchBox->setMinimumHeight(ITEM_HEIGHT + 8);
+    searchBox->setMinimumHeight(ITEM_HEIGHT + 12);  // Increased height
     searchBox->setStyleSheet(QString(
         "QLineEdit { "
         "    padding: 12px 16px; "
@@ -767,8 +771,8 @@ void ClipboardManager::setupUI() {
         Colors::SURFACE_LIGHT,  // Background
         Colors::TEXT_PRIMARY,   // Text color
         Colors::BORDER,         // Border color
-        QString::number(BASE_FONT_SIZE + 1),  // Font size
-        QString::number(ITEM_HEIGHT + 8),     // Min height
+        QString::number(fontSize + 2),  // Use configurable font size
+        QString::number(ITEM_HEIGHT + 12),     // Increased min height
         Colors::PRIMARY,         // Focus border
         Colors::SURFACE_LIGHTER, // Focus background
         Colors::TEXT_SECONDARY   // Placeholder color
@@ -778,13 +782,7 @@ void ClipboardManager::setupUI() {
             this, &ClipboardManager::onSearchTextChanged);
     mainLayout->addWidget(searchBox);
 
-    // Create splitter for resizable panes
-    splitter = new QSplitter(Qt::Vertical, this);
-    splitter->setHandleWidth(SPLITTER_HANDLE_WIDTH);
-    splitter->setChildrenCollapsible(false);
-    splitter->setOpaqueResize(true);
-    
-    // Create history list with improved settings
+    // Create history list with improved settings for single panel
     historyList = new QListWidget();
     historyList->setObjectName("historyList");
     historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -792,7 +790,7 @@ void ClipboardManager::setupUI() {
     historyList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     historyList->setSelectionMode(QAbstractItemView::SingleSelection);
     historyList->setTextElideMode(Qt::ElideRight);
-    historyList->setSpacing(4);
+    historyList->setSpacing(2);  // Reduced spacing
     historyList->setFrameShape(QFrame::NoFrame);
     historyList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     historyList->setStyleSheet(QString(
@@ -800,15 +798,15 @@ void ClipboardManager::setupUI() {
         "    background: %1; "
         "    border: 1px solid %2; "
         "    border-radius: 6px; "
-        "    padding: 6px; "
+        "    padding: 0px; "  // No padding
         "    outline: none; "
         "    font-size: %3px;"
         "}"
         "QListWidget::item { "
         "    background: %4; "
         "    color: %5; "
-        "    padding: 12px 16px; "
-        "    margin: 2px 0; "
+        "    padding: 8px 12px; "  // Reduced padding
+        "    margin: 1px 1px; "    // Reduced margin
         "    border-radius: 4px; "
         "    min-height: %6px;"
         "}"
@@ -823,16 +821,16 @@ void ClipboardManager::setupUI() {
     ).arg(
         Colors::SURFACE,        // Background
         Colors::BORDER,         // Border
-        QString::number(BASE_FONT_SIZE),  // Font size
+        QString::number(fontSize),  // Use configurable font size
         Colors::SURFACE_LIGHT,  // Item background
         Colors::TEXT_PRIMARY,   // Text color
-        QString::number(ITEM_HEIGHT),  // Item height
+        QString::number(ITEM_HEIGHT + 8),  // Increased item height
         Colors::PRIMARY,        // Selected background
         Colors::PRIMARY_LIGHT,  // Selected border
         Colors::SURFACE_LIGHTER, // Hover background
         Colors::BORDER          // Hover border
     ));
-    
+
     // Connect signals
     connect(historyList, &QListWidget::itemDoubleClicked,
             this, &ClipboardManager::onItemDoubleClicked);
@@ -842,21 +840,15 @@ void ClipboardManager::setupUI() {
     historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     historyList->setSelectionBehavior(QAbstractItemView::SelectRows);
     historyList->setSelectionMode(QAbstractItemView::SingleSelection);
-    historyList->setSpacing(4);
+    historyList->setSpacing(2);  // Reduced spacing
     historyList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     historyList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     historyList->setFocusPolicy(Qt::StrongFocus);
     historyList->setFrameShape(QFrame::NoFrame);
-    
-    // Ensure items are aligned to the top
-    QVBoxLayout* listLayout = new QVBoxLayout();
-    listLayout->setContentsMargins(0, 0, 0, 0);
-    listLayout->setSpacing(0);
-    listLayout->addWidget(historyList);
-    
-    QWidget* listContainer = new QWidget();
-    listContainer->setLayout(listLayout);
-    listContainer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+
+    // Apply the same reduced padding to the list viewport
+    historyList->viewport()->setContentsMargins(0, 0, 0, 0);
+
     historyList->viewport()->setAcceptDrops(true);
     historyList->setDropIndicatorShown(true);
     historyList->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -874,29 +866,8 @@ void ClipboardManager::setupUI() {
                 QListWidgetItem* item = historyList->currentItem();
                 if (item) onItemChanged(item);
             });
-    splitter->addWidget(listContainer);
 
-    // Preview pane
-    previewPane = new QTextEdit(this);
-    previewPane->setReadOnly(true);
-    previewPane->setMaximumHeight(180);
-    previewPane->setFrameStyle(QFrame::NoFrame);
-    previewPane->setStyleSheet(QStringLiteral(
-        "QTextEdit { "
-        "    background-color: #252526; "
-        "    border-radius: 6px; "
-        "    padding: 12px;"
-        "}"
-    ));
-    previewPane->setMinimumWidth(200);
-    splitter->addWidget(previewPane);
-    
-    // Set initial splitter sizes
-    QList<int> sizes;
-    sizes << width() * 0.6 << width() * 0.4;
-    splitter->setSizes(sizes);
-    
-    mainLayout->addWidget(splitter);
+    mainLayout->addWidget(historyList);
 
     // Status bar with smaller font
     QStatusBar* statusBar = new QStatusBar(this);
@@ -1107,13 +1078,22 @@ bool ClipboardManager::isFileTypeAllowed(const QString& fileName) const {
 
 void ClipboardManager::loadSettings() {
     QSettings settings("Havel", "ClipboardManager");
-    
+
     // Load history size (default to 1000 if not set, 0 or negative means unlimited)
     maxHistorySize = settings.value("maxHistorySize", 1000).toInt();
-    
+
     // Load preview max length (default to 1000 if not set)
     previewMaxLength = settings.value("previewMaxLength", 1000).toInt();
-    
+
+    // Load font size (default to 12 if not set)
+    fontSize = settings.value("fontSize", 12).toInt();
+
+    // Load displayed items limit (default to 50 if not set)
+    displayedItemsLimit = settings.value("displayedItemsLimit", 50).toInt();
+
+    // Load enabled status (default to true if not set)
+    enabled = settings.value("enabled", true).toBool();
+
     // Load enabled content types
     QVariant enabledTypes = settings.value("enabledContentTypes");
     if (enabledTypes.isValid()) {
@@ -1126,13 +1106,22 @@ void ClipboardManager::loadSettings() {
 
 void ClipboardManager::saveSettings() {
     QSettings settings("Havel", "ClipboardManager");
-    
+
     // Save history size
     settings.setValue("maxHistorySize", maxHistorySize);
-    
+
     // Save preview max length
     settings.setValue("previewMaxLength", previewMaxLength);
-    
+
+    // Save font size
+    settings.setValue("fontSize", fontSize);
+
+    // Save displayed items limit
+    settings.setValue("displayedItemsLimit", displayedItemsLimit);
+
+    // Save enabled status
+    settings.setValue("enabled", enabled);
+
     // Save enabled content types
     QVariantList types;
     for (const auto& type : enabledContentTypes) {
@@ -1466,41 +1455,67 @@ void ClipboardManager::onSearchTextChanged(const QString& text) {
 void ClipboardManager::filterHistory(const QString& filter) {
     historyList->clear();
 
+    int itemCount = 0;
     for (const ClipboardItem& item : historyItems) {
         if (filter.isEmpty() || item.displayText.contains(filter, Qt::CaseInsensitive) ||
             item.preview.contains(filter, Qt::CaseInsensitive)) {
+
+            // Respect the displayed items limit
+            if (displayedItemsLimit > 0 && itemCount >= displayedItemsLimit) {
+                break;
+            }
+
+            // Create list item
             auto* listItem = new QListWidgetItem();
-            
-            QString displayText = item.displayText;
-            if (displayText.length() > 80) {
-                displayText = displayText.left(77) + "...";
+
+            // Handle image content specially
+            if (item.type == ContentType::Image) {
+                // For images, show a thumbnail icon with text
+                QPixmap pixmap;
+                if (item.data.canConvert<QPixmap>()) {
+                    pixmap = item.data.value<QPixmap>();
+                } else if (item.data.canConvert<QImage>()) {
+                    QImage img = item.data.value<QImage>();
+                    pixmap = QPixmap::fromImage(img);
+                }
+
+                if (!pixmap.isNull()) {
+                    // Scale the pixmap to a thumbnail size
+                    QPixmap scaledPixmap = pixmap.scaled(24, 24, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+                    listItem->setIcon(QIcon(scaledPixmap));
+                    listItem->setText(truncateText(item.displayText, 100)); // Truncate text for images
+                } else {
+                    // If no valid pixmap, show text with image icon
+                    listItem->setText("🖼️ " + truncateText(item.displayText, 100));
+                }
+            } else {
+                // For text content, just show the text
+                listItem->setText(truncateText(item.displayText, 200));
             }
-            
-            // Add icon based on content type
-            QString iconText;
-            switch (item.type) {
-                case ContentType::Image: iconText = "🖼️ "; break;
-                case ContentType::FileList: iconText = "📁 "; break;
-                case ContentType::Html: iconText = "🌐 "; break;
-                case ContentType::Markdown: iconText = "📝 "; break;
-                default: iconText = "📋 ";
-            }
-            
-            listItem->setText(iconText + displayText);
+
             listItem->setData(Qt::UserRole, QVariant::fromValue(item));
             listItem->setToolTip(item.preview);
             listItem->setFlags(listItem->flags() | Qt::ItemIsEditable | Qt::ItemIsSelectable | Qt::ItemIsEnabled);
-            listItem->setSizeHint(QSize(listItem->sizeHint().width(), 50));
-            historyList->insertItem(0, listItem);
+            listItem->setSizeHint(QSize(listItem->sizeHint().width(), UIConfig::ITEM_HEIGHT + 8));
+
+            historyList->addItem(listItem);
+            itemCount++;
         }
     }
-    
+
     if (historyList->count() > 0) {
         historyList->setCurrentRow(lastRow >= 0 && lastRow < historyList->count() ? lastRow : 0);
     }
-    
+
     onItemSelectionChanged();
     statusBar()->showMessage(QString("Showing %1 items").arg(historyList->count()));
+}
+
+QString ClipboardManager::truncateText(const QString &text, int maxLength) {
+    if (text.length() <= maxLength) {
+        return text;
+    }
+    return text.left(maxLength) + "...";
 }
 
 void ClipboardManager::onItemSelectionChanged() {
@@ -1945,6 +1960,24 @@ void ClipboardManager::closeEvent(QCloseEvent* event) {
 }
 
 void ClipboardManager::keyPressEvent(QKeyEvent* event) {
+    // Auto-show search bar when user starts typing letters, numbers, or symbols
+    if (event->key() != Qt::Key_Escape &&
+        event->key() != Qt::Key_Up &&
+        event->key() != Qt::Key_Down &&
+        event->key() != Qt::Key_Enter &&
+        event->key() != Qt::Key_Return) {
+
+        // If the event is a printable character, focus the search box
+        if (event->text().length() == 1) {
+            if (searchBox) {
+                searchBox->setFocus();
+                searchBox->setText(event->text());
+                searchBox->selectAll();
+                return; // Don't propagate the event further
+            }
+        }
+    }
+
     if (event->key() == Qt::Key_Escape) {
         hide();
     } else {

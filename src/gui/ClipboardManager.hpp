@@ -18,8 +18,8 @@
 #include <QImage>
 #include <QFileInfo>
 #include <QUrl>
-#include <QDir>
 #include <QJsonArray>
+#include <QDir>
 #include "core/IO.hpp"
 
 namespace havel {
@@ -67,6 +67,9 @@ public:
     ClipboardManager& operator=(const ClipboardManager&) = delete;
 
     QClipboard* getClipboard() const { return clipboard; }
+
+    // Helper function for truncating text
+    QString truncateText(const QString &text, int maxLength);
 
 signals:
     void pasteRequested(int index);
@@ -121,7 +124,8 @@ private:
         Code,
         Unknown
     };
-    
+
+
     // File type filters
     struct FileTypeFilter {
         QString name;
@@ -134,13 +138,13 @@ private:
         QString displayText;
         QDateTime timestamp;
         QString preview;
-        
+
         // Default constructor
         ClipboardItem() = default;
-        
+
         // Constructor with data
-        ClipboardItem(ContentType t, const QVariant& d, const QString& dt = "", 
-                     const QDateTime& ts = QDateTime::currentDateTime(), 
+        ClipboardItem(ContentType t, const QVariant& d, const QString& dt = "",
+                     const QDateTime& ts = QDateTime::currentDateTime(),
                      const QString& p = "")
             : type(t), data(d), displayText(dt), timestamp(ts), preview(p) {
             if (displayText.isEmpty() && data.canConvert<QString>()) {
@@ -219,6 +223,20 @@ private:
     // Getters for configuration values
     int getMaxHistorySize() const { return maxHistorySize; }
     int getPreviewMaxLength() const { return previewMaxLength; }
+
+    // Settings for customization
+    int getFontSize() const { return fontSize; }
+    void setFontSize(int size) { fontSize = size; }
+    int getDisplayedItemsLimit() const { return displayedItemsLimit; }
+    void setDisplayedItemsLimit(int limit) { displayedItemsLimit = limit; }
+    bool isEnabled() const { return enabled; }
+    void setEnabled(bool value) { enabled = value; }
+
+private:
+    // Add new member variables for settings
+    int displayedItemsLimit = 50;  // Limit of items to display
+    bool enabled = true;           // Whether the clipboard manager is enabled
+    bool showPreviewPane = false;  // Whether to show the preview pane (now single panel)
 };
 
 } // namespace havel

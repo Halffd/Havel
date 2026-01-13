@@ -3,6 +3,8 @@
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
 #include "automation/AutoRunner.hpp"
+#include <QGuiApplication>
+#include <QClipboard>
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
 #include "core/ConfigManager.hpp"
@@ -538,7 +540,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     }
   });
   io.Hotkey("@numpadsub", [this]() {
-    audioManager.increaseVolume(0.05);
+    audioManager.decreaseVolume(0.05);
     double vol = audioManager.getVolume();
     showNotification("Volume",
                      std::to_string(static_cast<int>(vol * 100)) + "%");
@@ -546,7 +548,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
 
   io.Hotkey("@numpadadd", [this]() {
-    audioManager.decreaseVolume(0.05);
+    audioManager.increaseVolume(0.05);
     double vol = audioManager.getVolume();
     showNotification("Volume",
                      std::to_string(static_cast<int>(vol * 100)) + "%");
@@ -1026,6 +1028,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       io.Send("+{Tab}");
     }
   });*/
+  AddHotkey("#k", "xkill");
   io.Hotkey("@^+WheelUp",
             [this]() { brightnessManager.increaseBrightness(0.05); });
   io.Hotkey("@^+WheelDown",
@@ -1035,8 +1038,10 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@~RAlt:up", [this]() { altTabPressed = false; });
   io.Hotkey("@!WheelUp", [this]() {
     if (altTabPressed) {
+      io.PressKey("LShift", true);
       io.PressKey("Tab", true);
       io.PressKey("Tab", false);
+      io.PressKey("LShift", false);
     } else {
       Zoom(1);
     }
@@ -1045,10 +1050,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("@#WheelDown", [this]() { Zoom(0); });
   io.Hotkey("@!WheelDown", [this]() {
     if (altTabPressed) {
-      io.PressKey("LShift", true);
       io.PressKey("Tab", true);
       io.PressKey("Tab", false);
-      io.PressKey("LShift", false);
     } else {
       Zoom(0);
     }
@@ -1152,16 +1155,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("!+8", [this, WinMove]() { WinMove(0, 0, winOffset, 0); });
 
   AddHotkey("@!3", []() {
-    auto clipboardText = ClipboardManager::clipboard->text();
-    // get first 20000 characters
-    clipboardText = clipboardText.left(20000);
-    ClipboardManager::clipboard->setText(clipboardText);
+    // Use QClipboard directly for better performance
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (clipboard) {
+      QString text = clipboard->text();
+      // get first 20000 characters
+      text = text.left(20000);
+      clipboard->setText(text);
+    }
   });
   AddHotkey("@!4", []() {
-    auto clipboardText = ClipboardManager::clipboard->text();
-    // get last 20000 characters
-    clipboardText = clipboardText.right(20000);
-    ClipboardManager::clipboard->setText(clipboardText);
+    // Use QClipboard directly for better performance
+    QClipboard *clipboard = QGuiApplication::clipboard();
+    if (clipboard) {
+      QString text = clipboard->text();
+      // get last 20000 characters
+      text = text.right(20000);
+      clipboard->setText(text);
+    }
   });
   // Register screenshot hotkeys
   AddHotkey("@#|Print", "~/scripts/ocrs.sh");
@@ -1226,6 +1237,26 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
 
   static bool keyDown = false;
+  AddGamingHotkey("!m", [this](){
+      AddHotkey("mouseleft", [this](){
+        io.Send("f");
+      });
+      AddHotkey("mouseright", [this](){
+        io.Send("g");
+      });
+      AddHotkey("mouseup", [this](){
+        io.Send("i");
+      });
+      AddHotkey("mousedown", [this](){
+        io.Send("k");
+      });
+      AddHotkey("LButton", [this](){
+        io.Send("e");
+      });
+      AddHotkey("RButton", [this](){
+        io.Send("q");
+      });
+  });
   AddGamingHotkey("@w:up", [this]() { keyDown = false; }, nullptr, 0);
   AddGamingHotkey(
       "@|y",
@@ -1906,6 +1937,10 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
 }
 
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
+  if (!conditionalHotkeysEnabled) {
+    info("Conditional hotkeys are disabled");
+    return;
+  }
   if (verboseConditionLogging) {
     if (hotkey.usesFunctionCondition) {
       debug("Updating conditional hotkey - Key: '{}', Function Condition, "
@@ -2011,7 +2046,7 @@ void HotkeyManager::updateHotkeyState(ConditionalHotkey &hotkey,
 
 void HotkeyManager::batchUpdateConditionalHotkeys() {
   // Skip if we're in cleanup mode to prevent deadlocks
-  if (inCleanupMode.load()) {
+  if (inCleanupMode.load() || !conditionalHotkeysEnabled) {
     return;
   }
 

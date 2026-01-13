@@ -17,7 +17,7 @@
 #include "window/CompositorBridge.hpp"
 
 namespace havel {
-HavelApp::HavelApp(bool isStartup, QObject* parent) 
+HavelApp::HavelApp(bool isStartup, std::string scriptFile, bool repl, bool gui, QObject* parent) 
     : QObject(parent)
     , lastCheck(std::chrono::steady_clock::now())
     , lastWindowCheck(std::chrono::steady_clock::now()) {
@@ -26,10 +26,15 @@ HavelApp::HavelApp(bool isStartup, QObject* parent)
         throw std::runtime_error("HavelApp instance already exists");
     }
     instance = this;
+    this->scriptFile = scriptFile;
+    this->repl = repl;
+    this->gui = gui;
     
     try {
         setupSignalHandling();
-        setupTrayIcon();
+        if(gui) {
+            setupTrayIcon();
+        }
         initializeComponents(isStartup);
         setupTimers();
         initialized = true;
@@ -105,10 +110,6 @@ void HavelApp::initializeComponents(bool isStartup) {
     }
     mpv->Initialize();
 
-    scriptEngine = std::make_shared<ScriptEngine>(*io, *windowManager);
-    if (!scriptEngine) {
-        throw std::runtime_error("Failed to create ScriptEngine");
-    }
     audioManager = std::make_shared<AudioManager>(AudioBackend::AUTO);
     if (!audioManager) {
         throw std::runtime_error("Failed to create AudioManager");
@@ -136,144 +137,124 @@ void HavelApp::initializeComponents(bool isStartup) {
             brightnessManager->setTemperature(Configs::Get().Get<int>("Display.StartupTemperature", 5500));
         }, false);
     }
-
-    // Register all hotkeys
-    hotkeyManager->RegisterDefaultHotkeys();
-    hotkeyManager->RegisterMediaHotkeys();
-    hotkeyManager->RegisterWindowHotkeys();
-    hotkeyManager->RegisterSystemHotkeys();
-    hotkeyManager->registerAutomationHotkeys();
-    hotkeyManager->LoadHotkeyConfigurations();
-
-    // The hotkey manager has already been set above with shared_ptr
+    if(scriptFile.empty()){
+        // Register all hotkeys
+        hotkeyManager->RegisterDefaultHotkeys();
+        hotkeyManager->RegisterMediaHotkeys();
+        hotkeyManager->RegisterWindowHotkeys();
+        hotkeyManager->RegisterSystemHotkeys();
+        hotkeyManager->registerAutomationHotkeys();
+        hotkeyManager->LoadHotkeyConfigurations();
+    }
     
+    if(gui) {
+        io->Hotkey("@^!c", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) {
+                    gui::TextChunkerWindow::instance->toggleVisibility();
+                }
+            }, Qt::QueuedConnection);
+        });
+        
+        // Load new text
+        io->Hotkey("@^!v", [this]() {
+            QMetaObject::invokeMethod(this, [this]() {
+                showTextChunker();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Next chunk
+        io->Hotkey("@^!n", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->nextChunk();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Previous chunk
+        io->Hotkey("@^!p", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->prevChunk();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Invert
+        io->Hotkey("@^!i", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->invertMode();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Recopy
+        io->Hotkey("@^!r", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->recopyChunk();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Increase limit
+        io->Hotkey("@^!equal", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->increaseLimit();
+            }, Qt::QueuedConnection);
+        });
+        
+        // Decrease limit
+        io->Hotkey("@^!minus", [this]() {
+            QMetaObject::invokeMethod(this, []() {
+                if (gui::TextChunkerWindow::instance) 
+                    gui::TextChunkerWindow::instance->decreaseLimit();
+            }, Qt::QueuedConnection);
+        });
+        AutomationSuite::Instance(io.get());
 
-    // Toggle visibility
-    io->Hotkey("@^!c", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) {
-                gui::TextChunkerWindow::instance->toggleVisibility();
+        try {
+            if (!io) {
+                throw std::runtime_error("IO system not available");
             }
-        }, Qt::QueuedConnection);
-    });
-    
-    // Load new text
-    io->Hotkey("@^!v", [this]() {
-        QMetaObject::invokeMethod(this, [this]() {
-            showTextChunker();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Next chunk
-    io->Hotkey("@^!n", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->nextChunk();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Previous chunk
-    io->Hotkey("@^!p", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->prevChunk();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Invert
-    io->Hotkey("@^!i", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->invertMode();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Recopy
-    io->Hotkey("@^!r", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->recopyChunk();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Increase limit
-    io->Hotkey("@^!equal", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->increaseLimit();
-        }, Qt::QueuedConnection);
-    });
-    
-    // Decrease limit
-    io->Hotkey("@^!minus", [this]() {
-        QMetaObject::invokeMethod(this, []() {
-            if (gui::TextChunkerWindow::instance) 
-                gui::TextChunkerWindow::instance->decreaseLimit();
-        }, Qt::QueuedConnection);
-    });
-    // Initialize AutomationSuite with IO instance
-    AutomationSuite::Instance(io.get());
-    
-    // Print initial hotkey state
-    hotkeyManager->printHotkeys();
-    hotkeyManager->updateAllConditionalHotkeys();
-
-    // Initialize ClipboardManager after IO is ready
-    try {
-        if (!io) {
-            throw std::runtime_error("IO system not available");
+            
+            info("Initializing ClipboardManager...");
+            clipboardManager = std::make_unique<ClipboardManager>(io.get());
+            
+            // Verify clipboard manager was created successfully
+            if (!clipboardManager) {
+                throw std::runtime_error("Failed to create ClipboardManager instance");
+            }
+            
+            // Initialize hotkeys
+            clipboardManager->initializeHotkeys();
+        } catch (const std::exception& e) {
+            std::string errorMsg = std::string("Failed to initialize ClipboardManager: ") + e.what();
+            error(errorMsg);
         }
-        
-        info("Initializing ClipboardManager...");
-        clipboardManager = std::make_unique<ClipboardManager>(io.get());
-        
-        // Verify clipboard manager was created successfully
-        if (!clipboardManager) {
-            throw std::runtime_error("Failed to create ClipboardManager instance");
-        }
-        
-        // Initialize hotkeys
-        clipboardManager->initializeHotkeys();
-        
-        info("ClipboardManager initialized successfully");
-    } catch (const std::exception& e) {
-        std::string errorMsg = std::string("Failed to initialize ClipboardManager: ") + e.what();
-        error(errorMsg);
-        
-        // Don't crash the whole app if clipboard manager fails to initialize
-        // Just log the error and continue without clipboard functionality
-        if (trayIcon) {
-            trayIcon->showMessage("Havel", 
-                                QString::fromStdString("Clipboard features disabled: " + errorMsg),
-                                QSystemTrayIcon::Warning);
-        }
-        
-        // Clear any partially initialized clipboard manager
-        clipboardManager.reset();
+        guiManager = std::make_unique<GUIManager>(*windowManager);
+        interpreter = std::make_unique<Interpreter>(
+            *io,
+            *windowManager,
+            hotkeyManager.get(),
+            brightnessManager.get(),
+            audioManager.get(),
+            guiManager.get(),
+            AutomationSuite::Instance()->getScreenshotManager()
+        );
+    }
+    
+    if(scriptFile.empty()){
+        hotkeyManager->printHotkeys();
+        hotkeyManager->updateAllConditionalHotkeys();
     }
 
-    // Set up config watching
-    havel::Configs::Get().Watch<std::string>("UI.Theme", [](const auto& oldVal, const auto& newVal) {
-        info("Theme changed from " + oldVal + " to " + newVal);
-    });
-
-    // Initialize X11 display
-    display = DisplayManager::GetDisplay();
-    if (!display) {
-        throw std::runtime_error("Failed to open X11 display");
+    if(WindowManagerDetector::IsX11()){
+        // Initialize X11 display
+        display = DisplayManager::GetDisplay();
+        if (!display) {
+            throw std::runtime_error("Failed to open X11 display");
+        }
     }
-    guiManager = std::make_unique<GUIManager>(*windowManager);
-    interpreter = std::make_unique<Interpreter>(
-        *io,
-        *windowManager,
-        hotkeyManager.get(),
-        brightnessManager.get(),
-        audioManager.get(),
-        guiManager.get(),
-        AutomationSuite::Instance()->getScreenshotManager()
-    );
-
-    info("All components initialized successfully");
 }
 
 void HavelApp::setupTimers() {

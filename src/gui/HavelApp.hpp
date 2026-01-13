@@ -29,7 +29,7 @@ class HavelApp : public QObject {
     Q_OBJECT
 
 public:
-    explicit HavelApp(bool isStartup, QObject* parent = nullptr);
+    explicit HavelApp(bool isStartup, std::string scriptFile = "", bool repl = false, bool gui = true, QObject* parent = nullptr);
     ~HavelApp();
 
     // Non-copyable, non-movable
@@ -39,7 +39,7 @@ public:
     HavelApp& operator=(HavelApp&&) = delete;
 
     bool isInitialized() const noexcept { return initialized; }
-// Singleton instance
+    // Singleton instance
     inline static HavelApp* instance = nullptr;
     void setupTrayIcon();
     void initializeComponents(bool isStartup);
@@ -48,6 +48,9 @@ public:
     void cleanup() noexcept;
     
     // Components
+    std::string scriptFile = "";
+    bool repl = false;
+    bool gui = true;
     Interpreter* getInterpreter() { return interpreter.get(); }
     std::shared_ptr<IO> io;
     std::shared_ptr<WindowManager> windowManager;

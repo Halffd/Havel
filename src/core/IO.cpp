@@ -1783,6 +1783,8 @@ bool IO::Suspend() {
       }
 
       if (hotkeyManager) {
+        hotkeyManager->conditionalHotkeysEnabled = true;
+
         // Restore conditional hotkeys to their original state before suspension
         if (!suspendedConditionalHotkeyStates.empty()) {
           std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
@@ -1828,6 +1830,7 @@ bool IO::Suspend() {
 
       if (hotkeyManager) {
         // Track the original state of conditional hotkeys before suspension and update their states
+        hotkeyManager->conditionalHotkeysEnabled = false;
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
         for (auto& ch : hotkeyManager->conditionalHotkeys) {

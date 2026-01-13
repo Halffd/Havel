@@ -13,6 +13,9 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <queue>
+#include <condition_variable>
+#include <future>
 
 // Platform-specific headers
 #ifdef __linux__
@@ -211,6 +214,27 @@ public:
     mutable std::mutex pw_mutex;
     bool pw_ready = false;
     int pw_sync_seq = -1;
+
+    // Threading support for PipeWire operations
+    struct PipeWireCommand {
+        enum Type { SET_VOLUME, SET_MUTE, GET_VOLUME, GET_MUTE };
+        Type type;
+        uint32_t nodeId;
+        double volume;
+        bool mute;
+        std::promise<double>* volumePromise = nullptr;
+        std::promise<bool>* boolPromise = nullptr;
+    };
+    std::queue<PipeWireCommand> pw_command_queue;
+    std::mutex pw_command_mutex;
+    std::condition_variable pw_command_cv;
+    std::atomic<bool> pw_command_thread_running{false};
+    std::thread pw_command_thread;
+
+    void startPipeWireCommandThread();
+    void stopPipeWireCommandThread();
+    void processPipeWireCommands();
+    void queuePipeWireCommand(const PipeWireCommand& cmd);
 #endif // HAVE_PIPEWIRE
 
     // PulseAudio specific

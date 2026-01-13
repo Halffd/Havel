@@ -100,6 +100,7 @@ endif()
 find_library(XTEST_LIB Xtst REQUIRED)
 find_library(XRANDR_LIB Xrandr REQUIRED)  
 find_library(XINERAMA_LIB Xinerama REQUIRED)
+pkg_check_modules(XCOMPOSITE REQUIRED xcomposite)
 
 if(NOT XTEST_LIB OR NOT XRANDR_LIB OR NOT XINERAMA_LIB)
     message(FATAL_ERROR "Missing X11 extension libraries. Install libxtst-dev libxrandr-dev libxinerama-dev")
@@ -250,16 +251,17 @@ endif()
 # SOURCE FILE COLLECTION
 # ==============================================================================
 # Core sources (always required)
-file(GLOB_RECURSE CORE_SOURCES 
+file(GLOB_RECURSE CORE_SOURCES
     "src/core/*.cpp"
     "src/core/io/*.cpp"
-    "src/window/*.cpp" 
+    "src/window/*.cpp"
     "src/utils/*.cpp"
     "src/fs/*.cpp"
     "src/process/*.cpp"
     "src/media/*.cpp"
     "src/io/*.cpp"
     "src/utils/*.cpp"
+    "src/ai/ocr/*.cpp"
 )
 
 # GUI sources (always included)
@@ -291,6 +293,13 @@ pkg_check_modules(PCRE2_16 REQUIRED libpcre2-16)
 pkg_check_modules(ALSA alsa)
 # Minizip for ZIP functionality
 pkg_check_modules(MINIZIP minizip)
+
+# OCR libraries
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(TESSERACT REQUIRED tesseract)
+pkg_check_modules(LEPTONICA REQUIRED lept)
+find_package(OpenCV REQUIRED)
+
 set(COMMON_LIBS
     # System libraries
     ${PCRE2_8_LIBRARIES}
@@ -298,8 +307,9 @@ set(COMMON_LIBS
     ${X11_LIBRARIES}
     ${XI_LIBRARIES}
     ${XTEST_LIB}
-    ${XRANDR_LIB} 
+    ${XRANDR_LIB}
     ${XINERAMA_LIB}
+    ${XCOMPOSITE_LIBRARIES}
     ${PULSEAUDIO_LIBRARIES}
     ${PIPEWIRE_LIBRARIES}
     ${ALSA_LIBRARIES}
@@ -307,6 +317,10 @@ set(COMMON_LIBS
     ncurses
     ${DBUS_LIBRARIES}
     ${LUA_LIBRARIES}
+    # OCR libraries
+    ${TESSERACT_LIBRARIES}
+    ${LEPTONICA_LIBRARIES}
+    ${OpenCV_LIBS}
     # Optional Readline
     ${READLINE_LIB}
     dl crypto ssl pthread m
@@ -360,6 +374,9 @@ target_include_directories(havel PRIVATE
     ${LUA_INCLUDE_DIR}
     ${WAYLAND_INCLUDE_DIRS}
     ${GENERATED_PROTO_DIR}
+    ${TESSERACT_INCLUDE_DIRS}
+    ${LEPTONICA_INCLUDE_DIRS}
+    ${OpenCV_INCLUDE_DIRS}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${CMAKE_SOURCE_DIR}/src/havel-lang>
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_INCLUDE_DIRS}>
 )

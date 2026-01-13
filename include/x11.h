@@ -110,6 +110,8 @@ namespace x11 {
 #include <X11/XF86keysym.h>
 #include <X11/Xatom.h>
 #include <X11/extensions/Xinerama.h>
+#include <X11/extensions/Xcomposite.h>
+#include <X11/extensions/Xrender.h>
 #undef None
 #undef True
 #undef False
@@ -179,7 +181,15 @@ namespace x11 {
 #ifdef MCStreamer
 #undef MCStreamer
 #endif
-
+#ifdef FontChange
+#undef FontChange
+#endif
+#ifdef Unsorted
+#undef Unsorted
+#endif
+#ifdef Complex
+#undef Complex
+#endif
 // X11 types in safe namespace
 namespace x11 {
     // Type aliases

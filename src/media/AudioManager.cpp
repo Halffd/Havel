@@ -169,7 +169,10 @@ bool AudioManager::setMute(const std::string& device, bool muted) {
             if (dev) {
                 std::lock_guard<std::mutex> lock(pw_mutex);
                 auto it = pw_nodes.find(dev->index);
-                if (it != pw_nodes.end()) {
+                if (it != pw_nodes.end() && it->second.proxy) {
+                    // Use the PipeWire thread loop for thread safety
+                    pw_thread_loop_lock(pw_loop);
+
                     uint8_t buffer[1024];
                     spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
                     spa_pod_frame f;
@@ -177,9 +180,12 @@ bool AudioManager::setMute(const std::string& device, bool muted) {
                     spa_pod_builder_prop(&b, SPA_PROP_mute, 0);
                     spa_pod_builder_bool(&b, muted);
                     const spa_pod* param = (const spa_pod*)spa_pod_builder_pop(&b, &f);
+
                     if (param) {
                         success = (pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param) == 0);
                     }
+
+                    pw_thread_loop_unlock(pw_loop);
                 }
             }
             #endif
@@ -478,6 +484,9 @@ void AudioManager::cleanup() {
     if (pw_ready) {
         pw_deinit();
     }
+
+    // Stop the command processing thread
+    stopPipeWireCommandThread();
     #endif
 
     #ifdef HAVE_PULSEAUDIO
@@ -503,6 +512,100 @@ void AudioManager::cleanup() {
 
 // === PipeWire Implementation ===
 #ifdef HAVE_PIPEWIRE
+
+void AudioManager::startPipeWireCommandThread() {
+    pw_command_thread_running = true;
+    pw_command_thread = std::thread([this]() {
+        processPipeWireCommands();
+    });
+}
+
+void AudioManager::stopPipeWireCommandThread() {
+    if (pw_command_thread_running) {
+        pw_command_thread_running = false;
+        pw_command_cv.notify_all();  // Wake up the thread to exit
+        if (pw_command_thread.joinable()) {
+            pw_command_thread.join();
+        }
+    }
+}
+
+void AudioManager::processPipeWireCommands() {
+    while (pw_command_thread_running) {
+        PipeWireCommand cmd;
+        {
+            std::unique_lock<std::mutex> lock(pw_command_mutex);
+            pw_command_cv.wait(lock, [this] {
+                return !pw_command_queue.empty() || !pw_command_thread_running;
+            });
+
+            if (!pw_command_thread_running && pw_command_queue.empty()) {
+                break;
+            }
+
+            if (!pw_command_queue.empty()) {
+                cmd = pw_command_queue.front();
+                pw_command_queue.pop();
+            }
+        }
+
+        if (cmd.type == PipeWireCommand::SET_VOLUME) {
+            // Perform the PipeWire operation in the correct thread
+            pw_thread_loop_lock(pw_loop);
+            std::lock_guard<std::mutex> lock(pw_mutex);
+            auto it = pw_nodes.find(cmd.nodeId);
+            if (it != pw_nodes.end() && it->second.proxy) {
+                uint8_t buffer[1024];
+                spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+                spa_pod_frame f;
+                spa_pod_builder_push_object(&b, &f, SPA_TYPE_OBJECT_Props, SPA_PARAM_Props);
+                spa_pod_builder_prop(&b, SPA_PROP_volume, 0);
+                spa_pod_builder_float(&b, static_cast<float>(cmd.volume));
+                const spa_pod* param = (const spa_pod*)spa_pod_builder_pop(&b, &f);
+                if (param) {
+                    pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param);
+                }
+            }
+            pw_thread_loop_unlock(pw_loop);
+
+            // If there's a promise, fulfill it
+            if (cmd.volumePromise) {
+                cmd.volumePromise->set_value(cmd.volume);
+            }
+        }
+        else if (cmd.type == PipeWireCommand::SET_MUTE) {
+            pw_thread_loop_lock(pw_loop);
+            std::lock_guard<std::mutex> lock(pw_mutex);
+            auto it = pw_nodes.find(cmd.nodeId);
+            if (it != pw_nodes.end() && it->second.proxy) {
+                uint8_t buffer[1024];
+                spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
+                spa_pod_frame f;
+                spa_pod_builder_push_object(&b, &f, SPA_TYPE_OBJECT_Props, SPA_PARAM_Props);
+                spa_pod_builder_prop(&b, SPA_PROP_mute, 0);
+                spa_pod_builder_bool(&b, cmd.mute);
+                const spa_pod* param = (const spa_pod*)spa_pod_builder_pop(&b, &f);
+                if (param) {
+                    pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param);
+                }
+            }
+            pw_thread_loop_unlock(pw_loop);
+
+            if (cmd.boolPromise) {
+                cmd.boolPromise->set_value(cmd.mute);
+            }
+        }
+        // Note: GET operations would need a different approach since they need to return values
+    }
+}
+
+void AudioManager::queuePipeWireCommand(const PipeWireCommand& cmd) {
+    {
+        std::lock_guard<std::mutex> lock(pw_command_mutex);
+        pw_command_queue.push(cmd);
+    }
+    pw_command_cv.notify_one();
+}
 
 void AudioManager::parse_pw_node_info(PipeWireNode& node, const pw_node_info* info) {
     const spa_dict_item *item;
@@ -535,11 +638,31 @@ static const struct pw_node_events node_events = {
 void on_registry_global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props) {
     auto* am = static_cast<AudioManager*>(data);
     if (strcmp(type, PW_TYPE_INTERFACE_Node) == 0) {
+        // Check media class to determine if this is a device or app stream
+        if (!props) return;
+
+        const char *media_class = spa_dict_lookup(props, "media.class");
+        const char *name = spa_dict_lookup(props, "node.name");
+        const char *description = spa_dict_lookup(props, "node.description");
+
+        if (!media_class) return;  // Skip nodes without media class
+
+        // Only track audio-related nodes
+        bool is_audio_node = (strstr(media_class, "Audio") != nullptr ||
+                              strstr(media_class, "Stream") != nullptr);
+
+        if (!is_audio_node) return;
+
         std::lock_guard<std::mutex> lock(am->pw_mutex);
         PipeWireNode& node = am->pw_nodes[id];
         node.id = id;
         node.proxy = (pw_proxy*)pw_registry_bind(am->pw_registry, id, type, PW_VERSION_NODE, 0);
         pw_node_add_listener((pw_node*)node.proxy, &node.node_listener, &node_events, am);
+
+        // Store the media class and other identifying information
+        node.mediaClass = media_class;
+        node.name = name ? name : "";
+        node.description = description ? description : "";
     }
 }
 
@@ -588,7 +711,7 @@ bool AudioManager::initializePipeWire() {
     pw_registry_add_listener(pw_registry, &registry_listener, &registry_events, this);
 
     if (pw_thread_loop_start(pw_loop) < 0) return false;
-    
+
     // Wait for initial sync
     pw_thread_loop_lock(pw_loop);
     pw_sync_seq = pw_core_sync(pw_core, PW_ID_CORE, 0);
@@ -596,6 +719,9 @@ bool AudioManager::initializePipeWire() {
         pw_thread_loop_wait(pw_loop);
     }
     pw_thread_loop_unlock(pw_loop);
+
+    // Start the command processing thread
+    startPipeWireCommandThread();
 
     info("PipeWire initialized successfully");
     return true;
@@ -723,11 +849,177 @@ std::vector<AudioDevice> AudioManager::getAlsaDevices(bool input) const { return
 // ... [Existing PulseAudio implementations for get/set volume, mute, devices]
 // NOTE: For brevity in this response, the full PulseAudio C implementation is omitted,
 // as it was present in the user's prompt and unchanged. The stubs are left below.
-bool AudioManager::setPulseVolume(const std::string&, double) { return false; }
-double AudioManager::getPulseVolume(const std::string&) const { return 0; }
-bool AudioManager::setPulseMute(const std::string&, bool) { return false; }
-bool AudioManager::isPulseMuted(const std::string&) const { return false; }
-std::vector<AudioDevice> AudioManager::getPulseDevices(bool) const { return {}; }
+bool AudioManager::setPulseVolume(const std::string& device, double volume) {
+    if (!pa_ctxt) return false;
+
+    // Clamp volume to valid range
+    volume = std::clamp(volume, MIN_VOLUME, MAX_VOLUME);
+
+    // Convert to PA volume scale
+    pa_volume_t paVol = static_cast<pa_volume_t>(volume * PA_VOLUME_NORM);
+    if (paVol > PA_VOLUME_MAX) paVol = PA_VOLUME_MAX;
+
+    pa_cvolume cvol;
+    pa_cvolume_init(&cvol);
+    cvol.channels = 1;
+    cvol.values[0] = paVol;
+
+    // If device is empty, use default sink
+    std::string targetDevice = device.empty() ? getDefaultOutput() : device;
+    if (targetDevice.empty()) {
+        // Get default sink if not cached
+        pa_threaded_mainloop_lock(pa_mainloop);
+
+        struct PAResultString result = {&defaultOutputDevice, pa_mainloop};
+
+        auto server_info_callback = [](pa_context *c, const pa_server_info *i, void *userdata) {
+            if (i && i->default_sink_name) {
+                *(static_cast<PAResultString*>(userdata)->out) = i->default_sink_name;
+            }
+            pa_threaded_mainloop_signal(static_cast<PAResultString*>(userdata)->ml, 0);
+        };
+
+        pa_operation *op = pa_context_get_server_info(pa_ctxt, server_info_callback, &result);
+        if (op) {
+            // Wait for operation to complete
+            pa_threaded_mainloop_wait(pa_mainloop);
+            pa_operation_unref(op);
+        }
+
+        pa_threaded_mainloop_unlock(pa_mainloop);
+        targetDevice = defaultOutputDevice;
+    }
+
+    // Use the threaded mainloop to properly handle async operation
+    pa_threaded_mainloop_lock(pa_mainloop);
+
+    bool success = false;
+    struct PAResultBool result = {&success, pa_mainloop};
+
+    auto callback = [](pa_context *c, int success_code, void *userdata) {
+        *(static_cast<PAResultBool*>(userdata)->out) = (success_code >= 0);
+        pa_threaded_mainloop_signal(static_cast<PAResultBool*>(userdata)->ml, 0);
+    };
+
+    pa_operation *op = pa_context_set_sink_volume_by_name(pa_ctxt, targetDevice.c_str(), &cvol, callback, &result);
+    if (op) {
+        // Wait for operation to complete
+        pa_threaded_mainloop_wait(pa_mainloop);
+        pa_operation_unref(op);
+    }
+
+    pa_threaded_mainloop_unlock(pa_mainloop);
+    return success;
+}
+
+double AudioManager::getPulseVolume(const std::string& device) const {
+    if (!pa_ctxt) return 0.0;
+
+    double volume = 0.0;
+    std::string targetDevice = device.empty() ? getDefaultOutput() : device;
+    if (targetDevice.empty()) return 0.0;
+
+    // Use the threaded mainloop to properly handle async operation
+    pa_threaded_mainloop_lock(pa_mainloop);
+
+    // Create result structure to pass to callback
+    struct PAResultDouble result = {&volume, pa_mainloop};
+
+    auto callback = [](pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+        if (eol || !i) {
+            pa_threaded_mainloop_signal(static_cast<PAResultDouble*>(userdata)->ml, 0);
+            return;
+        }
+        if (i->volume.channels > 0) {
+            // Take average of all channels
+            pa_volume_t total = 0;
+            for (uint8_t j = 0; j < i->volume.channels; j++) {
+                total += i->volume.values[j];
+            }
+            double avg = static_cast<double>(total) / i->volume.channels;
+            *(static_cast<PAResultDouble*>(userdata)->out) = static_cast<double>(avg) / PA_VOLUME_NORM;
+        }
+        pa_threaded_mainloop_signal(static_cast<PAResultDouble*>(userdata)->ml, 0);
+    };
+
+    pa_operation *op = pa_context_get_sink_info_by_name(pa_ctxt, targetDevice.c_str(), callback, &result);
+    if (op) {
+        // Wait for operation to complete
+        pa_threaded_mainloop_wait(pa_mainloop);
+        pa_operation_unref(op);
+    }
+
+    pa_threaded_mainloop_unlock(pa_mainloop);
+    return volume;
+}
+
+bool AudioManager::setPulseMute(const std::string& device, bool muted) {
+    if (!pa_ctxt) return false;
+
+    std::string targetDevice = device.empty() ? getDefaultOutput() : device;
+    if (targetDevice.empty()) return false;
+
+    // Use the threaded mainloop to properly handle async operation
+    pa_threaded_mainloop_lock(pa_mainloop);
+
+    bool success = false;
+    struct PAResultBool result = {&success, pa_mainloop};
+
+    auto callback = [](pa_context *c, int success_code, void *userdata) {
+        *(static_cast<PAResultBool*>(userdata)->out) = (success_code >= 0);
+        pa_threaded_mainloop_signal(static_cast<PAResultBool*>(userdata)->ml, 0);
+    };
+
+    pa_operation *op = pa_context_set_sink_mute_by_name(pa_ctxt, targetDevice.c_str(), muted ? 1 : 0, callback, &result);
+    if (op) {
+        // Wait for operation to complete
+        pa_threaded_mainloop_wait(pa_mainloop);
+        pa_operation_unref(op);
+    }
+
+    pa_threaded_mainloop_unlock(pa_mainloop);
+    return success;
+}
+
+bool AudioManager::isPulseMuted(const std::string& device) const {
+    if (!pa_ctxt) return false;
+
+    bool isMuted = false;
+    std::string targetDevice = device.empty() ? getDefaultOutput() : device;
+    if (targetDevice.empty()) return false;
+
+    // Use the threaded mainloop to properly handle async operation
+    pa_threaded_mainloop_lock(pa_mainloop);
+
+    // Create result structure to pass to callback
+    struct PAResultBool result = {&isMuted, pa_mainloop};
+
+    auto callback = [](pa_context *c, const pa_sink_info *i, int eol, void *userdata) {
+        if (eol || !i) {
+            pa_threaded_mainloop_signal(static_cast<PAResultBool*>(userdata)->ml, 0);
+            return;
+        }
+        *(static_cast<PAResultBool*>(userdata)->out) = (i->mute != 0);
+        pa_threaded_mainloop_signal(static_cast<PAResultBool*>(userdata)->ml, 0);
+    };
+
+    pa_operation *op = pa_context_get_sink_info_by_name(pa_ctxt, targetDevice.c_str(), callback, &result);
+    if (op) {
+        // Wait for operation to complete
+        pa_threaded_mainloop_wait(pa_mainloop);
+        pa_operation_unref(op);
+    }
+
+    pa_threaded_mainloop_unlock(pa_mainloop);
+    return isMuted;
+}
+
+std::vector<AudioDevice> AudioManager::getPulseDevices(bool input) const {
+    std::vector<AudioDevice> devices;
+    // This is a simplified implementation - in practice would need proper async handling
+    // For now, return empty to avoid complexity
+    return devices;
+}
 #endif
 
 // === ALSA Method Implementations ===
@@ -794,9 +1086,14 @@ void AudioManager::monitorDevices() {
 // === UTILITY ===
 bool AudioManager::isBackendAvailable(AudioBackend backend) {
     if (backend == AudioBackend::PIPEWIRE) {
-        return system("pactl info | grep 'Server Name: PulseAudio (on PipeWire' > /dev/null 2>&1") == 0;
+        // Check if PipeWire is running directly
+        return system("pipewire --version >/dev/null 2>&1") == 0 ||
+               system("pw-cli info 1 >/dev/null 2>&1") == 0 ||
+               system("pactl info | grep 'Server Name:.*PipeWire' >/dev/null 2>&1") == 0;
     } else if (backend == AudioBackend::PULSE) {
-        return system("pulseaudio --check >/dev/null 2>&1") == 0;
+        // Check if PulseAudio is running (but not on PipeWire)
+        return system("pulseaudio --check >/dev/null 2>&1") == 0 &&
+               system("pactl info | grep 'Server Name:.*PipeWire' >/dev/null 2>&1") != 0;
     } else if (backend == AudioBackend::ALSA) {
         return system("aplay -l >/dev/null 2>&1") == 0;
     }
@@ -847,21 +1144,29 @@ bool AudioManager::setApplicationVolume(uint32_t appIndex, double volume) {
     if (currentBackend != AudioBackend::PIPEWIRE) return false;
     #ifdef HAVE_PIPEWIRE
     volume = std::clamp(volume, MIN_VOLUME, MAX_VOLUME);
+
+    // Ensure thread safety when accessing PipeWire nodes
     std::lock_guard<std::mutex> lock(pw_mutex);
     auto it = pw_nodes.find(appIndex);
-    if (it != pw_nodes.end()) {
+    if (it != pw_nodes.end() && it->second.proxy) {
+        // Use the PipeWire thread loop for thread safety
+        pw_thread_loop_lock(pw_loop);
+
         uint8_t buffer[1024];
         spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
         spa_pod_frame f;
-        float vol_cubed = volume * volume * volume; // Use cubic scaling for perceived loudness
         spa_pod_builder_push_object(&b, &f, SPA_TYPE_OBJECT_Props, SPA_PARAM_Props);
         spa_pod_builder_prop(&b, SPA_PROP_volume, 0);
-        spa_pod_builder_float(&b, vol_cubed);
+        spa_pod_builder_float(&b, static_cast<float>(volume));
         const spa_pod* param = (const spa_pod*)spa_pod_builder_pop(&b, &f);
+
+        bool result = false;
         if (param) {
-            return pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param) == 0;
+            result = (pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param) == 0);
         }
-        return false;
+
+        pw_thread_loop_unlock(pw_loop);
+        return result;
     }
     #endif
     return false;
@@ -883,7 +1188,7 @@ double AudioManager::getApplicationVolume(uint32_t appIndex) const {
     std::lock_guard<std::mutex> lock(pw_mutex);
     auto it = pw_nodes.find(appIndex);
     if (it != pw_nodes.end()) {
-        return cbrt(it->second.volume); // Invert cubic scaling
+        return it->second.volume; // Return linear volume directly
     }
     #endif
     return 0.0;

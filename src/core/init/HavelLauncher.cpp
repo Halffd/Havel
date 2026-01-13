@@ -143,7 +143,7 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
     char* dummy_argv[] = { dummy_name, nullptr };
     QApplication app(dummy_argc, dummy_argv);
     
-    HavelApp havelApp(false);  // Don't show GUI
+    HavelApp havelApp(false, cfg.scriptFile);  // Don't show GUI
     
     if (!havelApp.isInitialized()) {
         error("Failed to initialize HavelApp");
@@ -164,6 +164,8 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
     bool hasHotkeys = std::regex_search(code, hotkeyPattern);
     
     if (hasHotkeys) {
+        havelApp.hotkeyManager->printHotkeys();
+        havelApp.hotkeyManager->updateAllConditionalHotkeys();
         info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
         return app.exec();  // Run Qt event loop
     }
@@ -177,7 +179,7 @@ int HavelLauncher::runRepl(const LaunchConfig& cfg) {
     char* dummy_argv[] = { dummy_name, nullptr };
     QApplication app(dummy_argc, dummy_argv);
     
-    HavelApp havelApp(false);  // Don't show GUI
+    HavelApp havelApp(false, "", true);
     
     if (!havelApp.isInitialized()) {
         error("Failed to initialize HavelApp");

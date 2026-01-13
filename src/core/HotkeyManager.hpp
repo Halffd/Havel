@@ -153,7 +153,7 @@ public:
   int AddGamingHotkey(const std::string &key, std::function<void()> trueAction,
                       std::function<void()> falseAction = nullptr, int id = 0);
   IO &io;
-
+  bool conditionalHotkeysEnabled = true;
 private:
   bool altTabPressed = false;
   std::thread monitorThread;

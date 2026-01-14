@@ -13,7 +13,11 @@
 #include <atomic>
 
 #include "core/util/SignalWatcher.hpp"
-#include "runtime/Interpreter.hpp"
+#ifdef ENABLE_HAVEL_LANG
+#include "havel-lang/runtime/Interpreter.hpp"
+#else
+class Interpreter;  // Forward declaration when Havel Lang is disabled
+#endif
 #include "window/WindowManager.hpp"
 #include "core/IO.hpp"
 #include "core/ScriptEngine.hpp"
@@ -51,7 +55,11 @@ public:
     std::string scriptFile = "";
     bool repl = false;
     bool gui = true;
+    #ifdef ENABLE_HAVEL_LANG
     Interpreter* getInterpreter() { return interpreter.get(); }
+    #else
+    Interpreter* getInterpreter() { return nullptr; }
+    #endif
     std::shared_ptr<IO> io;
     std::shared_ptr<WindowManager> windowManager;
     std::shared_ptr<MPVController> mpv;
@@ -60,7 +68,7 @@ public:
     std::shared_ptr<ClipboardManager> clipboardManager;
     std::shared_ptr<AudioManager> audioManager;
     std::shared_ptr<BrightnessManager> brightnessManager;
-    std::shared_ptr<GUIManager> guiManager;
+    // std::shared_ptr<GUIManager> guiManager;  // GUIManager is not defined - commenting out
     std::shared_ptr<QMenu> trayMenu;
     
 private slots:
@@ -87,7 +95,9 @@ private slots:
     bool initialized = false;
     std::atomic<bool> shutdownRequested{false};
 
+    #ifdef ENABLE_HAVEL_LANG
     std::unique_ptr<Interpreter> interpreter;
+    #endif
     static constexpr int PERIODIC_INTERVAL_MS = 50;
     static constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
     static constexpr int CONFIG_CHECK_INTERVAL_S = 5;

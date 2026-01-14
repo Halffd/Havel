@@ -1160,6 +1160,46 @@ bool EventListener::CheckModifierMatch(int requiredModifiers,
   }
 }
 
+bool EventListener::CheckModifierMatchExcludingModifier(int requiredModifiers,
+                                                       bool wildcard,
+                                                       int excludeModifier) const {
+  // This is used when a key is remapped to a modifier (e.g., CapsLock -> LAlt)
+  // We need to check modifiers while excluding the remapped-to modifier
+  // This is called with stateMutex already locked
+
+  bool ctrlRequired = (requiredModifiers & (1 << 0)) != 0;
+  bool shiftRequired = (requiredModifiers & (1 << 1)) != 0;
+  bool altRequired = (requiredModifiers & (1 << 2)) != 0;
+  bool metaRequired = (requiredModifiers & (1 << 3)) != 0;
+
+  // Get the current modifier state, but exclude the remapped-to modifier
+  bool ctrlPressed = modifierState.IsCtrlPressed();
+  bool shiftPressed = modifierState.IsShiftPressed();
+  bool altPressed = modifierState.IsAltPressed();
+  bool metaPressed = modifierState.IsMetaPressed();
+
+  // Remove the contribution of the remapped modifier
+  if (excludeModifier == KEY_LEFTCTRL || excludeModifier == KEY_RIGHTCTRL) {
+    ctrlPressed = false;  // Assume only this key contributes to Ctrl
+  } else if (excludeModifier == KEY_LEFTSHIFT || excludeModifier == KEY_RIGHTSHIFT) {
+    shiftPressed = false;  // Assume only this key contributes to Shift
+  } else if (excludeModifier == KEY_LEFTALT || excludeModifier == KEY_RIGHTALT) {
+    altPressed = false;  // Assume only this key contributes to Alt
+  } else if (excludeModifier == KEY_LEFTMETA || excludeModifier == KEY_RIGHTMETA) {
+    metaPressed = false;  // Assume only this key contributes to Meta
+  }
+
+  if (wildcard) {
+    // Wildcard: only check that REQUIRED modifiers are pressed (excluding the remapped one)
+    return (!ctrlRequired || ctrlPressed) && (!shiftRequired || shiftPressed) &&
+           (!altRequired || altPressed) && (!metaRequired || metaPressed);
+  } else {
+    // Normal: exact modifier match (excluding the remapped one)
+    return (ctrlRequired == ctrlPressed) && (shiftRequired == shiftPressed) &&
+           (altRequired == altPressed) && (metaRequired == metaPressed);
+  }
+}
+
 bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
   std::vector<int> matchedHotkeyIds;
   bool shouldBlock = false;
@@ -1227,14 +1267,39 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
            evdevCode == KEY_LEFTSHIFT || evdevCode == KEY_RIGHTSHIFT ||
            evdevCode == KEY_LEFTMETA || evdevCode == KEY_RIGHTMETA);
 
+      // Check if this key is remapped to a modifier (e.g., CapsLock -> LAlt)
+      // If so, we should treat it like a modifier key for matching purposes
+      bool keyRemappedToModifier = false;
+      int remappedTarget = evdevCode;
+      {
+        std::lock_guard<std::mutex> remapLock(remapMutex);
+        auto it = keyRemaps.find(evdevCode);
+        if (it != keyRemaps.end()) {
+          remappedTarget = it->second;
+          keyRemappedToModifier = (remappedTarget == KEY_LEFTALT || remappedTarget == KEY_RIGHTALT ||
+                                   remappedTarget == KEY_LEFTCTRL || remappedTarget == KEY_RIGHTCTRL ||
+                                   remappedTarget == KEY_LEFTSHIFT || remappedTarget == KEY_RIGHTSHIFT ||
+                                   remappedTarget == KEY_LEFTMETA || remappedTarget == KEY_RIGHTMETA);
+        }
+      }
+
       bool modifierMatch;
 
       // If the HOTKEY itself is a modifier key, skip modifier comparisons.
       // The pressed modifier should ALWAYS trigger its own hotkey.
-      if (isModifierKey && hotkey.modifiers == 0) {
+      // This also applies if the key is remapped to a modifier.
+      if ((isModifierKey || keyRemappedToModifier) && hotkey.modifiers == 0) {
         modifierMatch = true;
       } else {
-        modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+        // For keys remapped to modifiers, ignore that modifier in the match check
+        // by using the original modifiers before the remap was applied
+        if (keyRemappedToModifier) {
+          // Check modifiers against the state BEFORE this key's remap was applied
+          // We need to exclude the remapped modifier from the check
+          modifierMatch = CheckModifierMatchExcludingModifier(hotkey.modifiers, hotkey.wildcard, remappedTarget);
+        } else {
+          modifierMatch = CheckModifierMatch(hotkey.modifiers, hotkey.wildcard);
+        }
       }
 
       if (!modifierMatch)

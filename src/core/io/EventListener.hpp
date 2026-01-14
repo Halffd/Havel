@@ -198,6 +198,9 @@ private:
     // Check modifier match (exact logic from IO.cpp)
     bool CheckModifierMatch(int requiredModifiers, bool wildcard) const;
     
+    // Check modifier match while excluding a specific modifier (for remapped keys)
+    bool CheckModifierMatchExcludingModifier(int requiredModifiers, bool wildcard, int excludeModifier) const;
+    
     // Update modifier state
     void UpdateModifierState(int evdevCode, bool down);
     

@@ -390,6 +390,7 @@ target_link_libraries(havel PRIVATE
 
 # Compile definitions
 target_compile_definitions(havel PRIVATE
+    $<$<BOOL:${ENABLE_HAVEL_LANG}>:ENABLE_HAVEL_LANG>
     $<$<NOT:$<BOOL:${ENABLE_HAVEL_LANG}>>:DISABLE_HAVEL_LANG>
     $<$<BOOL:${ENABLE_LLVM}>:HAVEL_ENABLE_LLVM>
     $<$<BOOL:${READLINE_LIB}>:HAVE_READLINE>

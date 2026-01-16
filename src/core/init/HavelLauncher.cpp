@@ -152,6 +152,10 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
     
     // Use HavelApp's interpreter
     auto* interpreter = havelApp.getInterpreter();
+    if (!interpreter) {
+        error("Interpreter is not available");
+        return 1;
+    }
     auto result = interpreter->Execute(code);
     
     if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
@@ -264,15 +268,19 @@ int HavelLauncher::runRepl(const LaunchConfig& cfg) {
         // Execute when balanced
         if (braceCount == 0 && !multiline.empty()) {
             try {
-                auto result = interpreter->Execute(multiline);
-                
-                if (std::holds_alternative<havel::HavelValue>(result)) {
-                    auto val = std::get<havel::HavelValue>(result);
-                    if (!std::holds_alternative<std::nullptr_t>(val)) {
-                        std::cout << "=> " << havel::Interpreter::ValueToString(val) << "\n";
+                if (interpreter) {
+                    auto result = interpreter->Execute(multiline);
+
+                    if (std::holds_alternative<havel::HavelValue>(result)) {
+                        auto val = std::get<havel::HavelValue>(result);
+                        if (!std::holds_alternative<std::nullptr_t>(val)) {
+                            std::cout << "=> " << havel::Interpreter::ValueToString(val) << "\n";
+                        }
+                    } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+                        std::cerr << "Error: " << std::get<havel::HavelRuntimeError>(result).what() << "\n";
                     }
-                } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-                    std::cerr << "Error: " << std::get<havel::HavelRuntimeError>(result).what() << "\n";
+                } else {
+                    std::cerr << "Error: Interpreter is not available\n";
                 }
             } catch (const std::exception& e) {
                 std::cerr << "Error: " << e.what() << "\n";

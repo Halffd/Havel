@@ -68,7 +68,9 @@ public:
     std::shared_ptr<ClipboardManager> clipboardManager;
     std::shared_ptr<AudioManager> audioManager;
     std::shared_ptr<BrightnessManager> brightnessManager;
-    // std::shared_ptr<GUIManager> guiManager;  // GUIManager is not defined - commenting out
+    #ifdef ENABLE_HAVEL_LANG
+    std::unique_ptr<GUIManager> guiManager;
+    #endif
     std::shared_ptr<QMenu> trayMenu;
     
 private slots:

@@ -231,6 +231,7 @@ void HavelApp::initializeComponents(bool isStartup) {
             std::string errorMsg = std::string("Failed to initialize ClipboardManager: ") + e.what();
             error(errorMsg);
         }
+        #ifdef ENABLE_HAVEL_LANG
         guiManager = std::make_unique<GUIManager>(*windowManager);
         interpreter = std::make_unique<Interpreter>(
             *io,
@@ -241,6 +242,7 @@ void HavelApp::initializeComponents(bool isStartup) {
             guiManager.get(),
             AutomationSuite::Instance()->getScreenshotManager()
         );
+        #endif
     }
     
     if(scriptFile.empty()){

@@ -16,7 +16,7 @@ public:
     
     int run(int argc, char* argv[]);
     
-private:
+private:        
     struct LaunchConfig {
         Mode mode = Mode::DAEMON;
         std::string scriptFile;

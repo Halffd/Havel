@@ -125,7 +125,11 @@ public:
     // Set scroll speed (1.0 = default)
     void SetScrollSpeed(double speed);
     double GetScrollSpeed() const { return scrollSpeed; }
-
+    using MouseMovementCallback = std::function<void(int dx, int dy)>;
+    
+    void SetMouseMovementCallback(MouseMovementCallback callback) {
+        mouseMovementCallback = callback;
+    }
     // X11 hotkey monitoring (separate from evdev)
     #ifdef __linux__
     bool StartX11Monitor(Display* display);
@@ -274,7 +278,7 @@ private:
 
     // Device grabbing
     bool grabDevices = false;
-
+    MouseMovementCallback mouseMovementCallback;
     // X11 hotkey monitor (separate component)
     #ifdef __linux__
     std::unique_ptr<X11HotkeyMonitor> x11Monitor;

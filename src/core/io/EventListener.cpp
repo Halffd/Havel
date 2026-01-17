@@ -930,7 +930,13 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             ev.code == REL_X ? "X" : "Y", ev.value, scaledValue,
             IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(scaledValue);
-
+      if (mouseMovementCallback) {
+              if (ev.code == REL_X) {
+                  mouseMovementCallback(scaledInt, 0);  // dx, dy=0
+              } else if (ev.code == REL_Y) {
+                  mouseMovementCallback(0, scaledInt);  // dx=0, dy
+              }
+          }
       // Process mouse gesture if we have gesture hotkeys registered
       if (!gestureHotkeys.empty()) {
         auto now = std::chrono::steady_clock::now();

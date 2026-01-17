@@ -2379,26 +2379,39 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       hotkey.key = static_cast<Key>(button);
     }
     hotkey.success = true;
-  }
+  } else {
+    // Check for combo
+    size_t ampPos = parsed.keyPart.find('&');
+    if (ampPos != std::string::npos) {
+      std::vector<std::string> parts;
+      size_t start = 0;
+      while (ampPos != std::string::npos) {
+        parts.push_back(parsed.keyPart.substr(start, ampPos - start));
+        start = ampPos + 1;
+        ampPos = parsed.keyPart.find('&', start);
+      }
+      parts.push_back(parsed.keyPart.substr(start));
 
-  // Check for combo
-  size_t ampPos = parsed.keyPart.find('&');
-  if (ampPos != std::string::npos) {
-    std::vector<std::string> parts;
-    size_t start = 0;
-    while (ampPos != std::string::npos) {
-      parts.push_back(parsed.keyPart.substr(start, ampPos - start));
-      start = ampPos + 1;
-      ampPos = parsed.keyPart.find('&', start);
+      hotkey.type = HotkeyType::Combo;
+      for (const auto &part : parts) {
+        auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0);
+        hotkey.comboSequence.push_back(subHotkey);
+      }
+      hotkey.success = !hotkey.comboSequence.empty();
+    } else {
+      // Not a mouse button/wheel, not a combo - try to parse as keyboard key
+      KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+      if (keycode != 0) {
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = static_cast<Key>(keycode);
+        hotkey.success = true;
+      } else {
+        // If it's not a valid key, mouse button, wheel, or combo, mark as failed
+        hotkey.type = HotkeyType::Keyboard;
+        hotkey.key = 0;
+        hotkey.success = false;
+      }
     }
-    parts.push_back(parsed.keyPart.substr(start));
-
-    hotkey.type = HotkeyType::Combo;
-    for (const auto &part : parts) {
-      auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0);
-      hotkey.comboSequence.push_back(subHotkey);
-    }
-    hotkey.success = !hotkey.comboSequence.empty();
   }
 
   // Add to maps if has action (skip for combo subs)

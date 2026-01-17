@@ -1237,25 +1237,31 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
 
   static bool keyDown = false;
-  AddGamingHotkey("!m", [this](){
-      AddHotkey("mouseleft", [this](){
-        io.Send("f");
-      });
-      AddHotkey("mouseright", [this](){
-        io.Send("g");
-      });
-      AddHotkey("mouseup", [this](){
-        io.Send("i");
-      });
-      AddHotkey("mousedown", [this](){
-        io.Send("k");
-      });
-      AddHotkey("LButton", [this](){
-        io.Send("e");
-      });
-      AddHotkey("RButton", [this](){
-        io.Send("q");
-      });
+  auto sendKey = [this](const std::string &key){
+    io.Send("{" + key + " down}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    io.Send("{" + key + " up}");
+  };
+  AddGamingHotkey("@mouseleft", [this](){
+    sendKey("f");
+  });
+  AddGamingHotkey("@mouseright", [this](){
+    sendKey("g");
+  });
+  AddGamingHotkey("@mouseup", [this](){
+    sendKey("i");
+  });
+  AddGamingHotkey("@mousedown", [this](){
+    sendKey("k");
+  });
+  AddGamingHotkey("@LButton", [this](){
+    while (io.GetKeyState("LButton")) {
+      sendKey("e");
+      std::this_thread::sleep_for(std::chrono::milliseconds(400));
+    }
+  });
+  AddGamingHotkey("@RButton", [this](){
+    sendKey("q");
   });
   AddGamingHotkey("@w:up", [this]() { keyDown = false; }, nullptr, 0);
   AddGamingHotkey(

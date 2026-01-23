@@ -4,6 +4,10 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
+#include <set>
 #ifndef Q_MOC_RUN
 #include <cstdlib> // For getenv()
 
@@ -17,7 +21,7 @@
     #define OS_NAME "Windows"
     using wID = HWND;
     using pID = DWORD;  
-    using Key = int;
+    //using Key = int;
     // #define DESKTOP_ENVIRONMENT "Unknown" // Placeholder for Windows
     // #define WINDOW_MANAGER "Unknown" // Placeholder for Windows
 #elif defined(__linux__)
@@ -48,7 +52,7 @@
     #undef None
     #endif
     using wID = unsigned long; // X11 Window type
-    using Key = unsigned long;
+    //using Key = unsigned long;
     #endif
     using pID = pid_t; // Example type for process ID
 #elif defined(__APPLE__)
@@ -63,8 +67,21 @@
     #error "Unsupported platform"
 #endif
 #endif
+using int32 = int32_t;
+using int64 = int64_t;
+using uint32 = uint32_t;
+using uint64 = uint64_t;
+template <typename T, typename U> using omap = std::map<T, U>;
+template <typename T> using vec = std::vector<T>;
+template <typename T, typename U> using umap = std::unordered_map<T, U>;
+template <typename T> using uset = std::unordered_set<T>;
+template <typename T> using oset = std::set<T>;
+using Key = int32_t;
 using str = std::string; // Alias for string type
+using string = std::string;
+using cstring = const str&;
 using cstr = const str&; // Alias for const string reference
+using cchar = const char;
 using group = std::map<str, std::vector<str>>; // Alias for a map of string to vector of strings
 using null = decltype(nullptr); // Use nullptr instead of NULL for better type safety
 namespace havel {

@@ -624,7 +624,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     Launcher::runShell("brave --new-tab");
   }); // #!b opens a new browser tab
   io.Hotkey("#c", []() {
-    Launcher::runShell("/bin/livecaptions");
+    Launcher::runShell("~/scripts/py/livecaptions.py");
   }); // #c runs /bin/livecaptions
   io.Hotkey("#!c", []() {
     Launcher::runShell("~/scripts/caption.sh 9 en");
@@ -635,8 +635,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   io.Hotkey("#+c", []() {
     Launcher::runShell("~/scripts/mimi.sh");
   });                         // #+c runs ~/scripts/mimi.sh
-  io.Hotkey("^!P", [this]() { // ^!P toggles capslock
-    // Toggle capslock by sending the CapsLock key, which will toggle the state
+  io.Hotkey("^!P", [this]() {
     io.Send("{CapsLock}");
   });
 
@@ -1029,6 +1028,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     }
   });*/
   AddHotkey("#k", "xkill");
+  AddHotkey("#!2", "xprop");
   io.Hotkey("@^+WheelUp",
             [this]() { brightnessManager.increaseBrightness(0.05); });
   io.Hotkey("@^+WheelDown",
@@ -1175,13 +1175,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     }
   });
   // Register screenshot hotkeys
-  AddHotkey("@#|Print", "~/scripts/ocrs.sh");
+  AddHotkey("@|#Print", "~/scripts/ocrs.sh");
 
-  io.Hotkey("@^+Print", [this]() { screenshotManager.takeScreenshot(); });
+  io.Hotkey("@|Print", [this]() { screenshotManager.takeScreenshot(); });
 
-  io.Hotkey("@!+Print", [this]() { screenshotManager.takeRegionScreenshot(); });
+  io.Hotkey("@|+Print", [this]() { screenshotManager.takeRegionScreenshot(); });
 
-  io.Hotkey("@!Pause",
+  io.Hotkey("@|Pause",
             [this]() { screenshotManager.takeScreenshotOfCurrentMonitor(); });
   AddHotkey("@|numpad5",
             [this]() { io.Click(MouseButton::Left, MouseAction::Hold); });
@@ -1235,33 +1235,37 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
-
+  
   static bool keyDown = false;
-  auto sendKey = [this](const std::string &key){
-    io.Send("{" + key + " down}");
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    io.Send("{" + key + " up}");
-  };
-  AddGamingHotkey("@mouseleft", [this](){
-    sendKey("f");
-  });
-  AddGamingHotkey("@mouseright", [this](){
-    sendKey("g");
-  });
-  AddGamingHotkey("@mouseup", [this](){
-    sendKey("i");
-  });
-  AddGamingHotkey("@mousedown", [this](){
-    sendKey("k");
-  });
-  AddGamingHotkey("@LButton", [this](){
-    while (io.GetKeyState("LButton")) {
-      sendKey("e");
-      std::this_thread::sleep_for(std::chrono::milliseconds(400));
+  static bool registeredMouseKeys = false;
+  AddGamingHotkey("@!m", [this](){
+    if (registeredMouseKeys) {
+      return;
     }
-  });
-  AddGamingHotkey("@RButton", [this](){
-    sendKey("q");
+    registeredMouseKeys = true;
+    auto sendKey = [this](const std::string &key){
+      io.Send("{" + key + " down}");
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      io.Send("{" + key + " up}");
+    };
+    AddGamingHotkey("@mouseleft", [this, sendKey](){
+      sendKey("f");
+    });
+    AddGamingHotkey("@mouseright", [this, sendKey](){
+      sendKey("g");
+    });
+    AddGamingHotkey("@mouseup", [this, sendKey](){
+      sendKey("i");
+    });
+    AddGamingHotkey("@mousedown", [this, sendKey](){
+      sendKey("k");
+    });
+    AddGamingHotkey("@LButton", [this, sendKey](){
+      sendKey("e");
+    });
+    AddGamingHotkey("@RButton", [this, sendKey](){
+      sendKey("q");
+    });
   });
   AddGamingHotkey("@w:up", [this]() { keyDown = false; }, nullptr, 0);
   AddGamingHotkey(
@@ -1320,7 +1324,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                      std::to_string(static_cast<int>(vol * 100)) + "%");
     info("Volume for {}: {:.0f}%", app, vol * 100);
   });
-  AddContextualHotkey("Enter", "window.class ~ 'chatterino'",
+  AddContextualHotkey("Enter", "window.title ~ 'Chatterino'",
                       []() { info("Enter pressed in chatterino"); });
   AddContextualHotkey("h", "window.title ~ 'Genshin Impact'", [this]() {
     auto winId = WindowManager::GetActiveWindow();

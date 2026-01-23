@@ -16,11 +16,35 @@ std::unordered_map<unsigned long, std::string> KeyMap::x11ToName;
 std::unordered_map<int, std::string> KeyMap::windowsToName;
 
 void KeyMap::AddKey(const std::string& name, int evdev, unsigned long x11, int windows) {
+    // Check for duplicate key names
+    if (nameToKey.find(name) != nameToKey.end()) {
+        std::cerr << "WARNING: Duplicate key name '" << name << "' found!" << std::endl;
+        std::cerr << "Previous evdev code: " << nameToKey[name].evdevCode << ", New evdev code: " << evdev << std::endl;
+    }
+
+    // Check for duplicate evdev codes
+    if (evdev != 0 && evdevToName.find(evdev) != evdevToName.end()) {
+        std::cerr << "WARNING: Duplicate evdev code " << evdev << " found!" << std::endl;
+        std::cerr << "Previous name: " << evdevToName[evdev] << ", New name: " << name << std::endl;
+    }
+
+    // Check for duplicate X11 codes
+    if (x11 != 0 && x11ToName.find(x11) != x11ToName.end()) {
+        std::cerr << "WARNING: Duplicate X11 code " << x11 << " found!" << std::endl;
+        std::cerr << "Previous name: " << x11ToName[x11] << ", New name: " << name << std::endl;
+    }
+
+    // Check for duplicate Windows codes
+    if (windows != 0 && windowsToName.find(windows) != windowsToName.end()) {
+        std::cerr << "WARNING: Duplicate Windows code " << windows << " found!" << std::endl;
+        std::cerr << "Previous name: " << windowsToName[windows] << ", New name: " << name << std::endl;
+    }
+
     KeyEntry entry = {name, {}, evdev, x11, windows};
     nameToKey[name] = entry;
-    evdevToName[evdev] = name;
-    x11ToName[x11] = name;
-    windowsToName[windows] = name;
+    if (evdev != 0) evdevToName[evdev] = name;
+    if (x11 != 0) x11ToName[x11] = name;
+    if (windows != 0) windowsToName[windows] = name;
 }
 
 void KeyMap::AddAlias(const std::string& alias, const std::string& primaryName) {
@@ -39,7 +63,7 @@ int KeyMap::FromString(const std::string& name) {
     if (it != nameToKey.end()) {
         return it->second.evdevCode;
     }
-    return 0; // Or some error code
+    return 0;
 }
 
 unsigned long KeyMap::ToX11(const std::string& name) {
@@ -47,7 +71,7 @@ unsigned long KeyMap::ToX11(const std::string& name) {
     if (it != nameToKey.end()) {
         return it->second.x11KeySym;
     }
-    return 0; // Or some error code
+    return 0;
 }
 
 int KeyMap::ToWindows(const std::string& name) {
@@ -55,7 +79,7 @@ int KeyMap::ToWindows(const std::string& name) {
     if (it != nameToKey.end()) {
         return it->second.windowsVK;
     }
-    return 0; // Or some error code
+    return 0;
 }
 
 std::string KeyMap::EvdevToString(int code) {
@@ -139,7 +163,11 @@ std::vector<std::string> KeyMap::GetAliases(const std::string& name) {
 
 // Helper to add all key mappings
 void KeyMap::Initialize() {
-    if (initialized) return;
+    if (initialized) {
+        std::cout << "KeyMap::Initialize(): Already initialized, skipping." << std::endl;
+        return;
+    }
+    std::cout << "KeyMap::Initialize(): Starting initialization..." << std::endl;
     
     // Windows VK codes (for reference when WINDOWS is not defined)
     #ifndef WINDOWS
@@ -604,6 +632,13 @@ void KeyMap::Initialize() {
     AddAlias("scrollup", "wheelup");
     AddKey("wheeldown", 0, Button5, 0);
     AddAlias("scrolldown", "wheeldown");
+
+    // Mouse movement directions (use codes well above KEY_MAX to avoid collisions)
+    // KEY_MAX is 0x2ff (767), so we use codes far beyond that
+    AddKey("mouseleft", 10001, 0, 0);   // Way above KEY_MAX
+    AddKey("mouseright", 10002, 0, 0);  // Way above KEY_MAX
+    AddKey("mouseup", 10003, 0, 0);     // Way above KEY_MAX
+    AddKey("mousedown", 10004, 0, 0);   // Way above KEY_MAX
     
     // Joystick buttons
     AddKey("joya", BTN_SOUTH, 0, 0);
@@ -628,7 +663,8 @@ void KeyMap::Initialize() {
     AddKey("reserved", KEY_RESERVED, 0, 0);
     AddKey("unknown", KEY_UNKNOWN, 0, 0);
     AddAlias("nosymbol", "unknown");
-    
+
+    std::cout << "KeyMap::Initialize(): Completed initialization, total keys: " << nameToKey.size() << std::endl;
     initialized = true;
 }
 

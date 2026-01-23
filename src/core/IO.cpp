@@ -1831,7 +1831,7 @@ bool IO::Suspend() {
       if (hotkeyManager) {
         // Track the original state of conditional hotkeys before suspension and update their states
         hotkeyManager->conditionalHotkeysEnabled = false;
-        std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
+        /*std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
         for (auto& ch : hotkeyManager->conditionalHotkeys) {
           ConditionalHotkeyState state;
@@ -1844,7 +1844,7 @@ bool IO::Suspend() {
             UngrabHotkey(ch.id);
             ch.currentlyGrabbed = false;
           }
-        }
+        }*/
       }
 
       wasSuspended = true;
@@ -2090,12 +2090,14 @@ KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
 
   // Handle raw keycode (kc123)
   if (keyPart.length() > 2 && keyPart.substr(0, 2) == "kc") {
+    debug("Parsing raw keycode: " + keyPart);
     try {
       int kc = std::stoi(keyPart.substr(2));
       if (kc > 0 && kc <= 767) {
         return kc;
       }
     } catch (const std::exception &) {
+      debug("Failed to parse raw keycode: " + keyPart);
       return 0;
     }
     return 0;
@@ -2103,11 +2105,13 @@ KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
 
   // Handle evdev names
   if (isEvdev) {
+    debug("Parsing evdev name: " + keyPart);
     return EvdevNameToKeyCode(keyPart);
   }
 
   // Handle X11 names
   std::string keyLower = toLower(keyPart);
+  debug("Parsing X11 name: " + keyLower);
   return GetKeyCode(keyLower);
 }
 
@@ -2172,11 +2176,13 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
   // Check if it's a comma-separated direction pattern (may include mouse directions)
   bool hasComma = parsed.keyPart.find(',') != std::string::npos;
 
-  // Check if it's a single mouse direction (using the new mouse-specific names)
-  bool isMouseDirection = (keyLower == "mouseleft" || keyLower == "mouseright" ||
-                          keyLower == "mouseup" || keyLower == "mousedown" ||
-                          keyLower == "mouseupleft" || keyLower == "mouseupright" ||
-                          keyLower == "mousedownleft" || keyLower == "mousedownright");
+  // Check if it's a single mouse movement direction (these should be keyboard hotkeys)
+  bool isSingleMouseMovement = (keyLower == "mouseleft" || keyLower == "mouseright" ||
+                               keyLower == "mouseup" || keyLower == "mousedown");
+
+  // Check if it's a single mouse gesture direction (corners and complex gestures)
+  bool isMouseGestureDirection = (keyLower == "mouseupleft" || keyLower == "mouseupright" ||
+                                 keyLower == "mousedownleft" || keyLower == "mousedownright");
 
   // Check if it's a comma-separated pattern that looks like a gesture pattern
   bool isGesturePattern = false;
@@ -2214,16 +2220,17 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
       isGesturePattern = allPartsAreMouseDirections;
   }
 
-  // Only treat as gesture if it's a predefined gesture, contains mouse-specific directions in comma pattern, or is a single mouse direction
+  // Only treat as gesture if it's a predefined gesture, contains mouse-specific directions in comma pattern, or is a mouse gesture direction
+  // Single mouse movements (mouseleft, mouseright, mouseup, mousedown) should be keyboard hotkeys
   // This avoids conflicting with regular arrow keys like "up", "down", "left", "right"
-  if (isPredefinedGesture || isGesturePattern || isMouseDirection) {
+  if (isPredefinedGesture || isGesturePattern || isMouseGestureDirection) {
     hotkey.type = HotkeyType::MouseGesture;
     hotkey.gesturePattern = parsed.keyPart; // Store the gesture pattern string
 
     // Determine gesture type and set up configuration based on the pattern
     if (isPredefinedGesture) {
         hotkey.gestureConfig.type = MouseGestureType::Shape;
-    } else if (isMouseDirection) {
+    } else if (isMouseGestureDirection) {
         hotkey.gestureConfig.type = MouseGestureType::Direction;
     } else {
         // It's a custom direction pattern
@@ -2268,17 +2275,40 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         hotkey.success = !hotkey.comboSequence.empty();
       } else {
         // Regular keyboard hotkey
-        KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+        debug("Parsing keyboard hotkey: '{}' (isEvdev: {})", parsed.keyPart, parsed.isEvdev);
 
-        if (keycode == 0) {
-          std::cerr << "Invalid key: '" << parsed.keyPart
-                    << "' in hotkey: " << rawInput << "\n";
-          return {};
+        // Check if this is a mouse movement hotkey that needs special handling
+        std::string keyLower = toLower(parsed.keyPart);
+        int virtualKeyCode = 0;
+
+        if (keyLower == "mouseleft") {
+            virtualKeyCode = 10001;
+        } else if (keyLower == "mouseright") {
+            virtualKeyCode = 10002;
+        } else if (keyLower == "mouseup") {
+            virtualKeyCode = 10003;
+        } else if (keyLower == "mousedown") {
+            virtualKeyCode = 10004;
+        } else {
+            // Regular key - use the normal parsing
+            KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
+            virtualKeyCode = static_cast<int>(keycode);
+
+            debug("Parsed keycode for '{}': {}", parsed.keyPart, virtualKeyCode);
+
+            if (virtualKeyCode == 0) {
+              std::cerr << "Invalid key: '" << parsed.keyPart
+                        << "' in hotkey: " << rawInput << "\n";
+              return {};
+            }
         }
 
         hotkey.type = HotkeyType::Keyboard;
-        hotkey.key = static_cast<Key>(keycode);
+        hotkey.key = static_cast<Key>(virtualKeyCode);
         hotkey.success = true;
+
+        debug("Registered keyboard hotkey '{}' with key code: {}",
+             rawInput, static_cast<int>(hotkey.key));
       }
     }
   }
@@ -3245,320 +3275,15 @@ Key IO::StringToButton(const std::string &buttonNameRaw) {
 Key IO::EvdevNameToKeyCode(std::string keyName) {
   removeSpecialCharacters(keyName);
   keyName = ToLower(keyName);
-
+  debug("Parsing evdev name: " + keyName);
   // Use KeyMap for lookup
   int code = KeyMap::FromString(keyName);
   if (code != 0) {
+    debug("Found evdev code: " + std::to_string(code));
     return code;
   }
-
-  // Fallback to old logic for compatibility
-  // Single character handling for letters/numbers
-  if (keyName.length() == 1) {
-    char c = keyName[0];
-    if (c >= 'a' && c <= 'z')
-      return KEY_A + (c - 'a');
-    if (c >= '0' && c <= '9')
-      return (c == '0') ? KEY_0 : KEY_1 + (c - '1');
-  }
-
-  static const std::unordered_map<std::string, Key> evdevMap = {
-      // Control keys
-      {"esc", KEY_ESC},
-      {"enter", KEY_ENTER},
-      {"space", KEY_SPACE},
-      {"tab", KEY_TAB},
-      {"backspace", KEY_BACKSPACE},
-      {"delete", KEY_DELETE},
-
-      // Modifiers
-      {"ctrl", KEY_LEFTCTRL},
-      {"lctrl", KEY_LEFTCTRL},
-      {"rctrl", KEY_RIGHTCTRL},
-      {"shift", KEY_LEFTSHIFT},
-      {"lshift", KEY_LEFTSHIFT},
-      {"rshift", KEY_RIGHTSHIFT},
-      {"alt", KEY_LEFTALT},
-      {"lalt", KEY_LEFTALT},
-      {"ralt", KEY_RIGHTALT},
-      {"win", KEY_LEFTMETA},
-      {"meta", KEY_LEFTMETA},
-      {"lwin", KEY_LEFTMETA},
-      {"lmeta", KEY_LEFTMETA},
-      {"rwin", KEY_RIGHTMETA},
-      {"rmeta", KEY_RIGHTMETA},
-
-      // Navigation
-      {"home", KEY_HOME},
-      {"end", KEY_END},
-      {"pgup", KEY_PAGEUP},
-      {"pgdn", KEY_PAGEDOWN},
-      {"pageup", KEY_PAGEUP},
-      {"pagedown", KEY_PAGEDOWN},
-      {"insert", KEY_INSERT},
-      {"left", KEY_LEFT},
-      {"right", KEY_RIGHT},
-      {"up", KEY_UP},
-      {"down", KEY_DOWN},
-
-      // Lock keys
-      {"capslock", KEY_CAPSLOCK},
-      {"numlock", KEY_NUMLOCK},
-      {"scrolllock", KEY_SCROLLLOCK},
-
-      // Function keys
-      {"f1", KEY_F1},
-      {"f2", KEY_F2},
-      {"f3", KEY_F3},
-      {"f4", KEY_F4},
-      {"f5", KEY_F5},
-      {"f6", KEY_F6},
-      {"f7", KEY_F7},
-      {"f8", KEY_F8},
-      {"f9", KEY_F9},
-      {"f10", KEY_F10},
-      {"f11", KEY_F11},
-      {"f12", KEY_F12},
-      {"f13", KEY_F13},
-      {"f14", KEY_F14},
-      {"f15", KEY_F15},
-      {"f16", KEY_F16},
-      {"f17", KEY_F17},
-      {"f18", KEY_F18},
-      {"f19", KEY_F19},
-      {"f20", KEY_F20},
-      {"f21", KEY_F21},
-      {"f22", KEY_F22},
-      {"f23", KEY_F23},
-      {"f24", KEY_F24},
-
-      // Numpad
-      {"numpad0", KEY_KP0},
-      {"numpad1", KEY_KP1},
-      {"numpad2", KEY_KP2},
-      {"numpad3", KEY_KP3},
-      {"numpad4", KEY_KP4},
-      {"numpad5", KEY_KP5},
-      {"numpad6", KEY_KP6},
-      {"numpad7", KEY_KP7},
-      {"numpad8", KEY_KP8},
-      {"numpad9", KEY_KP9},
-      {"numpadadd", KEY_KPPLUS},
-      {"numpadplus", KEY_KPPLUS},
-      {"numpadsub", KEY_KPMINUS},
-      {"numpadminus", KEY_KPMINUS},
-      {"numpadmul", KEY_KPASTERISK},
-      {"numpadmult", KEY_KPASTERISK},
-      {"numpadasterisk", KEY_KPASTERISK},
-      {"*", KEY_KPASTERISK},
-      {"numpaddiv", KEY_KPSLASH},
-      {"numpaddec", KEY_KPDOT},
-      {"numpaddot", KEY_KPDOT},
-      {"numpaddel", KEY_KPDOT},
-      {"numpadperiod", KEY_KPDOT},
-      {"numpaddelete", KEY_KPDOT},
-      {"numpaddecimal", KEY_KPDOT},
-      {"numpadenter", KEY_KPENTER},
-      {"numpadequal", KEY_KPEQUAL},
-      {"numpadcomma", KEY_KPCOMMA},
-      {"numpadleftparen", KEY_KPLEFTPAREN},
-      {"numpadrightparen", KEY_KPRIGHTPAREN},
-
-      // Symbols
-      {"minus", KEY_MINUS},
-      {"-", KEY_MINUS},
-      {"equal", KEY_EQUAL},
-      {"equals", KEY_EQUAL},
-      {"=", KEY_EQUAL},
-      {"leftbrace", KEY_LEFTBRACE},
-      {"[", KEY_LEFTBRACE},
-      {"rightbrace", KEY_RIGHTBRACE},
-      {"]", KEY_RIGHTBRACE},
-      {"semicolon", KEY_SEMICOLON},
-      {";", KEY_SEMICOLON},
-      {"apostrophe", KEY_APOSTROPHE},
-      {"'", KEY_APOSTROPHE},
-      {"grave", KEY_GRAVE},
-      {"`", KEY_GRAVE},
-      {"backslash", KEY_BACKSLASH},
-      {"\\", KEY_BACKSLASH},
-      {"comma", KEY_COMMA},
-      {",", KEY_COMMA},
-      {"dot", KEY_DOT},
-      {"period", KEY_DOT},
-      {".", KEY_DOT},
-      {"slash", KEY_SLASH},
-      {"/", KEY_SLASH},
-      {"less", KEY_102ND},
-      {"<", KEY_102ND},
-
-      // Media control keys
-      {"playpause", KEY_PLAYPAUSE},
-      {"play", KEY_PLAY},
-      {"pause", KEY_PAUSE},
-      {"stop", KEY_STOP},
-      {"stopcd", KEY_STOPCD},
-      {"record", KEY_RECORD},
-      {"rewind", KEY_REWIND},
-      {"fastforward", KEY_FASTFORWARD},
-      {"ejectcd", KEY_EJECTCD},
-      {"eject", KEY_EJECTCD},
-      {"nextsong", KEY_NEXTSONG},
-      {"previoussong", KEY_PREVIOUSSONG},
-      {"next", KEY_NEXTSONG},
-      {"prev", KEY_PREVIOUSSONG},
-      {"previous", KEY_PREVIOUSSONG},
-
-      // Volume control
-      {"volumeup", KEY_VOLUMEUP},
-      {"volumedown", KEY_VOLUMEDOWN},
-      {"mute", KEY_MUTE},
-      {"volumemute", KEY_MUTE},
-      {"micmute", KEY_MICMUTE},
-
-      // Browser keys
-      {"homepage", KEY_HOMEPAGE},
-      {"back", KEY_BACK},
-      {"forward", KEY_FORWARD},
-      {"search", KEY_SEARCH},
-      {"bookmarks", KEY_BOOKMARKS},
-      {"refresh", KEY_REFRESH},
-      {"stop", KEY_STOP},
-      {"favorites", KEY_FAVORITES},
-
-      // Application launcher keys
-      {"mail", KEY_MAIL},
-      {"calc", KEY_CALC},
-      {"calculator", KEY_CALC},
-      {"computer", KEY_COMPUTER},
-      {"media", KEY_MEDIA},
-      {"www", KEY_WWW},
-      {"finance", KEY_FINANCE},
-      {"shop", KEY_SHOP},
-      {"coffee", KEY_COFFEE},
-      {"chat", KEY_CHAT},
-      {"messenger", KEY_MESSENGER},
-      {"calendar", KEY_CALENDAR},
-
-      // Media player control
-      {"mediaplay", KEY_PLAYPAUSE},
-      {"medianext", KEY_NEXTSONG},
-      {"mediaprev", KEY_PREVIOUSSONG},
-      {"mediastop", KEY_STOPCD},
-      {"mediarecord", KEY_RECORD},
-      {"mediarewind", KEY_REWIND},
-      {"mediaforward", KEY_FASTFORWARD},
-      {"mediaeject", KEY_EJECTCD},
-
-      // Power management
-      {"power", KEY_POWER},
-      {"sleep", KEY_SLEEP},
-      {"wakeup", KEY_WAKEUP},
-      {"suspend", KEY_SUSPEND},
-      // Display/brightness
-      {"brightnessup", KEY_BRIGHTNESSUP},
-      {"brightnessdown", KEY_BRIGHTNESSDOWN},
-      {"brightness", KEY_BRIGHTNESS_AUTO},
-      {"brightnessauto", KEY_BRIGHTNESS_AUTO},
-      {"displayoff", KEY_DISPLAY_OFF},
-      {"switchvideomode", KEY_SWITCHVIDEOMODE},
-
-      // Keyboard backlight
-      {"kbdillumup", KEY_KBDILLUMUP},
-      {"kbdillumdown", KEY_KBDILLUMDOWN},
-      {"kbdillumtoggle", KEY_KBDILLUMTOGGLE},
-
-      // Wireless
-      {"wlan", KEY_WLAN},
-      {"bluetooth", KEY_BLUETOOTH},
-      {"wifi", KEY_WLAN},
-      {"rfkill", KEY_RFKILL},
-
-      // Battery
-      {"battery", KEY_BATTERY},
-
-      // Zoom
-      {"zoomin", KEY_ZOOMIN},
-      {"zoomout", KEY_ZOOMOUT},
-      {"zoomreset", KEY_ZOOMRESET},
-
-      // Screen control
-      {"cyclewindows", KEY_CYCLEWINDOWS},
-      {"scale", KEY_SCALE},
-      {"dashboard", KEY_DASHBOARD},
-
-      // File operations
-      {"file", KEY_FILE},
-      {"open", KEY_OPEN},
-      {"close", KEY_CLOSE},
-      {"save", KEY_SAVE},
-      {"print", KEY_PRINT},
-      {"cut", KEY_CUT},
-      {"copy", KEY_COPY},
-      {"paste", KEY_PASTE},
-      {"find", KEY_FIND},
-      {"undo", KEY_UNDO},
-      {"redo", KEY_REDO},
-
-      // Text editing
-      {"again", KEY_AGAIN},
-      {"props", KEY_PROPS},
-      {"front", KEY_FRONT},
-      {"help", KEY_HELP},
-      {"menu", KEY_MENU},
-      {"select", KEY_SELECT},
-      {"cancel", KEY_CANCEL},
-
-      // ISO keyboard extras
-      {"iso", KEY_102ND},
-      {"102nd", KEY_102ND},
-      {"ro", KEY_RO},
-      {"katakanahiragana", KEY_KATAKANAHIRAGANA},
-      {"yen", KEY_YEN},
-      {"henkan", KEY_HENKAN},
-      {"muhenkan", KEY_MUHENKAN},
-      {"kpjpcomma", KEY_KPJPCOMMA},
-      {"hangeul", KEY_HANGEUL},
-      {"hanja", KEY_HANJA},
-      {"katakana", KEY_KATAKANA},
-      {"hiragana", KEY_HIRAGANA},
-      {"zenkakuhankaku", KEY_ZENKAKUHANKAKU},
-
-      // Special system keys
-      {"sysrq", KEY_SYSRQ},
-      {"printscreen", KEY_SYSRQ},
-      {"pausebreak", KEY_PAUSE},
-      {"scrollup", KEY_SCROLLUP},
-      {"scrolldown", KEY_SCROLLDOWN},
-
-      // Gaming/multimedia extras
-      {"prog1", KEY_PROG1},
-      {"prog2", KEY_PROG2},
-      {"prog3", KEY_PROG3},
-      {"prog4", KEY_PROG4},
-      {"macro", KEY_MACRO},
-      {"fn", KEY_FN},
-      {"fnesc", KEY_FN_ESC},
-      {"fnf1", KEY_FN_F1},
-      {"fnf2", KEY_FN_F2},
-      {"fnf3", KEY_FN_F3},
-      {"fnf4", KEY_FN_F4},
-      {"fnf5", KEY_FN_F5},
-      {"fnf6", KEY_FN_F6},
-      {"fnf7", KEY_FN_F7},
-      {"fnf8", KEY_FN_F8},
-      {"fnf9", KEY_FN_F9},
-      {"fnf10", KEY_FN_F10},
-      {"fnf11", KEY_FN_F11},
-      {"fnf12", KEY_FN_F12},
-
-      // Special marker
-      {"nosymbol", KEY_RO},
-      {"reserved", KEY_RESERVED},
-      {"unknown", KEY_UNKNOWN}};
-
-  auto it = evdevMap.find(keyName);
-  return (it != evdevMap.end()) ? it->second : 0;
+  error("Failed to find evdev code for: " + keyName);
+  return 0;
 }
 
 // Display a message box

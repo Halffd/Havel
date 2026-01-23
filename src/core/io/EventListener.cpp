@@ -981,6 +981,17 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         }
       }
 
+      // ✅ ADD THIS: Queue movement as hotkey triggers (async processing)
+      const int threshold = 5;  // Minimum movement to trigger
+
+      if (ev.code == REL_X && std::abs(scaledInt) >= threshold) {
+          int virtualKey = (scaledInt > 0) ? 10002 : 10001;  // mouseright : mouseleft
+          QueueMouseMovementHotkey(virtualKey);
+      } else if (ev.code == REL_Y && std::abs(scaledInt) >= threshold) {
+          int virtualKey = (scaledInt > 0) ? 10004 : 10003;  // mousedown : mouseup
+          QueueMouseMovementHotkey(virtualKey);
+      }
+
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
@@ -1112,9 +1123,120 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     }
   }
 }
+
+void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
+    std::vector<int> matchedHotkeyIds;
+
+    {
+        std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
+        std::shared_lock<std::shared_mutex> stateLock(stateMutex);
+
+        for (auto &[id, hotkey] : IO::hotkeys) {
+            if (!hotkey.enabled)
+                continue;
+
+            // Only match keyboard hotkeys with our virtual movement keys
+            if (hotkey.type != HotkeyType::Keyboard)
+                continue;
+
+            // Check if the key matches
+            if (static_cast<int>(hotkey.key) != virtualKey)
+                continue;
+
+            // Modifier matching
+            if (hotkey.modifiers != 0) {
+                if (!CheckModifierMatch(hotkey.modifiers, hotkey.wildcard))
+                    continue;
+            }
+
+            // Context checks
+            if (!hotkey.contexts.empty()) {
+                bool contextMatch = std::any_of(
+                    hotkey.contexts.begin(), hotkey.contexts.end(),
+                    [](auto &ctx) { return ctx(); }
+                );
+                if (!contextMatch)
+                    continue;
+            }
+
+            // Match!
+            matchedHotkeyIds.push_back(id);
+        }
+    }
+
+    // Execute callbacks asynchronously to avoid blocking input thread
+    for (int hotkeyId : matchedHotkeyIds) {
+        std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+        auto it = IO::hotkeys.find(hotkeyId);
+
+        if (it != IO::hotkeys.end() && it->second.enabled) {
+            auto callback = it->second.callback;
+            lock.unlock();
+
+            // Execute callback in a separate thread to avoid blocking input
+            std::thread([callback]() {
+                callback();
+            }).detach();
+        }
+    }
+}
+
+void EventListener::QueueMouseMovementHotkey(int virtualKey) {
+    // Check rate limiting to avoid flooding the queue
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        now - lastMovementHotkeyTime).count();
+
+    // Only process at most every 10ms to avoid overwhelming the system
+    if (elapsed < 10) {
+        return;
+    }
+    lastMovementHotkeyTime = now;
+
+    // Add to queue if not already processing and queue isn't too large
+    {
+        std::unique_lock<std::shared_mutex> lock(movementHotkeyMutex);
+        if (queuedMovementHotkeys.size() < 10) {  // Prevent excessive queuing
+            queuedMovementHotkeys.push(virtualKey);
+        }
+    }
+
+    // Process queued hotkeys asynchronously if not already processing
+    if (!movementHotkeyProcessing.exchange(true)) {
+        // Process in a separate thread to avoid blocking the input thread
+        std::thread([this]() {
+            ProcessQueuedMouseMovementHotkeys();
+            movementHotkeyProcessing.store(false);
+        }).detach();
+    }
+}
+
+void EventListener::ProcessQueuedMouseMovementHotkeys() {
+    std::vector<int> hotkeysToProcess;
+
+    // Extract all queued hotkeys under lock
+    {
+        std::unique_lock<std::shared_mutex> lock(movementHotkeyMutex);
+        while (!queuedMovementHotkeys.empty()) {
+            hotkeysToProcess.push_back(queuedMovementHotkeys.front());
+            queuedMovementHotkeys.pop();
+        }
+    }
+
+    // Process unique hotkeys only (avoid duplicate processing)
+    std::sort(hotkeysToProcess.begin(), hotkeysToProcess.end());
+    hotkeysToProcess.erase(std::unique(hotkeysToProcess.begin(), hotkeysToProcess.end()),
+                          hotkeysToProcess.end());
+
+    // Process each unique hotkey
+    for (int virtualKey : hotkeysToProcess) {
+        EvaluateMouseMovementHotkeys(virtualKey);
+    }
+}
+
 void EventListener::UpdateModifierState(int evdevCode, bool down) {
   // This is called with stateMutex already locked
-  
+
   // Check if this key is remapped - if so, update modifier state based on target
   int effectiveCode = evdevCode;
   auto remapIt = keyRemaps.find(evdevCode);

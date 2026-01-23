@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -210,10 +211,19 @@ private:
     
     // Check if should block event
     bool ShouldBlockEvent(int evdevCode, bool down);
-    
+
     // Handle key remap
     int RemapKey(int evdevCode, bool down);
     bool EvaluateWheelCombo(const HotKey& hotkey, int wheelDirection);
+
+    // Queue mouse movement hotkeys for async processing
+    void QueueMouseMovementHotkey(int virtualKey);
+
+    // Process queued mouse movement hotkeys
+    void ProcessQueuedMouseMovementHotkeys();
+
+    // Evaluate mouse movement hotkeys
+    void EvaluateMouseMovementHotkeys(int virtualKey);
 
     std::atomic<bool> running{false};
     std::atomic<bool> shutdown{false};
@@ -267,6 +277,12 @@ private:
     int gestureLastX = 0;
     int gestureLastY = 0;
     std::chrono::steady_clock::time_point gestureLastTime;
+
+    // Mouse movement hotkey queuing
+    std::chrono::steady_clock::time_point lastMovementHotkeyTime{std::chrono::steady_clock::time_point::min()};
+    mutable std::shared_mutex movementHotkeyMutex;
+    std::queue<int> queuedMovementHotkeys;
+    std::atomic<bool> movementHotkeyProcessing{false};
 
     // Buffer for recent mouse movements for gesture detection
     struct MouseMovement {

@@ -22,6 +22,10 @@
 #include "window/CompositorBridge.hpp"
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
+#include "gui/HavelApp.hpp"
+#ifdef ENABLE_HAVEL_LANG
+#include "havel-lang/runtime/Interpreter.hpp"
+#endif
 #include <X11/XKBlib.h>
 #include <X11/keysym.h>
 #include <algorithm>
@@ -763,26 +767,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   const std::map<std::string, std::pair<std::string, std::function<void()>>>
       emergencyHotkeys = {
           {"#Esc",
-           {"Restart application",
-            []() {
-              info("Restarting application");
-              std::string exePath = GetExecutablePath();
-              if (!exePath.empty()) {
-                debug("Executable path: " + exePath);
-                if (fork() == 0) {
-                  debug("Child process started, executing: " + exePath);
-                  execl(exePath.c_str(), exePath.c_str(), nullptr);
-                  error("Failed to restart application");
-                  exit(1);
+            {"Restart application",
+              []() {
+#ifdef ENABLE_HAVEL_LANG
+                auto* interp = HavelApp::instance->getInterpreter();
+                if (!interp) {
+                  info("Restart application output: Interpreter not available");
+                  return;
                 }
-                info("Parent process exiting for restart");
-                if (App::instance()) {
-                  App::quit();
+                auto out = interp->Execute("app.restart()");
+                if (auto* err = std::get_if<HavelRuntimeError>(&out)) {
+                  info("Restart application output: {}", err->what());
+                } else {
+                  info("Restart application output: {}", toString(out));
                 }
-              } else {
-                error("Failed to get executable path");
-              }
-            }}},
+#else
+                info("Restart application output: Havel Lang disabled");
+#endif
+              }}},
           {"^#esc", {"Reload configuration", [this]() {
                        info("Reloading configuration");
                        ReloadConfigurations();

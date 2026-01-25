@@ -126,7 +126,7 @@ Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr,
       audioManager(audio_mgr), guiManager(gui_mgr),
       screenshotManager(screenshot_mgr), lastResult(nullptr) {
     environment = std::make_shared<Environment>();
-    InitializeStandardLibrary();
+    InitializeStandardLibrary();   
 }
 
 HavelResult Interpreter::Execute(const std::string& sourceCode) {

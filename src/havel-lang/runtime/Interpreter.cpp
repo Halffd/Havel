@@ -1184,7 +1184,7 @@ void Interpreter::visitForStatement(const ast::ForStatement& node) {
         // Iterate over each element
         if (*array) for (const auto& element : **array) {
             // Define iterator variable in current scope
-            environment->Define(node.iterator->symbol, element);
+            environment->Define(node.iterators[0]->symbol, element);
             
             // Execute loop body
             auto bodyResult = Evaluate(*node.body);

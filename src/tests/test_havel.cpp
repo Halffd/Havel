@@ -153,6 +153,20 @@ void testParser(Tests& tf) {
         return false;
     });
 
+    tf.test("If Statement In Hotkey Block", []() {
+        std::string code = "F1 => { if true { send \"a\" } }";
+        havel::parser::Parser parser;
+        auto ast = parser.produceAST(code);
+        return ast != nullptr && ast->body.size() == 1;
+    });
+
+    tf.test("Sequential If Statements In Block", []() {
+        std::string code = "F1 => { if true { send \"a\" } if true { send \"b\" } }";
+        havel::parser::Parser parser;
+        auto ast = parser.produceAST(code);
+        return ast != nullptr && ast->body.size() == 1;
+    });
+
     tf.test("Pipeline Expression AST", []() {
         std::string code = "F1 => clipboard.get | text.upper | send";
         havel::parser::Parser parser;

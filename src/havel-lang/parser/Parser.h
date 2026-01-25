@@ -24,6 +24,11 @@ private:
     std::vector<Token> tokens;
     size_t position = 0;
 
+    // Controls whether `expr { ... }` is treated as call-sugar/lambda.
+    // This must be disabled when parsing conditions for statements like `if/while/when`
+    // to ensure the `{` starts the statement body.
+    bool allowBraceCallSugar = true;
+
     [[noreturn]] void fail(const std::string& message);
     [[noreturn]] void failAt(const Token& token, const std::string& message);
 

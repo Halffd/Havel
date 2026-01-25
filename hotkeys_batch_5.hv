@@ -1,23 +1,38 @@
 ^+!a => {
-  audio.setDefaultOutputByIndex(3)
-  log "Current device: " + audio.getDefaultOutput()
-  audio.playTestSound()
+  let device = audio.findDeviceByIndex(3)
+  if device {
+    audio.setDefaultOutput(device.name)
+    log "Current device: " + audio.getDefaultOutput()
+    audio.playTestSound()
+  }
 }
 
 ^numpadsub => {
-  audio.increaseVolume("200")
-  audio.increaseVolume("G30")
-  let vol = audio.getVolume("G30")
-  let pct = vol * 100
-  gui.notify("Volume (G30)", pct + "%")
-  log "Current volume (G30): " + pct + "%"
+  let phone = audio.findDeviceByName("G30")
+  let bt = audio.findDeviceByName("200")
+  if bt {
+    audio.increaseVolume(bt.name, 0.05)
+  }
+  if phone {
+    audio.increaseVolume(phone.name, 0.05)
+    let vol = audio.getVolume(phone.name)
+    let pct = vol * 100
+    gui.notify("Volume (G30)", pct + "%")
+    log "Current volume (G30): " + pct + "%"
+  }
 }
 
 ^numpadadd => {
-  audio.decreaseVolume("200")
-  audio.decreaseVolume("G30")
-  let vol = audio.getVolume("G30")
-  let pct = vol * 100
-  gui.notify("Volume (G30)", pct + "%")
-  log "Current volume (G30): " + pct + "%"
+  let phone = audio.findDeviceByName("G30")
+  let bt = audio.findDeviceByName("200")
+  if bt {
+    audio.decreaseVolume(bt.name, 0.05)
+  }
+  if phone {
+    audio.decreaseVolume(phone.name, 0.05)
+    let vol = audio.getVolume(phone.name)
+    let pct = vol * 100
+    gui.notify("Volume (G30)", pct + "%")
+    log "Current volume (G30): " + pct + "%"
+  }
 }

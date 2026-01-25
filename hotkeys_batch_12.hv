@@ -1,0 +1,23 @@
++f7 => {
+  brightnessManager.decreaseTemperature(200)
+}
+
+^+f7 => {
+  brightnessManager.decreaseTemperature(0, 200)
+}
+
+^!+f7 => {
+  brightnessManager.decreaseTemperature(1, 200)
+}
+
++f8 => {
+  brightnessManager.increaseTemperature(200)
+}
+
+^+f8 => {
+  brightnessManager.increaseTemperature(0, 200)
+}
+
+^!+f8 => {
+  brightnessManager.increaseTemperature(1, 200)
+}

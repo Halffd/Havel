@@ -1,0 +1,103 @@
+let zoomLevel = 1.0
+let zoom3Value = 2.0
+let altTabPressed = false
+
+fn qdbus (cmd) {
+  let res = run("qdbus " + cmd)
+  return res.stdout
+}
+
+fn kwinZoom (cmd) {
+  runDetached("qdbus " + cmd)
+  let out = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+  zoomLevel = out
+}
+
+fn zoom (level) {
+  if level < 0 {
+    level = 0
+  } else if level > 4 {
+    level = 4
+  }
+
+  if level == 0 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
+    if zoomLevel <= 0 {
+      send("@^{Down}")
+      zoomLevel = zoomLevel - 0.1
+    }
+  } else if level == 1 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
+    if zoomLevel <= 0 {
+      send("@^{Up}")
+      zoomLevel = zoomLevel + 0.1
+    }
+  } else if level == 2 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
+    if zoomLevel <= 0 {
+      send("@^/")
+      zoomLevel = 1.0
+    }
+  } else if level == 3 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + zoom3Value)
+    if zoomLevel <= 0 {
+      send("@^+/")
+      zoomLevel = 1.5
+    }
+  } else if level == 4 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus")
+  }
+
+  if zoomLevel < 1.0 {
+    zoomLevel = 1.0
+  }
+}
+
+~^Down => {
+  zoomLevel = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+}
+
+~^Up => {
+  zoomLevel = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+}
+
+@^#WheelUp => send("#{PgUp}")
+@^#WheelDown => send("#{PgDn}")
+@#+WheelDown => send("!9")
+@#+WheelUp => send("!0")
+
+#k => runDetached("xkill")
+#!2 => runDetached("xprop")
+
+@^+WheelUp => brightnessManager.increaseBrightness(0.05)
+@^+WheelDown => brightnessManager.decreaseBrightness(0.05)
+
+@~!Tab => altTabPressed = true
+@~LAlt:up => altTabPressed = false
+@~RAlt:up => altTabPressed = false
+
+@!WheelUp => {
+  if altTabPressed {
+    send("+{Tab}")
+  } else {
+    zoom(1)
+  }
+}
+
+@#WheelUp => zoom(1)
+@#WheelDown => zoom(0)
+
+@!WheelDown => {
+  if altTabPressed {
+    send("{Tab}")
+  } else {
+    zoom(0)
+  }
+}
+
+@RShift & WheelUp => zoom(1)
+RShift & WheelDown => zoom(0)
+@LButton & RButton: => zoom(2)
+@RButton & LButton: => zoom(1)
+@RButton & WheelUp => zoom(1)
+@RButton & WheelDown => zoom(0)

@@ -15,6 +15,7 @@
 #include <cerrno>
 #include <cstring>
 #include <unistd.h>
+#include <signal.h>
 #include <filesystem>
 #include <random>
 #include <cmath>
@@ -1376,16 +1377,6 @@ void Interpreter::InitializeSystemBuiltins() {
         for(const auto& arg : args) {
             std::cout << this->ValueToString(arg) << " ";
         }
-        std::cout << std::endl;
-        std::cout.flush();
-        return HavelValue(nullptr);
-    }));
-    
-    environment->Define("warn", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        std::cerr << "[WARN] ";
-        for(const auto& arg : args) {
-            std::cerr << this->ValueToString(arg) << " ";
-        }
         std::cerr << std::endl;
         std::cerr.flush();
         return HavelValue(nullptr);
@@ -1451,6 +1442,42 @@ void Interpreter::InitializeSystemBuiltins() {
         this->io.Send(text.c_str());
         return HavelValue(nullptr);
     }));
+
+    // POSIX signal constants (used by some hotkey conversions)
+    environment->Define("SIGSTOP", HavelValue(static_cast<double>(SIGSTOP)));
+    environment->Define("SIGCONT", HavelValue(static_cast<double>(SIGCONT)));
+    environment->Define("SIGKILL", HavelValue(static_cast<double>(SIGKILL)));
+
+    // Process helpers
+    environment->Define("process.getState", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("process.getState() requires pid");
+        pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+        auto state = havel::ProcessManager::getProcessState(pid);
+        switch (state) {
+            case havel::ProcessManager::ProcessState::RUNNING: return HavelValue(std::string("RUNNING"));
+            case havel::ProcessManager::ProcessState::SLEEPING: return HavelValue(std::string("SLEEPING"));
+            case havel::ProcessManager::ProcessState::ZOMBIE: return HavelValue(std::string("ZOMBIE"));
+            case havel::ProcessManager::ProcessState::STOPPED: return HavelValue(std::string("STOPPED"));
+            case havel::ProcessManager::ProcessState::NO_PERMISSION: return HavelValue(std::string("NO_PERMISSION"));
+            case havel::ProcessManager::ProcessState::NOT_FOUND: return HavelValue(std::string("NOT_FOUND"));
+        }
+        return HavelValue(std::string("UNKNOWN"));
+    }));
+
+    environment->Define("process.sendSignal", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("process.sendSignal() requires (pid, signal)");
+        pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+        int sig = static_cast<int>(ValueToNumber(args[1]));
+        return HavelValue(havel::ProcessManager::sendSignal(pid, sig));
+    }));
+
+    auto processObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("process.getState")) (*processObj)["getState"] = *v;
+    if (auto v = environment->Get("process.sendSignal")) (*processObj)["sendSignal"] = *v;
+    if (auto v = environment->Get("SIGSTOP")) (*processObj)["SIGSTOP"] = *v;
+    if (auto v = environment->Get("SIGCONT")) (*processObj)["SIGCONT"] = *v;
+    if (auto v = environment->Get("SIGKILL")) (*processObj)["SIGKILL"] = *v;
+    environment->Define("process", HavelValue(processObj));
     
     // === MODE SYSTEM FUNCTIONS ===
     // Get current mode
@@ -1527,6 +1554,14 @@ void Interpreter::InitializeSystemBuiltins() {
             std::cerr << "[ERROR] Failed to reload configuration: " << e.what() << std::endl;
             return HavelValue(false);
         }
+    }));
+
+    environment->Define("config.get", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("config.get() requires key");
+        std::string key = ValueToString(args[0]);
+        std::string def = args.size() >= 2 ? ValueToString(args[1]) : std::string("");
+        auto& config = Configs::Get();
+        return HavelValue(config.Get<std::string>(key, def));
     }));
 
     environment->Define("app.quit", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
@@ -1887,6 +1922,11 @@ void Interpreter::InitializeWindowBuiltins() {
             return HavelValue(activeWin.Title());
         }
         return HavelValue(std::string(""));
+    }));
+
+    environment->Define("window.getPid", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        return HavelValue(static_cast<double>(this->windowManager.GetActiveWindowPID()));
     }));
     
     environment->Define("window.maximize", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
@@ -2339,9 +2379,18 @@ void Interpreter::InitializeArrayBuiltins() {
     // Expose as module object: brightnessManager
     auto bm = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 if (auto v = environment->Get("brightnessManager.getBrightness")) (*bm)["getBrightness"] = *v;
+    if (auto v = environment->Get("brightnessManager.getTemperature")) (*bm)["getTemperature"] = *v;
     if (auto v = environment->Get("brightnessManager.setBrightness")) (*bm)["setBrightness"] = *v;
     if (auto v = environment->Get("brightnessManager.increaseBrightness")) (*bm)["increaseBrightness"] = *v;
     if (auto v = environment->Get("brightnessManager.decreaseBrightness")) (*bm)["decreaseBrightness"] = *v;
+    if (auto v = environment->Get("brightnessManager.setTemperature")) (*bm)["setTemperature"] = *v;
+    if (auto v = environment->Get("brightnessManager.increaseTemperature")) (*bm)["increaseTemperature"] = *v;
+    if (auto v = environment->Get("brightnessManager.decreaseTemperature")) (*bm)["decreaseTemperature"] = *v;
+    if (auto v = environment->Get("brightnessManager.getShadowLift")) (*bm)["getShadowLift"] = *v;
+    if (auto v = environment->Get("brightnessManager.setShadowLift")) (*bm)["setShadowLift"] = *v;
+    if (auto v = environment->Get("brightnessManager.decreaseGamma")) (*bm)["decreaseGamma"] = *v;
+    if (auto v = environment->Get("brightnessManager.increaseGamma")) (*bm)["increaseGamma"] = *v;
+    if (auto v = environment->Get("brightnessManager.setGammaRGB")) (*bm)["setGammaRGB"] = *v;
     environment->Define("brightnessManager", HavelValue(bm));
 }
 
@@ -2355,6 +2404,21 @@ void Interpreter::InitializeIOBuiltins() {
             std::cout << "[WARN] HotkeyManager not available" << std::endl;
         }
         return HavelValue(nullptr);
+    }));
+
+    // IO suspend - suspend/resume all hotkeys (mirrors IO::Suspend() toggle)
+    environment->Define("io.suspend", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        return HavelValue(this->io.Suspend());
+    }));
+
+    // IO resume - only resumes if currently suspended
+    environment->Define("io.resume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (this->io.isSuspended) {
+            return HavelValue(this->io.Suspend());
+        }
+        return HavelValue(true);
     }));
     
     // IO unblock - enable all input
@@ -2481,13 +2545,32 @@ void Interpreter::InitializeBrightnessBuiltins() {
     // Brightness get
     environment->Define("brightnessManager.getBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
-        return HavelValue(brightnessManager->getBrightness());
+        if (args.empty()) {
+            return HavelValue(brightnessManager->getBrightness());
+        }
+        int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+        return HavelValue(brightnessManager->getBrightness(monitorIndex));
+    }));
+
+    environment->Define("brightnessManager.getTemperature", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) {
+            return HavelValue(static_cast<double>(brightnessManager->getTemperature()));
+        }
+        int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+        return HavelValue(static_cast<double>(brightnessManager->getTemperature(monitorIndex)));
     }));
     
     // Brightness set
     environment->Define("brightnessManager.setBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) return HavelRuntimeError("setBrightness() requires brightness value");
+        if (args.empty()) return HavelRuntimeError("setBrightness() requires value or (monitorIndex, value)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            double brightness = ValueToNumber(args[1]);
+            brightnessManager->setBrightness(monitorIndex, brightness);
+            return HavelValue(nullptr);
+        }
         double brightness = ValueToNumber(args[0]);
         brightnessManager->setBrightness(brightness);
         return HavelValue(nullptr);
@@ -2496,6 +2579,12 @@ void Interpreter::InitializeBrightnessBuiltins() {
     // Brightness increase
     environment->Define("brightnessManager.increaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            double step = ValueToNumber(args[1]);
+            brightnessManager->increaseBrightness(monitorIndex, step);
+            return HavelValue(nullptr);
+        }
         double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
         brightnessManager->increaseBrightness(step);
         return HavelValue(nullptr);
@@ -2504,8 +2593,125 @@ void Interpreter::InitializeBrightnessBuiltins() {
     // Brightness decrease
     environment->Define("brightnessManager.decreaseBrightness", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            double step = ValueToNumber(args[1]);
+            brightnessManager->decreaseBrightness(monitorIndex, step);
+            return HavelValue(nullptr);
+        }
         double step = args.empty() ? 0.1 : ValueToNumber(args[0]);
         brightnessManager->decreaseBrightness(step);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.setTemperature", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("setTemperature() requires kelvin or (monitorIndex, kelvin)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            int kelvin = static_cast<int>(ValueToNumber(args[1]));
+            brightnessManager->setTemperature(monitorIndex, kelvin);
+            return HavelValue(nullptr);
+        }
+        int kelvin = static_cast<int>(ValueToNumber(args[0]));
+        brightnessManager->setTemperature(kelvin);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.getShadowLift", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) {
+            return HavelValue(brightnessManager->getShadowLift());
+        }
+        int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+        return HavelValue(brightnessManager->getShadowLift(monitorIndex));
+    }));
+
+    environment->Define("brightnessManager.setShadowLift", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("setShadowLift() requires lift or (monitorIndex, lift)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            double lift = ValueToNumber(args[1]);
+            brightnessManager->setShadowLift(monitorIndex, lift);
+            return HavelValue(nullptr);
+        }
+        double lift = ValueToNumber(args[0]);
+        brightnessManager->setShadowLift(lift);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.decreaseGamma", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("decreaseGamma() requires amount or (monitorIndex, amount)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            int amount = static_cast<int>(ValueToNumber(args[1]));
+            brightnessManager->decreaseGamma(monitorIndex, amount);
+            return HavelValue(nullptr);
+        }
+        int amount = static_cast<int>(ValueToNumber(args[0]));
+        brightnessManager->decreaseGamma(amount);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.increaseGamma", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("increaseGamma() requires amount or (monitorIndex, amount)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            int amount = static_cast<int>(ValueToNumber(args[1]));
+            brightnessManager->increaseGamma(monitorIndex, amount);
+            return HavelValue(nullptr);
+        }
+        int amount = static_cast<int>(ValueToNumber(args[0]));
+        brightnessManager->increaseGamma(amount);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.setGammaRGB", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.size() < 3) return HavelRuntimeError("setGammaRGB() requires (r, g, b) or (monitorIndex, r, g, b)");
+        if (args.size() >= 4) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            double r = ValueToNumber(args[1]);
+            double g = ValueToNumber(args[2]);
+            double b = ValueToNumber(args[3]);
+            brightnessManager->setGammaRGB(monitorIndex, r, g, b);
+            return HavelValue(nullptr);
+        }
+        double r = ValueToNumber(args[0]);
+        double g = ValueToNumber(args[1]);
+        double b = ValueToNumber(args[2]);
+        brightnessManager->setGammaRGB(r, g, b);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.increaseTemperature", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("increaseTemperature() requires amount or (monitorIndex, amount)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            int amount = static_cast<int>(ValueToNumber(args[1]));
+            brightnessManager->increaseTemperature(monitorIndex, amount);
+            return HavelValue(nullptr);
+        }
+        int amount = static_cast<int>(ValueToNumber(args[0]));
+        brightnessManager->increaseTemperature(amount);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("brightnessManager.decreaseTemperature", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!brightnessManager) return HavelRuntimeError("BrightnessManager not available");
+        if (args.empty()) return HavelRuntimeError("decreaseTemperature() requires amount or (monitorIndex, amount)");
+        if (args.size() >= 2) {
+            int monitorIndex = static_cast<int>(ValueToNumber(args[0]));
+            int amount = static_cast<int>(ValueToNumber(args[1]));
+            brightnessManager->decreaseTemperature(monitorIndex, amount);
+            return HavelValue(nullptr);
+        }
+        int amount = static_cast<int>(ValueToNumber(args[0]));
+        brightnessManager->decreaseTemperature(amount);
         return HavelValue(nullptr);
     }));
     

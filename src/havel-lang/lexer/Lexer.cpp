@@ -324,11 +324,18 @@ std::vector<Token> Lexer::tokenize() {
             continue;
         }
         
-        // Handle # comments (hash-style)
+        // Handle # comments (hash-style) OR modifier hotkeys starting with '#'
         if (c == '#') {
-            while (!isAtEnd() && peek() != '\n') {
-                advance();
+            // If the next char is whitespace, treat as a comment (e.g. "# comment")
+            if (peek() == ' ' || peek() == '\t') {
+                while (!isAtEnd() && peek() != '\n') {
+                    advance();
+                }
+                continue;
             }
+
+            // Otherwise, allow '#' to start a modifier hotkey (e.g. "#f1", "#!Esc")
+            tokens.push_back(scanHotkey());
             continue;
         }
         

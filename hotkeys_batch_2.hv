@@ -1,0 +1,11 @@
+#!Esc => {
+  app.restart()
+}
+
+#f1 => {
+  runDetached("playerctl previous")
+}
+
+#f2 => {
+  runDetached("playerctl play-pause")
+}

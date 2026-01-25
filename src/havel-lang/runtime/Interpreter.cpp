@@ -5,12 +5,16 @@
 #include "gui/GUIManager.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "process/Launcher.hpp"
+#include "core/process/ProcessManager.hpp"
 #include "qt.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
+#include <unistd.h>
 #include <filesystem>
 #include <random>
 #include <cmath>
@@ -1532,6 +1536,28 @@ void Interpreter::InitializeSystemBuiltins() {
             return HavelValue(true);
         }
         return HavelRuntimeError("App is not running");
+    }));
+
+    environment->Define("app.restart", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        auto pid = ProcessManager::getCurrentPid();
+        std::string exec = ProcessManager::getProcessExecutablePath(pid);
+        if (exec.empty()) {
+            return HavelRuntimeError("Failed to resolve current executable");
+        }
+
+        fflush(nullptr);
+
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(exec.c_str()));
+        argv.push_back(nullptr);
+        execvp(exec.c_str(), argv.data());
+
+        std::string err = std::string("Failed to exec: ") + std::strerror(errno);
+        if (App::instance()) {
+            App::quit();
+        }
+        return HavelRuntimeError(err);
     }));
     
     // === IO METHODS ===

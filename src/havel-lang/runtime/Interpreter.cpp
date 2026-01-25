@@ -1629,21 +1629,48 @@ void Interpreter::InitializeSystemBuiltins() {
     // Volume control
     environment->Define("audio.setVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("audio.setVolume() requires volume (0.0-1.0)");
-        double volume = std::get<double>(args[0]);
+        if (args.size() >= 2) {
+            std::string device = this->ValueToString(args[0]);
+            double volume = ValueToNumber(args[1]);
+            return HavelValue(this->audioManager->setVolume(device, volume));
+        }
+        double volume = ValueToNumber(args[0]);
         return HavelValue(this->audioManager->setVolume(volume));
     }));
     
     environment->Define("audio.getVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!args.empty()) {
+            std::string device = this->ValueToString(args[0]);
+            return HavelValue(this->audioManager->getVolume(device));
+        }
         return HavelValue(this->audioManager->getVolume());
     }));
     
     environment->Define("audio.increaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        if (args.size() >= 2) {
+            std::string device = this->ValueToString(args[0]);
+            double amount = ValueToNumber(args[1]);
+            return HavelValue(this->audioManager->increaseVolume(device, amount));
+        }
+        if (args.size() == 1) {
+            std::string device = this->ValueToString(args[0]);
+            return HavelValue(this->audioManager->increaseVolume(device, 0.05));
+        }
+        double amount = args.empty() ? 0.05 : ValueToNumber(args[0]);
         return HavelValue(this->audioManager->increaseVolume(amount));
     }));
     
     environment->Define("audio.decreaseVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+        if (args.size() >= 2) {
+            std::string device = this->ValueToString(args[0]);
+            double amount = ValueToNumber(args[1]);
+            return HavelValue(this->audioManager->decreaseVolume(device, amount));
+        }
+        if (args.size() == 1) {
+            std::string device = this->ValueToString(args[0]);
+            return HavelValue(this->audioManager->decreaseVolume(device, 0.05));
+        }
+        double amount = args.empty() ? 0.05 : ValueToNumber(args[0]);
         return HavelValue(this->audioManager->decreaseVolume(amount));
     }));
     
@@ -1683,6 +1710,33 @@ void Interpreter::InitializeSystemBuiltins() {
         if (args.empty()) return HavelRuntimeError("audio.findDeviceByIndex() requires index");
         uint32_t index = static_cast<uint32_t>(std::get<double>(args[0]));
         const auto* device = this->audioManager->findDeviceByIndex(index);
+        if (!device) {
+            return HavelValue(nullptr);
+        }
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["name"] = HavelValue(device->name);
+        (*obj)["description"] = HavelValue(device->description);
+        (*obj)["index"] = HavelValue(static_cast<double>(device->index));
+        (*obj)["isDefault"] = HavelValue(device->isDefault);
+        (*obj)["isMuted"] = HavelValue(device->isMuted);
+        (*obj)["volume"] = HavelValue(device->volume);
+        return HavelValue(obj);
+    }));
+
+    environment->Define("audio.setDefaultOutputByIndex", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.setDefaultOutputByIndex() requires index");
+        uint32_t index = static_cast<uint32_t>(ValueToNumber(args[0]));
+        const auto* device = this->audioManager->findDeviceByIndex(index);
+        if (!device) {
+            return HavelValue(false);
+        }
+        return HavelValue(this->audioManager->setDefaultOutput(device->name));
+    }));
+
+    environment->Define("audio.findDeviceByName", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("audio.findDeviceByName() requires name");
+        std::string name = this->ValueToString(args[0]);
+        const auto* device = this->audioManager->findDeviceByName(name);
         if (!device) {
             return HavelValue(nullptr);
         }
@@ -1818,6 +1872,8 @@ void Interpreter::InitializeSystemBuiltins() {
     if (auto v = environment->Get("audio.getApplications")) (*audioMod)["getApplications"] = *v;
     if (auto v = environment->Get("audio.getDevices")) (*audioMod)["getDevices"] = *v;
     if (auto v = environment->Get("audio.findDeviceByIndex")) (*audioMod)["findDeviceByIndex"] = *v;
+    if (auto v = environment->Get("audio.findDeviceByName")) (*audioMod)["findDeviceByName"] = *v;
+    if (auto v = environment->Get("audio.setDefaultOutputByIndex")) (*audioMod)["setDefaultOutputByIndex"] = *v;
     if (auto v = environment->Get("audio.setDefaultOutput")) (*audioMod)["setDefaultOutput"] = *v;
     if (auto v = environment->Get("audio.getDefaultOutput")) (*audioMod)["getDefaultOutput"] = *v;
     if (auto v = environment->Get("audio.playTestSound")) (*audioMod)["playTestSound"] = *v;

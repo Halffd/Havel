@@ -1,0 +1,23 @@
+^+!a => {
+  audio.setDefaultOutputByIndex(3)
+  log "Current device: " + audio.getDefaultOutput()
+  audio.playTestSound()
+}
+
+^numpadsub => {
+  audio.increaseVolume("200")
+  audio.increaseVolume("G30")
+  let vol = audio.getVolume("G30")
+  let pct = vol * 100
+  gui.notify("Volume (G30)", pct + "%")
+  log "Current volume (G30): " + pct + "%"
+}
+
+^numpadadd => {
+  audio.decreaseVolume("200")
+  audio.decreaseVolume("G30")
+  let vol = audio.getVolume("G30")
+  let pct = vol * 100
+  gui.notify("Volume (G30)", pct + "%")
+  log "Current volume (G30): " + pct + "%"
+}

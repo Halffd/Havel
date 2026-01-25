@@ -102,7 +102,7 @@ bool Lexer::isSkippable(char c) const {
 bool Lexer::isHotkeyChar(char c) const {
     return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#' ||
            c == '@' || c == '|' || c == '*' || c == '&' || c == ':' || c == '~' || c == '$' ||
-           c == '=';
+           c == '=' || c == '.' || c == ',';
 }
 
 Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {

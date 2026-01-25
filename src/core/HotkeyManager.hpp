@@ -123,6 +123,14 @@ public:
   // Public cleanup for safe shutdown
   void cleanup();
 
+  void toggleFakeDesktopOverlay();
+
+  void showBlackOverlay();
+
+  void printActiveWindowInfo();
+
+  void toggleWindowFocusTracking();
+
   // Automation
   std::shared_ptr<automation::AutomationManager> automationManager_;
   std::unordered_map<std::string, automation::TaskPtr> automationTasks_;
@@ -203,8 +211,7 @@ private:
   static bool IsGamingProcess(pid_t pid);
 
   // Overlay functionality
-  void toggleFakeDesktopOverlay();
-  void showBlackOverlay();
+  
 
   // Window management
   void minimizeActiveWindow();
@@ -218,9 +225,7 @@ private:
   void restoreWindow();
 
   // Active window info
-  void printActiveWindowInfo();
-
-  void toggleWindowFocusTracking();
+  
 
   static bool isGamingWindow();
 

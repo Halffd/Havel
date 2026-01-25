@@ -620,22 +620,43 @@ struct WhileStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// For Statement (for i in range { ... })
+// For Statement (for i in range { ... }) or (for (key, value) in dict { ... })
 struct ForStatement : public Statement {
-  std::unique_ptr<Identifier> iterator;
+  std::vector<std::unique_ptr<Identifier>> iterators;
   std::unique_ptr<Expression> iterable;
   std::unique_ptr<Statement> body;
 
-  ForStatement(std::unique_ptr<Identifier> iter,
+  ForStatement(std::vector<std::unique_ptr<Identifier>> iters,
                std::unique_ptr<Expression> itbl,
                std::unique_ptr<Statement> bd)
-      : iterator(std::move(iter)), iterable(std::move(itbl)), body(std::move(bd)) {
+      : iterators(std::move(iters)), iterable(std::move(itbl)), body(std::move(bd)) {
     kind = NodeType::ForStatement;
   }
 
+  // Legacy constructor for single iterator
+  ForStatement(std::unique_ptr<Identifier> iter,
+               std::unique_ptr<Expression> itbl,
+               std::unique_ptr<Statement> bd)
+      : iterable(std::move(itbl)), body(std::move(bd)) {
+    kind = NodeType::ForStatement;
+    if (iter) {
+      iterators.push_back(std::move(iter));
+    }
+  }
+
   std::string toString() const override {
-    return "ForStatement{iterator: " +
-           (iterator ? iterator->toString() : "nullptr") +
+    std::string iterStr;
+    if (iterators.size() == 1) {
+      iterStr = iterators[0] ? iterators[0]->toString() : "nullptr";
+    } else {
+      iterStr += "(";
+      for (size_t i = 0; i < iterators.size(); ++i) {
+        if (i > 0) iterStr += ", ";
+        iterStr += iterators[i] ? iterators[i]->toString() : "nullptr";
+      }
+      iterStr += ")";
+    }
+    return "ForStatement{iterators: " + iterStr +
            ", iterable: " + (iterable ? iterable->toString() : "nullptr") +
            ", body: " + (body ? body->toString() : "nullptr") + "}";
   }

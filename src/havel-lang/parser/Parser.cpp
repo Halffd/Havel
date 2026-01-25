@@ -426,13 +426,52 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
     advance(); // consume "for"
 
-    if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected iterator variable after 'for'");
+    std::vector<std::unique_ptr<havel::ast::Identifier>> iterators;
+    
+    // Check for multiple iterators in parentheses: for (key, value) in dict
+    if (at().type == havel::TokenType::OpenParen) {
+        advance(); // consume "("
+        
+        // Parse first iterator
+        if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected first iterator variable in parentheses");
+        }
+        iterators.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+        
+        // Parse additional iterators separated by commas
+        while (at().type == havel::TokenType::Comma) {
+            advance(); // consume ","
+            
+            // Skip newlines after comma
+            while (at().type == havel::TokenType::NewLine) {
+                advance();
+            }
+            
+            if (at().type != havel::TokenType::Identifier) {
+                failAt(at(), "Expected iterator variable after comma");
+            }
+            iterators.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+        }
+        
+        // Skip newlines before closing paren
+        while (at().type == havel::TokenType::NewLine) {
+            advance();
+        }
+        
+        if (at().type != havel::TokenType::CloseParen) {
+            failAt(at(), "Expected ')' after iterator variables");
+        }
+        advance(); // consume ")"
+    } else {
+        // Single iterator: for i in range
+        if (at().type != havel::TokenType::Identifier) {
+            failAt(at(), "Expected iterator variable after 'for'");
+        }
+        iterators.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
     }
-    auto iterator = std::make_unique<havel::ast::Identifier>(advance().value);
 
     if (at().type != havel::TokenType::In) {
-        failAt(at(), "Expected 'in' after iterator variable");
+        failAt(at(), "Expected 'in' after iterator variable(s)");
     }
     advance(); // consume "in"
 
@@ -449,7 +488,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
 
     auto body = parseBlockStatement();
 
-    return std::make_unique<havel::ast::ForStatement>(std::move(iterator), std::move(iterable), std::move(body));
+    return std::make_unique<havel::ast::ForStatement>(std::move(iterators), std::move(iterable), std::move(body));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {

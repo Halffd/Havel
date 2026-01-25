@@ -347,7 +347,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
     advance(); // consume "if"
 
+    bool prevAllow = allowBraceCallSugar;
+    allowBraceCallSugar = false;
     auto condition = parseExpression();
+    allowBraceCallSugar = prevAllow;
 
     if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after if condition");
@@ -372,7 +375,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
     advance(); // consume "while"
 
+    bool prevAllow = allowBraceCallSugar;
+    allowBraceCallSugar = false;
     auto condition = parseExpression();
+    allowBraceCallSugar = prevAllow;
 
     if (at().type != havel::TokenType::OpenBrace) {
         failAt(at(), "Expected '{' after while condition");
@@ -647,7 +653,10 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
         advance(); // consume 'when'
 
         // Parse the condition
+        bool prevAllow = allowBraceCallSugar;
+        allowBraceCallSugar = false;
         auto condition = parseExpression();
+        allowBraceCallSugar = prevAllow;
 
         if (at().type != havel::TokenType::OpenBrace) {
             failAt(at(), "Expected '{' after when condition");
@@ -1412,6 +1421,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePostfixExpression(std::uniq
         } else if (at().type == havel::TokenType::OpenBracket) {
             expr = parseIndexExpression(std::move(expr));
         } else if (at().type == havel::TokenType::OpenBrace) {
+            if (!allowBraceCallSugar) {
+                break;
+            }
             // Sugar: expr { ... } -> expr({ ... }) or expr(() => { ... })
             // Lookahead to determine object vs block
             size_t savePos = position;
@@ -1582,7 +1594,7 @@ bool Parser::synchronize() {
     advance(); // Skip the problematic token
 
     // Skip tokens until we find one that looks like the start of a statement
-    while (!notEOF()) {
+    while (notEOF()) {
         if (at().type == havel::TokenType::NewLine) {
             advance();
             return true; // Found statement boundary

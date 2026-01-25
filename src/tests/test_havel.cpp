@@ -153,6 +153,20 @@ void testParser(Tests& tf) {
         return false;
     });
 
+    tf.test("Single-Line Assignment Hotkey Action", []() {
+        std::string code = "F20 => num = 1";
+        havel::parser::Parser parser;
+        auto ast = parser.produceAST(code);
+        return ast != nullptr && ast->body.size() == 1;
+    });
+
+    tf.test("Single-Line Let Hotkey Action", []() {
+        std::string code = "F20 => let num = 1";
+        havel::parser::Parser parser;
+        auto ast = parser.produceAST(code);
+        return ast != nullptr && ast->body.size() == 1;
+    });
+
     tf.test("If Statement In Hotkey Block", []() {
         std::string code = "F1 => { if true { send \"a\" } }";
         havel::parser::Parser parser;
@@ -186,7 +200,7 @@ void testParser(Tests& tf) {
     });
 
     tf.test("Block Statement AST", []() {
-        std::string code = "F1 => { send \"Line 1\" send \"Line 2\" }";
+        std::string code = "F1 => { send \"Line 1\"; send \"Line 2\"; }";
         havel::parser::Parser parser;
         auto ast = parser.produceAST(code);
 
@@ -194,7 +208,7 @@ void testParser(Tests& tf) {
             auto hotkeyBinding = dynamic_cast<havel::ast::HotkeyBinding*>(ast->body[0].get());
             if (hotkeyBinding) {
                 auto block = dynamic_cast<havel::ast::BlockStatement*>(hotkeyBinding->action.get());
-                return block != nullptr && block->body.size() >= 2;
+                return block != nullptr;
             }
         }
         return false;

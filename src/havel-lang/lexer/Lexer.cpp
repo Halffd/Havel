@@ -101,7 +101,7 @@ bool Lexer::isSkippable(char c) const {
 
 bool Lexer::isHotkeyChar(char c) const {
     return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#' ||
-           c == '@' || c == '|' || c == '*' || c == '&' || c == ':';
+           c == '@' || c == '|' || c == '*' || c == '&' || c == ':' || c == '~' || c == '$';
 }
 
 Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
@@ -279,8 +279,28 @@ Token Lexer::scanHotkey() {
     // Continue consuming characters that are part of a hotkey until a terminator
     while (!isAtEnd()) {
         char c = peek();
+        // Allow space-separated combo hotkeys like "RShift & WheelUp" or "LButton & RButton:"
+        // Only keep whitespace if it is part of a combo expression (followed by '&' or ':')
+        if (c == ' ' || c == '\t') {
+            if (hotkey.find('&') != std::string::npos) {
+                hotkey += advance();
+                continue;
+            }
+            size_t look = position;
+            while (look < source.size() && (source[look] == ' ' || source[look] == '\t')) {
+                look++;
+            }
+            if (look < source.size() && (source[look] == '&' || source[look] == ':')) {
+                while (position < look) {
+                    hotkey += advance();
+                }
+                continue;
+            }
+            break;
+        }
+
         // Stop at whitespace or special characters that end hotkeys or start other tokens
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' ) {
+        if (c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' ) {
             break;
         }
         if (!isHotkeyChar(c)) break;
@@ -299,8 +319,18 @@ Token Lexer::scanHotkey() {
         }
     }
 
-    // Accept raw modifier-based forms like ^+!F12 as Hotkey
-    if (!hotkey.empty() && (hotkey.find('^') != std::string::npos || hotkey.find('!') != std::string::npos || hotkey.find('+') != std::string::npos || hotkey[0] == 'F')) {
+    // Accept raw modifier-based forms and combo hotkeys (e.g. "RShift & WheelDown") as Hotkey
+    if (!hotkey.empty() && (
+            hotkey.find('^') != std::string::npos ||
+            hotkey.find('!') != std::string::npos ||
+            hotkey.find('+') != std::string::npos ||
+            hotkey.find('#') != std::string::npos ||
+            hotkey.find('@') != std::string::npos ||
+            hotkey.find('~') != std::string::npos ||
+            hotkey.find('$') != std::string::npos ||
+            hotkey.find('&') != std::string::npos ||
+            hotkey.find(':') != std::string::npos ||
+            hotkey[0] == 'F')) {
         return makeToken(hotkey, TokenType::Hotkey);
     }
 
@@ -427,6 +457,13 @@ std::vector<Token> Lexer::tokenize() {
             tokens.push_back(makeToken("..", TokenType::DotDot));
             continue;
         }
+
+        // Handle modifier-based hotkeys starting with special characters like ^ + ! @ ~ $
+        // This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized as Plus.
+        if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
+            tokens.push_back(scanHotkey());
+            continue;
+        }
         
         // Handle single character tokens
         auto singleCharIt = SINGLE_CHAR_TOKENS.find(c);
@@ -455,13 +492,27 @@ std::vector<Token> Lexer::tokenize() {
                 }
                 tokens.push_back(scanHotkey());
             } else {
-                tokens.push_back(scanIdentifier());
+                // Detect combo-style hotkeys like "RShift & WheelDown" or "LButton & RButton:"
+                // These start with an identifier, but should be tokenized as a Hotkey.
+                size_t look = position;
+                while (look < source.length() && isAlphaNumeric(source[look])) {
+                    look++;
+                }
+                size_t ws = look;
+                while (ws < source.length() && (source[ws] == ' ' || source[ws] == '\t')) {
+                    ws++;
+                }
+                if (ws < source.length() && (source[ws] == '&' || source[ws] == ':')) {
+                    tokens.push_back(scanHotkey());
+                } else {
+                    tokens.push_back(scanIdentifier());
+                }
             }
             continue;
         }
         
-        // Handle modifier-based hotkeys starting with special characters like ^ + ! #
-        if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@') {
+        // Handle modifier-based hotkeys starting with special characters like # and combo '&'
+        if (c == '#' || c == '&') {
             tokens.push_back(scanHotkey());
             continue;
         }

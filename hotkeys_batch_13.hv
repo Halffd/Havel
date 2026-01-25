@@ -1,0 +1,88 @@
+!x => {
+  let title = window.getTitle()
+  let isEmacs = contains(lower(title), "emacs")
+  let isAlacritty = contains(lower(title), "alacritty")
+  if !(isEmacs || isAlacritty) {
+    let terminal = config.get("General.Terminal", "st")
+    if terminal == "alacritty" {
+      runDetached("alacritty -e sh -c 'cd ~ && exec tmux'")
+    } else {
+      runDetached(terminal)
+    }
+  }
+}
+
+^!t => {
+  window.next()
+}
+
+f3 => {
+  let b = config.get("Display.DefaultBrightness", "1.0")
+  let sl = config.get("Display.DefaultShadowLift", "0.0")
+  let gr = config.get("Display.DefaultGammaR", "1.0")
+  let gg = config.get("Display.DefaultGammaG", "1.0")
+  let gb = config.get("Display.DefaultGammaB", "1.0")
+  let temp = config.get("Display.DefaultTemperature", "6500")
+
+  brightnessManager.setBrightness(b)
+  brightnessManager.setShadowLift(sl)
+  brightnessManager.setGammaRGB(gr, gg, gb)
+  brightnessManager.setTemperature(temp)
+}
+
++f3 => {
+  let temp = config.get("Temperature.Default", "6500")
+  brightnessManager.setTemperature(temp)
+}
+
+^f3 => {
+  let b = config.get("Brightness.Default", "1.0")
+  brightnessManager.setBrightness(1, b)
+}
+
+f7 => { brightnessManager.decreaseBrightness(0.05) }
+^f7 => { brightnessManager.decreaseBrightness(0, 0.05) }
+
+f8 => { brightnessManager.increaseBrightness(0.05) }
+^f8 => { brightnessManager.increaseBrightness(0, 0.05) }
+
+^!f8 => { brightnessManager.increaseBrightness(1, 0.05) }
+^!f7 => { brightnessManager.decreaseBrightness(1, 0.05) }
+
+@!f7 => {
+  let sl = brightnessManager.getShadowLift()
+  brightnessManager.setShadowLift(sl - 0.05)
+}
+
+@!f8 => {
+  let sl = brightnessManager.getShadowLift()
+  brightnessManager.setShadowLift(sl + 0.05)
+}
+
+@^f9 => {
+  let sl = brightnessManager.getShadowLift()
+  brightnessManager.setShadowLift(0, sl - 0.05)
+}
+
+@^f10 => {
+  let sl = brightnessManager.getShadowLift(0)
+  brightnessManager.setShadowLift(0, sl + 0.05)
+}
+
+@^+f9 => {
+  let sl = brightnessManager.getShadowLift(1)
+  brightnessManager.setShadowLift(1, sl - 0.05)
+}
+
+@^+f10 => {
+  let sl = brightnessManager.getShadowLift(1)
+  brightnessManager.setShadowLift(1, sl + 0.05)
+}
+
+@#f7 => { brightnessManager.decreaseGamma(200) }
+@#f8 => { brightnessManager.increaseGamma(200) }
+
+@+f9 => { brightnessManager.decreaseGamma(0, 200) }
+@+f10 => { brightnessManager.increaseGamma(0, 200) }
+@!+f10 => { brightnessManager.increaseGamma(1, 200) }
+!+f9 => { brightnessManager.decreaseGamma(1, 200) }

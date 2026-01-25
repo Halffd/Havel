@@ -125,10 +125,27 @@ namespace havel::parser {
                 if (at().type == havel::TokenType::Arrow) {
                     advance(); // consume '=>'
 
-                    // Parse the action (expression or block)
+                    // Parse the action (block, statement, or expression)
                     std::unique_ptr<havel::ast::Statement> action;
                     if (at().type == havel::TokenType::OpenBrace) {
                         action = parseBlockStatement();
+                    } else if (at().type == havel::TokenType::Let ||
+                               at().type == havel::TokenType::If ||
+                               at().type == havel::TokenType::While ||
+                               at().type == havel::TokenType::For ||
+                               at().type == havel::TokenType::Loop ||
+                               at().type == havel::TokenType::Break ||
+                               at().type == havel::TokenType::Continue ||
+                               at().type == havel::TokenType::Return ||
+                               at().type == havel::TokenType::When ||
+                               at().type == havel::TokenType::On ||
+                               at().type == havel::TokenType::Off ||
+                               at().type == havel::TokenType::Fn ||
+                               at().type == havel::TokenType::Import ||
+                               at().type == havel::TokenType::Config ||
+                               at().type == havel::TokenType::Devices ||
+                               at().type == havel::TokenType::Modes) {
+                        action = parseStatement();
                     } else {
                         auto expr = parseExpression();
                         action = std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
@@ -178,10 +195,27 @@ namespace havel::parser {
                     if (at().type == havel::TokenType::Arrow) {
                         advance(); // consume '=>'
 
-                        // Parse the action (expression or block)
+                        // Parse the action (block, statement, or expression)
                         std::unique_ptr<havel::ast::Statement> action;
                         if (at().type == havel::TokenType::OpenBrace) {
                             action = parseBlockStatement();
+                        } else if (at().type == havel::TokenType::Let ||
+                                   at().type == havel::TokenType::If ||
+                                   at().type == havel::TokenType::While ||
+                                   at().type == havel::TokenType::For ||
+                                   at().type == havel::TokenType::Loop ||
+                                   at().type == havel::TokenType::Break ||
+                                   at().type == havel::TokenType::Continue ||
+                                   at().type == havel::TokenType::Return ||
+                                   at().type == havel::TokenType::When ||
+                                   at().type == havel::TokenType::On ||
+                                   at().type == havel::TokenType::Off ||
+                                   at().type == havel::TokenType::Fn ||
+                                   at().type == havel::TokenType::Import ||
+                                   at().type == havel::TokenType::Config ||
+                                   at().type == havel::TokenType::Devices ||
+                                   at().type == havel::TokenType::Modes) {
+                            action = parseStatement();
                         } else {
                             auto expr = parseExpression();
                             action = std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));

@@ -857,3 +857,59 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 !+i => hotkey.toggleWindowFocusTracking()
 
 ^!d => debug.toggleVerboseConditionLogging()
+
+# Remaining numpad keys and mouse controls
+@|numpad5 => io.mouseDown(1)
+@numpad5:up => io.mouseUp(1)
+
+@numpadmult => io.mouseDown(2)
+@numpadmult:up => io.mouseUp(2)
+
+@numpadenter+ => io.mouseDown(3)
+@numpadenter:up => io.mouseUp(3)
+
+@numpad0 => io.scroll(-2, 0)
+@numpaddec => io.scroll(2, 0)
+@!numpad0 => io.scroll(1, 0)
+@+numpaddec => io.scroll(0, 1)
+@+numpad0 => io.scroll(0, -1)
+
+@numpad1 => moveMouse(-1, 1)
+@numpad2 => moveMouse(0, 1)
+@numpad3 => moveMouse(1, 1)
+@numpad4 => moveMouse(-1, 0)
+@numpad6 => moveMouse(1, 0)
+@numpad7 => moveMouse(-1, -1)
+@numpad8 => moveMouse(0, -1)
+@numpad9 => moveMouse(1, -1)
+
+@numpad1:up => resetMouseAcc()
+@numpad2:up => resetMouseAcc()
+@numpad3:up => resetMouseAcc()
+@numpad4:up => resetMouseAcc()
+@numpad6:up => resetMouseAcc()
+@numpad7:up => resetMouseAcc()
+@numpad8:up => resetMouseAcc()
+@numpad9:up => resetMouseAcc()
+
+# Combo sequences for game launchers
+@~^l & g => runDetached("/usr/bin/lutris")
+@~^s & g => runDetached("/usr/bin/steam")
+@~^h & g => runDetached("flatpak run com.heroicgameslauncher.hgl")
+
+# Additional CapsLock variants
+@+CapsLock => {
+  io.map("CapsLock", "LAlt")
+  send("{CapsLock}")
+}
+
+@^CapsLock => {
+  io.map("CapsLock", "LAlt")
+  send("{CapsLock}")
+}
+
+# Screenshot variants
+@|#Print => runDetached("~/scripts/ocrs.sh")
+@|Print => screenshot.full()
+@|+Print => screenshot.region()
+@|Pause => screenshot.monitor()

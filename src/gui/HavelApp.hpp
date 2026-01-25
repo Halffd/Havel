@@ -16,7 +16,7 @@
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
 #else
-class Interpreter;  // Forward declaration when Havel Lang is disabled
+namespace havel { class Interpreter; }  // Forward declaration when Havel Lang is disabled
 #endif
 #include "window/WindowManager.hpp"
 #include "core/IO.hpp"

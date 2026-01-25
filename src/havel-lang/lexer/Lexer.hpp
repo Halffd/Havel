@@ -3,9 +3,18 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include <iostream>
+#include <stdexcept>
 
 namespace havel {
+
+    class LexError : public std::runtime_error {
+    public:
+        LexError(size_t line, size_t column, const std::string& message)
+            : std::runtime_error(message), line(line), column(column) {}
+
+        size_t line;
+        size_t column;
+    };
 
     enum class TokenType {
         Let,

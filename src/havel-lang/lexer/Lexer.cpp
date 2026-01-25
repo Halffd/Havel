@@ -1,5 +1,4 @@
 #include "Lexer.hpp"
-#include <regex>
 #include <iostream>
 
 namespace havel {
@@ -242,7 +241,7 @@ Token Lexer::scanString() {
     }
     
     if (isAtEnd()) {
-        throw std::runtime_error("Unterminated string at line " + std::to_string(line));
+        throw havel::LexError(line, column, "Unterminated string");
     }
     
     // Consume closing quote
@@ -460,9 +459,7 @@ std::vector<Token> Lexer::tokenize() {
         }
 
         // Handle unrecognized characters
-        throw std::runtime_error("Unrecognized character '" + std::string(1, c) +
-                                "' at line " + std::to_string(line) +
-                                ", column " + std::to_string(column));
+        throw havel::LexError(line, column, "Unrecognized character '" + std::string(1, c) + "'");
     }
 
     // Add EOF token

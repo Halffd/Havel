@@ -101,7 +101,8 @@ bool Lexer::isSkippable(char c) const {
 
 bool Lexer::isHotkeyChar(char c) const {
     return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#' ||
-           c == '@' || c == '|' || c == '*' || c == '&' || c == ':' || c == '~' || c == '$';
+           c == '@' || c == '|' || c == '*' || c == '&' || c == ':' || c == '~' || c == '$' ||
+           c == '=';
 }
 
 Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
@@ -300,7 +301,12 @@ Token Lexer::scanHotkey() {
         }
 
         // Stop at whitespace or special characters that end hotkeys or start other tokens
-        if (c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' ) {
+        if (c == '\r' || c == '\n' || c == '{' || c == '(' ) {
+            break;
+        }
+
+        // Do not consume the '=' that begins the '=>' arrow operator
+        if (c == '=' && peek(1) == '>') {
             break;
         }
         if (!isHotkeyChar(c)) break;

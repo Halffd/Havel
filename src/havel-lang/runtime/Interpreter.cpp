@@ -5,6 +5,7 @@
 #include "gui/GUIManager.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "process/Launcher.hpp"
+#include "qt.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <iostream>
@@ -1522,6 +1523,15 @@ void Interpreter::InitializeSystemBuiltins() {
             std::cerr << "[ERROR] Failed to reload configuration: " << e.what() << std::endl;
             return HavelValue(false);
         }
+    }));
+
+    environment->Define("app.quit", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (App::instance()) {
+            App::quit();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("App is not running");
     }));
     
     // === IO METHODS ===

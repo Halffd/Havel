@@ -2,9 +2,9 @@
 
 Format: - [ ] [original syntax] → [lang syntax]
 
-- [ ] [io.Hotkey("^!g")] → [TBD]
-- [ ] [io.Hotkey("^!r")] → [TBD]
-- [ ] [io.Hotkey("!Esc")] → [TBD]
+- [x] [io.Hotkey("^!g")] → [^!g => { if mode.get() == "gaming" { mode.set("default") } else { mode.set("gaming") } gui.notify("Mode Changed", "Active mode: " + mode.get()) }]
+- [x] [io.Hotkey("^!r")] → [^!r => { config.reload() }]
+- [x] [io.Hotkey("!Esc")] → [!Esc => { app.quit() }]
 - [ ] [io.Hotkey("#!Esc")] → [TBD]
 - [ ] [io.Hotkey("#f1")] → [TBD]
 - [ ] [io.Hotkey("#f2")] → [TBD]

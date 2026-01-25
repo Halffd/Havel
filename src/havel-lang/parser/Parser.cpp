@@ -246,11 +246,29 @@ namespace havel::parser {
             case havel::TokenType::Import:
                 return parseImportStatement();
             case havel::TokenType::Config:
-                return parseConfigBlock();
+                if (at(1).type == havel::TokenType::OpenBrace) {
+                    return parseConfigBlock();
+                }
+                {
+                    auto expr = parseExpression();
+                    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+                }
             case havel::TokenType::Devices:
-                return parseDevicesBlock();
+                if (at(1).type == havel::TokenType::OpenBrace) {
+                    return parseDevicesBlock();
+                }
+                {
+                    auto expr = parseExpression();
+                    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+                }
             case havel::TokenType::Modes:
-                return parseModesBlock();
+                if (at(1).type == havel::TokenType::OpenBrace) {
+                    return parseModesBlock();
+                }
+                {
+                    auto expr = parseExpression();
+                    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+                }
             default: {
                 auto expr = parseExpression();
                 return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
@@ -1106,6 +1124,10 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
                 return std::make_unique<havel::ast::InterpolatedStringExpression>(std::move(segments));
             }
     
+            case havel::TokenType::Mode:
+            case havel::TokenType::Config:
+            case havel::TokenType::Devices:
+            case havel::TokenType::Modes:
             case havel::TokenType::Identifier: {
                 auto identTk = at();
                 // Arrow lambda with single parameter: x => expr

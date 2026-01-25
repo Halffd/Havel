@@ -1,0 +1,19 @@
+#f3 => {
+  runDetached("playerctl next")
+}
+
+numpaddiv => {
+  audio.toggleMute()
+  if audio.isMuted() {
+    gui.notify("Mute", "Muted")
+  } else {
+    gui.notify("Mute", "Unmuted")
+  }
+}
+
+^+!a => {
+  let devices = audio.getDevices()
+  for (device in devices) {
+    log "Device: " + device.name + " (" + device.description + ") Vol: " + (device.volume * 100)
+  }
+}

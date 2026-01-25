@@ -16,6 +16,7 @@
 #include <vector>
 #include <variant>
 #include <optional>
+#include <atomic>
 
 namespace havel {
 
@@ -204,6 +205,9 @@ private:
 
     // Keep parsed programs alive for function declarations captured by closures
     std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
+
+    int nextTimerId = 1;
+    std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
 
     HavelResult Evaluate(const ast::ASTNode& node);
 

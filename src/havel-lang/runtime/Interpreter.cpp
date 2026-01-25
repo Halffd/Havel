@@ -1448,6 +1448,41 @@ void Interpreter::InitializeSystemBuiltins() {
     environment->Define("SIGCONT", HavelValue(static_cast<double>(SIGCONT)));
     environment->Define("SIGKILL", HavelValue(static_cast<double>(SIGKILL)));
 
+    environment->Define("hotkey.toggleOverlay", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (!hotkeyManager) return HavelRuntimeError("HotkeyManager not available");
+        hotkeyManager->toggleFakeDesktopOverlay();
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("hotkey.showBlackOverlay", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (!hotkeyManager) return HavelRuntimeError("HotkeyManager not available");
+        hotkeyManager->showBlackOverlay();
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("hotkey.printActiveWindowInfo", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (!hotkeyManager) return HavelRuntimeError("HotkeyManager not available");
+        hotkeyManager->printActiveWindowInfo();
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("hotkey.toggleWindowFocusTracking", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        if (!hotkeyManager) return HavelRuntimeError("HotkeyManager not available");
+        hotkeyManager->toggleWindowFocusTracking();
+        return HavelValue(nullptr);
+    }));
+
+    auto hotkeyObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    if (auto v = environment->Get("hotkey.toggleOverlay")) (*hotkeyObj)["toggleOverlay"] = *v;
+    if (auto v = environment->Get("hotkey.showBlackOverlay")) (*hotkeyObj)["showBlackOverlay"] = *v;
+    if (auto v = environment->Get("hotkey.printActiveWindowInfo")) (*hotkeyObj)["printActiveWindowInfo"] = *v;
+    if (auto v = environment->Get("hotkey.toggleWindowFocusTracking")) (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
+    environment->Define("hotkey", HavelValue(hotkeyObj));
+
     // Process helpers
     environment->Define("process.getState", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) return HavelRuntimeError("process.getState() requires pid");

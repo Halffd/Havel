@@ -100,7 +100,8 @@ bool Lexer::isSkippable(char c) const {
 }
 
 bool Lexer::isHotkeyChar(char c) const {
-    return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#';
+    return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' || c == '#' ||
+           c == '@' || c == '|' || c == '*' || c == '&' || c == ':';
 }
 
 Token Lexer::makeToken(const std::string& value, TokenType type, const std::string& raw) {
@@ -279,7 +280,7 @@ Token Lexer::scanHotkey() {
     while (!isAtEnd()) {
         char c = peek();
         // Stop at whitespace or special characters that end hotkeys or start other tokens
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' || c == '|' ) {
+        if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '=' || c == '{' || c == '(' ) {
             break;
         }
         if (!isHotkeyChar(c)) break;
@@ -460,7 +461,7 @@ std::vector<Token> Lexer::tokenize() {
         }
         
         // Handle modifier-based hotkeys starting with special characters like ^ + ! #
-        if (c == '^' || c == '!' || c == '+' || c == '#') {
+        if (c == '^' || c == '!' || c == '+' || c == '#' || c == '@') {
             tokens.push_back(scanHotkey());
             continue;
         }

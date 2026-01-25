@@ -1,0 +1,11 @@
+#^c => {
+  runDetached("~/scripts/caption.sh 3 auto")
+}
+
+#+c => {
+  runDetached("~/scripts/mimi.sh")
+}
+
+^!P => {
+  send("{CapsLock}")
+}

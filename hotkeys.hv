@@ -915,32 +915,27 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 @|Pause => screenshot.monitor()
 
 # MPV media player hotkeys
-+0 => mpv.volumeUp()
-+9 => mpv.volumeDown()
-+- => mpv.toggleMute()
-
-@|rctrl => mpv.playPause()
-+Esc => mpv.stop()
-+PgUp => mpv.next()
-+PgDn => mpv.previous()
-
-# Seek controls
-o => mpv.seek("-3")
-p => mpv.seek("3")
-
-# Speed controls  
-+o => mpv.addSpeed("-0.1")
-+p => mpv.addSpeed("0.1")
-
-# Subtitle controls
-@|n => mpv.cycle("sub-visibility")
-+@|n => mpv.cycle("secondary-sub-visibility")
-numpad7 => mpv.addSubScale("-0.1")
-numpad8 => mpv.addSubScale("0.1")
-+z => mpv.addSubDelay("-0.1")
-+x => mpv.addSubDelay("0.1")
-numpad9 => mpv.cycle("sub")
-numpad0 => mpv.subSeek("0")
-+c => mpv.copyCurrentSubtitle()
-minus => mpv.subSeek("-1")
-equal => mpv.subSeek("1")
+let mpvHotkeys = {
+  "+0": () => mpv.volumeUp(),
+  "+9": () => mpv.volumeDown(),
+  "+-": () => mpv.toggleMute(),
+  "@|rctrl": () => mpv.playPause(),
+  "+Esc": () => mpv.stop(),
+  "+PgUp": () => mpv.next(),
+  "+PgDn": () => mpv.previous(),
+  "o": () => mpv.seek("-3"),
+  "p": () => mpv.seek("3"),
+  "+o": () => mpv.addSpeed("-0.1"),
+  "+p": () => mpv.addSpeed("0.1"),
+  "@|n": () => mpv.cycle("sub-visibility"),
+  "+@|n": () => mpv.cycle("secondary-sub-visibility"),
+  "numpad7": () => mpv.addSubScale("-0.1"),
+  "numpad8": () => mpv.addSubScale("0.1"),
+  "+z": () => mpv.addSubDelay("-0.1"),
+  "+x": () => mpv.addSubDelay("0.1"),
+  "numpad9": () => mpv.cycle("sub"),
+  "numpad0": () => mpv.subSeek("0"),
+  "+c": () => mpv.copyCurrentSubtitle(),
+  "minus": () => mpv.subSeek("-1"),
+  "equal": () => mpv.subSeek("1")
+}

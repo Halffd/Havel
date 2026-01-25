@@ -1564,6 +1564,24 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(config.Get<std::string>(key, def));
     }));
 
+    environment->Define("config.set", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("config.set() requires (key, value)");
+        std::string key = ValueToString(args[0]);
+        auto& config = Configs::Get();
+        const HavelValue& value = args[1];
+
+        if (std::holds_alternative<bool>(value)) {
+            config.Set(key, std::get<bool>(value));
+        } else if (std::holds_alternative<int>(value)) {
+            config.Set(key, std::get<int>(value));
+        } else if (std::holds_alternative<double>(value)) {
+            config.Set(key, std::get<double>(value));
+        } else {
+            config.Set(key, ValueToString(value));
+        }
+        return HavelValue(true);
+    }));
+
     environment->Define("app.quit", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         (void)args;
         if (App::instance()) {
@@ -1885,6 +1903,12 @@ void Interpreter::InitializeSystemBuiltins() {
     if (auto v = environment->Get("io.isCtrlPressed")) (*ioMod)["isCtrlPressed"] = *v;
     if (auto v = environment->Get("io.isAltPressed")) (*ioMod)["isAltPressed"] = *v;
     if (auto v = environment->Get("io.isWinPressed")) (*ioMod)["isWinPressed"] = *v;
+    if (auto v = environment->Get("io.scroll")) (*ioMod)["scroll"] = *v;
+    if (auto v = environment->Get("io.getMouseSensitivity")) (*ioMod)["getMouseSensitivity"] = *v;
+    if (auto v = environment->Get("io.setMouseSensitivity")) (*ioMod)["setMouseSensitivity"] = *v;
+    if (auto v = environment->Get("io.emergencyReleaseAllKeys")) (*ioMod)["emergencyReleaseAllKeys"] = *v;
+    if (auto v = environment->Get("io.map")) (*ioMod)["map"] = *v;
+    if (auto v = environment->Get("io.remap")) (*ioMod)["remap"] = *v;
     environment->Define("io", HavelValue(ioMod));
     
     // Create audio module
@@ -2177,6 +2201,40 @@ void Interpreter::InitializeTextBuiltins() {
         std::string search = this->ValueToString(args[1]);
         return HavelValue(text.find(search) != std::string::npos);
     }));
+
+    environment->Define("substr", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("substr() requires (text, start[, length])");
+        std::string text = this->ValueToString(args[0]);
+        int start = static_cast<int>(ValueToNumber(args[1]));
+        if (start < 0) start = 0;
+        if (start > static_cast<int>(text.size())) start = static_cast<int>(text.size());
+
+        if (args.size() >= 3) {
+            int length = static_cast<int>(ValueToNumber(args[2]));
+            if (length < 0) length = 0;
+            return HavelValue(text.substr(static_cast<size_t>(start), static_cast<size_t>(length)));
+        }
+
+        return HavelValue(text.substr(static_cast<size_t>(start)));
+    }));
+
+    environment->Define("left", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("left() requires (text, count)");
+        std::string text = this->ValueToString(args[0]);
+        int count = static_cast<int>(ValueToNumber(args[1]));
+        if (count <= 0) return HavelValue(std::string(""));
+        if (count >= static_cast<int>(text.size())) return HavelValue(text);
+        return HavelValue(text.substr(0, static_cast<size_t>(count)));
+    }));
+
+    environment->Define("right", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("right() requires (text, count)");
+        std::string text = this->ValueToString(args[0]);
+        int count = static_cast<int>(ValueToNumber(args[1]));
+        if (count <= 0) return HavelValue(std::string(""));
+        if (count >= static_cast<int>(text.size())) return HavelValue(text);
+        return HavelValue(text.substr(text.size() - static_cast<size_t>(count)));
+    }));
 }
 
 void Interpreter::InitializeFileBuiltins() {
@@ -2375,23 +2433,7 @@ void Interpreter::InitializeArrayBuiltins() {
         
         return HavelValue(result);
     }));
-    
-    // Expose as module object: brightnessManager
-    auto bm = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-if (auto v = environment->Get("brightnessManager.getBrightness")) (*bm)["getBrightness"] = *v;
-    if (auto v = environment->Get("brightnessManager.getTemperature")) (*bm)["getTemperature"] = *v;
-    if (auto v = environment->Get("brightnessManager.setBrightness")) (*bm)["setBrightness"] = *v;
-    if (auto v = environment->Get("brightnessManager.increaseBrightness")) (*bm)["increaseBrightness"] = *v;
-    if (auto v = environment->Get("brightnessManager.decreaseBrightness")) (*bm)["decreaseBrightness"] = *v;
-    if (auto v = environment->Get("brightnessManager.setTemperature")) (*bm)["setTemperature"] = *v;
-    if (auto v = environment->Get("brightnessManager.increaseTemperature")) (*bm)["increaseTemperature"] = *v;
-    if (auto v = environment->Get("brightnessManager.decreaseTemperature")) (*bm)["decreaseTemperature"] = *v;
-    if (auto v = environment->Get("brightnessManager.getShadowLift")) (*bm)["getShadowLift"] = *v;
-    if (auto v = environment->Get("brightnessManager.setShadowLift")) (*bm)["setShadowLift"] = *v;
-    if (auto v = environment->Get("brightnessManager.decreaseGamma")) (*bm)["decreaseGamma"] = *v;
-    if (auto v = environment->Get("brightnessManager.increaseGamma")) (*bm)["increaseGamma"] = *v;
-    if (auto v = environment->Get("brightnessManager.setGammaRGB")) (*bm)["setGammaRGB"] = *v;
-    environment->Define("brightnessManager", HavelValue(bm));
+
 }
 
 void Interpreter::InitializeIOBuiltins() {
@@ -2460,10 +2502,51 @@ void Interpreter::InitializeIOBuiltins() {
         // TODO: Implement keycode testing mode
         return HavelValue(nullptr);
     }));
+
+    environment->Define("io.scroll", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.scroll() requires dy");
+        int dy = static_cast<int>(ValueToNumber(args[0]));
+        int dx = args.size() >= 2 ? static_cast<int>(ValueToNumber(args[1])) : 0;
+        bool ok = this->io.Scroll(dy, dx);
+        return HavelValue(ok);
+    }));
+
+    environment->Define("io.getMouseSensitivity", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+    }));
+
+    environment->Define("io.setMouseSensitivity", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.setMouseSensitivity() requires value");
+        this->io.mouseSensitivity = ValueToNumber(args[0]);
+        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+    }));
+
+    environment->Define("io.emergencyReleaseAllKeys", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        this->io.EmergencyReleaseAllKeys();
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("io.map", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("io.map() requires (from, to)");
+        std::string from = ValueToString(args[0]);
+        std::string to = ValueToString(args[1]);
+        this->io.Map(from, to);
+        return HavelValue(nullptr);
+    }));
+
+    environment->Define("io.remap", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) return HavelRuntimeError("io.remap() requires (key1, key2)");
+        std::string key1 = ValueToString(args[0]);
+        std::string key2 = ValueToString(args[1]);
+        this->io.Remap(key1, key2);
+        return HavelValue(nullptr);
+    }));
     
     // Expose as module object: audioManager
     auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-if (auto v = environment->Get("audio.getVolume")) (*am)["getVolume"] = *v;
+    if (auto v = environment->Get("audio.getVolume")) (*am)["getVolume"] = *v;
     if (auto v = environment->Get("audio.setVolume")) (*am)["setVolume"] = *v;
     if (auto v = environment->Get("audio.increaseVolume")) (*am)["increaseVolume"] = *v;
     if (auto v = environment->Get("audio.decreaseVolume")) (*am)["decreaseVolume"] = *v;

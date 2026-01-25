@@ -126,7 +126,7 @@ Interpreter::Interpreter(IO& io_system, WindowManager& window_mgr,
       audioManager(audio_mgr), guiManager(gui_mgr),
       screenshotManager(screenshot_mgr), lastResult(nullptr) {
     environment = std::make_shared<Environment>();
-    InitializeStandardLibrary();   
+    InitializeStandardLibrary();
 }
 
 HavelResult Interpreter::Execute(const std::string& sourceCode) {
@@ -1661,6 +1661,23 @@ void Interpreter::InitializeSystemBuiltins() {
     environment->Define("audio.isMuted", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
         return HavelValue(this->audioManager->isMuted());
     }));
+
+    environment->Define("audio.getDevices", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        (void)args;
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        const auto& devices = this->audioManager->getDevices();
+        for (const auto& device : devices) {
+            auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*obj)["name"] = HavelValue(device.name);
+            (*obj)["description"] = HavelValue(device.description);
+            (*obj)["index"] = HavelValue(static_cast<double>(device.index));
+            (*obj)["isDefault"] = HavelValue(device.isDefault);
+            (*obj)["isMuted"] = HavelValue(device.isMuted);
+            (*obj)["volume"] = HavelValue(device.volume);
+            arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+    }));
     
     // Application volume control
     environment->Define("audio.setAppVolume", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
@@ -1766,6 +1783,7 @@ void Interpreter::InitializeSystemBuiltins() {
     if (auto v = environment->Get("audio.increaseActiveAppVolume")) (*audioMod)["increaseActiveAppVolume"] = *v;
     if (auto v = environment->Get("audio.decreaseActiveAppVolume")) (*audioMod)["decreaseActiveAppVolume"] = *v;
     if (auto v = environment->Get("audio.getApplications")) (*audioMod)["getApplications"] = *v;
+    if (auto v = environment->Get("audio.getDevices")) (*audioMod)["getDevices"] = *v;
     environment->Define("audio", HavelValue(audioMod));
 }
 

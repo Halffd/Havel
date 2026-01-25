@@ -2,8 +2,14 @@
 #include "utils/Logger.hpp"
 #include "core/ConfigManager.hpp"
 #include <iostream>
+#include <string>
 
 int main(int argc, char* argv[]) {
+    if (argc >= 2 && std::string(argv[1]) == "lexer") {
+        havel::init::HavelLauncher launcher;
+        return launcher.run(argc, argv);
+    }
+
     // Initialize config
     try {
         auto& config = havel::Configs::Get();

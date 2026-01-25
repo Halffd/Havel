@@ -1,19 +1,31 @@
-
 // src/havel-lang/parser/Parser.h
 
 #pragma once
 #include "../lexer/Lexer.hpp"
 #include "../ast/AST.h"
 #include "../common/Debug.hpp"
+#include <stdexcept>
 #include <vector>
 #include <memory>
 
 namespace havel::parser {
 
+class ParseError : public std::runtime_error {
+public:
+    ParseError(size_t line, size_t column, const std::string& message)
+        : std::runtime_error(message), line(line), column(column) {}
+
+    size_t line;
+    size_t column;
+};
+
 class Parser {
 private:
     std::vector<Token> tokens;
     size_t position = 0;
+
+    [[noreturn]] void fail(const std::string& message);
+    [[noreturn]] void failAt(const Token& token, const std::string& message);
 
     // Helper methods (like Tyler's at() and eat())
     Token at(size_t offset = 0) const;
@@ -80,6 +92,8 @@ public:
 
     // Main entry point (like Tyler's produceAST)
     std::unique_ptr<ast::Program> produceAST(const std::string& sourceCode);
+
+    std::unique_ptr<ast::Program> produceASTStrict(const std::string& sourceCode);
 
     void printAST(const ast::ASTNode& node, int indent = 0) const;
 };

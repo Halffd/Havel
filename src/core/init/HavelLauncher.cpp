@@ -2,6 +2,8 @@
 #include "gui/HavelApp.hpp"
 #include "utils/Logger.hpp"
 #include "havel-lang/common/Debug.hpp"
+#include "havel-lang/lexer/Lexer.hpp"
+#include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/runtime/Engine.h"
 #include "core/IO.hpp"
@@ -72,6 +74,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char* argv[]) {
         } else if (arg == "--help" || arg == "-h") {
             showHelp();
             exit(0);
+        } else if (arg == "lexer") {
+            cfg.mode = Mode::CLI;
+            return cfg;
         } else {
             // Assume it's a script file
             if (!cfg.scriptFile.empty()) {
@@ -176,6 +181,7 @@ int HavelLauncher::runScript(const LaunchConfig& cfg) {
     
     return 0;
 }
+
 int HavelLauncher::runRepl(const LaunchConfig& cfg) {
     info("Starting Havel REPL...");
     int dummy_argc = 1;
@@ -294,12 +300,179 @@ int HavelLauncher::runRepl(const LaunchConfig& cfg) {
 }
 
 int HavelLauncher::runCli(int argc, char* argv[]) {
-    std::cerr << "CLI mode not implemented yet\n";
-    return 1;
+    if (argc < 3) {
+        std::cerr << "usage: havel lexer script.hv\n";
+        return 2;
+    }
+
+    const std::string subcommand = argv[1];
+    if (subcommand != "lexer") {
+        std::cerr << "Unknown command: " << subcommand << "\n";
+        std::cerr << "usage: havel lexer script.hv\n";
+        return 2;
+    }
+
+    const std::string filePath = argv[2];
+
+    auto readFile = [](const std::string& path) -> std::string {
+        std::ifstream file(path);
+        if (!file) {
+            throw std::runtime_error("Cannot open script file: " + path);
+        }
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        return buffer.str();
+    };
+
+    auto getLine = [](const std::string& source, size_t oneBasedLine) -> std::string {
+        if (oneBasedLine == 0) return "";
+        size_t currentLine = 1;
+        size_t start = 0;
+        while (start < source.size() && currentLine < oneBasedLine) {
+            size_t nl = source.find('\n', start);
+            if (nl == std::string::npos) return "";
+            start = nl + 1;
+            currentLine++;
+        }
+        if (start >= source.size()) return "";
+        size_t end = source.find('\n', start);
+        if (end == std::string::npos) end = source.size();
+        return source.substr(start, end - start);
+    };
+
+    auto printDiagnostic = [&](const std::string& kind, size_t line, size_t column, const std::string& message, const std::string& source) {
+        auto countLines = [](const std::string& s) -> size_t {
+            if (s.empty()) return 1;
+            size_t count = 1;
+            for (char c : s) {
+                if (c == '\n') ++count;
+            }
+            return count;
+        };
+
+        const size_t totalLines = countLines(source);
+        const size_t safeLine = (line == 0 ? 1 : (line > totalLines ? totalLines : line));
+        const size_t safeColumn = (column == 0 ? 1 : column);
+
+        std::cerr << filePath << ":" << safeLine << ":" << safeColumn << ": " << kind << ": " << message << "\n";
+
+        std::string srcLine = getLine(source, safeLine);
+        if (safeLine >= 1 && safeLine <= totalLines) {
+            std::cerr << srcLine << "\n";
+
+            size_t caretCol = safeColumn;
+            if (column == 0) {
+                caretCol = srcLine.size() + 1;
+            }
+            if (caretCol < 1) caretCol = 1;
+            if (caretCol > srcLine.size() + 1) caretCol = srcLine.size() + 1;
+
+            for (size_t i = 1; i < caretCol; ++i) std::cerr << ' ';
+            std::cerr << "^\n";
+        }
+    };
+
+    auto prettify = [](const std::vector<havel::Token>& tokens) -> std::string {
+        auto needsSpaceBefore = [](havel::TokenType t) {
+            return t == havel::TokenType::Identifier || t == havel::TokenType::Number || t == havel::TokenType::String ||
+                   t == havel::TokenType::InterpolatedString || t == havel::TokenType::Hotkey;
+        };
+        auto needsSpaceAround = [](havel::TokenType t) {
+            return t == havel::TokenType::Plus || t == havel::TokenType::Minus || t == havel::TokenType::Multiply ||
+                   t == havel::TokenType::Divide || t == havel::TokenType::Modulo || t == havel::TokenType::Equals ||
+                   t == havel::TokenType::NotEquals || t == havel::TokenType::Less || t == havel::TokenType::Greater ||
+                   t == havel::TokenType::LessEquals || t == havel::TokenType::GreaterEquals || t == havel::TokenType::And ||
+                   t == havel::TokenType::Or || t == havel::TokenType::Assign || t == havel::TokenType::PlusAssign ||
+                   t == havel::TokenType::MinusAssign || t == havel::TokenType::MultiplyAssign || t == havel::TokenType::DivideAssign ||
+                   t == havel::TokenType::Arrow || t == havel::TokenType::Pipe || t == havel::TokenType::DotDot;
+        };
+
+        std::string out;
+        havel::TokenType prev = havel::TokenType::EOF_TOKEN;
+
+        for (const auto& tok : tokens) {
+            if (tok.type == havel::TokenType::EOF_TOKEN) break;
+
+            if (tok.type == havel::TokenType::NewLine) {
+                while (!out.empty() && out.back() == ' ') out.pop_back();
+                out += "\n";
+                prev = tok.type;
+                continue;
+            }
+
+            if (tok.type == havel::TokenType::Comma) {
+                while (!out.empty() && out.back() == ' ') out.pop_back();
+                out += ", ";
+                prev = tok.type;
+                continue;
+            }
+
+            if (tok.type == havel::TokenType::Semicolon) {
+                while (!out.empty() && out.back() == ' ') out.pop_back();
+                out += ";\n";
+                prev = tok.type;
+                continue;
+            }
+
+            if (tok.type == havel::TokenType::CloseParen || tok.type == havel::TokenType::CloseBracket || tok.type == havel::TokenType::CloseBrace) {
+                while (!out.empty() && out.back() == ' ') out.pop_back();
+            }
+
+            bool insertSpace = false;
+            if (!out.empty() && out.back() != '\n') {
+                if (needsSpaceBefore(tok.type) && (needsSpaceBefore(prev) || prev == havel::TokenType::CloseParen || prev == havel::TokenType::CloseBracket)) {
+                    insertSpace = true;
+                }
+                if (tok.type == havel::TokenType::OpenBrace && prev != havel::TokenType::NewLine && prev != havel::TokenType::OpenBrace) {
+                    insertSpace = true;
+                }
+            }
+
+            if (insertSpace) out += ' ';
+
+            if (needsSpaceAround(tok.type)) {
+                while (!out.empty() && out.back() == ' ') out.pop_back();
+                if (!out.empty() && out.back() != '\n') out += ' ';
+                out += tok.raw;
+                out += ' ';
+            } else {
+                out += tok.raw;
+            }
+
+            prev = tok.type;
+        }
+
+        while (!out.empty() && out.back() == ' ') out.pop_back();
+        if (!out.empty() && out.back() != '\n') out += '\n';
+        return out;
+    };
+
+    try {
+        const std::string source = readFile(filePath);
+
+        havel::Lexer lexer(source);
+        std::vector<havel::Token> tokens = lexer.tokenize();
+
+        havel::parser::Parser parser;
+        (void)parser.produceASTStrict(source);
+
+        std::cout << prettify(tokens);
+        return 0;
+    } catch (const havel::LexError& e) {
+        printDiagnostic("lex error", e.line, e.column, e.what(), readFile(filePath));
+        return 1;
+    } catch (const havel::parser::ParseError& e) {
+        printDiagnostic("parse error", e.line, e.column, e.what(), readFile(filePath));
+        return 1;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
+    }
 }
 
 void HavelLauncher::showHelp() {
     std::cout << "Usage: havel [script.hv] [options]\n";
+    std::cout << "       havel lexer script.hv\n";
     std::cout << "Options:\n";
     std::cout << "  --startup, -s       Run at system startup\n";
     std::cout << "  --debug, -d         Enable debug logging\n";

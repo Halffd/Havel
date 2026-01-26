@@ -11,6 +11,9 @@
   config.reload()
 }
 
+// Load configuration at startup
+config.load()
+
 !Esc => {
   app.quit()
 }
@@ -597,13 +600,12 @@ let mouseAcc = 1
 
 # CapsLock remap and passthrough
 # Note: mapping persists in runtime IO
+io.map("CapsLock", "LAlt")
 @+CapsLock => {
-  io.map("CapsLock", "LAlt")
   send("{CapsLock}")
 }
 
 @^CapsLock => {
-  io.map("CapsLock", "LAlt")
   send("{CapsLock}")
 }
 
@@ -897,17 +899,6 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 @~^s & g => runDetached("/usr/bin/steam")
 @~^h & g => runDetached("flatpak run com.heroicgameslauncher.hgl")
 
-# Additional CapsLock variants
-@+CapsLock => {
-  io.map("CapsLock", "LAlt")
-  send("{CapsLock}")
-}
-
-@^CapsLock => {
-  io.map("CapsLock", "LAlt")
-  send("{CapsLock}")
-}
-
 # Screenshot variants
 @|#Print => runDetached("~/scripts/ocrs.sh")
 @|Print => screenshot.full()
@@ -938,4 +929,10 @@ let mpvHotkeys = {
   "+c": () => mpv.copyCurrentSubtitle(),
   "minus": () => mpv.subSeek("-1"),
   "equal": () => mpv.subSeek("1")
+}
+
+for key in mpvHotkeys {
+  let action = mpvHotkeys[key]
+  let hk = Hotkey(key, action, "mode == \"gaming\"")
+  log hk.id
 }

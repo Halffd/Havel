@@ -453,15 +453,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
             iterators.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
         }
         
-        // Skip newlines before closing paren
+        // Skip newlines before closing paren or 'in'
         while (at().type == havel::TokenType::NewLine) {
             advance();
         }
         
-        if (at().type != havel::TokenType::CloseParen) {
-            failAt(at(), "Expected ')' after iterator variables");
+        // Check for closing paren (for multiple iterators) or 'in' (for single iterator)
+        if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ")"
+        } else if (at().type != havel::TokenType::In) {
+            failAt(at(), "Expected ')' or 'in' after iterator variable(s)");
         }
-        advance(); // consume ")"
     } else {
         // Single iterator: for i in range
         if (at().type != havel::TokenType::Identifier) {

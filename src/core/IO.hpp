@@ -82,7 +82,11 @@ struct HotKey {
     std::vector<HotKey> comboSequence;
     // Time window for combo in milliseconds
     int comboTimeWindow = 500;
-    
+    // Whether this combo requires a wheel event to trigger
+    bool requiresWheel = false;
+    // Specific physical keys required by this combo (for precise modifier matching)
+    std::vector<int> requiredPhysicalKeys;
+
     // For mouse gestures
     MouseGesture gestureConfig;
     std::string gesturePattern;  // Pattern string (e.g., "up,down,left,right" or predefined names like "circle")

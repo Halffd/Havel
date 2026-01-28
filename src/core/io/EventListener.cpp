@@ -608,6 +608,9 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
         activeInputs[originalCode] = ActiveInput(currentModifiers);
       }
 
+      // Track physical key state separately for precise combo matching
+      physicalKeyStates[originalCode] = true;
+
       debug("🔑 Key PRESS: original={} mapped={} | Modifiers: {}{}{}{}",
             originalCode, mappedCode,
             modifierState.IsCtrlPressed() ? "Ctrl+" : "",
@@ -658,6 +661,9 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       if (mappedCode != originalCode) {
         activeInputs.erase(originalCode);
       }
+
+      // Clear physical key state as well
+      physicalKeyStates[originalCode] = false;
 
       debug("🔼 Key UP: {} ({})", mappedCode,
             KeyMap::EvdevToString(mappedCode));
@@ -818,10 +824,14 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       if (down) {
         int currentMods = GetCurrentModifiersMask();
         activeInputs[ev.code] = ActiveInput(currentMods, now);
+        // Track physical mouse button state as well
+        physicalKeyStates[ev.code] = true;
         debug("🖱️  Mouse BUTTON DOWN: code={} | Active buttons: {}", ev.code,
               GetActiveInputsString());
       } else {
         activeInputs.erase(ev.code);
+        // Clear physical mouse button state as well
+        physicalKeyStates[ev.code] = false;
         debug("🖱️  Mouse BUTTON UP: code={} | Active buttons: {}", ev.code,
               GetActiveInputsString());
       }
@@ -1011,6 +1021,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
         std::unique_lock<std::shared_mutex> stateLock(stateMutex);
 
+        // Set wheel event context for combo evaluation
+        isProcessingWheelEvent = true;
+        currentWheelDirection = wheelDirection;
+
         // Update the wheel time tracking for combo evaluation
         auto now = std::chrono::steady_clock::now();
         if (wheelDirection > 0) {
@@ -1030,11 +1044,21 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
                               return k.type == HotkeyType::MouseWheel;
                             });
 
+            // For wheel combos, use the existing EvaluateWheelCombo function
+            // For other combos that don't require wheel, they won't be evaluated anyway due to the gate in EvaluateCombo
             if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
               info("Wheel combo: '{}'", hotkey.alias);
               wheelHotkeyIds.push_back(id);  // Store ID
               if (hotkey.grab)
                 wheelHotkeyShouldBlock = true;
+            } else if (!hasWheel && hotkey.requiresWheel) {
+              // This shouldn't happen, but just in case - evaluate normally if it has the flag
+              if (EvaluateCombo(hotkey)) {
+                info("Non-wheel combo with requiresWheel flag: '{}'", hotkey.alias);
+                wheelHotkeyIds.push_back(id);  // Store ID
+                if (hotkey.grab)
+                  wheelHotkeyShouldBlock = true;
+              }
             }
             continue;
           }
@@ -1067,6 +1091,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             wheelHotkeyShouldBlock = true;
         }
       } // Both locks released here
+
+      // Reset wheel event context after processing
+      isProcessingWheelEvent = false;
+      currentWheelDirection = 0;
 
       // Execute callbacks outside critical section
       for (int hotkeyId : wheelHotkeyIds) {
@@ -1519,9 +1547,15 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     try {
         // stateMutex is already locked by the caller (ProcessMouseEvent or ProcessKeyboardEvent)
-        // std::shared_lock<std::shared_mutex> stateLock(stateMutex); 
+        // std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
         auto now = std::chrono::steady_clock::now();
+
+        // Gate: If this combo requires a wheel event, only evaluate during wheel events
+        if (hotkey.requiresWheel && !isProcessingWheelEvent) {
+            debug("⏭️  Skipping combo '{}' - requires wheel but not processing wheel event", hotkey.alias);
+            return false;
+        }
 
         debug("🔍 Evaluating combo '{}' | Active inputs: {}",
               hotkey.alias, GetActiveInputsString());
@@ -1650,6 +1684,12 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
             }
         }
 
+        // Check specific physical keys are pressed (for precise modifier matching)
+        if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {
+            debug("❌ Combo '{}' rejected: required physical keys not pressed", hotkey.alias);
+            return false;
+        }
+
         // Check modifiers if required
         if (requiredModifiers != 0) {
             int currentMods = GetCurrentModifiersMask();
@@ -1682,6 +1722,16 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         error("Exception in EvaluateCombo for hotkey '{}': {}", hotkey.alias, e.what());
         return false;  // Return false instead of crashing
     }
+}
+
+bool EventListener::ArePhysicalKeysPressed(const std::vector<int>& requiredKeys) const {
+    for (int key : requiredKeys) {
+        auto it = physicalKeyStates.find(key);
+        if (it == physicalKeyStates.end() || !it->second) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void EventListener::ProcessMouseGesture(int dx, int dy) {

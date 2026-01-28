@@ -2273,6 +2273,16 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
           auto subHotkey = AddHotkey(TrimCopy(part), std::function<void()>{}, 0);
           hotkey.comboSequence.push_back(subHotkey);
         }
+        // Check if any part of the combo requires wheel events and collect required physical keys
+        for (const auto &comboPart : hotkey.comboSequence) {
+          if (comboPart.type == HotkeyType::MouseWheel) {
+            hotkey.requiresWheel = true;
+          }
+          // Add the physical key to requiredPhysicalKeys for precise matching
+          if (comboPart.type == HotkeyType::Keyboard || comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
+            hotkey.requiredPhysicalKeys.push_back(static_cast<int>(comboPart.key));
+          }
+        }
         hotkey.success = !hotkey.comboSequence.empty();
       } else {
         // Regular keyboard hotkey
@@ -2434,6 +2444,16 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       for (const auto &part : parts) {
         auto subHotkey = AddMouseHotkey(TrimCopy(part), std::function<void()>{}, 0);
         hotkey.comboSequence.push_back(subHotkey);
+      }
+      // Check if any part of the combo requires wheel events and collect required physical keys
+      for (const auto &comboPart : hotkey.comboSequence) {
+        if (comboPart.type == HotkeyType::MouseWheel) {
+          hotkey.requiresWheel = true;
+        }
+        // Add the physical key to requiredPhysicalKeys for precise matching
+        if (comboPart.type == HotkeyType::Keyboard || comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
+          hotkey.requiredPhysicalKeys.push_back(static_cast<int>(comboPart.key));
+        }
       }
       hotkey.success = !hotkey.comboSequence.empty();
     } else {

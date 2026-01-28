@@ -171,7 +171,7 @@ bool AudioManager::setMute(const std::string& device, bool muted) {
                 auto it = pw_nodes.find(dev->index);
                 if (it != pw_nodes.end() && it->second.proxy) {
                     // Use the PipeWire thread loop for thread safety
-                    pw_thread_loop_lock(pw_loop);
+                    pw_thread_loop_lock(m_pw_loop);
 
                     uint8_t buffer[1024];
                     spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
@@ -185,7 +185,7 @@ bool AudioManager::setMute(const std::string& device, bool muted) {
                         success = (pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param) == 0);
                     }
 
-                    pw_thread_loop_unlock(pw_loop);
+                    pw_thread_loop_unlock(m_pw_loop);
                 }
             }
             #endif
@@ -469,17 +469,17 @@ bool AudioManager::playNotificationSound() {
 
 void AudioManager::cleanup() {
     #ifdef HAVE_PIPEWIRE
-    if (pw_loop) {
-        pw_thread_loop_stop(pw_loop);
+    if (m_pw_loop) {
+        pw_thread_loop_stop(m_pw_loop);
     }
-    if (pw_core) {
-        pw_core_disconnect(pw_core);
+    if (m_pw_core) {
+        pw_core_disconnect(m_pw_core);
     }
-    if (pw_context) {
-        pw_context_destroy(pw_context);
+    if (m_pw_context) {
+        pw_context_destroy(m_pw_context);
     }
-    if (pw_loop) {
-        pw_thread_loop_destroy(pw_loop);
+    if (m_pw_loop) {
+        pw_thread_loop_destroy(m_pw_loop);
     }
     if (pw_ready) {
         pw_deinit();
@@ -551,7 +551,7 @@ void AudioManager::processPipeWireCommands() {
 
         if (cmd.type == PipeWireCommand::SET_VOLUME) {
             // Perform the PipeWire operation in the correct thread
-            pw_thread_loop_lock(pw_loop);
+            pw_thread_loop_lock(m_pw_loop);
             std::lock_guard<std::mutex> lock(pw_mutex);
             auto it = pw_nodes.find(cmd.nodeId);
             if (it != pw_nodes.end() && it->second.proxy) {
@@ -566,7 +566,7 @@ void AudioManager::processPipeWireCommands() {
                     pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param);
                 }
             }
-            pw_thread_loop_unlock(pw_loop);
+            pw_thread_loop_unlock(m_pw_loop);
 
             // If there's a promise, fulfill it
             if (cmd.volumePromise) {
@@ -574,7 +574,7 @@ void AudioManager::processPipeWireCommands() {
             }
         }
         else if (cmd.type == PipeWireCommand::SET_MUTE) {
-            pw_thread_loop_lock(pw_loop);
+            pw_thread_loop_lock(m_pw_loop);
             std::lock_guard<std::mutex> lock(pw_mutex);
             auto it = pw_nodes.find(cmd.nodeId);
             if (it != pw_nodes.end() && it->second.proxy) {
@@ -589,7 +589,7 @@ void AudioManager::processPipeWireCommands() {
                     pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param);
                 }
             }
-            pw_thread_loop_unlock(pw_loop);
+            pw_thread_loop_unlock(m_pw_loop);
 
             if (cmd.boolPromise) {
                 cmd.boolPromise->set_value(cmd.mute);
@@ -631,8 +631,9 @@ void on_node_info(void *data, const struct pw_node_info *info) {
 }
 
 static const struct pw_node_events node_events = {
-    PW_VERSION_NODE_EVENTS,
+    .version = PW_VERSION_NODE_EVENTS,
     .info = on_node_info,
+    .param = nullptr,
 };
 
 void on_registry_global(void *data, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props) {
@@ -656,7 +657,7 @@ void on_registry_global(void *data, uint32_t id, uint32_t permissions, const cha
         std::lock_guard<std::mutex> lock(am->pw_mutex);
         PipeWireNode& node = am->pw_nodes[id];
         node.id = id;
-        node.proxy = (pw_proxy*)pw_registry_bind(am->pw_registry, id, type, PW_VERSION_NODE, 0);
+        node.proxy = (pw_proxy*)pw_registry_bind(am->m_pw_registry, id, type, PW_VERSION_NODE, 0);
         pw_node_add_listener((pw_node*)node.proxy, &node.node_listener, &node_events, am);
 
         // Store the media class and other identifying information
@@ -680,45 +681,53 @@ void on_core_sync(void *data, uint32_t id, int seq) {
     auto* am = static_cast<AudioManager*>(data);
     if (am->pw_sync_seq == seq) {
         am->pw_ready = true;
-        pw_thread_loop_signal(am->pw_loop, false);
+        pw_thread_loop_signal(am->m_pw_loop, false);
     }
 }
 
 static const pw_core_events core_events = {
-    PW_VERSION_CORE_EVENTS,
+    .version = PW_VERSION_CORE_EVENTS,
+    .info = nullptr,
     .done = on_core_sync,
+    .ping = nullptr,
+    .error = nullptr,
+    .remove_id = nullptr,
+    .bound_id = nullptr,
+    .add_mem = nullptr,
+    .remove_mem = nullptr,
+    .bound_props = nullptr,
 };
 
 static const pw_registry_events registry_events = {
-    PW_VERSION_REGISTRY_EVENTS,
+    .version = PW_VERSION_REGISTRY_EVENTS,
     .global = on_registry_global,
     .global_remove = on_registry_global_remove,
 };
 
 bool AudioManager::initializePipeWire() {
     pw_init(nullptr, nullptr);
-    pw_loop = pw_thread_loop_new("havel-audio", nullptr);
-    if (!pw_loop) return false;
+    m_pw_loop = pw_thread_loop_new("havel-audio", nullptr);
+    if (!m_pw_loop) return false;
 
-    pw_context = pw_context_new(pw_thread_loop_get_loop(pw_loop), nullptr, 0);
-    if (!pw_context) return false;
+    m_pw_context = pw_context_new(pw_thread_loop_get_loop(m_pw_loop), nullptr, 0);
+    if (!m_pw_context) return false;
 
-    pw_core = pw_context_connect(pw_context, nullptr, 0);
-    if (!pw_core) return false;
+    m_pw_core = pw_context_connect(m_pw_context, nullptr, 0);
+    if (!m_pw_core) return false;
 
-    pw_core_add_listener(pw_core, &core_listener, &core_events, this);
-    pw_registry = pw_core_get_registry(pw_core, PW_VERSION_REGISTRY, 0);
-    pw_registry_add_listener(pw_registry, &registry_listener, &registry_events, this);
+    pw_core_add_listener(m_pw_core, &core_listener, &core_events, this);
+    m_pw_registry = pw_core_get_registry(m_pw_core, PW_VERSION_REGISTRY, 0);
+    pw_registry_add_listener(m_pw_registry, &registry_listener, &registry_events, this);
 
-    if (pw_thread_loop_start(pw_loop) < 0) return false;
+    if (pw_thread_loop_start(m_pw_loop) < 0) return false;
 
     // Wait for initial sync
-    pw_thread_loop_lock(pw_loop);
-    pw_sync_seq = pw_core_sync(pw_core, PW_ID_CORE, 0);
+    pw_thread_loop_lock(m_pw_loop);
+    pw_sync_seq = pw_core_sync(m_pw_core, PW_ID_CORE, 0);
     while (!pw_ready) {
-        pw_thread_loop_wait(pw_loop);
+        pw_thread_loop_wait(m_pw_loop);
     }
-    pw_thread_loop_unlock(pw_loop);
+    pw_thread_loop_unlock(m_pw_loop);
 
     // Start the command processing thread
     startPipeWireCommandThread();
@@ -1150,7 +1159,7 @@ bool AudioManager::setApplicationVolume(uint32_t appIndex, double volume) {
     auto it = pw_nodes.find(appIndex);
     if (it != pw_nodes.end() && it->second.proxy) {
         // Use the PipeWire thread loop for thread safety
-        pw_thread_loop_lock(pw_loop);
+        pw_thread_loop_lock(m_pw_loop);
 
         uint8_t buffer[1024];
         spa_pod_builder b = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
@@ -1165,7 +1174,7 @@ bool AudioManager::setApplicationVolume(uint32_t appIndex, double volume) {
             result = (pw_node_set_param((struct pw_node*)it->second.proxy, SPA_PARAM_Props, 0, param) == 0);
         }
 
-        pw_thread_loop_unlock(pw_loop);
+        pw_thread_loop_unlock(m_pw_loop);
         return result;
     }
     #endif

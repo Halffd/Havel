@@ -360,8 +360,8 @@ $f9 => {
 @#WheelDown => { zoom(0) }
 @RShift & WheelUp => { zoom(1) }
 RShift & WheelDown => { zoom(0) }
-@LButton & RButton: => { zoom(2) }
-@RButton & LButton: => { zoom(1) }
+@LButton & RButton => { zoom(2) }
+@RButton & LButton => { zoom(1) }
 @RButton & WheelUp => { zoom(1) }
 @RButton & WheelDown => { zoom(0) }
 
@@ -577,8 +577,8 @@ fn zoom2 (level) {
 
 @RShift & WheelUp => zoom2(1)
 RShift & WheelDown => zoom2(0)
-@LButton & RButton: => zoom2(2)
-@RButton & LButton: => zoom2(1)
+@LButton & RButton => { zoom2(2) }
+@RButton & LButton => { zoom2(1) }
 @RButton & WheelUp => zoom2(1)
 @RButton & WheelDown => zoom2(0)
 
@@ -732,7 +732,7 @@ let genshinAutomationActive = false
 
 !d => hotkey.toggleOverlay()
 
-!del => hotkey.toggleAutomationTask("autoclicker", "left")
+!delete => hotkey.toggleAutomationTask("autoclicker", "left")
 
 ^. => {
   audio.increaseActiveAppVolume(0.05)

@@ -6,6 +6,7 @@
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
+#include "utils/Utils.hpp"
 #include "x11.h"
 #include <chrono>
 #include <cstring>
@@ -2269,7 +2270,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 
         hotkey.type = HotkeyType::Combo;
         for (const auto &part : parts) {
-          auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
+          auto subHotkey = AddHotkey(TrimCopy(part), std::function<void()>{}, 0);
           hotkey.comboSequence.push_back(subHotkey);
         }
         hotkey.success = !hotkey.comboSequence.empty();
@@ -2303,7 +2304,14 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
             }
         }
 
-        hotkey.type = HotkeyType::Keyboard;
+        // Set appropriate type: mouse movement keys should be MouseMove, others Keyboard
+        if (keyLower == "mouseleft" || keyLower == "mouseright" ||
+            keyLower == "mouseup" || keyLower == "mousedown") {
+            hotkey.type = HotkeyType::MouseMove;
+        } else {
+            hotkey.type = HotkeyType::Keyboard;
+        }
+
         hotkey.key = static_cast<Key>(virtualKeyCode);
         hotkey.success = true;
 
@@ -2424,7 +2432,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
 
       hotkey.type = HotkeyType::Combo;
       for (const auto &part : parts) {
-        auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0);
+        auto subHotkey = AddMouseHotkey(TrimCopy(part), std::function<void()>{}, 0);
         hotkey.comboSequence.push_back(subHotkey);
       }
       hotkey.success = !hotkey.comboSequence.empty();

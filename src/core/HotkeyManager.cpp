@@ -1060,8 +1060,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
   io.Hotkey("@RShift & WheelUp", [this]() { Zoom(1); });
   io.Hotkey("RShift & WheelDown", [this]() { Zoom(0); });
-  io.Hotkey("@LButton & RButton:", [this]() { Zoom(2); });
-  io.Hotkey("@RButton & LButton:", [this]() { Zoom(1); });
+  io.Hotkey("@LButton & RButton", [this]() { Zoom(2); });
+  io.Hotkey("@RButton & LButton", [this]() { Zoom(1); });
   io.Hotkey("@RButton & WheelUp", [this]() { Zoom(1); });
   io.Hotkey("@RButton & WheelDown", [this]() { Zoom(0); });
   io.Hotkey("@~^l & g", []() { Launcher::runAsync("/usr/bin/lutris"); });
@@ -1296,7 +1296,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       },
       nullptr, 0);
 
-  AddHotkey("!del", [this]() {
+  AddHotkey("!delete", [this]() {
     info("Starting autoclicker");
     startAutoclicker("Button1");
   });

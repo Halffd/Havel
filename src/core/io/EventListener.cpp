@@ -274,7 +274,7 @@ void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
   if (hotkey.type == HotkeyType::Combo) {
     for (const auto &part : hotkey.comboSequence) {
       int keyCode = 0;
-      if (part.type == HotkeyType::Keyboard) {
+      if (part.type == HotkeyType::Keyboard || part.type == HotkeyType::MouseMove) {
         keyCode = static_cast<int>(part.key);
       } else if (part.type == HotkeyType::MouseButton) {
         keyCode = part.mouseButton;
@@ -739,11 +739,11 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
       continue;
     }
 
-    // For keyboard/mouse button parts, check if pressed
+    // For keyboard/mouse button/mouse move parts, check if pressed
     int keyCode;
     if (comboKey.type == HotkeyType::MouseButton) {
       keyCode = comboKey.mouseButton;
-    } else if (comboKey.type == HotkeyType::Keyboard) {
+    } else if (comboKey.type == HotkeyType::Keyboard || comboKey.type == HotkeyType::MouseMove) {
       keyCode = static_cast<int>(comboKey.key);
     } else {
       return false;
@@ -1135,8 +1135,8 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
             if (!hotkey.enabled)
                 continue;
 
-            // Only match keyboard hotkeys with our virtual movement keys
-            if (hotkey.type != HotkeyType::Keyboard)
+            // Only match keyboard and mouse movement hotkeys with our virtual movement keys
+            if (hotkey.type != HotkeyType::Keyboard && hotkey.type != HotkeyType::MouseMove)
                 continue;
 
             // Check if the key matches
@@ -1377,6 +1377,12 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         continue;
       }
 
+      // Guard: Modifiers should not trigger standalone hotkeys (unless in combo context)
+      // This prevents Shift/RShift from triggering zoom when combined with wheel events
+      if (KeyMap::IsModifier(static_cast<int>(hotkey.key)) && hotkey.type != HotkeyType::Combo) {
+        continue;
+      }
+
       // Event type check
       if (!hotkey.repeat && repeat) {
         continue;
@@ -1546,6 +1552,8 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
                 }
             } else if (comboKey.type == HotkeyType::MouseButton) {
                 requiredKeys.insert(comboKey.mouseButton);
+            } else if (comboKey.type == HotkeyType::MouseMove) {
+                requiredKeys.insert(static_cast<int>(comboKey.key));
             } else if (comboKey.type == HotkeyType::MouseWheel) {
                 // ← ADD THIS CASE
                 // Wheel events are TRANSIENT - they don't stay in activeInputs

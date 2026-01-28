@@ -204,10 +204,10 @@ public:
 
     // PipeWire specific
 #ifdef HAVE_PIPEWIRE
-    pw_thread_loop* pw_loop = nullptr;
-    pw_context* pw_context = nullptr;
-    pw_core* pw_core = nullptr;
-    pw_registry* pw_registry = nullptr;
+    pw_thread_loop* m_pw_loop = nullptr;
+    pw_context* m_pw_context = nullptr;
+    pw_core* m_pw_core = nullptr;
+    pw_registry* m_pw_registry = nullptr;
     spa_hook core_listener;
     spa_hook registry_listener;
     std::map<uint32_t, PipeWireNode> pw_nodes;

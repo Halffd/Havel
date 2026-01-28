@@ -931,8 +931,9 @@ let mpvHotkeys = {
   "equal": () => mpv.subSeek("1")
 }
 
-for key in mpvHotkeys {
-  let action = mpvHotkeys[key]
-  let hk = Hotkey(key, action, "mode == \"gaming\"")
-  log hk.id
-}
+# TODO: Fix for loop parsing
+# for key in mpvHotkeys {
+#   let action = mpvHotkeys[key]
+#   let hk = Hotkey(key, action, "mode == \"gaming\"")
+#   log hk.id
+# }

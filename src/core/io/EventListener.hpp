@@ -240,6 +240,8 @@ private:
     std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
     std::unordered_map<int, ActiveInput> activeInputs;  // Maps key code to ActiveInput
     ModifierState modifierState;
+    // Physical key tracking - tracks individual physical keys separately from modifier state
+    std::unordered_map<int, bool> physicalKeyStates;  // Maps evdev code to pressed/released state
     
     // Hotkey management (exact from IO.cpp)
     mutable std::shared_mutex hotkeyMutex;
@@ -262,6 +264,13 @@ private:
     
     // Mouse button state tracking
     std::map<int, bool> mouseButtonState;
+
+    // Current event context tracking
+    bool isProcessingWheelEvent = false;
+    int currentWheelDirection = 0;  // 1 for up, -1 for down, 0 for none
+
+    // Helper function to check if specific physical keys are pressed
+    bool ArePhysicalKeysPressed(const std::vector<int>& requiredKeys) const;
 
     // Wheel event tracking for wheel combos
     std::chrono::steady_clock::time_point lastWheelUpTime{std::chrono::steady_clock::time_point::min()};

@@ -506,13 +506,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       [this]() {
-        if (!CompositorBridge::IsKDERunning()) {
           Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
-        } else {
-          CompositorBridge::SendKWinZoomCommand(
-              "org.kde.plasmashell /PlasmaShell "
-              "org.kde.PlasmaShell.activateLauncherMenu");
-        }
       },                 // Tap action
       [this]() -> bool { // Tap condition function
         // Don't trigger in gaming mode

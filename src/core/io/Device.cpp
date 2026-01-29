@@ -388,56 +388,59 @@ std::vector<Device> Device::getAllDevices() {
 
 std::vector<DeviceInfo> Device::findKeyboards() {
     std::vector<Device> allDevices = getAllDevices();
+    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> keyboards;
-    
-    for (const auto& device : allDevices) {
+
+    for (const auto& device : mergedDevices) {
         if (device.type == DeviceType::Keyboard) {
             keyboards.push_back(device.toDeviceInfo());
         }
     }
-    
+
     // Sort by confidence (highest first)
-    std::sort(keyboards.begin(), keyboards.end(), 
+    std::sort(keyboards.begin(), keyboards.end(),
               [](const DeviceInfo& a, const DeviceInfo& b) {
                   return a.confidence > b.confidence;
               });
-    
+
     return keyboards;
 }
 
 std::vector<DeviceInfo> Device::findMice() {
     std::vector<Device> allDevices = getAllDevices();
+    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> mice;
-    
-    for (const auto& device : allDevices) {
+
+    for (const auto& device : mergedDevices) {
         if (device.type == DeviceType::Mouse) {
             mice.push_back(device.toDeviceInfo());
         }
     }
-    
-    std::sort(mice.begin(), mice.end(), 
+
+    std::sort(mice.begin(), mice.end(),
               [](const DeviceInfo& a, const DeviceInfo& b) {
                   return a.confidence > b.confidence;
               });
-    
+
     return mice;
 }
 
 std::vector<DeviceInfo> Device::findGamepads() {
     std::vector<Device> allDevices = getAllDevices();
+    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> gamepads;
-    
-    for (const auto& device : allDevices) {
+
+    for (const auto& device : mergedDevices) {
         if (device.type == DeviceType::Gamepad || device.type == DeviceType::Joystick) {
             gamepads.push_back(device.toDeviceInfo());
         }
     }
-    
-    std::sort(gamepads.begin(), gamepads.end(), 
+
+    std::sort(gamepads.begin(), gamepads.end(),
               [](const DeviceInfo& a, const DeviceInfo& b) {
                   return a.confidence > b.confidence;
               });
-    
+
     return gamepads;
 }
 
@@ -456,7 +459,7 @@ std::string Device::toString() const {
     std::ostringstream oss;
     oss << "Device: '" << name << "'\n";
     oss << "  Type: ";
-    
+
     switch (type) {
         case DeviceType::Keyboard: oss << "Keyboard"; break;
         case DeviceType::Mouse: oss << "Mouse"; break;
@@ -466,13 +469,89 @@ std::string Device::toString() const {
         case DeviceType::Button: oss << "Button"; break;
         default: oss << "Unknown"; break;
     }
-    
+
     oss << " (confidence: " << (confidence * 100) << "%)\n";
     oss << "  Event: " << eventPath << "\n";
-    oss << "  Capabilities: " << caps.totalKeys << " keys, " 
-        << caps.mouseButtons << " mouse buttons, " 
+    oss << "  Bus: 0x" << std::hex << busType << ", Vendor: 0x" << vendor
+        << ", Product: 0x" << product << std::dec << "\n";
+    oss << "  Capabilities: " << caps.totalKeys << " keys, "
+        << caps.mouseButtons << " mouse buttons, "
         << caps.gamepadButtons << " gamepad buttons\n";
     oss << "  Reason: " << classificationReason << "\n";
-    
+
     return oss.str();
+}
+
+// Function to merge capabilities of devices with the same vendor+product
+std::vector<Device> Device::mergeDevicesByVendorProduct(const std::vector<Device>& devices) {
+    std::vector<Device> mergedDevices;
+    std::map<std::pair<int, int>, Device> deviceMap; // Map of (vendor, product) to merged device
+
+    for (const auto& device : devices) {
+        std::pair<int, int> key = std::make_pair(device.vendor, device.product);
+
+        if (deviceMap.find(key) == deviceMap.end()) {
+            // First device with this vendor+product combination
+            deviceMap[key] = device;
+            // Initialize the combined capabilities
+            deviceMap[key].capabilities.clear(); // Will be rebuilt from all devices
+            deviceMap[key].handlers = device.handlers; // Will be combined later
+        } else {
+            // Merge with existing device
+            Device& existing = deviceMap[key];
+
+            // Combine capabilities by OR-ing the bitmasks
+            // Extend vectors if needed
+            size_t maxSize = std::max(existing.keyCapabilities.size(), device.keyCapabilities.size());
+            existing.keyCapabilities.resize(maxSize, 0);
+            for (size_t i = 0; i < device.keyCapabilities.size(); i++) {
+                existing.keyCapabilities[i] |= device.keyCapabilities[i];
+            }
+
+            maxSize = std::max(existing.eventCapabilities.size(), device.eventCapabilities.size());
+            existing.eventCapabilities.resize(maxSize, 0);
+            for (size_t i = 0; i < device.eventCapabilities.size(); i++) {
+                existing.eventCapabilities[i] |= device.eventCapabilities[i];
+            }
+
+            maxSize = std::max(existing.relCapabilities.size(), device.relCapabilities.size());
+            existing.relCapabilities.resize(maxSize, 0);
+            for (size_t i = 0; i < device.relCapabilities.size(); i++) {
+                existing.relCapabilities[i] |= device.relCapabilities[i];
+            }
+
+            maxSize = std::max(existing.absCapabilities.size(), device.absCapabilities.size());
+            existing.absCapabilities.resize(maxSize, 0);
+            for (size_t i = 0; i < device.absCapabilities.size(); i++) {
+                existing.absCapabilities[i] |= device.absCapabilities[i];
+            }
+
+            // Combine handlers string
+            if (!existing.handlers.empty() && existing.handlers.find(device.handlers) == std::string::npos) {
+                existing.handlers += " " + device.handlers;
+            }
+
+            // Combine capability strings
+            existing.capabilities.insert(existing.capabilities.end(),
+                                       device.capabilities.begin(),
+                                       device.capabilities.end());
+
+            // Re-analyze capabilities after merging
+            existing.caps = existing.analyzeCapabilities();
+
+            // Update name to indicate it's a merged device
+            if (existing.name.find("(merged)") == std::string::npos) {
+                existing.name += " (merged)";
+            }
+        }
+    }
+
+    // Convert map back to vector
+    for (auto& pair : deviceMap) {
+        // Update the device type based on merged capabilities
+        pair.second.type = pair.second.detectType();
+        mergedDevices.push_back(pair.second);
+    }
+
+    return mergedDevices;
 }

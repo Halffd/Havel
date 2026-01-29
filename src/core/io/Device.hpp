@@ -108,7 +108,10 @@ public:
     // String representation
     std::string toString() const;
     DeviceInfo toDeviceInfo() const;
-    
+
+    // Device merging functionality
+    static std::vector<Device> mergeDevicesByVendorProduct(const std::vector<Device>& devices);
+
 private:
     std::vector<uint64_t> keyCapabilities;
     std::vector<uint64_t> eventCapabilities;

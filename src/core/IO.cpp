@@ -297,21 +297,26 @@ std::string IO::getGamepadDevice() {
 std::vector<std::string> IO::GetInputDevices() {
   std::vector<std::string> devices;
   std::string keyboardDevice = getKeyboardDevice();
-  std::string mouseDevice = getMouseDevice();
-  std::string gamepadDevice;
 
+  // Add keyboard device if available
   if (!keyboardDevice.empty()) {
     devices.push_back(keyboardDevice);
   }
 
-  if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-      !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-    devices.push_back(mouseDevice);
+  // Add all mouse devices (including multiple devices from same physical mouse)
+  auto mouseDevices = Device::findMice();
+  if (!Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+    for (const auto& mouse : mouseDevices) {
+      // Only add if not already added as keyboard device
+      if (mouse.eventPath != keyboardDevice) {
+        devices.push_back(mouse.eventPath);
+      }
+    }
   }
 
   bool enableGamepad = Configs::Get().Get<bool>("Device.EnableGamepad", false);
   if (enableGamepad) {
-    gamepadDevice = getGamepadDevice();
+    std::string gamepadDevice = getGamepadDevice();
     if (!gamepadDevice.empty()) {
       devices.push_back(gamepadDevice);
     }
@@ -389,22 +394,26 @@ IO::IO() {
              kb.name, kb.eventPath, kb.confidence * 100);
       }
 
-      std::string mouseDevice = getMouseDevice();
+      // Get all mouse devices (including multiple devices from same physical mouse)
+      auto mouseDevices = Device::findMice();
       std::string gamepadDevice;
 
-      if (!mouseDevice.empty() &&
+      if (!mouseDevices.empty() &&
           !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        // Only add mouse device if it's not already in the keyboard devices list
-        bool alreadyAdded = false;
-        for (const auto& kb_device : keyboardDevices) {
-          if (kb_device.eventPath == mouseDevice) {
-            alreadyAdded = true;
-            break;
+        for (const auto& mouse : mouseDevices) {
+          // Only add mouse device if it's not already in the keyboard devices list
+          bool alreadyAdded = false;
+          for (const auto& kb_device : keyboardDevices) {
+            if (kb_device.eventPath == mouse.eventPath) {
+              alreadyAdded = true;
+              break;
+            }
           }
-        }
-        if (!alreadyAdded) {
-          devices.push_back(mouseDevice);
-          info("Adding mouse device: {}", mouseDevice);
+          if (!alreadyAdded) {
+            devices.push_back(mouse.eventPath);
+            info("Adding mouse device: '{}' -> {} (confidence: {:.1f}%)",
+                 mouse.name, mouse.eventPath, mouse.confidence * 100);
+          }
         }
       }
 
@@ -461,19 +470,22 @@ IO::IO() {
         error("Failed to find a suitable keyboard device");
       }
 
-      // Initialize mouse device
-      std::string mouseDevice = getMouseDevice();
-      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        try {
-          info("Using mouse device: {}", mouseDevice);
-          StartEvdevMouseListener(mouseDevice);
-          info("Successfully started evdev mouse listener");
-        } catch (const std::exception &e) {
-          error("Failed to start evdev mouse listener: {}", e.what());
+      // Initialize mouse device(s)
+      auto mouseDevices = Device::findMice();
+      if (!mouseDevices.empty() && !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+        for (const auto& mouse : mouseDevices) {
+          if (mouse.eventPath != keyboardDevice) {
+            try {
+              info("Using mouse device: '{}' -> {}", mouse.name, mouse.eventPath);
+              StartEvdevMouseListener(mouse.eventPath);
+              info("Successfully started evdev mouse listener for: {}", mouse.eventPath);
+            } catch (const std::exception &e) {
+              error("Failed to start evdev mouse listener for '{}': {}", mouse.eventPath, e.what());
+            }
+          }
         }
-      } else if (mouseDevice.empty()) {
-        warning("No suitable mouse device found");
+      } else {
+        warning("No suitable mouse devices found");
       }
 
       // Initialize gamepad device if requested

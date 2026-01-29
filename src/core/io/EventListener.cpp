@@ -1685,9 +1685,16 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         }
 
         // Check specific physical keys are pressed (for precise modifier matching)
-        if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {
-            debug("❌ Combo '{}' rejected: required physical keys not pressed", hotkey.alias);
-            return false;
+        // Skip this check for pure modifier+wheel combos to avoid conflicts with modifier handling
+        bool isPureModifierWheelCombo = hotkey.requiresWheel &&
+                                       requiredKeys.empty() &&
+                                       requiredModifiers != 0;
+
+        if (!isPureModifierWheelCombo && !hotkey.requiredPhysicalKeys.empty()) {
+            if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {
+                debug("❌ Combo '{}' rejected: required physical keys not pressed", hotkey.alias);
+                return false;
+            }
         }
 
         // Check modifiers if required

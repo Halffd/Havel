@@ -2279,7 +2279,13 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
             hotkey.requiresWheel = true;
           }
           // Add the physical key to requiredPhysicalKeys for precise matching
-          if (comboPart.type == HotkeyType::Keyboard || comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
+          if (comboPart.type == HotkeyType::Keyboard) {
+            int keyCode = static_cast<int>(comboPart.key);
+            if (!KeyMap::IsModifier(keyCode)) {
+              hotkey.requiredPhysicalKeys.push_back(keyCode);
+            }
+          }
+          else if (comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
             hotkey.requiredPhysicalKeys.push_back(static_cast<int>(comboPart.key));
           }
         }
@@ -2451,7 +2457,13 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
           hotkey.requiresWheel = true;
         }
         // Add the physical key to requiredPhysicalKeys for precise matching
-        if (comboPart.type == HotkeyType::Keyboard || comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
+        if (comboPart.type == HotkeyType::Keyboard) {
+          int keyCode = static_cast<int>(comboPart.key);
+          if (!KeyMap::IsModifier(keyCode)) {
+            hotkey.requiredPhysicalKeys.push_back(keyCode);
+          }
+        }
+        else if (comboPart.type == HotkeyType::MouseButton || comboPart.type == HotkeyType::MouseMove) {
           hotkey.requiredPhysicalKeys.push_back(static_cast<int>(comboPart.key));
         }
       }

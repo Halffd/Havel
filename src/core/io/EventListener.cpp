@@ -1407,8 +1407,13 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
       // Guard: Modifiers should not trigger standalone hotkeys (unless in combo context)
       // This prevents Shift/RShift from triggering zoom when combined with wheel events
+      // However, we need to allow single modifier hotkeys to work, so we'll check more carefully
       if (KeyMap::IsModifier(static_cast<int>(hotkey.key)) && hotkey.type != HotkeyType::Combo) {
-        continue;
+        // Allow single modifier hotkeys to work - if the hotkey is for the modifier itself
+        // and no additional modifiers are required, then it should be allowed
+        if (static_cast<int>(hotkey.key) != evdevCode || hotkey.modifiers != 0) {
+          continue;
+        }
       }
 
       // Event type check

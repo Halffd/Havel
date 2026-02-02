@@ -3,6 +3,7 @@
 #include "../utils/Utils.hpp"
 #include "../window/WindowManager.hpp"
 #include "BrightnessManager.hpp"
+#include "ConditionalHotkeyManager.hpp"
 #include "ConditionSystem.hpp"
 #include "ConfigManager.hpp"
 #include "IO.hpp"
@@ -36,20 +37,7 @@ struct HotkeyDefinition {
   int id;
 };
 
-struct ConditionalHotkey {
-  int id;
-  std::string key;
-  std::string condition; // String condition (for legacy)
-  std::function<bool()>
-      conditionFunc; // Function condition (for new functionality)
-  std::function<void()> trueAction;
-  std::function<void()> falseAction;
-  bool currentlyGrabbed = false;
-  bool lastConditionResult = false;
-  bool usesFunctionCondition =
-      false; // Flag to indicate which condition type to use
-};
-
+// Note: ConditionalHotkey is now defined in ConditionalHotkeyManager.hpp
 // Callback type for any key press
 using AnyKeyPressCallback = std::function<void(const std::string &key)>;
 

@@ -248,6 +248,8 @@ public:
   bool EnableHotkey(const std::string& keyName);
   bool DisableHotkey(const std::string& keyName);
   bool ToggleHotkey(const std::string& keyName);
+  bool RemoveHotkey(const std::string& keyName);  // Remove by name
+  bool RemoveHotkey(int hotkeyId);                // Remove by ID
   bool AddHotkey(const std::string &alias, Key key, int modifiers,
                  std::function<void()> callback);
   HotKey AddMouseHotkey(const std::string &hotkeyStr,

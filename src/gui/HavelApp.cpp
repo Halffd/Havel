@@ -233,6 +233,7 @@ void HavelApp::initializeComponents(bool isStartup) {
         }
         #ifdef ENABLE_HAVEL_LANG
         guiManager = std::make_unique<GUIManager>(*windowManager);
+        std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
         interpreter = std::make_unique<Interpreter>(
             *io,
             *windowManager,
@@ -242,6 +243,7 @@ void HavelApp::initializeComponents(bool isStartup) {
             guiManager.get(),
             AutomationSuite::Instance()->getScreenshotManager()
         );
+        std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
         #endif
     }
     

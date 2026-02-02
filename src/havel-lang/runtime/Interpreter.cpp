@@ -2578,6 +2578,46 @@ void Interpreter::InitializeIOBuiltins() {
         this->io.Remap(key1, key2);
         return HavelValue(nullptr);
     }));
+
+    // Hotkey management builtins
+    environment->Define("io.enableHotkey", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.enableHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.EnableHotkey(hotkey));
+    }));
+
+    environment->Define("io.disableHotkey", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.disableHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.DisableHotkey(hotkey));
+    }));
+
+    environment->Define("io.toggleHotkey", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.ToggleHotkey(hotkey));
+    }));
+
+    environment->Define("io.removeHotkey", BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) return HavelRuntimeError("io.removeHotkey() requires hotkey name or ID");
+        
+        // Try to parse as number first (ID), then as string (name)
+        const HavelValue& arg = args[0];
+        
+        // Check if it's a number by trying to get it as a number
+        double numVal = ValueToNumber(arg);
+        
+        // If it holds an int or double, use as ID
+        bool isNumber = std::holds_alternative<int>(arg) || std::holds_alternative<double>(arg);
+        
+        if (isNumber) {
+            int id = static_cast<int>(numVal);
+            return HavelValue(this->io.RemoveHotkey(id));
+        } else {
+            std::string name = ValueToString(args[0]);
+            return HavelValue(this->io.RemoveHotkey(name));
+        }
+    }));
     
     // Expose as module object: audioManager
     auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();

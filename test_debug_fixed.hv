@@ -1,0 +1,4 @@
+// Test the new debug module object structure
+debug.enabled = true
+debug.print("Debug is working!", 123, [1,2,3])
+debug.trace("Trace message test")

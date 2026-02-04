@@ -1,0 +1,13 @@
+// Test mpvcontroller functions directly
+print("Testing mpvcontroller functions directly:");
+
+print("Testing volume up...");
+mpvcontroller.volumeUp();
+
+print("Testing seek forward...");
+mpvcontroller.seekForward();
+
+print("Testing subtitle toggle...");
+mpvcontroller.toggleSubtitleVisibility();
+
+print("Direct function test completed!");

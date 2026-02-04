@@ -1,0 +1,11 @@
+print("Testing if standard library completes...");
+if (standard_library_completed) {
+    print("SUCCESS: Standard library completed!");
+    if (media_builtins_called) {
+        print("SUCCESS: InitializeMediaBuiltins was called!");
+    } else {
+        print("FAILURE: InitializeMediaBuiltins was NOT called!");
+    }
+} else {
+    print("FAILURE: Standard library did NOT complete!");
+}

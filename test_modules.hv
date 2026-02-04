@@ -1,0 +1,8 @@
+// Test if mode module exists
+print "Mode module:", mode
+print "Config module:", config
+print "__current_mode__:", __current_mode__
+
+// Test direct function calls
+print "mode.get():", mode.get()
+print "config.get():", config.get("General.GamingApps", "not found")

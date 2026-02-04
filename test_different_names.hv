@@ -1,0 +1,5 @@
+// Test if module objects work with different names
+print "Testing with different names:"
+
+// Create a test module to see if module objects work at all
+print "testModule:", testModule

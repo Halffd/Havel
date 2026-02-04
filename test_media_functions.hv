@@ -1,0 +1,10 @@
+// Test media functions
+print("Testing media functions:");
+
+print("Testing media.play...");
+media.play();
+
+print("Testing media.next...");
+media.next();
+
+print("Media function test completed!");

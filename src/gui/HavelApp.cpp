@@ -7,6 +7,7 @@
 #include <QIcon>
 #include <QColor>
 #include <stdexcept>
+#include <fstream>
 #include "AutomationSuite.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"

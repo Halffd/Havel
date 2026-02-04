@@ -1,0 +1,3 @@
+// Test basic functions
+print("Testing basic functions")
+log("Testing log function")

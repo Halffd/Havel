@@ -1,0 +1,14 @@
+print("Testing if media modules are available...");
+if (media) {
+    print("SUCCESS: media module is available!");
+    print("media:", media);
+} else {
+    print("FAILURE: media module is NOT available!");
+}
+
+if (mpvcontroller) {
+    print("SUCCESS: mpvcontroller module is available!");
+    print("mpvcontroller:", mpvcontroller);
+} else {
+    print("FAILURE: mpvcontroller module is NOT available!");
+}

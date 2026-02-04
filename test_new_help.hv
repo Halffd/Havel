@@ -1,0 +1,6 @@
+help("mpvcontroller");
+help("textchunker");
+help("ocr");
+help("alttab");
+help("clipboardmanager");
+help("mapmanager");

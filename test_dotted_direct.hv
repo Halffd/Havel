@@ -1,0 +1,4 @@
+// Test dotted function names directly
+print "Testing dotted functions:"
+print "mode.get():", mode.get()
+print "config.get():", config.get("General.GamingApps", "not found")

@@ -1,0 +1,5 @@
+// Test if audio dotted functions work
+print "Testing audio.setVolume:"
+audio.setVolume(0.5)
+print "Testing audio.getVolume:"
+audio.getVolume()

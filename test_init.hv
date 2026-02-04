@@ -1,0 +1,6 @@
+print("Testing if InitializeStandardLibrary is called...");
+if (test_init) {
+    print("SUCCESS: InitializeStandardLibrary was called!");
+} else {
+    print("FAILURE: InitializeStandardLibrary was NOT called!");
+}

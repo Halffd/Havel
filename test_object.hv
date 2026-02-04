@@ -1,0 +1,4 @@
+// Test script to check object access
+log "Testing object access..."
+let result = log("test")
+log "Log result: " + result

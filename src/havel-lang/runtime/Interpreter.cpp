@@ -2,12 +2,14 @@
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "fs/FileManager.hpp"
 #include "gui/GUIManager.hpp"
 #include "gui/HavelApp.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
 #include "process/Launcher.hpp"
 #include "qt.hpp"
+#include "window/WindowManagerDetector.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <algorithm>
@@ -1471,6 +1473,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeDebugBuiltins();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();
+  InitializeFileManagerBuiltins();
   InitializeLauncherBuiltins();
   InitializeGUIBuiltins();
   InitializeScreenshotBuiltins();
@@ -4000,6 +4003,384 @@ void Interpreter::InitializeMediaBuiltins() {
   environment->Define("mpvcontroller", HavelValue(mpvcontrollerObj));
 }
 
+void Interpreter::InitializeFileManagerBuiltins() {
+  // === FILEMANAGER MODULE ===
+  // Create filemanager module object
+  auto filemanagerObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // File operations
+  (*filemanagerObj)["read"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.read() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(file.read());
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to read file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["write"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "filemanager.write() requires file path and content arguments");
+        std::string path = ValueToString(args[0]);
+        std::string content = ValueToString(args[1]);
+        try {
+          FileManager file(path);
+          file.write(content);
+          return HavelValue(true);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to write file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["append"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "filemanager.append() requires file path and content arguments");
+        std::string path = ValueToString(args[0]);
+        std::string content = ValueToString(args[1]);
+        try {
+          FileManager file(path);
+          file.append(content);
+          return HavelValue(true);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to append to file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["exists"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.exists() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(file.exists());
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to check file existence: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["delete"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.delete() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(file.deleteFile());
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to delete file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["copy"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "filemanager.copy() requires source and destination arguments");
+        std::string source = ValueToString(args[0]);
+        std::string dest = ValueToString(args[1]);
+        try {
+          FileManager file(source);
+          return HavelValue(file.copy(dest));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to copy file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["move"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "filemanager.move() requires source and destination arguments");
+        std::string source = ValueToString(args[0]);
+        std::string dest = ValueToString(args[1]);
+        try {
+          FileManager file(source);
+          return HavelValue(file.move(dest));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to move file: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  // File information
+  (*filemanagerObj)["size"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.size() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(static_cast<double>(file.size()));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to get file size: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["wordCount"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.wordCount() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(static_cast<double>(file.wordCount()));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to count words: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["lineCount"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.lineCount() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(static_cast<double>(file.lineCount()));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to count lines: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["getChecksum"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.getChecksum() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        std::string algorithm =
+            args.size() > 1 ? ValueToString(args[1]) : "SHA-256";
+        try {
+          FileManager file(path);
+          return HavelValue(file.getChecksum(algorithm));
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to calculate checksum: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  (*filemanagerObj)["getMimeType"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.getMimeType() requires file path argument");
+        std::string path = ValueToString(args[0]);
+        try {
+          FileManager file(path);
+          return HavelValue(file.getMimeType());
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to get MIME type: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  // Create File constructor
+  (*filemanagerObj)["File"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "filemanager.File() requires file path argument");
+        std::string path = ValueToString(args[0]);
+
+        // Create File object
+        auto fileObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        // Store the file path
+        (*fileObj)["path"] = HavelValue(path);
+
+        // Add methods
+        (*fileObj)["read"] = BuiltinFunction(
+            [path](const std::vector<HavelValue> &args) -> HavelResult {
+              try {
+                FileManager file(path);
+                return HavelValue(file.read());
+              } catch (const std::exception &e) {
+                return HavelRuntimeError("Failed to read file: " +
+                                         std::string(e.what()));
+              }
+            });
+
+        (*fileObj)["write"] = BuiltinFunction(
+            [path](const std::vector<HavelValue> &args) -> HavelResult {
+              if (args.empty())
+                return HavelRuntimeError(
+                    "File.write() requires content argument");
+              std::string content = ValueToString(args[0]);
+              try {
+                FileManager file(path);
+                file.write(content);
+                return HavelValue(true);
+              } catch (const std::exception &e) {
+                return HavelRuntimeError("Failed to write file: " +
+                                         std::string(e.what()));
+              }
+            });
+
+        (*fileObj)["exists"] = BuiltinFunction(
+            [path](const std::vector<HavelValue> &args) -> HavelResult {
+              try {
+                FileManager file(path);
+                return HavelValue(file.exists());
+              } catch (const std::exception &e) {
+                return HavelRuntimeError("Failed to check file existence: " +
+                                         std::string(e.what()));
+              }
+            });
+
+        (*fileObj)["size"] = BuiltinFunction(
+            [path](const std::vector<HavelValue> &args) -> HavelResult {
+              try {
+                FileManager file(path);
+                return HavelValue(static_cast<double>(file.size()));
+              } catch (const std::exception &e) {
+                return HavelRuntimeError("Failed to get file size: " +
+                                         std::string(e.what()));
+              }
+            });
+
+        return HavelValue(fileObj);
+      });
+
+  // Define the filemanager object
+  environment->Define("filemanager", HavelValue(filemanagerObj));
+
+  // === DETECTOR FUNCTIONS ===
+
+  // Display detector
+  environment->Define(
+      "detectDisplay",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        auto monitors = DisplayManager::GetMonitors();
+        auto result =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        (*result)["count"] = HavelValue(static_cast<double>(monitors.size()));
+        (*result)["type"] =
+            HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
+
+        auto monitorsArray = std::make_shared<std::vector<HavelValue>>();
+        for (const auto &monitor : monitors) {
+          auto monitorObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*monitorObj)["name"] = HavelValue(monitor.name);
+          (*monitorObj)["x"] = HavelValue(static_cast<double>(monitor.x));
+          (*monitorObj)["y"] = HavelValue(static_cast<double>(monitor.y));
+          (*monitorObj)["width"] =
+              HavelValue(static_cast<double>(monitor.width));
+          (*monitorObj)["height"] =
+              HavelValue(static_cast<double>(monitor.height));
+          (*monitorObj)["isPrimary"] = HavelValue(monitor.isPrimary);
+          monitorsArray->push_back(HavelValue(monitorObj));
+        }
+        (*result)["monitors"] = HavelValue(monitorsArray);
+
+        return HavelValue(result);
+      }));
+
+  // Monitor config detector
+  environment->Define(
+      "detectMonitorConfig",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        auto monitors = DisplayManager::GetMonitors();
+        auto result =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        (*result)["totalMonitors"] =
+            HavelValue(static_cast<double>(monitors.size()));
+
+        int primaryCount = 0;
+        int totalWidth = 0, totalHeight = 0;
+
+        for (const auto &monitor : monitors) {
+          if (monitor.isPrimary)
+            primaryCount++;
+          totalWidth += monitor.width;
+          totalHeight += monitor.height;
+        }
+
+        (*result)["primaryMonitors"] =
+            HavelValue(static_cast<double>(primaryCount));
+        (*result)["totalWidth"] = HavelValue(static_cast<double>(totalWidth));
+        (*result)["totalHeight"] = HavelValue(static_cast<double>(totalHeight));
+        (*result)["sessionType"] =
+            HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
+
+        return HavelValue(result);
+      }));
+
+  // Window manager detector
+  environment->Define(
+      "detectWindowManager",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        auto result =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        (*result)["name"] = HavelValue(WindowManagerDetector::GetWMName());
+        (*result)["isWayland"] = HavelValue(WindowManagerDetector::IsWayland());
+        (*result)["isX11"] = HavelValue(WindowManagerDetector::IsX11());
+        (*result)["sessionType"] =
+            HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
+
+        return HavelValue(result);
+      }));
+
+  // System detector (OS, desktop environment, etc.)
+  environment->Define(
+      "detectSystem",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        auto result =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+// Detect OS
+#ifdef __linux__
+        (*result)["os"] = HavelValue("Linux");
+#elif _WIN32
+        (*result)["os"] = HavelValue("Windows");
+#elif __APPLE__
+        (*result)["os"] = HavelValue("macOS");
+#else
+        (*result)["os"] = HavelValue("Unknown");
+#endif
+
+        (*result)["windowManager"] =
+            HavelValue(WindowManagerDetector::GetWMName());
+        (*result)["displayProtocol"] =
+            HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
+
+        return HavelValue(result);
+      }));
+}
+
 void Interpreter::InitializeLauncherBuiltins() {
   // Process launching
   environment->Define(
@@ -4545,6 +4926,44 @@ void Interpreter::InitializeHelpBuiltin() {
                     "mapping\n";
             help << "  mapmanager.remove(key)                      - Remove "
                     "key mapping\n";
+          } else if (module == "filemanager") {
+            help << "\n=== FileManager Module ===\n\n";
+            help << "Functions:\n";
+            help << "  filemanager.read(path)                      - Read file "
+                    "content\n";
+            help << "  filemanager.write(path, content)             - Write "
+                    "content to file\n";
+            help << "  filemanager.append(path, content)            - Append "
+                    "content to file\n";
+            help << "  filemanager.exists(path)                     - Check if "
+                    "file exists\n";
+            help << "  filemanager.delete(path)                    - Delete "
+                    "file\n";
+            help << "  filemanager.copy(source, dest)              - Copy "
+                    "file\n";
+            help << "  filemanager.move(source, dest)              - Move "
+                    "file\n";
+            help << "  filemanager.size(path)                      - Get file "
+                    "size\n";
+            help << "  filemanager.wordCount(path)                 - Count "
+                    "words in file\n";
+            help << "  filemanager.lineCount(path)                 - Count "
+                    "lines in file\n";
+            help << "  filemanager.getChecksum(path, algorithm)    - Get file "
+                    "checksum\n";
+            help << "  filemanager.getMimeType(path)               - Get MIME "
+                    "type\n";
+            help << "  filemanager.File(path)                      - Create "
+                    "File object\n\n";
+            help << "Detector Functions:\n";
+            help << "  detectDisplay()                             - Detect "
+                    "display configuration\n";
+            help << "  detectMonitorConfig()                       - Detect "
+                    "monitor configuration\n";
+            help << "  detectWindowManager()                       - Detect "
+                    "window manager\n";
+            help << "  detectSystem()                              - Detect "
+                    "system information\n";
           } else {
             help << "\nUnknown module: " << module << "\n";
             help << "Use help() to see available modules.\n";

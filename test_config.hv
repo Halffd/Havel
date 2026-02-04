@@ -1,0 +1,2 @@
+// Test script to verify config object
+config.load()

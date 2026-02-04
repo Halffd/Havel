@@ -1,0 +1,7 @@
+// Test implemented functions
+audio.mute()
+audio.unmute()
+media.play()
+click()
+mouseMove(100, 200)
+help("media")

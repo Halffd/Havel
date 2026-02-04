@@ -1,0 +1,3 @@
+// Test audio module to see if member access works
+print "Audio module:", audio
+print "audio.getVolume():", audio.getVolume()

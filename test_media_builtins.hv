@@ -1,0 +1,6 @@
+print("Testing if InitializeMediaBuiltins is called...");
+if (media_builtins_called) {
+    print("SUCCESS: InitializeMediaBuiltins was called!");
+} else {
+    print("FAILURE: InitializeMediaBuiltins was NOT called!");
+}

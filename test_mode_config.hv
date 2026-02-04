@@ -1,0 +1,14 @@
+// Test mode module object
+print "Current mode:", mode.get()
+mode.set("work")
+print "New mode:", mode.get()
+print "Is work mode:", mode.is("work")
+print "Is gaming mode:", mode.is("gaming")
+
+// Test config module object
+print "General.GamingApps:", config.get("General.GamingApps", "not found")
+config.set("Test.Value", "hello from script")
+print "Test.Value:", config.get("Test.Value")
+
+// Test __current_mode__ variable
+print "__current_mode__:", __current_mode__

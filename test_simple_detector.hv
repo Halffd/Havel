@@ -1,0 +1,10 @@
+print("Testing detectSystem function...");
+result = detectSystem();
+print("Result type:", typeof(result));
+print("Result:", result);
+
+if (result) {
+    print("OS:", result.os);
+} else {
+    print("Failed to get system info");
+}

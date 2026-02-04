@@ -1,0 +1,56 @@
+print("=== Testing FileManager Module ===");
+
+// Test filemanager module
+print("filemanager module:", filemanager != null ? "WORKS" : "FAILS");
+
+// Test File object creation
+if (filemanager) {
+    print("Creating File object...");
+    fileObj = filemanager.File("/tmp/test_havel.txt");
+    print("File object created:", fileObj != null ? "SUCCESS" : "FAILED");
+    
+    if (fileObj) {
+        print("File path:", fileObj.path);
+        
+        // Test file operations
+        print("Writing to file...");
+        fileObj.write("Hello from Havel FileManager!");
+        
+        print("Reading from file...");
+        content = fileObj.read();
+        print("File content:", content);
+        
+        print("File exists:", fileObj.exists());
+        print("File size:", fileObj.size());
+    }
+}
+
+print("\n=== Testing Detector Functions ===");
+
+// Test display detector
+print("Testing detectDisplay...");
+display = detectDisplay();
+print("Display count:", display.count);
+print("Display type:", display.type);
+
+// Test monitor config detector
+print("Testing detectMonitorConfig...");
+monitorConfig = detectMonitorConfig();
+print("Total monitors:", monitorConfig.totalMonitors);
+print("Session type:", monitorConfig.sessionType);
+
+// Test window manager detector
+print("Testing detectWindowManager...");
+wm = detectWindowManager();
+print("Window manager:", wm.name);
+print("Is Wayland:", wm.isWayland);
+print("Is X11:", wm.isX11);
+
+// Test system detector
+print("Testing detectSystem...");
+system = detectSystem();
+print("OS:", system.os);
+print("Window manager:", system.windowManager);
+print("Display protocol:", system.displayProtocol);
+
+print("\n=== Test Complete ===");

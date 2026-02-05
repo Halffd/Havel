@@ -1,13 +1,16 @@
 HAVEL PROGRAMMING LANGUAGE
-Design Document v1.0
+Design Document v2.0
 ----
 
 📋 Summary
 Havel is a declarative automation scripting language designed for hotkey management and workflow automation. Named after the resilient knight from Dark Souls, Havel embodies strength, reliability, and unwavering functionality in automation tasks.
 
+**Key Innovation**: AHK-inspired ergonomic syntax that combines the speed of macro languages with the power of programming languages.
+
 ## Navigation
 - [Quick Syntax Reference](#quick-syntax-reference)
 - [Keywords](#keywords)
+- [Ergonomic Syntax Features](#ergonomic-syntax-features)
 - [Conditional Hotkeys](#conditional-hotkeys)
 - [Examples](#examples)
 
@@ -19,6 +22,74 @@ Core Philosophy
 	* Functional Flow - Data flows through transformation pipelines
 	* Automation First - Built specifically for hotkeys and workflow automation
 	* Platform Agnostic - Write once, run everywhere
+	* **AHK-Inspired Ergonomics** - Fast typing beats academic purity
+
+## Ergonomic Syntax Features
+
+### 1. Global Core Verbs (Fast Path)
+For maximum productivity, core operations are available as global functions:
+
+```havel
+// Fast typing, zero ceremony
+print("Hello")
+sleep(1000)
+send("ctrl+c")
+play("music.mp3")
+exit()
+read("/tmp/file.txt")
+write("/tmp/file.txt", "content")
+click()
+mouseMove(100, 200)
+```
+
+**Available Globals:**
+- `print()` - Output text
+- `sleep(ms)` - Delay execution
+- `send(keys)` - Send keystrokes
+- `play()` - Media control
+- `exit()` - Exit application
+- `read(path)` - File operations
+- `write(path, content)` - File operations
+- `click([button])` - Mouse actions
+- `mouseMove(x, y)` - Mouse positioning
+
+### 2. Use Statement Flattening (Structured Path)
+Import module functions directly into current scope:
+
+```havel
+use io, media, filemanager
+
+// Direct access without module.method()
+mouseMove(10, 0)     // instead of io.mouseMove(10, 0)
+play("song.mp3")     // instead of media.play("song.mp3")
+read("/tmp/file.txt") // instead of filemanager.read("/tmp/file.txt")
+```
+
+**Available Modules:**
+- `io` - Input/output operations
+- `media` - Media playback control
+- `filemanager` - File system operations
+- `clipboard` - Clipboard operations
+- `text` - Text processing
+- `window` - Window management
+
+### 3. With Blocks (Contextual Scoping)
+Create temporary scope with object members available:
+
+```havel
+with io {
+    mouseMove(10, 0)     // Direct access inside with block
+    click()               // No io. prefix needed
+    send("hello")         // All functions available
+}
+// Outside with block: back to normal scope
+```
+
+**Benefits:**
+- Zero typing overhead inside blocks
+- Clean, readable syntax
+- Automatic scope management
+- Perfect for complex operations
 
 ## Quick Syntax Reference
 
@@ -59,9 +130,78 @@ if condition { ... } else { ... }
 | `fn` | Function definition | `fn name(args) => ...` |
 | `return` | Function return | `return value` |
 | `import` | Module import | `import module from "path"` |
+| `use` | Module flattening | `use io, media` |
+| `with` | Contextual scoping | `with io { ... }` |
 | `config` | Configuration block | `config { ... }` |
 | `devices` | Device configuration | `devices { ... }` |
 | `modes` | Mode configuration | `modes { ... }` |
+
+## Standard Library Modules
+
+### Built-in Modules
+Havel provides comprehensive built-in modules for common automation tasks:
+
+#### IO Module (Input/Output)
+```havel
+// Direct access
+use io
+mouseMove(100, 200)     // Move mouse
+click()                  // Click mouse
+send("hello")            // Send keystrokes
+keyDown("ctrl")           // Key down
+keyUp("ctrl")             // Key up
+```
+
+#### Media Module (Media Control)
+```havel
+// Direct access
+use media
+play()                   // Play/pause
+pause()                  // Pause playback
+stop()                   // Stop playback
+next()                   // Next track
+previous()               // Previous track
+```
+
+#### Filemanager Module (File Operations)
+```havel
+// Direct access
+use filemanager
+read("/path/to/file")           // Read file
+write("/path/to/file", "content") // Write file
+exists("/path/to/file")         // Check existence
+size("/path/to/file")           // Get file size
+```
+
+#### Clipboard Module (Clipboard Operations)
+```havel
+// Direct access
+use clipboard
+get()                    // Get clipboard content
+set("text")               // Set clipboard content
+clear()                   // Clear clipboard
+```
+
+#### Text Module (Text Processing)
+```havel
+// Direct access
+use text
+upper("hello")             // Uppercase
+lower("HELLO")             // Lowercase
+trim("  text  ")            // Remove whitespace
+replace("a", "b", "text")  // Replace text
+```
+
+#### Window Module (Window Management)
+```havel
+// Direct access
+use window
+active()                  // Get active window
+list()                    // List all windows
+focus("title")             // Focus window
+min()                     // Minimize window
+max()                     // Maximize window
+```
 
 ## Conditional Hotkeys
 

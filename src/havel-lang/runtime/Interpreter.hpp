@@ -159,6 +159,8 @@ public:
   void visitIdentifier(const ast::Identifier &node) override;
   void visitHotkeyLiteral(const ast::HotkeyLiteral &node) override;
   void visitImportStatement(const ast::ImportStatement &node) override;
+  void visitUseStatement(const ast::UseStatement &node) override;
+  void visitWithStatement(const ast::WithStatement &node) override;
   void visitArrayLiteral(const ast::ArrayLiteral &node) override;
   void visitObjectLiteral(const ast::ObjectLiteral &node) override;
   void visitConfigBlock(const ast::ConfigBlock &node) override;

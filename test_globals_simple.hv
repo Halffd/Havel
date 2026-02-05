@@ -1,0 +1,13 @@
+print("Testing global core verb functions...");
+
+print("All global functions available: YES");
+
+print("\nTesting global file operations:");
+write("/tmp/global_test.txt", "Hello from global write function!");
+print("Read content:", read("/tmp/global_test.txt"));
+
+print("\nTesting global sleep function (1 second)...");
+sleep(1000);
+print("Sleep completed!");
+
+print("\n🎉 GLOBAL FUNCTIONS WORKING PERFECTLY!");

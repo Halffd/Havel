@@ -1130,15 +1130,15 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
   if (modesObject && !modesObject->empty()) {
     std::string initialMode = modesObject->begin()->first;
     environment->Define("__current_mode__", HavelValue(initialMode));
-    environment->Define(
-        "mode", HavelValue(initialMode)); // Also update the mode variable
+    environment->Define("current_mode",
+                        HavelValue(initialMode)); // Use different variable name
     environment->Define("__previous_mode__",
                         HavelValue(std::string("default")));
   } else {
     environment->Define("__current_mode__", HavelValue(std::string("default")));
     environment->Define(
-        "mode",
-        HavelValue(std::string("default"))); // Also update the mode variable
+        "current_mode",
+        HavelValue(std::string("default"))); // Use different variable name
     environment->Define("__previous_mode__",
                         HavelValue(std::string("default")));
   }
@@ -2015,23 +2015,6 @@ void Interpreter::InitializeSystemBuiltins() {
     (*processObj)["SIGKILL"] = *v;
   environment->Define("process", HavelValue(processObj));
 
-  // Configuration reload
-  environment->Define(
-      "config.reload",
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
-        try {
-          auto &config = Configs::Get();
-          config.Reload();
-          std::cout << "[INFO] Configuration reloaded successfully"
-                    << std::endl;
-          return HavelValue(true);
-        } catch (const std::exception &e) {
-          std::cerr << "[ERROR] Failed to reload configuration: " << e.what()
-                    << std::endl;
-          return HavelValue(false);
-        }
-      }));
-
   // === CONFIG MODULE ===
   // Create config object with proper namespace
   auto configObj =
@@ -2066,6 +2049,35 @@ void Interpreter::InitializeSystemBuiltins() {
           config.Set(key, ValueToString(value));
         }
         return HavelValue(true);
+      });
+
+  // Add load function to config object
+  (*configObj)["load"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        try {
+          auto &config = Configs::Get();
+          config.Reload(); // Load is same as reload for now
+          std::cout << "[INFO] Configuration loaded successfully" << std::endl;
+          return HavelValue(true);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to load configuration: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  // Add reload function to config object
+  (*configObj)["reload"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        try {
+          auto &config = Configs::Get();
+          config.Reload();
+          std::cout << "[INFO] Configuration reloaded successfully"
+                    << std::endl;
+          return HavelValue(true);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to reload configuration: " +
+                                   std::string(e.what()));
+        }
       });
 
   // Define the config object

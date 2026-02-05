@@ -31,6 +31,7 @@ enum class TokenType {
   Default,
   Fn,
   Return,
+  Ret,
   Config,
   Devices,
   Modes,

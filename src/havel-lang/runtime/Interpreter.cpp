@@ -165,13 +165,25 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
 }
 
 HavelResult Interpreter::Execute(const std::string &sourceCode) {
-  parser::Parser parser;
-  auto program = parser.produceAST(sourceCode);
-  auto *programPtr = program.get();
-  // Keep the AST alive to avoid dangling pointers captured in
-  // functions/closures
-  loadedPrograms.push_back(std::move(program));
-  return Evaluate(*programPtr);
+  try {
+    parser::Parser parser;
+    auto program = parser.produceAST(sourceCode);
+    auto *programPtr = program.get();
+    // Keep the AST alive to avoid dangling pointers captured in
+    // functions/closures
+    loadedPrograms.push_back(std::move(program));
+    return Evaluate(*programPtr);
+  } catch (const havel::LexError &e) {
+    return HavelRuntimeError("Lex error at line " + std::to_string(e.line) +
+                             ", column " + std::to_string(e.column) + ": " +
+                             e.what());
+  } catch (const havel::parser::ParseError &e) {
+    return HavelRuntimeError("Parse error at line " + std::to_string(e.line) +
+                             ", column " + std::to_string(e.column) + ": " +
+                             e.what());
+  } catch (const std::exception &e) {
+    return HavelRuntimeError(std::string("Parse error: ") + e.what());
+  }
 }
 
 void Interpreter::RegisterHotkeys(const std::string &sourceCode) {

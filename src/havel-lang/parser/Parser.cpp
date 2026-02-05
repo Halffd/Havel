@@ -138,6 +138,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                  at().type == havel::TokenType::Break ||
                  at().type == havel::TokenType::Continue ||
                  at().type == havel::TokenType::Return ||
+                 at().type == havel::TokenType::Ret ||
                  at().type == havel::TokenType::When ||
                  at().type == havel::TokenType::On ||
                  at().type == havel::TokenType::Off ||
@@ -214,6 +215,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                    at().type == havel::TokenType::Break ||
                    at().type == havel::TokenType::Continue ||
                    at().type == havel::TokenType::Return ||
+                   at().type == havel::TokenType::Ret ||
                    at().type == havel::TokenType::When ||
                    at().type == havel::TokenType::On ||
                    at().type == havel::TokenType::Off ||
@@ -283,6 +285,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Fn:
     return parseFunctionDeclaration();
   case havel::TokenType::Return:
+  case havel::TokenType::Ret:
     return parseReturnStatement();
   case havel::TokenType::When:
     return parseWhenBlock();

@@ -1,0 +1,94 @@
+config.load()
+let sys = detectSystem()
+let wl = sys.displayProtocol == "Wayland"
+let wm = sys.windowManager
+let brightness = 70
+let temperature = 6500
+# let isStartup = contains(app.args, "--startup")
+let zoom3Value = 2.0
+let mouse1Pressed = false
+let mouse2Pressed = false
+print("wl: $wl")
+print("wm: $wm")
+# print("isStartup: $isStartup")
+
+fn qdbus (cmd) {
+  let res = run("qdbus $cmd")
+  return res.stdout
+}
+
+fn kwinZoom (cmd) {
+  runDetached("qdbus $cmd")
+  let out = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+  zoomLevel = out
+}
+print("KWin zoom function defined")
+fn zoom (level) {
+  if level < 0 {
+    level = 0
+  } else if level > 4 {
+    level = 4
+  }
+  if wl {
+    if level == 0 {
+      zoomLevel = zoomLevel - 0.1
+    }
+    if level == 1 {
+      zoomLevel = zoomLevel + 0.1
+    }
+    if level == 2 {
+      zoomLevel = 1.0
+    }
+    if level == 3 {
+      zoomLevel = 1.5
+    }
+    if level == 4 {
+      zoomLevel = 2.0
+    }
+    print("$level: $zoomLevel")
+    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
+  }
+
+  if level == 0 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
+    if zoomLevel <= 0 {
+      send("@^{Down}")
+      zoomLevel = zoomLevel - 0.1
+    }
+  } else if level == 1 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
+    if zoomLevel <= 0 {
+      send("@^{Up}")
+      zoomLevel = zoomLevel + 0.1
+    }
+  } else if level == 2 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
+    if zoomLevel <= 0 {
+      send("@^/")
+      zoomLevel = 1.0
+    }
+  } else if level == 3 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + zoom3Value)
+    if zoomLevel <= 0 {
+      send("@^+/")
+      zoomLevel = 1.5
+    }
+  } else if level == 4 {
+    kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus")
+  }
+
+  if zoomLevel < 1.0 {
+    zoomLevel = 1.0
+  }
+}
+print("Zoom function defined")
+
+fn zoomToggle () {
+  zoomLevel = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
+  if zoomLevel <= 1.0 {
+    zoom(3)
+  } else {
+    zoom(2)
+  }
+}
+print("Zoom toggle function defined")

@@ -14,6 +14,7 @@
 #include <QGuiApplication>
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -21,6 +22,7 @@
 #include <random>
 #include <signal.h>
 #include <sstream>
+#include <thread>
 #include <unistd.h>
 namespace havel {
 
@@ -806,6 +808,87 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
   lastResult = nullptr;
 }
 
+void Interpreter::visitUseStatement(const ast::UseStatement &node) {
+  // Implementation of use statement for module flattening
+  // For each module name, flatten all its functions into the current scope
+
+  for (const std::string &moduleName : node.moduleNames) {
+    // Get the module from the environment
+    auto moduleVal = environment->Get(moduleName);
+    if (!moduleVal) {
+      lastResult = HavelRuntimeError("Module not found: " + moduleName);
+      return;
+    }
+
+    // Check if it's an object (module)
+    if (!std::holds_alternative<HavelObject>(*moduleVal)) {
+      lastResult = HavelRuntimeError("Not a module/object: " + moduleName);
+      return;
+    }
+
+    auto moduleObj = std::get<HavelObject>(*moduleVal);
+    if (!moduleObj) {
+      lastResult = HavelRuntimeError("Module is null: " + moduleName);
+      return;
+    }
+
+    // Flatten all module functions into the current environment
+    for (const auto &[functionName, functionValue] : *moduleObj) {
+      environment->Define(functionName, functionValue);
+    }
+  }
+
+  lastResult = nullptr;
+}
+
+void Interpreter::visitWithStatement(const ast::WithStatement &node) {
+  // Get the object from the environment
+  auto objectVal = environment->Get(node.objectName);
+  if (!objectVal) {
+    lastResult = HavelRuntimeError("Object not found: " + node.objectName);
+    return;
+  }
+
+  // Check if it's an object
+  if (!std::holds_alternative<HavelObject>(*objectVal)) {
+    lastResult = HavelRuntimeError("Not an object: " + node.objectName);
+    return;
+  }
+
+  auto withObject = std::get<HavelObject>(*objectVal);
+  if (!withObject) {
+    lastResult = HavelRuntimeError("Object is null: " + node.objectName);
+    return;
+  }
+
+  // Create a new environment with the object's members available
+  auto withEnvironment = std::make_shared<Environment>(environment);
+
+  // Add all object members to the new environment
+  for (const auto &[name, value] : *withObject) {
+    withEnvironment->Define(name, value);
+  }
+
+  // Push the new environment and execute the body
+  auto originalEnv = this->environment;
+  this->environment = withEnvironment;
+
+  for (const auto &stmt : node.body) {
+    if (stmt) {
+      stmt->accept(*this);
+      if (isError(lastResult)) {
+        // Pop environment on error
+        this->environment = originalEnv;
+        return;
+      }
+    }
+  }
+
+  // Pop the environment
+  this->environment = originalEnv;
+  lastResult = nullptr;
+}
+
 void Interpreter::visitStringLiteral(const ast::StringLiteral &node) {
   lastResult = node.value;
 }
@@ -1499,6 +1582,110 @@ void Interpreter::InitializeSystemBuiltins() {
                      std::cout.flush();
                      return HavelValue(nullptr);
                    }));
+
+  // Core verb functions - global for fast typing
+  environment->Define(
+      "sleep",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.empty())
+              return HavelRuntimeError("sleep() requires milliseconds");
+            int ms = static_cast<int>(ValueToNumber(args[0]));
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            return HavelValue(nullptr);
+          }));
+
+  // Global send function (alias to io.send)
+  environment->Define(
+      "send", BuiltinFunction(
+                  [this](const std::vector<HavelValue> &args) -> HavelResult {
+                    if (args.empty())
+                      return HavelRuntimeError("send() requires keys string");
+                    std::string keys = ValueToString(args[0]);
+                    io.Send(keys.c_str());
+                    return HavelValue(nullptr);
+                  }));
+
+  // Global play function (alias to media.play)
+  environment->Define(
+      "play", BuiltinFunction(
+                  [this](const std::vector<HavelValue> &args) -> HavelResult {
+                    if (auto app = HavelApp::instance) {
+                      if (app->mpv) {
+                        app->mpv->PlayPause();
+                        return HavelValue(true);
+                      }
+                    }
+                    return HavelRuntimeError("MPVController not available");
+                  }));
+
+  // Global exit function
+  environment->Define(
+      "exit", BuiltinFunction(
+                  [this](const std::vector<HavelValue> &args) -> HavelResult {
+                    if (App::instance()) {
+                      App::quit();
+                    }
+                    return HavelValue(nullptr);
+                  }));
+
+  // Global file operations
+  environment->Define(
+      "read", BuiltinFunction(
+                  [this](const std::vector<HavelValue> &args) -> HavelResult {
+                    if (args.empty())
+                      return HavelRuntimeError("read() requires file path");
+                    std::string path = ValueToString(args[0]);
+                    try {
+                      FileManager file(path);
+                      return HavelValue(file.read());
+                    } catch (const std::exception &e) {
+                      return HavelRuntimeError("Failed to read file: " +
+                                               std::string(e.what()));
+                    }
+                  }));
+
+  environment->Define(
+      "write", BuiltinFunction(
+                   [this](const std::vector<HavelValue> &args) -> HavelResult {
+                     if (args.size() < 2)
+                       return HavelRuntimeError(
+                           "write() requires file path and content");
+                     std::string path = ValueToString(args[0]);
+                     std::string content = ValueToString(args[1]);
+                     try {
+                       FileManager file(path);
+                       file.write(content);
+                       return HavelValue(true);
+                     } catch (const std::exception &e) {
+                       return HavelRuntimeError("Failed to write file: " +
+                                                std::string(e.what()));
+                     }
+                   }));
+
+  // Global click function
+  environment->Define(
+      "click",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            int button =
+                args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
+            io.MouseClick(button);
+            return HavelValue(nullptr);
+          }));
+
+  // Global mouseMove function
+  environment->Define(
+      "mouseMove",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2)
+              return HavelRuntimeError("mouseMove() requires x, y coordinates");
+            int x = static_cast<int>(ValueToNumber(args[0]));
+            int y = static_cast<int>(ValueToNumber(args[1]));
+            io.MouseMoveTo(x, y);
+            return HavelValue(nullptr);
+          }));
 
   // repeat(n, fn)
   environment->Define(

@@ -1,0 +1,22 @@
+print("Testing global core verb functions...");
+
+// Test global functions without any use statements
+print("sleep available:", sleep != null ? "YES" : "NO");
+print("send available:", send != null ? "YES" : "NO");
+print("play available:", play != null ? "YES" : "NO");
+print("exit available:", exit != null ? "YES" : "NO");
+print("read available:", read != null ? "YES" : "NO");
+print("write available:", write != null ? "YES" : "NO");
+print("click available:", click != null ? "YES" : "NO");
+print("mouseMove available:", mouseMove != null ? "YES" : "NO");
+
+print("\nTesting global file operations:");
+write("/tmp/global_test.txt", "Hello from global write function!");
+content = read("/tmp/global_test.txt");
+print("Read content:", content);
+
+print("\nTesting global sleep function (1 second)...");
+sleep(1000);
+print("Sleep completed!");
+
+print("\nTesting global functions - SUCCESS!");

@@ -13,6 +13,8 @@ enum class NodeType {
   Program,
   Module,
   ImportStatement, // import List from "std/collections"
+  UseStatement,    // use io, use media
+  WithStatement,   // with io { ... }
 
   // Core functional expressions
   HotkeyBinding,         // F1 => { ... }
@@ -26,25 +28,25 @@ enum class NodeType {
   ApplicationExpression, // Curried function application
 
   // Pattern matching (essential for FP)
-  MatchExpression, // match value with | Some(x) -> x | None -> 0
-  PatternLiteral,  // Some(x), [head|tail], {x, y}
-  GuardExpression, // | x when x > 0 -> "positive"
-  BlockStatement,  // { ... }
-  IfStatement,     // if condition { ... } else { ... }
-  TernaryExpression, // condition ? trueValue : falseValue
-  RangeExpression,   // 0..10
+  MatchExpression,      // match value with | Some(x) -> x | None -> 0
+  PatternLiteral,       // Some(x), [head|tail], {x, y}
+  GuardExpression,      // | x when x > 0 -> "positive"
+  BlockStatement,       // { ... }
+  IfStatement,          // if condition { ... } else { ... }
+  TernaryExpression,    // condition ? trueValue : falseValue
+  RangeExpression,      // 0..10
   AssignmentExpression, // identifier = value
-  ReturnStatement, // return value;
-  WhileStatement,  // while condition { ... }
-  ForStatement,    // for i in range { ... }
-  LoopStatement,   // loop { ... }
-  BreakStatement,  // break
-  ContinueStatement, // continue
-  OnModeStatement,  // on mode gaming { ... }
-  OffModeStatement, // off mode gaming { ... }
-  WhenModeExpression, // when mode gaming
+  ReturnStatement,      // return value;
+  WhileStatement,       // while condition { ... }
+  ForStatement,         // for i in range { ... }
+  LoopStatement,        // loop { ... }
+  BreakStatement,       // break
+  ContinueStatement,    // continue
+  OnModeStatement,      // on mode gaming { ... }
+  OffModeStatement,     // off mode gaming { ... }
+  WhenModeExpression,   // when mode gaming
   // Conditional hotkeys
-  ConditionalHotkey, // hotkey "Ctrl+A" if mode == foo then ...
+  ConditionalHotkey,  // hotkey "Ctrl+A" if mode == foo then ...
   WhenBlockStatement, // when condition { ... }
   // Immutable data structures
   ListExpression,   // [1, 2, 3]
@@ -64,13 +66,13 @@ enum class NodeType {
   TuplePattern,  // (x, y)
   RecordPattern, // {name, age}
   // Literals
-  StringLiteral,  // "Hello"
+  StringLiteral,                // "Hello"
   InterpolatedStringExpression, // "Hello ${name}"
-  NumberLiteral,  // 42, 3.14
-  BooleanLiteral, // true, false
-  AtomLiteral,    // :ok, :error (like Elixir atoms)
-  Identifier,     // variable names
-  HotkeyLiteral,  // F1, Ctrl+V
+  NumberLiteral,                // 42, 3.14
+  BooleanLiteral,               // true, false
+  AtomLiteral,                  // :ok, :error (like Elixir atoms)
+  Identifier,                   // variable names
+  HotkeyLiteral,                // F1, Ctrl+V
 
   // Functional statements (minimize these)
   ExpressionStatement, // Most things are expressions
@@ -306,11 +308,11 @@ struct HotkeyBinding : public Statement {
   // Changed from Expression to Statement
 
   // Conditional support
-  std::vector<std::string> conditions;  // e.g., ["mode gaming", "title genshin"]
+  std::vector<std::string> conditions; // e.g., ["mode gaming", "title genshin"]
 
   // Direct key mapping support (e.g., Left => A)
   bool isKeyMapping = false;
-  std::string mappedKey;  // Target key for mapping
+  std::string mappedKey; // Target key for mapping
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
   HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
@@ -322,14 +324,16 @@ struct HotkeyBinding : public Statement {
   std::string toString() const override {
     std::string result = "HotkeyBinding{hotkeys: [";
     for (size_t i = 0; i < hotkeys.size(); ++i) {
-      if (i > 0) result += ", ";
+      if (i > 0)
+        result += ", ";
       result += hotkeys[i] ? hotkeys[i]->toString() : "nullptr";
     }
     result += "], action: " + (action ? action->toString() : "nullptr");
     if (!conditions.empty()) {
       result += ", conditions: [";
       for (size_t i = 0; i < conditions.size(); ++i) {
-        if (i > 0) result += ", ";
+        if (i > 0)
+          result += ", ";
         result += conditions[i];
       }
       result += "]";
@@ -349,7 +353,8 @@ struct ConditionalHotkey : public Statement {
   std::unique_ptr<Expression> condition;
   std::unique_ptr<HotkeyBinding> binding;
 
-  ConditionalHotkey(std::unique_ptr<Expression> cond, std::unique_ptr<HotkeyBinding> bind)
+  ConditionalHotkey(std::unique_ptr<Expression> cond,
+                    std::unique_ptr<HotkeyBinding> bind)
       : condition(std::move(cond)), binding(std::move(bind)) {
     kind = NodeType::ConditionalHotkey;
   }
@@ -368,15 +373,16 @@ struct WhenBlock : public Statement {
   std::unique_ptr<Expression> condition;
   std::vector<std::unique_ptr<Statement>> statements;
 
-  WhenBlock(std::unique_ptr<Expression> cond, std::vector<std::unique_ptr<Statement>> stmts)
+  WhenBlock(std::unique_ptr<Expression> cond,
+            std::vector<std::unique_ptr<Statement>> stmts)
       : condition(std::move(cond)), statements(std::move(stmts)) {
     kind = NodeType::WhenBlockStatement;
   }
 
   std::string toString() const override {
     return "WhenBlock{condition: " +
-           (condition ? condition->toString() : "nullptr") +
-           ", statements: [" + std::to_string(statements.size()) + "]}";
+           (condition ? condition->toString() : "nullptr") + ", statements: [" +
+           std::to_string(statements.size()) + "]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -464,25 +470,27 @@ struct InterpolatedStringExpression : public Expression {
   // Alternating string segments and expressions
   // e.g., "Hello ${name}!" -> ["Hello ", name_expr, "!"]
   struct Segment {
-    bool isString;  // true for string literal, false for expression
-    std::string stringValue;  // if isString
-    std::unique_ptr<Expression> expression;  // if !isString
-    
-    Segment(const std::string& str) : isString(true), stringValue(str) {}
-    Segment(std::unique_ptr<Expression> expr) : isString(false), expression(std::move(expr)) {}
+    bool isString;           // true for string literal, false for expression
+    std::string stringValue; // if isString
+    std::unique_ptr<Expression> expression; // if !isString
+
+    Segment(const std::string &str) : isString(true), stringValue(str) {}
+    Segment(std::unique_ptr<Expression> expr)
+        : isString(false), expression(std::move(expr)) {}
   };
-  
+
   std::vector<Segment> segments;
-  
+
   InterpolatedStringExpression(std::vector<Segment> segs = {})
       : segments(std::move(segs)) {
     kind = NodeType::InterpolatedStringExpression;
   }
-  
+
   std::string toString() const override {
-    return "InterpolatedString{" + std::to_string(segments.size()) + " segments}";
+    return "InterpolatedString{" + std::to_string(segments.size()) +
+           " segments}";
   }
-  
+
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -627,16 +635,15 @@ struct ForStatement : public Statement {
   std::unique_ptr<Statement> body;
 
   ForStatement(std::vector<std::unique_ptr<Identifier>> iters,
-               std::unique_ptr<Expression> itbl,
-               std::unique_ptr<Statement> bd)
-      : iterators(std::move(iters)), iterable(std::move(itbl)), body(std::move(bd)) {
+               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
+      : iterators(std::move(iters)), iterable(std::move(itbl)),
+        body(std::move(bd)) {
     kind = NodeType::ForStatement;
   }
 
   // Legacy constructor for single iterator
   ForStatement(std::unique_ptr<Identifier> iter,
-               std::unique_ptr<Expression> itbl,
-               std::unique_ptr<Statement> bd)
+               std::unique_ptr<Expression> itbl, std::unique_ptr<Statement> bd)
       : iterable(std::move(itbl)), body(std::move(bd)) {
     kind = NodeType::ForStatement;
     if (iter) {
@@ -651,7 +658,8 @@ struct ForStatement : public Statement {
     } else {
       iterStr += "(";
       for (size_t i = 0; i < iterators.size(); ++i) {
-        if (i > 0) iterStr += ", ";
+        if (i > 0)
+          iterStr += ", ";
         iterStr += iterators[i] ? iterators[i]->toString() : "nullptr";
       }
       iterStr += ")";
@@ -668,8 +676,7 @@ struct ForStatement : public Statement {
 struct LoopStatement : public Statement {
   std::unique_ptr<Statement> body;
 
-  LoopStatement(std::unique_ptr<Statement> bd)
-      : body(std::move(bd)) {
+  LoopStatement(std::unique_ptr<Statement> bd) : body(std::move(bd)) {
     kind = NodeType::LoopStatement;
   }
 
@@ -684,9 +691,7 @@ struct LoopStatement : public Statement {
 struct BreakStatement : public Statement {
   BreakStatement() { kind = NodeType::BreakStatement; }
 
-  std::string toString() const override {
-    return "BreakStatement{}";
-  }
+  std::string toString() const override { return "BreakStatement{}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -695,9 +700,7 @@ struct BreakStatement : public Statement {
 struct ContinueStatement : public Statement {
   ContinueStatement() { kind = NodeType::ContinueStatement; }
 
-  std::string toString() const override {
-    return "ContinueStatement{}";
-  }
+  std::string toString() const override { return "ContinueStatement{}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -707,19 +710,19 @@ struct OnModeStatement : public Statement {
   std::string modeName;
   std::unique_ptr<Statement> body;
   std::unique_ptr<Statement> alternative; // Optional else block
-  
-  OnModeStatement(const std::string& mode, std::unique_ptr<Statement> bd,
+
+  OnModeStatement(const std::string &mode, std::unique_ptr<Statement> bd,
                   std::unique_ptr<Statement> alt = nullptr)
       : modeName(mode), body(std::move(bd)), alternative(std::move(alt)) {
     kind = NodeType::OnModeStatement;
   }
-  
+
   std::string toString() const override {
-    return "OnModeStatement{mode: " + modeName + ", body: " +
-           (body ? body->toString() : "nullptr") +
+    return "OnModeStatement{mode: " + modeName +
+           ", body: " + (body ? body->toString() : "nullptr") +
            (alternative ? ", else: " + alternative->toString() : "") + "}";
   }
-  
+
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -727,17 +730,17 @@ struct OnModeStatement : public Statement {
 struct OffModeStatement : public Statement {
   std::string modeName;
   std::unique_ptr<Statement> body;
-  
-  OffModeStatement(const std::string& mode, std::unique_ptr<Statement> bd)
+
+  OffModeStatement(const std::string &mode, std::unique_ptr<Statement> bd)
       : modeName(mode), body(std::move(bd)) {
     kind = NodeType::OffModeStatement;
   }
-  
+
   std::string toString() const override {
-    return "OffModeStatement{mode: " + modeName + ", body: " +
-           (body ? body->toString() : "nullptr") + "}";
+    return "OffModeStatement{mode: " + modeName +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
   }
-  
+
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -882,27 +885,29 @@ struct TypeAnnotation : public ASTNode {
   void accept(ASTVisitor &visitor) const override;
 };
 struct UnaryExpression : public Expression {
-    enum class UnaryOperator {
-        Not,      // !expr, not expr
-        Minus,    // -expr
-        Plus      // +expr (unary plus)
-    };
-    
-    UnaryOperator operator_;
-    std::unique_ptr<Expression> operand;
-    
-    UnaryExpression(UnaryOperator op, std::unique_ptr<Expression> operand)
-        : operator_(op), operand(std::move(operand)) {
-        kind = NodeType::UnaryExpression;
-    }
-    
-    std::string toString() const override {
-        std::string opStr = (operator_ == UnaryOperator::Not) ? "!" :
-                           (operator_ == UnaryOperator::Minus) ? "-" : "+";
-        return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") + "}";
-    }
-    
-    void accept(ASTVisitor &visitor) const override;
+  enum class UnaryOperator {
+    Not,   // !expr, not expr
+    Minus, // -expr
+    Plus   // +expr (unary plus)
+  };
+
+  UnaryOperator operator_;
+  std::unique_ptr<Expression> operand;
+
+  UnaryExpression(UnaryOperator op, std::unique_ptr<Expression> operand)
+      : operator_(op), operand(std::move(operand)) {
+    kind = NodeType::UnaryExpression;
+  }
+
+  std::string toString() const override {
+    std::string opStr = (operator_ == UnaryOperator::Not)     ? "!"
+                        : (operator_ == UnaryOperator::Minus) ? "-"
+                                                              : "+";
+    return "UnaryExpr{" + opStr + (operand ? operand->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
 };
 // Array Literal ([1, 2, 3])
 struct ArrayLiteral : public Expression {
@@ -924,7 +929,8 @@ struct ArrayLiteral : public Expression {
 struct ObjectLiteral : public Expression {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  ObjectLiteral(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  ObjectLiteral(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::ObjectLiteral;
   }
@@ -940,7 +946,8 @@ struct ObjectLiteral : public Expression {
 struct ConfigBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  ConfigBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  ConfigBlock(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::ConfigBlock;
   }
@@ -956,7 +963,8 @@ struct ConfigBlock : public Statement {
 struct DevicesBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  DevicesBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  DevicesBlock(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::DevicesBlock;
   }
@@ -972,7 +980,8 @@ struct DevicesBlock : public Statement {
 struct ModesBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
-  ModesBlock(std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+  ModesBlock(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
       : pairs(std::move(p)) {
     kind = NodeType::ModesBlock;
   }
@@ -986,22 +995,26 @@ struct ModesBlock : public Statement {
 
 // Update Expression (i++, --i)
 struct UpdateExpression : public Expression {
-    std::unique_ptr<Expression> argument;
-    bool isPrefix;
-    enum class Operator { Increment, Decrement } operator_;
+  std::unique_ptr<Expression> argument;
+  bool isPrefix;
+  enum class Operator { Increment, Decrement } operator_;
 
-    UpdateExpression(std::unique_ptr<Expression> arg, Operator op, bool prefix)
-        : argument(std::move(arg)), operator_(op), isPrefix(prefix) {
-        kind = NodeType::UpdateExpression;
-    }
+  UpdateExpression(std::unique_ptr<Expression> arg, Operator op, bool prefix)
+      : argument(std::move(arg)), operator_(op), isPrefix(prefix) {
+    kind = NodeType::UpdateExpression;
+  }
 
-    std::string toString() const override {
-        std::string opStr = (operator_ == Operator::Increment) ? "++" : "--";
-        if (isPrefix) return "UpdateExpr{" + opStr + (argument ? argument->toString() : "nullptr") + "}";
-        else return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") + opStr + "}";
-    }
+  std::string toString() const override {
+    std::string opStr = (operator_ == Operator::Increment) ? "++" : "--";
+    if (isPrefix)
+      return "UpdateExpr{" + opStr +
+             (argument ? argument->toString() : "nullptr") + "}";
+    else
+      return "UpdateExpr{" + (argument ? argument->toString() : "nullptr") +
+             opStr + "}";
+  }
 
-    void accept(ASTVisitor &visitor) const override;
+  void accept(ASTVisitor &visitor) const override;
 };
 
 // Lambda (arrow) Function Expression (() => { ... } or x => expr)
@@ -1027,15 +1040,15 @@ struct IndexExpression : public Expression {
   std::unique_ptr<Expression> object;
   std::unique_ptr<Expression> index;
 
-  IndexExpression(std::unique_ptr<Expression> obj, std::unique_ptr<Expression> idx)
+  IndexExpression(std::unique_ptr<Expression> obj,
+                  std::unique_ptr<Expression> idx)
       : object(std::move(obj)), index(std::move(idx)) {
     kind = NodeType::IndexExpression;
   }
 
   std::string toString() const override {
-    return "IndexExpression{" + 
-           (object ? object->toString() : "nullptr") + "[" +
-           (index ? index->toString() : "nullptr") + "]}";
+    return "IndexExpression{" + (object ? object->toString() : "nullptr") +
+           "[" + (index ? index->toString() : "nullptr") + "]}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1047,15 +1060,16 @@ struct TernaryExpression : public Expression {
   std::unique_ptr<Expression> trueValue;
   std::unique_ptr<Expression> falseValue;
 
-  TernaryExpression(std::unique_ptr<Expression> cond, 
+  TernaryExpression(std::unique_ptr<Expression> cond,
                     std::unique_ptr<Expression> tVal,
                     std::unique_ptr<Expression> fVal)
-      : condition(std::move(cond)), trueValue(std::move(tVal)), falseValue(std::move(fVal)) {
+      : condition(std::move(cond)), trueValue(std::move(tVal)),
+        falseValue(std::move(fVal)) {
     kind = NodeType::TernaryExpression;
   }
 
   std::string toString() const override {
-    return "TernaryExpression{" + 
+    return "TernaryExpression{" +
            (condition ? condition->toString() : "nullptr") + " ? " +
            (trueValue ? trueValue->toString() : "nullptr") + " : " +
            (falseValue ? falseValue->toString() : "nullptr") + "}";
@@ -1075,8 +1089,7 @@ struct RangeExpression : public Expression {
   }
 
   std::string toString() const override {
-    return "RangeExpression{" + 
-           (start ? start->toString() : "nullptr") + ".." +
+    return "RangeExpression{" + (start ? start->toString() : "nullptr") + ".." +
            (end ? end->toString() : "nullptr") + "}";
   }
 
@@ -1085,21 +1098,20 @@ struct RangeExpression : public Expression {
 
 // Assignment Expression (identifier = value)
 struct AssignmentExpression : public Expression {
-  std::unique_ptr<Expression> target;  // What we're assigning to
-  std::unique_ptr<Expression> value;   // The new value
-  std::string operator_;               // "=" for now
+  std::unique_ptr<Expression> target; // What we're assigning to
+  std::unique_ptr<Expression> value;  // The new value
+  std::string operator_;              // "=" for now
 
-  AssignmentExpression(std::unique_ptr<Expression> t, 
-                       std::unique_ptr<Expression> v,
-                       std::string op = "=")
+  AssignmentExpression(std::unique_ptr<Expression> t,
+                       std::unique_ptr<Expression> v, std::string op = "=")
       : target(std::move(t)), value(std::move(v)), operator_(std::move(op)) {
     kind = NodeType::AssignmentExpression;
   }
 
   std::string toString() const override {
-    return "AssignmentExpression{" + 
-           (target ? target->toString() : "nullptr") + " " + operator_ + " " +
-           (value ? value->toString() : "nullptr") + "}";
+    return "AssignmentExpression{" + (target ? target->toString() : "nullptr") +
+           " " + operator_ + " " + (value ? value->toString() : "nullptr") +
+           "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1124,7 +1136,7 @@ struct ImportStatement : public Statement {
       for (size_t i = 0; i < importedItems.size(); ++i) {
         result += importedItems[i].first;
         if (importedItems[i].first != importedItems[i].second) {
-            result += " as " + importedItems[i].second;
+          result += " as " + importedItems[i].second;
         }
         if (i < importedItems.size() - 1)
           result += ", ";
@@ -1137,6 +1149,55 @@ struct ImportStatement : public Statement {
 
   void accept(ASTVisitor &visitor) const override;
 };
+
+// Use Statement (use io, use media)
+struct UseStatement : public Statement {
+  std::vector<std::string> moduleNames; // List of module names to flatten
+
+  UseStatement(std::vector<std::string> modules = {})
+      : moduleNames(std::move(modules)) {
+    kind = NodeType::UseStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "UseStatement{modules: [";
+    for (size_t i = 0; i < moduleNames.size(); ++i) {
+      result += moduleNames[i];
+      if (i < moduleNames.size() - 1)
+        result += ", ";
+    }
+    result += "]}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// With Statement (with io { ... })
+struct WithStatement : public Statement {
+  std::string objectName;                       // The object/module name
+  std::vector<std::unique_ptr<Statement>> body; // Block statements
+
+  WithStatement(const std::string &name,
+                std::vector<std::unique_ptr<Statement>> stmts = {})
+      : objectName(name), body(std::move(stmts)) {
+    kind = NodeType::WithStatement;
+  }
+
+  std::string toString() const override {
+    std::string result = "WithStatement{object: " + objectName + ", body: [";
+    for (size_t i = 0; i < body.size(); ++i) {
+      result += body[i] ? body[i]->toString() : "null";
+      if (i < body.size() - 1)
+        result += ", ";
+    }
+    result += "]}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Visitor pattern interface for AST traversal
 class ASTVisitor {
 public:
@@ -1151,14 +1212,15 @@ public:
   virtual void visitBinaryExpression(const BinaryExpression &node) = 0;
 
   virtual void visitCallExpression(const CallExpression &node) = 0;
-  
+
   virtual void visitMemberExpression(const MemberExpression &node) = 0;
-  
+
   virtual void visitLambdaExpression(const LambdaExpression &node) = 0;
 
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
 
-  virtual void visitInterpolatedStringExpression(const InterpolatedStringExpression &node) = 0;
+  virtual void visitInterpolatedStringExpression(
+      const InterpolatedStringExpression &node) = 0;
 
   virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
 
@@ -1189,24 +1251,26 @@ public:
   virtual void visitTryExpression(const TryExpression &node) = 0;
   virtual void visitUnaryExpression(const UnaryExpression &node) = 0;
   virtual void visitUpdateExpression(const UpdateExpression &node) = 0;
-  virtual void visitImportStatement(const ImportStatement& node) = 0;
-  virtual void visitArrayLiteral(const ArrayLiteral& node) = 0;
-  virtual void visitObjectLiteral(const ObjectLiteral& node) = 0;
-  virtual void visitConfigBlock(const ConfigBlock& node) = 0;
-  virtual void visitDevicesBlock(const DevicesBlock& node) = 0;
-  virtual void visitModesBlock(const ModesBlock& node) = 0;
-  virtual void visitIndexExpression(const IndexExpression& node) = 0;
-  virtual void visitTernaryExpression(const TernaryExpression& node) = 0;
-  virtual void visitRangeExpression(const RangeExpression& node) = 0;
-  virtual void visitAssignmentExpression(const AssignmentExpression& node) = 0;
-  virtual void visitForStatement(const ForStatement& node) = 0;
-  virtual void visitLoopStatement(const LoopStatement& node) = 0;
-  virtual void visitBreakStatement(const BreakStatement& node) = 0;
-  virtual void visitContinueStatement(const ContinueStatement& node) = 0;
-  virtual void visitOnModeStatement(const OnModeStatement& node) = 0;
-  virtual void visitOffModeStatement(const OffModeStatement& node) = 0;
-  virtual void visitConditionalHotkey(const ConditionalHotkey& node) = 0;
-  virtual void visitWhenBlock(const WhenBlock& node) = 0;
+  virtual void visitImportStatement(const ImportStatement &node) = 0;
+  virtual void visitUseStatement(const UseStatement &node) = 0;
+  virtual void visitWithStatement(const WithStatement &node) = 0;
+  virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
+  virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
+  virtual void visitConfigBlock(const ConfigBlock &node) = 0;
+  virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
+  virtual void visitModesBlock(const ModesBlock &node) = 0;
+  virtual void visitIndexExpression(const IndexExpression &node) = 0;
+  virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
+  virtual void visitRangeExpression(const RangeExpression &node) = 0;
+  virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+  virtual void visitForStatement(const ForStatement &node) = 0;
+  virtual void visitLoopStatement(const LoopStatement &node) = 0;
+  virtual void visitBreakStatement(const BreakStatement &node) = 0;
+  virtual void visitContinueStatement(const ContinueStatement &node) = 0;
+  virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
+  virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
+  virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
+  virtual void visitWhenBlock(const WhenBlock &node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -1344,31 +1408,31 @@ inline void OffModeStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOffModeStatement(*this);
 }
 
-inline void TypeDeclaration::accept(ASTVisitor& visitor) const {
+inline void TypeDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitTypeDeclaration(*this);
 }
 
-inline void TypeAnnotation::accept(ASTVisitor& visitor) const {
+inline void TypeAnnotation::accept(ASTVisitor &visitor) const {
   visitor.visitTypeAnnotation(*this);
 }
 
-inline void UnionType::accept(ASTVisitor& visitor) const {
+inline void UnionType::accept(ASTVisitor &visitor) const {
   visitor.visitUnionType(*this);
 }
 
-inline void RecordType::accept(ASTVisitor& visitor) const {
+inline void RecordType::accept(ASTVisitor &visitor) const {
   visitor.visitRecordType(*this);
 }
 
-inline void FunctionType::accept(ASTVisitor& visitor) const {
+inline void FunctionType::accept(ASTVisitor &visitor) const {
   visitor.visitFunctionType(*this);
 }
 
-inline void TypeReference::accept(ASTVisitor& visitor) const {
+inline void TypeReference::accept(ASTVisitor &visitor) const {
   visitor.visitTypeReference(*this);
 }
 
-inline void TryExpression::accept(ASTVisitor& visitor) const {
+inline void TryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitTryExpression(*this);
 }
 
@@ -1380,15 +1444,23 @@ inline void UpdateExpression::accept(ASTVisitor &visitor) const {
   visitor.visitUpdateExpression(*this);
 }
 
-inline void ImportStatement::accept(ASTVisitor& visitor) const {
+inline void ImportStatement::accept(ASTVisitor &visitor) const {
   visitor.visitImportStatement(*this);
 }
 
-inline void ConditionalHotkey::accept(ASTVisitor& visitor) const {
+inline void UseStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitUseStatement(*this);
+}
+
+inline void WithStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitWithStatement(*this);
+}
+
+inline void ConditionalHotkey::accept(ASTVisitor &visitor) const {
   visitor.visitConditionalHotkey(*this);
 }
 
-inline void WhenBlock::accept(ASTVisitor& visitor) const {
+inline void WhenBlock::accept(ASTVisitor &visitor) const {
   visitor.visitWhenBlock(*this);
 }
 } // namespace havel::ast

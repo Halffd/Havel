@@ -1,0 +1,12 @@
+print("Testing individual function calls...")
+
+print("Testing mode system...")
+print("mode.get():", mode.get())
+
+print("Testing config...")
+config.load()
+
+print("Testing gui notify...")
+gui.notify("Test", "Test message")
+
+print("All tests completed")

@@ -8,11 +8,11 @@
 }
 
 ^!r => {
-  conf.reload()
+  config.reload()
 }
 
 // Load configuration at startup
-conf.load()
+config.load()
 
 !Esc => {
   app.quit()
@@ -394,7 +394,7 @@ RShift & WheelDown => { zoom(0) }
   let isEmacs = contains(lower(title), "emacs")
   let isAlacritty = contains(lower(title), "alacritty")
   if !(isEmacs || isAlacritty) {
-    let terminal = conf.get("General.Terminal", "st")
+    let terminal = config.get("General.Terminal", "st")
     if terminal == "alacritty" {
       runDetached("alacritty -e sh -c 'cd ~ && exec tmux'")
     } else {
@@ -408,12 +408,12 @@ RShift & WheelDown => { zoom(0) }
 }
 
 f3 => {
-  let b = conf.get("Display.DefaultBrightness", "1.0")
-  let sl = conf.get("Display.DefaultShadowLift", "0.0")
-  let gr = conf.get("Display.DefaultGammaR", "1.0")
-  let gg = conf.get("Display.DefaultGammaG", "1.0")
-  let gb = conf.get("Display.DefaultGammaB", "1.0")
-  let temp = conf.get("Display.DefaultTemperature", "6500")
+  let b = config.get("Display.DefaultBrightness", "1.0")
+  let sl = config.get("Display.DefaultShadowLift", "0.0")
+  let gr = config.get("Display.DefaultGammaR", "1.0")
+  let gg = config.get("Display.DefaultGammaG", "1.0")
+  let gb = config.get("Display.DefaultGammaB", "1.0")
+  let temp = config.get("Display.DefaultTemperature", "6500")
 
   brightnessManager.setBrightness(b)
   brightnessManager.setShadowLift(sl)
@@ -422,12 +422,12 @@ f3 => {
 }
 
 +f3 => {
-  let temp = conf.get("Temperature.Default", "6500")
+  let temp = config.get("Temperature.Default", "6500")
   brightnessManager.setTemperature(temp)
 }
 
 ^f3 => {
-  let b = conf.get("Brightness.Default", "1.0")
+  let b = config.get("Brightness.Default", "1.0")
   brightnessManager.setBrightness(1, b)
 }
 
@@ -613,13 +613,13 @@ io.map("CapsLock", "LAlt")
 @!- => {
   dpi = dpi - 5
   runDetached("~/scripts/dpi.sh " + dpi)
-  conf.set("Mouse.DPI", dpi)
+  config.set("Mouse.DPI", dpi)
 }
 
 @!= => {
   dpi = dpi + 5
   runDetached("~/scripts/dpi.sh " + dpi)
-  conf.set("Mouse.DPI", dpi)
+  config.set("Mouse.DPI", dpi)
 }
 
 # Mouse sensitivity adjustments
@@ -629,7 +629,7 @@ io.map("CapsLock", "LAlt")
   sens = sens - inc
   if sens < 0 { sens = 0 }
   io.setMouseSensitivity(sens)
-  conf.set("Mouse.Sensitivity", sens)
+  config.set("Mouse.Sensitivity", sens)
 }
 
 @!#= => {
@@ -638,7 +638,7 @@ io.map("CapsLock", "LAlt")
   sens = sens + inc
   if sens > 2.0 { sens = 2.0 }
   io.setMouseSensitivity(sens)
-  conf.set("Mouse.Sensitivity", sens)
+  config.set("Mouse.Sensitivity", sens)
 }
 
 #a => runDetached("/bin/pavucontrol")

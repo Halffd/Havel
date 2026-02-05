@@ -57,7 +57,8 @@ HavelApp::~HavelApp() {
 
 void HavelApp::setupTrayIcon() {
     if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-        throw std::runtime_error("System tray is not available on this system");
+        warn("System tray is not available on this system");
+        return;
     }
 
     trayIcon = std::make_unique<QSystemTrayIcon>(this);
@@ -319,9 +320,9 @@ void HavelApp::setupSignalHandling() {
                 // Don't call full io->cleanup() since we already did emergency cleanup
                 io.reset();
                 
-                // Minimal Qt cleanup
-                trayMenu.reset();
-                trayIcon.reset();
+                if(trayMenu) {
+                    trayMenu.reset();
+                }
                 
                 info("Emergency shutdown complete - exiting now");
                 
@@ -435,7 +436,6 @@ void HavelApp::cleanup() noexcept {
 
     // Clean up Qt components
     trayMenu.reset();
-    trayIcon.reset();
 
     info("HavelApp cleanup complete");
 }

@@ -1,0 +1,8 @@
+print("This line is fine")
+
+// This should cause a parse error on line 4
+if true && {
+  print("invalid syntax")
+}
+
+print("This line will never be reached")

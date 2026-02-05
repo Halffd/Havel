@@ -1,0 +1,6 @@
+print("This line is fine")
+
+// This should cause a parse error on line 4
+print("unclosed string
+
+print("This line will never be reached")

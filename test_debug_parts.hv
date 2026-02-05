@@ -1,0 +1,14 @@
+print("Testing individual parts...")
+
+print("1. Testing config...")
+config.load()
+
+print("2. Testing app module...")
+print("app.quit exists:", app.quit)
+print("app.restart exists:", app.restart)
+
+print("3. Testing io module...")
+print("io.map exists:", io.map)
+print("io.remap exists:", io.remap)
+
+print("All tests completed successfully")

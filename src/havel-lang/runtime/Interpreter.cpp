@@ -2083,8 +2083,12 @@ void Interpreter::InitializeSystemBuiltins() {
   // Define the config object
   environment->Define("config", HavelValue(configObj));
 
-  environment->Define(
-      "app.quit",
+  // === APP MODULE ===
+  // Create app module object
+  auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // Add quit function to app module
+  (*appObj)["quit"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         if (App::instance()) {
@@ -2092,10 +2096,10 @@ void Interpreter::InitializeSystemBuiltins() {
           return HavelValue(true);
         }
         return HavelRuntimeError("App is not running");
-      }));
+      });
 
-  environment->Define(
-      "app.restart",
+  // Add restart function to app module
+  (*appObj)["restart"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto pid = ProcessManager::getCurrentPid();
@@ -2117,7 +2121,39 @@ void Interpreter::InitializeSystemBuiltins() {
           App::quit();
         }
         return HavelRuntimeError(err);
-      }));
+      });
+
+  // Add info function to app module
+  (*appObj)["info"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto infoObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        auto pid = ProcessManager::getCurrentPid();
+        (*infoObj)["pid"] = HavelValue(static_cast<double>(pid));
+
+        std::string exec = ProcessManager::getProcessExecutablePath(pid);
+        (*infoObj)["path"] = HavelValue(exec);
+
+        (*infoObj)["version"] = HavelValue("2.0.0");
+        (*infoObj)["name"] = HavelValue("Havel");
+
+        return HavelValue(infoObj);
+      });
+
+  // Add args function to app module
+  (*appObj)["args"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        // For now, return empty array - would need to store command line args
+        // at startup
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        return HavelValue(arr);
+      });
+
+  // Define the app module
+  environment->Define("app", HavelValue(appObj));
 
   // === IO METHODS ===
   // Mouse methods
@@ -3324,6 +3360,32 @@ void Interpreter::InitializeArrayBuiltins() {
 }
 
 void Interpreter::InitializeIOBuiltins() {
+  // IO map function - map one key to another
+  environment->Define(
+      "io.map",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2)
+              return HavelRuntimeError("io.map() requires (from, to)");
+            std::string from = ValueToString(args[0]);
+            std::string to = ValueToString(args[1]);
+            this->io.Map(from, to);
+            return HavelValue(nullptr);
+          }));
+
+  // IO remap function - remap two keys
+  environment->Define(
+      "io.remap",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2)
+              return HavelRuntimeError("io.remap() requires (key1, key2)");
+            std::string key1 = ValueToString(args[0]);
+            std::string key2 = ValueToString(args[1]);
+            this->io.Remap(key1, key2);
+            return HavelValue(nullptr);
+          }));
+
   // IO block - disable all input
   environment->Define(
       "io.block",
@@ -3449,30 +3511,6 @@ void Interpreter::InitializeIOBuiltins() {
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
             this->io.EmergencyReleaseAllKeys();
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.map",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.map() requires (from, to)");
-            std::string from = ValueToString(args[0]);
-            std::string to = ValueToString(args[1]);
-            this->io.Map(from, to);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.remap",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.remap() requires (key1, key2)");
-            std::string key1 = ValueToString(args[0]);
-            std::string key2 = ValueToString(args[1]);
-            this->io.Remap(key1, key2);
             return HavelValue(nullptr);
           }));
 

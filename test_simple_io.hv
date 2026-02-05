@@ -1,0 +1,3 @@
+print("Testing direct io.map and io.remap access...")
+print("io.map:", io.map)
+print("io.remap:", io.remap)

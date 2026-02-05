@@ -15,10 +15,10 @@
 config.load()
 
 !Esc => {
-  app.quit()
+  app.exit()
 }
 
-#!Esc => {
+#Esc => {
   app.restart()
 }
 
@@ -586,10 +586,6 @@ let dpi = 400
 let mouseStep = 5
 let mouseAcc = 1
 
-@~^l&g => runDetached("/usr/bin/lutris")
-@~^s&g => runDetached("/usr/bin/steam")
-@~^h&g => runDetached("flatpak run com.heroicgameslauncher.hgl")
-
 # Emergency exit
 @^!+#Esc => {
   io.emergencyReleaseAllKeys()
@@ -599,7 +595,6 @@ let mouseAcc = 1
 @+#Esc => io.emergencyReleaseAllKeys()
 
 # CapsLock remap and passthrough
-# Note: mapping persists in runtime IO
 io.map("CapsLock", "LAlt")
 @+CapsLock => {
   send("{CapsLock}")
@@ -893,11 +888,6 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 @numpad7:up => resetMouseAcc()
 @numpad8:up => resetMouseAcc()
 @numpad9:up => resetMouseAcc()
-
-# Combo sequences for game launchers
-@~^l & g => runDetached("/usr/bin/lutris")
-@~^s & g => runDetached("/usr/bin/steam")
-@~^h & g => runDetached("flatpak run com.heroicgameslauncher.hgl")
 
 # Screenshot variants
 @|#Print => runDetached("~/scripts/ocrs.sh")

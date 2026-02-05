@@ -1,0 +1,6 @@
+print("Testing io functions directly...")
+print("io.map from environment:", environment.get("io.map"))
+print("io.remap from environment:", environment.get("io.remap"))
+print("Testing io module...")
+print("io.map exists:", io.map)
+print("io.remap exists:", io.remap)

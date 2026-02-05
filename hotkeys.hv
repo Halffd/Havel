@@ -634,7 +634,7 @@ let mouseAcc = 1
 @+#Esc => io.emergencyReleaseAllKeys()
 
 # CapsLock remap and passthrough
-# io.map("CapsLock", "LAlt")
+io.map("CapsLock", "LAlt")
 @+CapsLock => {
   send("{CapsLock}")
 }

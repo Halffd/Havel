@@ -2572,44 +2572,6 @@ void Interpreter::InitializeSystemBuiltins() {
     (*clip)["clear"] = *v;
   environment->Define("clipboard", HavelValue(clip));
 
-  // Create io module
-  auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("io.mouseMove"))
-    (*ioMod)["mouseMove"] = *v;
-  if (auto v = environment->Get("io.mouseMoveTo"))
-    (*ioMod)["mouseMoveTo"] = *v;
-  if (auto v = environment->Get("io.mouseClick"))
-    (*ioMod)["mouseClick"] = *v;
-  if (auto v = environment->Get("io.mouseDown"))
-    (*ioMod)["mouseDown"] = *v;
-  if (auto v = environment->Get("io.mouseUp"))
-    (*ioMod)["mouseUp"] = *v;
-  if (auto v = environment->Get("io.mouseWheel"))
-    (*ioMod)["mouseWheel"] = *v;
-  if (auto v = environment->Get("io.getKeyState"))
-    (*ioMod)["getKeyState"] = *v;
-  if (auto v = environment->Get("io.isShiftPressed"))
-    (*ioMod)["isShiftPressed"] = *v;
-  if (auto v = environment->Get("io.isCtrlPressed"))
-    (*ioMod)["isCtrlPressed"] = *v;
-  if (auto v = environment->Get("io.isAltPressed"))
-    (*ioMod)["isAltPressed"] = *v;
-  if (auto v = environment->Get("io.isWinPressed"))
-    (*ioMod)["isWinPressed"] = *v;
-  if (auto v = environment->Get("io.scroll"))
-    (*ioMod)["scroll"] = *v;
-  if (auto v = environment->Get("io.getMouseSensitivity"))
-    (*ioMod)["getMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.setMouseSensitivity"))
-    (*ioMod)["setMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
-    (*ioMod)["emergencyReleaseAllKeys"] = *v;
-  if (auto v = environment->Get("io.map"))
-    (*ioMod)["map"] = *v;
-  if (auto v = environment->Get("io.remap"))
-    (*ioMod)["remap"] = *v;
-  environment->Define("io", HavelValue(ioMod));
-
   // Create audio module
   auto audioMod =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -3956,6 +3918,71 @@ void Interpreter::InitializeDebugBuiltins() {
         }
         return HavelValue(nullptr);
       }));
+
+  // Create io module at the end after all io functions are defined
+  auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("io.mouseMove"))
+    (*ioMod)["mouseMove"] = *v;
+  if (auto v = environment->Get("io.mouseMoveTo"))
+    (*ioMod)["mouseMoveTo"] = *v;
+  if (auto v = environment->Get("io.mouseClick"))
+    (*ioMod)["mouseClick"] = *v;
+  if (auto v = environment->Get("io.mouseDown"))
+    (*ioMod)["mouseDown"] = *v;
+  if (auto v = environment->Get("io.mouseUp"))
+    (*ioMod)["mouseUp"] = *v;
+  if (auto v = environment->Get("io.mouseWheel"))
+    (*ioMod)["mouseWheel"] = *v;
+  if (auto v = environment->Get("io.getKeyState"))
+    (*ioMod)["getKeyState"] = *v;
+  if (auto v = environment->Get("io.isShiftPressed"))
+    (*ioMod)["isShiftPressed"] = *v;
+  if (auto v = environment->Get("io.isCtrlPressed"))
+    (*ioMod)["isCtrlPressed"] = *v;
+  if (auto v = environment->Get("io.isAltPressed"))
+    (*ioMod)["isAltPressed"] = *v;
+  if (auto v = environment->Get("io.isWinPressed"))
+    (*ioMod)["isWinPressed"] = *v;
+  if (auto v = environment->Get("io.scroll"))
+    (*ioMod)["scroll"] = *v;
+  if (auto v = environment->Get("io.getMouseSensitivity"))
+    (*ioMod)["getMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.setMouseSensitivity"))
+    (*ioMod)["setMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
+    (*ioMod)["emergencyReleaseAllKeys"] = *v;
+
+  if (auto v = environment->Get("io.map"))
+    (*ioMod)["map"] = *v;
+  if (auto v = environment->Get("io.remap"))
+    (*ioMod)["remap"] = *v;
+
+  environment->Define("io", HavelValue(ioMod));
+
+  // Create audio module
+  auto audioMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("audio.setVolume"))
+    (*audioMod)["setVolume"] = *v;
+  if (auto v = environment->Get("audio.getVolume"))
+    (*audioMod)["getVolume"] = *v;
+  if (auto v = environment->Get("audio.increaseVolume"))
+    (*audioMod)["increaseVolume"] = *v;
+  if (auto v = environment->Get("audio.decreaseVolume"))
+    (*audioMod)["decreaseVolume"] = *v;
+  if (auto v = environment->Get("audio.toggleMute"))
+    (*audioMod)["toggleMute"] = *v;
+  if (auto v = environment->Get("audio.setMute"))
+    (*audioMod)["setMute"] = *v;
+  if (auto v = environment->Get("audio.isMuted"))
+    (*audioMod)["isMuted"] = *v;
+  if (auto v = environment->Get("audio.getApps"))
+    (*audioMod)["getApps"] = *v;
+  if (auto v = environment->Get("audio.getDefaultOutput"))
+    (*audioMod)["getDefaultOutput"] = *v;
+  if (auto v = environment->Get("audio.playTestSound"))
+    (*audioMod)["playTestSound"] = *v;
+  environment->Define("audio", HavelValue(audioMod));
 }
 
 void Interpreter::InitializeAudioBuiltins() {

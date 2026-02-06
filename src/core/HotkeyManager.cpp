@@ -3,8 +3,6 @@
 #include "../utils/Logger.hpp"
 #include "IO.hpp"
 #include "automation/AutoRunner.hpp"
-#include <QGuiApplication>
-#include <QClipboard>
 #include "core/BrightnessManager.hpp"
 #include "core/ConditionSystem.hpp"
 #include "core/ConfigManager.hpp"
@@ -14,6 +12,7 @@
 #include "core/process/ProcessManager.hpp"
 #include "gui/AutomationSuite.hpp"
 #include "gui/ClipboardManager.hpp"
+#include "gui/HavelApp.hpp"
 #include "media/AudioManager.hpp"
 #include "process/ProcessManager.hpp"
 #include "utils/Timer.hpp"
@@ -22,7 +21,9 @@
 #include "window/CompositorBridge.hpp"
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
-#include "gui/HavelApp.hpp"
+#include <QClipboard>
+#include <QGuiApplication>
+#include <fstream>
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
 #endif
@@ -250,15 +251,15 @@ void HotkeyManager::printHotkeys() const {
 
   info("=== End Hotkey Report ===");
 }
-HotkeyManager::HotkeyManager(IO &io, WindowManager &windowManager,
-                             MPVController &mpv, AudioManager &audioManager,
-                             ScriptEngine &scriptEngine,
-                             ScreenshotManager &screenshotManager,
-                             BrightnessManager &brightnessManager)
+HotkeyManager::HotkeyManager(
+    IO &io, WindowManager &windowManager, MPVController &mpv,
+    AudioManager &audioManager, ScriptEngine &scriptEngine,
+    ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager,
+    std::shared_ptr<net::NetworkManager> networkManager)
     : io(io), windowManager(windowManager), mpv(mpv),
       audioManager(audioManager), scriptEngine(scriptEngine),
       brightnessManager(brightnessManager),
-      screenshotManager(screenshotManager) {
+      screenshotManager(screenshotManager), networkManager(networkManager) {
   mouseController = std::make_unique<MouseController>(io);
   conditionEngine = std::make_unique<ConditionEngine>();
   setupConditionEngine();
@@ -638,10 +639,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   }); // #^c runs ~/scripts/caption.sh 3 auto
   io.Hotkey("#+c", []() {
     Launcher::runShell("~/scripts/mimi.sh");
-  });                         // #+c runs ~/scripts/mimi.sh
-  io.Hotkey("^!P", [this]() {
-    io.Send("{CapsLock}");
-  });
+  }); // #+c runs ~/scripts/mimi.sh
+  io.Hotkey("^!P", [this]() { io.Send("{CapsLock}"); });
 
   AddGamingHotkey(
       "u",
@@ -767,24 +766,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   const std::map<std::string, std::pair<std::string, std::function<void()>>>
       emergencyHotkeys = {
           {"#Esc",
-            {"Restart application",
-              []() {
+           {"Restart application",
+            []() {
 #ifdef ENABLE_HAVEL_LANG
-                auto* interp = HavelApp::instance->getInterpreter();
-                if (!interp) {
-                  info("Restart application output: Interpreter not available");
-                  return;
-                }
-                auto out = interp->Execute("app.restart()");
-                if (auto* err = std::get_if<HavelRuntimeError>(&out)) {
-                  info("Restart application output: {}", err->what());
-                } else {
-                  info("Restart application output: {}", toString(out));
-                }
+              auto *interp = HavelApp::instance->getInterpreter();
+              if (!interp) {
+                info("Restart application output: Interpreter not available");
+                return;
+              }
+              auto out = interp->Execute("app.restart()");
+              if (auto *err = std::get_if<HavelRuntimeError>(&out)) {
+                info("Restart application output: {}", err->what());
+              } else {
+                info("Restart application output: {}", toString(out));
+              }
 #else
                 info("Restart application output: Havel Lang disabled");
 #endif
-              }}},
+            }}},
           {"^#esc", {"Reload configuration", [this]() {
                        info("Reloading configuration");
                        ReloadConfigurations();
@@ -1237,37 +1236,25 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   AddHotkey("@numpad8:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("@numpad9:up", [&]() { mouseController->resetAcceleration(); });
   AddHotkey("!d", [this]() { toggleFakeDesktopOverlay(); });
-  
+
   static bool keyDown = false;
   static bool registeredMouseKeys = false;
-  AddGamingHotkey("@!m", [this](){
+  AddGamingHotkey("@!m", [this]() {
     if (registeredMouseKeys) {
       return;
     }
     registeredMouseKeys = true;
-    auto sendKey = [this](const std::string &key){
+    auto sendKey = [this](const std::string &key) {
       io.Send("{" + key + " down}");
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       io.Send("{" + key + " up}");
     };
-    AddGamingHotkey("@mouseleft", [this, sendKey](){
-      sendKey("f");
-    });
-    AddGamingHotkey("@mouseright", [this, sendKey](){
-      sendKey("g");
-    });
-    AddGamingHotkey("@mouseup", [this, sendKey](){
-      sendKey("i");
-    });
-    AddGamingHotkey("@mousedown", [this, sendKey](){
-      sendKey("k");
-    });
-    AddGamingHotkey("@LButton", [this, sendKey](){
-      sendKey("e");
-    });
-    AddGamingHotkey("@RButton", [this, sendKey](){
-      sendKey("q");
-    });
+    AddGamingHotkey("@mouseleft", [this, sendKey]() { sendKey("f"); });
+    AddGamingHotkey("@mouseright", [this, sendKey]() { sendKey("g"); });
+    AddGamingHotkey("@mouseup", [this, sendKey]() { sendKey("i"); });
+    AddGamingHotkey("@mousedown", [this, sendKey]() { sendKey("k"); });
+    AddGamingHotkey("@LButton", [this, sendKey]() { sendKey("e"); });
+    AddGamingHotkey("@RButton", [this, sendKey]() { sendKey("q"); });
   });
   AddGamingHotkey("@w:up", [this]() { keyDown = false; }, nullptr, 0);
   AddGamingHotkey(
@@ -1504,6 +1491,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       showNotification("Genshin Automation", "No active automation to stop");
     }
   });
+
+  // Register network hotkeys
+  RegisterNetworkHotkeys();
 }
 void HotkeyManager::PlayPause() {
   if (mpv.IsSocketAlive()) {
@@ -3664,6 +3654,265 @@ bool HotkeyManager::isWindowClassInList(const std::string &windowClass,
   }
 
   return false;
+}
+
+// Network functions implementation
+void HotkeyManager::makeHttpRequest(const std::string &url,
+                                    const std::string &method) {
+  if (!networkManager) {
+    showNotification("Network Error", "NetworkManager not available");
+    return;
+  }
+
+  try {
+    // Parse URL to get host and path
+    size_t protocolPos = url.find("://");
+    if (protocolPos == std::string::npos) {
+      showNotification("Network Error", "Invalid URL format");
+      return;
+    }
+
+    std::string hostPath = url.substr(protocolPos + 3);
+    size_t pathPos = hostPath.find('/');
+    std::string host =
+        (pathPos == std::string::npos) ? hostPath : hostPath.substr(0, pathPos);
+    std::string path =
+        (pathPos == std::string::npos) ? "/" : hostPath.substr(pathPos);
+
+    // Create HTTP client configuration
+    net::NetworkConfig config;
+    config.host = host;
+    config.port = 80; // Default HTTP port
+    config.timeoutMs = 10000;
+
+    // Create HTTP client
+    int clientId = networkManager->createHttpClient(config);
+    auto *client = networkManager->getComponentAs<net::HttpClient>(clientId);
+
+    if (client) {
+      client->setCallback([this](const net::NetworkEvent &event) {
+        if (event.type == net::NetworkEventType::Error) {
+          showNotification("HTTP Request Failed", event.error);
+        } else if (event.type == net::NetworkEventType::DataReceived) {
+          showNotification("HTTP Response",
+                           "Response received: " +
+                               std::to_string(event.data.length()) + " bytes");
+        }
+      });
+
+      // Make request based on method
+      net::HttpClient::HttpResponse response;
+      if (method == "GET") {
+        response = client->get(path);
+      } else if (method == "POST") {
+        response = client->post(path, "");
+      } else if (method == "PUT") {
+        response = client->put(path, "");
+      } else if (method == "DELETE") {
+        response = client->del(path);
+      } else {
+        showNotification("Network Error", "Unsupported HTTP method: " + method);
+        networkManager->destroyComponent(clientId);
+        return;
+      }
+
+      if (response.error.empty()) {
+        showNotification("HTTP Request Success",
+                         "Status: " + std::to_string(response.statusCode) +
+                             " " + response.statusText);
+      } else {
+        showNotification("HTTP Request Failed", response.error);
+      }
+
+      networkManager->destroyComponent(clientId);
+    } else {
+      showNotification("Network Error", "Failed to create HTTP client");
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::downloadFile(const std::string &url,
+                                 const std::string &outputPath) {
+  if (!networkManager) {
+    showNotification("Network Error", "NetworkManager not available");
+    return;
+  }
+
+  try {
+    // Parse URL to get host and path
+    size_t protocolPos = url.find("://");
+    if (protocolPos == std::string::npos) {
+      showNotification("Network Error", "Invalid URL format");
+      return;
+    }
+
+    std::string hostPath = url.substr(protocolPos + 3);
+    size_t pathPos = hostPath.find('/');
+    std::string host =
+        (pathPos == std::string::npos) ? hostPath : hostPath.substr(0, pathPos);
+    std::string path =
+        (pathPos == std::string::npos) ? "/" : hostPath.substr(pathPos);
+
+    // Extract filename from URL or use default
+    std::string filename = outputPath;
+    if (filename.empty()) {
+      size_t lastSlash = path.find_last_of('/');
+      filename = (lastSlash == std::string::npos) ? "downloaded_file"
+                                                  : path.substr(lastSlash + 1);
+      if (filename.empty())
+        filename = "downloaded_file";
+    }
+
+    // Create HTTP client configuration
+    net::NetworkConfig config;
+    config.host = host;
+    config.port = 80;
+    config.timeoutMs = 30000; // Longer timeout for downloads
+
+    // Create HTTP client
+    int clientId = networkManager->createHttpClient(config);
+    auto *client = networkManager->getComponentAs<net::HttpClient>(clientId);
+
+    if (client) {
+      client->setCallback([this, filename](const net::NetworkEvent &event) {
+        if (event.type == net::NetworkEventType::Error) {
+          showNotification("Download Failed", event.error);
+        } else if (event.type == net::NetworkEventType::DataReceived) {
+          // In a real implementation, you would save the data to file
+          showNotification("Download Progress",
+                           "Received " + std::to_string(event.data.length()) +
+                               " bytes");
+        }
+      });
+
+      // Make GET request to download file
+      auto response = client->get(path);
+
+      if (response.error.empty()) {
+        // Save response body to file (simplified)
+        std::ofstream outFile(filename);
+        if (outFile) {
+          outFile << response.body;
+          outFile.close();
+          showNotification("Download Complete",
+                           "File saved as: " + filename + " (" +
+                               std::to_string(response.body.length()) +
+                               " bytes)");
+        } else {
+          showNotification("Download Failed",
+                           "Could not create file: " + filename);
+        }
+      } else {
+        showNotification("Download Failed", response.error);
+      }
+
+      networkManager->destroyComponent(clientId);
+    } else {
+      showNotification("Network Error", "Failed to create HTTP client");
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::pingHost(const std::string &host) {
+  if (!networkManager) {
+    showNotification("Network Error", "NetworkManager not available");
+    return;
+  }
+
+  try {
+    // Use port checking as a simple ping alternative
+    bool reachable = net::NetworkManager::isPortOpen(host, 80);
+
+    if (reachable) {
+      showNotification("Ping Result", host + " is reachable (port 80)");
+    } else {
+      // Try other common ports
+      reachable = net::NetworkManager::isPortOpen(host, 443);
+      if (reachable) {
+        showNotification("Ping Result", host + " is reachable (port 443)");
+      } else {
+        showNotification("Ping Result", host + " is not reachable");
+      }
+    }
+
+    // Also validate IP/hostname format
+    bool validIp = net::NetworkManager::isValidIpAddress(host);
+    bool validHost = net::NetworkManager::isValidHostname(host);
+
+    std::string validation = "Format: ";
+    if (validIp)
+      validation += "Valid IP";
+    else if (validHost)
+      validation += "Valid Hostname";
+    else
+      validation += "Invalid Format";
+
+    showNotification("Host Validation", validation);
+
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::checkNetworkStatus() {
+  if (!networkManager) {
+    showNotification("Network Error", "NetworkManager not available");
+    return;
+  }
+
+  try {
+    // Get local IP addresses
+    auto localIps = net::NetworkManager::getLocalIpAddresses();
+
+    std::string status = "Network Status:\n";
+    status += "Local IPs: " + std::to_string(localIps.size()) + "\n";
+
+    for (const auto &ip : localIps) {
+      status += "  " + ip + "\n";
+    }
+
+    // Test connectivity to common hosts
+    std::vector<std::string> testHosts = {"google.com", "cloudflare.com",
+                                          "github.com"};
+    int reachableCount = 0;
+
+    for (const auto &host : testHosts) {
+      if (net::NetworkManager::isPortOpen(host, 443)) {
+        reachableCount++;
+        status += host + ": Reachable\n";
+      } else {
+        status += host + ": Not Reachable\n";
+      }
+    }
+
+    status += "Overall: " + std::to_string(reachableCount) + "/" +
+              std::to_string(testHosts.size()) + " hosts reachable";
+
+    showNotification("Network Status", status);
+
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::RegisterNetworkHotkeys() {
+  // HTTP Request hotkeys
+  io.Hotkey("^!h",
+            [this]() { makeHttpRequest("http://httpbin.org/get", "GET"); });
+
+  io.Hotkey("^!p", [this]() { pingHost("google.com"); });
+
+  io.Hotkey("^!d", [this]() { downloadFile("http://httpbin.org/json", ""); });
+
+  io.Hotkey("^!n", [this]() { checkNetworkStatus(); });
+
+  // Custom HTTP request with input dialog (simplified)
+  io.Hotkey("^!+h",
+            [this]() { makeHttpRequest("http://httpbin.org/get", "GET"); });
 }
 
 } // namespace havel

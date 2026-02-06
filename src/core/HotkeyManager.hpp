@@ -3,8 +3,8 @@
 #include "../utils/Utils.hpp"
 #include "../window/WindowManager.hpp"
 #include "BrightnessManager.hpp"
-#include "ConditionalHotkeyManager.hpp"
 #include "ConditionSystem.hpp"
+#include "ConditionalHotkeyManager.hpp"
 #include "ConfigManager.hpp"
 #include "IO.hpp"
 #include "ScriptEngine.hpp"
@@ -16,6 +16,7 @@
 #include "gui/ScreenshotManager.hpp"
 #include "io/MouseController.hpp"
 #include "media/AudioManager.hpp"
+#include "net/NetworkManager.hpp"
 #include "qt.hpp"
 #include "utils/Timer.hpp"
 #include <atomic>
@@ -47,7 +48,8 @@ public:
   HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
                 AudioManager &audioManager, ScriptEngine &scriptEngine,
                 ScreenshotManager &screenshotManager,
-                BrightnessManager &brightnessManager);
+                BrightnessManager &brightnessManager,
+                std::shared_ptr<net::NetworkManager> networkManager);
   std::unique_ptr<MouseController> mouseController;
   virtual ~HotkeyManager() { cleanup(); }
   void Zoom(int zoom);
@@ -61,7 +63,7 @@ public:
   int speed = 5;
   float acc = 1.0f;
   int dpi = 400;
-  
+
   bool evaluateCondition(const std::string &condition);
 
   std::unique_ptr<ConditionEngine> conditionEngine;
@@ -93,6 +95,8 @@ public:
 
   void RegisterSystemHotkeys();
 
+  void RegisterNetworkHotkeys();
+
   void updateAllConditionalHotkeys();
 
   void forceUpdateAllConditionalHotkeys();
@@ -118,6 +122,13 @@ public:
   void printActiveWindowInfo();
 
   void toggleWindowFocusTracking();
+
+  // Network functions
+  void makeHttpRequest(const std::string &url,
+                       const std::string &method = "GET");
+  void downloadFile(const std::string &url, const std::string &outputPath = "");
+  void pingHost(const std::string &host);
+  void checkNetworkStatus();
 
   // Automation
   std::shared_ptr<automation::AutomationManager> automationManager_;
@@ -150,6 +161,7 @@ public:
                       std::function<void()> falseAction = nullptr, int id = 0);
   IO &io;
   bool conditionalHotkeysEnabled = true;
+
 private:
   bool altTabPressed = false;
   std::thread monitorThread;
@@ -160,14 +172,14 @@ private:
       1; // Check every 1ms for immediate response to window changes
   std::atomic<std::chrono::steady_clock::time_point> lastModeSwitch =
       std::chrono::steady_clock::now();
-  static constexpr int MODE_SWITCH_DEBOUNCE_MS = 150; // 150ms debounce for mode switching
+  static constexpr int MODE_SWITCH_DEBOUNCE_MS =
+      150; // 150ms debounce for mode switching
   std::unique_ptr<KeyTap> lwin;
   std::unique_ptr<KeyTap> ralt;
 
   // Watchdog for detecting input freezes
   std::atomic<std::chrono::steady_clock::time_point> lastInputTime{
-      std::chrono::steady_clock::now()
-  };
+      std::chrono::steady_clock::now()};
   std::thread watchdogThread;
   std::atomic<bool> watchdogRunning{true};
 
@@ -199,7 +211,6 @@ private:
   static bool IsGamingProcess(pid_t pid);
 
   // Overlay functionality
-  
 
   // Window management
   void minimizeActiveWindow();
@@ -213,7 +224,6 @@ private:
   void restoreWindow();
 
   // Active window info
-  
 
   static bool isGamingWindow();
 
@@ -237,6 +247,7 @@ private:
   ScriptEngine &scriptEngine;
   ScreenshotManager &screenshotManager;
   BrightnessManager &brightnessManager;
+  std::shared_ptr<net::NetworkManager> networkManager;
 
   // Mode management
   bool m_isZooming{false};
@@ -396,11 +407,11 @@ public:
 
   // Instance accessors for IO suspend functionality
   bool getCurrentGamingWindowStatus() const;
-  void reevaluateConditionalHotkeys(IO& io);
-  void reevaluateConditionalHotkeysInstance(IO& io); // For use with shared_ptr
+  void reevaluateConditionalHotkeys(IO &io);
+  void reevaluateConditionalHotkeysInstance(IO &io); // For use with shared_ptr
 
   // Mutex access for IO operations
-  std::mutex& getHotkeyMutex() { return hotkeyMutex; }
+  std::mutex &getHotkeyMutex() { return hotkeyMutex; }
 
 private:
   // Store IDs of MPV hotkeys for grab/ungrab
@@ -408,20 +419,21 @@ private:
   std::vector<int> gamingHotkeyIds;
   std::vector<HotkeyDefinition> mpvHotkeys;
   std::mutex hotkeyMutex; // Protects conditionalHotkeys and conditionCache
-  std::atomic<bool> updateLoopPaused{false}; // Flag to pause update loop when window changes
+  std::atomic<bool> updateLoopPaused{
+      false}; // Flag to pause update loop when window changes
   void InvalidateConditionalHotkeys();
   void updateConditionalHotkey(ConditionalHotkey &hotkey);
   void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
   void batchUpdateConditionalHotkeys();
-  ConditionalHotkey* findConditionalHotkey(int id);
+  ConditionalHotkey *findConditionalHotkey(int id);
 
   // Helper function to check if window class is in a comma-separated list
-  bool isWindowClassInList(const std::string& windowClass, const std::string& classList);
+  bool isWindowClassInList(const std::string &windowClass,
+                           const std::string &classList);
 
   // Window focus tracking
   bool trackWindowFocus;
   wID lastActiveWindowId;
-
 
   // Update loop members
   std::thread updateLoopThread;

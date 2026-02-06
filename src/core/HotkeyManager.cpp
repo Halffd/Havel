@@ -3899,8 +3899,142 @@ void HotkeyManager::checkNetworkStatus() {
   }
 }
 
+// Shell-based network functions (use runShell for shell features)
+void HotkeyManager::makeHttpRequestShell(const std::string &url,
+                                         const std::string &method,
+                                         const std::string &data) {
+  try {
+    std::string cmd =
+        "curl -s -w '\\nHTTP Status: %{http_code}\\nTime: %{time_total}s\\n' ";
+
+    if (method == "GET") {
+      cmd += "'" + url + "'";
+    } else if (method == "POST") {
+      cmd += "-X POST -H 'Content-Type: application/json' -d '" + data + "' '" +
+             url + "'";
+    } else if (method == "PUT") {
+      cmd += "-X PUT -H 'Content-Type: application/json' -d '" + data + "' '" +
+             url + "'";
+    } else if (method == "DELETE") {
+      cmd += "-X DELETE '" + url + "'";
+    } else {
+      showNotification("Network Error", "Unsupported HTTP method: " + method);
+      return;
+    }
+
+    auto result = Launcher::runShell(cmd);
+
+    if (result.success) {
+      showNotification("HTTP Request", "Shell request completed successfully");
+      info("Shell HTTP Response: {}", result.stdout);
+    } else {
+      showNotification("HTTP Request Failed", result.error);
+      error("Shell HTTP Error: {}", result.error);
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::downloadFileShell(const std::string &url,
+                                      const std::string &outputPath) {
+  try {
+    std::string filename = outputPath;
+    if (filename.empty()) {
+      // Extract filename from URL
+      size_t lastSlash = url.find_last_of('/');
+      filename = (lastSlash == std::string::npos) ? "downloaded_file"
+                                                  : url.substr(lastSlash + 1);
+      if (filename.empty())
+        filename = "downloaded_file";
+    }
+
+    std::string cmd =
+        "curl -L -o '" + filename + "' '" + url + "' --progress-bar";
+
+    auto result = Launcher::runShell(cmd);
+
+    if (result.success) {
+      showNotification("Download Complete", "File saved as: " + filename);
+      info("Shell download completed: {}", filename);
+    } else {
+      showNotification("Download Failed", result.error);
+      error("Shell download error: {}", result.error);
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::pingHostShell(const std::string &host) {
+  try {
+    // Use ping command with shell features
+    std::string cmd = "ping -c 4 '" + host + "' 2>/dev/null | tail -1";
+
+    auto result = Launcher::runShell(cmd);
+
+    if (result.success && !result.stdout.empty()) {
+      showNotification("Ping Result", host + ": " + result.stdout);
+      info("Shell ping result for {}: {}", host, result.stdout);
+    } else {
+      // Try with -c 1 for faster response
+      cmd = "ping -c 1 '" + host +
+            "' >/dev/null 2>&1 && echo 'Host is reachable' || echo 'Host is "
+            "unreachable'";
+      result = Launcher::runShell(cmd);
+
+      if (result.success) {
+        showNotification("Ping Result", host + ": " + result.stdout);
+      } else {
+        showNotification("Ping Failed", result.error);
+      }
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
+void HotkeyManager::checkNetworkStatusShell() {
+  try {
+    // Use shell commands for comprehensive network status
+    std::string cmd = R"(
+      echo "=== Network Status ==="
+      echo "Local IPs:"
+      ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | head -3
+      echo ""
+      echo "Internet Connectivity:"
+      for host in google.com cloudflare.com github.com; do
+        if ping -c 1 -W 2 "$host" >/dev/null 2>&1; then
+          echo "  $host: ✓ Reachable"
+        else
+          echo "  $host: ✗ Not Reachable"
+        fi
+      done
+      echo ""
+      echo "DNS Resolution:"
+      if nslookup google.com >/dev/null 2>&1; then
+        echo "  DNS: ✓ Working"
+      else
+        echo "  DNS: ✗ Failed"
+      fi
+    )";
+
+    auto result = Launcher::runShell(cmd);
+
+    if (result.success) {
+      showNotification("Network Status", "Shell network check completed");
+      info("Shell network status:\n{}", result.stdout);
+    } else {
+      showNotification("Network Status Failed", result.error);
+      error("Shell network status error: {}", result.error);
+    }
+  } catch (const std::exception &e) {
+    showNotification("Network Error", std::string("Exception: ") + e.what());
+  }
+}
+
 void HotkeyManager::RegisterNetworkHotkeys() {
-  // HTTP Request hotkeys
+  // HTTP Request hotkeys (NetworkManager-based)
   io.Hotkey("^!h",
             [this]() { makeHttpRequest("http://httpbin.org/get", "GET"); });
 
@@ -3910,9 +4044,39 @@ void HotkeyManager::RegisterNetworkHotkeys() {
 
   io.Hotkey("^!n", [this]() { checkNetworkStatus(); });
 
-  // Custom HTTP request with input dialog (simplified)
-  io.Hotkey("^!+h",
-            [this]() { makeHttpRequest("http://httpbin.org/get", "GET"); });
+  // Shell-based network hotkeys (use runShell for shell features)
+  io.Hotkey("^!+h", [this]() {
+    makeHttpRequestShell("http://httpbin.org/get", "GET");
+  });
+
+  io.Hotkey("^!+p", [this]() { pingHostShell("google.com"); });
+
+  io.Hotkey("^!+d",
+            [this]() { downloadFileShell("http://httpbin.org/json", ""); });
+
+  io.Hotkey("^!+n", [this]() { checkNetworkStatusShell(); });
+
+  // Advanced shell-based examples
+  io.Hotkey("^!+s", [this]() {
+    // Shell example with pipes and command substitution
+    std::string cmd = "echo 'Testing shell features:' && "
+                      "echo 'Current time: $(date)' && "
+                      "echo 'System info: $(uname -a)' && "
+                      "echo 'Network interfaces: $(ip link show | grep -E "
+                      "\"^[0-9]\" | awk \"{print \\$2}\" | sed \"s/://\")'";
+
+    auto result = Launcher::runShell(cmd);
+    if (result.success) {
+      showNotification("Shell Test", "Shell features working");
+      info("Shell test result:\n{}", result.stdout);
+    }
+  });
+
+  // Custom HTTP request with data
+  io.Hotkey("^!+x", [this]() {
+    makeHttpRequestShell("https://httpbin.org/post", "POST",
+                         "{\"test\": \"data\"}");
+  });
 }
 
 } // namespace havel

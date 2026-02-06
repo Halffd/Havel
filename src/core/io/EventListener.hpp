@@ -1,7 +1,8 @@
 #pragma once
+#include "HotkeyExecutor.hpp" // Include HotkeyExecutor
 #include "KeyMap.hpp"
 #include "core/CallbackTypes.hpp"     // Include callback types
-#include "core/MouseGestureTypes.hpp" // Include the mouse gesture types
+#include "core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -26,7 +27,6 @@ namespace havel {
 
 // Forward declarations
 struct HotKey;
-class HotkeyExecutor;
 
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {

@@ -1,8 +1,8 @@
 #include "EventListener.hpp"
 #include "../IO.hpp"
-#include "HotkeyExecutor.hpp"
-#include "core/MouseGestureTypes.hpp" // Include mouse gesture types
-#include "utils/Logger.hpp"
+#include "../core/MouseGestureTypes.hpp" // Include mouse gesture types
+#include "../io/HotkeyExecutor.hpp"
+#include "../utils/Logger.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>

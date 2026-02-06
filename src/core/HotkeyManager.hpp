@@ -130,6 +130,15 @@ public:
   void pingHost(const std::string &host);
   void checkNetworkStatus();
 
+  // Shell-based network functions (use runShell for shell features)
+  void makeHttpRequestShell(const std::string &url,
+                            const std::string &method = "GET",
+                            const std::string &data = "");
+  void downloadFileShell(const std::string &url,
+                         const std::string &outputPath = "");
+  void pingHostShell(const std::string &host);
+  void checkNetworkStatusShell();
+
   // Automation
   std::shared_ptr<automation::AutomationManager> automationManager_;
   std::unordered_map<std::string, automation::TaskPtr> automationTasks_;

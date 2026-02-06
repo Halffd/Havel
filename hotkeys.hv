@@ -2,7 +2,7 @@ config.load()
 let sys = detectSystem()
 let wl = sys.displayProtocol == "Wayland"
 let wm = sys.windowManager
-let brightness = 70
+let brightness = 90
 let temperature = 6500
 # let isStartup = contains(app.args, "--startup")
 let zoom3Value = 2.0
@@ -15,20 +15,21 @@ print("wm: $wm")
 # print("isStartup: $isStartup")
 
 fn applyBr () {
-  if temperature < 1000 {
-    temperature = 1000
+  if temperature < 0 {
+    temperature = 0
   }
   if temperature > 10000 {
     temperature = 10000
   }
-  if brightness < 1.0 {
-    brightness = 1.0
+  if brightness < 0.0 {
+    brightness = 0.0
   }
-  if brightness > 100 {
-    brightness = 100
+  if brightness > 100.0 {
+    brightness = 100.0
   }
-  print("~/scripts/lux-hypr.sh $brightness $temperature")
-  let r = run("~/scripts/lux-hypr.sh $brightness $temperature")
+  let cmd = "~/scripts/lux-hypr.sh $brightness $temperature"
+  let r = runDetached(cmd)
+  print(cmd)
   print(r)
 }
 fn qdbus (cmd) {
@@ -70,7 +71,10 @@ fn zoom (level) {
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
-    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
+    let cmd = "hyprctl keyword cursor:zoom_factor $zoomLevel"
+    print(cmd)
+    let r = run(cmd)
+    print(r)
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")

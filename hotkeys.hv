@@ -13,7 +13,7 @@ let zoomLevel = 1.0
 print("wl: $wl")
 print("wm: $wm")
 # print("isStartup: $isStartup")
-
+let hyprsunsetPid = 0
 fn applyBr () {
   if temperature < 0 {
     temperature = 0
@@ -27,10 +27,20 @@ fn applyBr () {
   if brightness > 100.0 {
     brightness = 100.0
   }
-  let cmd = "~/scripts/lux-hypr.sh $brightness $temperature"
+  if hyprsunsetPid != 0 {
+    process.kill(hyprsunsetPid, "SIGTERM")
+    hyprsunsetPid = 0
+  } else {
+    if process.exists("hyprsunset") {
+      process.kill("hyprsunset", "SIGTERM")
+    }
+  }
+  while process.exists("hyprsunset") {
+    sleep(0.1)
+  }
+  let cmd = "hyprsunset --gamma $brightness --temperature $temperature"
   let r = runDetached(cmd)
-  print(cmd)
-  print(r)
+  hyprsunsetPid = r.pid
 }
 fn qdbus (cmd) {
   let res = run("qdbus $cmd")
@@ -72,9 +82,7 @@ fn zoom (level) {
       zoomLevel = 8.0
     }
     let cmd = "hyprctl keyword cursor:zoom_factor $zoomLevel"
-    print(cmd)
-    let r = run(cmd)
-    print(r)
+    run(cmd)
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")

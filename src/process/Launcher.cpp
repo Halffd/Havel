@@ -97,7 +97,10 @@ ProcessResult Launcher::runHidden(const std::string &cmd) {
 }
 
 ProcessResult Launcher::runShell(const std::string &cmd) {
-  return run(cmd, {Method::Shell});
+  LaunchParams params;
+  params.method = Method::Shell;
+  debug("Running shell command: " + cmd);
+  return executeShell(cmd, params);
 }
 
 ProcessResult Launcher::runShellDetached(const std::string &cmd) {
@@ -107,7 +110,7 @@ ProcessResult Launcher::runShellDetached(const std::string &cmd) {
   params.windowState = WindowState::Hidden; // Optional: run hidden
 
   debug("Running detached shell command: " + cmd);
-  return run(cmd, params);
+  return executeShell(cmd, params);
 }
 
 ProcessResult Launcher::runDetached(const std::string &cmd) {
@@ -116,7 +119,10 @@ ProcessResult Launcher::runDetached(const std::string &cmd) {
   params.windowState = WindowState::Normal;
   params.priority = Priority::Normal;
   params.detachFromParent = true;
-  return run(cmd, params);
+
+  // Use shell execution to preserve shell features
+  debug("Running detached command with shell: " + cmd);
+  return executeShell(cmd, params);
 }
 
 ProcessResult Launcher::terminal(const std::string &command,
@@ -721,7 +727,7 @@ ProcessResult Launcher::executeShell(const std::string &command,
   result.stderr = "";
 
 #else
-  // Unix implementation with detach support
+  // Unix implementation with proper shell support
   int pipe_stdin[2] = {-1, -1};
   int pipe_stdout[2] = {-1, -1};
   int pipe_stderr[2] = {-1, -1};
@@ -736,41 +742,8 @@ ProcessResult Launcher::executeShell(const std::string &command,
     }
   }
 
-  // Parse command into executable and args for posix_spawn
-  auto parsedArgs = parseCommandLine(command);
-  if (parsedArgs.empty()) {
-    return {-1, -1, false, "Invalid command"};
-  }
-  std::string execName = parsedArgs[0];
-  parsedArgs.erase(parsedArgs.begin());
-
-  posix_spawn_file_actions_t actions;
-  posix_spawn_file_actions_init(&actions);
-
-  // For detached processes, we don't need stdin/stdout/stderr redirection
-  // But we still need to handle case where we're not detaching
-  if (!params.detachFromParent) {
-    posix_spawn_file_actions_adddup2(&actions, pipe_stdin[0], STDIN_FILENO);
-    posix_spawn_file_actions_adddup2(&actions, pipe_stdout[1], STDOUT_FILENO);
-    posix_spawn_file_actions_adddup2(&actions, pipe_stderr[1], STDERR_FILENO);
-  }
-
-  // Prepare argv
-  std::vector<char *> argv;
-  argv.reserve(parsedArgs.size() + 1);
-  for (const auto &arg : parsedArgs) {
-    argv.push_back(const_cast<char *>(arg.c_str()));
-  }
-  argv.push_back(nullptr);
-
-  pid_t pid;
-  int spawn_result = posix_spawnp(&pid, execName.c_str(), &actions, nullptr,
-                                  argv.data(), environ);
-
-  // Clean up file actions
-  posix_spawn_file_actions_destroy(&actions);
-
-  if (spawn_result != 0) {
+  pid_t pid = fork();
+  if (pid == -1) {
     if (!params.detachFromParent) {
       close(pipe_stdin[0]);
       close(pipe_stdin[1]);
@@ -779,13 +752,13 @@ ProcessResult Launcher::executeShell(const std::string &command,
       close(pipe_stderr[0]);
       close(pipe_stderr[1]);
     }
-    return {-1, -1, false,
-            "posix_spawn failed: " + std::string(strerror(spawn_result))};
+    result.error = "fork failed: " + std::string(strerror(errno));
+    result.success = false;
+    return result;
   }
 
   if (pid == 0) {
     // Child process
-
     if (params.detachFromParent) {
       // Create new session and process group
       if (setsid() < 0) {
@@ -830,7 +803,7 @@ ProcessResult Launcher::executeShell(const std::string &command,
       chdir(params.workingDir.c_str());
     }
 
-    // Execute the command
+    // Execute the command using shell to preserve shell features
     execl("/bin/sh", "sh", "-c", command.c_str(), (char *)NULL);
 
     // If we get here, execl failed

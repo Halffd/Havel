@@ -2641,13 +2641,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.getTitle",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            std::string title = this->windowManager.GetActiveWindowTitle();
-            std::cout << "DEBUG: window.getTitle called, got: '" << title << "'"
-                      << std::endl;
-            if (title.empty()) {
-              return HavelValue("TEST_TITLE");
-            }
-            return HavelValue(title);
+            return HavelValue(this->windowManager.GetActiveWindowTitle());
           }));
 
   environment->Define(
@@ -2876,21 +2870,11 @@ void Interpreter::InitializeWindowBuiltins() {
 
   // Expose as module object: window
   auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  std::cout << "DEBUG: Creating window module..." << std::endl;
 
-  if (auto v = environment->Get("window.getTitle")) {
+  if (auto v = environment->Get("window.getTitle"))
     (*win)["getTitle"] = *v;
-    std::cout << "DEBUG: Added window.getTitle" << std::endl;
-  } else {
-    std::cout << "DEBUG: FAILED to get window.getTitle" << std::endl;
-  }
-
-  if (auto v = environment->Get("window.maximize")) {
+  if (auto v = environment->Get("window.maximize"))
     (*win)["maximize"] = *v;
-    std::cout << "DEBUG: Added window.maximize" << std::endl;
-  } else {
-    std::cout << "DEBUG: FAILED to get window.maximize" << std::endl;
-  }
   if (auto v = environment->Get("window.minimize"))
     (*win)["minimize"] = *v;
   if (auto v = environment->Get("window.next"))

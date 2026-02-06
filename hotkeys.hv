@@ -71,9 +71,9 @@ fn zoom (level) {
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
-    let cmd = "/usr/bin/hyprctl keyword cursor:zoom_factor \"$zoomLevel\""
+    let cmd = "hyprctl keyword cursor:zoom_factor $zoomLevel"
     print(cmd)
-    let r = runShell(cmd)
+    let r = run(cmd)
     print(r)
   } else {
     if level == 0 {

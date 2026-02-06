@@ -1,14 +1,22 @@
 #pragma once
+#include "core/CallbackTypes.hpp"     // Include callback types
+#include "core/MouseGestureTypes.hpp" // Include the mouse gesture types
+#include "core/io/Device.hpp"
+#include "core/io/HotkeyExecutor.hpp"
+#include "core/io/KeyMap.hpp"
 #include "types.hpp"
+#include "x11.h"
+#include <X11/extensions/XInput2.h>
 #include <atomic>
+#include <condition_variable>
 #include <fcntl.h>
 #include <functional>
 #include <iostream>
 #include <linux/input.h>
 #include <linux/uinput.h>
-#include <X11/extensions/XInput2.h>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <sys/ioctl.h>
@@ -16,20 +24,15 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <vector>
-#include <condition_variable>
-#include <mutex>
-#include "core/io/HotkeyExecutor.hpp"
-#include "core/io/Device.hpp"
-#include "core/io/KeyMap.hpp"
-#include "core/MouseGestureTypes.hpp"  // Include the mouse gesture types
-#include "core/CallbackTypes.hpp"      // Include callback types
-#include "x11.h"
-#define CLEANMASK(mask) (mask & ~(numlockmask|LockMask) & (ShiftMask|ControlMask|Mod1Mask|Mod2Mask|Mod3Mask|Mod4Mask|Mod5Mask))
+#define CLEANMASK(mask)                                                        \
+  (mask & ~(numlockmask | LockMask) &                                          \
+   (ShiftMask | ControlMask | Mod1Mask | Mod2Mask | Mod3Mask | Mod4Mask |      \
+    Mod5Mask))
 
 namespace havel {
 
 // Forward declarations
-class EventListener;  // Add forward declaration for EventListener
+class EventListener; // Add forward declaration for EventListener
 class HotkeyManager;
 
 enum class MouseButton {
@@ -47,53 +50,55 @@ enum class MouseAction { Hold = 1, Release = 0, Click = 2 };
 enum class HotkeyEventType { Both, Down, Up };
 
 enum class HotkeyType {
-    Keyboard,
-    MouseButton,
-    MouseWheel,
-    MouseMove,
-    MouseGesture,  // New type for mouse gestures
-    Combo
+  Keyboard,
+  MouseButton,
+  MouseWheel,
+  MouseMove,
+  MouseGesture, // New type for mouse gestures
+  Combo
 };
 
 struct HotKey {
-    int id = 0;  // Unique identifier for this hotkey
-    std::string alias;
-    Key key;
-    int modifiers;
-    std::function<void()> callback;
-    std::string action;
-    std::vector<std::function<bool()>> contexts;
-    bool enabled = true;
-    bool grab = false;
-    bool suspend = false;
-    bool success = false;
-    bool evdev = false;
-    bool x11 = false;
-    bool repeat = true;
-    bool wildcard = false;
-    HotkeyType type = HotkeyType::Keyboard;
-    HotkeyEventType eventType = HotkeyEventType::Down;
-    
-    // For mouse buttons
-    int mouseButton = 0;
-    // For wheel events: 1 = up, -1 = down
-    int wheelDirection = 0;
-    // For combos
-    std::vector<HotKey> comboSequence;
-    // Time window for combo in milliseconds
-    int comboTimeWindow = 500;
-    // Whether this combo requires a wheel event to trigger
-    bool requiresWheel = false;
-    // Specific physical keys required by this combo (for precise modifier matching)
-    std::vector<int> requiredPhysicalKeys;
+  int id = 0; // Unique identifier for this hotkey
+  std::string alias;
+  Key key;
+  int modifiers;
+  std::function<void()> callback;
+  std::string action;
+  std::vector<std::function<bool()>> contexts;
+  bool enabled = true;
+  bool grab = false;
+  bool suspend = false;
+  bool success = false;
+  bool evdev = false;
+  bool x11 = false;
+  bool repeat = true;
+  bool wildcard = false;
+  HotkeyType type = HotkeyType::Keyboard;
+  HotkeyEventType eventType = HotkeyEventType::Down;
 
-    // For mouse gestures
-    MouseGesture gestureConfig;
-    std::string gesturePattern;  // Pattern string (e.g., "up,down,left,right" or predefined names like "circle")
+  // For mouse buttons
+  int mouseButton = 0;
+  // For wheel events: 1 = up, -1 = down
+  int wheelDirection = 0;
+  // For combos
+  std::vector<HotKey> comboSequence;
+  // Time window for combo in milliseconds
+  int comboTimeWindow = 500;
+  // Whether this combo requires a wheel event to trigger
+  bool requiresWheel = false;
+  // Specific physical keys required by this combo (for precise modifier
+  // matching)
+  std::vector<int> requiredPhysicalKeys;
 
-    // Repeat interval in milliseconds (0 = use default key repeat)
-    int repeatInterval = 0;
-    std::chrono::steady_clock::time_point lastTriggerTime;
+  // For mouse gestures
+  MouseGesture gestureConfig;
+  std::string gesturePattern; // Pattern string (e.g., "up,down,left,right" or
+                              // predefined names like "circle")
+
+  // Repeat interval in milliseconds (0 = use default key repeat)
+  int repeatInterval = 0;
+  std::chrono::steady_clock::time_point lastTriggerTime;
 };
 struct ParsedHotkey {
   std::string keyPart;
@@ -137,12 +142,12 @@ struct ModifierState {
 
 // Event batching structures for optimization
 struct KeyToken {
-  enum Type { 
-    Modifier,       // ^, +, !, #, etc.
-    Key,            // Regular key or {key_name}
-    ModifierDown,   // {ctrl down}, {shift up}, etc.
+  enum Type {
+    Modifier,     // ^, +, !, #, etc.
+    Key,          // Regular key or {key_name}
+    ModifierDown, // {ctrl down}, {shift up}, etc.
     ModifierUp,
-    Special         // {emergency_release}, {panic}
+    Special // {emergency_release}, {panic}
   } type;
   std::string value;
   bool down = true;
@@ -150,7 +155,7 @@ struct KeyToken {
 
 // Helper to create input_event structs efficiently
 inline input_event MakeEvent(uint16_t type, uint16_t code, int32_t value) {
-  struct input_event ev {};
+  struct input_event ev{};
   gettimeofday(&ev.time, nullptr);
   ev.type = type;
   ev.code = code;
@@ -165,9 +170,7 @@ struct IoEvent {
 };
 class GrabException : public std::exception {
 public:
-  const char *what() const noexcept override {
-    return "Failed to grab hotkey";
-  }
+  const char *what() const noexcept override { return "Failed to grab hotkey"; }
 };
 class EvdevException : public std::exception {
 public:
@@ -181,7 +184,7 @@ class IO {
   std::atomic<bool> mouseEvdevRunning{false};
   std::string evdevDevicePath;
   std::string mouseEvdevDevicePath;
-  int mouseDeviceFd = -1;  // Track the mouse device file descriptor
+  int mouseDeviceFd = -1; // Track the mouse device file descriptor
   std::thread mouseEvdevThread;
   int mouseUinputFd = -1;
   std::atomic<bool> globalAltPressed{false};
@@ -198,22 +201,24 @@ class IO {
   std::atomic<bool> rightButtonDown{false};
   std::string emergencyHotkey = "^!esc";
   // Deadlock protection
-  int evdevShutdownFd = -1;  // eventfd for clean shutdown
+  int evdevShutdownFd = -1; // eventfd for clean shutdown
   std::atomic<bool> callbackInProgress{false};
   std::chrono::steady_clock::time_point lastCallbackStart;
   std::mutex callbackMutex;
   std::condition_variable callbackCv;
   std::atomic<int> pendingCallbacks{0};
-  static constexpr int CALLBACK_TIMEOUT_MS = 5000;  // 5 second timeout for callbacks
-  static constexpr int WATCHDOG_INTERVAL_MS = 1000;  // Check every second
-  
+  static constexpr int CALLBACK_TIMEOUT_MS =
+      5000; // 5 second timeout for callbacks
+  static constexpr int WATCHDOG_INTERVAL_MS = 1000; // Check every second
+
   // Track active callback threads for proper cleanup
   std::vector<std::shared_ptr<std::thread>> activeCallbackThreads;
-  
+
   // New unified event listener
   std::unique_ptr<EventListener> eventListener;
   bool useNewEventListener = false;
   std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
+
 public:
   static std::unordered_map<int, HotKey> hotkeys;
   bool isSuspended = false;
@@ -225,10 +230,12 @@ public:
   ~IO();
 
   // Public access methods for EventListener
-  EventListener* GetEventListener() { return eventListener.get(); }
+  EventListener *GetEventListener() { return eventListener.get(); }
   bool IsUsingNewEventListener() const { return useNewEventListener; }
   std::vector<std::string> GetInputDevices(); // We'll implement this method
-  void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager){ this->hotkeyManager = hotkeyManager; }
+  void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
+    this->hotkeyManager = hotkeyManager;
+  }
 
   // Key sending methods
   void Send(Key key, bool down = true);
@@ -245,20 +252,21 @@ public:
 
   // Hotkey methods
   bool ContextActive(std::vector<std::function<bool()>> contexts);
-  bool EnableHotkey(const std::string& keyName);
-  bool DisableHotkey(const std::string& keyName);
-  bool ToggleHotkey(const std::string& keyName);
-  bool RemoveHotkey(const std::string& keyName);  // Remove by name
-  bool RemoveHotkey(int hotkeyId);                // Remove by ID
+  bool EnableHotkey(const std::string &keyName);
+  bool DisableHotkey(const std::string &keyName);
+  bool ToggleHotkey(const std::string &keyName);
+  bool RemoveHotkey(const std::string &keyName); // Remove by name
+  bool RemoveHotkey(int hotkeyId);               // Remove by ID
   bool AddHotkey(const std::string &alias, Key key, int modifiers,
                  std::function<void()> callback);
   HotKey AddMouseHotkey(const std::string &hotkeyStr,
-  std::function<void()> action, int id = 0);
+                        std::function<void()> action, int id = 0);
 
-  HotKey AddHotkey(const std::string &rawInput, std::function<void()> action, int id = 0);
+  HotKey AddHotkey(const std::string &rawInput, std::function<void()> action,
+                   int id = 0);
 
-  bool Hotkey(const std::string &hotkeyStr, std::function<void()> action, const std::string &condition = "",
-              int id = 0);
+  bool Hotkey(const std::string &hotkeyStr, std::function<void()> action,
+              const std::string &condition = "", int id = 0);
   bool Suspend();
   bool Suspend(int id);
 
@@ -273,43 +281,50 @@ public:
   // Mouse methods
   bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
   bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
-  
+
   // XInput2 hardware mouse control
   bool InitializeXInput2();
   bool SetHardwareMouseSensitivity(double sensitivity);
-  
+
   // Mouse event handling
   bool StartEvdevMouseListener(const std::string &mouseDevicePath);
   void StopEvdevMouseListener();
-  bool handleMouseButton(const input_event& ev);
-  bool handleMouseRelative(const input_event& ev);
-  bool handleMouseAbsolute(const input_event& ev);
+  bool handleMouseButton(const input_event &ev);
+  bool handleMouseRelative(const input_event &ev);
+  bool handleMouseAbsolute(const input_event &ev);
   bool SetupMouseUinputDevice();
-  void SendMouseUInput(const input_event& ev);
+  void SendMouseUInput(const input_event &ev);
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
-  void executeComboAction(const std::string& action);
+  void executeComboAction(const std::string &action);
   void CleanupUinputDevice();
   // Access current modifier bitmask (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
-  int GetCurrentModifiers() const { 
-    if(currentModifierState.leftCtrl || currentModifierState.rightCtrl) return ControlMask;
-    if(currentModifierState.leftShift || currentModifierState.rightShift) return ShiftMask;
-    if(currentModifierState.leftAlt || currentModifierState.rightAlt) return Mod1Mask;
-    if(currentModifierState.leftMeta || currentModifierState.rightMeta) return Mod4Mask;
+  int GetCurrentModifiers() const {
+    if (currentModifierState.leftCtrl || currentModifierState.rightCtrl)
+      return ControlMask;
+    if (currentModifierState.leftShift || currentModifierState.rightShift)
+      return ShiftMask;
+    if (currentModifierState.leftAlt || currentModifierState.rightAlt)
+      return Mod1Mask;
+    if (currentModifierState.leftMeta || currentModifierState.rightMeta)
+      return Mod4Mask;
     return 0;
-   }
-  const ModifierState& GetModifierState() const { return currentModifierState; }
-  
-  // Mouse sensitivity control (1.0 is default, lower values decrease sensitivity, higher values increase it)
+  }
+  const ModifierState &GetModifierState() const { return currentModifierState; }
+
+  // Mouse sensitivity control (1.0 is default, lower values decrease
+  // sensitivity, higher values increase it)
   void SetMouseSensitivity(double sensitivity);
   double GetMouseSensitivity() const;
-  
-  // Mouse scroll speed control (1.0 is default, lower values decrease speed, higher values increase it)
+
+  // Mouse scroll speed control (1.0 is default, lower values decrease speed,
+  // higher values increase it)
   void SetScrollSpeed(double speed);
   double GetScrollSpeed() const;
-  
+
   // Enhanced mouse movement with custom sensitivity
-  bool MouseMoveSensitive(int dx, int dy, int baseSpeed = 5, float accel = 1.5f);
+  bool MouseMoveSensitive(int dx, int dy, int baseSpeed = 5,
+                          float accel = 1.5f);
 
   void MouseClick(int button);
   void MouseDown(int button);
@@ -317,16 +332,16 @@ public:
   void MouseWheel(int amount);
 
   // State methods
-  bool GetKeyState(const std::string& keyName);
+  bool GetKeyState(const std::string &keyName);
   bool GetKeyState(int keycode); // For raw keycodes
   bool IsAnyKeyPressed();
-  bool IsAnyKeyPressedExcept(const std::string& excludeKey);
-  bool IsAnyKeyPressedExcept(const std::vector<std::string>& excludeKeys);
-  bool IsKeyPressed(const std::string& keyName) { return GetKeyState(keyName); }
-  
+  bool IsAnyKeyPressedExcept(const std::string &excludeKey);
+  bool IsAnyKeyPressedExcept(const std::vector<std::string> &excludeKeys);
+  bool IsKeyPressed(const std::string &keyName) { return GetKeyState(keyName); }
+
   // Modifier state helpers
   bool IsShiftPressed();
-  bool IsCtrlPressed(); 
+  bool IsCtrlPressed();
   bool IsAltPressed();
   bool IsWinPressed();
 
@@ -345,11 +360,12 @@ public:
 
   int GetKeyboard();
 
-  static ParsedHotkey ParseModifiersAndFlags(const std::string& input, bool isEvdev);
-  static KeyCode ParseKeyPart(const std::string& keyPart, bool isEvdev);
-  static ParsedHotkey ParseHotkeyString(const std::string& rawInput);
+  static ParsedHotkey ParseModifiersAndFlags(const std::string &input,
+                                             bool isEvdev);
+  static KeyCode ParseKeyPart(const std::string &keyPart, bool isEvdev);
+  static ParsedHotkey ParseHotkeyString(const std::string &rawInput);
   static int ParseModifiers(std::string str);
-  static int ParseMouseButton(const std::string& str);
+  static int ParseMouseButton(const std::string &str);
 
   void AssignHotkey(HotKey hotkey, int id);
 
@@ -366,8 +382,8 @@ public:
   bool UngrabHotkeysByPrefix(const std::string &prefix);
 
   // Key mapping
-  void Map(const std::string& from, const std::string& to);
-  void Remap(const std::string& key1, const std::string& key2);
+  void Map(const std::string &from, const std::string &to);
+  void Remap(const std::string &key1, const std::string &key2);
 
   // Static methods
   static void removeSpecialCharacters(std::string &keyName);
@@ -376,11 +392,7 @@ public:
 
   static Key StringToVirtualKey(std::string keyName);
 
-  // Call this to start listening on your keyboard device
-  bool StartEvdevHotkeyListener(const std::string &devicePath);
-
-  // Call this to stop the thread cleanly
-  void StopEvdevHotkeyListener();
+  // Old hotkey system removed - use EventListener and KeyMap instead
 
   // Public method for emergency cleanup (signals)
   void UngrabAll();
@@ -425,7 +437,7 @@ public:
       static_assert(always_false<S>, "Unsupported type for action");
     }
   }
-  
+
   template <typename T>
   bool MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
     if (!MouseMove(dx, dy, speed, accel))
@@ -443,12 +455,12 @@ public:
   bool shutdown = false;
 
   // Performance optimization: Keycode caching and batch event helpers
-  static int GetKeyCacheLookup(const std::string& keyName);
-  static std::vector<KeyToken> ParseKeyString(const std::string& keys);
-  void SendBatchedKeyEvents(const std::vector<input_event>& events);
+  static int GetKeyCacheLookup(const std::string &keyName);
+  static std::vector<KeyToken> ParseKeyString(const std::string &keys);
+  void SendBatchedKeyEvents(const std::vector<input_event> &events);
 
 private:
-  Display* display;
+  Display *display;
   int uinputFd;
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;
@@ -458,16 +470,15 @@ private:
   template <typename T> static constexpr bool always_false = false;
   unsigned int numlockmask = 0;
 
-
-  std::set<int> grabbedKeys;  // Keys that should be blocked
+  std::set<int> grabbedKeys; // Keys that should be blocked
   std::mutex grabbedKeysMutex;
-  bool blockAllInput = false;  // Emergency block all input
+  bool blockAllInput = false; // Emergency block all input
   static int XErrorHandler(Display *dpy, XErrorEvent *ee);
 
   // Track the original state of conditional hotkeys during suspend
   struct ConditionalHotkeyState {
-      int id;
-      bool wasGrabbed;
+    int id;
+    bool wasGrabbed;
   };
   std::vector<ConditionalHotkeyState> suspendedConditionalHotkeyStates;
   bool wasSuspended = false;
@@ -477,12 +488,12 @@ private:
   bool EmitClick(int btnCode, int action);
 
   bool SetupUinputDevice();
-  // X11 hotkey monitoring
-  void MonitorHotkeys();
+  // X11 hotkey monitoring removed - use EventListener instead
 
   static Key EvdevNameToKeyCode(std::string keyName);
 
-  bool MatchEvdevModifiers(int expectedModifiers, const std::map<int, bool>& keyState);
+  bool MatchEvdevModifiers(int expectedModifiers,
+                           const std::map<int, bool> &keyState);
   // Platform specific implementations
   std::map<std::string, Key> keyMap;
   std::map<int, bool> evdevKeyState;
@@ -502,17 +513,17 @@ private:
   static int hotkeyCount;
 
   static std::atomic<int> syntheticEventsExpected;
-  std::timed_mutex hotkeyMutex;  // Use timed_mutex for try_lock_for() support
+  std::timed_mutex hotkeyMutex; // Use timed_mutex for try_lock_for() support
   std::mutex blockedKeysMutex;
   std::map<int, bool> keyDownState;
-  
+
   // Remap tracking (persistent across events)
   std::mutex remapMutex;
-  std::unordered_map<int, int> activeRemaps;  // original -> mapped
-  
+  std::unordered_map<int, int> activeRemaps; // original -> mapped
+
   // Mouse control members
   mutable std::mutex mouseMutex;
-  
+
   // XInput2 device ID for the pointer device
   int xinput2DeviceId = -1;
   bool xinput2Available = false;
@@ -523,8 +534,8 @@ private:
   std::unordered_map<KeySym, KeySym> remappedKeys;
   bool IsKeyRemappedTo(int targetKey);
   // Evdev key mapping
-  std::unordered_map<int, int> evdevKeyMap;        // Maps from scancode to scancode
-  std::unordered_map<int, int> evdevRemappedKeys;  // Bidirectional remapping
+  std::unordered_map<int, int> evdevKeyMap; // Maps from scancode to scancode
+  std::unordered_map<int, int> evdevRemappedKeys; // Bidirectional remapping
 
   void SendKeyEvent(Key key, bool down);
 
@@ -534,24 +545,25 @@ private:
   bool Grab(Key input, unsigned int modifiers, Window root, bool grab,
             bool isMouse = false);
 
-  void Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse = false);
+  void Ungrab(Key input, unsigned int modifiers, Window root,
+              bool isMouse = false);
   bool GrabKeyboard();
   bool FastGrab(Key input, unsigned int modifiers, Window root);
   bool GrabAllHotkeys();
-  std::string findEvdevDevice(const std::string& deviceName);
+  std::string findEvdevDevice(const std::string &deviceName);
   std::vector<InputDevice> getInputDevices();
   void listInputDevices();
 
   std::string getGamepadDevice();
-  void StartEvdevGamepadListener(const std::string& devicePath);
+  void StartEvdevGamepadListener(const std::string &devicePath);
   void StopEvdevGamepadListener();
   // Combo evaluation
-  bool EvaluateCombo(const HotKey& combo);
-  
+  bool EvaluateCombo(const HotKey &combo);
+
   // Device detection helpers
   std::string detectEvdevDevice(
-    const std::vector<std::string> &patterns,
-    const std::function<bool(const std::string &, int)> &deviceFilter);
+      const std::vector<std::string> &patterns,
+      const std::function<bool(const std::string &, int)> &deviceFilter);
   std::string getKeyboardDevice();
   std::string getMouseDevice();
 };

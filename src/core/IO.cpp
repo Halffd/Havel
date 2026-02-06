@@ -452,70 +452,7 @@ IO::IO() {
         error("No input devices found for EventListener");
       }
     } else {
-      // Use old separate listeners
-      // Initialize keyboard device
-      std::string keyboardDevice = getKeyboardDevice();
-      if (!keyboardDevice.empty()) {
-        try {
-          info("Using keyboard device: {}", keyboardDevice);
-          SetupUinputDevice();
-          std::this_thread::sleep_for(std::chrono::milliseconds(10));
-          StartEvdevHotkeyListener(keyboardDevice);
-          info("Successfully started evdev hotkey listener for keyboard");
-        } catch (const std::exception &e) {
-          error("Failed to start evdev keyboard listener: {}", e.what());
-          globalEvdev = false;
-        }
-      } else {
-        globalEvdev = false;
-        error("Failed to find a suitable keyboard device");
-      }
-
-      // Initialize mouse device
-      std::string mouseDevice = getMouseDevice();
-      if (!mouseDevice.empty() && mouseDevice != keyboardDevice &&
-          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        try {
-          info("Using mouse device: {}", mouseDevice);
-          StartEvdevMouseListener(mouseDevice);
-          info("Successfully started evdev mouse listener");
-        } catch (const std::exception &e) {
-          error("Failed to start evdev mouse listener: {}", e.what());
-        }
-      } else if (mouseDevice.empty()) {
-        warning("No suitable mouse device found");
-      }
-
-      // Initialize gamepad device if requested
-      bool enableGamepad =
-          Configs::Get().Get<bool>("Device.EnableGamepad", false);
-      if (enableGamepad) {
-        std::string gamepadDevice = getGamepadDevice();
-        if (!gamepadDevice.empty()) {
-          try {
-            info("Using gamepad device: {}", gamepadDevice);
-            StartEvdevGamepadListener(gamepadDevice);
-            info("Successfully started evdev gamepad listener");
-          } catch (const std::exception &e) {
-            error("Failed to start evdev gamepad listener: {}", e.what());
-          }
-        } else {
-          warning(
-              "Gamepad support enabled but no suitable gamepad device found");
-        }
-      }
-    }
-
-    // Fall back to X11 hotkeys if evdev initialization failed
-    if (!globalEvdev) {
-      timerRunning = true;
-      try {
-        timerThread = std::thread(&IO::MonitorHotkeys, this);
-        info("Started X11 hotkey monitoring thread");
-      } catch (const std::exception &e) {
-        error("Failed to start X11 hotkey monitoring thread: {}", e.what());
-        timerRunning = false;
-      }
+      error("EventListener disabled - no input handling available");
     }
 
     // Debug output - show what we detected
@@ -528,15 +465,7 @@ IO::IO() {
 IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
-  // Stop the hotkey monitoring thread
-  if (timerRunning && timerThread.joinable()) {
-    timerRunning = false;
-    timerThread.join();
-  }
-
-  // Stop the evdev listener if it's running
-  StopEvdevHotkeyListener();
-  StopEvdevMouseListener();
+  // EventListener handles all cleanup now
 
   // Stop EventListener if using new event system
   if (eventListener) {
@@ -772,6 +701,7 @@ bool IO::FastGrab(Key input, unsigned int modifiers, Window root) {
 bool IO::ModifierMatch(unsigned int expected, unsigned int actual) {
   return CLEANMASK(expected) == CLEANMASK(actual);
 }
+/*
 void IO::MonitorHotkeys() {
 #ifdef __linux__
   info("Starting X11 hotkey monitoring thread");
@@ -930,6 +860,7 @@ void IO::MonitorHotkeys() {
   info("Hotkey monitoring thread stopped");
 #endif // __linux__
 }
+*/
 // X11 hotkey monitoring thread
 void IO::InitKeyMap() {
   // Basic implementation of key map
@@ -4264,6 +4195,7 @@ bool IO::IsKeyRemappedTo(int targetKey) {
   return false;
 }
 
+/*
 bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   if (evdevRunning)
     return false;
@@ -4656,6 +4588,8 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 
   return true;
 }
+*/
+/*
 void IO::StopEvdevHotkeyListener() {
   if (!evdevRunning)
     return;
@@ -4677,6 +4611,7 @@ void IO::StopEvdevHotkeyListener() {
 
   info("Evdev hotkey listener stopped");
 }
+*/
 
 void IO::CleanupUinputDevice() {
   if (mouseUinputFd >= 0) {

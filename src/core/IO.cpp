@@ -1382,14 +1382,14 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
                    baseSpeed, 1.0f);
 }
 
-bool IO::Scroll(int dy, int dx) {
+bool IO::Scroll(double dy, double dx) {
   std::lock_guard<std::mutex> lock(mouseMutex);
 
   // Apply scroll speed
-  if (dy != 0)
-    dy = static_cast<int>(dy * scrollSpeed);
-  if (dx != 0)
-    dx = static_cast<int>(dx * scrollSpeed);
+  if (dy != 0.0)
+    dy = dy * scrollSpeed;
+  if (dx != 0.0)
+    dx = dx * scrollSpeed;
 
   if (uinputFd < 0)
     return false;
@@ -1404,10 +1404,11 @@ bool IO::Scroll(int dy, int dx) {
     return true;
   };
   debug("Scrolling: {} {}", dx, dy);
-  // Emit relative scrolls
-  if (dy != 0 && !emitScroll(REL_WHEEL, dy))
+
+  // Emit relative scrolls with proper rounding
+  if (dy != 0.0 && !emitScroll(REL_WHEEL, static_cast<int>(std::round(dy))))
     return false;
-  if (dx != 0 && !emitScroll(REL_HWHEEL, dx))
+  if (dx != 0.0 && !emitScroll(REL_HWHEEL, static_cast<int>(std::round(dx))))
     return false;
 
   // Sync event

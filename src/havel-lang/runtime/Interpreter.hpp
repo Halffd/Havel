@@ -12,6 +12,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -205,6 +206,7 @@ private:
   GUIManager *guiManager;
   ScreenshotManager *screenshotManager;
   HavelResult lastResult;
+  std::mutex interpreterMutex; // Protect interpreter state
 
   // Keep parsed programs alive for function declarations captured by closures
   std::vector<std::unique_ptr<ast::Program>> loadedPrograms;

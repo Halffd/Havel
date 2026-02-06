@@ -137,7 +137,7 @@ fn zoomToggle () {
 
 
 !Esc => {
-  app.exit()
+  app.quit()
 }
 
 #Esc => {
@@ -626,7 +626,7 @@ let mouseAcc = 1
 # Emergency exit
 @^!+#Esc => {
   io.emergencyReleaseAllKeys()
-  app.exit()
+  app.quit()
 }
 
 @+#Esc => io.emergencyReleaseAllKeys()

@@ -298,8 +298,8 @@ void HavelApp::setupTimers() {
 void HavelApp::setupSignalHandling() {
   try {
     havel::util::blockAllSignals();
-    signalWatcher.start();
-    info("Signal handling initialized");
+    // signalWatcher.start(); // DISABLED - EventListener handles signals
+    info("Signal handling initialized - EventListener manages signals");
 
     // Set up immediate cleanup on signal reception - prioritize evdev
     // ungrabbing

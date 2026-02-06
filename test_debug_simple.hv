@@ -1,4 +1,0 @@
-// Test debug module with proper syntax
-debug.enabled = true
-debug.print("Debug is working!")
-debug.trace("Trace message test")

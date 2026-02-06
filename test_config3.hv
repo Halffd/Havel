@@ -1,9 +1,0 @@
-// Test script to check config object
-log "Testing config object..."
-if config {
-  log "Config object exists"
-  let result = config.load()
-  log "Config load result: " + result
-} else {
-  log "Config object is null or undefined"
-}

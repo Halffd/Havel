@@ -1,0 +1,4 @@
+print("System detection:")
+system = detectSystem()
+print("Window Manager: " + system.windowManager)
+print("Display Protocol: " + system.displayProtocol)

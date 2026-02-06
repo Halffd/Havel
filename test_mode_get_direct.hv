@@ -1,3 +1,0 @@
-// Test if mode.get function exists directly
-print "Testing mode.get directly:"
-mode.get()

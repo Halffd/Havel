@@ -1,3 +1,0 @@
-// Test script to verify config object
-let result = config.load()
-log "Config load result: " + result

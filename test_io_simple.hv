@@ -1,4 +1,0 @@
-print("Testing io module after fix...")
-print("io object:", io)
-print("io.map:", io.map)
-print("io.remap:", io.remap)

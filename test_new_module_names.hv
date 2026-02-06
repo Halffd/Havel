@@ -1,5 +1,0 @@
-// Test modeModule and configModule with new names
-print "modeModule:", modeModule
-print "configModule:", configModule
-print "modeModule.get():", modeModule.get()
-print "configModule.get():", configModule.get("General.GamingApps", "not found")

@@ -1,6 +1,0 @@
-print("Testing mode system...")
-print("mode object:", mode)
-print("mode.get():", mode.get())
-print("mode.set('test'):")
-mode.set("test")
-print("mode.get() after set:", mode.get())

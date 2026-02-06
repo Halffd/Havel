@@ -48,14 +48,13 @@ fn zoom (level) {
     if level == 4 {
       zoomLevel = 2.0
     }
-    print("$level: $zoomLevel")
-    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
     if zoomLevel < 1.0 {
       zoomLevel = 1.0
     }
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
+    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
@@ -961,8 +960,8 @@ let mpvHotkeys = {
 }
 
 # TODO: Fix for loop parsing
-# for key in mpvHotkeys {
-#   let action = mpvHotkeys[key]
-#   let hk = Hotkey(key, action, "mode == \"gaming\"")
-#   log hk.id
-# }
+for key in mpvHotkeys {
+  let action = mpvHotkeys[key]
+  let hk = Hotkey(key, action, "mode == \"gaming\"")
+  log hk.id
+}

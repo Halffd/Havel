@@ -1,3 +1,0 @@
-// Test if config.get function exists
-print "Testing config.get directly:"
-config.get("General.GamingApps", "not found")

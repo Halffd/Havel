@@ -1,0 +1,5 @@
+print("Testing window functions...")
+title = window.getTitle()
+print("Window title: " + title)
+pid = window.getPID()
+print("Window PID: " + pid)

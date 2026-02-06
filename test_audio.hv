@@ -1,7 +1,0 @@
-// Test script to check audio object
-log "Testing audio object..."
-if audio {
-  log "Audio object exists"
-} else {
-  log "Audio object is null"
-}

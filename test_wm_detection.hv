@@ -1,0 +1,17 @@
+// Test window manager and compositor detection
+print("=== Window Manager Detection Test ===")
+
+// Test if we can get window info
+try:
+    title = window.getTitle()
+    print("Active window title: " + title)
+except:
+    print("Error getting window title")
+
+try:
+    pid = window.getPID()
+    print("Active window PID: " + pid)
+except:
+    print("Error getting window PID")
+
+print("=== Test Complete ===")

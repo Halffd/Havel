@@ -1,3 +1,0 @@
-// Test io module
-print "IO module:", io
-print "io.mouseMove:", io.mouseMove

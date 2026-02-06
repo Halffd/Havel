@@ -1,2 +1,0 @@
-// Test script without config.load() since config loads automatically
-log "Script started successfully - config is already loaded at C++ level"

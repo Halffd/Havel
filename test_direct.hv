@@ -1,0 +1,3 @@
+print("Testing direct window manager functions...")
+print("IsWayland: " + WindowManager.IsWayland())
+print("Title from WindowManager: " + WindowManager.GetActiveWindowTitle())

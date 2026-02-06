@@ -94,18 +94,9 @@ pID WindowManager::GetActiveWindowPID() {
 
 std::string WindowManager::GetActiveWindowTitle() {
 #ifdef __linux__
-  std::cout << "DEBUG: GetActiveWindowTitle called" << std::endl;
-  debug("WindowManager: GetActiveWindowTitle() called");
-  debug("WindowManager: IsWayland()={}, compositorBridge={}, IsAvailable()={}",
-        IsWayland(),
-        compositorBridge ? (compositorBridge->IsAvailable() ? "true" : "false")
-                         : "null");
   // On Wayland, use CompositorBridge
   if (IsWayland() && compositorBridge && compositorBridge->IsAvailable()) {
-    debug("WindowManager: Getting active window from CompositorBridge");
     auto windowInfo = compositorBridge->GetActiveWindow();
-    debug("WindowManager: Got window info - valid={}, title='{}'",
-          windowInfo.valid, windowInfo.title);
     if (windowInfo.valid) {
       return windowInfo.title;
     }

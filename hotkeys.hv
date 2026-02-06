@@ -2,6 +2,7 @@ config.load()
 let sys = detectSystem()
 let wl = sys.displayProtocol == "Wayland"
 let wm = sys.windowManager
+let hypr = wm == "Hyprland"
 let brightness = 90
 let temperature = 6500
 # let isStartup = contains(app.args, "--startup")
@@ -13,7 +14,7 @@ let zoomLevel = 1.0
 print("wl: $wl")
 print("wm: $wm")
 # print("isStartup: $isStartup")
-let hyprsunsetPid = 0
+
 fn applyBr () {
   if temperature < 0 {
     temperature = 0
@@ -27,20 +28,8 @@ fn applyBr () {
   if brightness > 100.0 {
     brightness = 100.0
   }
-  if hyprsunsetPid != 0 {
-    process.kill(hyprsunsetPid, "SIGTERM")
-    hyprsunsetPid = 0
-  } else {
-    if process.exists("hyprsunset") {
-      process.kill("hyprsunset", "SIGTERM")
-    }
-  }
-  while process.exists("hyprsunset") {
-    sleep(0.1)
-  }
-  let cmd = "hyprsunset --gamma $brightness --temperature $temperature"
-  let r = runDetached(cmd)
-  hyprsunsetPid = r.pid
+  let cmd = "~/scripts/lux-hypr.sh $brightness $temperature"
+  runDetached(cmd)
 }
 fn qdbus (cmd) {
   let res = run("qdbus $cmd")
@@ -59,7 +48,7 @@ fn zoom (level) {
   } else if level > 4 {
     level = 4
   }
-  if wl == true {
+  if hypr {
     if level == 0 {
       zoomLevel -= inc
     }
@@ -81,8 +70,7 @@ fn zoom (level) {
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
-    let cmd = "hyprctl keyword cursor:zoom_factor $zoomLevel"
-    run(cmd)
+    run("hyprctl keyword cursor:zoom_factor $zoomLevel")
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
@@ -119,7 +107,7 @@ fn zoom (level) {
 }
 
 fn zoomToggle () {
-  if wl {
+  if hypr {
     if zoomLevel <= 1.0 {
       zoom(3)
     } else {
@@ -435,7 +423,7 @@ RShift & WheelDown => { zoom(0) }
 @RButton & WheelDown => { zoom(0) }
 
 +f7 => {
-  if wl {
+  if hypr {
     temperature -= 200
     applyBr()
   } else {
@@ -452,7 +440,7 @@ RShift & WheelDown => { zoom(0) }
 }
 
 +f8 => {
-  if wl {
+  if hypr {
     temperature += 200
     applyBr()
   } else {
@@ -493,7 +481,7 @@ f3 => {
   let gg = config.get("Display.DefaultGammaG", "1.0")
   let gb = config.get("Display.DefaultGammaB", "1.0")
   let temp = config.get("Display.DefaultTemperature", "6500")
-  if wl {
+  if hypr {
     temperature = temp
     brightness = b
     applyBr()
@@ -516,7 +504,7 @@ f3 => {
 }
 
 f7 => { 
-  if wl {
+  if hypr {
     brightness -= 5.0
     applyBr()
   } else {
@@ -526,7 +514,7 @@ f7 => {
 ^f7 => { brightnessManager.decreaseBrightness(0, 0.05) }
 
 f8 => { 
-  if wl {
+  if hypr {
     brightness += 5.0
     applyBr()
   } else {
@@ -576,7 +564,7 @@ f8 => {
 @!+f10 => { brightnessManager.increaseGamma(1, 200) }
 !+f9 => { brightnessManager.decreaseGamma(1, 200) }
 
-if wl {
+if hypr {
   ^Down => zoom(0)
   ^Up => zoom(1)
   ^/ => zoom(2)

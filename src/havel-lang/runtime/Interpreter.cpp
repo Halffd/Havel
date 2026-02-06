@@ -22,6 +22,7 @@
 #include <random>
 #include <signal.h>
 #include <sstream>
+#include <sys/resource.h>
 #include <thread>
 #include <unistd.h>
 namespace havel {
@@ -2013,12 +2014,125 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(havel::ProcessManager::sendSignal(pid, sig));
       }));
 
+  environment->Define(
+      "process.kill",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("process.kill() requires (pid, signal)");
+        pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+        std::string signalStr = ValueToString(args[1]);
+
+        // Convert signal string to number
+        int signal = SIGTERM; // default
+        if (signalStr == "SIGTERM") {
+          signal = SIGTERM;
+        } else if (signalStr == "SIGKILL") {
+          signal = SIGKILL;
+        } else if (signalStr == "SIGINT") {
+          signal = SIGINT;
+        } else {
+          // Try to parse as number
+          try {
+            signal = std::stoi(signalStr);
+          } catch (...) {
+            return HavelRuntimeError("Invalid signal: " + signalStr);
+          }
+        }
+
+        return HavelValue(havel::ProcessManager::sendSignal(pid, signal));
+      }));
+
+  environment->Define(
+      "process.exists",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "process.exists() requires pid or process name");
+
+        // Check if argument is a number (PID) or string (process name)
+        if (args[0].isNumber()) {
+          pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+          return HavelValue(havel::ProcessManager::isProcessAlive(pid));
+        } else {
+          // Search by process name
+          std::string name = ValueToString(args[0]);
+          auto processes = havel::ProcessManager::findProcesses(name);
+          return HavelValue(!processes.empty());
+        }
+      }));
+
+  environment->Define(
+      "process.find",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("process.find() requires process name");
+
+        std::string name = ValueToString(args[0]);
+        auto processes = havel::ProcessManager::findProcesses(name);
+
+        // Convert to array of process info objects
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+        for (const auto &proc : processes) {
+          auto procObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*procObj)["pid"] = HavelValue(static_cast<double>(proc.pid));
+          (*procObj)["ppid"] = HavelValue(static_cast<double>(proc.ppid));
+          (*procObj)["name"] = HavelValue(proc.name);
+          (*procObj)["command"] = HavelValue(proc.command);
+          (*procObj)["user"] = HavelValue(proc.user);
+          (*procObj)["cpu_usage"] = HavelValue(proc.cpu_usage);
+          (*procObj)["memory_usage"] =
+              HavelValue(static_cast<double>(proc.memory_usage));
+          resultArray->push_back(HavelValue(procObj));
+        }
+
+        return HavelValue(resultArray);
+      }));
+
+  environment->Define(
+      "process.nice",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("process.nice() requires (pid, nice_value)");
+
+        pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+        int niceValue = static_cast<int>(ValueToNumber(args[1]));
+
+        return HavelValue(
+            havel::ProcessManager::setProcessNice(pid, niceValue));
+      }));
+
+  environment->Define(
+      "process.ionice",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError(
+              "process.ionice() requires (pid, class, data)");
+
+        pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
+        int ioclass = static_cast<int>(ValueToNumber(args[1]));
+        int iodata = static_cast<int>(ValueToNumber(args[2]));
+
+        return HavelValue(
+            havel::ProcessManager::setProcessIoPriority(pid, ioclass, iodata));
+      }));
+
   auto processObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
   if (auto v = environment->Get("process.getState"))
     (*processObj)["getState"] = *v;
   if (auto v = environment->Get("process.sendSignal"))
     (*processObj)["sendSignal"] = *v;
+  if (auto v = environment->Get("process.kill"))
+    (*processObj)["kill"] = *v;
+  if (auto v = environment->Get("process.exists"))
+    (*processObj)["exists"] = *v;
+  if (auto v = environment->Get("process.find"))
+    (*processObj)["find"] = *v;
+  if (auto v = environment->Get("process.nice"))
+    (*processObj)["nice"] = *v;
+  if (auto v = environment->Get("process.ionice"))
+    (*processObj)["ionice"] = *v;
   if (auto v = environment->Get("SIGSTOP"))
     (*processObj)["SIGSTOP"] = *v;
   if (auto v = environment->Get("SIGCONT"))

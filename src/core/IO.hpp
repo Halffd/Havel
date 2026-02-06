@@ -444,7 +444,7 @@ public:
       return false;
     return Click(btnCode, MouseAction::Click);
   }
-  bool Scroll(int dy, int dx = 0);
+  bool Scroll(double dy, double dx = 0);
 
   void EmergencyReleaseAllKeys();
   bool TryPressKey(int keycode);

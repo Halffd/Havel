@@ -386,6 +386,40 @@ system.notify(msg)   // Show notification
 system.beep()        // System beep
 system.sleep(ms)     // Delay execution
 
+Process Management Module
+process.find(name)           // Find processes by name
+process.exists(pid|name)     // Check if process exists
+process.kill(pid, signal)    // Send signal to process
+process.nice(pid, value)     // Set CPU priority (-20 to 19)
+process.ionice(pid, class, data)  // Set I/O priority
+
+Process Discovery and Control
+// Find all Firefox processes
+let firefox_procs = process.find("firefox")
+for proc in firefox_procs {
+    print("PID: ${proc.pid}, CPU: ${proc.cpu_usage}%")
+}
+
+// Process lifecycle management
+if process.exists("chrome") {
+    let chrome = process.find("chrome")
+    process.kill(chrome[0].pid, "SIGTERM")
+}
+
+// Priority control
+process.nice(1234, 10)           // Lower CPU priority
+process.ionice(1234, 2, 4)      // Best-effort I/O, priority 4
+
+Process Information Object
+When using process.find(), each process object contains:
+- pid: Process ID
+- ppid: Parent process ID  
+- name: Process name
+- command: Full command line
+- user: Process owner
+- cpu_usage: CPU usage percentage
+- memory_usage: Memory usage in bytes
+
 🛠️ Development Tools
 IDE Integration
 	* VS Code Extension - Syntax highlighting, IntelliSense, debugging

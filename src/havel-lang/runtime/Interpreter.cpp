@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <sstream>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <thread>
 #include <unistd.h>
 namespace havel {
@@ -166,6 +167,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
 }
 
 HavelResult Interpreter::Execute(const std::string &sourceCode) {
+  std::lock_guard<std::mutex> lock(interpreterMutex);
   try {
     parser::Parser parser;
     auto program = parser.produceAST(sourceCode);
@@ -192,6 +194,7 @@ void Interpreter::RegisterHotkeys(const std::string &sourceCode) {
 }
 
 HavelResult Interpreter::Evaluate(const ast::ASTNode &node) {
+  std::lock_guard<std::mutex> lock(interpreterMutex);
   const_cast<ast::ASTNode &>(node).accept(*this);
   return lastResult;
 }
@@ -2228,31 +2231,21 @@ void Interpreter::InitializeSystemBuiltins() {
   (*appObj)["restart"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
-        auto pid = ProcessManager::getCurrentPid();
-        std::string exec = ProcessManager::getProcessExecutablePath(pid);
-        if (exec.empty()) {
-          return HavelRuntimeError("Failed to resolve current executable");
-        }
 
-        fflush(nullptr);
-
-        std::vector<char *> argv;
-        argv.push_back(const_cast<char *>(exec.c_str()));
-        argv.push_back(nullptr);
-        execvp(exec.c_str(), argv.data());
-
-        std::string err =
-            std::string("Failed to exec: ") + std::strerror(errno);
         if (App::instance()) {
-          App::quit();
+          // Use Qt's proper restart mechanism
+          QCoreApplication::exit(42); // Use special exit code for restart
+          return HavelValue(true);
         }
-        return HavelRuntimeError(err);
+
+        return HavelRuntimeError("App is not running");
       });
 
   // Add info function to app module
   (*appObj)["info"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
+
         auto infoObj =
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
@@ -3566,10 +3559,10 @@ void Interpreter::InitializeIOBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
-              return HavelRuntimeError("io.scroll() requires dy");
-            int dy = static_cast<int>(ValueToNumber(args[0]));
-            int dx =
-                args.size() >= 2 ? static_cast<int>(ValueToNumber(args[1])) : 0;
+              return HavelRuntimeError("io.scroll() requires dy, [dx]");
+
+            double dy = ValueToNumber(args[0]);
+            double dx = args.size() >= 2 ? ValueToNumber(args[1]) : 0.0;
             bool ok = this->io.Scroll(dy, dx);
             return HavelValue(ok);
           }));
@@ -3692,7 +3685,8 @@ void Interpreter::InitializeIOBuiltins() {
           help << "  - help(\"syntax\")   : Show syntax reference\n";
           help << "  - help(\"keywords\"): Show all keywords and usage\n";
           help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
-          help << "  - help(\"modules\")  : Show available modules\n\n";
+          help << "  - help(\"modules\")  : Show available modules\n";
+          help << "  - help(\"process\")  : Show process management\n\n";
           help << "Conditional Hotkeys:\n";
           help << "  - Basic: hotkey => action\n";
           help << "  - Postfix: hotkey => action if condition\n";
@@ -3739,6 +3733,30 @@ void Interpreter::InitializeIOBuiltins() {
             help << "text      : Text processing (upper, lower, trim, etc.)\n";
             help << "file      : File I/O operations\n";
             help << "system    : System operations (run, notify, sleep)\n";
+            help << "process   : Process management (find, kill, nice, "
+                    "ionice)\n";
+            help << "launcher  : Process execution (run, runShell, "
+                    "runDetached)\n";
+          } else if (topic == "process" || topic == "PROCESS") {
+            help << "\n=== Process Management Module ===\n\n";
+            help << "Process Discovery:\n";
+            help << "  process.find(name)           : Find processes by name\n";
+            help << "  process.exists(pid|name)     : Check if process "
+                    "exists\n\n";
+            help << "Process Control:\n";
+            help << "  process.kill(pid, signal)    : Send signal to process\n";
+            help << "  process.nice(pid, value)     : Set CPU priority (-20 to "
+                    "19)\n";
+            help << "  process.ionice(pid, class, data) : Set I/O priority\n\n";
+            help << "Examples:\n";
+            help << "  let procs = process.find(\"firefox\")\n";
+            help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
+            help
+                << "  process.nice(1234, 10)           // Lower CPU priority\n";
+            help << "  process.ionice(1234, 2, 4)      // Best-effort I/O\n\n";
+            help << "Process Object Fields:\n";
+            help << "  pid, ppid, name, command, user\n";
+            help << "  cpu_usage, memory_usage\n";
           } else {
             help << "\nUnknown topic: " << topic << "\n";
             help << "Use help() to see available topics.\n";

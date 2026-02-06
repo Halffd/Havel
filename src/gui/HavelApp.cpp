@@ -120,9 +120,19 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!brightnessManager) {
     throw std::runtime_error("Failed to create BrightnessManager");
   }
+
+  // Initialize NetworkManager (singleton)
+  networkManager = std::shared_ptr<net::NetworkManager>(
+      &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
+  if (!networkManager) {
+    throw std::runtime_error("Failed to create NetworkManager");
+  }
+  info("NetworkManager initialized successfully");
+
   hotkeyManager = std::make_shared<HotkeyManager>(
       *io, *windowManager, *mpv, *audioManager, *scriptEngine,
-      *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager);
+      *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager,
+      networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }

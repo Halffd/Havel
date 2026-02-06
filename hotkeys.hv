@@ -968,3 +968,67 @@ for key in mpvHotkeys {
   let hk = Hotkey(key, action, "mode == \"gaming\"")
   log hk.id
 }
+
+# Network-aware hotkey examples
+# These hotkeys use the integrated network module
+
+# Network status and connectivity
+Hotkey("^!n", () => {
+  print("Checking network status...")
+  let ips = network.getLocalIps()
+  print("Local IP addresses: $ips")
+  
+  let reachable = network.isReachable("google.com")
+  if reachable {
+    print("Internet connection: OK")
+    showNotification("Network Status", "Connected to internet")
+  } else {
+    print("Internet connection: FAILED")
+    showNotification("Network Status", "No internet connection")
+  }
+})
+
+# HTTP request example
+Hotkey("^!h", () => {
+  print("Making HTTP request...")
+  let response = network.httpGet("http://httpbin.org/get")
+  print("HTTP Response: $response")
+  showNotification("HTTP Request", "Response received: ${len(response)} bytes")
+})
+
+# Download file example
+Hotkey("^!d", () => {
+  print("Downloading file...")
+  let url = "http://httpbin.org/json"
+  let filename = "downloaded_data.json"
+  let success = network.download(url, filename)
+  
+  if success {
+    print("Downloaded: $filename")
+    showNotification("Download Complete", "File saved as: $filename")
+  } else {
+    print("Download failed")
+    showNotification("Download Failed", "Could not download file")
+  }
+})
+
+# Ping host example
+Hotkey("^!p", () => {
+  let host = "google.com"
+  print("Pinging $host...")
+  
+  let reachable = network.isReachable(host)
+  if reachable {
+    print("$host is reachable")
+    showNotification("Ping Result", "$host is reachable")
+  } else {
+    print("$host is not reachable")
+    showNotification("Ping Result", "$host is not reachable")
+  }
+})
+
+print("Network hotkeys loaded:")
+print("^!n - Network status")
+print("^!h - HTTP request")
+print("^!d - Download file")
+print("^!p - Ping host")

@@ -1,5 +1,0 @@
-print("Testing app module...")
-print("app object:", app)
-print("app.info():", app.info())
-print("app.args():", app.args())
-print("All app tests completed")

@@ -2,13 +2,12 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "include/x11_includes.h"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
-#include "x11.h"
 #include <chrono>
-#include <cstring>
 #include <fcntl.h>
 #include <future>
 #include <linux/input.h>
@@ -51,9 +50,9 @@ std::atomic<int> IO::syntheticEventsExpected{0};
 static std::unordered_map<std::string, int> g_keycodeCache;
 static std::mutex g_keycodeCacheMutex;
 
-int IO::GetKeyCacheLookup(const std::string& keyName) {
+int IO::GetKeyCacheLookup(const std::string &keyName) {
   std::string lower = toLower(keyName);
-  
+
   // Fast path: check cache first
   {
     std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
@@ -62,29 +61,28 @@ int IO::GetKeyCacheLookup(const std::string& keyName) {
       return it->second;
     }
   }
-  
+
   // Cache miss: do the expensive lookup
   int code = EvdevNameToKeyCode(lower);
-  
+
   // Store in cache for next time
   if (code != -1) {
     std::lock_guard<std::mutex> lock(g_keycodeCacheMutex);
     g_keycodeCache[lower] = code;
   }
-  
+
   return code;
 }
 
 // Parse key string into tokens once instead of scanning repeatedly
-std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
+std::vector<KeyToken> IO::ParseKeyString(const std::string &keys) {
   std::vector<KeyToken> tokens;
   size_t i = 0;
-  
+
   static std::unordered_map<char, std::string> shorthandModifiers = {
-      {'^', "ctrl"}, {'!', "alt"}, {'+', "shift"},
-      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}
-  };
-  
+      {'^', "ctrl"}, {'!', "alt"},           {'+', "shift"},
+      {'#', "meta"}, {'@', "toggle_uinput"}, {'%', "toggle_x11"}};
+
   while (i < keys.length()) {
     // Handle special sequences like {key_name}
     if (keys[i] == '{') {
@@ -92,9 +90,9 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
       if (end != std::string::npos) {
         std::string seq = keys.substr(i + 1, end - i - 1);
         std::transform(seq.begin(), seq.end(), seq.begin(), ::tolower);
-        
+
         KeyToken token;
-        
+
         if (seq == "emergency_release" || seq == "panic") {
           token.type = KeyToken::Special;
           token.value = seq;
@@ -111,13 +109,13 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
           token.value = seq;
           token.down = true;
         }
-        
+
         tokens.push_back(token);
         i = end + 1;
         continue;
       }
     }
-    
+
     // Handle shorthand modifiers (^, +, !, #)
     if (shorthandModifiers.count(keys[i])) {
       std::string mod = shorthandModifiers[keys[i]];
@@ -129,13 +127,13 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
       ++i;
       continue;
     }
-    
+
     // Skip whitespace
     if (isspace(keys[i])) {
       ++i;
       continue;
     }
-    
+
     // Single character keys
     KeyToken token;
     token.type = KeyToken::Key;
@@ -144,17 +142,18 @@ std::vector<KeyToken> IO::ParseKeyString(const std::string& keys) {
     tokens.push_back(token);
     ++i;
   }
-  
+
   return tokens;
 }
 
 // Batch write events with a single syscall
-void IO::SendBatchedKeyEvents(const std::vector<input_event>& events) {
-  if (events.empty()) return;
-  
+void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
+  if (events.empty())
+    return;
+
   // Use EventListener's batched write if available
   if (eventListener && useNewEventListener) {
-    for (const auto& ev : events) {
+    for (const auto &ev : events) {
       eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
     }
   }
@@ -163,11 +162,18 @@ void IO::SendBatchedKeyEvents(const std::vector<input_event>& events) {
 }
 
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
-  if (ee->error_code == x11::XBadWindow ||
-      (ee->request_code == X_GrabButton && ee->error_code == x11::XBadAccess) ||
-      (ee->request_code == X_GrabKey && ee->error_code == x11::XBadAccess)) {
-    return 0;
+  // Suppress BadWindow errors on Wayland (common when XWayland windows
+  // disappear)
+  if (ee->error_code == 3) { // BadWindow error code is 3
+    return 0;                // Suppress BadWindow errors
   }
+
+  // Only suppress access errors, not BadWindow errors
+  if ((ee->request_code == X_GrabButton || ee->request_code == X_GrabKey) &&
+      ee->error_code == 1) { // BadAccess error code is 1
+    return 0;                // Suppress access errors for grabbing
+  }
+
   error("X11 error: request_code={}, error_code={}", ee->request_code,
         ee->error_code);
   return 0; // Don't crash
@@ -382,7 +388,7 @@ IO::IO() {
 
       // Get all keyboard devices (including auxiliary keyboards)
       auto keyboardDevices = Device::findKeyboards();
-      for (const auto& kb : keyboardDevices) {
+      for (const auto &kb : keyboardDevices) {
         devices.push_back(kb.eventPath);
         info("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)",
              kb.name, kb.eventPath, kb.confidence * 100);
@@ -393,9 +399,10 @@ IO::IO() {
 
       if (!mouseDevice.empty() &&
           !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        // Only add mouse device if it's not already in the keyboard devices list
+        // Only add mouse device if it's not already in the keyboard devices
+        // list
         bool alreadyAdded = false;
-        for (const auto& kb_device : keyboardDevices) {
+        for (const auto &kb_device : keyboardDevices) {
           if (kb_device.eventPath == mouseDevice) {
             alreadyAdded = true;
             break;
@@ -514,9 +521,7 @@ IO::IO() {
   }
 #endif
 }
-IO::~IO() {
-  cleanup();
-}
+IO::~IO() { cleanup(); }
 
 void IO::cleanup() {
   // Stop the hotkey monitoring thread
@@ -572,7 +577,7 @@ void IO::cleanup() {
   // Force cleanup of any remaining evdev resources
   info("Final cleanup completed - all devices should be ungrabbed");
 #endif
-  
+
   std::cout << "IO cleanup completed" << std::endl;
 }
 
@@ -1634,9 +1639,10 @@ void IO::Send(cstr keys) {
     }
   }
 #else
-  // OPTIMIZATION #1: Pre-parse the key string once instead of scanning repeatedly
+  // OPTIMIZATION #1: Pre-parse the key string once instead of scanning
+  // repeatedly
   auto tokens = ParseKeyString(keys);
-  
+
   // Linux implementation with state tracking and optimizations
   bool useUinput = true;
   bool useX11 = false;
@@ -1649,7 +1655,8 @@ void IO::Send(cstr keys) {
 
   auto SendKeyImpl = [&](const std::string &keyName, bool down) {
     if (useUinput || (!useX11 && globalEvdev)) {
-      // OPTIMIZATION #3: Cache keycode lookups to avoid repeated string->keycode conversions
+      // OPTIMIZATION #3: Cache keycode lookups to avoid repeated
+      // string->keycode conversions
       int code = GetKeyCacheLookup(keyName);
       if (Configs::Get().GetVerboseKeyLogging()) {
         info("Sending key: " + keyName + " (" + std::to_string(down) +
@@ -1671,87 +1678,91 @@ void IO::Send(cstr keys) {
   auto SendKey = [&](const std::string &keyName, bool down) {
     SendKeyImpl(keyName, down);
   };
-  
+
   // Release interfering modifiers
   std::set<std::string> toRelease;
   if (eventListener) {
     auto modState = eventListener->GetModifierState();
-    auto checkMod = [&](bool leftPressed, bool rightPressed, 
-                        const std::string& leftKey, const std::string& rightKey) {
-        if (leftPressed) toRelease.insert(leftKey);
-        if (rightPressed) toRelease.insert(rightKey);
+    auto checkMod = [&](bool leftPressed, bool rightPressed,
+                        const std::string &leftKey,
+                        const std::string &rightKey) {
+      if (leftPressed)
+        toRelease.insert(leftKey);
+      if (rightPressed)
+        toRelease.insert(rightKey);
     };
     checkMod(modState.leftCtrl, modState.rightCtrl, "ctrl", "rctrl");
     checkMod(modState.leftShift, modState.rightShift, "shift", "rshift");
     checkMod(modState.leftAlt, modState.rightAlt, "alt", "ralt");
     checkMod(modState.leftMeta, modState.rightMeta, "meta", "rmeta");
   }
-  
+
   for (const auto &mod : toRelease) {
-      debug("Releasing modifier: {}", mod);
-      SendKey(modifierKeys[mod], false);
+    debug("Releasing modifier: {}", mod);
+    SendKey(modifierKeys[mod], false);
   }
 
   // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
   bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
-  
-  for (const auto& token : tokens) {
+
+  for (const auto &token : tokens) {
     switch (token.type) {
-      case KeyToken::Modifier: {
-        if (token.value == "toggle_uinput") {
-          useUinput = !useUinput;
-          if (Configs::Get().GetVerboseKeyLogging())
-            debug(useUinput ? "Switched to uinput" : "Switched to X11");
-        } else if (token.value == "toggle_x11") {
-          useX11 = !useX11;
-          if (Configs::Get().GetVerboseKeyLogging())
-            debug(useX11 ? "Switched to X11" : "Switched to uinput");
-        } else if (modifierKeys.count(token.value)) {
-          SendKey(modifierKeys[token.value], true);
-          activeModifiers.push_back(token.value);
-        }
-        break;
+    case KeyToken::Modifier: {
+      if (token.value == "toggle_uinput") {
+        useUinput = !useUinput;
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug(useUinput ? "Switched to uinput" : "Switched to X11");
+      } else if (token.value == "toggle_x11") {
+        useX11 = !useX11;
+        if (Configs::Get().GetVerboseKeyLogging())
+          debug(useX11 ? "Switched to X11" : "Switched to uinput");
+      } else if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], true);
+        activeModifiers.push_back(token.value);
       }
-      
-      case KeyToken::Special: {
-        if (token.value == "emergency_release" || token.value == "panic") {
-          EmergencyReleaseAllKeys();
-        }
-        break;
+      break;
+    }
+
+    case KeyToken::Special: {
+      if (token.value == "emergency_release" || token.value == "panic") {
+        EmergencyReleaseAllKeys();
       }
-      
-      case KeyToken::ModifierDown: {
-        if (modifierKeys.count(token.value)) {
-          SendKey(modifierKeys[token.value], true);
-          activeModifiers.push_back(token.value);
-        } else {
-          SendKey(token.value, true);
-        }
-        break;
-      }
-      
-      case KeyToken::ModifierUp: {
-        if (modifierKeys.count(token.value)) {
-          SendKey(modifierKeys[token.value], false);
-          activeModifiers.erase(
-              std::remove(activeModifiers.begin(), activeModifiers.end(), token.value),
-              activeModifiers.end());
-        } else {
-          SendKey(token.value, false);
-        }
-        break;
-      }
-      
-      case KeyToken::Key: {
-        debug("Sending key: " + token.value);
+      break;
+    }
+
+    case KeyToken::ModifierDown: {
+      if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], true);
+        activeModifiers.push_back(token.value);
+      } else {
         SendKey(token.value, true);
-        // OPTIMIZATION #4: Only sleep if explicitly configured (removed default 100μs sleep)
-        if (shouldSleep) {
-          std::this_thread::sleep_for(std::chrono::microseconds(100));
-        }
-        SendKey(token.value, false);
-        break;
       }
+      break;
+    }
+
+    case KeyToken::ModifierUp: {
+      if (modifierKeys.count(token.value)) {
+        SendKey(modifierKeys[token.value], false);
+        activeModifiers.erase(std::remove(activeModifiers.begin(),
+                                          activeModifiers.end(), token.value),
+                              activeModifiers.end());
+      } else {
+        SendKey(token.value, false);
+      }
+      break;
+    }
+
+    case KeyToken::Key: {
+      debug("Sending key: " + token.value);
+      SendKey(token.value, true);
+      // OPTIMIZATION #4: Only sleep if explicitly configured (removed default
+      // 100μs sleep)
+      if (shouldSleep) {
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
+      }
+      SendKey(token.value, false);
+      break;
+    }
     }
   }
 
@@ -1789,10 +1800,10 @@ bool IO::Suspend() {
         if (!suspendedConditionalHotkeyStates.empty()) {
           std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
           // Restore to the original state before suspension
-          for (const auto& state : suspendedConditionalHotkeyStates) {
-            auto& ch = hotkeyManager->conditionalHotkeys;
+          for (const auto &state : suspendedConditionalHotkeyStates) {
+            auto &ch = hotkeyManager->conditionalHotkeys;
             auto it = std::find_if(ch.begin(), ch.end(),
-                                   [state](const auto& ch_item) {
+                                   [state](const auto &ch_item) {
                                      return ch_item.id == state.id;
                                    });
             if (it != ch.end()) {
@@ -1822,18 +1833,20 @@ bool IO::Suspend() {
       for (auto &[id, hotkey] : hotkeys) {
         if (hotkey.enabled && !hotkey.suspend) {
           if (!hotkey.evdev) {
-            Ungrab(hotkey.key, hotkey.modifiers, DisplayManager::GetRootWindow());
+            Ungrab(hotkey.key, hotkey.modifiers,
+                   DisplayManager::GetRootWindow());
           }
           hotkey.enabled = false;
         }
       }
 
       if (hotkeyManager) {
-        // Track the original state of conditional hotkeys before suspension and update their states
+        // Track the original state of conditional hotkeys before suspension and
+        // update their states
         hotkeyManager->conditionalHotkeysEnabled = false;
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
-        for (auto& ch : hotkeyManager->conditionalHotkeys) {
+        for (auto &ch : hotkeyManager->conditionalHotkeys) {
           ConditionalHotkeyState state;
           state.id = ch.id;
           state.wasGrabbed = ch.currentlyGrabbed;
@@ -1988,20 +2001,20 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
   result.isEvdev = isEvdev;
 
   size_t i = 0;
-  
+
   // Parse text-based modifiers (loop until no more found)
-  std::vector<std::string> textModifiers = {"ctrl", "shift", "alt", "meta", "win"};
+  std::vector<std::string> textModifiers = {"ctrl", "shift", "alt", "meta",
+                                            "win"};
   bool foundTextModifier = false;
-  
+
   do {
     foundTextModifier = false;
-    
-    for (const auto& mod : textModifiers) {
-      if (i + mod.size() <= input.size() && 
+
+    for (const auto &mod : textModifiers) {
+      if (i + mod.size() <= input.size() &&
           input.substr(i, mod.size()) == mod) {
         // Check if this is followed by '+' or end of string
-        if (i + mod.size() == input.size() || 
-            input[i + mod.size()] == '+') {
+        if (i + mod.size() == input.size() || input[i + mod.size()] == '+') {
           // Found text modifier
           if (mod == "ctrl") {
             result.modifiers |= isEvdev ? (1 << 0) : ControlMask;
@@ -2012,21 +2025,21 @@ ParsedHotkey IO::ParseModifiersAndFlags(const std::string &input,
           } else if (mod == "meta" || mod == "win") {
             result.modifiers |= isEvdev ? (1 << 3) : Mod4Mask;
           }
-          
+
           i += mod.size();
           foundTextModifier = true;
-          
+
           // Skip the '+' if present
           if (i < input.size() && input[i] == '+') {
             ++i;
           }
-          
+
           break; // Break inner for loop to restart with new position
         }
       }
     }
   } while (foundTextModifier);
-  
+
   while (i < input.size()) {
     char c = input[i];
 
@@ -2164,70 +2177,79 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 
   // Check if the key part looks like a gesture pattern
   // This could be predefined gestures like "circle", "square", "triangle", etc.
-  // or mouse-specific direction patterns like "mouseleft,mouseright,mouseup,mousedown"
+  // or mouse-specific direction patterns like
+  // "mouseleft,mouseright,mouseup,mousedown"
   std::string keyLower = toLower(parsed.keyPart);
-  bool isPredefinedGesture = (keyLower == "circle" || keyLower == "square" || keyLower == "triangle" ||
-                             keyLower == "zigzag" || keyLower == "check");
+  bool isPredefinedGesture =
+      (keyLower == "circle" || keyLower == "square" || keyLower == "triangle" ||
+       keyLower == "zigzag" || keyLower == "check");
 
-  // Check if it's a comma-separated direction pattern (may include mouse directions)
+  // Check if it's a comma-separated direction pattern (may include mouse
+  // directions)
   bool hasComma = parsed.keyPart.find(',') != std::string::npos;
 
   // Check if it's a single mouse direction (using the new mouse-specific names)
-  bool isMouseDirection = (keyLower == "mouseleft" || keyLower == "mouseright" ||
-                          keyLower == "mouseup" || keyLower == "mousedown" ||
-                          keyLower == "mouseupleft" || keyLower == "mouseupright" ||
-                          keyLower == "mousedownleft" || keyLower == "mousedownright");
+  bool isMouseDirection =
+      (keyLower == "mouseleft" || keyLower == "mouseright" ||
+       keyLower == "mouseup" || keyLower == "mousedown" ||
+       keyLower == "mouseupleft" || keyLower == "mouseupright" ||
+       keyLower == "mousedownleft" || keyLower == "mousedownright");
 
   // Check if it's a comma-separated pattern that looks like a gesture pattern
   bool isGesturePattern = false;
   if (hasComma) {
-      // Parse the comma-separated values to see if they look like gesture directions
-      std::string tempPattern = parsed.keyPart; // Don't convert to lower yet, to check original
-      std::istringstream iss(tempPattern);
-      std::string part;
-      bool allPartsAreMouseDirections = true;
+    // Parse the comma-separated values to see if they look like gesture
+    // directions
+    std::string tempPattern =
+        parsed.keyPart; // Don't convert to lower yet, to check original
+    std::istringstream iss(tempPattern);
+    std::string part;
+    bool allPartsAreMouseDirections = true;
 
-      while (std::getline(iss, part, ',')) {
-          // Remove leading/trailing whitespace
-          part.erase(0, part.find_first_not_of(" \t\n\r"));
-          part.erase(part.find_last_not_of(" \t\n\r") + 1);
+    while (std::getline(iss, part, ',')) {
+      // Remove leading/trailing whitespace
+      part.erase(0, part.find_first_not_of(" \t\n\r"));
+      part.erase(part.find_last_not_of(" \t\n\r") + 1);
 
-          std::string lowerPart = toLower(part);
+      std::string lowerPart = toLower(part);
 
-          // Check if this part is a mouse direction
-          bool isMouseDir = (lowerPart == "mouseleft" || lowerPart == "mouseright" ||
-                           lowerPart == "mouseup" || lowerPart == "mousedown" ||
-                           lowerPart == "mouseupleft" || lowerPart == "mouseupright" ||
-                           lowerPart == "mousedownleft" || lowerPart == "mousedownright" ||
-                           // Corner directions without mouse prefix (for backward compatibility)
-                           lowerPart == "up-left" || lowerPart == "upleft" ||
-                           lowerPart == "up-right" || lowerPart == "upright" ||
-                           lowerPart == "down-left" || lowerPart == "downleft" ||
-                           lowerPart == "down-right" || lowerPart == "downright");
+      // Check if this part is a mouse direction
+      bool isMouseDir =
+          (lowerPart == "mouseleft" || lowerPart == "mouseright" ||
+           lowerPart == "mouseup" || lowerPart == "mousedown" ||
+           lowerPart == "mouseupleft" || lowerPart == "mouseupright" ||
+           lowerPart == "mousedownleft" || lowerPart == "mousedownright" ||
+           // Corner directions without mouse prefix (for backward
+           // compatibility)
+           lowerPart == "up-left" || lowerPart == "upleft" ||
+           lowerPart == "up-right" || lowerPart == "upright" ||
+           lowerPart == "down-left" || lowerPart == "downleft" ||
+           lowerPart == "down-right" || lowerPart == "downright");
 
-          if (!isMouseDir) {
-              allPartsAreMouseDirections = false;
-              break;
-          }
+      if (!isMouseDir) {
+        allPartsAreMouseDirections = false;
+        break;
       }
+    }
 
-      isGesturePattern = allPartsAreMouseDirections;
+    isGesturePattern = allPartsAreMouseDirections;
   }
 
-  // Only treat as gesture if it's a predefined gesture, contains mouse-specific directions in comma pattern, or is a single mouse direction
-  // This avoids conflicting with regular arrow keys like "up", "down", "left", "right"
+  // Only treat as gesture if it's a predefined gesture, contains mouse-specific
+  // directions in comma pattern, or is a single mouse direction This avoids
+  // conflicting with regular arrow keys like "up", "down", "left", "right"
   if (isPredefinedGesture || isGesturePattern || isMouseDirection) {
     hotkey.type = HotkeyType::MouseGesture;
     hotkey.gesturePattern = parsed.keyPart; // Store the gesture pattern string
 
     // Determine gesture type and set up configuration based on the pattern
     if (isPredefinedGesture) {
-        hotkey.gestureConfig.type = MouseGestureType::Shape;
+      hotkey.gestureConfig.type = MouseGestureType::Shape;
     } else if (isMouseDirection) {
-        hotkey.gestureConfig.type = MouseGestureType::Direction;
+      hotkey.gestureConfig.type = MouseGestureType::Direction;
     } else {
-        // It's a custom direction pattern
-        hotkey.gestureConfig.type = MouseGestureType::Freeform;
+      // It's a custom direction pattern
+      hotkey.gestureConfig.type = MouseGestureType::Freeform;
     }
 
     hotkey.success = true;
@@ -2288,7 +2310,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
-    hotkey.id = id;  // Set the hotkey's id
+    hotkey.id = id; // Set the hotkey's id
     hotkeys[id] = hotkey;
     if (hotkey.x11)
       x11Hotkeys.insert(id);
@@ -2406,7 +2428,8 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
         hotkey.key = static_cast<Key>(keycode);
         hotkey.success = true;
       } else {
-        // If it's not a valid key, mouse button, wheel, or combo, mark as failed
+        // If it's not a valid key, mouse button, wheel, or combo, mark as
+        // failed
         hotkey.type = HotkeyType::Keyboard;
         hotkey.key = 0;
         hotkey.success = false;
@@ -2419,7 +2442,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
     if (id == 0)
       id = ++hotkeyCount;
-    hotkey.id = id;  // Set the hotkey's id
+    hotkey.id = id; // Set the hotkey's id
     hotkeys[id] = hotkey;
     if (hotkey.x11)
       x11Hotkeys.insert(id);
@@ -4122,12 +4145,12 @@ bool IO::RemoveHotkey(const std::string &keyName) {
   for (auto it = hotkeys.begin(); it != hotkeys.end();) {
     if (it->second.alias == keyName) {
       int id = it->first;
-      
+
       // Ungrab if currently grabbed
       if (it->second.grab && !it->second.evdev) {
         UngrabHotkey(id);
       }
-      
+
       it = hotkeys.erase(it);
       found = true;
     } else {
@@ -4140,7 +4163,7 @@ bool IO::RemoveHotkey(const std::string &keyName) {
 
 bool IO::RemoveHotkey(int hotkeyId) {
   std::lock_guard<std::mutex> lock(hotkeySetMutex);
-  
+
   auto it = hotkeys.find(hotkeyId);
   if (it == hotkeys.end()) {
     return false;
@@ -5434,7 +5457,7 @@ void IO::MouseDown(int button) {
   } else if (mouseUinputFd >= 0) {
     static std::mutex uinputWriteMutex;
     std::lock_guard<std::mutex> lk(uinputWriteMutex);
-    
+
     // OPTIMIZATION #1: Batch press and sync into one write operation
     struct input_event events[2];
     gettimeofday(&events[0].time, nullptr);
@@ -5464,7 +5487,7 @@ void IO::MouseUp(int button) {
   } else if (mouseUinputFd >= 0) {
     static std::mutex uinputWriteMutex;
     std::lock_guard<std::mutex> lk(uinputWriteMutex);
-    
+
     // OPTIMIZATION #1: Batch release and sync into one write operation
     struct input_event events[2];
     gettimeofday(&events[0].time, nullptr);
@@ -5494,7 +5517,7 @@ void IO::MouseWheel(int amount) {
   } else if (mouseUinputFd >= 0) {
     static std::mutex uinputWriteMutex;
     std::lock_guard<std::mutex> lk(uinputWriteMutex);
-    
+
     // OPTIMIZATION #1: Batch wheel and sync into one write operation
     struct input_event events[2];
     gettimeofday(&events[0].time, nullptr);

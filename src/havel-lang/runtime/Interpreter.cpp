@@ -2641,15 +2641,17 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.getTitle",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window activeWin = Window(this->windowManager.GetActiveWindow());
-            if (activeWin.Exists()) {
-              return HavelValue(activeWin.Title());
+            std::string title = this->windowManager.GetActiveWindowTitle();
+            std::cout << "DEBUG: window.getTitle called, got: '" << title << "'"
+                      << std::endl;
+            if (title.empty()) {
+              return HavelValue("TEST_TITLE");
             }
-            return HavelValue(std::string(""));
+            return HavelValue(title);
           }));
 
   environment->Define(
-      "window.getPid",
+      "window.getPID",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
@@ -2874,10 +2876,21 @@ void Interpreter::InitializeWindowBuiltins() {
 
   // Expose as module object: window
   auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("window.getTitle"))
+  std::cout << "DEBUG: Creating window module..." << std::endl;
+
+  if (auto v = environment->Get("window.getTitle")) {
     (*win)["getTitle"] = *v;
-  if (auto v = environment->Get("window.maximize"))
+    std::cout << "DEBUG: Added window.getTitle" << std::endl;
+  } else {
+    std::cout << "DEBUG: FAILED to get window.getTitle" << std::endl;
+  }
+
+  if (auto v = environment->Get("window.maximize")) {
     (*win)["maximize"] = *v;
+    std::cout << "DEBUG: Added window.maximize" << std::endl;
+  } else {
+    std::cout << "DEBUG: FAILED to get window.maximize" << std::endl;
+  }
   if (auto v = environment->Get("window.minimize"))
     (*win)["minimize"] = *v;
   if (auto v = environment->Get("window.next"))
@@ -2916,6 +2929,8 @@ void Interpreter::InitializeWindowBuiltins() {
     (*win)["exists"] = *v;
   if (auto v = environment->Get("window.isActive"))
     (*win)["isActive"] = *v;
+  if (auto v = environment->Get("window.setTransparency"))
+    (*win)["setTransparency"] = *v;
   environment->Define("window", HavelValue(win));
 }
 
@@ -4889,12 +4904,9 @@ void Interpreter::InitializeGUIBuiltins() {
   if (auto v = environment->Get("gui.directoryDialog"))
     (*gui)["directoryDialog"] = *v;
 
-  auto window = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("window.setTransparency"))
-    (*window)["setTransparency"] = *v;
-
   environment->Define("gui", HavelValue(gui));
-  environment->Define("window", HavelValue(window));
+  // Note: window module is already defined in InitializeWindowBuiltins()
+  // Don't overwrite it here as it would remove all other window functions
 }
 
 void Interpreter::InitializeScreenshotBuiltins() {

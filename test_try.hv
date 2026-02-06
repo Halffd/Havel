@@ -1,0 +1,6 @@
+print("Testing function call...")
+try:
+    result = window.getTitle()
+    print("Result: " + result)
+except:
+    print("Error calling window.getTitle")

@@ -1,3 +1,0 @@
-// Check what mode actually is
-print "mode:", mode
-print "type of mode:", typeof(mode)

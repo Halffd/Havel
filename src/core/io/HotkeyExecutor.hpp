@@ -18,7 +18,7 @@ public:
     };
 
     // Create executor with `workers` threads and `maxQueue` capacity.
-    HotkeyExecutor(size_t workers = 4, size_t maxQueue = 256)
+    HotkeyExecutor(size_t workers = 16, size_t maxQueue = 8192)
       : maxQueue(maxQueue), stopFlag(false)
     {
         startWorkers(workers);
@@ -30,7 +30,7 @@ public:
 
     // Submit a callback with a timeout in milliseconds for detection (not cancellation).
     // callback runs on a worker thread; if it runs longer than timeoutMs we log it.
-    SubmitResult submit(std::function<void()> cb, int timeoutMs = 5000) {
+    SubmitResult submit(std::function<void()> cb, int timeoutMs = 90000) {
         std::unique_lock<std::mutex> lk(queueMutex);
         if (stopFlag) return {false};
         if (taskQueue.size() >= maxQueue) return {false}; // backpressure: reject

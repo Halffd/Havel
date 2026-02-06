@@ -32,7 +32,6 @@ fn zoom (level) {
     level = 4
   }
   if wl == true {
-    print(zoomLevel)
     if level == 0 {
       zoomLevel -= inc
     }

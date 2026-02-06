@@ -27,7 +27,7 @@ fn applyBr () {
   if brightness > 100.0 {
     brightness = 100.0
   }
-  let cmd = "/home/half-arch/scripts/lux-hypr.sh $brightness $temperature"
+  let cmd = "/home/half-arch/scripts/lux-hypr.sh $temperature $brightness"
   let r = run(cmd)
   print(cmd)
   print(r)

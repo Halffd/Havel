@@ -4,6 +4,7 @@
 #include "core/HotkeyManager.hpp"
 #include "include/x11_includes.h"
 #include "io/EventListener.hpp"
+#include "io/HotkeyExecutor.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"

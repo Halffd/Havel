@@ -369,6 +369,10 @@ IO::IO() {
   // Initialize KeyMap
   KeyMap::Initialize();
 
+  // Initialize HotkeyExecutor for thread-safe hotkey execution
+  hotkeyExecutor = std::make_unique<HotkeyExecutor>(4, 256);
+  info("HotkeyExecutor initialized with 4 worker threads");
+
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
 
@@ -4599,23 +4603,25 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
             debug("Hotkey {} triggered, key: {}, modifiers: {}, down: {}, "
                   "repeat: {}",
                   hotkey.alias, hotkey.key, hotkey.modifiers, down, repeat);
-            std::thread([callback = hotkey.callback, alias = hotkey.alias,
-                         key = hotkey.key, modifiers = hotkey.modifiers,
-                         this]() {
-              try {
-                info("Executing hotkey callback: {} key: {} modifiers: {}",
-                     alias, key, modifiers);
-                pendingCallbacks++;
-                if (evdevRunning && !shutdown) {
-                  callback();
-                }
-              } catch (const std::exception &e) {
-                error("Hotkey '{}' threw: {}", alias, e.what());
-              } catch (...) {
-                error("Hotkey '{}' threw unknown exception", alias);
+            // Use HotkeyExecutor to ensure thread-safe execution
+            if (hotkeyExecutor && evdevRunning && !shutdown) {
+              auto result = hotkeyExecutor->submit(
+                  [callback = hotkey.callback, hotkeyAlias = hotkey.alias]() {
+                    try {
+                      info("Executing hotkey callback: {}", hotkeyAlias);
+                      callback();
+                    } catch (const std::exception &e) {
+                      error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+                    } catch (...) {
+                      error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+                    }
+                  });
+
+              if (!result.accepted) {
+                warn("Hotkey task queue full, dropping callback: {}",
+                     hotkey.alias);
               }
-              pendingCallbacks--;
-            }).detach();
+            }
             if (hotkey.grab) {
               shouldBlockKey = true;
             }

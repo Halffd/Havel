@@ -433,6 +433,9 @@ IO::IO() {
           eventListener = std::make_unique<EventListener>();
           eventListener->SetupUinput();
 
+          // Pass HotkeyExecutor to EventListener for thread-safe execution
+          eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+
           // Set mouse and scroll sensitivity
           eventListener->SetMouseSensitivity(mouseSensitivity);
           eventListener->SetScrollSpeed(

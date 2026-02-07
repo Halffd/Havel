@@ -2157,7 +2157,7 @@ void Interpreter::InitializeSystemBuiltins() {
               "process.exists() requires pid or process name");
 
         // Check if argument is a number (PID) or string (process name)
-        if (args[0].isNumber()) {
+        if (std::holds_alternative<double>(args[0])) {
           pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
           return HavelValue(havel::ProcessManager::isProcessAlive(pid));
         } else {

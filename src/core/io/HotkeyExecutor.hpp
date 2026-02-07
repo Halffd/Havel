@@ -135,19 +135,14 @@ private:
       auto now = std::chrono::steady_clock::now();
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
           now - t->createdTime);
-      if (elapsed.count() > t->timeoutMs) {
+      bool alreadyTimedOut = elapsed.count() > t->timeoutMs;
+      if (alreadyTimedOut) {
         std::cerr << "[HotkeyExecutor] Task timed out before execution: "
                   << elapsed.count() << "ms > " << t->timeoutMs << "ms\n";
         t->timedOut.store(true);
-        try {
-          t->prom->set_value();
-        } catch (...) {
-          // promise already satisfied
-        }
-        continue;
       }
 
-      // Execute task
+      // Execute task (even if timed out)
       try {
         t->fn();
       } catch (const std::exception &e) {
@@ -161,7 +156,7 @@ private:
       try {
         t->prom->set_value();
       } catch (...) {
-        // promise already satisfied? ignore
+        // promise already satisfied or already set due to timeout
       }
     }
   }

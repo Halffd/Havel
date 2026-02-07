@@ -47,7 +47,10 @@ bool IO::globalEvdev = true;
 double IO::mouseSensitivity = 1.0;
 double IO::scrollSpeed = 1.0;
 std::atomic<int> IO::syntheticEventsExpected{0};
-// Static keycode cache - eliminates repeated lookups for the same keys
+// Scroll accumulation for fractional values
+static double scrollAccumY = 0.0;
+static double scrollAccumX = 0.0;
+// Static keycode cache - eliminates repeated lookups for same keys
 static std::unordered_map<std::string, int> g_keycodeCache;
 static std::mutex g_keycodeCacheMutex;
 
@@ -1385,11 +1388,13 @@ bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
 bool IO::Scroll(double dy, double dx) {
   std::lock_guard<std::mutex> lock(mouseMutex);
 
-  // Apply scroll speed
-  if (dy != 0.0)
-    dy = dy * scrollSpeed;
-  if (dx != 0.0)
-    dx = dx * scrollSpeed;
+  // Apply scroll speed and accumulate
+  if (dy != 0.0) {
+    scrollAccumY += dy * scrollSpeed;
+  }
+  if (dx != 0.0) {
+    scrollAccumX += dx * scrollSpeed;
+  }
 
   if (uinputFd < 0)
     return false;
@@ -1405,11 +1410,19 @@ bool IO::Scroll(double dy, double dx) {
   };
   debug("Scrolling: {} {}", dx, dy);
 
-  // Emit relative scrolls with proper rounding
-  if (dy != 0.0 && !emitScroll(REL_WHEEL, static_cast<int>(std::round(dy))))
+  // Emit accumulated scroll values
+  int emitY = (int)scrollAccumY;
+  int emitX = (int)scrollAccumX;
+
+  // Only emit if non-zero
+  if (emitY != 0 && !emitScroll(REL_WHEEL, emitY))
     return false;
-  if (dx != 0.0 && !emitScroll(REL_HWHEEL, static_cast<int>(std::round(dx))))
+  if (emitX != 0 && !emitScroll(REL_HWHEEL, emitX))
     return false;
+
+  // Subtract emitted values from accumulation
+  scrollAccumY -= emitY;
+  scrollAccumX -= emitX;
 
   // Sync event
   ev.type = EV_SYN;

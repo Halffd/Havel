@@ -32,7 +32,7 @@ fn applyBr () {
   runDetached(cmd)
 }
 fn qdbus (cmd) {
-  let res = run("qdbus $cmd")
+  let res = runDetached("qdbus $cmd")
   return res.stdout
 }
 
@@ -70,7 +70,7 @@ fn zoom (level) {
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
-    run("hyprctl keyword cursor:zoom_factor $zoomLevel")
+    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")

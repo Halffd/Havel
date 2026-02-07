@@ -183,6 +183,9 @@ public:
 
   // Stubs for unused AST nodes
   void visitWhileStatement(const ast::WhileStatement &node) override;
+  void visitDoWhileStatement(const ast::DoWhileStatement &node) override;
+  void visitSwitchStatement(const ast::SwitchStatement &node) override;
+  void visitSwitchCase(const ast::SwitchCase &node) override;
   void visitTypeDeclaration(const ast::TypeDeclaration &node) override;
   void visitTypeAnnotation(const ast::TypeAnnotation &node) override;
   void visitUnionType(const ast::UnionType &node) override;

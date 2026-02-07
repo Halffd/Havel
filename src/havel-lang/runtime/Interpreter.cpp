@@ -354,13 +354,6 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     }
   };
 
-  // Validate that action handler is callable before registration
-  if (!actionHandler) {
-    std::cerr << "Warning: Hotkey action handler is not callable\n";
-    lastResult = HavelRuntimeError("Hotkey action handler is not callable");
-    return;
-  }
-
   // Register ALL hotkeys with the same action handler
   for (const auto &hotkeyExpr : node.hotkeys) {
     auto hotkeyLiteral =

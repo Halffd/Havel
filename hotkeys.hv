@@ -29,7 +29,7 @@ fn applyBr () {
     brightness = 100.0
   }
   let cmd = "~/scripts/lux-hypr.sh $brightness $temperature"
-  runDetached(cmd)
+  run(cmd)
 }
 fn qdbus (cmd) {
   let res = runDetached("qdbus $cmd")
@@ -600,9 +600,6 @@ if hypr {
     zoom(1)
   }
 }
-
-@#WheelUp => zoom(1)
-@#WheelDown => zoom(0)
 
 @!WheelDown => {
   if altTabPressed {

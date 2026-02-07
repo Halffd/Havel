@@ -1271,6 +1271,110 @@ void Interpreter::visitWhileStatement(const ast::WhileStatement &node) {
 
   lastResult = nullptr;
 }
+
+void Interpreter::visitDoWhileStatement(const ast::DoWhileStatement &node) {
+  // Execute body first, then check condition
+  while (true) {
+    // Execute loop body
+    auto bodyResult = Evaluate(*node.body);
+
+    // Handle errors and return statements
+    if (isError(bodyResult)) {
+      lastResult = bodyResult;
+      return;
+    }
+
+    if (std::holds_alternative<ReturnValue>(bodyResult)) {
+      lastResult = bodyResult;
+      return;
+    }
+
+    // Handle break
+    if (std::holds_alternative<BreakValue>(bodyResult)) {
+      break;
+    }
+
+    // Handle continue - skip to condition check
+    if (std::holds_alternative<ContinueValue>(bodyResult)) {
+      // Continue with condition check
+    }
+
+    // Evaluate condition
+    auto conditionResult = Evaluate(*node.condition);
+    if (isError(conditionResult)) {
+      lastResult = conditionResult;
+      return;
+    }
+
+    if (!ValueToBool(unwrap(conditionResult))) {
+      break; // Exit loop when condition is false
+    }
+  }
+
+  lastResult = nullptr;
+}
+
+void Interpreter::visitSwitchStatement(const ast::SwitchStatement &node) {
+  // Evaluate the switch expression
+  auto expressionResult = Evaluate(*node.expression);
+  if (isError(expressionResult)) {
+    lastResult = expressionResult;
+    return;
+  }
+  auto switchValue = unwrap(expressionResult);
+
+  // Find matching case (first match wins)
+  for (const auto &caseNode : node.cases) {
+    if (!caseNode)
+      continue;
+
+    // Check if this is an else case (test is nullptr)
+    if (!caseNode->test) {
+      // Execute else case
+      auto caseResult = Evaluate(*caseNode->body);
+      lastResult = caseResult;
+      return;
+    }
+
+    // Evaluate case test
+    auto testResult = Evaluate(*caseNode->test);
+    if (isError(testResult)) {
+      lastResult = testResult;
+      return;
+    }
+    auto testValue = unwrap(testResult);
+
+    // Check for match (using equality)
+    bool matches = false;
+    if (std::holds_alternative<double>(switchValue) &&
+        std::holds_alternative<double>(testValue)) {
+      matches = (std::get<double>(switchValue) == std::get<double>(testValue));
+    } else if (std::holds_alternative<std::string>(switchValue) &&
+               std::holds_alternative<std::string>(testValue)) {
+      matches = (std::get<std::string>(switchValue) ==
+                 std::get<std::string>(testValue));
+    } else if (std::holds_alternative<bool>(switchValue) &&
+               std::holds_alternative<bool>(testValue)) {
+      matches = (std::get<bool>(switchValue) == std::get<bool>(testValue));
+    }
+
+    if (matches) {
+      // Execute matching case
+      auto caseResult = Evaluate(*caseNode->body);
+      lastResult = caseResult;
+      return;
+    }
+  }
+
+  // No case matched and no else case
+  lastResult = nullptr;
+}
+
+void Interpreter::visitSwitchCase(const ast::SwitchCase &node) {
+  // This should not be called directly - switch cases are handled by
+  // visitSwitchStatement
+  lastResult = HavelRuntimeError("SwitchCase should not be visited directly");
+}
 void Interpreter::visitRangeExpression(const ast::RangeExpression &node) {
   auto startResult = Evaluate(*node.start);
   if (isError(startResult)) {

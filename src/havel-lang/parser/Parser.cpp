@@ -270,6 +270,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseIfStatement();
   case havel::TokenType::While:
     return parseWhileStatement();
+  case havel::TokenType::Do:
+    return parseDoWhileStatement();
+  case havel::TokenType::Switch:
+    return parseSwitchStatement();
   case havel::TokenType::For:
     return parseForStatement();
   case havel::TokenType::Loop:
@@ -445,6 +449,107 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
 
   return std::make_unique<havel::ast::WhileStatement>(std::move(condition),
                                                       std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
+  advance(); // consume "do"
+
+  // Parse the body block
+  std::unique_ptr<havel::ast::Statement> body;
+  if (at().type == havel::TokenType::OpenBrace) {
+    body = parseBlockStatement();
+  } else {
+    failAt(at(), "Expected '{' after 'do'");
+  }
+
+  // Expect "while" keyword
+  if (at().type != havel::TokenType::While) {
+    failAt(at(), "Expected 'while' after do-while body");
+  }
+  advance(); // consume "while"
+
+  // Parse the condition
+  bool prevAllow = allowBraceCallSugar;
+  allowBraceCallSugar = false;
+  auto condition = parseExpression();
+  allowBraceCallSugar = prevAllow;
+
+  return std::make_unique<havel::ast::DoWhileStatement>(std::move(body),
+                                                        std::move(condition));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
+  advance(); // consume "switch"
+
+  // Parse the switch expression
+  bool prevAllow = allowBraceCallSugar;
+  allowBraceCallSugar = false;
+  auto expression = parseExpression();
+  allowBraceCallSugar = prevAllow;
+
+  // Expect opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after switch expression");
+  }
+  advance(); // consume "{"
+
+  std::vector<std::unique_ptr<havel::ast::SwitchCase>> cases;
+
+  // Parse switch cases
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Parse case test expression or 'else'
+    std::unique_ptr<havel::ast::Expression> test = nullptr;
+
+    if (at().type == havel::TokenType::Else) {
+      advance(); // consume "else"
+    } else {
+      // Parse case test expression
+      test = parseExpression();
+    }
+
+    // Expect '=>'
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after switch case test");
+    }
+    advance(); // consume "=>"
+
+    // Parse case body
+    std::unique_ptr<havel::ast::Statement> caseBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      caseBody = parseBlockStatement();
+    } else {
+      // Single expression statement
+      auto expr = parseExpression();
+      caseBody =
+          std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
+    }
+
+    cases.push_back(std::make_unique<havel::ast::SwitchCase>(
+        std::move(test), std::move(caseBody)));
+
+    // Skip newlines after case
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
+  // Expect closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close switch statement");
+  }
+  advance(); // consume "}"
+
+  return std::make_unique<havel::ast::SwitchStatement>(std::move(expression),
+                                                       std::move(cases));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {

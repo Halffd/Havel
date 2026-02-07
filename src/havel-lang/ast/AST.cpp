@@ -200,6 +200,47 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitDoWhileStatement(const DoWhileStatement &node) override {
+    out << getIndent() << "DoWhileStatement {" << std::endl;
+    indentLevel++;
+    printChildNode("body: ", node.body);
+    printChildNode("condition: ", node.condition);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitSwitchStatement(const SwitchStatement &node) override {
+    out << getIndent() << "SwitchStatement {" << std::endl;
+    indentLevel++;
+    printChildNode("expression: ", node.expression);
+    out << getIndent() << "cases: [" << std::endl;
+    indentLevel++;
+    for (const auto &caseNode : node.cases) {
+      if (caseNode) {
+        caseNode->accept(*this);
+      } else {
+        out << getIndent() << "nullptr_case" << std::endl;
+      }
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitSwitchCase(const SwitchCase &node) override {
+    out << getIndent() << "SwitchCase {" << std::endl;
+    indentLevel++;
+    if (node.test) {
+      printChildNode("test: ", node.test);
+    } else {
+      out << getIndent() << "test: else" << std::endl;
+    }
+    printChildNode("body: ", node.body);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitFunctionDeclaration(const FunctionDeclaration &node) override {
     out << getIndent() << "FunctionDeclaration {" << std::endl;
     indentLevel++;

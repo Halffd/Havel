@@ -21,6 +21,8 @@ enum class TokenType {
   If,
   Else,
   While,
+  Do,
+  Switch,
   For,
   In,
   Loop,

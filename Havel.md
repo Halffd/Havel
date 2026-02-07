@@ -120,12 +120,81 @@ let variable_name = value
 if condition { ... } else { ... }
 ```
 
+### Control Flow Statements
+
+#### Do-While Loop
+Execute body at least once, then repeat while condition is true:
+
+```havel
+do {
+    brightness += 0.1
+} while getKey("alt")
+
+// Counter example
+let counter = 0
+do {
+    print("Iteration: " + counter)
+    counter++
+} while counter < 5
+```
+
+#### Switch Statement
+Pattern matching with first-match-wins semantics:
+
+```havel
+// Basic switch
+let level = 0
++numpad1 => {
+    level++
+    switch level {
+        -1   { zoomOut() }
+         0   { resetZoom() }
+         1   { zoomIn() }
+         2   { toggleZoom() }
+         3   { disableZoom() }
+        >3   { level = -1 }
+        else { level = 3 }
+    }
+}
+
+// String matching
+let mode = "gaming"
+switch mode {
+    "gaming" => { print("Gaming mode activated") }
+    "work"   => { print("Work mode activated") }
+    else     => { print("Unknown mode: " + mode) }
+}
+
+// Relational operators
+let value = 5
+switch value {
+    <0   => { print("Negative") }
+    >10  => { print("Large positive") }
+    else => { print("Medium or zero") }
+}
+```
+
+**Switch Features:**
+- **First match wins** - No fallthrough possible
+- **Relational operators** - `>3`, `<=2`, `<0`, `>=10`
+- **Else clause** - Optional but recommended
+- **Type support** - Numbers, strings, booleans
+- **Clean syntax** - No parentheses, visually scannable
+
+**Parsing Rules:**
+- Left side: literal (`0`, `-1`) or relational (`>3`, `<=2`)
+- Right side: block `{ }`
+- Evaluated top → bottom
+- `else` optional but recommended
+
 ## Keywords
 
 | Keyword | Purpose | Example |
 |---------|---------|---------|
 | `let` | Variable declaration | `let x = 5` |
 | `if/else` | Conditional execution | `if x > 0 { ... } else { ... }` |
+| `do/while` | Do-while loop | `do { ... } while condition` |
+| `switch` | Pattern matching | `switch x { 1 => { ... } else => { ... } }` |
 | `when` | Conditional block | `when condition { ... }` |
 | `fn` | Function definition | `fn name(args) => ...` |
 | `return` | Function return | `return value` |

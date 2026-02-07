@@ -50,8 +50,10 @@ private:
   std::unique_ptr<ast::Statement> parseLetDeclaration();
   std::unique_ptr<ast::Statement> parseIfStatement();
   std::unique_ptr<ast::Statement> parseWhileStatement();
+  std::unique_ptr<ast::Statement> parseDoWhileStatement();
   std::unique_ptr<ast::Statement> parseForStatement();
   std::unique_ptr<ast::Statement> parseLoopStatement();
+  std::unique_ptr<ast::Statement> parseSwitchStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();
   std::unique_ptr<ast::Statement> parseOnModeStatement();

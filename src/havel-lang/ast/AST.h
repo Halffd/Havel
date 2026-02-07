@@ -40,6 +40,9 @@ enum class NodeType {
   WhileStatement,       // while condition { ... }
   ForStatement,         // for i in range { ... }
   LoopStatement,        // loop { ... }
+  DoWhileStatement,     // do { ... } while condition
+  SwitchStatement,      // switch expression { cases... }
+  SwitchCase,           // case expression => { ... }
   BreakStatement,       // break
   ContinueStatement,    // continue
   OnModeStatement,      // on mode gaming { ... }
@@ -705,6 +708,64 @@ struct ContinueStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Do-While Statement
+struct DoWhileStatement : public Statement {
+  std::unique_ptr<Statement> body;
+  std::unique_ptr<Expression> condition;
+
+  DoWhileStatement(std::unique_ptr<Statement> bd,
+                   std::unique_ptr<Expression> cond)
+      : body(std::move(bd)), condition(std::move(cond)) {
+    kind = NodeType::DoWhileStatement;
+  }
+
+  std::string toString() const override {
+    return "DoWhileStatement{body: " + (body ? body->toString() : "nullptr") +
+           ", condition: " + (condition ? condition->toString() : "nullptr") +
+           "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Switch Case
+struct SwitchCase : public ASTNode {
+  std::unique_ptr<Expression> test; // nullptr for 'else' case
+  std::unique_ptr<Statement> body;
+
+  SwitchCase(std::unique_ptr<Expression> t, std::unique_ptr<Statement> bd)
+      : test(std::move(t)), body(std::move(bd)) {
+    kind = NodeType::SwitchCase;
+  }
+
+  std::string toString() const override {
+    return "SwitchCase{test: " + (test ? test->toString() : "else") +
+           ", body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Switch Statement
+struct SwitchStatement : public Statement {
+  std::unique_ptr<Expression> expression;
+  std::vector<std::unique_ptr<SwitchCase>> cases;
+
+  SwitchStatement(std::unique_ptr<Expression> expr,
+                  std::vector<std::unique_ptr<SwitchCase>> cs)
+      : expression(std::move(expr)), cases(std::move(cs)) {
+    kind = NodeType::SwitchStatement;
+  }
+
+  std::string toString() const override {
+    return "SwitchStatement{expression: " +
+           (expression ? expression->toString() : "nullptr") + ", cases: [" +
+           std::to_string(cases.size()) + " cases]}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // On Mode Statement (on mode gaming { ... } else { ... })
 struct OnModeStatement : public Statement {
   std::string modeName;
@@ -1239,6 +1300,9 @@ public:
   virtual void visitReturnStatement(const ReturnStatement &node) = 0;
 
   virtual void visitWhileStatement(const WhileStatement &node) = 0;
+  virtual void visitDoWhileStatement(const DoWhileStatement &node) = 0;
+  virtual void visitSwitchStatement(const SwitchStatement &node) = 0;
+  virtual void visitSwitchCase(const SwitchCase &node) = 0;
 
   virtual void visitFunctionDeclaration(const FunctionDeclaration &node) = 0;
 
@@ -1343,6 +1407,15 @@ inline void ReturnStatement::accept(ASTVisitor &visitor) const {
 
 inline void WhileStatement::accept(ASTVisitor &visitor) const {
   visitor.visitWhileStatement(*this);
+}
+inline void DoWhileStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitDoWhileStatement(*this);
+}
+inline void SwitchStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitSwitchStatement(*this);
+}
+inline void SwitchCase::accept(ASTVisitor &visitor) const {
+  visitor.visitSwitchCase(*this);
 }
 inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitFunctionDeclaration(*this);

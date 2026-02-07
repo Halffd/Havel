@@ -194,7 +194,6 @@ void Interpreter::RegisterHotkeys(const std::string &sourceCode) {
 }
 
 HavelResult Interpreter::Evaluate(const ast::ASTNode &node) {
-  std::lock_guard<std::mutex> lock(interpreterMutex);
   const_cast<ast::ASTNode &>(node).accept(*this);
   return lastResult;
 }
@@ -1332,6 +1331,30 @@ void Interpreter::visitSwitchStatement(const ast::SwitchStatement &node) {
     if (!caseNode->test) {
       // Execute else case
       auto caseResult = Evaluate(*caseNode->body);
+
+      // Handle control flow from switch else case
+      if (isError(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
+      if (std::holds_alternative<ReturnValue>(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
+      if (std::holds_alternative<BreakValue>(caseResult)) {
+        // Break exits the switch
+        lastResult = caseResult;
+        return;
+      }
+
+      // Continue is not meaningful in switch, treat as normal completion
+      if (std::holds_alternative<ContinueValue>(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
       lastResult = caseResult;
       return;
     }
@@ -1361,6 +1384,30 @@ void Interpreter::visitSwitchStatement(const ast::SwitchStatement &node) {
     if (matches) {
       // Execute matching case
       auto caseResult = Evaluate(*caseNode->body);
+
+      // Handle control flow from switch case
+      if (isError(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
+      if (std::holds_alternative<ReturnValue>(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
+      if (std::holds_alternative<BreakValue>(caseResult)) {
+        // Break exits the switch
+        lastResult = caseResult;
+        return;
+      }
+
+      // Continue is not meaningful in switch, treat as normal completion
+      if (std::holds_alternative<ContinueValue>(caseResult)) {
+        lastResult = caseResult;
+        return;
+      }
+
       lastResult = caseResult;
       return;
     }

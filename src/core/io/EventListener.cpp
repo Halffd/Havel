@@ -696,6 +696,16 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   if (!hotkey.callback)
     return;
 
+  // Prevent double execution of the same hotkey
+  {
+    std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+    if (executingHotkeys.find(hotkey.alias) != executingHotkeys.end()) {
+      debug("Hotkey '{}' already executing, skipping", hotkey.alias);
+      return;
+    }
+    executingHotkeys.insert(hotkey.alias);
+  }
+
   // Create a copy of the callback and metadata BEFORE releasing locks
   // This prevents deadlock where callback tries to acquire locks we hold
   auto callback_copy = hotkey.callback;
@@ -704,7 +714,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   // Use HotkeyExecutor if available for thread-safe execution
   if (hotkeyExecutor) {
     auto result = hotkeyExecutor->submit([callback = callback_copy,
-                                          hotkeyAlias = alias_copy]() {
+                                          hotkeyAlias = alias_copy, this]() {
       try {
         info("Executing hotkey callback via HotkeyExecutor: {}", hotkeyAlias);
         callback();
@@ -713,10 +723,21 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
       } catch (...) {
         error("Hotkey '{}' threw unknown exception", hotkeyAlias);
       }
+
+      // Remove from executing set when done
+      {
+        std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+        executingHotkeys.erase(hotkeyAlias);
+      }
     });
 
     if (!result.accepted) {
       warn("Hotkey task queue full, dropping callback: {}", alias_copy);
+      // Remove from executing set since we won't execute
+      {
+        std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+        executingHotkeys.erase(alias_copy);
+      }
     }
     return;
   }
@@ -734,6 +755,12 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
       error("Hotkey '{}' exception: {}", alias, e.what());
     }
     pendingCallbacks--;
+
+    // Remove from executing set when done
+    {
+      std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+      executingHotkeys.erase(alias);
+    }
   }).detach();
 }
 bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,

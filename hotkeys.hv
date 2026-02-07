@@ -70,7 +70,7 @@ fn zoom (level) {
     if zoomLevel > 8.0 {
       zoomLevel = 8.0
     }
-    runDetached("hyprctl keyword cursor:zoom_factor $zoomLevel")
+    run("hyprctl keyword cursor:zoom_factor $zoomLevel")
   } else {
     if level == 0 {
       kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
@@ -413,8 +413,6 @@ $f9 => {
   log "Suspending all hotkeys"
   io.suspend()
 }
-@#WheelUp => { zoom(1) }
-@#WheelDown => { zoom(0) }
 @RShift & WheelUp => { zoom(1) }
 RShift & WheelDown => { zoom(0) }
 @LButton & RButton => { zoom(2) }
@@ -600,6 +598,9 @@ if hypr {
     zoom(1)
   }
 }
+
+@#WheelUp => zoom(1)
+@#WheelDown => zoom(0)
 
 @!WheelDown => {
   if altTabPressed {

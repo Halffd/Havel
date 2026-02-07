@@ -13,10 +13,12 @@
 #include <queue>
 #include <shared_mutex>
 #include <signal.h>
+#include <sstream>
 #include <string>
 #include <sys/eventfd.h>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef __linux__
@@ -326,6 +328,10 @@ private:
 
   // HotkeyExecutor for thread-safe callback execution
   HotkeyExecutor *hotkeyExecutor = nullptr;
+
+  // Hotkey execution deduplication - prevent double execution of same hotkey
+  std::mutex hotkeyExecMutex;
+  std::unordered_set<std::string> executingHotkeys;
 // X11 hotkey monitor (separate component)
 #ifdef __linux__
   std::unique_ptr<X11HotkeyMonitor> x11Monitor;

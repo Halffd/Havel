@@ -873,6 +873,7 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 !+Down => window.resizeToCorner(2)
 !+Left => window.resizeToCorner(3)
 !+Right => window.resizeToCorner(4)
+
 // Create LWin keytap with gaming mode condition
 let lwin = createKeyTap("lwin", () => { 
     if wm != "KDE Plasma" {
@@ -884,8 +885,24 @@ let lwin = createKeyTap("lwin", () => {
     return getMode() != "gaming"; 
   }, () => { play(); }, 
   "mode == 'gaming'", false, true)
-lwin.setup()
+ lwin->setup();
 
+  ralt = std::make_unique<KeyTap>(
+      io, *this, "ralt",
+      [this]() {
+        if (CompositorBridge::IsKDERunning()) {
+          auto win = havel::Window(WindowManager::GetActiveWindow());
+          if (win.Pos().x < 0) {
+            io.Send("#+{Right}");
+          } else {
+            io.Send("#+{Left}");
+          }
+        } else {
+          WindowManager::MoveWindowToNextMonitor();
+        }
+      },
+      "", nullptr, "", false, true);
+  ralt->setup();
 !a => window.toggleAlwaysOnTop()
 
 !delete => hotkey.toggleAutomationTask("autoclicker", "left")

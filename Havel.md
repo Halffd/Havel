@@ -187,6 +187,60 @@ switch value {
 - Evaluated top → bottom
 - `else` optional but recommended
 
+### Exception Handling
+Havel provides structured exception handling with try/catch/finally blocks:
+
+#### Basic Try-Catch
+```havel
+try {
+    // Risky operation
+    throw "Something went wrong"
+} catch error {
+    print("Caught: " + error)
+}
+```
+
+#### Try with Finally
+```havel
+try {
+    // Operation that needs cleanup
+    file = open("/tmp/data.txt")
+} finally {
+    // Always runs, even if error occurs
+    if file {
+        file.close()
+    }
+}
+```
+
+#### Complete Exception Handling
+```havel
+try {
+    // Main operation
+    data = read("/config.json")
+    config = parse(data)
+} catch parseError {
+    print("Failed to parse config: " + parseError)
+} finally {
+    print("Config loading attempt complete")
+}
+```
+
+#### Throw Values
+Any value can be thrown:
+```havel
+throw "Error message"           // String
+throw 42                        // Number  
+throw {type: "custom", code: 123} // Object
+```
+
+**Exception Features:**
+- **Single catch handler** - Simple error handling model
+- **Optional finally block** - Always runs for cleanup
+- **Any value type** - Throw strings, numbers, objects
+- **Structured error propagation** - Clean control flow
+- **Nested try blocks** - Support for complex error handling
+
 ## Keywords
 
 | Keyword | Purpose | Example |
@@ -204,6 +258,10 @@ switch value {
 | `config` | Configuration block | `config { ... }` |
 | `devices` | Device configuration | `devices { ... }` |
 | `modes` | Mode configuration | `modes { ... }` |
+| `try` | Exception handling | `try { ... } catch { ... } finally { ... }` |
+| `catch` | Exception handler | `catch error { ... }` |
+| `finally` | Cleanup block | `finally { ... }` |
+| `throw` | Raise exception | `throw value` |
 
 ## Standard Library Modules
 

@@ -96,7 +96,8 @@ enum class NodeType {
   BindExpression, // >>= operator
 
   // Error handling (functional style)
-  TryExpression, // try expr catch pattern -> handler
+  TryExpression,  // try expr catch pattern -> handler
+  ThrowStatement, // throw value
 
   // Lazy evaluation
   LazyExpression,  // lazy { expensive_computation() }
@@ -835,8 +836,10 @@ struct FunctionDeclaration : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 struct TryExpression : public Statement {
-  std::unique_ptr<Expression> tryBody;
-  std::unique_ptr<Expression> catchBody;
+  std::unique_ptr<Statement> tryBody;
+  std::unique_ptr<Identifier> catchVariable; // catch e -> variable name
+  std::unique_ptr<Statement> catchBody;      // catch block
+  std::unique_ptr<Statement> finallyBlock;   // optional finally block
 
   TryExpression() { kind = NodeType::TryExpression; }
 
@@ -844,6 +847,17 @@ struct TryExpression : public Statement {
 
   void accept(ASTVisitor &visitor) const override;
 };
+
+struct ThrowStatement : public Statement {
+  std::unique_ptr<Expression> value;
+
+  ThrowStatement() { kind = NodeType::ThrowStatement; }
+
+  std::string toString() const override { return "ThrowStatement{}"; }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Type Definition base class
 struct TypeDefinition : public ASTNode {
   std::string toString() const override { return "TypeDefinition{}"; }
@@ -1384,6 +1398,7 @@ public:
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
   virtual void visitArrayPattern(const ArrayPattern &node) = 0;
   virtual void visitObjectPattern(const ObjectPattern &node) = 0;
+  virtual void visitThrowStatement(const ThrowStatement &node) = 0;
   virtual void visitForStatement(const ForStatement &node) = 0;
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
   virtual void visitBreakStatement(const BreakStatement &node) = 0;

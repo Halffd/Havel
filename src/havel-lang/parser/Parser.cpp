@@ -291,6 +291,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
     return parseReturnStatement();
+  case havel::TokenType::Throw:
+    return parseThrowStatement();
+  case havel::TokenType::Try:
+    return parseTryStatement();
+  case havel::TokenType::Catch:
+    // Catch should only appear within try statements
+    failAt(at(), "'catch' can only appear within a 'try' statement");
+  case havel::TokenType::Finally:
+    // Finally should only appear within try statements
+    failAt(at(), "'finally' can only appear within a 'try' statement");
   case havel::TokenType::When:
     return parseWhenBlock();
   case havel::TokenType::OpenBrace:
@@ -402,6 +412,56 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
   }
 
   return std::make_unique<havel::ast::ReturnStatement>(std::move(value));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {
+  advance(); // consume 'throw'
+  auto value = parseExpression();
+  return std::make_unique<havel::ast::ThrowStatement>(std::move(value));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
+  advance(); // consume 'try'
+
+  // Parse try body
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after 'try'");
+  }
+  auto tryBody = parseBlockStatement();
+
+  std::unique_ptr<havel::ast::Identifier> catchVariable = nullptr;
+  std::unique_ptr<havel::ast::Statement> catchBody = nullptr;
+
+  // Parse optional catch
+  if (at().type == havel::TokenType::Catch) {
+    advance(); // consume 'catch'
+
+    // Parse catch variable (optional)
+    if (at().type == havel::TokenType::Identifier) {
+      catchVariable = std::make_unique<havel::ast::Identifier>(advance().value);
+    }
+
+    // Parse catch body
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after catch");
+    }
+    catchBody = parseBlockStatement();
+  }
+
+  // Parse optional finally
+  std::unique_ptr<havel::ast::Statement> finallyBlock = nullptr;
+  if (at().type == havel::TokenType::Finally) {
+    advance(); // consume 'finally'
+
+    if (at().type != havel::TokenType::OpenBrace) {
+      failAt(at(), "Expected '{' after 'finally'");
+    }
+    finallyBlock = parseBlockStatement();
+  }
+
+  return std::make_unique<havel::ast::TryExpression>(
+      std::move(tryBody), std::move(catchVariable), std::move(catchBody),
+      std::move(finallyBlock));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
@@ -2204,6 +2264,8 @@ bool Parser::atStatementStart() {
   case havel::TokenType::Off:
   case havel::TokenType::Fn:
   case havel::TokenType::Return:
+  case havel::TokenType::Throw:
+  case havel::TokenType::Try:
   case havel::TokenType::OpenBrace:
   case havel::TokenType::Import:
   case havel::TokenType::Config:

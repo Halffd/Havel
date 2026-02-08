@@ -351,7 +351,20 @@ public:
     out << getIndent() << "TryExpression {" << std::endl;
     indentLevel++;
     printChildNode("tryBody: ", node.tryBody);
-    printChildNode("catchBody: ", node.catchBody);
+
+    out << getIndent() << "catchHandlers: [" << std::endl;
+    indentLevel++;
+    for (const auto &[pattern, handler] : node.catchHandlers) {
+      out << getIndent() << "Pattern -> Handler" << std::endl;
+      indentLevel++;
+      printChildNode("pattern: ", pattern);
+      printChildNode("handler: ", handler);
+      indentLevel--;
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+
+    printChildNode("finallyBlock: ", node.finallyBlock);
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }
@@ -436,4 +449,5 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 };
+
 } // namespace havel::ast

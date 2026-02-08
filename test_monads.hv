@@ -25,33 +25,33 @@ let data = [1, 2, 3, null, "test"]
 
 // Pipeline with Maybe monad - should stop on first null/empty
 let maybeResult = data 
-  |> maybe(x => x * 2) 
-  |> maybe(x => x + 10)
+  | maybe(x => x * 2) 
+  | maybe(x => x + 10)
 
 // Pipeline with Optional monad - should continue on empty values
 let optionalResult = data
-  |> optional(x => x * 3)  
-  |> optional(x => x + 5)
+  | optional(x => x * 3)  
+  | optional(x => x + 5)
 
 // Pipeline with Result monad - should stop on error
 let resultPipeline = data
-  |> result(x => x * 2) 
-  |> result(x => if x > 0 then x * 3 else error("Negative number"))
+  | result(x => x * 2) 
+  | result(x => if x > 0 then x * 3 else error("Negative number"))
 
 // Pipeline with Promise monad
 let promisePipeline = data
-  |> promise(x => x.toString()) 
-  |> promise(x => "processed: " + x)
+  | promise(x => x.toString()) 
+  | promise(x => "processed: " + x)
 
 // Pipeline with Error monad - should stop on error
 let errorPipeline = data
-  |> error(x => if x != null then x.toString() else error("Null value"))
+  | error(x => if x != null then x.toString() else error("Null value"))
 
 // Test combining monads
 let combined = data
-  |> maybe(x => x) 
-  |> optional(y => y + " from optional") 
-  |> result(z => "final: " + z)
+  | maybe(x => x) 
+  | optional(y => y + " from optional") 
+  | result(z => "final: " + z)
 
 print("Maybe tests:")
 print("maybeValue:", maybeValue)

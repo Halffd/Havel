@@ -1843,6 +1843,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeArrayBuiltins();
   InitializeIOBuiltins();
   InitializeBrightnessBuiltins();
+  InitializeMathBuiltins();
   InitializeHelpBuiltin();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();
@@ -4215,6 +4216,436 @@ void Interpreter::InitializeIOBuiltins() {
         std::cout << help.str();
         return HavelValue(nullptr);
       }));
+}
+
+void Interpreter::InitializeMathBuiltins() {
+  // === MATH MODULE ===
+  auto mathObj = std::make_shared<HavelObject>();
+
+  // Basic arithmetic functions
+  (*mathObj)["abs"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("abs() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::abs(value));
+      });
+
+  (*mathObj)["ceil"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("ceil() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::ceil(value));
+      });
+
+  (*mathObj)["floor"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("floor() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::floor(value));
+      });
+
+  (*mathObj)["round"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("round() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::round(value));
+      });
+
+  // Trigonometric functions
+  (*mathObj)["sin"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("sin() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::sin(value));
+      });
+
+  (*mathObj)["cos"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("cos() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::cos(value));
+      });
+
+  (*mathObj)["tan"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("tan() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::tan(value));
+      });
+
+  (*mathObj)["asin"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("asin() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value < -1.0 || value > 1.0)
+          return HavelRuntimeError("asin() argument must be between -1 and 1");
+
+        return HavelValue(std::asin(value));
+      });
+
+  (*mathObj)["acos"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("acos() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value < -1.0 || value > 1.0)
+          return HavelRuntimeError("acos() argument must be between -1 and 1");
+
+        return HavelValue(std::acos(value));
+      });
+
+  (*mathObj)["atan"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("atan() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::atan(value));
+      });
+
+  (*mathObj)["atan2"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 2)
+          return HavelRuntimeError("atan2() requires 2 arguments (y, x)");
+
+        double y = ValueToNumber(args[0]);
+        double x = ValueToNumber(args[1]);
+        return HavelValue(std::atan2(y, x));
+      });
+
+  // Hyperbolic functions
+  (*mathObj)["sinh"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("sinh() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::sinh(value));
+      });
+
+  (*mathObj)["cosh"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("cosh() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::cosh(value));
+      });
+
+  (*mathObj)["tanh"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("tanh() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::tanh(value));
+      });
+
+  // Exponential and logarithmic functions
+  (*mathObj)["exp"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("exp() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::exp(value));
+      });
+
+  (*mathObj)["log"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("log() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value <= 0.0)
+          return HavelRuntimeError("log() argument must be positive");
+
+        return HavelValue(std::log(value));
+      });
+
+  (*mathObj)["log10"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("log10() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value <= 0.0)
+          return HavelRuntimeError("log10() argument must be positive");
+
+        return HavelValue(std::log10(value));
+      });
+
+  (*mathObj)["log2"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("log2() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value <= 0.0)
+          return HavelRuntimeError("log2() argument must be positive");
+
+        return HavelValue(std::log2(value));
+      });
+
+  (*mathObj)["sqrt"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("sqrt() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value < 0.0)
+          return HavelRuntimeError("sqrt() argument must be non-negative");
+
+        return HavelValue(std::sqrt(value));
+      });
+
+  (*mathObj)["cbrt"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("cbrt() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(std::cbrt(value));
+      });
+
+  // Power functions
+  (*mathObj)["pow"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 2)
+          return HavelRuntimeError(
+              "pow() requires 2 arguments (base, exponent)");
+
+        double base = ValueToNumber(args[0]);
+        double exponent = ValueToNumber(args[1]);
+        return HavelValue(std::pow(base, exponent));
+      });
+
+  // Constants
+  (*mathObj)["PI"] = HavelValue(M_PI);
+  (*mathObj)["E"] = HavelValue(M_E);
+  (*mathObj)["TAU"] = HavelValue(2 * M_PI);
+  (*mathObj)["SQRT2"] = HavelValue(M_SQRT2);
+  (*mathObj)["SQRT1_2"] = HavelValue(M_SQRT1_2);
+  (*mathObj)["LN2"] = HavelValue(M_LN2);
+  (*mathObj)["LN10"] = HavelValue(M_LN10);
+  (*mathObj)["LOG2E"] = HavelValue(M_LOG2E);
+  (*mathObj)["LOG10E"] = HavelValue(M_LOG10E);
+
+  // Utility functions
+  (*mathObj)["min"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("min() requires at least 2 arguments");
+
+        double result = ValueToNumber(args[0]);
+        for (size_t i = 1; i < args.size(); i++) {
+          result = std::min(result, ValueToNumber(args[i]));
+        }
+        return HavelValue(result);
+      });
+
+  (*mathObj)["max"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("max() requires at least 2 arguments");
+
+        double result = ValueToNumber(args[0]);
+        for (size_t i = 1; i < args.size(); i++) {
+          result = std::max(result, ValueToNumber(args[i]));
+        }
+        return HavelValue(result);
+      });
+
+  (*mathObj)["clamp"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 3)
+          return HavelRuntimeError(
+              "clamp() requires 3 arguments (value, min, max)");
+
+        double value = ValueToNumber(args[0]);
+        double minVal = ValueToNumber(args[1]);
+        double maxVal = ValueToNumber(args[2]);
+
+        if (minVal > maxVal)
+          return HavelRuntimeError(
+              "clamp() min must be less than or equal to max");
+
+        return HavelValue(std::clamp(value, minVal, maxVal));
+      });
+
+  (*mathObj)["lerp"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 3)
+          return HavelRuntimeError(
+              "lerp() requires 3 arguments (start, end, t)");
+
+        double start = ValueToNumber(args[0]);
+        double end = ValueToNumber(args[1]);
+        double t = ValueToNumber(args[2]);
+
+        return HavelValue(start + t * (end - start));
+      });
+
+  // Random functions
+  (*mathObj)["random"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+
+        if (args.empty()) {
+          // random() -> [0, 1)
+          std::uniform_real_distribution<double> dis(0.0, 1.0);
+          return HavelValue(dis(gen));
+        } else if (args.size() == 1) {
+          // random(max) -> [0, max)
+          double maxVal = ValueToNumber(args[0]);
+          if (maxVal <= 0)
+            return HavelRuntimeError("random(max) requires max > 0");
+          std::uniform_real_distribution<double> dis(0.0, maxVal);
+          return HavelValue(dis(gen));
+        } else if (args.size() == 2) {
+          // random(min, max) -> [min, max)
+          double minVal = ValueToNumber(args[0]);
+          double maxVal = ValueToNumber(args[1]);
+          if (minVal >= maxVal)
+            return HavelRuntimeError("random(min, max) requires min < max");
+          std::uniform_real_distribution<double> dis(minVal, maxVal);
+          return HavelValue(dis(gen));
+        } else {
+          return HavelRuntimeError("random() accepts 0, 1, or 2 arguments");
+        }
+      });
+
+  (*mathObj)["randint"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+
+        if (args.size() == 1) {
+          // randint(max) -> [0, max]
+          int maxVal = static_cast<int>(ValueToNumber(args[0]));
+          if (maxVal < 0)
+            return HavelRuntimeError("randint(max) requires max >= 0");
+          std::uniform_int_distribution<int> dis(0, maxVal);
+          return HavelValue(static_cast<double>(dis(gen)));
+        } else if (args.size() == 2) {
+          // randint(min, max) -> [min, max]
+          int minVal = static_cast<int>(ValueToNumber(args[0]));
+          int maxVal = static_cast<int>(ValueToNumber(args[1]));
+          if (minVal > maxVal)
+            return HavelRuntimeError("randint(min, max) requires min <= max");
+          std::uniform_int_distribution<int> dis(minVal, maxVal);
+          return HavelValue(static_cast<double>(dis(gen)));
+        } else {
+          return HavelRuntimeError("randint() requires 1 or 2 arguments");
+        }
+      });
+
+  // Angle conversion functions
+  (*mathObj)["deg2rad"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("deg2rad() requires 1 argument");
+
+        double degrees = ValueToNumber(args[0]);
+        return HavelValue(degrees * M_PI / 180.0);
+      });
+
+  (*mathObj)["rad2deg"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("rad2deg() requires 1 argument");
+
+        double radians = ValueToNumber(args[0]);
+        return HavelValue(radians * 180.0 / M_PI);
+      });
+
+  // Special functions
+  (*mathObj)["sign"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("sign() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        if (value > 0)
+          return HavelValue(1.0);
+        if (value < 0)
+          return HavelValue(-1.0);
+        return HavelValue(0.0);
+      });
+
+  (*mathObj)["fract"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1)
+          return HavelRuntimeError("fract() requires 1 argument");
+
+        double value = ValueToNumber(args[0]);
+        return HavelValue(value - std::floor(value));
+      });
+
+  (*mathObj)["mod"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 2)
+          return HavelRuntimeError("mod() requires 2 arguments (x, y)");
+
+        double x = ValueToNumber(args[0]);
+        double y = ValueToNumber(args[1]);
+
+        if (y == 0.0)
+          return HavelRuntimeError("mod() divisor cannot be zero");
+
+        return HavelValue(std::fmod(x, y));
+      });
+
+  // Distance and geometry functions
+  (*mathObj)["distance"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 4)
+          return HavelRuntimeError(
+              "distance() requires 4 arguments (x1, y1, x2, y2)");
+
+        double x1 = ValueToNumber(args[0]);
+        double y1 = ValueToNumber(args[1]);
+        double x2 = ValueToNumber(args[2]);
+        double y2 = ValueToNumber(args[3]);
+
+        double dx = x2 - x1;
+        double dy = y2 - y1;
+        return HavelValue(std::sqrt(dx * dx + dy * dy));
+      });
+
+  (*mathObj)["hypot"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("hypot() requires at least 2 arguments");
+
+        double sumSquares = 0.0;
+        for (const auto &arg : args) {
+          double value = ValueToNumber(arg);
+          sumSquares += value * value;
+        }
+
+        return HavelValue(std::sqrt(sumSquares));
+      });
+
+  environment->Define("math", HavelValue(mathObj));
 }
 
 void Interpreter::InitializeBrightnessBuiltins() {

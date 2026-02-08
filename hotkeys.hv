@@ -873,6 +873,18 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 !+Down => window.resizeToCorner(2)
 !+Left => window.resizeToCorner(3)
 !+Right => window.resizeToCorner(4)
+// Create LWin keytap with gaming mode condition
+let lwin = createKeyTap("lwin", () => { 
+    if wm != "KDE Plasma" {
+      runAsync("/bin/xfce4-popup-whiskermenu");
+    } else {
+      qdbus("org.kde.plasmashell /PlasmaShell \"org.kde.PlasmaShell.activateLauncherMenu\"")
+    }
+  }, () => { 
+    return getMode() != "gaming"; 
+  }, () => { play(); }, 
+  "mode == 'gaming'", false, true)
+lwin.setup()
 
 !a => window.toggleAlwaysOnTop()
 

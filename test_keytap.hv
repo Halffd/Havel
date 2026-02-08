@@ -1,0 +1,29 @@
+// Test KeyTap with arrow functions
+print("Testing KeyTap with arrow functions...")
+
+// Simple arrow function test
+let testFunc = () => { print("Arrow function called!") }
+testFunc()
+
+// Test createKeyTap with arrow functions
+let lwin = createKeyTap("lwin", 
+  () => { 
+    print("LWin tapped!")
+    if wm != "KDE Plasma" {
+      runAsync("/bin/xfce4-popup-whiskermenu")
+    } else {
+      qdbus("org.kde.plasmashell /PlasmaShell \"org.kde.PlasmaShell.activateLauncherMenu\"")
+    }
+  }, 
+  () => { 
+    print("Checking tap condition...")
+    return getMode() != "gaming" 
+  }, 
+  () => { 
+    print("LWin combo action!")
+    play() 
+  }, 
+  "mode == 'gaming'", false, true)
+
+print("KeyTap created successfully!")
+print("Press LWin to test...")

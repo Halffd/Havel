@@ -1745,44 +1745,64 @@ void Interpreter::InitializeStandardLibrary() {
         std::string keyName = ValueToString(args[0]);
 
         // Optional parameters with defaults
-        std::function<void()> onTap = []() {
-          if (args.size() >= 2) {
-            // Execute tap action if provided
-            auto tapAction = args[1];
-            if (std::holds_alternative < std::function <
-                HavelValue(const std::vector<HavelValue> &) >>> (tapAction)) {
-              auto func = std::get<
-                  std::function<HavelValue(const std::vector<HavelValue> &)>>(
-                  tapAction);
-              func({HavelValue(nullptr)});
-            } else if (std::holds_alternative<std::string>(tapAction)) {
-              io.Send(ValueToString(tapAction));
-            }
-          }
-        };
-
+        std::function<void()> onTap = []() { /* Default empty tap action */ };
         std::variant<std::string, std::function<bool()>> tapCondition = {};
         std::variant<std::string, std::function<bool()>> comboCondition = {};
         std::function<void()> onCombo = nullptr;
         bool grabDown = true;
         bool grabUp = true;
 
-        // Optional condition parameter
-        if (args.size() >= 3) {
-          if (std::holds_alternative<std::string>(args[2])) {
-            tapCondition = ValueToString(args[2]);
+        // Handle onTap parameter (can be lambda function or string)
+        if (args.size() >= 2) {
+          auto tapAction = args[1];
+          if (std::holds_alternative<BuiltinFunction>(tapAction)) {
+            auto func = std::get<BuiltinFunction>(tapAction);
+            onTap = [this, func]() {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in tap action: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+              }
+            };
+          } else if (std::holds_alternative<std::string>(tapAction)) {
+            std::string cmd = ValueToString(tapAction);
+            onTap = [this, cmd]() { io.Send(cmd); };
           }
         }
 
-        // Optional combo action parameter
+        // Handle tapCondition parameter (string or lambda function)
+        if (args.size() >= 3) {
+          auto condition = args[2];
+          if (std::holds_alternative<std::string>(condition)) {
+            tapCondition = ValueToString(condition);
+          } else if (std::holds_alternative<BuiltinFunction>(condition)) {
+            auto func = std::get<BuiltinFunction>(condition);
+            tapCondition = [this, func]() -> bool {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in tap condition: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+                return false;
+              }
+              return ValueToBool(result);
+            };
+          }
+        }
+
+        // Handle onCombo parameter (lambda function)
         if (args.size() >= 4) {
-          if (std::holds_alternative < std::function <
-              HavelValue(const std::vector<HavelValue> &) >>> (args[3])) {
-            onCombo = [args[3]](const std::vector<HavelValue> &) {
-              auto func = std::get<
-                  std::function<HavelValue(const std::vector<HavelValue> &)>>(
-                  args[3]);
-              func({HavelValue(nullptr)});
+          auto comboAction = args[3];
+          if (std::holds_alternative<BuiltinFunction>(comboAction)) {
+            auto func = std::get<BuiltinFunction>(comboAction);
+            onCombo = [this, func]() {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in combo action: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+              }
             };
           }
         }

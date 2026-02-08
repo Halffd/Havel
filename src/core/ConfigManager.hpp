@@ -167,7 +167,6 @@ public:
                     if (currentModified > lastModified) {
                         lastModified = currentModified;
                         Reload();
-                        std::cout << "Config file changed, reloaded: " << path << std::endl;
                     }
                 } catch (...) {
                     // Silently continue
@@ -220,22 +219,7 @@ public:
     void Load(const std::string& filename = "havel.cfg") {
         path = ConfigPaths::GetConfigPath(filename);
         
-        // Debug: Show where we're trying to load from
-        std::cout << "Loading config from: " << path << std::endl;
-        
         std::ifstream file(path);
-        if (!file.is_open()) {
-            std::cerr << "Warning: Could not open config file: " << path << std::endl;
-            // Also try current directory as fallback
-            std::ifstream fallback(filename);
-            if (fallback.is_open()) {
-                std::cout << "Using fallback config: " << filename << std::endl;
-                file = std::move(fallback);
-                path = filename;
-            } else {
-                return;
-            }
-        }
         
         std::string line, currentSection;
         int lineNumber = 0;
@@ -260,8 +244,6 @@ public:
                     // Trim section name
                     currentSection.erase(0, currentSection.find_first_not_of(" \t"));
                     currentSection.erase(currentSection.find_last_not_of(" \t") + 1);
-                    
-                    std::cout << "Found section: [" << currentSection << "]" << std::endl;
                 } else {
                     std::cerr << "Warning: Malformed section header at line " << lineNumber 
                              << ": " << line << std::endl;
@@ -294,37 +276,21 @@ public:
                     
                     size_t endQuote = value.find(quote);
                     if (endQuote != std::string::npos) {
-                        value = value.substr(0, endQuote);  // Remove closing quote
+                        value = value.substr(0, endQuote);  // Remove clos`ing quote
                     } else {
-                        std::cerr << "Warning: Unmatched quote at line " << lineNumber << std::endl;
+                        error("Warning: Unmatched quote at line " + std::to_string(lineNumber));
                     }
                 }
                 
                 // Store the setting
                 settings[fullKey] = value;
                 
-                // Debug output
-                std::cout << "Loaded: " << fullKey << " = \"" << value << "\"" << std::endl;
-                
             } else {
-                std::cerr << "Warning: Invalid line format at line " << lineNumber 
-                         << ": " << line << std::endl;
+                error("Warning: Invalid line format at line " + std::to_string(lineNumber) + ": " + line);
             }
         }
         
         file.close();
-        
-        // Summary
-        std::cout << "Config loading complete. Loaded " << settings.size() 
-                  << " settings from " << path << std::endl;
-        
-        // Debug: Show all loaded keys
-        if (!settings.empty()) {
-            std::cout << "All loaded keys:" << std::endl;
-            for (const auto& [key, value] : settings) {
-                std::cout << "  " << key << " = \"" << value << "\"" << std::endl;
-            }
-        }
     }
 
     void Save(const std::string& filename = "havel.cfg") {
@@ -334,7 +300,7 @@ public:
         
         std::ofstream file(tempPath);
         if (!file.is_open()) {
-            std::cerr << "Error: Could not save config file to temporary path: " << tempPath << std::endl;
+            error("Error: Could not save config file to temporary path: " + tempPath);
             return;
         }
         
@@ -365,13 +331,14 @@ public:
         try {
             std::filesystem::rename(tempPath, path);
         } catch (const std::filesystem::filesystem_error& e) {
-            std::cerr << "Error renaming temporary config file: " << e.what() << std::endl;
+            error("Error renaming temporary config file: ", e.what());
             // As a fallback, try to copy and delete
             try {
                 std::filesystem::copy_file(tempPath, path, std::filesystem::copy_options::overwrite_existing);
                 std::filesystem::remove(tempPath);
             } catch (const std::filesystem::filesystem_error& e2) {
-                std::cerr << "Error copying temporary config file: " << e2.what() << std::endl;
+                error("Error copying temporary config file: ", e2.what());
+                return;
             }
         }
     }

@@ -885,7 +885,6 @@ let lwin = createKeyTap("lwin", () => {
     return getMode() != "gaming"; 
   }, () => { play(); }, 
   "mode == 'gaming'", false, true)
- lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
       io, *this, "ralt",

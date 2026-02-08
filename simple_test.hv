@@ -1,0 +1,6 @@
+// Simple test
+try {
+  print("In try")
+} catch {
+  print("In catch")
+}

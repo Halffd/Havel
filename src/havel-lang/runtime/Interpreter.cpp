@@ -1673,7 +1673,7 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
   // Execute try body
   auto tryResult = Evaluate(*node.tryBody);
 
-  // If try body succeeded, execute finally block if present
+  // Execute finally block if present (always runs)
   if (node.finallyBlock) {
     auto finallyResult = Evaluate(*node.finallyBlock);
     if (isError(finallyResult)) {
@@ -1682,19 +1682,28 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
     }
   }
 
-  // If try body threw an error, try to match catch handlers
+  // Check if try body threw an error
   if (auto *err = std::get_if<HavelRuntimeError>(&tryResult)) {
-    for (const auto &[pattern, handler] : node.catchHandlers) {
-      // For now, just execute the first handler (simplified)
-      auto handlerResult = Evaluate(*handler);
-      if (isError(handlerResult)) {
-        lastResult = handlerResult;
+    // If we have a catch block, execute it
+    if (node.catchBody) {
+      // If catch variable is specified, create it in current scope
+      if (node.catchVariable) {
+        // Store the error value in the catch variable
+        // For now, we'll store the error message as string
+        std::string errorMsg = err->what();
+        environment->Define(node.catchVariable->symbol, HavelValue(errorMsg));
+      }
+
+      auto catchResult = Evaluate(*node.catchBody);
+      if (isError(catchResult)) {
+        lastResult = catchResult;
         return;
       }
-      lastResult = handlerResult;
+      lastResult = catchResult;
       return;
     }
-    // If no handler matched, re-throw the original error
+
+    // No catch handler, re-throw the original error
     lastResult = *err;
     return;
   }
@@ -1715,59 +1724,10 @@ void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
     return;
   }
 
-  // Convert the thrown value to a string error message
-  std::string errorMsg = "Thrown: " + ValueToString(unwrap(valueResult));
-  lastResult = HavelRuntimeError(errorMsg);
-}
-
-void Interpreter::visitForStatement(const ast::ForStatement &node) {
-  // Evaluate the iterable
-  auto iterableResult = Evaluate(*node.iterable);
-  if (isError(iterableResult)) {
-    lastResult = iterableResult;
-    return;
-  }
-
-  HavelValue iterableValue = unwrap(iterableResult);
-
-  // Check if iterable is an array
-  if (auto *array = std::get_if<HavelArray>(&iterableValue)) {
-    // Iterate over each element
-    if (*array)
-      for (const auto &element : **array) {
-        // Define iterator variable in current scope
-        environment->Define(node.iterators[0]->symbol, element);
-
-        // Execute loop body
-        auto bodyResult = Evaluate(*node.body);
-
-        // Handle errors and return statements
-        if (isError(bodyResult)) {
-          lastResult = bodyResult;
-          return;
-        }
-
-        if (std::holds_alternative<ReturnValue>(bodyResult)) {
-          lastResult = bodyResult;
-          return;
-        }
-
-        // Handle break
-        if (std::holds_alternative<BreakValue>(bodyResult)) {
-          break;
-        }
-
-        // Handle continue
-        if (std::holds_alternative<ContinueValue>(bodyResult)) {
-          continue;
-        }
-      }
-
-    lastResult = nullptr;
-    return;
-  }
-
-  lastResult = HavelRuntimeError("for-in loop requires an iterable (array)");
+  // Store the thrown value as a runtime error
+  // This preserves the original value type instead of converting to string
+  lastResult =
+      HavelRuntimeError("Thrown: " + ValueToString(unwrap(valueResult)));
 }
 
 void Interpreter::visitLoopStatement(const ast::LoopStatement &node) {
@@ -1872,9 +1832,6 @@ void Interpreter::visitFunctionType(const ast::FunctionType &node) {
 }
 void Interpreter::visitTypeReference(const ast::TypeReference &node) {
   lastResult = HavelRuntimeError("Type references not implemented.");
-}
-void Interpreter::visitTryExpression(const ast::TryExpression &node) {
-  lastResult = HavelRuntimeError("Try expressions not implemented.");
 }
 
 void Interpreter::InitializeStandardLibrary() {

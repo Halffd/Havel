@@ -352,17 +352,12 @@ public:
     indentLevel++;
     printChildNode("tryBody: ", node.tryBody);
 
-    out << getIndent() << "catchHandlers: [" << std::endl;
-    indentLevel++;
-    for (const auto &[pattern, handler] : node.catchHandlers) {
-      out << getIndent() << "Pattern -> Handler" << std::endl;
-      indentLevel++;
-      printChildNode("pattern: ", pattern);
-      printChildNode("handler: ", handler);
-      indentLevel--;
+    if (node.catchVariable) {
+      printChildNode("catchVariable: ", node.catchVariable);
     }
-    indentLevel--;
-    out << getIndent() << "]" << std::endl;
+    if (node.catchBody) {
+      printChildNode("catchBody: ", node.catchBody);
+    }
 
     printChildNode("finallyBlock: ", node.finallyBlock);
     indentLevel--;
@@ -445,6 +440,13 @@ public:
     }
     indentLevel--;
     out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+  void visitThrowStatement(const ThrowStatement &node) override {
+    out << getIndent() << "ThrowStatement {" << std::endl;
+    indentLevel++;
+    printChildNode("value: ", node.value);
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }

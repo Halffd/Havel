@@ -744,22 +744,60 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
 
     // Generate try block
     builder.SetInsertPoint(tryBlock);
-    llvm::Value *tryValue = GenerateExpression(*tryExpr.tryBody);
+    GenerateStatement(*tryExpr.tryBody);
     builder.CreateBr(continueBlock);
 
     // Generate catch block
     builder.SetInsertPoint(catchBlock);
-    llvm::Value *catchValue = GenerateExpression(*tryExpr.catchBody);
+    if (tryExpr.catchBody) {
+      // Add catch variable to symbol table if present
+      if (tryExpr.catchVariable) {
+        llvm::AllocaInst *catchVarAlloca =
+            builder.CreateAlloca(llvm::Type::getDoubleTy(context), nullptr,
+                                 tryExpr.catchVariable->symbol);
+        symbolTable[tryExpr.catchVariable->symbol] = catchVarAlloca;
+      }
+      GenerateStatement(*tryExpr.catchBody);
+    }
     builder.CreateBr(continueBlock);
 
-    // Generate continue block with PHI
-    builder.SetInsertPoint(continueBlock);
-    llvm::PHINode *phi =
-        builder.CreatePHI(tryValue->getType(), 2, "try_result");
-    phi->addIncoming(tryValue, tryBlock);
-    phi->addIncoming(catchValue, catchBlock);
+    // Generate finally block if present
+    if (tryExpr.finallyBlock) {
+      llvm::BasicBlock *finallyBlock = llvm::BasicBlock::Create(
+          context, "finally", builder.GetInsertBlock()->getParent());
+      builder.SetInsertPoint(finallyBlock);
+      GenerateStatement(*tryExpr.finallyBlock);
+      builder.CreateBr(continueBlock);
+    }
 
-    return phi;
+    // Generate continue block
+    builder.SetInsertPoint(continueBlock);
+    return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
+  }
+
+  case ast::NodeType::ThrowStatement: {
+    const auto &throwStmt = static_cast<const ast::ThrowStatement &>(stmt);
+
+    // Generate the value to throw
+    llvm::Value *throwValue = nullptr;
+    if (throwStmt.value) {
+      throwValue = GenerateExpression(*throwStmt.value);
+    }
+
+    // For now, we'll just print the thrown value and exit
+    // In a full implementation, this would throw an exception
+    if (throwValue) {
+      // Create a call to print function (assuming it exists)
+      llvm::Function *printFunc = module->getFunction("print");
+      if (printFunc) {
+        builder.CreateCall(printFunc, {throwValue});
+      }
+    }
+
+    // Create unreachable to indicate this path doesn't continue
+    builder.CreateUnreachable();
+
+    return llvm::UndefValue::get(llvm::Type::getVoidTy(context));
   }
 
   default:

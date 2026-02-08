@@ -37,6 +37,14 @@ static bool isError(const HavelResult &result) {
   return std::holds_alternative<HavelRuntimeError>(result);
 }
 
+// Helper to extract error message from HavelResult
+static std::string getErrorMessage(const HavelResult &result) {
+  if (auto *err = std::get_if<HavelRuntimeError>(&result)) {
+    return err->what();
+  }
+  return "Unknown error";
+}
+
 static HavelValue unwrap(HavelResult &result) {
   if (auto *val = std::get_if<HavelValue>(&result)) {
     return *val;
@@ -44,8 +52,11 @@ static HavelValue unwrap(HavelResult &result) {
   if (auto *ret = std::get_if<ReturnValue>(&result)) {
     return ret->value;
   }
-  // This should not be called on an error.
-  throw std::get<HavelRuntimeError>(result);
+  if (auto *err = std::get_if<HavelRuntimeError>(&result)) {
+    throw *err;
+  }
+  // This should not be called on break/continue.
+  throw std::runtime_error("Cannot unwrap control flow result");
 }
 
 std::string Interpreter::ValueToString(const HavelValue &value) {
@@ -107,6 +118,14 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
       value);
 }
 
+bool Interpreter::ExecResultToBool(const HavelResult &result) {
+  if (std::holds_alternative<HavelValue>(result)) {
+    return ValueToBool(std::get<HavelValue>(result));
+  }
+  // For control flow types (return, break, continue) and errors, return false
+  return false;
+}
+
 bool Interpreter::ValueToBool(const HavelValue &value) {
   return std::visit(
       [](auto &&arg) -> bool {
@@ -160,7 +179,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
     : io(io_system), windowManager(window_mgr), hotkeyManager(hotkey_mgr),
       brightnessManager(brightness_mgr), audioManager(audio_mgr),
       guiManager(gui_mgr), screenshotManager(screenshot_mgr),
-      lastResult(nullptr) {
+      lastResult(HavelValue(nullptr)) {
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
@@ -176,7 +195,8 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     // Keep the AST alive to avoid dangling pointers captured in
     // functions/closures
     loadedPrograms.push_back(std::move(program));
-    return Evaluate(*programPtr);
+    auto result = Evaluate(*programPtr);
+    return result;
   } catch (const havel::LexError &e) {
     return HavelRuntimeError("Lex error at line " + std::to_string(e.line) +
                              ", column " + std::to_string(e.column) + ": " +
@@ -226,7 +246,66 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
     }
     value = unwrap(result);
   }
-  environment->Define(node.name->symbol, value);
+
+  // Handle destructuring patterns
+  if (auto *ident = dynamic_cast<const ast::Identifier *>(node.pattern.get())) {
+    // Simple variable declaration: let x = value
+    environment->Define(ident->symbol, value);
+  } else if (auto *arrayPattern =
+                 dynamic_cast<const ast::ArrayPattern *>(node.pattern.get())) {
+    // Array destructuring: let [a, b] = arr
+    if (!node.value) {
+      lastResult =
+          HavelRuntimeError("Array destructuring requires initialization");
+      return;
+    }
+
+    if (auto *array = std::get_if<HavelArray>(&value)) {
+      if (*array) {
+        for (size_t i = 0;
+             i < arrayPattern->elements.size() && i < (*array)->size(); ++i) {
+          const auto &element = (*array)->at(i);
+          const auto &pattern = arrayPattern->elements[i];
+
+          if (auto *ident =
+                  dynamic_cast<const ast::Identifier *>(pattern.get())) {
+            environment->Define(ident->symbol, element);
+          }
+          // TODO: Handle nested patterns
+        }
+      }
+    } else {
+      lastResult = HavelRuntimeError("Cannot destructure non-array value");
+      return;
+    }
+  } else if (auto *objectPattern =
+                 dynamic_cast<const ast::ObjectPattern *>(node.pattern.get())) {
+    // Object destructuring: let {x, y} = obj
+    if (!node.value) {
+      lastResult =
+          HavelRuntimeError("Object destructuring requires initialization");
+      return;
+    }
+
+    if (auto *object = std::get_if<HavelObject>(&value)) {
+      if (*object) {
+        for (const auto &[key, pattern] : objectPattern->properties) {
+          auto it = (*object)->find(key);
+          if (it != (*object)->end()) {
+            if (auto *ident =
+                    dynamic_cast<const ast::Identifier *>(pattern.get())) {
+              environment->Define(ident->symbol, it->second);
+            }
+            // TODO: Handle renamed patterns and nested patterns
+          }
+        }
+      }
+    } else {
+      lastResult = HavelRuntimeError("Cannot destructure non-object value");
+      return;
+    }
+  }
+
   lastResult = value;
 }
 
@@ -349,8 +428,8 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     if (action) {
       auto result = this->Evaluate(*action);
       if (isError(result)) {
-        std::cerr << "Runtime error in hotkey: "
-                  << std::get<HavelRuntimeError>(result).what() << std::endl;
+        std::cerr << "Runtime error in hotkey: " << getErrorMessage(result)
+                  << std::endl;
       }
     }
   };
@@ -654,9 +733,29 @@ void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
   lastResult = HavelValue(lambda);
 }
 
+void Interpreter::visitSetExpression(const ast::SetExpression &node) {
+  auto set = std::make_shared<std::vector<HavelValue>>();
+
+  for (const auto &element : node.elements) {
+    auto result = Evaluate(*element);
+    if (isError(result)) {
+      lastResult = result;
+      return;
+    }
+    set->push_back(unwrap(result));
+  }
+
+  lastResult = HavelValue(HavelSet(set));
+}
+
+void Interpreter::visitArrayPattern(const ast::ArrayPattern &node) {
+  // TODO: Implement array pattern matching
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
   if (node.stages.empty()) {
-    lastResult = nullptr;
+    lastResult = HavelValue(nullptr);
     return;
   }
 
@@ -1555,6 +1654,21 @@ void Interpreter::visitAssignmentExpression(
   lastResult = value; // Assignment expressions return the assigned value
 }
 
+void Interpreter::visitObjectPattern(const ast::ObjectPattern &node) {
+  // This is typically handled during assignment/let declaration
+  // For now, just evaluate pattern properties (identifiers)
+  for (const auto &[key, pattern] : node.properties) {
+    if (pattern) {
+      auto result = Evaluate(*pattern);
+      if (isError(result)) {
+        lastResult = result;
+        return;
+      }
+    }
+  }
+  lastResult = HavelValue(nullptr); // Patterns don't produce values
+}
+
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
   // Evaluate the iterable
   auto iterableResult = Evaluate(*node.iterable);
@@ -1721,7 +1835,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeArrayBuiltins();
   InitializeIOBuiltins();
   InitializeBrightnessBuiltins();
-  InitializeDebugBuiltins();
+  InitializeHelpBuiltin();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();
   InitializeFileManagerBuiltins();
@@ -1729,6 +1843,105 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeGUIBuiltins();
   InitializeScreenshotBuiltins();
   InitializeHelpBuiltin();
+  // Debug flag
+  environment->Define("debug", HavelValue(false));
+
+  // Debug print with conditional execution
+  environment->Define(
+      "debug.print",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            auto debugFlag = environment->Get("debug");
+            bool isDebug = debugFlag && ValueToBool(*debugFlag);
+
+            if (isDebug) {
+              std::cout << "[DEBUG] ";
+              for (const auto &arg : args) {
+                std::cout << this->ValueToString(arg) << " ";
+              }
+              std::cout << std::endl;
+            }
+            return HavelValue(nullptr);
+          }));
+
+  // Assert function
+  environment->Define(
+      "assert",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("assert() requires condition");
+        if (!ValueToBool(args[0])) {
+          std::string msg =
+              args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
+          return HavelRuntimeError(msg);
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Create io module at the end after all io functions are defined
+  auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("io.mouseMove"))
+    (*ioMod)["mouseMove"] = *v;
+  if (auto v = environment->Get("io.mouseMoveTo"))
+    (*ioMod)["mouseMoveTo"] = *v;
+  if (auto v = environment->Get("io.mouseClick"))
+    (*ioMod)["mouseClick"] = *v;
+  if (auto v = environment->Get("io.mouseDown"))
+    (*ioMod)["mouseDown"] = *v;
+  if (auto v = environment->Get("io.mouseUp"))
+    (*ioMod)["mouseUp"] = *v;
+  if (auto v = environment->Get("io.mouseWheel"))
+    (*ioMod)["mouseWheel"] = *v;
+  if (auto v = environment->Get("io.getKeyState"))
+    (*ioMod)["getKeyState"] = *v;
+  if (auto v = environment->Get("io.isShiftPressed"))
+    (*ioMod)["isShiftPressed"] = *v;
+  if (auto v = environment->Get("io.isCtrlPressed"))
+    (*ioMod)["isCtrlPressed"] = *v;
+  if (auto v = environment->Get("io.isAltPressed"))
+    (*ioMod)["isAltPressed"] = *v;
+  if (auto v = environment->Get("io.isWinPressed"))
+    (*ioMod)["isWinPressed"] = *v;
+  if (auto v = environment->Get("io.scroll"))
+    (*ioMod)["scroll"] = *v;
+  if (auto v = environment->Get("io.getMouseSensitivity"))
+    (*ioMod)["getMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.setMouseSensitivity"))
+    (*ioMod)["setMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
+    (*ioMod)["emergencyReleaseAllKeys"] = *v;
+
+  if (auto v = environment->Get("io.map"))
+    (*ioMod)["map"] = *v;
+  if (auto v = environment->Get("io.remap"))
+    (*ioMod)["remap"] = *v;
+
+  environment->Define("io", HavelValue(ioMod));
+
+  // Create audio module
+  auto audioMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("audio.setVolume"))
+    (*audioMod)["setVolume"] = *v;
+  if (auto v = environment->Get("audio.getVolume"))
+    (*audioMod)["getVolume"] = *v;
+  if (auto v = environment->Get("audio.increaseVolume"))
+    (*audioMod)["increaseVolume"] = *v;
+  if (auto v = environment->Get("audio.decreaseVolume"))
+    (*audioMod)["decreaseVolume"] = *v;
+  if (auto v = environment->Get("audio.toggleMute"))
+    (*audioMod)["toggleMute"] = *v;
+  if (auto v = environment->Get("audio.setMute"))
+    (*audioMod)["setMute"] = *v;
+  if (auto v = environment->Get("audio.isMuted"))
+    (*audioMod)["isMuted"] = *v;
+  if (auto v = environment->Get("audio.getApps"))
+    (*audioMod)["getApps"] = *v;
+  if (auto v = environment->Get("audio.getDefaultOutput"))
+    (*audioMod)["getDefaultOutput"] = *v;
+  if (auto v = environment->Get("audio.playTestSound"))
+    (*audioMod)["playTestSound"] = *v;
+  environment->Define("audio", HavelValue(audioMod));
 
   // Expose KeyTap constructor to script environment
   environment->Define(
@@ -1783,88 +1996,7 @@ void Interpreter::InitializeStandardLibrary() {
                           << std::endl;
                 return false;
               }
-              return ValueToBool(result);
-            };
-          }
-        }
-
-        // Handle onCombo parameter (lambda function)
-        if (args.size() >= 4) {
-          auto comboAction = args[3];
-          if (std::holds_alternative<BuiltinFunction>(comboAction)) {
-            auto func = std::get<BuiltinFunction>(comboAction);
-            onCombo = [this, func]() {
-              auto result = func({});
-              if (isError(result)) {
-                std::cerr << "Error in combo action: "
-                          << std::get<HavelRuntimeError>(result).what()
-                          << std::endl;
-              }
-            };
-          }
-        }
-
-        auto keyTap = createKeyTap(keyName, onTap, tapCondition, comboCondition,
-                                   onCombo, grabDown, grabUp);
-        return HavelValue(keyName + " KeyTap created");
-      })));
-  // Debug test to see if InitializeStandardLibrary completes
-  environment->Define("standard_library_completed", HavelValue(true));
-
-  // Expose KeyTap constructor to script environment
-  environment->Define(
-      "createKeyTap",
-      HavelValue(BuiltinFunction([this](const std::vector<HavelValue> &args)
-                                     -> HavelResult {
-        if (args.size() < 1) {
-          return HavelRuntimeError("createKeyTap requires keyName");
-        }
-
-        std::string keyName = ValueToString(args[0]);
-
-        // Optional parameters with defaults
-        std::function<void()> onTap = []() { /* Default empty tap action */ };
-        std::variant<std::string, std::function<bool()>> tapCondition = {};
-        std::variant<std::string, std::function<bool()>> comboCondition = {};
-        std::function<void()> onCombo = nullptr;
-        bool grabDown = true;
-        bool grabUp = true;
-
-        // Handle onTap parameter (can be lambda function or string)
-        if (args.size() >= 2) {
-          auto tapAction = args[1];
-          if (std::holds_alternative<BuiltinFunction>(tapAction)) {
-            auto func = std::get<BuiltinFunction>(tapAction);
-            onTap = [this, func]() {
-              auto result = func({});
-              if (isError(result)) {
-                std::cerr << "Error in tap action: "
-                          << std::get<HavelRuntimeError>(result).what()
-                          << std::endl;
-              }
-            };
-          } else if (std::holds_alternative<std::string>(tapAction)) {
-            std::string cmd = ValueToString(tapAction);
-            onTap = [this, cmd]() { io.Send(cmd); };
-          }
-        }
-
-        // Handle tapCondition parameter (string or lambda function)
-        if (args.size() >= 3) {
-          auto condition = args[2];
-          if (std::holds_alternative<std::string>(condition)) {
-            tapCondition = ValueToString(condition);
-          } else if (std::holds_alternative<BuiltinFunction>(condition)) {
-            auto func = std::get<BuiltinFunction>(condition);
-            tapCondition = [this, func]() -> bool {
-              auto result = func({});
-              if (isError(result)) {
-                std::cerr << "Error in tap condition: "
-                          << std::get<HavelRuntimeError>(result).what()
-                          << std::endl;
-                return false;
-              }
-              return ValueToBool(result);
+              return ExecResultToBool(result);
             };
           }
         }
@@ -4374,112 +4506,10 @@ std::unique_ptr<KeyTap> Interpreter::createKeyTap(
     std::function<void()> onCombo, bool grabDown, bool grabUp) {
   auto keyTap =
       std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
-                               comboCondition, onCombo, grabDown, grabUp);
+                               onCombo, comboCondition, grabDown, grabUp);
   keyTaps.push_back(std::move(keyTap));
-  keyTap->setup();
-  return keyTap;
-}
-
-void Interpreter::InitializeStandardLibrary() {
-  // Debug flag
-  environment->Define("debug", HavelValue(false));
-
-  // Debug print with conditional execution
-  environment->Define(
-      "debug.print",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            auto debugFlag = environment->Get("debug");
-            bool isDebug = debugFlag && ValueToBool(*debugFlag);
-
-            if (isDebug) {
-              std::cout << "[DEBUG] ";
-              for (const auto &arg : args) {
-                std::cout << this->ValueToString(arg) << " ";
-              }
-              std::cout << std::endl;
-            }
-            return HavelValue(nullptr);
-          }));
-
-  // Assert function
-  environment->Define(
-      "assert",
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty())
-          return HavelRuntimeError("assert() requires condition");
-        if (!ValueToBool(args[0])) {
-          std::string msg =
-              args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
-          return HavelRuntimeError(msg);
-        }
-        return HavelValue(nullptr);
-      }));
-
-  // Create io module at the end after all io functions are defined
-  auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("io.mouseMove"))
-    (*ioMod)["mouseMove"] = *v;
-  if (auto v = environment->Get("io.mouseMoveTo"))
-    (*ioMod)["mouseMoveTo"] = *v;
-  if (auto v = environment->Get("io.mouseClick"))
-    (*ioMod)["mouseClick"] = *v;
-  if (auto v = environment->Get("io.mouseDown"))
-    (*ioMod)["mouseDown"] = *v;
-  if (auto v = environment->Get("io.mouseUp"))
-    (*ioMod)["mouseUp"] = *v;
-  if (auto v = environment->Get("io.mouseWheel"))
-    (*ioMod)["mouseWheel"] = *v;
-  if (auto v = environment->Get("io.getKeyState"))
-    (*ioMod)["getKeyState"] = *v;
-  if (auto v = environment->Get("io.isShiftPressed"))
-    (*ioMod)["isShiftPressed"] = *v;
-  if (auto v = environment->Get("io.isCtrlPressed"))
-    (*ioMod)["isCtrlPressed"] = *v;
-  if (auto v = environment->Get("io.isAltPressed"))
-    (*ioMod)["isAltPressed"] = *v;
-  if (auto v = environment->Get("io.isWinPressed"))
-    (*ioMod)["isWinPressed"] = *v;
-  if (auto v = environment->Get("io.scroll"))
-    (*ioMod)["scroll"] = *v;
-  if (auto v = environment->Get("io.getMouseSensitivity"))
-    (*ioMod)["getMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.setMouseSensitivity"))
-    (*ioMod)["setMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
-    (*ioMod)["emergencyReleaseAllKeys"] = *v;
-
-  if (auto v = environment->Get("io.map"))
-    (*ioMod)["map"] = *v;
-  if (auto v = environment->Get("io.remap"))
-    (*ioMod)["remap"] = *v;
-
-  environment->Define("io", HavelValue(ioMod));
-
-  // Create audio module
-  auto audioMod =
-      std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("audio.setVolume"))
-    (*audioMod)["setVolume"] = *v;
-  if (auto v = environment->Get("audio.getVolume"))
-    (*audioMod)["getVolume"] = *v;
-  if (auto v = environment->Get("audio.increaseVolume"))
-    (*audioMod)["increaseVolume"] = *v;
-  if (auto v = environment->Get("audio.decreaseVolume"))
-    (*audioMod)["decreaseVolume"] = *v;
-  if (auto v = environment->Get("audio.toggleMute"))
-    (*audioMod)["toggleMute"] = *v;
-  if (auto v = environment->Get("audio.setMute"))
-    (*audioMod)["setMute"] = *v;
-  if (auto v = environment->Get("audio.isMuted"))
-    (*audioMod)["isMuted"] = *v;
-  if (auto v = environment->Get("audio.getApps"))
-    (*audioMod)["getApps"] = *v;
-  if (auto v = environment->Get("audio.getDefaultOutput"))
-    (*audioMod)["getDefaultOutput"] = *v;
-  if (auto v = environment->Get("audio.playTestSound"))
-    (*audioMod)["playTestSound"] = *v;
-  environment->Define("audio", HavelValue(audioMod));
+  keyTaps.back()->setup();
+  return std::move(keyTaps.back());
 }
 
 void Interpreter::InitializeAudioBuiltins() {
@@ -5140,20 +5170,6 @@ void Interpreter::InitializeFileManagerBuiltins() {
 
         return HavelValue(result);
       }));
-}
-
-// KeyTap constructor implementation
-std::unique_ptr<KeyTap> Interpreter::createKeyTap(
-    const std::string &keyName, std::function<void()> onTap,
-    std::variant<std::string, std::function<bool()>> tapCondition,
-    std::variant<std::string, std::function<bool()>> comboCondition,
-    std::function<void()> onCombo, bool grabDown, bool grabUp) {
-  auto keyTap =
-      std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
-                               comboCondition, onCombo, grabDown, grabUp);
-  keyTaps.push_back(std::move(keyTap));
-  keyTaps.back()->setup();
-  return keyTaps.back();
 }
 
 void Interpreter::InitializeLauncherBuiltins() {

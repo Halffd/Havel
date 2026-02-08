@@ -6,16 +6,25 @@
 
 namespace havel::engine {
 
+// Import the types we need
+using HavelResult = havel::HavelResult;
+
 // Helper to unwrap HavelResult
 static havel::HavelValue unwrapHavelResult(const havel::HavelResult &result) {
   if (auto *val = std::get_if<havel::HavelValue>(&result)) {
     return *val;
   }
-  if (auto *err = std::get_if<havel::HavelRuntimeError>(&result)) {
-    throw *err;
-  }
   if (auto *ret = std::get_if<havel::ReturnValue>(&result)) {
     return ret->value;
+  }
+  if (auto *brk = std::get_if<havel::BreakValue>(&result)) {
+    return nullptr;
+  }
+  if (auto *cont = std::get_if<havel::ContinueValue>(&result)) {
+    return nullptr;
+  }
+  if (auto *err = std::get_if<havel::HavelRuntimeError>(&result)) {
+    throw *err;
   }
   return nullptr;
 }
@@ -106,7 +115,7 @@ havel::HavelValue Engine::RunScript(const std::string &filePath) {
 havel::HavelValue Engine::ExecuteCode(const std::string &sourceCode) {
   if (config.enableProfiler)
     StartProfiling();
-  HavelResult result_variant;
+  havel::HavelResult result_variant;
 
   try {
     switch (config.mode) {

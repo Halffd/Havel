@@ -156,7 +156,7 @@ public:
   void visitLetDeclaration(const LetDeclaration &node) override {
     out << getIndent() << "LetDeclaration {" << std::endl;
     indentLevel++;
-    printChildNode("name: ", node.name);
+    printChildNode("pattern: ", node.pattern);
     if (node.value) {
       // Value is optional
       printChildNode("value: ", node.value);

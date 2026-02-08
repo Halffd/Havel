@@ -547,18 +547,20 @@ struct ExpressionStatement : public Statement {
 
 // Let Declaration
 struct LetDeclaration : public Statement {
-  std::unique_ptr<Identifier> name;
+  std::unique_ptr<Expression>
+      pattern; // Can be Identifier, ArrayPattern, or ObjectPattern
   std::unique_ptr<Expression> value;
   // Value can be optional if language supports `let x;`
 
-  LetDeclaration(std::unique_ptr<Identifier> id,
+  LetDeclaration(std::unique_ptr<Expression> pat,
                  std::unique_ptr<Expression> val = nullptr)
-      : name(std::move(id)), value(std::move(val)) {
+      : pattern(std::move(pat)), value(std::move(val)) {
     kind = NodeType::LetDeclaration;
   }
 
   std::string toString() const override {
-    return "LetDeclaration{name: " + (name ? name->toString() : "nullptr") +
+    return "LetDeclaration{pattern: " +
+           (pattern ? pattern->toString() : "nullptr") +
            (value ? ", value: " + value->toString() : "") + "}";
   }
 
@@ -1003,6 +1005,22 @@ struct ObjectLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Set Expression (#{1, 2, 3})
+struct SetExpression : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  SetExpression(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::SetExpression;
+  }
+
+  std::string toString() const override {
+    return "SetExpression{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Config Block (config { ... })
 struct ConfigBlock : public Statement {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
@@ -1178,6 +1196,42 @@ struct AssignmentExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Array Pattern for destructuring [a, b, c]
+struct ArrayPattern : public Expression {
+  std::vector<std::unique_ptr<Expression>>
+      elements; // Can be Identifier or nested patterns
+
+  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::ListPattern; // Reuse ListPattern for now
+  }
+
+  std::string toString() const override {
+    return "ArrayPattern{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Object Pattern for destructuring {x, y}
+struct ObjectPattern : public Expression {
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
+      properties; // key: pattern
+
+  ObjectPattern(std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
+                    props = {})
+      : properties(std::move(props)) {
+    kind = NodeType::RecordPattern; // Reuse RecordPattern for now
+  }
+
+  std::string toString() const override {
+    return "ObjectPattern{" + std::to_string(properties.size()) +
+           " properties}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
   std::string modulePath;
@@ -1320,6 +1374,7 @@ public:
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
+  virtual void visitSetExpression(const SetExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
@@ -1327,6 +1382,8 @@ public:
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+  virtual void visitArrayPattern(const ArrayPattern &node) = 0;
+  virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitForStatement(const ForStatement &node) = 0;
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
   virtual void visitBreakStatement(const BreakStatement &node) = 0;
@@ -1429,6 +1486,10 @@ inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitObjectLiteral(*this);
 }
 
+inline void SetExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitSetExpression(*this);
+}
+
 inline void ConfigBlock::accept(ASTVisitor &visitor) const {
   visitor.visitConfigBlock(*this);
 }
@@ -1455,6 +1516,14 @@ inline void RangeExpression::accept(ASTVisitor &visitor) const {
 
 inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
   visitor.visitAssignmentExpression(*this);
+}
+
+inline void ArrayPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitArrayPattern(*this);
+}
+
+inline void ObjectPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitObjectPattern(*this);
 }
 
 inline void ForStatement::accept(ASTVisitor &visitor) const {

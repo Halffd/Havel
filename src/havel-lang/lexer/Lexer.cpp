@@ -374,13 +374,20 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle # comments (hash-style) OR modifier hotkeys starting with '#'
+    // Handle # comments (hash-style) OR set literals #{} OR modifier hotkeys
+    // starting with '#'
     if (c == '#') {
       // If the next char is whitespace, treat as a comment (e.g. "# comment")
       if (peek() == ' ' || peek() == '\t') {
         while (!isAtEnd() && peek() != '\n') {
           advance();
         }
+        continue;
+      }
+
+      // If the next char is '{', treat as set literal start
+      if (peek() == '{') {
+        tokens.push_back(makeToken("#", TokenType::Hash));
         continue;
       }
 

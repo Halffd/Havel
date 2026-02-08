@@ -90,6 +90,7 @@ enum class TokenType {
   OpenBracket,  // [
   CloseBracket, // ]
   DotDot,       // ..
+  Hash,         // # for set literals
   EOF_TOKEN
 };
 

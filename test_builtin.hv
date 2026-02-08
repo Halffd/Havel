@@ -1,0 +1,16 @@
+// Test builtin functions
+print("Testing builtin functions...")
+
+// Test if print works
+print("✓ print function works")
+
+// Test if other builtins work
+print("typeof(print):", typeof(print))
+
+// List some common builtins
+let builtins = ["print", "run", "io", "audio"]
+for (let builtin in builtins) {
+  print(builtin, "exists:", typeof(builtin))
+}
+
+print("Test completed")

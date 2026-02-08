@@ -4163,6 +4163,37 @@ void Interpreter::InitializeBrightnessBuiltins() {
             return HavelValue(nullptr);
           }));
 
+  // Expose as module object: brightnessManager
+  auto brightnessManagerObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("brightnessManager.getBrightness"))
+    (*brightnessManagerObj)["getBrightness"] = *v;
+  if (auto v = environment->Get("brightnessManager.getTemperature"))
+    (*brightnessManagerObj)["getTemperature"] = *v;
+  if (auto v = environment->Get("brightnessManager.setBrightness"))
+    (*brightnessManagerObj)["setBrightness"] = *v;
+  if (auto v = environment->Get("brightnessManager.increaseBrightness"))
+    (*brightnessManagerObj)["increaseBrightness"] = *v;
+  if (auto v = environment->Get("brightnessManager.decreaseBrightness"))
+    (*brightnessManagerObj)["decreaseBrightness"] = *v;
+  if (auto v = environment->Get("brightnessManager.setTemperature"))
+    (*brightnessManagerObj)["setTemperature"] = *v;
+  if (auto v = environment->Get("brightnessManager.increaseTemperature"))
+    (*brightnessManagerObj)["increaseTemperature"] = *v;
+  if (auto v = environment->Get("brightnessManager.decreaseTemperature"))
+    (*brightnessManagerObj)["decreaseTemperature"] = *v;
+  if (auto v = environment->Get("brightnessManager.getShadowLift"))
+    (*brightnessManagerObj)["getShadowLift"] = *v;
+  if (auto v = environment->Get("brightnessManager.setShadowLift"))
+    (*brightnessManagerObj)["setShadowLift"] = *v;
+  if (auto v = environment->Get("brightnessManager.decreaseGamma"))
+    (*brightnessManagerObj)["decreaseGamma"] = *v;
+  if (auto v = environment->Get("brightnessManager.increaseGamma"))
+    (*brightnessManagerObj)["increaseGamma"] = *v;
+  if (auto v = environment->Get("brightnessManager.setGammaRGB"))
+    (*brightnessManagerObj)["setGammaRGB"] = *v;
+  environment->Define("brightnessManager", HavelValue(brightnessManagerObj));
+
   // Expose as module object: launcher
   auto launcher =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();

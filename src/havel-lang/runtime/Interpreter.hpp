@@ -54,6 +54,15 @@ using HavelArray = std::shared_ptr<std::vector<HavelValue>>;
 using HavelObject =
     std::shared_ptr<std::unordered_map<std::string, HavelValue>>;
 
+// Set wrapper to distinguish from Array
+struct HavelSet {
+  std::shared_ptr<std::vector<HavelValue>> elements;
+
+  HavelSet() : elements(std::make_shared<std::vector<HavelValue>>()) {}
+  explicit HavelSet(std::shared_ptr<std::vector<HavelValue>> elems)
+      : elements(std::move(elems)) {}
+};
+
 // Result type (declare BEFORE BuiltinFunction)
 using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue,
                                  BreakValue, ContinueValue>;
@@ -65,7 +74,7 @@ using BuiltinFunction =
 // Value type for the interpreter
 struct HavelValue
     : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
-                   HavelObject, std::shared_ptr<HavelFunction>,
+                   HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
                    BuiltinFunction> {
   using variant::variant;
 };
@@ -171,6 +180,9 @@ public:
   void visitIndexExpression(const ast::IndexExpression &node) override;
   void visitTernaryExpression(const ast::TernaryExpression &node) override;
   void visitRangeExpression(const ast::RangeExpression &node) override;
+  void visitSetExpression(const ast::SetExpression &node) override;
+  void visitArrayPattern(const ast::ArrayPattern &node) override;
+  void visitObjectPattern(const ast::ObjectPattern &node) override;
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;
   void visitForStatement(const ast::ForStatement &node) override;
@@ -199,6 +211,7 @@ public:
   static std::string ValueToString(const HavelValue &value);
   static bool ValueToBool(const HavelValue &value);
   static double ValueToNumber(const HavelValue &value);
+  static bool ExecResultToBool(const HavelResult &result);
 
 private:
   std::shared_ptr<Environment> environment;

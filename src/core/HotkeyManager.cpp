@@ -775,11 +775,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
                 return;
               }
               auto out = interp->Execute("app.restart()");
-              if (auto *err = std::get_if<HavelRuntimeError>(&out)) {
-                info("Restart application output: {}", err->what());
-              } else {
-                info("Restart application output: {}", toString(out));
-              }
+              // Since HavelRuntimeError is not in HavelValue variant, we can't
+              // check for it directly For now, just log the output
+              info("Restart application output: {}", toString(out));
 #else
                 info("Restart application output: Havel Lang disabled");
 #endif

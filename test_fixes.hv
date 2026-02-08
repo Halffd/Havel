@@ -1,0 +1,33 @@
+// Test sets
+let mySet = #{1, 2, 3, 4, 5};
+print("Set:", mySet);
+
+// Test switch cases
+let value = 2;
+switch (value) {
+  case 1:
+    print("One");
+  case 2:
+    print("Two");
+  case 3:
+    print("Three");
+  default:
+    print("Other");
+}
+
+// Test basic monad-like error handling (using try/catch for now)
+try {
+  let result = 10 / 0;
+  print("Result:", result);
+} catch (e) {
+  print("Error caught:", e);
+}
+
+// Test function expressions
+let add = fn(a, b) { a + b };
+print("5 + 3 =", add(5, 3));
+
+// Test destructuring (basic)
+let point = {x: 10, y: 20};
+let {x, y} = point;
+print("Destructured:", x, y);

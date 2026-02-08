@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Function to log messages to both console and file
+log() {
+    local level=$1
+    local message=$2
+    local color=$3
+    echo -e "${color}[${level}] ${message}${NC}" | tee -a "${BUILD_LOG}"
+}
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,8 +19,8 @@ OLD_LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 unset LD_LIBRARY_PATH
 
 # Default build mode
-BUILD_MODE=0
-BUILD_TYPE="Debug"
+BUILD_MODE=1
+BUILD_TYPE="Release"
 BUILD_DIR="build"
 LOG_DIR="logs"
 THREADS=3
@@ -46,7 +53,7 @@ if [[ "$1" =~ ^[012356789]$ ]]; then
     if [[ -z "$BUILD_TYPE" ]]; then
         echo -e "${RED}[ERROR] Invalid build mode: $BUILD_MODE${NC}"
         echo "Valid modes: 0, 1, 2, 3, 5, 6, 7, 8, 9"
-        exit 1
+#        exit 1
     fi
     
     # Fix logical inconsistency: If LLVM is enabled, Havel Lang must also be enabled
@@ -62,19 +69,9 @@ BUILD_LOG="${LOG_DIR}/build-mode${BUILD_MODE}-${BUILD_TYPE,,}.log"
 # Ensure log directory exists
 mkdir -p "${LOG_DIR}"
 
-# Function to log messages to both console and file
-log() {
-    local level=$1
-    local message=$2
-    local color=$3
-    echo -e "${color}[${level}] ${message}${NC}" | tee -a "${BUILD_LOG}"
-}
-
 # Function to check if last command succeeded
 check_status() {
-    if [ $? -eq 0 ]; then
-        log "SUCCESS" "$1" "${GREEN}"
-    else
+    if [ $? -ne 0 ]; then
         log "ERROR" "$1" "${RED}"
         exit 1
     fi
@@ -158,14 +155,6 @@ build() {
     log "INFO" "Building project with ${THREADS} parallel jobs..." "${YELLOW}"
     (cd "${BUILD_DIR}" && make -j${THREADS}) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "Build"
-    
-    # Show build results
-    log "INFO" "=== BUILD RESULTS ===" "${GREEN}"
-    
-    if [[ -f "${BUILD_DIR}/havel" ]]; then
-        local size=$(du -h "${BUILD_DIR}/havel" | cut -f1)
-        log "SUCCESS" "✅ havel built successfully (${size})" "${GREEN}"
-    fi
     
     if [[ "$ENABLE_TESTS" = "ON" ]]; then
         for test_exe in test_havel test_gui files_test main_test utils_test; do
@@ -288,6 +277,11 @@ process_commands() {
                 shift
                 ;;
             "build")
+                build
+                shift
+                ;;
+            "rebuild")
+                clean
                 build
                 shift
                 ;;

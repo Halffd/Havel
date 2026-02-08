@@ -1,0 +1,12 @@
+// Simple test
+print("Testing createKeyTap...")
+
+// Try to call createKeyTap directly
+try {
+  let result = createKeyTap("test", () => { print("Hello from KeyTap!") })
+  print("✓ createKeyTap worked:", result)
+} catch (error) {
+  print("✗ createKeyTap failed:", error)
+}
+
+print("Test completed")

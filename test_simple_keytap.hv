@@ -1,0 +1,15 @@
+// Simple test for createKeyTap
+print("Testing createKeyTap function...")
+
+// Test if createKeyTap exists
+if (typeof(createKeyTap) == "function") {
+  print("✓ createKeyTap function is available")
+  
+  // Test basic KeyTap creation
+  let test = createKeyTap("test", () => { print("KeyTap test called!") })
+  print("✓ Basic KeyTap creation successful")
+} else {
+  print("✗ createKeyTap function not available")
+}
+
+print("Test completed")

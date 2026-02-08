@@ -2,6 +2,7 @@
 #include "ast/AST.h"
 #include "core/ConfigManager.hpp"
 #include "core/IO.hpp"
+#include "core/io/KeyTap.hpp"
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "utils/Logger.hpp"

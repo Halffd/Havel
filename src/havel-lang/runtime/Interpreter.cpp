@@ -1730,6 +1730,84 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeScreenshotBuiltins();
   InitializeHelpBuiltin();
 
+  // Expose KeyTap constructor to script environment
+  environment->Define(
+      "createKeyTap",
+      HavelValue(BuiltinFunction([this](const std::vector<HavelValue> &args)
+                                     -> HavelResult {
+        if (args.size() < 1) {
+          return HavelRuntimeError("createKeyTap requires keyName");
+        }
+
+        std::string keyName = ValueToString(args[0]);
+
+        // Optional parameters with defaults
+        std::function<void()> onTap = []() { /* Default empty tap action */ };
+        std::variant<std::string, std::function<bool()>> tapCondition = {};
+        std::variant<std::string, std::function<bool()>> comboCondition = {};
+        std::function<void()> onCombo = nullptr;
+        bool grabDown = true;
+        bool grabUp = true;
+
+        // Handle onTap parameter (can be lambda function or string)
+        if (args.size() >= 2) {
+          auto tapAction = args[1];
+          if (std::holds_alternative<BuiltinFunction>(tapAction)) {
+            auto func = std::get<BuiltinFunction>(tapAction);
+            onTap = [this, func]() {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in tap action: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+              }
+            };
+          } else if (std::holds_alternative<std::string>(tapAction)) {
+            std::string cmd = ValueToString(tapAction);
+            onTap = [this, cmd]() { io.Send(cmd); };
+          }
+        }
+
+        // Handle tapCondition parameter (string or lambda function)
+        if (args.size() >= 3) {
+          auto condition = args[2];
+          if (std::holds_alternative<std::string>(condition)) {
+            tapCondition = ValueToString(condition);
+          } else if (std::holds_alternative<BuiltinFunction>(condition)) {
+            auto func = std::get<BuiltinFunction>(condition);
+            tapCondition = [this, func]() -> bool {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in tap condition: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+                return false;
+              }
+              return ValueToBool(result);
+            };
+          }
+        }
+
+        // Handle onCombo parameter (lambda function)
+        if (args.size() >= 4) {
+          auto comboAction = args[3];
+          if (std::holds_alternative<BuiltinFunction>(comboAction)) {
+            auto func = std::get<BuiltinFunction>(comboAction);
+            onCombo = [this, func]() {
+              auto result = func({});
+              if (isError(result)) {
+                std::cerr << "Error in combo action: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+              }
+            };
+          }
+        }
+
+        auto keyTap = createKeyTap(keyName, onTap, tapCondition, comboCondition,
+                                   onCombo, grabDown, grabUp);
+        return HavelValue(keyName + " KeyTap created");
+      })));
   // Debug test to see if InitializeStandardLibrary completes
   environment->Define("standard_library_completed", HavelValue(true));
 
@@ -4298,8 +4376,107 @@ std::unique_ptr<KeyTap> Interpreter::createKeyTap(
       std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
                                comboCondition, onCombo, grabDown, grabUp);
   keyTaps.push_back(std::move(keyTap));
-  keyTaps.back()->setup();
-  return keyTaps.back();
+  keyTap->setup();
+  return keyTap;
+}
+
+void Interpreter::InitializeStandardLibrary() {
+  // Debug flag
+  environment->Define("debug", HavelValue(false));
+
+  // Debug print with conditional execution
+  environment->Define(
+      "debug.print",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            auto debugFlag = environment->Get("debug");
+            bool isDebug = debugFlag && ValueToBool(*debugFlag);
+
+            if (isDebug) {
+              std::cout << "[DEBUG] ";
+              for (const auto &arg : args) {
+                std::cout << this->ValueToString(arg) << " ";
+              }
+              std::cout << std::endl;
+            }
+            return HavelValue(nullptr);
+          }));
+
+  // Assert function
+  environment->Define(
+      "assert",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("assert() requires condition");
+        if (!ValueToBool(args[0])) {
+          std::string msg =
+              args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
+          return HavelRuntimeError(msg);
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Create io module at the end after all io functions are defined
+  auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("io.mouseMove"))
+    (*ioMod)["mouseMove"] = *v;
+  if (auto v = environment->Get("io.mouseMoveTo"))
+    (*ioMod)["mouseMoveTo"] = *v;
+  if (auto v = environment->Get("io.mouseClick"))
+    (*ioMod)["mouseClick"] = *v;
+  if (auto v = environment->Get("io.mouseDown"))
+    (*ioMod)["mouseDown"] = *v;
+  if (auto v = environment->Get("io.mouseUp"))
+    (*ioMod)["mouseUp"] = *v;
+  if (auto v = environment->Get("io.mouseWheel"))
+    (*ioMod)["mouseWheel"] = *v;
+  if (auto v = environment->Get("io.getKeyState"))
+    (*ioMod)["getKeyState"] = *v;
+  if (auto v = environment->Get("io.isShiftPressed"))
+    (*ioMod)["isShiftPressed"] = *v;
+  if (auto v = environment->Get("io.isCtrlPressed"))
+    (*ioMod)["isCtrlPressed"] = *v;
+  if (auto v = environment->Get("io.isAltPressed"))
+    (*ioMod)["isAltPressed"] = *v;
+  if (auto v = environment->Get("io.isWinPressed"))
+    (*ioMod)["isWinPressed"] = *v;
+  if (auto v = environment->Get("io.scroll"))
+    (*ioMod)["scroll"] = *v;
+  if (auto v = environment->Get("io.getMouseSensitivity"))
+    (*ioMod)["getMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.setMouseSensitivity"))
+    (*ioMod)["setMouseSensitivity"] = *v;
+  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
+    (*ioMod)["emergencyReleaseAllKeys"] = *v;
+
+  if (auto v = environment->Get("io.map"))
+    (*ioMod)["map"] = *v;
+  if (auto v = environment->Get("io.remap"))
+    (*ioMod)["remap"] = *v;
+
+  environment->Define("io", HavelValue(ioMod));
+
+  // Create audio module
+  auto audioMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("audio.setVolume"))
+    (*audioMod)["setVolume"] = *v;
+  if (auto v = environment->Get("audio.getVolume"))
+    (*audioMod)["getVolume"] = *v;
+  if (auto v = environment->Get("audio.increaseVolume"))
+    (*audioMod)["increaseVolume"] = *v;
+  if (auto v = environment->Get("audio.decreaseVolume"))
+    (*audioMod)["decreaseVolume"] = *v;
+  if (auto v = environment->Get("audio.toggleMute"))
+    (*audioMod)["toggleMute"] = *v;
+  if (auto v = environment->Get("audio.setMute"))
+    (*audioMod)["setMute"] = *v;
+  if (auto v = environment->Get("audio.isMuted"))
+    (*audioMod)["isMuted"] = *v;
+  if (auto v = environment->Get("audio.getApps"))
+    (*audioMod)["getApps"] = *v;
+  if (auto v = environment->Get("audio.getDefaultOutput"))
+    (*audioMod)["getDefaultOutput"] = *v;
   if (auto v = environment->Get("audio.playTestSound"))
     (*audioMod)["playTestSound"] = *v;
   environment->Define("audio", HavelValue(audioMod));
@@ -4963,6 +5140,20 @@ void Interpreter::InitializeFileManagerBuiltins() {
 
         return HavelValue(result);
       }));
+}
+
+// KeyTap constructor implementation
+std::unique_ptr<KeyTap> Interpreter::createKeyTap(
+    const std::string &keyName, std::function<void()> onTap,
+    std::variant<std::string, std::function<bool()>> tapCondition,
+    std::variant<std::string, std::function<bool()>> comboCondition,
+    std::function<void()> onCombo, bool grabDown, bool grabUp) {
+  auto keyTap =
+      std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
+                               comboCondition, onCombo, grabDown, grabUp);
+  keyTaps.push_back(std::move(keyTap));
+  keyTaps.back()->setup();
+  return keyTaps.back();
 }
 
 void Interpreter::InitializeLauncherBuiltins() {

@@ -842,6 +842,14 @@ struct TryExpression : public Statement {
   std::unique_ptr<Statement> finallyBlock;   // optional finally block
 
   TryExpression() { kind = NodeType::TryExpression; }
+  TryExpression(std::unique_ptr<Statement> tryBody,
+                std::unique_ptr<Identifier> catchVariable,
+                std::unique_ptr<Statement> catchBody,
+                std::unique_ptr<Statement> finallyBlock)
+      : tryBody(std::move(tryBody)), catchVariable(std::move(catchVariable)),
+        catchBody(std::move(catchBody)), finallyBlock(std::move(finallyBlock)) {
+    kind = NodeType::TryExpression;
+  }
 
   std::string toString() const override { return "TryExpression{}"; }
 
@@ -852,6 +860,9 @@ struct ThrowStatement : public Statement {
   std::unique_ptr<Expression> value;
 
   ThrowStatement() { kind = NodeType::ThrowStatement; }
+  ThrowStatement(std::unique_ptr<Expression> value) : value(std::move(value)) {
+    kind = NodeType::ThrowStatement;
+  }
 
   std::string toString() const override { return "ThrowStatement{}"; }
 

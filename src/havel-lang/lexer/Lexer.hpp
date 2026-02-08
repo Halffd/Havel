@@ -91,6 +91,10 @@ enum class TokenType {
   CloseBracket, // ]
   DotDot,       // ..
   Hash,         // # for set literals
+  Try,          // try
+  Catch,        // catch
+  Finally,      // finally
+  Throw,        // throw
   EOF_TOKEN
 };
 

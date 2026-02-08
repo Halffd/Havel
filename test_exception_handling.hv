@@ -1,0 +1,91 @@
+// Test file for try/catch/finally/throw exception handling
+
+// Basic throw test
+fn testThrow() {
+  throw "Error message";
+}
+
+// Try with finally only
+fn testTryFinally() {
+  try {
+    print("In try block");
+    return "success";
+  } finally {
+    print("In finally block - always runs");
+  }
+}
+
+// Try with catch only
+fn testTryCatch() {
+  try {
+    throw "Something went wrong";
+    print("This won't print");
+  } catch {
+    print("Caught error in catch block");
+  }
+}
+
+// Try with catch variable
+fn testTryCatchVariable() {
+  try {
+    throw 42;
+  } catch error {
+    print("Caught error value: " + error);
+  }
+}
+
+// Complete try/catch/finally
+fn testComplete() {
+  try {
+    print("Starting operation");
+    if (true) {
+      throw "Operation failed";
+    }
+    print("Operation succeeded");
+  } catch err {
+    print("Error caught: " + err);
+  } finally {
+    print("Cleanup - always runs");
+  }
+}
+
+// Nested try blocks
+fn testNested() {
+  try {
+    print("Outer try");
+    try {
+      print("Inner try");
+      throw "Inner error";
+    } catch innerErr {
+      print("Inner catch: " + innerErr);
+    }
+  } catch outerErr {
+    print("Outer catch: " + outerErr);
+  } finally {
+    print("Outer finally");
+  }
+}
+
+// Test that throw can handle any value type
+fn testThrowTypes() {
+  try {
+    throw {type: "custom", code: 123};
+  } catch error {
+    print("Caught object error: " + error.type + " code: " + error.code);
+  }
+}
+
+// Run all tests
+print("=== Testing Exception Handling ===");
+testTryFinally();
+print("---");
+testTryCatch();  
+print("---");
+testTryCatchVariable();
+print("---");
+testComplete();
+print("---");
+testNested();
+print("---");
+testThrowTypes();
+print("=== Exception Handling Tests Complete ===");

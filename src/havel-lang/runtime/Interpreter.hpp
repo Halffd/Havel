@@ -183,6 +183,8 @@ public:
   void visitSetExpression(const ast::SetExpression &node) override;
   void visitArrayPattern(const ast::ArrayPattern &node) override;
   void visitObjectPattern(const ast::ObjectPattern &node) override;
+  void visitTryExpression(const ast::TryExpression &node) override;
+  void visitThrowStatement(const ast::ThrowStatement &node) override;
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;
   void visitForStatement(const ast::ForStatement &node) override;
@@ -205,7 +207,6 @@ public:
   void visitRecordType(const ast::RecordType &node) override;
   void visitFunctionType(const ast::FunctionType &node) override;
   void visitTypeReference(const ast::TypeReference &node) override;
-  void visitTryExpression(const ast::TryExpression &node) override;
 
   // Helper methods for value conversion
   static std::string ValueToString(const HavelValue &value);

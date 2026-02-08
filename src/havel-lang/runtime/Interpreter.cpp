@@ -1669,6 +1669,57 @@ void Interpreter::visitObjectPattern(const ast::ObjectPattern &node) {
   lastResult = HavelValue(nullptr); // Patterns don't produce values
 }
 
+void Interpreter::visitTryExpression(const ast::TryExpression &node) {
+  // Execute try body
+  auto tryResult = Evaluate(*node.tryBody);
+
+  // If try body succeeded, execute finally block if present
+  if (node.finallyBlock) {
+    auto finallyResult = Evaluate(*node.finallyBlock);
+    if (isError(finallyResult)) {
+      lastResult = finallyResult;
+      return;
+    }
+  }
+
+  // If try body threw an error, try to match catch handlers
+  if (auto *err = std::get_if<HavelRuntimeError>(&tryResult)) {
+    for (const auto &[pattern, handler] : node.catchHandlers) {
+      // For now, just execute the first handler (simplified)
+      auto handlerResult = Evaluate(*handler);
+      if (isError(handlerResult)) {
+        lastResult = handlerResult;
+        return;
+      }
+      lastResult = handlerResult;
+      return;
+    }
+    // If no handler matched, re-throw the original error
+    lastResult = *err;
+    return;
+  }
+
+  // Try body succeeded, return its result
+  lastResult = tryResult;
+}
+
+void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
+  if (!node.value) {
+    lastResult = HavelRuntimeError("Thrown value is null");
+    return;
+  }
+
+  auto valueResult = Evaluate(*node.value);
+  if (isError(valueResult)) {
+    lastResult = valueResult;
+    return;
+  }
+
+  // Convert the thrown value to a string error message
+  std::string errorMsg = "Thrown: " + ValueToString(unwrap(valueResult));
+  lastResult = HavelRuntimeError(errorMsg);
+}
+
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
   // Evaluate the iterable
   auto iterableResult = Evaluate(*node.iterable);

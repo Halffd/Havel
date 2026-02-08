@@ -90,6 +90,8 @@ private:
   std::unique_ptr<ast::Expression> parseObjectLiteral();
   std::unique_ptr<ast::Expression> parseArrayPattern();
   std::unique_ptr<ast::Expression> parseObjectPattern();
+  std::unique_ptr<ast::Statement> parseTryStatement();
+  std::unique_ptr<ast::Statement> parseThrowStatement();
   std::unique_ptr<ast::Expression>
   parseLambdaFromParams(std::vector<std::unique_ptr<ast::Identifier>> params);
   std::unique_ptr<ast::Expression>

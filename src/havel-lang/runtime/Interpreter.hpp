@@ -254,6 +254,7 @@ private:
   void InitializeArrayBuiltins();
   void InitializeIOBuiltins();
   void InitializeBrightnessBuiltins();
+  void InitializeMathBuiltins();
   void InitializeDebugBuiltins();
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();

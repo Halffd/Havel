@@ -319,6 +319,78 @@ trim("  text  ")            // Remove whitespace
 replace("a", "b", "text")  // Replace text
 ```
 
+#### Math Module (Mathematical Functions)
+```havel
+// Direct access
+use math
+
+// Basic arithmetic
+abs(-5.5)                  // Absolute value: 5.5
+ceil(4.2)                  // Round up: 5.0
+floor(4.8)                 // Round down: 4.0
+round(4.6)                 // Round to nearest: 5.0
+
+// Trigonometric functions (radians)
+sin(PI/2)                  // Sine: 1.0
+cos(0)                     // Cosine: 1.0
+tan(PI/4)                  // Tangent: 1.0
+asin(0.5)                  // Arc sine
+acos(0.5)                  // Arc cosine
+atan(1)                   // Arc tangent
+atan2(y, x)               // Angle from (x, y)
+
+// Hyperbolic functions
+sinh(1.0)                  // Hyperbolic sine
+cosh(1.0)                  // Hyperbolic cosine
+tanh(1.0)                  // Hyperbolic tangent
+
+// Exponential and logarithmic
+exp(1)                     // e^1: 2.718...
+log(E)                     // Natural logarithm
+log10(100)                 // Base-10 logarithm: 2.0
+log2(8)                    // Base-2 logarithm: 3.0
+sqrt(16)                   // Square root: 4.0
+cbrt(27)                   // Cube root: 3.0
+pow(2, 3)                  // Power: 8.0
+
+// Mathematical constants
+PI                         // 3.14159...
+E                          // 2.71828...
+TAU                        // 2*PI: 6.28318...
+SQRT2                      // √2: 1.41421...
+LN2                        // ln(2): 0.69314...
+LN10                       // ln(10): 2.30258...
+
+// Utility functions
+min(3, 1, 4, 2)            // Minimum: 1.0
+max(3, 1, 4, 2)            // Maximum: 4.0
+clamp(2.5, 1, 3)           // Clamp value: 2.5
+lerp(0, 10, 0.5)           // Linear interpolation: 5.0
+
+// Random numbers
+random()                   // Random float [0, 1)
+random(10)                 // Random float [0, 10)
+random(5, 10)              // Random float [5, 10)
+randint(10)                // Random integer [0, 10]
+randint(5, 10)             // Random integer [5, 10]
+
+// Angle conversion
+deg2rad(180)               // Degrees to radians: π
+rad2deg(PI)                // Radians to degrees: 180
+
+// Special functions
+sign(5)                    // Sign: 1.0
+sign(-5)                   // Sign: -1.0
+sign(0)                    // Sign: 0.0
+fract(3.7)                 // Fractional part: 0.7
+mod(7, 3)                  // Modulo: 1.0
+
+// Geometry functions
+distance(0, 0, 3, 4)       // 2D distance: 5.0
+hypot(3, 4)                // Hypotenuse: 5.0
+hypot(1, 2, 2)             // Multi-dimensional hypotenuse
+```
+
 #### Window Module (Window Management)
 ```havel
 // Direct access

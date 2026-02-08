@@ -1604,6 +1604,10 @@ inline void TryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitTryExpression(*this);
 }
 
+inline void ThrowStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitThrowStatement(*this);
+}
+
 inline void UnaryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitUnaryExpression(*this);
 }

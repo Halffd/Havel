@@ -1730,6 +1730,93 @@ void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
       HavelRuntimeError("Thrown: " + ValueToString(unwrap(valueResult)));
 }
 
+void Interpreter::visitForStatement(const ast::ForStatement &node) {
+  // Evaluate the iterable expression
+  auto iterableResult = Evaluate(*node.iterable);
+  if (isError(iterableResult)) {
+    lastResult = iterableResult;
+    return;
+  }
+
+  // Unwrap the result to get the HavelValue
+  auto iterableValue = unwrap(iterableResult);
+
+  // Create a new environment for the for loop
+  auto loopEnv = std::make_shared<Environment>(this->environment);
+  auto originalEnv = this->environment;
+  this->environment = loopEnv;
+
+  // Handle different types of iterables
+  if (std::holds_alternative<HavelArray>(iterableValue)) {
+    // Array iteration
+    auto array = std::get<HavelArray>(iterableValue);
+    if (!array) {
+      lastResult = HavelRuntimeError("Cannot iterate over null array");
+      this->environment = originalEnv;
+      return;
+    }
+
+    for (const auto &element : *array) {
+      // Set loop variable (use first iterator if available)
+      if (!node.iterators.empty()) {
+        environment->Define(node.iterators[0]->symbol, element);
+      }
+
+      // Execute loop body
+      node.body->accept(*this);
+
+      // Check for break/continue
+      if (std::holds_alternative<BreakValue>(lastResult)) {
+        lastResult = nullptr;
+        break;
+      }
+      if (std::holds_alternative<ContinueValue>(lastResult)) {
+        lastResult = nullptr;
+        continue;
+      }
+      if (isError(lastResult)) {
+        break;
+      }
+    }
+  } else if (std::holds_alternative<HavelObject>(iterableValue)) {
+    // Object iteration
+    auto object = std::get<HavelObject>(iterableValue);
+    if (!object) {
+      lastResult = HavelRuntimeError("Cannot iterate over null object");
+      this->environment = originalEnv;
+      return;
+    }
+
+    for (const auto &[key, value] : *object) {
+      // Set loop variable to the key (use first iterator if available)
+      if (!node.iterators.empty()) {
+        environment->Define(node.iterators[0]->symbol, HavelValue(key));
+      }
+
+      // Execute loop body
+      node.body->accept(*this);
+
+      // Check for break/continue
+      if (std::holds_alternative<BreakValue>(lastResult)) {
+        lastResult = nullptr;
+        break;
+      }
+      if (std::holds_alternative<ContinueValue>(lastResult)) {
+        lastResult = nullptr;
+        continue;
+      }
+      if (isError(lastResult)) {
+        break;
+      }
+    }
+  } else {
+    lastResult = HavelRuntimeError("Cannot iterate over value");
+  }
+
+  // Restore original environment
+  this->environment = originalEnv;
+}
+
 void Interpreter::visitLoopStatement(const ast::LoopStatement &node) {
   // Infinite loop
   while (true) {
@@ -4220,10 +4307,11 @@ void Interpreter::InitializeIOBuiltins() {
 
 void Interpreter::InitializeMathBuiltins() {
   // === MATH MODULE ===
-  auto mathObj = std::make_shared<HavelObject>();
-
+  auto mathObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  auto &math = *mathObj;
   // Basic arithmetic functions
-  (*mathObj)["abs"] =
+  math["abs"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("abs() requires 1 argument");
@@ -4232,7 +4320,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::abs(value));
       });
 
-  (*mathObj)["ceil"] =
+  math["ceil"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("ceil() requires 1 argument");
@@ -4241,7 +4329,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::ceil(value));
       });
 
-  (*mathObj)["floor"] =
+  math["floor"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("floor() requires 1 argument");
@@ -4250,7 +4338,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::floor(value));
       });
 
-  (*mathObj)["round"] =
+  math["round"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("round() requires 1 argument");
@@ -4260,7 +4348,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Trigonometric functions
-  (*mathObj)["sin"] =
+  math["sin"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sin() requires 1 argument");
@@ -4269,7 +4357,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::sin(value));
       });
 
-  (*mathObj)["cos"] =
+  math["cos"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cos() requires 1 argument");
@@ -4278,7 +4366,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::cos(value));
       });
 
-  (*mathObj)["tan"] =
+  math["tan"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("tan() requires 1 argument");
@@ -4287,7 +4375,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::tan(value));
       });
 
-  (*mathObj)["asin"] =
+  math["asin"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("asin() requires 1 argument");
@@ -4299,7 +4387,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::asin(value));
       });
 
-  (*mathObj)["acos"] =
+  math["acos"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("acos() requires 1 argument");
@@ -4311,7 +4399,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::acos(value));
       });
 
-  (*mathObj)["atan"] =
+  math["atan"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("atan() requires 1 argument");
@@ -4320,7 +4408,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::atan(value));
       });
 
-  (*mathObj)["atan2"] =
+  math["atan2"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError("atan2() requires 2 arguments (y, x)");
@@ -4331,7 +4419,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Hyperbolic functions
-  (*mathObj)["sinh"] =
+  math["sinh"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sinh() requires 1 argument");
@@ -4340,7 +4428,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::sinh(value));
       });
 
-  (*mathObj)["cosh"] =
+  math["cosh"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cosh() requires 1 argument");
@@ -4349,7 +4437,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::cosh(value));
       });
 
-  (*mathObj)["tanh"] =
+  math["tanh"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("tanh() requires 1 argument");
@@ -4359,7 +4447,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Exponential and logarithmic functions
-  (*mathObj)["exp"] =
+  math["exp"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("exp() requires 1 argument");
@@ -4368,7 +4456,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::exp(value));
       });
 
-  (*mathObj)["log"] =
+  math["log"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log() requires 1 argument");
@@ -4380,7 +4468,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::log(value));
       });
 
-  (*mathObj)["log10"] =
+  math["log10"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log10() requires 1 argument");
@@ -4392,7 +4480,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::log10(value));
       });
 
-  (*mathObj)["log2"] =
+  math["log2"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log2() requires 1 argument");
@@ -4404,7 +4492,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::log2(value));
       });
 
-  (*mathObj)["sqrt"] =
+  math["sqrt"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sqrt() requires 1 argument");
@@ -4416,7 +4504,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::sqrt(value));
       });
 
-  (*mathObj)["cbrt"] =
+  math["cbrt"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cbrt() requires 1 argument");
@@ -4426,7 +4514,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Power functions
-  (*mathObj)["pow"] =
+  math["pow"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError(
@@ -4438,18 +4526,18 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Constants
-  (*mathObj)["PI"] = HavelValue(M_PI);
-  (*mathObj)["E"] = HavelValue(M_E);
-  (*mathObj)["TAU"] = HavelValue(2 * M_PI);
-  (*mathObj)["SQRT2"] = HavelValue(M_SQRT2);
-  (*mathObj)["SQRT1_2"] = HavelValue(M_SQRT1_2);
-  (*mathObj)["LN2"] = HavelValue(M_LN2);
-  (*mathObj)["LN10"] = HavelValue(M_LN10);
-  (*mathObj)["LOG2E"] = HavelValue(M_LOG2E);
-  (*mathObj)["LOG10E"] = HavelValue(M_LOG10E);
+  math["PI"] = HavelValue(M_PI);
+  math["E"] = HavelValue(M_E);
+  math["TAU"] = HavelValue(2 * M_PI);
+  math["SQRT2"] = HavelValue(M_SQRT2);
+  math["SQRT1_2"] = HavelValue(M_SQRT1_2);
+  math["LN2"] = HavelValue(M_LN2);
+  math["LN10"] = HavelValue(M_LN10);
+  math["LOG2E"] = HavelValue(M_LOG2E);
+  math["LOG10E"] = HavelValue(M_LOG10E);
 
   // Utility functions
-  (*mathObj)["min"] =
+  math["min"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("min() requires at least 2 arguments");
@@ -4461,7 +4549,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(result);
       });
 
-  (*mathObj)["max"] =
+  math["max"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("max() requires at least 2 arguments");
@@ -4473,7 +4561,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(result);
       });
 
-  (*mathObj)["clamp"] =
+  math["clamp"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 3)
           return HavelRuntimeError(
@@ -4490,7 +4578,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::clamp(value, minVal, maxVal));
       });
 
-  (*mathObj)["lerp"] =
+  math["lerp"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 3)
           return HavelRuntimeError(
@@ -4504,7 +4592,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Random functions
-  (*mathObj)["random"] =
+  math["random"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         static std::random_device rd;
         static std::mt19937 gen(rd());
@@ -4533,7 +4621,7 @@ void Interpreter::InitializeMathBuiltins() {
         }
       });
 
-  (*mathObj)["randint"] =
+  math["randint"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         static std::random_device rd;
         static std::mt19937 gen(rd());
@@ -4559,7 +4647,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Angle conversion functions
-  (*mathObj)["deg2rad"] =
+  math["deg2rad"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("deg2rad() requires 1 argument");
@@ -4568,7 +4656,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(degrees * M_PI / 180.0);
       });
 
-  (*mathObj)["rad2deg"] =
+  math["rad2deg"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("rad2deg() requires 1 argument");
@@ -4578,7 +4666,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Special functions
-  (*mathObj)["sign"] =
+  math["sign"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sign() requires 1 argument");
@@ -4591,7 +4679,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(0.0);
       });
 
-  (*mathObj)["fract"] =
+  math["fract"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("fract() requires 1 argument");
@@ -4600,7 +4688,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(value - std::floor(value));
       });
 
-  (*mathObj)["mod"] =
+  math["mod"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError("mod() requires 2 arguments (x, y)");
@@ -4615,7 +4703,7 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Distance and geometry functions
-  (*mathObj)["distance"] =
+  math["distance"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 4)
           return HavelRuntimeError(
@@ -4631,7 +4719,7 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::sqrt(dx * dx + dy * dy));
       });
 
-  (*mathObj)["hypot"] =
+  math["hypot"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("hypot() requires at least 2 arguments");

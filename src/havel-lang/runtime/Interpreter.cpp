@@ -1,6 +1,7 @@
 #include "Interpreter.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/io/KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
 #include "gui/GUIManager.hpp"
@@ -1731,6 +1732,65 @@ void Interpreter::InitializeStandardLibrary() {
 
   // Debug test to see if InitializeStandardLibrary completes
   environment->Define("standard_library_completed", HavelValue(true));
+
+  // Expose KeyTap constructor to script environment
+  environment->Define(
+      "createKeyTap",
+      HavelValue(BuiltinFunction([this](const std::vector<HavelValue> &args)
+                                     -> HavelResult {
+        if (args.size() < 1) {
+          return HavelRuntimeError("createKeyTap requires keyName");
+        }
+
+        std::string keyName = ValueToString(args[0]);
+
+        // Optional parameters with defaults
+        std::function<void()> onTap = []() {
+          if (args.size() >= 2) {
+            // Execute tap action if provided
+            auto tapAction = args[1];
+            if (std::holds_alternative < std::function <
+                HavelValue(const std::vector<HavelValue> &) >>> (tapAction)) {
+              auto func = std::get<
+                  std::function<HavelValue(const std::vector<HavelValue> &)>>(
+                  tapAction);
+              func({HavelValue(nullptr)});
+            } else if (std::holds_alternative<std::string>(tapAction)) {
+              io.Send(ValueToString(tapAction));
+            }
+          }
+        };
+
+        std::variant<std::string, std::function<bool()>> tapCondition = {};
+        std::variant<std::string, std::function<bool()>> comboCondition = {};
+        std::function<void()> onCombo = nullptr;
+        bool grabDown = true;
+        bool grabUp = true;
+
+        // Optional condition parameter
+        if (args.size() >= 3) {
+          if (std::holds_alternative<std::string>(args[2])) {
+            tapCondition = ValueToString(args[2]);
+          }
+        }
+
+        // Optional combo action parameter
+        if (args.size() >= 4) {
+          if (std::holds_alternative < std::function <
+              HavelValue(const std::vector<HavelValue> &) >>> (args[3])) {
+            onCombo = [args[3]](const std::vector<HavelValue> &) {
+              auto func = std::get<
+                  std::function<HavelValue(const std::vector<HavelValue> &)>>(
+                  args[3]);
+              func({HavelValue(nullptr)});
+            };
+          }
+        }
+
+        auto keyTap = createKeyTap(keyName, onTap, tapCondition, comboCondition,
+                                   onCombo, grabDown, grabUp);
+        return HavelValue(keyName + " KeyTap created");
+      })));
 }
 
 void Interpreter::InitializeSystemBuiltins() {
@@ -4208,7 +4268,21 @@ void Interpreter::InitializeBrightnessBuiltins() {
   environment->Define("launcher", HavelValue(launcher));
 }
 
-void Interpreter::InitializeDebugBuiltins() {
+// KeyTap constructor implementation
+std::unique_ptr<KeyTap> Interpreter::createKeyTap(
+    const std::string &keyName, std::function<void()> onTap,
+    std::variant<std::string, std::function<bool()>> tapCondition,
+    std::variant<std::string, std::function<bool()>> comboCondition,
+    std::function<void()> onCombo, bool grabDown, bool grabUp) {
+  auto keyTap =
+      std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
+                               comboCondition, onCombo, grabDown, grabUp);
+  keyTaps.push_back(std::move(keyTap));
+  keyTap->setup();
+  return keyTap;
+}
+
+void Interpreter::InitializeStandardLibrary() {
   // Debug flag
   environment->Define("debug", HavelValue(false));
 

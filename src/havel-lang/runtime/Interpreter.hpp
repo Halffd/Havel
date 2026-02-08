@@ -211,6 +211,9 @@ private:
   HavelResult lastResult;
   std::mutex interpreterMutex; // Protect interpreter state
 
+  // KeyTap instances for advanced hotkey functionality
+  std::vector<std::unique_ptr<KeyTap>> keyTaps;
+
   // Keep parsed programs alive for function declarations captured by closures
   std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
 
@@ -218,6 +221,14 @@ private:
   std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
 
   HavelResult Evaluate(const ast::ASTNode &node);
+
+  // KeyTap constructor for advanced hotkey functionality
+  std::unique_ptr<KeyTap> createKeyTap(
+      const std::string &keyName, std::function<void()> onTap,
+      std::variant<std::string, std::function<bool()>> tapCondition = {},
+      std::variant<std::string, std::function<bool()>> comboCondition = {},
+      std::function<void()> onCombo = nullptr, bool grabDown = true,
+      bool grabUp = true);
 
   void InitializeStandardLibrary();
   void InitializeSystemBuiltins();

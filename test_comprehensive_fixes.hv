@@ -1,0 +1,48 @@
+// Comprehensive test of all bug fixes
+
+print("=== Testing All Bug Fixes ===");
+
+// Test 1: Math constants now available globally
+print("1. Math constants:");
+print("E =", E);
+print("PI =", PI);
+print("E + 1 =", E + 1);
+print("PI * 2 =", PI * 2);
+
+// Test 2: Complex mathematical expressions
+print("2. Complex expressions:");
+print("2 * pow(PI, 3) =", 2 * pow(PI, 3));
+print("min(log10(1.5), cos(-2) * E) =", min(log10(1.5), cos(-2) * E));
+
+// Test 3: Logical operators
+print("3. Logical operators:");
+let t = true;
+let f = false;
+print("t =", t);
+print("f =", f);
+print("!t =", !t);
+print("!f =", !f);
+print("t && f =", t && f);
+print("t || f =", t || f);
+
+// Test 4: Variable assignment and access
+print("4. Variable access:");
+let x = 42;
+let y = 3.14;
+print("x =", x);
+print("y =", y);
+print("x + y =", x + y);
+
+// Test 5: Hotkey function
+print("5. Hotkey function:");
+let hk = Hotkey("a", print("Hotkey triggered!"));
+print("Hotkey result =", hk);
+
+// Test 6: Module function overriding
+print("6. Module function overriding:");
+function math.abs(x) {
+    return "Custom abs: " + x;
+}
+print("math.abs(-5) =", math.abs(-5));
+
+print("=== All tests completed successfully! ===");

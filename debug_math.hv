@@ -1,0 +1,13 @@
+// Debug test for mathematical expressions
+print("Testing mathematical expressions...");
+
+// Test basic arithmetic
+print("2 + 3 =", 2 + 3);
+print("E + 1 =", E + 1);
+
+// Test function calls
+print("pow(2, 3) =", pow(2, 3));
+print("PI =", PI);
+
+// Test complex expression
+print("2 * PI =", 2 * PI);

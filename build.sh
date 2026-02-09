@@ -155,23 +155,6 @@ build() {
     log "INFO" "Building project with ${THREADS} parallel jobs..." "${YELLOW}"
     (cd "${BUILD_DIR}" && make -j${THREADS}) 2>&1 | tee -a "${BUILD_LOG}"
     check_status "Build"
-    
-    if [[ "$ENABLE_TESTS" = "ON" ]]; then
-        for test_exe in test_havel test_gui files_test main_test utils_test; do
-            if [[ -f "${BUILD_DIR}/${test_exe}" ]]; then
-                local size=$(du -h "${BUILD_DIR}/${test_exe}" | cut -f1)
-                log "SUCCESS" "✅ ${test_exe} built successfully (${size})" "${GREEN}"
-            fi
-        done
-    fi
-    
-    if [[ "$ENABLE_HAVEL_LANG" = "ON" ]]; then
-        if [[ -f "${BUILD_DIR}/libhavel_lang.a" ]]; then
-            local size=$(du -h "${BUILD_DIR}/libhavel_lang.a" | cut -f1)
-            local llvm_status=$([ "$ENABLE_LLVM" = "ON" ] && echo "with LLVM JIT" || echo "interpreter only")
-            log "SUCCESS" "✅ libhavel_lang.a built successfully (${size}) - ${llvm_status}" "${GREEN}"
-        fi
-    fi
 }
 
 # Run the project

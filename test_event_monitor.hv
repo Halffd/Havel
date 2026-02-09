@@ -1,0 +1,71 @@
+// Test Custom Window/Event Monitor System
+
+print("=== Testing Custom Event Monitor System ===");
+
+// Test 1: Timer functions
+print("1. Timer functions:");
+
+let timerId = setTimeout(() => {
+    print("  Timeout executed after 1000ms!");
+}, 1000);
+
+let intervalId = setInterval(() => {
+    print("  Interval executed every 500ms");
+}, 500);
+
+// Stop the interval after 3 seconds
+setTimeout(() => {
+    print("  Stopping interval...");
+    stopInterval(intervalId);
+}, 3000);
+
+// Test 2: Mode management
+print("2. Mode management:");
+
+setMode("gaming");
+print("Current mode:", getMode());
+
+onKeyDown((keyCode, isDown, keyName) => {
+    if (isDown) {
+        print("  Key down:", keyName, "(keyCode:", keyCode, ")");
+    }
+});
+
+onKeyUp((keyCode, isDown, keyName) => {
+    if (!isDown) {
+        print("  Key up:", keyName, "(keyCode:", keyCode, ")");
+    }
+});
+
+// Test 3: Custom update loop
+print("3. Custom update loop:");
+
+let updateLoopId = startUpdateLoop(() => {
+    // This would run at ~60 FPS (16ms intervals)
+    // For now, just print a counter
+    static let counter = 0;
+    counter = counter + 1;
+    if (counter % 60 == 0) { // Every second
+        print("  Update loop running, frame:", counter);
+    }
+}, 16); // 16ms = ~60 FPS
+
+// Test 4: Mode change callbacks
+print("4. Mode change detection:");
+
+// Note: This would require full EventMonitor implementation
+// For now, we demonstrate the API structure
+
+print("=== All event monitor features demonstrated ===");
+print("");
+print("Available functions:");
+print("- setTimeout(callback, delayMs)");
+print("- setInterval(callback, intervalMs)");
+print("- stopInterval(timerId)");
+print("- setMode(modeName)");
+print("- getMode()");
+print("- onKeyDown(callback)");
+print("- onKeyUp(callback)");
+print("- startUpdateLoop(callback, [intervalMs])");
+print("");
+print("Note: Full implementation requires EventMonitor class integration");

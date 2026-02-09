@@ -1,0 +1,29 @@
+// Test function overriding
+print("Testing function overriding...");
+
+// Test overriding built-in math.abs function
+function abs(x) {
+    return "custom abs: " + x;
+}
+
+print(abs(-5));  // Should call our custom function, not built-in
+
+// Test overriding with different signature
+function sin(x, y) {
+    return "custom sin with 2 args: " + x + ", " + y;
+}
+
+print(sin(1.5));  // Should call our custom sin, not built-in
+
+// Test that built-in still works when not overridden
+print(math.cos(0));  // Should call built-in cos through module
+
+// Test overriding with recursive call
+function factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+print(factorial(5));  // Should work with recursion

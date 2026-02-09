@@ -637,25 +637,60 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     args.push_back(unwrap(argRes));
   }
 
+  // Check if this is a direct function name call (not a variable reference)
+  if (auto *identifier = std::get_if<std::string>(&callee)) {
+    // First check if there's a user-defined function with this name in the
+    // current environment
+    auto userFunc = environment->Get(*identifier);
+    if (userFunc &&
+        std::holds_alternative<std::shared_ptr<HavelFunction>>(*userFunc)) {
+      auto &func = *std::get<std::shared_ptr<HavelFunction>>(*userFunc);
+      if (args.size() != func.declaration->parameters.size()) {
+        lastResult =
+            HavelRuntimeError("Mismatched argument count for function " +
+                              func.declaration->name->symbol);
+        return;
+      }
+
+      auto funcEnv = std::make_shared<Environment>(func.closure);
+      for (size_t i = 0; i < args.size(); ++i) {
+        funcEnv->Define(func.declaration->parameters[i]->symbol, args[i]);
+      }
+
+      auto originalEnv = this->environment;
+      this->environment = funcEnv;
+      auto bodyResult = Evaluate(*func.declaration->body);
+      this->environment = originalEnv;
+
+      if (std::holds_alternative<ReturnValue>(bodyResult)) {
+        lastResult = std::get<ReturnValue>(bodyResult).value;
+      } else {
+        lastResult = nullptr; // Implicit return
+      }
+      return;
+    }
+  }
+
+  // Fall back to original logic for built-in functions and variable references
   if (auto *builtin = std::get_if<BuiltinFunction>(&callee)) {
     lastResult = (*builtin)(args);
   } else if (auto *userFunc =
                  std::get_if<std::shared_ptr<HavelFunction>>(&callee)) {
-    auto &func = *userFunc;
-    if (args.size() != func->declaration->parameters.size()) {
+    auto &func = **userFunc;
+    if (args.size() != func.declaration->parameters.size()) {
       lastResult = HavelRuntimeError("Mismatched argument count for function " +
-                                     func->declaration->name->symbol);
+                                     func.declaration->name->symbol);
       return;
     }
 
-    auto funcEnv = std::make_shared<Environment>(func->closure);
+    auto funcEnv = std::make_shared<Environment>(func.closure);
     for (size_t i = 0; i < args.size(); ++i) {
-      funcEnv->Define(func->declaration->parameters[i]->symbol, args[i]);
+      funcEnv->Define(func.declaration->parameters[i]->symbol, args[i]);
     }
 
     auto originalEnv = this->environment;
     this->environment = funcEnv;
-    auto bodyResult = Evaluate(*func->declaration->body);
+    auto bodyResult = Evaluate(*func.declaration->body);
     this->environment = originalEnv;
 
     if (std::holds_alternative<ReturnValue>(bodyResult)) {
@@ -702,6 +737,33 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     if (propName == "length") {
       lastResult = static_cast<double>((*arrPtr) ? (*arrPtr)->size() : 0);
       return;
+    }
+  }
+
+  // Check for module function overriding
+  // If object is a string (module name), check if we have a user-defined
+  // override
+  if (auto *moduleName = std::get_if<std::string>(&objectValue)) {
+    // First check if there's a user-defined function with this qualified name
+    std::string qualifiedName = *moduleName + "." + propName;
+    auto userFunc = environment->Get(qualifiedName);
+    if (userFunc &&
+        std::holds_alternative<std::shared_ptr<HavelFunction>>(*userFunc)) {
+      lastResult = *userFunc;
+      return;
+    }
+  }
+
+  // Check if object is a module object and we have an override for the property
+  if (auto *moduleObj = std::get_if<HavelObject>(&objectValue)) {
+    if (*moduleObj) {
+      std::string qualifiedName = "module." + propName;
+      auto userFunc = environment->Get(qualifiedName);
+      if (userFunc &&
+          std::holds_alternative<std::shared_ptr<HavelFunction>>(*userFunc)) {
+        lastResult = *userFunc;
+        return;
+      }
     }
   }
 
@@ -1597,6 +1659,57 @@ void Interpreter::visitAssignmentExpression(
       return;
     }
     value = newValue;
+  } else if (auto *memberExpr = dynamic_cast<const ast::MemberExpression *>(
+                 node.target.get())) {
+    // Member expression assignment: obj.prop = value
+    auto objectResult = Evaluate(*memberExpr->object);
+    if (isError(objectResult)) {
+      lastResult = objectResult;
+      return;
+    }
+    HavelValue objectValue = unwrap(objectResult);
+
+    auto *propId =
+        dynamic_cast<const ast::Identifier *>(memberExpr->property.get());
+    if (!propId) {
+      lastResult = HavelRuntimeError("Invalid property assignment");
+      return;
+    }
+    std::string propName = propId->symbol;
+
+    // Handle module function overriding
+    if (auto *moduleName = std::get_if<std::string>(&objectValue)) {
+      // This is a module name, so we're overriding a module function
+      std::string qualifiedName = *moduleName + "." + propName;
+      if (!environment->Assign(qualifiedName, value)) {
+        lastResult = HavelRuntimeError("Cannot assign to module function: " +
+                                       qualifiedName);
+        return;
+      }
+      value = value;
+      return;
+    }
+
+    // Handle object property assignment
+    if (auto *objPtr = std::get_if<HavelObject>(&objectValue)) {
+      if (!*objPtr) {
+        *objPtr =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+      }
+      auto it = (*objPtr)->find(propName);
+      if (it != (*objPtr)->end()) {
+        HavelValue newValue = applyCompound(op, it->second, value);
+        (*objPtr)->operator[](propName) = newValue;
+        value = newValue;
+      } else {
+        (*objPtr)->operator[](propName) = value;
+        value = value;
+      }
+    } else {
+      lastResult =
+          HavelRuntimeError("Cannot assign property to non-object value");
+      return;
+    }
   } else if (auto *index = dynamic_cast<const ast::IndexExpression *>(
                  node.target.get())) {
     // Array/object index assignment (array[0] = value)
@@ -1632,8 +1745,8 @@ void Interpreter::visitAssignmentExpression(
         *objectPtr =
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
       }
-      // If property exists, apply compound operator; otherwise treat as simple
-      // assignment
+      // If property exists, apply compound operator; otherwise treat as
+      // simple assignment
       auto it = (**objectPtr).find(key);
       if (it != (**objectPtr).end()) {
         HavelValue newValue = applyCompound(op, it->second, value);
@@ -1934,6 +2047,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeHelpBuiltin();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();
+  InitializeTimerBuiltins();
   InitializeFileManagerBuiltins();
   InitializeLauncherBuiltins();
   InitializeGUIBuiltins();
@@ -2165,7 +2279,11 @@ void Interpreter::InitializeSystemBuiltins() {
                   [this](const std::vector<HavelValue> &args) -> HavelResult {
                     if (auto app = HavelApp::instance) {
                       if (app->mpv) {
-                        app->mpv->PlayPause();
+                        if (app->mpv->IsSocketAlive()) {
+                          app->mpv->SendCommand({"cycle", "pause"});
+                        } else {
+                          Launcher::runShell("playerctl play-pause");
+                        }
                         return HavelValue(true);
                       }
                     }
@@ -2517,6 +2635,30 @@ void Interpreter::InitializeSystemBuiltins() {
   if (auto v = environment->Get("hotkey.toggleWindowFocusTracking"))
     (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
+
+  // Add Hotkey function for creating hotkey bindings
+  environment->Define(
+      "Hotkey",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2) {
+              return HavelRuntimeError(
+                  "Hotkey() requires at least 2 arguments (key, action)");
+            }
+
+            // Get hotkey string
+            std::string hotkeyStr = this->ValueToString(args[0]);
+
+            // Create a simple hotkey binding object
+            auto binding =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*binding)["key"] = args[0];
+            (*binding)["action"] = args[1];
+
+            // For now, just return binding object
+            // In a full implementation, this would register with hotkey system
+            return HavelValue(HavelObject(binding));
+          }));
 
   // Process helpers
   environment->Define(
@@ -3278,6 +3420,179 @@ void Interpreter::InitializeSystemBuiltins() {
   if (auto v = environment->Get("audio.playTestSound"))
     (*audioMod)["playTestSound"] = *v;
   environment->Define("audio", HavelValue(audioMod));
+
+  // === ENHANCED MPV MODULE ===
+  auto mpvMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // Existing MPV functions
+  (*mpvMod)["playPause"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            if (app->mpv->IsSocketAlive()) {
+              app->mpv->SendCommand({"cycle", "pause"});
+            } else {
+              Launcher::runShell("playerctl play-pause");
+            }
+            return HavelValue(true);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  (*mpvMod)["stop"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            if (app->mpv->IsSocketAlive()) {
+              app->mpv->SendCommand({"stop"});
+            } else {
+              Launcher::runShell("playerctl stop");
+            }
+            return HavelValue(true);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  // New MPV process discovery functions
+  (*mpvMod)["findInstances"] = BuiltinFunction([this](
+                                                   const std::vector<HavelValue>
+                                                       &args) -> HavelResult {
+    if (auto app = HavelApp::instance) {
+      if (app->mpv) {
+        auto instances = app->mpv->FindMPVInstances();
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto &instance : instances) {
+          auto instanceObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*instanceObj)["pid"] = HavelValue(instance.pid);
+          (*instanceObj)["socketPath"] = HavelValue(instance.socketPath);
+          (*instanceObj)["command"] = HavelValue(instance.command);
+          (*instanceObj)["isActive"] = HavelValue(instance.isActive);
+          resultArray->push_back(HavelValue(instanceObj));
+        }
+
+        return HavelValue(resultArray);
+      }
+    }
+    return HavelRuntimeError("MPV not available");
+  });
+
+  (*mpvMod)["isRunning"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            return HavelValue(app->mpv->IsMPVRunning());
+          }
+        }
+        return HavelValue(false);
+      });
+
+  (*mpvMod)["changeSocket"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError("changeSocket() requires socket path");
+        }
+
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            std::string socketPath = ValueToString(args[0]);
+            app->mpv->ChangeSocket(socketPath);
+            return HavelValue(true);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  (*mpvMod)["setActiveInstance"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError("setActiveInstance() requires PID");
+        }
+
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            std::string pid = ValueToString(args[0]);
+            bool success = app->mpv->SetActiveInstance(pid);
+            return HavelValue(success);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  (*mpvMod)["setActiveInstanceBySocket"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError(
+              "setActiveInstanceBySocket() requires socket path");
+        }
+
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            std::string socketPath = ValueToString(args[0]);
+            bool success = app->mpv->SetActiveInstanceBySocket(socketPath);
+            return HavelValue(success);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  (*mpvMod)["getActiveInstance"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            auto instance = app->mpv->GetActiveInstance();
+            if (instance.has_value()) {
+              auto instanceObj = std::make_shared<
+                  std::unordered_map<std::string, HavelValue>>();
+              (*instanceObj)["pid"] = HavelValue(instance->pid);
+              (*instanceObj)["socketPath"] = HavelValue(instance->socketPath);
+              (*instanceObj)["command"] = HavelValue(instance->command);
+              (*instanceObj)["isActive"] = HavelValue(instance->isActive);
+              return HavelValue(instanceObj);
+            }
+          }
+        }
+        return HavelValue(nullptr);
+      });
+
+  (*mpvMod)["controlMultiple"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "controlMultiple() requires pids array and commands array");
+        }
+
+        if (auto app = HavelApp::instance) {
+          if (app->mpv) {
+            // Extract PIDs
+            std::vector<std::string> pids;
+            if (std::holds_alternative<HavelArray>(args[0])) {
+              auto pidArray = std::get<HavelArray>(args[0]);
+              for (const auto &pid : *pidArray) {
+                pids.push_back(ValueToString(pid));
+              }
+            }
+
+            // Extract commands
+            std::vector<std::string> commands;
+            if (std::holds_alternative<HavelArray>(args[1])) {
+              auto cmdArray = std::get<HavelArray>(args[1]);
+              for (const auto &cmd : *cmdArray) {
+                commands.push_back(ValueToString(cmd));
+              }
+            }
+
+            app->mpv->ControlMultiple(pids, commands);
+            return HavelValue(true);
+          }
+        }
+        return HavelRuntimeError("MPV not available");
+      });
+
+  environment->Define("mpv", HavelValue(mpvMod));
 }
 
 void Interpreter::InitializeWindowBuiltins() {
@@ -4044,7 +4359,8 @@ void Interpreter::InitializeIOBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (hotkeyManager) {
-              // TODO: Add actual unblock method to HotkeyManager when available
+              // TODO: Add actual unblock method to HotkeyManager when
+              // available
               std::cout << "[INFO] IO input unblocked" << std::endl;
             } else {
               std::cout << "[WARN] HotkeyManager not available" << std::endl;
@@ -4072,7 +4388,8 @@ void Interpreter::InitializeIOBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (hotkeyManager) {
-              // TODO: Add actual ungrab method to HotkeyManager when available
+              // TODO: Add actual ungrab method to HotkeyManager when
+              // available
               std::cout << "[INFO] IO input ungrabbed" << std::endl;
             } else {
               std::cout << "[WARN] HotkeyManager not available" << std::endl;
@@ -4257,9 +4574,11 @@ void Interpreter::InitializeIOBuiltins() {
             help << "\n=== Conditional Hotkeys ===\n\n";
             help << "Postfix: F1 => send(\"hello\") if mode == \"gaming\"\n";
             help << "Prefix:  F1 if mode == \"gaming\" => send(\"hello\")\n";
-            help << "Grouped: when mode == \"gaming\" { F1 => send(\"hi\"); F2 "
+            help << "Grouped: when mode == \"gaming\" { F1 => send(\"hi\"); "
+                    "F2 "
                     "=> send(\"bye\"); }\n";
-            help << "Nested:  when condition1 { F1 if condition2 => action }\n";
+            help << "Nested:  when condition1 { F1 if condition2 => action "
+                    "}\n";
             help << "All conditions are evaluated dynamically at runtime!\n";
           } else if (topic == "modules" || topic == "MODULES") {
             help << "\n=== Available Modules ===\n\n";
@@ -4277,19 +4596,23 @@ void Interpreter::InitializeIOBuiltins() {
           } else if (topic == "process" || topic == "PROCESS") {
             help << "\n=== Process Management Module ===\n\n";
             help << "Process Discovery:\n";
-            help << "  process.find(name)           : Find processes by name\n";
+            help << "  process.find(name)           : Find processes by "
+                    "name\n";
             help << "  process.exists(pid|name)     : Check if process "
                     "exists\n\n";
             help << "Process Control:\n";
-            help << "  process.kill(pid, signal)    : Send signal to process\n";
-            help << "  process.nice(pid, value)     : Set CPU priority (-20 to "
+            help << "  process.kill(pid, signal)    : Send signal to "
+                    "process\n";
+            help << "  process.nice(pid, value)     : Set CPU priority (-20 "
+                    "to "
                     "19)\n";
-            help << "  process.ionice(pid, class, data) : Set I/O priority\n\n";
+            help << "  process.ionice(pid, class, data) : Set I/O "
+                    "priority\n\n";
             help << "Examples:\n";
             help << "  let procs = process.find(\"firefox\")\n";
             help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
-            help
-                << "  process.nice(1234, 10)           // Lower CPU priority\n";
+            help << "  process.nice(1234, 10)           // Lower CPU "
+                    "priority\n";
             help << "  process.ionice(1234, 2, 4)      // Best-effort I/O\n\n";
             help << "Process Object Fields:\n";
             help << "  pid, ppid, name, command, user\n";
@@ -4311,265 +4634,265 @@ void Interpreter::InitializeMathBuiltins() {
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
   auto &math = *mathObj;
   // Basic arithmetic functions
-  math["abs"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["abs"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("abs() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::abs(value));
       });
 
-  math["ceil"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["ceil"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("ceil() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::ceil(value));
       });
 
-  math["floor"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["floor"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("floor() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::floor(value));
       });
 
-  math["round"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["round"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("round() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::round(value));
       });
 
   // Trigonometric functions
-  math["sin"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["sin"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sin() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::sin(value));
       });
 
-  math["cos"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["cos"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cos() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::cos(value));
       });
 
-  math["tan"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["tan"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("tan() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::tan(value));
       });
 
-  math["asin"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["asin"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("asin() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value < -1.0 || value > 1.0)
           return HavelRuntimeError("asin() argument must be between -1 and 1");
 
         return HavelValue(std::asin(value));
       });
 
-  math["acos"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["acos"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("acos() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value < -1.0 || value > 1.0)
           return HavelRuntimeError("acos() argument must be between -1 and 1");
 
         return HavelValue(std::acos(value));
       });
 
-  math["atan"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["atan"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("atan() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::atan(value));
       });
 
-  math["atan2"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["atan2"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError("atan2() requires 2 arguments (y, x)");
 
-        double y = ValueToNumber(args[0]);
-        double x = ValueToNumber(args[1]);
+        double y = this->ValueToNumber(args[0]);
+        double x = this->ValueToNumber(args[1]);
         return HavelValue(std::atan2(y, x));
       });
 
   // Hyperbolic functions
-  math["sinh"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["sinh"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sinh() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::sinh(value));
       });
 
-  math["cosh"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["cosh"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cosh() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::cosh(value));
       });
 
-  math["tanh"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["tanh"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("tanh() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::tanh(value));
       });
 
   // Exponential and logarithmic functions
-  math["exp"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["exp"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("exp() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::exp(value));
       });
 
-  math["log"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["log"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value <= 0.0)
           return HavelRuntimeError("log() argument must be positive");
 
         return HavelValue(std::log(value));
       });
 
-  math["log10"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["log10"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log10() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value <= 0.0)
           return HavelRuntimeError("log10() argument must be positive");
 
         return HavelValue(std::log10(value));
       });
 
-  math["log2"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["log2"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("log2() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value <= 0.0)
           return HavelRuntimeError("log2() argument must be positive");
 
         return HavelValue(std::log2(value));
       });
 
-  math["sqrt"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["sqrt"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sqrt() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value < 0.0)
           return HavelRuntimeError("sqrt() argument must be non-negative");
 
         return HavelValue(std::sqrt(value));
       });
 
-  math["cbrt"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["cbrt"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("cbrt() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(std::cbrt(value));
       });
 
   // Power functions
-  math["pow"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["pow"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError(
               "pow() requires 2 arguments (base, exponent)");
 
-        double base = ValueToNumber(args[0]);
-        double exponent = ValueToNumber(args[1]);
+        double base = this->ValueToNumber(args[0]);
+        double exponent = this->ValueToNumber(args[1]);
         return HavelValue(std::pow(base, exponent));
       });
 
   // Constants
-  math["PI"] = HavelValue(M_PI);
-  math["E"] = HavelValue(M_E);
-  math["TAU"] = HavelValue(2 * M_PI);
-  math["SQRT2"] = HavelValue(M_SQRT2);
-  math["SQRT1_2"] = HavelValue(M_SQRT1_2);
-  math["LN2"] = HavelValue(M_LN2);
-  math["LN10"] = HavelValue(M_LN10);
-  math["LOG2E"] = HavelValue(M_LOG2E);
-  math["LOG10E"] = HavelValue(M_LOG10E);
+  (*mathObj)["PI"] = HavelValue(M_PI);
+  (*mathObj)["E"] = HavelValue(M_E);
+  (*mathObj)["TAU"] = HavelValue(2 * M_PI);
+  (*mathObj)["SQRT2"] = HavelValue(M_SQRT2);
+  (*mathObj)["SQRT1_2"] = HavelValue(M_SQRT1_2);
+  (*mathObj)["LN2"] = HavelValue(M_LN2);
+  (*mathObj)["LN10"] = HavelValue(M_LN10);
+  (*mathObj)["LOG2E"] = HavelValue(M_LOG2E);
+  (*mathObj)["LOG10E"] = HavelValue(M_LOG10E);
 
   // Utility functions
-  math["min"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["min"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("min() requires at least 2 arguments");
 
-        double result = ValueToNumber(args[0]);
+        double result = this->ValueToNumber(args[0]);
         for (size_t i = 1; i < args.size(); i++) {
-          result = std::min(result, ValueToNumber(args[i]));
+          result = std::min(result, this->ValueToNumber(args[i]));
         }
         return HavelValue(result);
       });
 
-  math["max"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["max"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("max() requires at least 2 arguments");
 
-        double result = ValueToNumber(args[0]);
+        double result = this->ValueToNumber(args[0]);
         for (size_t i = 1; i < args.size(); i++) {
-          result = std::max(result, ValueToNumber(args[i]));
+          result = std::max(result, this->ValueToNumber(args[i]));
         }
         return HavelValue(result);
       });
 
-  math["clamp"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["clamp"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 3)
           return HavelRuntimeError(
               "clamp() requires 3 arguments (value, min, max)");
 
-        double value = ValueToNumber(args[0]);
-        double minVal = ValueToNumber(args[1]);
-        double maxVal = ValueToNumber(args[2]);
+        double value = this->ValueToNumber(args[0]);
+        double minVal = this->ValueToNumber(args[1]);
+        double maxVal = this->ValueToNumber(args[2]);
 
         if (minVal > maxVal)
           return HavelRuntimeError(
@@ -4578,22 +4901,22 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(std::clamp(value, minVal, maxVal));
       });
 
-  math["lerp"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["lerp"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 3)
           return HavelRuntimeError(
               "lerp() requires 3 arguments (start, end, t)");
 
-        double start = ValueToNumber(args[0]);
-        double end = ValueToNumber(args[1]);
-        double t = ValueToNumber(args[2]);
+        double start = this->ValueToNumber(args[0]);
+        double end = this->ValueToNumber(args[1]);
+        double t = this->ValueToNumber(args[2]);
 
         return HavelValue(start + t * (end - start));
       });
 
   // Random functions
-  math["random"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["random"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         static std::random_device rd;
         static std::mt19937 gen(rd());
 
@@ -4603,15 +4926,15 @@ void Interpreter::InitializeMathBuiltins() {
           return HavelValue(dis(gen));
         } else if (args.size() == 1) {
           // random(max) -> [0, max)
-          double maxVal = ValueToNumber(args[0]);
+          double maxVal = this->ValueToNumber(args[0]);
           if (maxVal <= 0)
             return HavelRuntimeError("random(max) requires max > 0");
           std::uniform_real_distribution<double> dis(0.0, maxVal);
           return HavelValue(dis(gen));
         } else if (args.size() == 2) {
           // random(min, max) -> [min, max)
-          double minVal = ValueToNumber(args[0]);
-          double maxVal = ValueToNumber(args[1]);
+          double minVal = this->ValueToNumber(args[0]);
+          double maxVal = this->ValueToNumber(args[1]);
           if (minVal >= maxVal)
             return HavelRuntimeError("random(min, max) requires min < max");
           std::uniform_real_distribution<double> dis(minVal, maxVal);
@@ -4621,22 +4944,22 @@ void Interpreter::InitializeMathBuiltins() {
         }
       });
 
-  math["randint"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["randint"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         static std::random_device rd;
         static std::mt19937 gen(rd());
 
         if (args.size() == 1) {
           // randint(max) -> [0, max]
-          int maxVal = static_cast<int>(ValueToNumber(args[0]));
+          int maxVal = static_cast<int>(this->ValueToNumber(args[0]));
           if (maxVal < 0)
             return HavelRuntimeError("randint(max) requires max >= 0");
           std::uniform_int_distribution<int> dis(0, maxVal);
           return HavelValue(static_cast<double>(dis(gen)));
         } else if (args.size() == 2) {
           // randint(min, max) -> [min, max]
-          int minVal = static_cast<int>(ValueToNumber(args[0]));
-          int maxVal = static_cast<int>(ValueToNumber(args[1]));
+          int minVal = static_cast<int>(this->ValueToNumber(args[0]));
+          int maxVal = static_cast<int>(this->ValueToNumber(args[1]));
           if (minVal > maxVal)
             return HavelRuntimeError("randint(min, max) requires min <= max");
           std::uniform_int_distribution<int> dis(minVal, maxVal);
@@ -4647,31 +4970,31 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Angle conversion functions
-  math["deg2rad"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["deg2rad"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("deg2rad() requires 1 argument");
 
-        double degrees = ValueToNumber(args[0]);
+        double degrees = this->ValueToNumber(args[0]);
         return HavelValue(degrees * M_PI / 180.0);
       });
 
-  math["rad2deg"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["rad2deg"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("rad2deg() requires 1 argument");
 
-        double radians = ValueToNumber(args[0]);
+        double radians = this->ValueToNumber(args[0]);
         return HavelValue(radians * 180.0 / M_PI);
       });
 
   // Special functions
-  math["sign"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["sign"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("sign() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         if (value > 0)
           return HavelValue(1.0);
         if (value < 0)
@@ -4679,22 +5002,22 @@ void Interpreter::InitializeMathBuiltins() {
         return HavelValue(0.0);
       });
 
-  math["fract"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["fract"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 1)
           return HavelRuntimeError("fract() requires 1 argument");
 
-        double value = ValueToNumber(args[0]);
+        double value = this->ValueToNumber(args[0]);
         return HavelValue(value - std::floor(value));
       });
 
-  math["mod"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["mod"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
           return HavelRuntimeError("mod() requires 2 arguments (x, y)");
 
-        double x = ValueToNumber(args[0]);
-        double y = ValueToNumber(args[1]);
+        double x = this->ValueToNumber(args[0]);
+        double y = this->ValueToNumber(args[1]);
 
         if (y == 0.0)
           return HavelRuntimeError("mod() divisor cannot be zero");
@@ -4703,30 +5026,30 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   // Distance and geometry functions
-  math["distance"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["distance"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 4)
           return HavelRuntimeError(
               "distance() requires 4 arguments (x1, y1, x2, y2)");
 
-        double x1 = ValueToNumber(args[0]);
-        double y1 = ValueToNumber(args[1]);
-        double x2 = ValueToNumber(args[2]);
-        double y2 = ValueToNumber(args[3]);
+        double x1 = this->ValueToNumber(args[0]);
+        double y1 = this->ValueToNumber(args[1]);
+        double x2 = this->ValueToNumber(args[2]);
+        double y2 = this->ValueToNumber(args[3]);
 
         double dx = x2 - x1;
         double dy = y2 - y1;
         return HavelValue(std::sqrt(dx * dx + dy * dy));
       });
 
-  math["hypot"] =
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mathObj)["hypot"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("hypot() requires at least 2 arguments");
 
         double sumSquares = 0.0;
         for (const auto &arg : args) {
-          double value = ValueToNumber(arg);
+          double value = this->ValueToNumber(arg);
           sumSquares += value * value;
         }
 
@@ -4734,6 +5057,205 @@ void Interpreter::InitializeMathBuiltins() {
       });
 
   environment->Define("math", HavelValue(mathObj));
+
+  // Also add math constants to global scope for easier access
+  environment->Define("E", HavelValue(M_E));
+  environment->Define("PI", HavelValue(M_PI));
+  environment->Define("TAU", HavelValue(2 * M_PI));
+  environment->Define("SQRT2", HavelValue(M_SQRT2));
+  environment->Define("SQRT1_2", HavelValue(M_SQRT1_2));
+  environment->Define("LN2", HavelValue(M_LN2));
+  environment->Define("LN10", HavelValue(M_LN10));
+  environment->Define("LOG2E", HavelValue(M_LOG2E));
+  environment->Define("LOG10E", HavelValue(M_LOG10E));
+}
+
+void Interpreter::InitializeTimerBuiltins() {
+  // === TIMER FUNCTIONS ===
+
+  // setTimeout(callback, delayMs) -> timerId
+  environment->Define(
+      "setTimeout",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 2) {
+          return HavelRuntimeError(
+              "setTimeout() requires 2 arguments (callback, delayMs)");
+        }
+
+        // Extract callback function
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError(
+              "setTimeout() first argument must be a function");
+        }
+
+        auto func = std::get<std::shared_ptr<HavelFunction>>(args[0]);
+        int delayMs = static_cast<int>(ValueToNumber(args[1]));
+
+        // Create a wrapper that calls the Havel function
+        auto callback = [this, func]() {
+          auto funcEnv = std::make_shared<Environment>(func->closure);
+          auto originalEnv = this->environment;
+          this->environment = funcEnv;
+          auto result = Evaluate(*func->declaration->body);
+          this->environment = originalEnv;
+          // Ignore return value for setTimeout
+        };
+
+        int timerId = havel::setTimeout(callback, delayMs);
+        return HavelValue(static_cast<double>(timerId));
+      }));
+
+  // setInterval(callback, intervalMs) -> timerId
+  environment->Define(
+      "setInterval",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 2) {
+          return HavelRuntimeError(
+              "setInterval() requires 2 arguments (callback, intervalMs)");
+        }
+
+        // Extract callback function
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError(
+              "setInterval() first argument must be a function");
+        }
+
+        auto func = std::get<std::shared_ptr<HavelFunction>>(args[0]);
+        int intervalMs = static_cast<int>(ValueToNumber(args[1]));
+
+        // Create a wrapper that calls the Havel function
+        auto callback = [this, func]() {
+          auto funcEnv = std::make_shared<Environment>(func->closure);
+          auto originalEnv = this->environment;
+          this->environment = funcEnv;
+          auto result = Evaluate(*func->declaration->body);
+          this->environment = originalEnv;
+          // Ignore return value for setInterval
+        };
+
+        int timerId = havel::setInterval(callback, intervalMs);
+        return HavelValue(static_cast<double>(timerId));
+      }));
+
+  // stopInterval(timerId) -> null
+  environment->Define(
+      "stopInterval",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError(
+              "stopInterval() requires 1 argument (timerId)");
+        }
+
+        int timerId = static_cast<int>(ValueToNumber(args[0]));
+        havel::stopInterval(timerId);
+        return HavelValue(nullptr);
+      }));
+
+  // === EVENT MONITOR FUNCTIONS ===
+
+  // setMode(modeName) -> null
+  environment->Define(
+      "setMode",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError("setMode() requires 1 argument (modeName)");
+        }
+
+        std::string mode = ValueToString(args[0]);
+        // TODO: Implement mode manager access
+        // For now, just store in environment
+        return HavelValue(nullptr);
+      }));
+
+  // getMode() -> modeName
+  environment->Define(
+      "getMode",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 0) {
+          return HavelRuntimeError("getMode() requires no arguments");
+        }
+
+        // TODO: Implement mode manager access
+        // For now, return default
+        return HavelValue(std::string("default"));
+      }));
+
+  // onKeyDown(callback) -> null
+  environment->Define(
+      "onKeyDown",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError(
+              "onKeyDown() requires 1 argument (callback)");
+        }
+
+        // TODO: Implement key listener registration
+        // For now, just validate callback is function
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError(
+              "onKeyDown() first argument must be a function");
+        }
+
+        return HavelValue(nullptr);
+      }));
+
+  // onKeyUp(callback) -> null
+  environment->Define(
+      "onKeyUp",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError("onKeyUp() requires 1 argument (callback)");
+        }
+
+        // TODO: Implement key listener registration
+        // For now, just validate callback is function
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError(
+              "onKeyUp() first argument must be a function");
+        }
+
+        return HavelValue(nullptr);
+      }));
+
+  // startUpdateLoop(callback, intervalMs) -> timerId
+  environment->Define(
+      "startUpdateLoop",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 1 || args.size() > 2) {
+          return HavelRuntimeError("startUpdateLoop() requires 1-2 arguments "
+                                   "(callback, [intervalMs])");
+        }
+
+        // Extract callback function
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError(
+              "startUpdateLoop() first argument must be a function");
+        }
+
+        auto func = std::get<std::shared_ptr<HavelFunction>>(args[0]);
+        int intervalMs = 16; // Default ~60 FPS
+        if (args.size() > 1) {
+          intervalMs = static_cast<int>(ValueToNumber(args[1]));
+        }
+
+        // Create a wrapper that calls the Havel function
+        auto callback = [this, func]() {
+          auto funcEnv = std::make_shared<Environment>(func->closure);
+          auto originalEnv = this->environment;
+          this->environment = funcEnv;
+          auto result = Evaluate(*func->declaration->body);
+          this->environment = originalEnv;
+          // Ignore return value for update loop
+        };
+
+        // TODO: Implement update loop manager
+        // For now, use setInterval
+        int timerId = havel::setInterval(callback, intervalMs);
+        return HavelValue(static_cast<double>(timerId));
+      }));
 }
 
 void Interpreter::InitializeBrightnessBuiltins() {
@@ -5994,8 +6516,8 @@ void Interpreter::InitializeHelpBuiltin() {
           // Show general help
           help << "\n=== Havel Language Help ===\n\n";
           help << "Usage: help()          - Show this help\n";
-          help
-              << "       help(\"module\")  - Show help for specific module\n\n";
+          help << "       help(\"module\")  - Show help for specific "
+                  "module\n\n";
           help << "Available modules:\n";
           help << "  - system      : System functions (print, sleep, exit, "
                   "etc.)\n";
@@ -6041,10 +6563,11 @@ void Interpreter::InitializeHelpBuiltin() {
             help << "  window.minimize()              - Minimize active "
                     "window\n";
             help << "  window.close()                 - Close active window\n";
-            help << "  window.center()                - Center active window\n";
+            help << "  window.center()                - Center active "
+                    "window\n";
             help << "  window.focus()                 - Focus active window\n";
-            help
-                << "  window.next()                  - Switch to next window\n";
+            help << "  window.next()                  - Switch to next "
+                    "window\n";
             help << "  window.previous()              - Switch to previous "
                     "window\n";
             help << "  window.move(x, y)              - Move window to "
@@ -6094,7 +6617,8 @@ void Interpreter::InitializeHelpBuiltin() {
             help << "Functions:\n";
             help << "  map(array, fn)         - Transform array elements\n";
             help << "  filter(array, fn)      - Filter array elements\n";
-            help << "  reduce(array, fn, init)- Reduce array to single value\n";
+            help << "  reduce(array, fn, init)- Reduce array to single "
+                    "value\n";
             help << "  forEach(array, fn)     - Execute function for each "
                     "element\n";
             help << "  push(array, value)     - Add element to end\n";
@@ -6134,7 +6658,8 @@ void Interpreter::InitializeHelpBuiltin() {
             help << "Functions:\n";
             help << "  brightnessManager.getBrightness()    - Get brightness "
                     "(0-100)\n";
-            help << "  brightnessManager.setBrightness(val) - Set brightness\n";
+            help << "  brightnessManager.setBrightness(val) - Set "
+                    "brightness\n";
           } else if (module == "launcher") {
             help << "\n=== Launcher Module ===\n\n";
             help << "Functions:\n";
@@ -6191,7 +6716,8 @@ void Interpreter::InitializeHelpBuiltin() {
           } else if (module == "textchunker") {
             help << "\n=== TextChunker Module ===\n\n";
             help << "Functions:\n";
-            help << "  textchunker.chunk(text, maxSize)           - Split text "
+            help << "  textchunker.chunk(text, maxSize)           - Split "
+                    "text "
                     "into chunks\n";
             help << "  textchunker.merge(chunks)                   - Merge "
                     "chunks back\n";
@@ -6209,16 +6735,19 @@ void Interpreter::InitializeHelpBuiltin() {
             help << "Functions:\n";
             help << "  alttab.show()                               - Show "
                     "alt-tab window switcher\n";
-            help << "  alttab.next()                               - Switch to "
+            help << "  alttab.next()                               - Switch "
+                    "to "
                     "next window\n";
-            help << "  alttab.previous()                           - Switch to "
+            help << "  alttab.previous()                           - Switch "
+                    "to "
                     "previous window\n";
             help << "  alttab.hide()                               - Hide "
                     "alt-tab switcher\n";
           } else if (module == "clipboardmanager") {
             help << "\n=== ClipboardManager Module ===\n\n";
             help << "Functions:\n";
-            help << "  clipboardmanager.copy(text)                 - Copy text "
+            help << "  clipboardmanager.copy(text)                 - Copy "
+                    "text "
                     "to clipboard\n";
             help << "  clipboardmanager.paste()                    - Paste "
                     "from clipboard\n";
@@ -6233,7 +6762,8 @@ void Interpreter::InitializeHelpBuiltin() {
                     "mapping file\n";
             help << "  mapmanager.save(mapFile)                    - Save "
                     "current mappings\n";
-            help << "  mapmanager.clear()                          - Clear all "
+            help << "  mapmanager.clear()                          - Clear "
+                    "all "
                     "mappings\n";
             help << "  mapmanager.list()                           - List all "
                     "mappings\n";
@@ -6244,13 +6774,15 @@ void Interpreter::InitializeHelpBuiltin() {
           } else if (module == "filemanager") {
             help << "\n=== FileManager Module ===\n\n";
             help << "Functions:\n";
-            help << "  filemanager.read(path)                      - Read file "
+            help << "  filemanager.read(path)                      - Read "
+                    "file "
                     "content\n";
             help << "  filemanager.write(path, content)             - Write "
                     "content to file\n";
             help << "  filemanager.append(path, content)            - Append "
                     "content to file\n";
-            help << "  filemanager.exists(path)                     - Check if "
+            help << "  filemanager.exists(path)                     - Check "
+                    "if "
                     "file exists\n";
             help << "  filemanager.delete(path)                    - Delete "
                     "file\n";
@@ -6314,7 +6846,8 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
       if (isError(result)) {
         // Log error but return false to prevent the hotkey from triggering
         // std::cerr << "Conditional hotkey condition evaluation failed: "
-        //           << std::get<HavelRuntimeError>(result).what() << std::endl;
+        //           << std::get<HavelRuntimeError>(result).what() <<
+        //           std::endl;
         return false;
       }
       return ValueToBool(unwrap(result));
@@ -6382,7 +6915,8 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
         auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
           auto result = Evaluate(*condExpr);
           if (isError(result)) {
-            // Log error but return false to prevent the hotkey from triggering
+            // Log error but return false to prevent the hotkey from
+            // triggering
             return false;
           }
           return ValueToBool(unwrap(result));

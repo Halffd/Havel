@@ -1,0 +1,108 @@
+// Test Enhanced MPV Module and createKeyTap Fixes
+
+print("=== Testing Enhanced MPV Module ===");
+
+// Test 1: MPV process discovery
+print("1. Testing MPV process discovery...");
+let instances = mpv.findInstances();
+print("Found MPV instances:", instances.length);
+
+if (instances.length > 0) {
+    for (let i = 0; i < instances.length; i++) {
+        let instance = instances[i];
+        print("  Instance", i, ":");
+        print("    PID:", instance.pid);
+        print("    Socket:", instance.socketPath);
+        print("    Command:", instance.command);
+        print("    Active:", instance.isActive);
+    }
+} else {
+    print("  No MPV instances found");
+}
+
+// Test 2: Check if MPV is running
+print("2. Testing MPV running check...");
+print("MPV running:", mpv.isRunning());
+
+// Test 3: Socket management
+print("3. Testing socket management...");
+if (instances.length > 0) {
+    let firstInstance = instances[0];
+    print("Switching to first instance...");
+    let success = mpv.setActiveInstance(firstInstance.pid);
+    print("Switch successful:", success);
+    
+    let activeInstance = mpv.getActiveInstance();
+    if (activeInstance != null) {
+        print("Current active instance:");
+        print("  PID:", activeInstance.pid);
+        print("  Socket:", activeInstance.socketPath);
+    }
+}
+
+// Test 4: Socket change
+print("4. Testing socket change...");
+if (instances.length > 0) {
+    mpv.changeSocket(instances[0].socketPath);
+    print("Changed socket to:", instances[0].socketPath);
+}
+
+// Test 5: Control multiple instances
+print("5. Testing multiple instance control...");
+if (instances.length >= 2) {
+    let pids = [instances[0].pid, instances[1].pid];
+    let commands = ["cycle pause", "stop"];
+    mpv.controlMultiple(pids, commands);
+    print("Sent pause/stop to first two instances");
+}
+
+// Test 6: createKeyTap functionality
+print("6. Testing createKeyTap...");
+
+// Simple key tap
+let tap1 = createKeyTap("a", () => {
+    print("Key 'a' tapped!");
+});
+
+print("Created simple key tap for 'a'");
+
+// Key tap with condition
+let tap2 = createKeyTap("b", () => {
+    print("Key 'b' tapped in gaming mode!");
+}, "mode == \"gaming\"");
+
+print("Created conditional key tap for 'b' in gaming mode");
+
+// Key tap with combo
+let tap3 = createKeyTap("c", () => {
+    print("Key 'c' tapped!");
+}, {}, () => {
+    print("Combo 'c' activated!");
+});
+
+print("Created combo key tap for 'c'");
+
+// Test 7: Enhanced MPV controls
+print("7. Testing enhanced MPV controls...");
+
+// Try play/pause with fallback
+mpv.playPause();
+print("Sent play/pause command");
+
+print("=== All tests completed ===");
+print("");
+print("📝 New MPV Functions Available:");
+print("- mpv.findInstances() - Find all MPV instances");
+print("- mpv.isRunning() - Check if MPV is running");
+print("- mpv.changeSocket(path) - Change MPV socket");
+print("- mpv.setActiveInstance(pid) - Set active MPV instance by PID");
+print("- mpv.setActiveInstanceBySocket(path) - Set active instance by socket");
+print("- mpv.getActiveInstance() - Get current active instance");
+print("- mpv.controlMultiple(pids, commands) - Control multiple instances");
+print("- mpv.playPause() - Enhanced play/pause with fallback");
+print("");
+print("🔧 createKeyTap Enhancements:");
+print("- Proper hotkey registration with conditions");
+print("- Combo key support");
+print("- Context-aware key tapping");
+print("- Integration with hotkeyManager");

@@ -258,6 +258,7 @@ private:
   void InitializeDebugBuiltins();
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();
+  void InitializeTimerBuiltins();
   void InitializeFileManagerBuiltins();
   void InitializeLauncherBuiltins();
   void InitializeGUIBuiltins();

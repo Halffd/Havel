@@ -99,9 +99,25 @@ private:
 
     Task() = default;
 
-    // Delete move and copy operations since we have std::atomic member
-    Task(Task &&) = delete;
-    Task &operator=(Task &&) = delete;
+    // Make Task movable but not copyable
+    Task(Task &&other) noexcept
+        : fn(std::move(other.fn)), prom(std::move(other.prom)),
+          fut(std::move(other.fut)), timeoutMs(other.timeoutMs),
+          createdTime(other.createdTime), timedOut(other.timedOut.load()) {}
+
+    Task &operator=(Task &&other) noexcept {
+      if (this != &other) {
+        fn = std::move(other.fn);
+        prom = std::move(other.prom);
+        fut = std::move(other.fut);
+        timeoutMs = other.timeoutMs;
+        createdTime = other.createdTime;
+        timedOut.store(other.timedOut.load());
+      }
+      return *this;
+    }
+
+    // Delete copy operations
     Task(const Task &) = delete;
     Task &operator=(const Task &) = delete;
   };
@@ -142,9 +158,11 @@ private:
         t->timedOut.store(true);
       }
 
-      // Execute task (even if timed out)
+      // Execute task with additional safety checks
       try {
-        t->fn();
+        if (t->fn) {
+          t->fn();
+        }
       } catch (const std::exception &e) {
         std::cerr << "[HotkeyExecutor] Task threw exception: " << e.what()
                   << "\n";
@@ -152,11 +170,13 @@ private:
         std::cerr << "[HotkeyExecutor] Task threw unknown exception\n";
       }
 
-      // Mark completion
+      // Mark completion with exception safety
       try {
-        t->prom->set_value();
+        if (t->prom) {
+          t->prom->set_value();
+        }
       } catch (...) {
-        // promise already satisfied or already set due to timeout
+        // Promise already satisfied or already set due to timeout
       }
     }
   }

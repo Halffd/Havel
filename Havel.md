@@ -391,6 +391,52 @@ hypot(3, 4)                // Hypotenuse: 5.0
 hypot(1, 2, 2)             // Multi-dimensional hypotenuse
 ```
 
+#### Function and Module Overriding
+
+Havel allows overriding both built-in functions and module functions to provide custom implementations:
+
+```havel
+// Override built-in function directly
+function abs(x) {
+    return "custom abs: " + x;
+}
+
+// Override module function
+function math.abs(x) {
+    return "custom math.abs: " + x;
+}
+
+// Override with different signature
+function math.sin(x, y) {
+    return "custom sin with 2 args: " + x + ", " + y;
+}
+```
+
+**Overriding Rules:**
+
+1. **Direct Function Override**: Define a function with the same name as a built-in function
+   - `abs(-5)` calls custom `abs()` instead of built-in
+   - Takes precedence over built-in functions
+
+2. **Module Function Override**: Define a function with qualified module name
+   - `math.abs(-5)` calls custom `math.abs()` instead of built-in
+   - `io.print("msg")` calls custom `io.print()` instead of built-in
+   - `gui.message("title", "msg")` calls custom `gui.message()` instead of built-in
+
+3. **Signature Flexibility**: Override with different parameter counts
+   - Built-in `math.sin(x)` can be overridden with `math.sin(x, y)`
+   - Allows extending functionality while maintaining compatibility
+
+4. **Built-in Access**: Non-overridden functions still work normally
+   - `math.cos(0)` still calls built-in cosine if not overridden
+   - Module functions can call other built-in functions internally
+
+**Use Cases:**
+- **Custom Behavior**: Replace built-in implementations with custom logic
+- **Logging**: Wrap built-in functions to add logging/debugging
+- **Validation**: Add input validation before calling built-in functions
+- **Feature Extension**: Add parameters to existing functions
+
 #### Window Module (Window Management)
 ```havel
 // Direct access

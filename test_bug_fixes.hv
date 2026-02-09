@@ -1,0 +1,52 @@
+// Test all the bug fixes
+
+print("=== Testing Bug Fixes ===");
+
+// Test 1: Basic let assignment
+print("1. Basic let assignment:");
+let a = true;
+print("a =", a);
+
+// Test 2: Logical operators
+print("2. Logical operators:");
+let b = false;
+print("b =", b);
+let ab = a && b;
+print("a && b =", ab);
+let ab2 = a || b;
+print("a || b =", ab2);
+let nb = !b;
+print("!b =", nb);
+
+// Test 3: Module function overriding via assignment
+print("3. Module function overriding via assignment:");
+brightnessManager.increaseBrightness = (br) => { 
+    print("Custom brightness increase: " + br);
+    return "increased by " + br;
+}
+print(brightnessManager.increaseBrightness("10%"));
+
+// Test 4: Direct module function override
+print("4. Direct module function override:");
+function brightnessManager.increaseBrightness(amount) {
+    return "Direct override: " + amount;
+}
+print(brightnessManager.increaseBrightness("20%"));
+
+// Test 5: Hotkey function
+print("5. Hotkey function:");
+let result = Hotkey("a", print("Hotkey triggered!"));
+print("Hotkey result =", result);
+
+// Test 6: Complex expressions
+print("6. Complex expressions:");
+let complex = a && !b || (true && false);
+print("complex =", complex);
+
+// Test 7: Member access and assignment
+print("7. Member access and assignment:");
+let testObj = {name: "test", value: 42};
+testObj.value = 100;
+print("testObj.value =", testObj.value);
+
+print("=== All tests completed ===");

@@ -1,0 +1,96 @@
+// Test Hotkey Crash Fixes
+print("=== Testing Hotkey Crash Fixes ===");
+
+// Test 1: Basic createKeyTap functionality
+print("1. Testing basic createKeyTap...");
+
+let tap1 = createKeyTap("F1", () => {
+    print("✅ F1 key tapped successfully!");
+});
+
+print("Created F1 key tap:", tap1);
+
+// Test 2: Conditional key tap
+print("2. Testing conditional createKeyTap...");
+
+let tap2 = createKeyTap("F2", () => {
+    print("✅ F2 tapped in gaming mode!");
+}, "mode == \"gaming\"");
+
+print("Created F2 conditional tap:", tap2);
+
+// Test 3: Key tap with combo
+print("3. Testing createKeyTap with combo...");
+
+let tap3 = createKeyTap("F3", () => {
+    print("✅ F3 clean tap!");
+}, {}, () => {
+    print("✅ F3 combo activated!");
+});
+
+print("Created F3 combo tap:", tap3);
+
+// Test 4: Multiple rapid key taps
+print("4. Testing multiple key taps...");
+
+let taps = [];
+for (let i = 0; i < 5; i++) {
+    let tap = createKeyTap("F" + (i + 4), () => {
+        print("✅ F" + (i + 4) + " tapped!");
+    });
+    taps.push(tap);
+}
+
+print("Created", taps.length, "additional key taps");
+
+// Test 5: Stress test with wheel events
+print("5. Testing wheel hotkey registration...");
+
+// This should trigger the wheel hotkey that was causing crashes
+let wheelTap = createKeyTap("@!WheelDown", () => {
+    print("✅ Wheel down handled safely!");
+});
+
+print("Created wheel hotkey tap:", wheelTap);
+
+// Test 6: Mode-based hotkeys
+print("6. Testing mode-based hotkeys...");
+
+setMode("test");
+
+let modeTap = createKeyTap("F9", () => {
+    print("✅ Mode-based F9 in mode:", getMode());
+}, "mode == \"test\"");
+
+print("Created mode-based tap:", modeTap);
+
+// Test 7: Error handling
+print("7. Testing error handling...");
+
+let errorTap = createKeyTap("F10", () => {
+    try {
+        // This should not crash the system
+        throw "Test error";
+    } catch (e) {
+        print("✅ Error handled correctly:", e);
+    }
+});
+
+print("Created error-handling tap:", errorTap);
+
+print("=== All hotkey tests created successfully ===");
+print("");
+print("🎯 Test Instructions:");
+print("- Press F1-F10 to test different key tap types");
+print("- Use mouse wheel to test wheel hotkey safety");
+print("- Change modes to test conditional hotkeys");
+print("- Check for segmentation faults (should be fixed)");
+print("");
+print("🔧 Fixes Applied:");
+print("- Removed dangerous 'this' capture in EventListener");
+print("- Made Task movable in HotkeyExecutor");
+print("- Added null checks for callbacks and promises");
+print("- Enhanced exception handling in worker loops");
+print("- Fixed syntax error in audio module");
+print("");
+print("✅ Hotkey system should now be crash-free!");

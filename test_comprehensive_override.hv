@@ -1,0 +1,70 @@
+// Test comprehensive function and module overriding
+
+print("=== Testing Function and Module Overriding ===");
+
+// Test 1: Override built-in function directly
+function abs(x) {
+    return "custom abs: " + x;
+}
+
+print("1. Direct function override:");
+print(abs(-5));  // Should call custom abs
+
+// Test 2: Override module function
+function math.abs(x) {
+    return "custom math.abs: " + x;
+}
+
+print("2. Module function override:");
+print(math.abs(-10));  // Should call custom math.abs
+
+// Test 3: Override with different signature
+function math.sin(x, y) {
+    return "custom math.sin with 2 args: " + x + ", " + y;
+}
+
+print("3. Module function with different signature:");
+print(math.sin(1.5, 2.0));  // Should call custom sin
+
+// Test 4: Override io module function
+function io.print(msg) {
+    print("custom io.print: " + msg);
+}
+
+print("4. IO module function override:");
+io.print("Hello from custom io.print!");
+
+// Test 5: Override gui module function
+function gui.message(title, msg) {
+    print("custom gui.message: " + title + " - " + msg);
+}
+
+print("5. GUI module function override:");
+gui.message("Custom Title", "Custom Message");
+
+// Test 6: Built-in still works when not overridden
+print("6. Built-in functions still work:");
+print(math.cos(0));  // Should call built-in cos
+print(math.sqrt(16));  // Should call built-in sqrt
+
+// Test 7: Override with recursive calls
+function factorial(n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+print("7. Recursive custom function:");
+print(factorial(5));  // Should work with recursion
+
+// Test 8: Override module function that calls other functions
+function math.hypot(x, y) {
+    print("  Inside custom math.hypot with x=" + x + ", y=" + y);
+    return math.sqrt(x*x + y*y);  // Can call built-in sqrt
+}
+
+print("8. Module function calling built-ins:");
+print(math.hypot(3, 4));  // Should call custom hypot which uses built-in sqrt
+
+print("=== All tests completed ===");

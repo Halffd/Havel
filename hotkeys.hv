@@ -1,8 +1,21 @@
 config.load()
 let sys = detectSystem()
 let wl = sys.displayProtocol == "Wayland"
-let wm = sys.windowManager
-let hypr = wm == "Hyprland"
+let wm = lower(sys.windowManager)
+let hypr = wm == "hyprland"
+let kde = wm == "kde plasma"
+let kdewl = kde
+if !wl {
+  kdewl = false
+}
+let xfce = wm == "xfce" || wm == "xfce session" || wm == "xfce on wayland" 
+let xfcewl = xfce && wl
+let i3 = wm == "i3"
+let compiz = wm == "compiz"
+let cinnamon = wm == "cinnamon"
+let gnome = wm == "gnome" || wm == "gnome on x11" || wm == "gnome on wayland"
+let other = !hypr && !kde && !xfce && !i3 && !compiz && !cinnamon && !gnome
+
 let brightness = 90
 let temperature = 6500
 # let isStartup = contains(app.args, "--startup")
@@ -14,7 +27,101 @@ let zoomLevel = 1.0
 print("wl: $wl")
 print("wm: $wm")
 # print("isStartup: $isStartup")
+let brStep = 0.02
+let tempStep = 100
+let gammaStep = 0.05
 
+fn qdbus (cmd) {
+  let res = runDetached("qdbus $cmd")
+  return res.stdout
+}
+print("kdewl: $kdewl")
+if kdewl {
+  print("KDE Wayland detected")
+  brightnessManager.increaseBrightness = (br) => {
+    print("Increasing brightness")
+    if !br {
+      br = brStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight increaseBrightness $br")
+  }
+  brightnessManager.decreaseBrightness = (br) => {
+    print("Decreasing brightness")
+    if !br {
+      br = brStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight decreaseBrightness $br")
+  }
+  brightnessManager.setBrightness = (br) => { 
+    print("Setting brightness to $br")
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight setBrightness $br")
+  }
+  brightnessManager.getBrightness = () => {
+    return qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight getBrightness")
+  }
+  brightnessManager.toggle = () => {
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight toggle")
+  }
+  brightnessManager.decreaseTemperature = (temperature) => {
+    if !temperature {
+      temperature = tempStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight decreaseTemperature $temperature")
+  }
+  brightnessManager.increaseTemperature = (temperature) => {
+    if !temperature {
+      temperature = tempStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight increaseTemperature $temperature")
+  }
+  brightnessManager.setTemperature = (temperature) => {
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight setTemperature $temperature")
+  }
+  brightnessManager.getTemperature = () => {
+    return qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight getTemperature")
+  }
+  brightnessManager.decreaseGamma = (gamma) => {
+    if !gamma {
+      gamma = gammaStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight decreaseGamma $gamma")
+  }
+  brightnessManager.increaseGamma = (gamma) => {
+    if !gamma {
+      gamma = gammaStep
+    }
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight increaseGamma $gamma")
+  }
+  brightnessManager.setGamma = (gamma) => {
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight setGamma $gamma")
+  }
+  brightnessManager.getGamma = () => {
+    return qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight getGamma")
+  }
+  brightnessManager.setMode = (mode) => {
+    qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight setMode $mode")
+  }
+  brightnessManager.getMode = () => {
+    return qdbus("org.kde.KWin.NightLight /org/kde/KWin/NightLight getMode")
+  }
+  let window.active = () => {
+    let id = qdbus("org.kde.KWin.WindowManager /org/kde/KWin/WindowManager getActiveWindow")
+    print("Window ID: " + id)
+    return id
+  }
+  let window.getId = () => {
+    return window.active()
+  }
+  let window.getTitle = () => {
+    let id = window.getId()
+    let title = qdbus("org.kde.KWin.WindowManager /org/kde/KWin/WindowManager getWindowTitle $id")
+    print("Window Title: " + title)
+    return title
+  }
+  let window.pos = (id) => {
+    return qdbus("org.kde.KWin.WindowManager /org/kde/KWin/WindowManager getWindowPosition $id")
+  }
+}
 fn applyBr () {
   if temperature < 0 {
     temperature = 0
@@ -31,17 +138,13 @@ fn applyBr () {
   let cmd = "~/scripts/lux-hypr.sh $brightness $temperature"
   run(cmd)
 }
-fn qdbus (cmd) {
-  let res = runDetached("qdbus $cmd")
-  return res.stdout
-}
 
 fn kwinZoom (cmd) {
   runDetached("qdbus $cmd")
   let out = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
   zoomLevel = out
 }
-let inc = 0.25
+let inc = 0.05
 fn zoom (level) {
   if level < 0 {
     level = 0
@@ -73,31 +176,46 @@ fn zoom (level) {
     run("hyprctl keyword cursor:zoom_factor $zoomLevel")
   } else {
     if level == 0 {
-      kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
-      if zoomLevel <= 0 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus")
+      }
+      if zoomLevel <= 0 || !kde {
         send("@^{Down}")
         zoomLevel -= 0.1
       }
     } else if level == 1 {
-      kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
-      if zoomLevel <= 0 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus")
+      }
+      if zoomLevel <= 0 || !kde {
         send("@^{Up}")
         zoomLevel += 0.1
       }
     } else if level == 2 {
-      kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
-      if zoomLevel <= 0 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus")
+      }
+      if zoomLevel <= 0 || !kde {
         send("@^/")
         zoomLevel = 1.0
       }
     } else if level == 3 {
-      kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + zoom3Value)
-      if zoomLevel <= 0 {
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus " + zoom3Value)
+      }
+      if zoomLevel <= 0 || !kde {
         send("@^+/")
         zoomLevel = 1.5
       }
     } else if level == 4 {
-      kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus")
+      if kde {
+        kwinZoom("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus")
+      }
+      if zoomLevel <= 0 || !kde {
+        send("@^+/")
+        send("@^Up")
+        send("@^Up")
+      }
     }
 
     if zoomLevel < 1.0 {
@@ -107,19 +225,13 @@ fn zoom (level) {
 }
 
 fn zoomToggle () {
-  if hypr {
-    if zoomLevel <= 1.0 {
-      zoom(3)
-    } else {
-      zoom(2)
-    }
-  } else {
+  if kde {
     zoomLevel = qdbus("org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus")
-    if zoomLevel <= 1.0 {
-      zoom(3)
-    } else {
-      zoom(2)
-    }
+  }
+  if zoomLevel <= 1.0 {
+    zoom(3)
+  } else {
+    zoom(2)
   }
 }
 ^!g => {
@@ -876,32 +988,33 @@ enter if contains(window.getTitle(), "Genshin Impact") => {
 
 // Create LWin keytap with gaming mode condition
 let lwin = createKeyTap("lwin", () => { 
-    if wm != "KDE Plasma" {
+    if xfce {
       runAsync("/bin/xfce4-popup-whiskermenu");
-    } else {
+    } else if kde {
       qdbus("org.kde.plasmashell /PlasmaShell \"org.kde.PlasmaShell.activateLauncherMenu\"")
+    } else {
+      runAsync("rofi -show drun");
     }
-  }, () => { 
-    return getMode() != "gaming"; 
-  }, () => { play(); }, 
-  "mode == 'gaming'", false, true)
+  },
+  "mode == 'gaming'",
+  () => { play(); },
+  "mode == 'gaming'",
+  false,
+  true)
 
-  ralt = std::make_unique<KeyTap>(
-      io, *this, "ralt",
-      [this]() {
-        if (CompositorBridge::IsKDERunning()) {
-          auto win = havel::Window(WindowManager::GetActiveWindow());
-          if (win.Pos().x < 0) {
+  ralt = createKeyTap("ralt", () => { 
+        if wl {
+          let win = window.getActiveWindow();
+          if (win.pos.x < 0) {
             io.Send("#+{Right}");
           } else {
             io.Send("#+{Left}");
           }
         } else {
-          WindowManager::MoveWindowToNextMonitor();
+          window.moveWindowToNextMonitor();
         }
       },
-      "", nullptr, "", false, true);
-  ralt->setup();
+      "", "", "", false, true);
 !a => window.toggleAlwaysOnTop()
 
 !delete => hotkey.toggleAutomationTask("autoclicker", "left")
@@ -963,7 +1076,7 @@ let mpvHotkeys = {
   "+0": () => mpv.volumeUp(),
   "+9": () => mpv.volumeDown(),
   "+-": () => mpv.toggleMute(),
-  "@|rctrl": () => mpv.playPause(),
+  "@|rctrl": () => play(),
   "+Esc": () => mpv.stop(),
   "+PgUp": () => mpv.next(),
   "+PgDn": () => mpv.previous(),
@@ -983,10 +1096,6 @@ let mpvHotkeys = {
   "minus": () => mpv.subSeek("-1"),
   "equal": () => mpv.subSeek("1")
 }
-
-# TODO: Fix for loop parsing
 for key in mpvHotkeys {
-  let action = mpvHotkeys[key]
-  let hk = Hotkey(key, action, "mode == \"gaming\"")
-  log hk.id
+  Hotkey(key, mpvHotkeys[key], "mode == \"gaming\"")
 }

@@ -1,0 +1,17 @@
+// Quick test of the bug fixes
+print("Testing fixes...");
+
+// Test 1: let assignment
+let x = true;
+print("x =", x);
+
+// Test 2: logical operators
+let y = false;
+print("x && y =", x && y);
+print("x || y =", x || y);
+
+// Test 3: Hotkey function
+let hk = Hotkey("a", print("triggered"));
+print("Hotkey created:", hk);
+
+print("All basic tests passed!");

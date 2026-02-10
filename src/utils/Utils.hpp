@@ -1,24 +1,18 @@
 #pragma once
 
-#include <functional>
-#include <limits.h> // For PATH_MAX
 #include <string>
+#include <limits.h>  // For PATH_MAX
 
 namespace havel {
 
-// Timer management functions
-int setTimeout(const std::function<void()> &callback, int delayMs);
-int setInterval(const std::function<void()> &callback, int intervalMs);
-void stopInterval(int timerId);
-
 // String conversion utilities
-std::string ToLower(const std::string &str);
-std::string ToUpper(const std::string &str);
+std::string ToLower(const std::string& str);
+std::string ToUpper(const std::string& str);
 
 // String manipulation utilities
-void Trim(std::string &str);
-std::string TrimCopy(const std::string &str);
-void RemoveChars(std::string &str, const std::string &chars);
+void Trim(std::string& str);
+std::string TrimCopy(const std::string& str);
+void RemoveChars(std::string& str, const std::string& chars);
 
 // Path utilities
 std::string GetExecutablePath();
@@ -30,4 +24,4 @@ bool IsElevated();
 void ElevateProcess();
 void SetProcessPriority(int priority);
 
-} // namespace havel
+} // namespace havel 

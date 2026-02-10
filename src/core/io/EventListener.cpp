@@ -714,7 +714,7 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   // Use HotkeyExecutor if available for thread-safe execution
   if (hotkeyExecutor) {
     auto result = hotkeyExecutor->submit([callback = callback_copy,
-                                          hotkeyAlias = alias_copy]() {
+                                          hotkeyAlias = alias_copy, this]() {
       try {
         info("Executing hotkey callback via HotkeyExecutor: {}", hotkeyAlias);
         callback();
@@ -722,6 +722,12 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
         error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
       } catch (...) {
         error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+      }
+
+      // Remove from executing set when done
+      {
+        std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+        executingHotkeys.erase(hotkeyAlias);
       }
     });
 

@@ -831,13 +831,6 @@ io.map("CapsLock", "LAlt")
 @numpadenter+ => io.mouseDown(3)
 @numpadenter:up => io.mouseUp(3)
 
-# Scrolling
-@numpad0 => io.scroll(-2, 0)
-@numpaddec => io.scroll(2, 0)
-@!numpad0 => io.scroll(1, 0)
-@+numpaddec => io.scroll(0, 1)
-@+numpad0 => io.scroll(0, -1)
-
 # Numpad mouse movement with simple acceleration model
 fn moveMouse (dx, dy) {
   io.mouseMove(dx * mouseStep * mouseAcc, dy * mouseStep * mouseAcc)

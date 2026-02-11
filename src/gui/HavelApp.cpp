@@ -135,7 +135,6 @@ void HavelApp::initializeComponents(bool isStartup) {
   }
   info("NetworkManager initialized successfully");
 
-  // Create interpreter (replaces ScriptEngine)
   interpreter = std::make_shared<havel::Interpreter>();
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");

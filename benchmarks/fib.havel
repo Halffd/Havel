@@ -1,0 +1,391 @@
+// Benchmark Suite
+print("=== Havel Performance Benchmarks ===");
+
+// Benchmark 1: Fibonacci calculation
+print("1. Fibonacci benchmark...");
+
+let fib_recursive = (n) => {
+    if (n <= 1) return n;
+    return fib_recursive(n - 1) + fib_recursive(n - 2);
+};
+
+let fib_iterative = (n) => {
+    if (n <= 1) return n;
+    
+    let a = 0;
+    let b = 1;
+    
+    for (let i = 2; i <= n; i++) {
+        let temp = a + b;
+        a = b;
+        b = temp;
+    }
+    
+    return b;
+};
+
+// Benchmark different Fibonacci implementations
+let test_fib = (name, func, n) => {
+    let start = time();
+    let result = func(n);
+    let end = time();
+    
+    print("  " + name + "(" + n + ") = " + result + " (" + (end - start) + "ms)");
+    return {name: name, time: end - start, result: result};
+};
+
+let fib_results = [
+    test_fib("fib_recursive", fib_recursive, 30),
+    test_fib("fib_iterative", fib_iterative, 30)
+];
+
+print("  Fibonacci comparison:");
+print("    Recursive:", fib_results[0].time, "ms");
+print("    Iterative:", fib_results[1].time, "ms");
+print("    Speedup:", fib_results[0].time / fib_results[1].time, "x");
+
+// Benchmark 2: Array operations
+print("2. Array operations benchmark...");
+
+let array_ops = () => {
+    let arr = [];
+    
+    // Array creation
+    let start = time();
+    for (let i = 0; i < 100000; i++) {
+        arr.push(i);
+    }
+    let create_time = time() - start;
+    
+    // Array access
+    start = time();
+    let sum = 0;
+    for (let i = 0; i < arr.length; i++) {
+        sum = sum + arr[i];
+    }
+    let access_time = time() - start;
+    
+    // Array iteration
+    start = time();
+    let iter_sum = 0;
+    for (let value in arr) {
+        iter_sum = iter_sum + value;
+    }
+    let iter_time = time() - start;
+    
+    return {
+        create: create_time,
+        access: access_time,
+        iterate: iter_time,
+        length: arr.length
+    };
+};
+
+let array_results = array_ops();
+print("  Array creation (100k elements):", array_results.create, "ms");
+print("  Array access (100k elements):", array_results.access, "ms");
+print("  Array iteration (100k elements):", array_results.iterate, "ms");
+print("  Total elements:", array_results.length);
+
+// Benchmark 3: String operations
+print("3. String operations benchmark...");
+
+let string_ops = () => {
+    let strings = [];
+    
+    // String creation
+    let start = time();
+    for (let i = 0; i < 50000; i++) {
+        strings.push("string_" + i + "_data");
+    }
+    let create_time = time() - start;
+    
+    // String concatenation
+    start = time();
+    let result = "";
+    for (let i = 0; i < strings.length; i++) {
+        result = result + strings[i] + " ";
+    }
+    let concat_time = time() - start;
+    
+    // String search
+    start = time();
+    let found_count = 0;
+    for (let i = 0; i < strings.length; i++) {
+        if (strings[i].includes("string_25")) {
+            found_count++;
+        }
+    }
+    let search_time = time() - start;
+    
+    return {
+        create: create_time,
+        concat: concat_time,
+        search: search_time,
+        count: strings.length,
+        found: found_count
+    };
+};
+
+let string_results = string_ops();
+print("  String creation (50k strings):", string_results.create, "ms");
+print("  String concatenation (50k strings):", string_results.concat, "ms");
+print("  String search (50k strings):", string_results.search, "ms");
+print("  Total strings:", string_results.count);
+print("  Found matches:", string_results.found);
+
+// Benchmark 4: Object operations
+print("4. Object operations benchmark...");
+
+let object_ops = () => {
+    let objects = [];
+    
+    // Object creation
+    let start = time();
+    for (let i = 0; i < 10000; i++) {
+        objects.push({
+            id: i,
+            name: "object_" + i,
+            value: i * 2,
+            active: i % 2 == 0
+        });
+    }
+    let create_time = time() - start;
+    
+    // Property access
+    start = time();
+    let sum = 0;
+    for (let i = 0; i < objects.length; i++) {
+        sum = sum + objects[i].value;
+    }
+    let access_time = time() - start;
+    
+    // Property iteration
+    start = time();
+    let prop_count = 0;
+    for (let i = 0; i < objects.length; i++) {
+        for (let key in objects[i]) {
+            prop_count++;
+        }
+    }
+    let iter_time = time() - start;
+    
+    return {
+        create: create_time,
+        access: access_time,
+        iterate: iter_time,
+        count: objects.length,
+        properties: prop_count
+    };
+};
+
+let object_results = object_ops();
+print("  Object creation (10k objects):", object_results.create, "ms");
+print("  Property access (10k objects):", object_results.access, "ms");
+print("  Property iteration (10k objects):", object_results.iterate, "ms");
+print("  Total objects:", object_results.count);
+print("  Total properties:", object_results.properties);
+
+// Benchmark 5: Mathematical operations
+print("5. Mathematical operations benchmark...");
+
+let math_ops = () => {
+    let numbers = [];
+    for (let i = 0; i < 100000; i++) {
+        numbers.push(i);
+    }
+    
+    // Addition
+    let start = time();
+    let sum = 0;
+    for (let i = 0; i < numbers.length; i++) {
+        sum = sum + numbers[i];
+    }
+    let add_time = time() - start;
+    
+    // Multiplication
+    start = time();
+    let product = 1;
+    for (let i = 0; i < 1000; i++) {
+        product = product * numbers[i];
+    }
+    let mul_time = time() - start;
+    
+    // Division
+    start = time();
+    let quotient = 0;
+    for (let i = 1; i < 1000; i++) {
+        quotient = quotient + numbers[i] / i;
+    }
+    let div_time = time() - start;
+    
+    return {
+        add: add_time,
+        multiply: mul_time,
+        divide: div_time,
+        sum: sum,
+        product: product,
+        quotient: quotient
+    };
+};
+
+let math_results = math_ops();
+print("  Addition (100k operations):", math_results.add, "ms");
+print("  Multiplication (1k operations):", math_results.multiply, "ms");
+print("  Division (1k operations):", math_results.divide, "ms");
+print("  Final sum:", math_results.sum);
+print("  Final product:", math_results.product);
+print("  Final quotient:", math_results.quotient);
+
+// Benchmark 6: Function call overhead
+print("6. Function call overhead benchmark...");
+
+let func_call_ops = () => {
+    let simple_func = (x) => x * 2;
+    
+    // Direct function calls
+    let start = time();
+    let result = 0;
+    for (let i = 0; i < 1000000; i++) {
+        result = result + simple_func(i);
+    }
+    let direct_time = time() - start;
+    
+    // Function calls through array
+    let funcs = [simple_func, simple_func, simple_func, simple_func, simple_func];
+    start = time();
+    result = 0;
+    for (let i = 0; i < 1000000; i++) {
+        result = result + funcs[i % funcs.length](i);
+    }
+    let indirect_time = time() - start;
+    
+    return {
+        direct: direct_time,
+        indirect: indirect_time,
+        calls: 1000000
+    };
+};
+
+let func_results = func_call_ops();
+print("  Direct function calls (1M calls):", func_results.direct, "ms");
+print("  Indirect function calls (1M calls):", func_results.indirect, "ms");
+print("  Total calls:", func_results.calls);
+print("  Overhead ratio:", func_results.indirect / func_results.direct, "x");
+
+// Benchmark 7: Memory allocation
+print("7. Memory allocation benchmark...");
+
+let memory_ops = () => {
+    // Object allocation and deallocation
+    let start = time();
+    for (let i = 0; i < 100000; i++) {
+        let obj = {data: "test_data_" + i, index: i};
+        // Simulate some work
+        obj.processed = obj.data.length;
+    }
+    let alloc_time = time() - start;
+    
+    // Array allocation
+    start = time();
+    for (let i = 0; i < 10000; i++) {
+        let arr = [];
+        for (let j = 0; j < 100; j++) {
+            arr.push(i * 100 + j);
+        }
+    }
+    let array_alloc_time = time() - start;
+    
+    return {
+        objects: alloc_time,
+        arrays: array_alloc_time
+    };
+};
+
+let memory_results = memory_ops();
+print("  Object allocation (100k objects):", memory_results.objects, "ms");
+print("  Array allocation (10k x 100):", memory_results.arrays, "ms");
+
+// Benchmark 8: Control flow
+print("8. Control flow benchmark...");
+
+let control_ops = () => {
+    // If-else chains
+    let start = time();
+    let count = 0;
+    for (let i = 0; i < 1000000; i++) {
+        if (i % 2 == 0) {
+            if (i % 3 == 0) {
+                count = count + 3;
+            } else {
+                count = count + 2;
+            }
+        } else {
+            if (i % 5 == 0) {
+                count = count + 5;
+            } else {
+                count = count + 1;
+            }
+        }
+    }
+    let if_time = time() - start;
+    
+    // Switch statements
+    start = time();
+    count = 0;
+    for (let i = 0; i < 1000000; i++) {
+        switch (i % 6) {
+            case 0: count = count + 0; break;
+            case 1: count = count + 1; break;
+            case 2: count = count + 2; break;
+            case 3: count = count + 3; break;
+            case 4: count = count + 4; break;
+            case 5: count = count + 5; break;
+        }
+    }
+    let switch_time = time() - start;
+    
+    return {
+        if_else: if_time,
+        switch: switch_time
+    };
+};
+
+let control_results = control_ops();
+print("  If-else chains (1M iterations):", control_results.if_else, "ms");
+print("  Switch statements (1M iterations):", control_results.switch, "ms");
+print("  Switch vs If-else ratio:", control_results.if_else / control_results.switch, "x");
+
+// Summary
+print("=== Benchmark Summary ===");
+
+let all_results = {
+    fibonacci: fib_results,
+    arrays: array_results,
+    strings: string_results,
+    objects: object_results,
+    math: math_results,
+    functions: func_results,
+    memory: memory_results,
+    control: control_results
+};
+
+print("📊 Performance Summary:");
+print("  • Fibonacci recursive vs iterative:", fib_results[0].time / fib_results[1].time, "x faster");
+print("  • Array operations completed successfully");
+print("  • String operations completed successfully");
+print("  • Object operations completed successfully");
+print("  • Math operations completed successfully");
+print("  • Function call overhead:", func_results.indirect / func_results.direct, "x");
+print("  • Memory allocation patterns measured");
+print("  • Control flow comparison:", control_results.if_else / control_results.switch, "x");
+
+print("✅ Benchmark suite completed!");
+print("🚀 Ready for performance comparison with other languages!");
+print("");
+print("💡 Next Steps:");
+print("  1. Run same benchmarks in Python, JavaScript, Java");
+print("  2. Compare results and identify bottlenecks");
+print("  3. Optimize slow operations");
+print("  4. Document performance characteristics");
+print("  5. Publish competitive analysis");

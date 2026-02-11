@@ -122,6 +122,11 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create BrightnessManager");
   }
 
+  automationManager = std::make_shared<automation::AutomationManager>(io);
+  if (!automationManager) {
+    throw std::runtime_error("Failed to create AutomationManager");
+  }
+
   // Initialize NetworkManager (singleton)
   networkManager = std::shared_ptr<net::NetworkManager>(
       &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});

@@ -8,7 +8,7 @@
 #include <thread>
 #include <unordered_map>
 namespace havel {
-    using TimerTask = std::shared_ptr<std::atomic<bool>>;
+using TimerTask = std::shared_ptr<std::atomic<bool>>;
 class TimerManager {
 private:
   struct TimerInfo {
@@ -23,7 +23,8 @@ private:
   static std::unordered_map<std::shared_ptr<std::atomic<bool>>,
                             std::shared_ptr<TimerInfo>>
       activeTimers;
-  static std::mutex timersMutex;
+  // Use a shared_mutex for read-write lock
+  static std::shared_mutex timersMutex;
 
 public:
   static std::shared_ptr<std::atomic<bool>>
@@ -39,7 +40,7 @@ public:
 
     // Store before starting thread
     {
-      std::lock_guard<std::mutex> lock(timersMutex);
+      std::unique_lock<std::shared_mutex> lock(timersMutex);
       activeTimers[running] = timerInfo;
     }
 
@@ -83,7 +84,7 @@ public:
       }
 
       // Clean up when done
-      std::lock_guard<std::mutex> lock(timersMutex);
+      std::unique_lock<std::shared_mutex> lock(timersMutex);
       activeTimers.erase(running);
     });
 
@@ -99,7 +100,7 @@ public:
     timer->store(false);
 
     // Clean up the timer entry
-    std::lock_guard<std::mutex> lock(timersMutex);
+    std::unique_lock<std::shared_mutex> lock(timersMutex);
     auto it = activeTimers.find(timer);
     if (it != activeTimers.end()) {
       // If the thread is still joinable, we should wait for it to finish
@@ -110,15 +111,15 @@ public:
 
   // Optional: Clean up all timers
   static void CleanupAllTimers() {
-    std::lock_guard<std::mutex> lock(timersMutex);
+    std::unique_lock<std::shared_mutex> lock(timersMutex);
     for (auto &[timer, info] : activeTimers) {
       timer->store(false);
     }
     activeTimers.clear();
   }
 };
-inline std::shared_ptr<std::atomic<bool>> SetTimer(int milliseconds,
-                                            const std::function<void()> &func) {
+inline std::shared_ptr<std::atomic<bool>>
+SetTimer(int milliseconds, const std::function<void()> &func) {
   bool repeating = milliseconds >= 0;
   return TimerManager::SetTimer(milliseconds, func, repeating);
 }

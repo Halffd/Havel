@@ -75,7 +75,7 @@ using BuiltinFunction =
 struct HavelValue
     : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
                    HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   BuiltinFunction> {
+                   std::shared_ptr<Promise>, BuiltinFunction> {
   using variant::variant;
 };
 
@@ -90,10 +90,63 @@ struct BreakValue {};
 // Continue value wrapper
 struct ContinueValue {};
 
-// User-defined function
-struct HavelFunction {
-  const ast::FunctionDeclaration *declaration;
-  std::shared_ptr<Environment> closure;
+// Promise for async/await
+struct Promise {
+  enum class State { Pending, Fulfilled, Rejected } state = State::Pending;
+  HavelValue value;
+  std::string error;
+  std::vector<std::function<void()>> thenCallbacks;
+  std::vector<std::function<void(const std::string &)>> catchCallbacks;
+
+  Promise() = default;
+
+  void fulfill(const HavelValue &result) {
+    if (state == State::Pending) {
+      state = State::Fulfilled;
+      value = result;
+      for (auto &callback : thenCallbacks) {
+        callback();
+      }
+      thenCallbacks.clear();
+      catchCallbacks.clear();
+    }
+  }
+
+  void reject(const std::string &errorMsg) {
+    if (state == State::Pending) {
+      state = State::Rejected;
+      error = errorMsg;
+      for (auto &callback : catchCallbacks) {
+        callback(errorMsg);
+      }
+      thenCallbacks.clear();
+      catchCallbacks.clear();
+    }
+  }
+
+  void then(std::function<void()> callback) {
+    if (state == State::Fulfilled) {
+      callback();
+    } else if (state == State::Pending) {
+      thenCallbacks.push_back(callback);
+    }
+  }
+
+  void catch_(std::function<void(const std::string &)> callback) {
+    if (state == State::Rejected) {
+      callback(error);
+    } else if (state == State::Pending) {
+      catchCallbacks.push_back(callback);
+    }
+  }
+};
+
+// Value type for the interpreter
+struct HavelValue
+    : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
+                   HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
+                   std::shared_ptr<Promise>, BuiltinFunction> {
+  using std::variant::variant;
 };
 
 // Environment class
@@ -234,6 +287,7 @@ private:
 
   int nextTimerId = 1;
   std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
+  std::mutex timersMutex; // Thread safety for timer operations
 
   HavelResult Evaluate(const ast::ASTNode &node);
 
@@ -262,6 +316,8 @@ private:
   void InitializeLauncherBuiltins();
   void InitializeGUIBuiltins();
   void InitializeScreenshotBuiltins();
+  void InitializeTimerBuiltins();
+  void InitializeAutomationBuiltins();
   void InitializeHelpBuiltin();
 };
 

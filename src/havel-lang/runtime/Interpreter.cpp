@@ -1942,6 +1942,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeTimerBuiltins();
   InitializeAutomationBuiltins();
   InitializeAsyncBuiltins();
+  InitializePhysicsBuiltins();
   InitializeHelpBuiltin();
   // Debug flag
   environment->Define("debug", HavelValue(false));
@@ -6391,833 +6392,921 @@ void Interpreter::InitializeAsyncBuiltins() {
                      AsyncScheduler::getInstance().yield();
                      return HavelValue(nullptr);
                    }));
-}
 
-void Interpreter::InitializeTimerBuiltins() {
-  // === TIMER MODULE ===
-  auto timerMod =
-      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  // Physics builtins
+  void Interpreter::InitializePhysicsBuiltins() {
+    auto physics =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  // Thread-safe setTimeout function
-  (*timerMod)["setTimeout"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 2) {
-          return HavelRuntimeError("setTimeout requires callback and delay");
-        }
+    // Speed of light (m/s)
+    (*physics)["c"] = HavelValue(299792458.0);
 
-        int delayMs = static_cast<int>(ValueToNumber(args[0]));
+    // Gravitational constant (N⋅m²/kg²)
+    (*physics)["G"] = HavelValue(6.67430e-11);
 
-        // Validate callback
-        if (!std::holds_alternative<HavelFunction>(args[1])) {
-          return HavelRuntimeError(
-              "setTimeout second argument must be a function");
-        }
+    // Elementary charge (C)
+    (*physics)["e"] = HavelValue(1.602176634e-19);
 
-        auto callback = std::get<HavelFunction>(args[1]);
+    // Electron mass (kg)
+    (*physics)["me"] = HavelValue(9.10938356e-31);
 
-        // Thread-safe timer creation and management
-        int timerId;
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          timerId = nextTimerId++;
-        }
+    // Proton mass (kg)
+    (*physics)["mp"] = HavelValue(1.67262192369e-27);
 
-        // Create timer with exception safety
-        try {
-          auto timer = havel::SetTimeout(delayMs, [this, callback, timerId]() {
-            // Execute callback with thread safety
-            try {
-              // Direct callback execution with empty args
-              auto result = callback({});
-              if (std::holds_alternative<HavelRuntimeError>(result)) {
-                error("Timer {} callback failed: {}", timerId,
-                      std::get<HavelRuntimeError>(result).message);
-              }
-            } catch (const std::exception &e) {
-              error("Timer {} callback threw exception: {}", timerId, e.what());
-            } catch (...) {
-              error("Timer {} callback threw unknown exception", timerId);
-            }
+    // Planck constant (J⋅s)
+    (*physics)["h"] = HavelValue(6.62607015e-34);
 
-            // Thread-safe cleanup
+    // Avogadro constant (mol⁻¹)
+    (*physics)["NA"] = HavelValue(6.02214076e23);
+
+    // Boltzmann constant (J/K)
+    (*physics)["k"] = HavelValue(1.380649e-23);
+
+    // Permittivity of free space (F/m)
+    (*physics)["epsilon0"] = HavelValue(8.854187817e-12);
+
+    // Permeability of free space (H/m)
+    (*physics)["mu0"] = HavelValue(1.25663706212e-6);
+
+    // Fine structure constant
+    (*physics)["alpha"] = HavelValue(7.2973525693e-3);
+
+    // Rydberg constant (J)
+    (*physics)["Rinf"] = HavelValue(10973731.56816);
+
+    // Stefan-Boltzmann constant (W⋅m⁻²⋅K⁻⁴)
+    (*physics)["sigma"] = HavelValue(5.670374419e-8);
+
+    // Electron volt (J)
+    (*physics)["eV"] = HavelValue(1.602176634e-19);
+
+    // Atomic mass unit (kg)
+    (*physics)["u"] = HavelValue(1.66053906660e-27);
+
+    // Bohr radius (m)
+    (*physics)["a0"] = HavelValue(5.29177210903e-11);
+
+    // Classical electron radius (m)
+    (*physics)["re"] = HavelValue(2.8179403227e-15);
+
+    environment->Define("physics", HavelValue(physics));
+  }
+
+  void Interpreter::InitializeTimerBuiltins() {
+    // === TIMER MODULE ===
+    auto timerMod =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+    // Thread-safe setTimeout function
+    (*timerMod)["setTimeout"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.size() < 2) {
+            return HavelRuntimeError("setTimeout requires callback and delay");
+          }
+
+          int delayMs = static_cast<int>(ValueToNumber(args[0]));
+
+          // Validate callback
+          if (!std::holds_alternative<HavelFunction>(args[1])) {
+            return HavelRuntimeError(
+                "setTimeout second argument must be a function");
+          }
+
+          auto callback = std::get<HavelFunction>(args[1]);
+
+          // Thread-safe timer creation and management
+          int timerId;
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            timerId = nextTimerId++;
+          }
+
+          // Create timer with exception safety
+          try {
+            auto timer =
+                havel::SetTimeout(delayMs, [this, callback, timerId]() {
+                  // Execute callback with thread safety
+                  try {
+                    // Direct callback execution with empty args
+                    auto result = callback({});
+                    if (std::holds_alternative<HavelRuntimeError>(result)) {
+                      error("Timer {} callback failed: {}", timerId,
+                            std::get<HavelRuntimeError>(result).message);
+                    }
+                  } catch (const std::exception &e) {
+                    error("Timer {} callback threw exception: {}", timerId,
+                          e.what());
+                  } catch (...) {
+                    error("Timer {} callback threw unknown exception", timerId);
+                  }
+
+                  // Thread-safe cleanup
+                  {
+                    std::lock_guard<std::mutex> lock(timersMutex);
+                    timers.erase(timerId);
+                  }
+                });
+
+            // Thread-safe timer storage
             {
               std::lock_guard<std::mutex> lock(timersMutex);
-              timers.erase(timerId);
+              timers[timerId] = timer;
             }
-          });
 
-          // Thread-safe timer storage
-          {
-            std::lock_guard<std::mutex> lock(timersMutex);
-            timers[timerId] = timer;
+            return HavelValue(timerId);
+          } catch (const std::exception &e) {
+            return HavelRuntimeError("Failed to create timer: " +
+                                     std::string(e.what()));
+          }
+        });
+
+    // Thread-safe setInterval function
+    (*timerMod)["setInterval"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.size() < 2) {
+            return HavelRuntimeError(
+                "setInterval requires callback and interval");
           }
 
-          return HavelValue(timerId);
-        } catch (const std::exception &e) {
-          return HavelRuntimeError("Failed to create timer: " +
-                                   std::string(e.what()));
-        }
-      });
+          int intervalMs = static_cast<int>(ValueToNumber(args[0]));
 
-  // Thread-safe setInterval function
-  (*timerMod)["setInterval"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 2) {
-          return HavelRuntimeError(
-              "setInterval requires callback and interval");
-        }
+          // Validate callback
+          if (!std::holds_alternative<HavelFunction>(args[1])) {
+            return HavelRuntimeError(
+                "setInterval second argument must be a function");
+          }
 
-        int intervalMs = static_cast<int>(ValueToNumber(args[0]));
+          auto callback = std::get<HavelFunction>(args[1]);
 
-        // Validate callback
-        if (!std::holds_alternative<HavelFunction>(args[1])) {
-          return HavelRuntimeError(
-              "setInterval second argument must be a function");
-        }
+          // Thread-safe timer creation and management
+          int timerId;
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            timerId = nextTimerId++;
+          }
 
-        auto callback = std::get<HavelFunction>(args[1]);
-
-        // Thread-safe timer creation and management
-        int timerId;
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          timerId = nextTimerId++;
-        }
-
-        // Create interval timer with exception safety
-        try {
-          auto timer = havel::SetInterval(intervalMs, [this, callback,
-                                                       timerId]() {
-            // Execute callback with thread safety
-            try {
-              // Create a call expression to execute the function
-              ast::CallExpression callExpr;
-              callExpr.callee = std::make_unique<ast::Identifier>(
-                  callback->declaration->symbol);
-              auto result = Evaluate(callExpr);
-              if (std::holds_alternative<HavelRuntimeError>(result)) {
-                error("Interval {} callback failed: {}", timerId,
-                      std::get<HavelRuntimeError>(result).message);
+          // Create interval timer with exception safety
+          try {
+            auto timer = havel::SetInterval(intervalMs, [this, callback,
+                                                         timerId]() {
+              // Execute callback with thread safety
+              try {
+                // Create a call expression to execute the function
+                ast::CallExpression callExpr;
+                callExpr.callee = std::make_unique<ast::Identifier>(
+                    callback->declaration->symbol);
+                auto result = Evaluate(callExpr);
+                if (std::holds_alternative<HavelRuntimeError>(result)) {
+                  error("Interval {} callback failed: {}", timerId,
+                        std::get<HavelRuntimeError>(result).message);
+                }
+              } catch (const std::exception &e) {
+                error("Interval {} callback threw exception: {}", timerId,
+                      e.what());
+              } catch (...) {
+                error("Interval {} callback threw unknown exception", timerId);
               }
-            } catch (const std::exception &e) {
-              error("Interval {} callback threw exception: {}", timerId,
-                    e.what());
-            } catch (...) {
-              error("Interval {} callback threw unknown exception", timerId);
-            }
-            // Note: Don't erase interval timers on callback completion
-          });
+              // Note: Don't erase interval timers on callback completion
+            });
 
-          // Thread-safe timer storage
+            // Thread-safe timer storage
+            {
+              std::lock_guard<std::mutex> lock(timersMutex);
+              timers[timerId] = timer;
+            }
+
+            return HavelValue(timerId);
+          } catch (const std::exception &e) {
+            return HavelRuntimeError("Failed to create interval: " +
+                                     std::string(e.what()));
+          }
+        });
+
+    // Thread-safe clearTimeout function
+    (*timerMod)["clearTimeout"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.empty()) {
+            return HavelRuntimeError("clearTimeout requires timer ID");
+          }
+
+          int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+          // Thread-safe timer cleanup
           {
             std::lock_guard<std::mutex> lock(timersMutex);
-            timers[timerId] = timer;
-          }
-
-          return HavelValue(timerId);
-        } catch (const std::exception &e) {
-          return HavelRuntimeError("Failed to create interval: " +
-                                   std::string(e.what()));
-        }
-      });
-
-  // Thread-safe clearTimeout function
-  (*timerMod)["clearTimeout"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty()) {
-          return HavelRuntimeError("clearTimeout requires timer ID");
-        }
-
-        int timerId = static_cast<int>(ValueToNumber(args[0]));
-
-        // Thread-safe timer cleanup
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          auto it = timers.find(timerId);
-          if (it != timers.end()) {
-            havel::StopTimer(it->second);
-            timers.erase(it);
-            return HavelValue(true);
-          }
-        }
-
-        return HavelValue(false);
-      });
-
-  // Thread-safe clearInterval function
-  (*timerMod)["clearInterval"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty()) {
-          return HavelRuntimeError("clearInterval requires timer ID");
-        }
-
-        int timerId = static_cast<int>(ValueToNumber(args[0]));
-
-        // Thread-safe timer cleanup
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          auto it = timers.find(timerId);
-          if (it != timers.end()) {
-            havel::StopTimer(it->second);
-            timers.erase(it);
-            return HavelValue(true);
-          }
-        }
-
-        return HavelValue(false);
-      });
-
-  // Thread-safe stopTimer function (unified)
-  (*timerMod)["stopTimer"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty()) {
-          return HavelRuntimeError("stopTimer requires timer ID");
-        }
-
-        int timerId = static_cast<int>(ValueToNumber(args[0]));
-
-        // Thread-safe timer cleanup
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          auto it = timers.find(timerId);
-          if (it != timers.end()) {
-            havel::StopTimer(it->second);
-            timers.erase(it);
-            return HavelValue(true);
-          }
-        }
-
-        return HavelValue(false);
-      });
-
-  // Thread-safe getTimerStatus function
-  (*timerMod)["getTimerStatus"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty()) {
-          return HavelRuntimeError("getTimerStatus requires timer ID");
-        }
-
-        int timerId = static_cast<int>(ValueToNumber(args[0]));
-
-        // Thread-safe timer status check
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          auto it = timers.find(timerId);
-          if (it != timers.end()) {
-            auto statusObj =
-                std::make_shared<std::unordered_map<std::string, HavelValue>>();
-            (*statusObj)["id"] = HavelValue(timerId);
-            (*statusObj)["running"] = HavelValue(it->second->load());
-            return HavelValue(statusObj);
-          }
-        }
-
-        return HavelValue(nullptr);
-      });
-
-  // Thread-safe cleanupAllTimers function
-  (*timerMod)["cleanupAllTimers"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        // Thread-safe cleanup of all timers
-        std::unordered_map<int, std::shared_ptr<std::atomic<bool>>>
-            timersToStop;
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          timersToStop = timers;
-          timers.clear();
-        }
-
-        // Stop all timers outside the lock to avoid deadlock
-        for (const auto &[timerId, timer] : timersToStop) {
-          havel::StopTimer(timer);
-        }
-
-        return HavelValue(static_cast<int>(timersToStop.size()));
-      });
-
-  // Thread-safe getActiveTimers function
-  (*timerMod)["getActiveTimers"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
-        // Thread-safe get all active timers
-        std::vector<int> activeTimerIds;
-        {
-          std::lock_guard<std::mutex> lock(timersMutex);
-          activeTimerIds.reserve(timers.size());
-          for (const auto &[timerId, timer] : timers) {
-            if (timer->load()) {
-              activeTimerIds.push_back(timerId);
+            auto it = timers.find(timerId);
+            if (it != timers.end()) {
+              havel::StopTimer(it->second);
+              timers.erase(it);
+              return HavelValue(true);
             }
           }
-        }
 
-        // Convert to Havel array
-        auto timerArray = std::make_shared<std::vector<HavelValue>>();
-        for (int timerId : activeTimerIds) {
-          timerArray->push_back(HavelValue(timerId));
-        }
+          return HavelValue(false);
+        });
 
-        return HavelValue(timerArray);
-      });
-
-  environment->Define("timer", HavelValue(timerMod));
-}
-
-void Interpreter::InitializeHelpBuiltin() {
-  environment->Define(
-      "help",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        std::stringstream help;
-
-        if (args.empty()) {
-          // Show general help
-          help << "\n=== Havel Language Help ===\n\n";
-          help << "Usage: help()          - Show this help\n";
-          help
-              << "       help(\"module\")  - Show help for specific module\n\n";
-          help << "Available modules:\n";
-          help << "  - system      : System functions (print, sleep, exit, "
-                  "etc.)\n";
-          help << "  - window      : Window management functions\n";
-          help << "  - clipboard   : Clipboard operations\n";
-          help << "  - text        : Text manipulation (upper, lower, trim, "
-                  "etc.)\n";
-          help << "  - file        : File I/O operations\n";
-          help << "  - array       : Array manipulation (map, filter, reduce, "
-                  "etc.)\n";
-          help << "  - io          : Input/output control\n";
-          help << "  - audio       : Audio control (volume, mute, etc.)\n";
-          help << "  - media       : Media playback control\n";
-          help << "  - brightness  : Screen brightness control\n";
-          help << "  - launcher    : Process launching (run, kill, etc.)\n";
-          help << "  - gui         : GUI dialogs and menus\n";
-          help << "  - debug       : Debugging utilities\n\n";
-          help << "For detailed documentation, see Havel.md\n";
-        } else {
-          std::string module = ValueToString(args[0]);
-
-          if (module == "system") {
-            help << "\n=== System Module ===\n\n";
-            help << "Constants:\n";
-            help << "  true, false, null\n\n";
-            help << "Functions:\n";
-            help << "  print(...args)         - Print values to stdout\n";
-            help << "  println(...args)       - Print values with newline\n";
-            help << "  sleep(ms)              - Sleep for milliseconds\n";
-            help << "  exit([code])           - Exit program with optional "
-                    "code\n";
-            help << "  type(value)            - Get type of value\n";
-            help << "  len(array|string)      - Get length\n";
-            help << "  range(start, end)      - Create array of numbers\n";
-            help << "  random([min, max])     - Generate random number\n";
-          } else if (module == "window") {
-            help << "\n=== Window Module ===\n\n";
-            help << "Functions:\n";
-            help << "  window.getTitle()              - Get active window "
-                    "title\n";
-            help << "  window.maximize()              - Maximize active "
-                    "window\n";
-            help << "  window.minimize()              - Minimize active "
-                    "window\n";
-            help << "  window.close()                 - Close active window\n";
-            help << "  window.center()                - Center active window\n";
-            help << "  window.focus()                 - Focus active window\n";
-            help
-                << "  window.next()                  - Switch to next window\n";
-            help << "  window.previous()              - Switch to previous "
-                    "window\n";
-            help << "  window.move(x, y)              - Move window to "
-                    "position\n";
-            help << "  window.resize(w, h)            - Resize window\n";
-            help << "  window.moveResize(x,y,w,h)     - Move and resize\n";
-            help << "  window.alwaysOnTop(enable)     - Set always on top\n";
-            help << "  window.transparency(level)     - Set transparency "
-                    "(0-1)\n";
-            help << "  window.toggleFullscreen()      - Toggle fullscreen\n";
-            help << "  window.snap(direction)         - Snap to screen edge\n";
-            help << "  window.moveToMonitor(index)    - Move to monitor\n";
-            help << "  window.moveToCorner(corner)    - Move to corner\n";
-            help << "  window.getClass()              - Get window class\n";
-            help << "  window.exists()                - Check if window "
-                    "exists\n";
-            help << "  window.isActive()              - Check if window is "
-                    "active\n";
-          } else if (module == "clipboard") {
-            help << "\n=== Clipboard Module ===\n\n";
-            help << "Functions:\n";
-            help << "  clipboard.get()        - Get clipboard text\n";
-            help << "  clipboard.set(text)    - Set clipboard text\n";
-            help << "  clipboard.clear()      - Clear clipboard\n";
-          } else if (module == "text") {
-            help << "\n=== Text Module ===\n\n";
-            help << "Functions:\n";
-            help << "  upper(text)            - Convert to uppercase\n";
-            help << "  lower(text)            - Convert to lowercase\n";
-            help << "  trim(text)             - Remove leading/trailing "
-                    "whitespace\n";
-            help << "  split(text, delimiter) - Split text into array\n";
-            help << "  join(array, separator) - Join array into text\n";
-            help << "  replace(text, old, new)- Replace text\n";
-            help << "  contains(text, search) - Check if text contains "
-                    "substring\n";
-            help << "  startsWith(text, prefix) - Check if starts with\n";
-            help << "  endsWith(text, suffix)   - Check if ends with\n";
-          } else if (module == "file") {
-            help << "\n=== File Module ===\n\n";
-            help << "Functions:\n";
-            help << "  file.read(path)        - Read file contents\n";
-            help << "  file.write(path, data) - Write to file\n";
-            help << "  file.exists(path)      - Check if file exists\n";
-          } else if (module == "array") {
-            help << "\n=== Array Module ===\n\n";
-            help << "Functions:\n";
-            help << "  map(array, fn)         - Transform array elements\n";
-            help << "  filter(array, fn)      - Filter array elements\n";
-            help << "  reduce(array, fn, init)- Reduce array to single value\n";
-            help << "  forEach(array, fn)     - Execute function for each "
-                    "element\n";
-            help << "  push(array, value)     - Add element to end\n";
-            help << "  pop(array)             - Remove and return last "
-                    "element\n";
-            help << "  shift(array)           - Remove and return first "
-                    "element\n";
-            help << "  unshift(array, value)  - Add element to beginning\n";
-            help << "  reverse(array)         - Reverse array\n";
-            help << "  sort(array, [fn])      - Sort array\n";
-          } else if (module == "io") {
-            help << "\n=== IO Module ===\n\n";
-            help << "Functions:\n";
-            help << "  io.block()             - Block all input\n";
-            help << "  io.unblock()           - Unblock input\n";
-            help << "  send(keys)             - Send keystrokes\n";
-            help << "  click([button])        - Simulate mouse click\n";
-            help << "  mouseMove(x, y)        - Move mouse to position\n";
-          } else if (module == "audio") {
-            help << "\n=== Audio Module ===\n\n";
-            help << "Functions:\n";
-            help << "  audio.getVolume()      - Get system volume (0-100)\n";
-            help << "  audio.setVolume(level) - Set system volume\n";
-            help << "  audio.mute()           - Mute audio\n";
-            help << "  audio.unmute()         - Unmute audio\n";
-            help << "  audio.toggleMute()     - Toggle mute state\n";
-          } else if (module == "media") {
-            help << "\n=== Media Module ===\n\n";
-            help << "Functions:\n";
-            help << "  media.play()           - Play media\n";
-            help << "  media.pause()          - Pause media\n";
-            help << "  media.stop()           - Stop media\n";
-            help << "  media.next()           - Next track\n";
-            help << "  media.previous()       - Previous track\n";
-          } else if (module == "brightness") {
-            help << "\n=== Brightness Module ===\n\n";
-            help << "Functions:\n";
-            help << "  brightnessManager.getBrightness()    - Get brightness "
-                    "(0-100)\n";
-            help << "  brightnessManager.setBrightness(val) - Set brightness\n";
-          } else if (module == "launcher") {
-            help << "\n=== Launcher Module ===\n\n";
-            help << "Functions:\n";
-            help << "  run(command)           - Run command and return result "
-                    "object {success, exitCode, stdout, stderr, pid, error, "
-                    "executionTimeMs\n";
-            help << "  runAsync(command)      - Run command asynchronously\n";
-            help << "  runDetached(command)   - Run command detached from "
-                    "parent\n";
-            help << "  terminal(command)      - Run command in terminal\n";
-            help << "  kill(pid)              - Kill process by PID\n";
-            help << "  killByName(name)       - Kill process by name\n";
-          } else if (module == "gui") {
-            help << "\n=== GUI Module ===\n\n";
-            help << "Functions:\n";
-            help << "  gui.menu(items)        - Show menu dialog\n";
-            help << "  gui.notify(title, msg) - Show notification\n";
-            help << "  gui.confirm(msg)       - Show confirmation dialog\n";
-            help << "  gui.input(prompt)      - Show input dialog\n";
-            help << "  gui.fileDialog([title, dir, filter]) - Show file "
-                    "picker\n";
-            help << "  gui.directoryDialog([title, dir])    - Show directory "
-                    "picker\n";
-          } else if (module == "debug") {
-            help << "\n=== Debug Module ===\n\n";
-            help << "Variables:\n";
-            help << "  debug                  - Debug flag (boolean)\n\n";
-            help << "Functions:\n";
-            help << "  assert(condition, msg) - Assert condition\n";
-            help << "  trace(msg)             - Print trace message\n";
-          } else if (module == "mpvcontroller") {
-            help << "\n=== MPVController Module ===\n\n";
-            help << "Functions:\n";
-            help << "  mpvcontroller.volumeUp()                    - Increase "
-                    "volume\n";
-            help << "  mpvcontroller.volumeDown()                  - Decrease "
-                    "volume\n";
-            help << "  mpvcontroller.toggleMute()                  - Toggle "
-                    "mute\n";
-            help << "  mpvcontroller.seekForward()                 - Seek "
-                    "forward\n";
-            help << "  mpvcontroller.seekBackward()                - Seek "
-                    "backward\n";
-            help << "  mpvcontroller.speedUp()                     - Increase "
-                    "playback speed\n";
-            help << "  mpvcontroller.slowDown()                    - Decrease "
-                    "playback speed\n";
-            help << "  mpvcontroller.toggleSubtitleVisibility()   - Toggle "
-                    "subtitles\n";
-            help << "  mpvcontroller.setLoop(enabled)              - Set loop "
-                    "mode\n";
-            help << "  mpvcontroller.sendRaw(command)             - Send raw "
-                    "MPV command\n";
-          } else if (module == "textchunker") {
-            help << "\n=== TextChunker Module ===\n\n";
-            help << "Functions:\n";
-            help << "  textchunker.chunk(text, maxSize)           - Split text "
-                    "into chunks\n";
-            help << "  textchunker.merge(chunks)                   - Merge "
-                    "chunks back\n";
-          } else if (module == "ocr") {
-            help << "\n=== OCR Module ===\n\n";
-            help << "Functions:\n";
-            help << "  ocr.capture()                               - Capture "
-                    "screen and extract text\n";
-            help << "  ocr.captureRegion(x, y, width, height)      - Capture "
-                    "region and extract text\n";
-            help << "  ocr.extractText(imagePath)                  - Extract "
-                    "text from image file\n";
-          } else if (module == "alttab") {
-            help << "\n=== AltTab Module ===\n\n";
-            help << "Functions:\n";
-            help << "  alttab.show()                               - Show "
-                    "alt-tab window switcher\n";
-            help << "  alttab.next()                               - Switch to "
-                    "next window\n";
-            help << "  alttab.previous()                           - Switch to "
-                    "previous window\n";
-            help << "  alttab.hide()                               - Hide "
-                    "alt-tab switcher\n";
-          } else if (module == "clipboardmanager") {
-            help << "\n=== ClipboardManager Module ===\n\n";
-            help << "Functions:\n";
-            help << "  clipboardmanager.copy(text)                 - Copy text "
-                    "to clipboard\n";
-            help << "  clipboardmanager.paste()                    - Paste "
-                    "from clipboard\n";
-            help << "  clipboardmanager.clear()                    - Clear "
-                    "clipboard\n";
-            help << "  clipboardmanager.history()                  - Get "
-                    "clipboard history\n";
-          } else if (module == "mapmanager") {
-            help << "\n=== MapManager Module ===\n\n";
-            help << "Functions:\n";
-            help << "  mapmanager.load(mapFile)                    - Load key "
-                    "mapping file\n";
-            help << "  mapmanager.save(mapFile)                    - Save "
-                    "current mappings\n";
-            help << "  mapmanager.clear()                          - Clear all "
-                    "mappings\n";
-            help << "  mapmanager.list()                           - List all "
-                    "mappings\n";
-            help << "  mapmanager.add(key, action)                 - Add key "
-                    "mapping\n";
-            help << "  mapmanager.remove(key)                      - Remove "
-                    "key mapping\n";
-          } else if (module == "filemanager") {
-            help << "\n=== FileManager Module ===\n\n";
-            help << "Functions:\n";
-            help << "  filemanager.read(path)                      - Read file "
-                    "content\n";
-            help << "  filemanager.write(path, content)             - Write "
-                    "content to file\n";
-            help << "  filemanager.append(path, content)            - Append "
-                    "content to file\n";
-            help << "  filemanager.exists(path)                     - Check if "
-                    "file exists\n";
-            help << "  filemanager.delete(path)                    - Delete "
-                    "file\n";
-            help << "  filemanager.copy(source, dest)              - Copy "
-                    "file\n";
-            help << "  filemanager.move(source, dest)              - Move "
-                    "file\n";
-            help << "  filemanager.size(path)                      - Get file "
-                    "size\n";
-            help << "  filemanager.wordCount(path)                 - Count "
-                    "words in file\n";
-            help << "  filemanager.lineCount(path)                 - Count "
-                    "lines in file\n";
-            help << "  filemanager.getChecksum(path, algorithm)    - Get file "
-                    "checksum\n";
-            help << "  filemanager.getMimeType(path)               - Get MIME "
-                    "type\n";
-            help << "  filemanager.File(path)                      - Create "
-                    "File object\n\n";
-            help << "Detector Functions:\n";
-            help << "  detectDisplay()                             - Detect "
-                    "display configuration\n";
-            help << "  detectMonitorConfig()                       - Detect "
-                    "monitor configuration\n";
-            help << "  detectWindowManager()                       - Detect "
-                    "window manager\n";
-            help << "  detectSystem()                              - Detect "
-                    "system information\n";
-          } else {
-            help << "\nUnknown module: " << module << "\n";
-            help << "Use help() to see available modules.\n";
+    // Thread-safe clearInterval function
+    (*timerMod)["clearInterval"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.empty()) {
+            return HavelRuntimeError("clearInterval requires timer ID");
           }
-        }
 
-        std::cout << help.str();
-        return HavelValue(nullptr);
-      }));
-}
+          int timerId = static_cast<int>(ValueToNumber(args[0]));
 
-void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
-  // Extract the hotkey string for use with HotkeyManager
-  std::string hotkeyStr;
-  if (!node.binding->hotkeys.empty()) {
-    if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
-            node.binding->hotkeys[0].get())) {
-      hotkeyStr = hotkeyLit->combination;
+          // Thread-safe timer cleanup
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            auto it = timers.find(timerId);
+            if (it != timers.end()) {
+              havel::StopTimer(it->second);
+              timers.erase(it);
+              return HavelValue(true);
+            }
+          }
+
+          return HavelValue(false);
+        });
+
+    // Thread-safe stopTimer function (unified)
+    (*timerMod)["stopTimer"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.empty()) {
+            return HavelRuntimeError("stopTimer requires timer ID");
+          }
+
+          int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+          // Thread-safe timer cleanup
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            auto it = timers.find(timerId);
+            if (it != timers.end()) {
+              havel::StopTimer(it->second);
+              timers.erase(it);
+              return HavelValue(true);
+            }
+          }
+
+          return HavelValue(false);
+        });
+
+    // Thread-safe getTimerStatus function
+    (*timerMod)["getTimerStatus"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.empty()) {
+            return HavelRuntimeError("getTimerStatus requires timer ID");
+          }
+
+          int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+          // Thread-safe timer status check
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            auto it = timers.find(timerId);
+            if (it != timers.end()) {
+              auto statusObj = std::make_shared<
+                  std::unordered_map<std::string, HavelValue>>();
+              (*statusObj)["id"] = HavelValue(timerId);
+              (*statusObj)["running"] = HavelValue(it->second->load());
+              return HavelValue(statusObj);
+            }
+          }
+
+          return HavelValue(nullptr);
+        });
+
+    // Thread-safe cleanupAllTimers function
+    (*timerMod)["cleanupAllTimers"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          // Thread-safe cleanup of all timers
+          std::unordered_map<int, std::shared_ptr<std::atomic<bool>>>
+              timersToStop;
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            timersToStop = timers;
+            timers.clear();
+          }
+
+          // Stop all timers outside the lock to avoid deadlock
+          for (const auto &[timerId, timer] : timersToStop) {
+            havel::StopTimer(timer);
+          }
+
+          return HavelValue(static_cast<int>(timersToStop.size()));
+        });
+
+    // Thread-safe getActiveTimers function
+    (*timerMod)["getActiveTimers"] = BuiltinFunction(
+        [this](const std::vector<HavelValue> &args) -> HavelResult {
+          // Thread-safe get all active timers
+          std::vector<int> activeTimerIds;
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            activeTimerIds.reserve(timers.size());
+            for (const auto &[timerId, timer] : timers) {
+              if (timer->load()) {
+                activeTimerIds.push_back(timerId);
+              }
+            }
+          }
+
+          // Convert to Havel array
+          auto timerArray = std::make_shared<std::vector<HavelValue>>();
+          for (int timerId : activeTimerIds) {
+            timerArray->push_back(HavelValue(timerId));
+          }
+
+          return HavelValue(timerArray);
+        });
+
+    environment->Define("timer", HavelValue(timerMod));
+  }
+
+  void Interpreter::InitializeHelpBuiltin() {
+    environment->Define(
+        "help", BuiltinFunction([this](const std::vector<HavelValue> &args)
+                                    -> HavelResult {
+          std::stringstream help;
+
+          if (args.empty()) {
+            // Show general help
+            help << "\n=== Havel Language Help ===\n\n";
+            help << "Usage: help()          - Show this help\n";
+            help << "       help(\"module\")  - Show help for specific "
+                    "module\n\n";
+            help << "Available modules:\n";
+            help << "  - system      : System functions (print, sleep, exit, "
+                    "etc.)\n";
+            help << "  - window      : Window management functions\n";
+            help << "  - clipboard   : Clipboard operations\n";
+            help << "  - text        : Text manipulation (upper, lower, trim, "
+                    "etc.)\n";
+            help << "  - file        : File I/O operations\n";
+            help
+                << "  - array       : Array manipulation (map, filter, reduce, "
+                   "etc.)\n";
+            help << "  - io          : Input/output control\n";
+            help << "  - audio       : Audio control (volume, mute, etc.)\n";
+            help << "  - media       : Media playback control\n";
+            help << "  - brightness  : Screen brightness control\n";
+            help << "  - launcher    : Process launching (run, kill, etc.)\n";
+            help << "  - gui         : GUI dialogs and menus\n";
+            help << "  - debug       : Debugging utilities\n\n";
+            help << "For detailed documentation, see Havel.md\n";
+          } else {
+            std::string module = ValueToString(args[0]);
+
+            if (module == "system") {
+              help << "\n=== System Module ===\n\n";
+              help << "Constants:\n";
+              help << "  true, false, null\n\n";
+              help << "Functions:\n";
+              help << "  print(...args)         - Print values to stdout\n";
+              help << "  println(...args)       - Print values with newline\n";
+              help << "  sleep(ms)              - Sleep for milliseconds\n";
+              help << "  exit([code])           - Exit program with optional "
+                      "code\n";
+              help << "  type(value)            - Get type of value\n";
+              help << "  len(array|string)      - Get length\n";
+              help << "  range(start, end)      - Create array of numbers\n";
+              help << "  random([min, max])     - Generate random number\n";
+            } else if (module == "window") {
+              help << "\n=== Window Module ===\n\n";
+              help << "Functions:\n";
+              help << "  window.getTitle()              - Get active window "
+                      "title\n";
+              help << "  window.maximize()              - Maximize active "
+                      "window\n";
+              help << "  window.minimize()              - Minimize active "
+                      "window\n";
+              help
+                  << "  window.close()                 - Close active window\n";
+              help << "  window.center()                - Center active "
+                      "window\n";
+              help
+                  << "  window.focus()                 - Focus active window\n";
+              help << "  window.next()                  - Switch to next "
+                      "window\n";
+              help << "  window.previous()              - Switch to previous "
+                      "window\n";
+              help << "  window.move(x, y)              - Move window to "
+                      "position\n";
+              help << "  window.resize(w, h)            - Resize window\n";
+              help << "  window.moveResize(x,y,w,h)     - Move and resize\n";
+              help << "  window.alwaysOnTop(enable)     - Set always on top\n";
+              help << "  window.transparency(level)     - Set transparency "
+                      "(0-1)\n";
+              help << "  window.toggleFullscreen()      - Toggle fullscreen\n";
+              help
+                  << "  window.snap(direction)         - Snap to screen edge\n";
+              help << "  window.moveToMonitor(index)    - Move to monitor\n";
+              help << "  window.moveToCorner(corner)    - Move to corner\n";
+              help << "  window.getClass()              - Get window class\n";
+              help << "  window.exists()                - Check if window "
+                      "exists\n";
+              help << "  window.isActive()              - Check if window is "
+                      "active\n";
+            } else if (module == "clipboard") {
+              help << "\n=== Clipboard Module ===\n\n";
+              help << "Functions:\n";
+              help << "  clipboard.get()        - Get clipboard text\n";
+              help << "  clipboard.set(text)    - Set clipboard text\n";
+              help << "  clipboard.clear()      - Clear clipboard\n";
+            } else if (module == "text") {
+              help << "\n=== Text Module ===\n\n";
+              help << "Functions:\n";
+              help << "  upper(text)            - Convert to uppercase\n";
+              help << "  lower(text)            - Convert to lowercase\n";
+              help << "  trim(text)             - Remove leading/trailing "
+                      "whitespace\n";
+              help << "  split(text, delimiter) - Split text into array\n";
+              help << "  join(array, separator) - Join array into text\n";
+              help << "  replace(text, old, new)- Replace text\n";
+              help << "  contains(text, search) - Check if text contains "
+                      "substring\n";
+              help << "  startsWith(text, prefix) - Check if starts with\n";
+              help << "  endsWith(text, suffix)   - Check if ends with\n";
+            } else if (module == "file") {
+              help << "\n=== File Module ===\n\n";
+              help << "Functions:\n";
+              help << "  file.read(path)        - Read file contents\n";
+              help << "  file.write(path, data) - Write to file\n";
+              help << "  file.exists(path)      - Check if file exists\n";
+            } else if (module == "array") {
+              help << "\n=== Array Module ===\n\n";
+              help << "Functions:\n";
+              help << "  map(array, fn)         - Transform array elements\n";
+              help << "  filter(array, fn)      - Filter array elements\n";
+              help << "  reduce(array, fn, init)- Reduce array to single "
+                      "value\n";
+              help << "  forEach(array, fn)     - Execute function for each "
+                      "element\n";
+              help << "  push(array, value)     - Add element to end\n";
+              help << "  pop(array)             - Remove and return last "
+                      "element\n";
+              help << "  shift(array)           - Remove and return first "
+                      "element\n";
+              help << "  unshift(array, value)  - Add element to beginning\n";
+              help << "  reverse(array)         - Reverse array\n";
+              help << "  sort(array, [fn])      - Sort array\n";
+            } else if (module == "io") {
+              help << "\n=== IO Module ===\n\n";
+              help << "Functions:\n";
+              help << "  io.block()             - Block all input\n";
+              help << "  io.unblock()           - Unblock input\n";
+              help << "  send(keys)             - Send keystrokes\n";
+              help << "  click([button])        - Simulate mouse click\n";
+              help << "  mouseMove(x, y)        - Move mouse to position\n";
+            } else if (module == "audio") {
+              help << "\n=== Audio Module ===\n\n";
+              help << "Functions:\n";
+              help << "  audio.getVolume()      - Get system volume (0-100)\n";
+              help << "  audio.setVolume(level) - Set system volume\n";
+              help << "  audio.mute()           - Mute audio\n";
+              help << "  audio.unmute()         - Unmute audio\n";
+              help << "  audio.toggleMute()     - Toggle mute state\n";
+            } else if (module == "media") {
+              help << "\n=== Media Module ===\n\n";
+              help << "Functions:\n";
+              help << "  media.play()           - Play media\n";
+              help << "  media.pause()          - Pause media\n";
+              help << "  media.stop()           - Stop media\n";
+              help << "  media.next()           - Next track\n";
+              help << "  media.previous()       - Previous track\n";
+            } else if (module == "brightness") {
+              help << "\n=== Brightness Module ===\n\n";
+              help << "Functions:\n";
+              help << "  brightnessManager.getBrightness()    - Get brightness "
+                      "(0-100)\n";
+              help << "  brightnessManager.setBrightness(val) - Set "
+                      "brightness\n";
+            } else if (module == "launcher") {
+              help << "\n=== Launcher Module ===\n\n";
+              help << "Functions:\n";
+              help
+                  << "  run(command)           - Run command and return result "
+                     "object {success, exitCode, stdout, stderr, pid, error, "
+                     "executionTimeMs\n";
+              help << "  runAsync(command)      - Run command asynchronously\n";
+              help << "  runDetached(command)   - Run command detached from "
+                      "parent\n";
+              help << "  terminal(command)      - Run command in terminal\n";
+              help << "  kill(pid)              - Kill process by PID\n";
+              help << "  killByName(name)       - Kill process by name\n";
+            } else if (module == "gui") {
+              help << "\n=== GUI Module ===\n\n";
+              help << "Functions:\n";
+              help << "  gui.menu(items)        - Show menu dialog\n";
+              help << "  gui.notify(title, msg) - Show notification\n";
+              help << "  gui.confirm(msg)       - Show confirmation dialog\n";
+              help << "  gui.input(prompt)      - Show input dialog\n";
+              help << "  gui.fileDialog([title, dir, filter]) - Show file "
+                      "picker\n";
+              help << "  gui.directoryDialog([title, dir])    - Show directory "
+                      "picker\n";
+            } else if (module == "debug") {
+              help << "\n=== Debug Module ===\n\n";
+              help << "Variables:\n";
+              help << "  debug                  - Debug flag (boolean)\n\n";
+              help << "Functions:\n";
+              help << "  assert(condition, msg) - Assert condition\n";
+              help << "  trace(msg)             - Print trace message\n";
+            } else if (module == "mpvcontroller") {
+              help << "\n=== MPVController Module ===\n\n";
+              help << "Functions:\n";
+              help
+                  << "  mpvcontroller.volumeUp()                    - Increase "
+                     "volume\n";
+              help
+                  << "  mpvcontroller.volumeDown()                  - Decrease "
+                     "volume\n";
+              help << "  mpvcontroller.toggleMute()                  - Toggle "
+                      "mute\n";
+              help << "  mpvcontroller.seekForward()                 - Seek "
+                      "forward\n";
+              help << "  mpvcontroller.seekBackward()                - Seek "
+                      "backward\n";
+              help
+                  << "  mpvcontroller.speedUp()                     - Increase "
+                     "playback speed\n";
+              help
+                  << "  mpvcontroller.slowDown()                    - Decrease "
+                     "playback speed\n";
+              help << "  mpvcontroller.toggleSubtitleVisibility()   - Toggle "
+                      "subtitles\n";
+              help
+                  << "  mpvcontroller.setLoop(enabled)              - Set loop "
+                     "mode\n";
+              help << "  mpvcontroller.sendRaw(command)             - Send raw "
+                      "MPV command\n";
+            } else if (module == "textchunker") {
+              help << "\n=== TextChunker Module ===\n\n";
+              help << "Functions:\n";
+              help << "  textchunker.chunk(text, maxSize)           - Split "
+                      "text "
+                      "into chunks\n";
+              help << "  textchunker.merge(chunks)                   - Merge "
+                      "chunks back\n";
+            } else if (module == "ocr") {
+              help << "\n=== OCR Module ===\n\n";
+              help << "Functions:\n";
+              help << "  ocr.capture()                               - Capture "
+                      "screen and extract text\n";
+              help << "  ocr.captureRegion(x, y, width, height)      - Capture "
+                      "region and extract text\n";
+              help << "  ocr.extractText(imagePath)                  - Extract "
+                      "text from image file\n";
+            } else if (module == "alttab") {
+              help << "\n=== AltTab Module ===\n\n";
+              help << "Functions:\n";
+              help << "  alttab.show()                               - Show "
+                      "alt-tab window switcher\n";
+              help << "  alttab.next()                               - Switch "
+                      "to "
+                      "next window\n";
+              help << "  alttab.previous()                           - Switch "
+                      "to "
+                      "previous window\n";
+              help << "  alttab.hide()                               - Hide "
+                      "alt-tab switcher\n";
+            } else if (module == "clipboardmanager") {
+              help << "\n=== ClipboardManager Module ===\n\n";
+              help << "Functions:\n";
+              help << "  clipboardmanager.copy(text)                 - Copy "
+                      "text "
+                      "to clipboard\n";
+              help << "  clipboardmanager.paste()                    - Paste "
+                      "from clipboard\n";
+              help << "  clipboardmanager.clear()                    - Clear "
+                      "clipboard\n";
+              help << "  clipboardmanager.history()                  - Get "
+                      "clipboard history\n";
+            } else if (module == "mapmanager") {
+              help << "\n=== MapManager Module ===\n\n";
+              help << "Functions:\n";
+              help
+                  << "  mapmanager.load(mapFile)                    - Load key "
+                     "mapping file\n";
+              help << "  mapmanager.save(mapFile)                    - Save "
+                      "current mappings\n";
+              help << "  mapmanager.clear()                          - Clear "
+                      "all "
+                      "mappings\n";
+              help
+                  << "  mapmanager.list()                           - List all "
+                     "mappings\n";
+              help << "  mapmanager.add(key, action)                 - Add key "
+                      "mapping\n";
+              help << "  mapmanager.remove(key)                      - Remove "
+                      "key mapping\n";
+            } else if (module == "filemanager") {
+              help << "\n=== FileManager Module ===\n\n";
+              help << "Functions:\n";
+              help << "  filemanager.read(path)                      - Read "
+                      "file "
+                      "content\n";
+              help << "  filemanager.write(path, content)             - Write "
+                      "content to file\n";
+              help << "  filemanager.append(path, content)            - Append "
+                      "content to file\n";
+              help << "  filemanager.exists(path)                     - Check "
+                      "if "
+                      "file exists\n";
+              help << "  filemanager.delete(path)                    - Delete "
+                      "file\n";
+              help << "  filemanager.copy(source, dest)              - Copy "
+                      "file\n";
+              help << "  filemanager.move(source, dest)              - Move "
+                      "file\n";
+              help
+                  << "  filemanager.size(path)                      - Get file "
+                     "size\n";
+              help << "  filemanager.wordCount(path)                 - Count "
+                      "words in file\n";
+              help << "  filemanager.lineCount(path)                 - Count "
+                      "lines in file\n";
+              help
+                  << "  filemanager.getChecksum(path, algorithm)    - Get file "
+                     "checksum\n";
+              help
+                  << "  filemanager.getMimeType(path)               - Get MIME "
+                     "type\n";
+              help << "  filemanager.File(path)                      - Create "
+                      "File object\n\n";
+              help << "Detector Functions:\n";
+              help << "  detectDisplay()                             - Detect "
+                      "display configuration\n";
+              help << "  detectMonitorConfig()                       - Detect "
+                      "monitor configuration\n";
+              help << "  detectWindowManager()                       - Detect "
+                      "window manager\n";
+              help << "  detectSystem()                              - Detect "
+                      "system information\n";
+            } else {
+              help << "\nUnknown module: " << module << "\n";
+              help << "Use help() to see available modules.\n";
+            }
+          }
+
+          std::cout << help.str();
+          return HavelValue(nullptr);
+        }));
+  }
+
+  void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
+    // Extract the hotkey string for use with HotkeyManager
+    std::string hotkeyStr;
+    if (!node.binding->hotkeys.empty()) {
+      if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
+              node.binding->hotkeys[0].get())) {
+        hotkeyStr = hotkeyLit->combination;
+      }
     }
-  }
 
-  if (hotkeyStr.empty()) {
-    lastResult =
-        HavelRuntimeError("Invalid hotkey in conditional hotkey binding");
-    return;
-  }
-
-  if (hotkeyManager) {
-    // Create a lambda that captures the condition expression and re-evaluates
-    // it
-    auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
-      auto result = Evaluate(*condExpr);
-      if (isError(result)) {
-        // Log error but return false to prevent the hotkey from triggering
-        // std::cerr << "Conditional hotkey condition evaluation failed: "
-        //           << std::get<HavelRuntimeError>(result).what() << std::endl;
-        return false;
-      }
-      return ValueToBool(unwrap(result));
-    };
-
-    // Create the action callback
-    auto actionFunc = [this, action = node.binding->action.get()]() {
-      if (action) {
-        auto result = Evaluate(*action);
-        if (isError(result)) {
-          std::cerr << "Conditional hotkey action evaluation failed: "
-                    << std::get<HavelRuntimeError>(result).what() << std::endl;
-        }
-      }
-    };
-
-    // Register as a contextual hotkey with the HotkeyManager using
-    // function-based condition
-    hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc, actionFunc);
-    lastResult = nullptr;
-  } else {
-    // Fallback: static evaluation if HotkeyManager is not available
-    auto conditionResult = Evaluate(*node.condition);
-    if (isError(conditionResult)) {
-      lastResult = conditionResult;
+    if (hotkeyStr.empty()) {
+      lastResult =
+          HavelRuntimeError("Invalid hotkey in conditional hotkey binding");
       return;
     }
 
-    bool conditionMet = ValueToBool(unwrap(conditionResult));
-
-    if (conditionMet) {
-      // If condition is true, register the hotkey binding normally
-      visitHotkeyBinding(*node.binding);
-    } else {
-      // If condition is false, we don't register the hotkey, and we don't
-      // evaluate the action Only register the hotkey if the condition is
-      // initially true
-      lastResult = nullptr;
-    }
-  }
-}
-
-void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
-  // For each statement in the when block, wrap it with the shared condition
-  for (const auto &stmt : node.statements) {
-    // Check if it's a hotkey binding
-    if (auto *hotkeyBinding =
-            dynamic_cast<const ast::HotkeyBinding *>(stmt.get())) {
-      // Extract hotkey string
-      std::string hotkeyStr;
-      if (!hotkeyBinding->hotkeys.empty()) {
-        if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
-                hotkeyBinding->hotkeys[0].get())) {
-          hotkeyStr = hotkeyLit->combination;
+    if (hotkeyManager) {
+      // Create a lambda that captures the condition expression and re-evaluates
+      // it
+      auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
+        auto result = Evaluate(*condExpr);
+        if (isError(result)) {
+          // Log error but return false to prevent the hotkey from triggering
+          // std::cerr << "Conditional hotkey condition evaluation failed: "
+          //           << std::get<HavelRuntimeError>(result).what() <<
+          //           std::endl;
+          return false;
         }
-      }
+        return ValueToBool(unwrap(result));
+      };
 
-      if (hotkeyStr.empty()) {
-        lastResult = HavelRuntimeError("Invalid hotkey in when block");
+      // Create the action callback
+      auto actionFunc = [this, action = node.binding->action.get()]() {
+        if (action) {
+          auto result = Evaluate(*action);
+          if (isError(result)) {
+            std::cerr << "Conditional hotkey action evaluation failed: "
+                      << std::get<HavelRuntimeError>(result).what()
+                      << std::endl;
+          }
+        }
+      };
+
+      // Register as a contextual hotkey with the HotkeyManager using
+      // function-based condition
+      hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc, actionFunc);
+      lastResult = nullptr;
+    } else {
+      // Fallback: static evaluation if HotkeyManager is not available
+      auto conditionResult = Evaluate(*node.condition);
+      if (isError(conditionResult)) {
+        lastResult = conditionResult;
         return;
       }
 
-      if (hotkeyManager) {
-        // Create a lambda that captures the shared condition
-        auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
-          auto result = Evaluate(*condExpr);
-          if (isError(result)) {
-            // Log error but return false to prevent the hotkey from triggering
-            return false;
-          }
-          return ValueToBool(unwrap(result));
-        };
+      bool conditionMet = ValueToBool(unwrap(conditionResult));
 
-        // Create the action callback
-        auto actionFunc = [this, action = hotkeyBinding->action.get()]() {
-          if (action) {
-            auto result = Evaluate(*action);
-            if (isError(result)) {
-              std::cerr << "When block hotkey action failed: "
-                        << std::get<HavelRuntimeError>(result).what()
-                        << std::endl;
-            }
-          }
-        };
-
-        // Register as contextual hotkey with shared condition
-        hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc,
-                                           actionFunc);
+      if (conditionMet) {
+        // If condition is true, register the hotkey binding normally
+        visitHotkeyBinding(*node.binding);
+      } else {
+        // If condition is false, we don't register the hotkey, and we don't
+        // evaluate the action Only register the hotkey if the condition is
+        // initially true
+        lastResult = nullptr;
       }
-    } else if (auto *conditionalHotkey =
-                   dynamic_cast<const ast::ConditionalHotkey *>(stmt.get())) {
-      // Handle nested conditional hotkeys inside when blocks
-      // Combine the outer condition with the inner condition
-      if (hotkeyManager) {
-        // Extract hotkey string from the nested binding
+    }
+  }
+
+  void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
+    // For each statement in the when block, wrap it with the shared condition
+    for (const auto &stmt : node.statements) {
+      // Check if it's a hotkey binding
+      if (auto *hotkeyBinding =
+              dynamic_cast<const ast::HotkeyBinding *>(stmt.get())) {
+        // Extract hotkey string
         std::string hotkeyStr;
-        if (!conditionalHotkey->binding->hotkeys.empty()) {
+        if (!hotkeyBinding->hotkeys.empty()) {
           if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
-                  conditionalHotkey->binding->hotkeys[0].get())) {
+                  hotkeyBinding->hotkeys[0].get())) {
             hotkeyStr = hotkeyLit->combination;
           }
         }
 
         if (hotkeyStr.empty()) {
-          lastResult = HavelRuntimeError(
-              "Invalid hotkey in conditional hotkey within when block");
+          lastResult = HavelRuntimeError("Invalid hotkey in when block");
           return;
         }
 
-        // Create a combined condition that requires both outer and inner
-        // conditions
-        auto combinedConditionFunc =
-            [this, outerCond = node.condition.get(),
-             innerCond = conditionalHotkey->condition.get()]() -> bool {
-          // Evaluate outer condition
-          auto outerResult = Evaluate(*outerCond);
-          if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
-            return false;
+        if (hotkeyManager) {
+          // Create a lambda that captures the shared condition
+          auto conditionFunc = [this,
+                                condExpr = node.condition.get()]() -> bool {
+            auto result = Evaluate(*condExpr);
+            if (isError(result)) {
+              // Log error but return false to prevent the hotkey from
+              // triggering
+              return false;
+            }
+            return ValueToBool(unwrap(result));
+          };
+
+          // Create the action callback
+          auto actionFunc = [this, action = hotkeyBinding->action.get()]() {
+            if (action) {
+              auto result = Evaluate(*action);
+              if (isError(result)) {
+                std::cerr << "When block hotkey action failed: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+              }
+            }
+          };
+
+          // Register as contextual hotkey with shared condition
+          hotkeyManager->AddContextualHotkey(hotkeyStr, conditionFunc,
+                                             actionFunc);
+        }
+      } else if (auto *conditionalHotkey =
+                     dynamic_cast<const ast::ConditionalHotkey *>(stmt.get())) {
+        // Handle nested conditional hotkeys inside when blocks
+        // Combine the outer condition with the inner condition
+        if (hotkeyManager) {
+          // Extract hotkey string from the nested binding
+          std::string hotkeyStr;
+          if (!conditionalHotkey->binding->hotkeys.empty()) {
+            if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
+                    conditionalHotkey->binding->hotkeys[0].get())) {
+              hotkeyStr = hotkeyLit->combination;
+            }
           }
 
-          // Evaluate inner condition
-          auto innerResult = Evaluate(*innerCond);
-          if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
-            return false;
+          if (hotkeyStr.empty()) {
+            lastResult = HavelRuntimeError(
+                "Invalid hotkey in conditional hotkey within when block");
+            return;
           }
 
-          return true;
-        };
+          // Create a combined condition that requires both outer and inner
+          // conditions
+          auto combinedConditionFunc =
+              [this, outerCond = node.condition.get(),
+               innerCond = conditionalHotkey->condition.get()]() -> bool {
+            // Evaluate outer condition
+            auto outerResult = Evaluate(*outerCond);
+            if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+              return false;
+            }
 
-        // Create the action callback from the inner binding
-        auto actionFunc =
-            [this, action = conditionalHotkey->binding->action.get()]() {
-              if (action) {
-                auto result = Evaluate(*action);
-                if (isError(result)) {
-                  std::cerr << "Nested conditional hotkey action failed: "
-                            << std::get<HavelRuntimeError>(result).what()
-                            << std::endl;
+            // Evaluate inner condition
+            auto innerResult = Evaluate(*innerCond);
+            if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+              return false;
+            }
+
+            return true;
+          };
+
+          // Create the action callback from the inner binding
+          auto actionFunc =
+              [this, action = conditionalHotkey->binding->action.get()]() {
+                if (action) {
+                  auto result = Evaluate(*action);
+                  if (isError(result)) {
+                    std::cerr << "Nested conditional hotkey action failed: "
+                              << std::get<HavelRuntimeError>(result).what()
+                              << std::endl;
+                  }
+                }
+              };
+
+          // Register with combined condition
+          hotkeyManager->AddContextualHotkey(hotkeyStr, combinedConditionFunc,
+                                             actionFunc);
+        }
+      } else if (auto *whenBlock =
+                     dynamic_cast<const ast::WhenBlock *>(stmt.get())) {
+        // Handle nested when blocks - inherit the condition by creating a
+        // combined condition
+        if (hotkeyManager) {
+          // Create a combined condition that requires both the outer and inner
+          // conditions
+          auto combinedConditionFunc =
+              [this, outerCond = node.condition.get(),
+               innerCond = whenBlock->condition.get()]() -> bool {
+            // Evaluate outer condition
+            auto outerResult = Evaluate(*outerCond);
+            if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+              return false;
+            }
+
+            // Evaluate inner condition
+            auto innerResult = Evaluate(*innerCond);
+            if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+              return false;
+            }
+
+            return true;
+          };
+
+          // For nested when blocks, we need to recursively process their
+          // statements with the combined condition. For simplicity, we'll just
+          // evaluate inner when blocks with the combined condition, but a more
+          // complete implementation would recursively process each statement
+          // inside the nested when block.
+          for (const auto &innerStmt : whenBlock->statements) {
+            // Process each statement in the nested when block with the combined
+            // condition
+            if (auto *innerHotkeyBinding =
+                    dynamic_cast<const ast::HotkeyBinding *>(innerStmt.get())) {
+              // Extract hotkey string from the nested statement
+              std::string innerHotkeyStr;
+              if (!innerHotkeyBinding->hotkeys.empty()) {
+                if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
+                        innerHotkeyBinding->hotkeys[0].get())) {
+                  innerHotkeyStr = hotkeyLit->combination;
                 }
               }
-            };
 
-        // Register with combined condition
-        hotkeyManager->AddContextualHotkey(hotkeyStr, combinedConditionFunc,
-                                           actionFunc);
-      }
-    } else if (auto *whenBlock =
-                   dynamic_cast<const ast::WhenBlock *>(stmt.get())) {
-      // Handle nested when blocks - inherit the condition by creating a
-      // combined condition
-      if (hotkeyManager) {
-        // Create a combined condition that requires both the outer and inner
-        // conditions
-        auto combinedConditionFunc =
-            [this, outerCond = node.condition.get(),
-             innerCond = whenBlock->condition.get()]() -> bool {
-          // Evaluate outer condition
-          auto outerResult = Evaluate(*outerCond);
-          if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
-            return false;
-          }
-
-          // Evaluate inner condition
-          auto innerResult = Evaluate(*innerCond);
-          if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
-            return false;
-          }
-
-          return true;
-        };
-
-        // For nested when blocks, we need to recursively process their
-        // statements with the combined condition. For simplicity, we'll just
-        // evaluate inner when blocks with the combined condition, but a more
-        // complete implementation would recursively process each statement
-        // inside the nested when block.
-        for (const auto &innerStmt : whenBlock->statements) {
-          // Process each statement in the nested when block with the combined
-          // condition
-          if (auto *innerHotkeyBinding =
-                  dynamic_cast<const ast::HotkeyBinding *>(innerStmt.get())) {
-            // Extract hotkey string from the nested statement
-            std::string innerHotkeyStr;
-            if (!innerHotkeyBinding->hotkeys.empty()) {
-              if (auto *hotkeyLit = dynamic_cast<const ast::HotkeyLiteral *>(
-                      innerHotkeyBinding->hotkeys[0].get())) {
-                innerHotkeyStr = hotkeyLit->combination;
+              if (innerHotkeyStr.empty()) {
+                continue; // Skip invalid hotkeys
               }
-            }
 
-            if (innerHotkeyStr.empty()) {
-              continue; // Skip invalid hotkeys
-            }
-
-            // Use the same action
-            auto innerActionFunc =
-                [this, action = innerHotkeyBinding->action.get()]() {
-                  if (action) {
-                    auto result = Evaluate(*action);
-                    if (isError(result)) {
-                      std::cerr << "Nested when block hotkey action failed: "
-                                << std::get<HavelRuntimeError>(result).what()
-                                << std::endl;
+              // Use the same action
+              auto innerActionFunc =
+                  [this, action = innerHotkeyBinding->action.get()]() {
+                    if (action) {
+                      auto result = Evaluate(*action);
+                      if (isError(result)) {
+                        std::cerr << "Nested when block hotkey action failed: "
+                                  << std::get<HavelRuntimeError>(result).what()
+                                  << std::endl;
+                      }
                     }
-                  }
-                };
+                  };
 
-            // Register with the combined condition (outer && inner)
-            hotkeyManager->AddContextualHotkey(
-                innerHotkeyStr, combinedConditionFunc, innerActionFunc);
+              // Register with the combined condition (outer && inner)
+              hotkeyManager->AddContextualHotkey(
+                  innerHotkeyStr, combinedConditionFunc, innerActionFunc);
+            }
           }
         }
-      }
-    } else {
-      // Non-hotkey statements in when block - evaluate once statically
-      auto result = Evaluate(*stmt);
-      if (isError(result)) {
-        lastResult = result;
-        return;
+      } else {
+        // Non-hotkey statements in when block - evaluate once statically
+        auto result = Evaluate(*stmt);
+        if (isError(result)) {
+          lastResult = result;
+          return;
+        }
       }
     }
-  }
 
-  lastResult = nullptr;
-}
+    lastResult = nullptr;
+  }
 
 } // namespace havel

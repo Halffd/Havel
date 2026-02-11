@@ -414,6 +414,7 @@ private:
   void InitializeTimerBuiltins();
   void InitializeAutomationBuiltins();
   void InitializeAsyncBuiltins();
+  void InitializePhysicsBuiltins();
   void InitializeHelpBuiltin();
 };
 

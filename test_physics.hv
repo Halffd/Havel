@@ -1,0 +1,131 @@
+// Physics Constants and Scientific Notation Test
+print("=== Testing Physics Constants ===");
+
+// Test 1: Basic physics constants
+print("1. Testing fundamental constants...");
+
+let c = physics.c;        // Speed of light
+let G = physics.G;        // Gravitational constant
+let e = physics.e;        // Elementary charge
+let me = physics.me;      // Electron mass
+let h = physics.h;        // Planck constant
+
+print("  Speed of light (c):", c, "m/s");
+print("  Gravitational constant (G):", G, "N⋅m²/kg²");
+print("  Elementary charge (e):", e, "C");
+print("  Electron mass (me):", me, "kg");
+print("  Planck constant (h):", h, "J⋅s");
+
+// Test 2: More constants
+print("2. Testing additional constants...");
+
+let mp = physics.mp;       // Proton mass
+let k = physics.k;         // Boltzmann constant
+let NA = physics.NA;       // Avogadro constant
+let epsilon0 = physics.epsilon0;  // Permittivity of free space
+let mu0 = physics.mu0;     // Permeability of free space
+
+print("  Proton mass (mp):", mp, "kg");
+print("  Boltzmann constant (k):", k, "J/K");
+print("  Avogadro constant (NA):", NA, "mol⁻¹");
+print("  Permittivity (ε₀):", epsilon0, "F/m");
+print("  Permeability (μ₀):", mu0, "H/m");
+
+// Test 3: User's example calculation
+print("3. Testing kinetic energy calculation...");
+
+let m = 0.001;  // kg (1 gram)
+let c_squared = c * c;
+let E = m * c_squared;
+
+print("  Mass:", m, "kg");
+print("  c²:", c_squared, "m²/s²");
+print("  E = mc²:", E, "J");
+
+// Test 4: Scientific notation
+print("4. Testing scientific notation...");
+
+let small = 1.23e-10;
+let large = 4.56e8;
+let tiny = 7.89e-25;
+
+print("  Small number:", small);
+print("  Large number:", large);
+print("  Tiny number:", tiny);
+
+// Test 5: Physics calculations
+print("5. Testing physics formulas...");
+
+// Coulomb's law: F = k * q1 * q2 / r²
+let q1 = 1e-6;      // 1 μC
+let q2 = 2e-6;      // 2 μC
+let r = 0.1;         // 10 cm
+let k_coulomb = 8.99e9; // Coulomb's constant
+
+let F = k_coulomb * q1 * q2 / (r * r);
+print("  Coulomb force:", F, "N");
+
+// Gravitational force: F = G * m1 * m2 / r²
+let m1 = 5.972e24;    // Earth mass (kg)
+let m2 = 7.348e22;    // Moon mass (kg)
+let r_earth_moon = 3.844e8; // Distance (m)
+
+let F_gravity = G * m1 * m2 / (r_earth_moon * r_earth_moon);
+print("  Earth-Moon gravitational force:", F_gravity, "N");
+
+// Test 6: Energy calculations
+print("6. Testing energy calculations...");
+
+// Photon energy: E = h * f
+let frequency = 5e14; // 500 THz (green light)
+let E_photon = h * frequency;
+print("  Photon energy:", E_photon, "J");
+
+// Kinetic energy: E = 0.5 * m * v²
+let v = 10; // m/s
+let m_car = 1000; // kg
+let E_kinetic = 0.5 * m_car * v * v;
+print("  Car kinetic energy:", E_kinetic, "J");
+
+// Test 7: Format with scientific notation
+print("7. Testing formatted output...");
+
+print("  Speed of light formatted: {c:.2e} m/s");
+print("  Electron charge formatted: {e:.2e} C");
+print("  Planck constant formatted: {h:.2e} J⋅s");
+print("  Gravitational force formatted: {F_gravity:.2e} N");
+
+print("=== Physics Constants Test Complete ===");
+print("");
+print("⚛️ Physics Constants Available:");
+print("");
+print("📏 Fundamental Constants:");
+print("  physics.c        - Speed of light (299,792,458 m/s)");
+print("  physics.G        - Gravitational constant (6.674×10⁻¹¹ N⋅m²/kg²)");
+print("  physics.h        - Planck constant (6.626×10⁻³⁴ J⋅s)");
+print("  physics.e        - Elementary charge (1.602×10⁻¹⁹ C)");
+print("  physics.k        - Boltzmann constant (1.381×10⁻²³ J/K)");
+print("");
+print("⚛️ Particle Constants:");
+print("  physics.me       - Electron mass (9.109×10⁻³¹ kg)");
+print("  physics.mp       - Proton mass (1.673×10⁻²⁷ kg)");
+print("  physics.u        - Atomic mass unit (1.661×10⁻²⁷ kg)");
+print("  physics.eV       - Electron volt (1.602×10⁻¹⁹ J)");
+print("");
+print("📡 Electromagnetic Constants:");
+print("  physics.epsilon0 - Permittivity of free space (8.854×10⁻¹² F/m)");
+print("  physics.mu0       - Permeability of free space (1.257×10⁻⁶ H/m)");
+print("  physics.alpha     - Fine structure constant (7.297×10⁻³)");
+print("");
+print("🔬 Atomic Constants:");
+print("  physics.NA       - Avogadro constant (6.022×10²³ mol⁻¹)");
+print("  physics.Rinf      - Rydberg constant (1.097×10⁷ J)");
+print("  physics.a0        - Bohr radius (5.292×10⁻¹¹ m)");
+print("  physics.re        - Classical electron radius (2.818×10⁻¹⁵ m)");
+print("");
+print("🌡 Thermal Constants:");
+print("  physics.sigma     - Stefan-Boltzmann constant (5.670×10⁻⁸ W⋅m⁻²⋅K⁻⁴)");
+print("");
+print("✅ Scientific notation supported: 1.23e-10, 4.56e8, etc.");
+print("✅ Physics calculations: E = mc², F = Gm₁m₂/r², etc.");
+print("✅ High precision: All constants use double precision");

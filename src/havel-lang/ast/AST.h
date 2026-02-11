@@ -27,6 +27,10 @@ enum class NodeType {
   LambdaExpression,      // fn(x) -> x * 2, |x| x + 1
   ApplicationExpression, // Curried function application
 
+  // Async/await expressions
+  AsyncExpression, // async { ... }
+  AwaitExpression, // await promise
+
   // Pattern matching (essential for FP)
   MatchExpression,      // match value with | Some(x) -> x | None -> 0
   PatternLiteral,       // Some(x), [head|tail], {x, y}
@@ -1126,15 +1130,46 @@ struct LambdaExpression : public Expression {
   std::vector<std::unique_ptr<Identifier>> parameters;
   std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
 
+  LambdaExpression() { kind = NodeType::LambdaExpression; }
   LambdaExpression(std::vector<std::unique_ptr<Identifier>> params,
-                   std::unique_ptr<Statement> bd)
-      : parameters(std::move(params)), body(std::move(bd)) {
+                   std::unique_ptr<Statement> bdy)
+      : parameters(std::move(params)), body(std::move(bdy)) {
     kind = NodeType::LambdaExpression;
   }
 
   std::string toString() const override {
-    return "Lambda{" + std::to_string(parameters.size()) + " params}";
+    return "LambdaExpression{" + std::to_string(parameters.size()) + " params}";
   }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Async Expression (async { ... })
+struct AsyncExpression : public Expression {
+  std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
+
+  AsyncExpression() { kind = NodeType::AsyncExpression; }
+  AsyncExpression(std::unique_ptr<Statement> bdy) : body(std::move(bdy)) {
+    kind = NodeType::AsyncExpression;
+  }
+
+  std::string toString() const override {
+    return "AsyncExpression{async block}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Await Expression (await promise)
+struct AwaitExpression : public Expression {
+  std::unique_ptr<Expression> argument; // The promise to await
+
+  AwaitExpression() { kind = NodeType::AwaitExpression; }
+  AwaitExpression(std::unique_ptr<Expression> arg) : argument(std::move(arg)) {
+    kind = NodeType::AwaitExpression;
+  }
+
+  std::string toString() const override { return "AwaitExpression{await}"; }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -1356,6 +1391,8 @@ public:
   virtual void visitMemberExpression(const MemberExpression &node) = 0;
 
   virtual void visitLambdaExpression(const LambdaExpression &node) = 0;
+  virtual void visitAsyncExpression(const AsyncExpression &node) = 0;
+  virtual void visitAwaitExpression(const AwaitExpression &node) = 0;
 
   virtual void visitStringLiteral(const StringLiteral &node) = 0;
 
@@ -1610,6 +1647,14 @@ inline void ThrowStatement::accept(ASTVisitor &visitor) const {
 
 inline void UnaryExpression::accept(ASTVisitor &visitor) const {
   visitor.visitUnaryExpression(*this);
+}
+
+inline void AsyncExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAsyncExpression(*this);
+}
+
+inline void AwaitExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAwaitExpression(*this);
 }
 
 inline void UpdateExpression::accept(ASTVisitor &visitor) const {

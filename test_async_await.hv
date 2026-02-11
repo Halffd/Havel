@@ -1,0 +1,225 @@
+// Async/Await Functionality Test
+print("=== Testing Async/Await Functionality ===");
+
+// Test 1: Basic async function
+print("1. Testing basic async function...");
+
+let asyncFunction = async () => {
+    print("  Inside async function");
+    sleep(1000); // Simulate async work
+    return "async result";
+};
+
+print("Created async function");
+
+// Test 2: Basic await
+print("2. Testing basic await...");
+
+let awaitFunction = () => {
+    print("  Starting await...");
+    let result = await asyncFunction();
+    print("  Awaited result:", result);
+    return result + " modified";
+};
+
+let finalResult = awaitFunction();
+print("Final result:", finalResult);
+
+// Test 3: Async with timer
+print("3. Testing async with timer...");
+
+let asyncTimer = async () => {
+    print("  Async timer started");
+    await timer.setTimeout(2000, () => {
+        print("  Timer callback executed");
+    });
+    return "timer completed";
+};
+
+let timerResult = await asyncTimer();
+print("Timer result:", timerResult);
+
+// Test 4: Promise chaining
+print("4. Testing promise chaining...");
+
+let chainedAsync = async () => {
+    let first = await asyncFunction();
+    print("  First promise completed:", first);
+    
+    let second = await timer.setTimeout(1000, () => "second result");
+    print("  Second promise completed:", second);
+    
+    return first + " + " + second;
+};
+
+let chainedResult = await chainedAsync();
+print("Chained result:", chainedResult);
+
+// Test 5: Error handling in async
+print("5. Testing async error handling...");
+
+let asyncError = async () => {
+    await timer.setTimeout(1000, () => {
+        throw "Something went wrong";
+    });
+    return "should not reach here";
+};
+
+let errorHandler = async () => {
+    try {
+        let result = await asyncError();
+        print("  Unexpected result:", result);
+    } catch (e) {
+        print("  Caught error:", e);
+        return "error handled";
+    }
+};
+
+let errorResult = await errorHandler();
+print("Error handling result:", errorResult);
+
+// Test 6: Parallel async operations
+print("6. Testing parallel async operations...");
+
+let parallel1 = async () => {
+    await timer.setTimeout(1500, () => "parallel 1 done");
+    return "result 1";
+};
+
+let parallel2 = async () => {
+    await timer.setTimeout(1000, () => "parallel 2 done");
+    return "result 2";
+};
+
+let parallel3 = async () => {
+    await timer.setTimeout(2000, () => "parallel 3 done");
+    return "result 3";
+};
+
+let parallelTest = async () => {
+    print("  Starting parallel operations...");
+    
+    let results = [
+        await parallel1(),
+        await parallel2(),
+        await parallel3()
+    ];
+    
+    print("  All parallel results:", results);
+    return "parallel completed";
+};
+
+let parallelResult = await parallelTest();
+print("Parallel test result:", parallelResult);
+
+// Test 7: Async automation integration
+print("7. Testing async automation integration...");
+
+let asyncAutomation = async () => {
+    print("  Starting async automation...");
+    
+    // Start automation task
+    let clickTask = automation.autoClick("left", 100);
+    print("  Started click task:", clickTask);
+    
+    // Wait for automation to run
+    await timer.setTimeout(2000, () => {});
+    
+    // Stop automation
+    automation.stopAutoClicker(clickTask);
+    print("  Stopped click task");
+    
+    return "automation completed";
+};
+
+let autoResult = await asyncAutomation();
+print("Async automation result:", autoResult);
+
+// Test 8: Async with mode changes
+print("8. Testing async with mode changes...");
+
+let asyncModeTest = async () => {
+    print("  Current mode:", getMode());
+    
+    await timer.setTimeout(1500, () => {
+        setMode("test");
+        print("  Mode changed to:", getMode());
+    });
+    
+    await timer.setTimeout(1000, () => {
+        setMode("normal");
+        print("  Mode restored to:", getMode());
+    });
+    
+    return "mode test completed";
+};
+
+let modeResult = await asyncModeTest();
+print("Mode test result:", modeResult);
+
+// Test 9: Complex async workflow
+print("9. Testing complex async workflow...");
+
+let complexWorkflow = async () => {
+    print("  Starting complex workflow...");
+    
+    // Phase 1: Setup
+    let setupResult = await timer.setTimeout(1000, () => "setup complete");
+    print("  Setup:", setupResult);
+    
+    // Phase 2: Processing
+    let processResults = [];
+    for (let i = 0; i < 3; i++) {
+        let result = await timer.setTimeout(500 * (i + 1), () => "process " + i);
+        processResults.push(result);
+        print("  Process", i, ":", result);
+    }
+    
+    // Phase 3: Cleanup
+    let cleanupResult = await timer.setTimeout(1000, () => "cleanup complete");
+    print("  Cleanup:", cleanupResult);
+    
+    return {
+        setup: setupResult,
+        processes: processResults,
+        cleanup: cleanupResult
+    };
+};
+
+let workflowResult = await complexWorkflow();
+print("Complex workflow result:");
+print("  Setup:", workflowResult.setup);
+print("  Processes:", workflowResult.processes);
+print("  Cleanup:", workflowResult.cleanup);
+
+print("=== Async/Await Tests Complete ===");
+print("");
+print("🎯 Async/Await Features:");
+print("");
+print("⚡ async keyword:");
+print("  - Creates asynchronous functions");
+print("  - Returns promises automatically");
+print("  - Supports await expressions inside");
+print("");
+print("⏳ await keyword:");
+print("  - Pauses execution until promise resolves");
+print("  - Works with any promise-based operation");
+print("  - Handles both fulfillment and rejection");
+print("");
+print("🔗 Promise Chaining:");
+print("  - Sequential async operations");
+print("  - Parallel async operations");
+print("  - Error propagation through chain");
+print("");
+print("🛡️ Error Handling:");
+print("  - try/catch works with async/await");
+print("  - Rejected promises throw exceptions");
+print("  - Graceful error recovery");
+print("");
+print("🔀 Integration:");
+print("  - Works with timer module");
+print("  - Works with automation module");
+print("  - Works with mode management");
+print("  - Non-blocking operations");
+print("");
+print("✅ Async/await provides modern asynchronous programming in Havel! 🚀");

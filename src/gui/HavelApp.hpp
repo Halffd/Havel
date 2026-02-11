@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/BrightnessManager.hpp"
+#include "core/automation/AutomationManager.hpp"
 #include "gui/SettingsWindow.hpp"
 #include "qt.hpp"
 #include <QIcon>
@@ -73,6 +74,7 @@ public:
   std::shared_ptr<ClipboardManager> clipboardManager;
   std::shared_ptr<AudioManager> audioManager;
   std::shared_ptr<BrightnessManager> brightnessManager;
+  std::shared_ptr<automation::AutomationManager> automationManager;
   std::shared_ptr<net::NetworkManager> networkManager;
 #ifdef ENABLE_HAVEL_LANG
   std::unique_ptr<GUIManager> guiManager;

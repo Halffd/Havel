@@ -1,6 +1,7 @@
 #include "Interpreter.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/automation/AutomationManager.hpp"
 #include "core/io/KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
@@ -1938,6 +1939,8 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeLauncherBuiltins();
   InitializeGUIBuiltins();
   InitializeScreenshotBuiltins();
+  InitializeTimerBuiltins();
+  InitializeAutomationBuiltins();
   InitializeHelpBuiltin();
   // Debug flag
   environment->Define("debug", HavelValue(false));
@@ -5981,6 +5984,611 @@ void Interpreter::InitializeScreenshotBuiltins() {
   if (auto v = environment->Get("screenshot.monitor"))
     (*screenshotMod)["monitor"] = *v;
   environment->Define("screenshot", HavelValue(screenshotMod));
+}
+
+void Interpreter::InitializeAutomationBuiltins() {
+  // === AUTOMATION MODULE ===
+  auto automationMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // AutoClicker functions
+  (*automationMod)["startAutoClicker"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string button = args.empty() ? "left" : ValueToString(args[0]);
+            int intervalMs = args.size() > 1
+                                 ? static_cast<int>(ValueToNumber(args[1]))
+                                 : 100;
+            auto task =
+                app->automationManager->createAutoClicker(button, intervalMs);
+            task->start();
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["stopAutoClicker"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName =
+                args.empty() ? "AutoClicker" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->stop();
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  // AutoKeyPresser functions
+  (*automationMod)["startAutoKeyPresser"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string key = args.empty() ? "space" : ValueToString(args[0]);
+            int intervalMs = args.size() > 1
+                                 ? static_cast<int>(ValueToNumber(args[1]))
+                                 : 100;
+            auto task =
+                app->automationManager->createAutoKeyPresser(key, intervalMs);
+            task->start();
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["stopAutoKeyPresser"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName =
+                args.empty() ? "AutoKeyPresser" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->stop();
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  // AutoRunner functions
+  (*automationMod)["startAutoRunner"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string direction = args.empty() ? "w" : ValueToString(args[0]);
+            int intervalMs =
+                args.size() > 1 ? static_cast<int>(ValueToNumber(args[1])) : 50;
+            auto task =
+                app->automationManager->createAutoRunner(direction, intervalMs);
+            task->start();
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["stopAutoRunner"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName =
+                args.empty() ? "AutoRunner" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->stop();
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  // ChainedTask functions
+  (*automationMod)["createChainedTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "createChainedTask requires name and actions array");
+        }
+
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName = ValueToString(args[0]);
+
+            if (!std::holds_alternative<HavelArray>(args[1])) {
+              return HavelRuntimeError(
+                  "Second argument must be an array of actions");
+            }
+
+            auto actionsArray = std::get<HavelArray>(args[1]);
+            std::vector<havel::automation::AutomationManager::TimedAction>
+                timedActions;
+
+            for (const auto &action : *actionsArray) {
+              if (std::holds_alternative<HavelArray>(action)) {
+                auto actionArray = std::get<HavelArray>(action);
+                if (actionArray->size() >= 2) {
+                  std::string actionStr = ValueToString((*actionArray)[0]);
+                  int delayMs =
+                      static_cast<int>(ValueToNumber((*actionArray)[1]));
+
+                  // Create action function based on string
+                  auto actionFunc = [actionStr]() {
+                    // Parse and execute the action string
+                    if (actionStr == "click") {
+                      if (auto app = HavelApp::instance) {
+                        if (app->io) {
+                          app->io->MouseClick(1); // Left click
+                        }
+                      }
+                    } else if (actionStr == "rightClick") {
+                      if (auto app = HavelApp::instance) {
+                        if (app->io) {
+                          app->io->MouseClick(3); // Right click
+                        }
+                      }
+                    } else if (actionStr.find("key:") == 0) {
+                      std::string key =
+                          actionStr.substr(4); // Remove "key:" prefix
+                      IO::PressKey(key, true); // Key down
+                      std::this_thread::sleep_for(
+                          std::chrono::milliseconds(10));
+                      IO::PressKey(key, false); // Key up
+                    } else if (actionStr.find("wait:") == 0) {
+                      int waitMs = std::stoi(
+                          actionStr.substr(5)); // Remove "wait:" prefix
+                      std::this_thread::sleep_for(
+                          std::chrono::milliseconds(waitMs));
+                    }
+                  };
+
+                  timedActions.push_back(
+                      havel::automation::AutomationManager::makeTimedAction(
+                          actionFunc, delayMs));
+                }
+              }
+            }
+
+            bool loop = args.size() > 2 ? ValueToBool(args[2]) : false;
+            auto task = app->automationManager->createChainedTask(
+                taskName, timedActions, loop);
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["startChainedTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName =
+                args.empty() ? "ChainedTask" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->start();
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  (*automationMod)["stopChainedTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName =
+                args.empty() ? "ChainedTask" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->stop();
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  // Task management functions
+  (*automationMod)["getTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName = args.empty() ? "" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              auto taskObj = std::make_shared<
+                  std::unordered_map<std::string, HavelValue>>();
+              (*taskObj)["name"] = HavelValue(task->getName());
+              (*taskObj)["running"] = HavelValue(task->isRunning());
+              return HavelValue(taskObj);
+            }
+          }
+        }
+        return HavelValue(nullptr);
+      });
+
+  (*automationMod)["hasTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName = args.empty() ? "" : ValueToString(args[0]);
+            bool hasTask = app->automationManager->hasTask(taskName);
+            return HavelValue(hasTask);
+          }
+        }
+        return HavelValue(false);
+      });
+
+  (*automationMod)["removeTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName = args.empty() ? "" : ValueToString(args[0]);
+            app->automationManager->removeTask(taskName);
+            return HavelValue(true);
+          }
+        }
+        return HavelValue(false);
+      });
+
+  (*automationMod)["stopAllTasks"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            app->automationManager->stopAll();
+            return HavelValue(true);
+          }
+        }
+        return HavelValue(false);
+      });
+
+  (*automationMod)["toggleTask"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string taskName = args.empty() ? "" : ValueToString(args[0]);
+            auto task = app->automationManager->getTask(taskName);
+            if (task) {
+              task->toggle();
+              return HavelValue(task->isRunning());
+            }
+          }
+        }
+        return HavelValue(false);
+      });
+
+  // Convenience functions for common automation patterns
+  (*automationMod)["autoClick"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string button = args.empty() ? "left" : ValueToString(args[0]);
+            int intervalMs = args.size() > 1
+                                 ? static_cast<int>(ValueToNumber(args[1]))
+                                 : 100;
+            auto task =
+                app->automationManager->createAutoClicker(button, intervalMs);
+            task->toggle(); // Start the task
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["autoPress"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string key = args.empty() ? "space" : ValueToString(args[0]);
+            int intervalMs = args.size() > 1
+                                 ? static_cast<int>(ValueToNumber(args[1]))
+                                 : 100;
+            auto task =
+                app->automationManager->createAutoKeyPresser(key, intervalMs);
+            task->toggle(); // Start the task
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  (*automationMod)["autoRun"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (auto app = HavelApp::instance) {
+          if (app->automationManager) {
+            std::string direction = args.empty() ? "w" : ValueToString(args[0]);
+            int intervalMs =
+                args.size() > 1 ? static_cast<int>(ValueToNumber(args[1])) : 50;
+            auto task =
+                app->automationManager->createAutoRunner(direction, intervalMs);
+            task->toggle(); // Start the task
+            return HavelValue(task->getName());
+          }
+        }
+        return HavelRuntimeError("AutomationManager not available");
+      });
+
+  environment->Define("automation", HavelValue(automationMod));
+}
+
+void Interpreter::InitializeTimerBuiltins() {
+  // === TIMER MODULE ===
+  auto timerMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // Thread-safe setTimeout function
+  (*timerMod)["setTimeout"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2) {
+          return HavelRuntimeError("setTimeout requires callback and delay");
+        }
+
+        int delayMs = static_cast<int>(ValueToNumber(args[0]));
+
+        // Validate callback
+        if (!std::holds_alternative<HavelFunction>(args[1])) {
+          return HavelRuntimeError(
+              "setTimeout second argument must be a function");
+        }
+
+        auto callback = std::get<HavelFunction>(args[1]);
+
+        // Thread-safe timer creation and management
+        int timerId;
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          timerId = nextTimerId++;
+        }
+
+        // Create timer with exception safety
+        try {
+          auto timer = havel::SetTimeout(delayMs, [this, callback, timerId]() {
+            // Execute callback with thread safety
+            try {
+              // Direct callback execution with empty args
+              auto result = callback({});
+              if (std::holds_alternative<HavelRuntimeError>(result)) {
+                error("Timer {} callback failed: {}", timerId,
+                      std::get<HavelRuntimeError>(result).message);
+              }
+            } catch (const std::exception &e) {
+              error("Timer {} callback threw exception: {}", timerId, e.what());
+            } catch (...) {
+              error("Timer {} callback threw unknown exception", timerId);
+            }
+
+            // Thread-safe cleanup
+            {
+              std::lock_guard<std::mutex> lock(timersMutex);
+              timers.erase(timerId);
+            }
+          });
+
+          // Thread-safe timer storage
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            timers[timerId] = timer;
+          }
+
+          return HavelValue(timerId);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to create timer: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  // Thread-safe setInterval function
+  (*timerMod)["setInterval"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "setInterval requires callback and interval");
+        }
+
+        int intervalMs = static_cast<int>(ValueToNumber(args[0]));
+
+        // Validate callback
+        if (!std::holds_alternative<HavelFunction>(args[1])) {
+          return HavelRuntimeError(
+              "setInterval second argument must be a function");
+        }
+
+        auto callback = std::get<HavelFunction>(args[1]);
+
+        // Thread-safe timer creation and management
+        int timerId;
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          timerId = nextTimerId++;
+        }
+
+        // Create interval timer with exception safety
+        try {
+          auto timer = havel::SetInterval(intervalMs, [this, callback,
+                                                       timerId]() {
+            // Execute callback with thread safety
+            try {
+              // Create a call expression to execute the function
+              ast::CallExpression callExpr;
+              callExpr.callee = std::make_unique<ast::Identifier>(
+                  callback->declaration->symbol);
+              auto result = Evaluate(callExpr);
+              if (std::holds_alternative<HavelRuntimeError>(result)) {
+                error("Interval {} callback failed: {}", timerId,
+                      std::get<HavelRuntimeError>(result).message);
+              }
+            } catch (const std::exception &e) {
+              error("Interval {} callback threw exception: {}", timerId,
+                    e.what());
+            } catch (...) {
+              error("Interval {} callback threw unknown exception", timerId);
+            }
+            // Note: Don't erase interval timers on callback completion
+          });
+
+          // Thread-safe timer storage
+          {
+            std::lock_guard<std::mutex> lock(timersMutex);
+            timers[timerId] = timer;
+          }
+
+          return HavelValue(timerId);
+        } catch (const std::exception &e) {
+          return HavelRuntimeError("Failed to create interval: " +
+                                   std::string(e.what()));
+        }
+      });
+
+  // Thread-safe clearTimeout function
+  (*timerMod)["clearTimeout"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clearTimeout requires timer ID");
+        }
+
+        int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+        // Thread-safe timer cleanup
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          auto it = timers.find(timerId);
+          if (it != timers.end()) {
+            havel::StopTimer(it->second);
+            timers.erase(it);
+            return HavelValue(true);
+          }
+        }
+
+        return HavelValue(false);
+      });
+
+  // Thread-safe clearInterval function
+  (*timerMod)["clearInterval"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clearInterval requires timer ID");
+        }
+
+        int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+        // Thread-safe timer cleanup
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          auto it = timers.find(timerId);
+          if (it != timers.end()) {
+            havel::StopTimer(it->second);
+            timers.erase(it);
+            return HavelValue(true);
+          }
+        }
+
+        return HavelValue(false);
+      });
+
+  // Thread-safe stopTimer function (unified)
+  (*timerMod)["stopTimer"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("stopTimer requires timer ID");
+        }
+
+        int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+        // Thread-safe timer cleanup
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          auto it = timers.find(timerId);
+          if (it != timers.end()) {
+            havel::StopTimer(it->second);
+            timers.erase(it);
+            return HavelValue(true);
+          }
+        }
+
+        return HavelValue(false);
+      });
+
+  // Thread-safe getTimerStatus function
+  (*timerMod)["getTimerStatus"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("getTimerStatus requires timer ID");
+        }
+
+        int timerId = static_cast<int>(ValueToNumber(args[0]));
+
+        // Thread-safe timer status check
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          auto it = timers.find(timerId);
+          if (it != timers.end()) {
+            auto statusObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*statusObj)["id"] = HavelValue(timerId);
+            (*statusObj)["running"] = HavelValue(it->second->load());
+            return HavelValue(statusObj);
+          }
+        }
+
+        return HavelValue(nullptr);
+      });
+
+  // Thread-safe cleanupAllTimers function
+  (*timerMod)["cleanupAllTimers"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        // Thread-safe cleanup of all timers
+        std::unordered_map<int, std::shared_ptr<std::atomic<bool>>>
+            timersToStop;
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          timersToStop = timers;
+          timers.clear();
+        }
+
+        // Stop all timers outside the lock to avoid deadlock
+        for (const auto &[timerId, timer] : timersToStop) {
+          havel::StopTimer(timer);
+        }
+
+        return HavelValue(static_cast<int>(timersToStop.size()));
+      });
+
+  // Thread-safe getActiveTimers function
+  (*timerMod)["getActiveTimers"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        // Thread-safe get all active timers
+        std::vector<int> activeTimerIds;
+        {
+          std::lock_guard<std::mutex> lock(timersMutex);
+          activeTimerIds.reserve(timers.size());
+          for (const auto &[timerId, timer] : timers) {
+            if (timer->load()) {
+              activeTimerIds.push_back(timerId);
+            }
+          }
+        }
+
+        // Convert to Havel array
+        auto timerArray = std::make_shared<std::vector<HavelValue>>();
+        for (int timerId : activeTimerIds) {
+          timerArray->push_back(HavelValue(timerId));
+        }
+
+        return HavelValue(timerArray);
+      });
+
+  environment->Define("timer", HavelValue(timerMod));
 }
 
 void Interpreter::InitializeHelpBuiltin() {

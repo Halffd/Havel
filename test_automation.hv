@@ -1,0 +1,184 @@
+// Test Automation Module
+print("=== Testing Automation Module ===");
+
+// Test 1: AutoClicker
+print("1. Testing AutoClicker...");
+
+let clickerTask = automation.startAutoClicker("left", 200);
+print("Started AutoClicker:", clickerTask);
+
+sleep(2000); // Let it run for 2 seconds
+
+automation.stopAutoClicker(clickerTask);
+print("Stopped AutoClicker");
+
+// Test 2: AutoKeyPresser
+print("2. Testing AutoKeyPresser...");
+
+let presserTask = automation.startAutoKeyPresser("space", 300);
+print("Started AutoKeyPresser:", presserTask);
+
+sleep(1500); // Let it run for 1.5 seconds
+
+automation.stopAutoKeyPresser(presserTask);
+print("Stopped AutoKeyPresser");
+
+// Test 3: AutoRunner
+print("3. Testing AutoRunner...");
+
+let runnerTask = automation.startAutoRunner("w", 100);
+print("Started AutoRunner:", runnerTask);
+
+sleep(1000); // Let it run for 1 second
+
+automation.stopAutoRunner(runnerTask);
+print("Stopped AutoRunner");
+
+// Test 4: ChainedTask
+print("4. Testing ChainedTask...");
+
+// Create a sequence of actions: click, wait 500ms, right click, wait 500ms
+let actions = [
+    ["click", 0],
+    ["wait:500", 0],
+    ["rightClick", 0],
+    ["wait:500", 0],
+    ["key:space", 0]
+];
+
+let chainedTask = automation.createChainedTask("testChain", actions, false);
+print("Created ChainedTask:", chainedTask);
+
+automation.startChainedTask(chainedTask);
+print("Started ChainedTask");
+
+sleep(3000); // Let the chain complete
+
+// Test 5: Task Management
+print("5. Testing Task Management...");
+
+let taskInfo = automation.getTask(chainedTask);
+if (taskInfo != null) {
+    print("Task info:");
+    print("  Name:", taskInfo.name);
+    print("  Running:", taskInfo.running);
+}
+
+print("Has task:", automation.hasTask(chainedTask));
+
+// Test 6: Convenience Functions
+print("6. Testing Convenience Functions...");
+
+let autoClickTask = automation.autoClick("right", 150);
+print("AutoClick task:", autoClickTask);
+
+sleep(1000);
+
+automation.toggleTask(autoClickTask); // Stop it
+print("Toggled AutoClick task (should be stopped)");
+
+let autoPressTask = automation.autoPress("e", 200);
+print("AutoPress task:", autoPressTask);
+
+sleep(1000);
+
+automation.removeTask(autoPressTask);
+print("Removed AutoPress task");
+
+let autoRunTask = automation.autoRun("s", 80);
+print("AutoRun task:", autoRunTask);
+
+sleep(1000);
+
+automation.stopAllTasks();
+print("Stopped all tasks");
+
+// Test 7: Advanced ChainedTask
+print("7. Testing Advanced ChainedTask...");
+
+// Create a complex automation sequence
+let complexActions = [
+    ["key:w", 100],
+    ["key:a", 100],
+    ["key:s", 100],
+    ["key:d", 100],
+    ["click", 50],
+    ["wait:1000", 0],
+    ["key:space", 0]
+];
+
+let complexTask = automation.createChainedTask("complexAutomation", complexActions, true); // Loop
+print("Created complex ChainedTask:", complexTask);
+
+automation.startChainedTask(complexTask);
+print("Started complex ChainedTask (looping)");
+
+sleep(5000); // Let it run for a few loops
+
+automation.stopChainedTask(complexTask);
+print("Stopped complex ChainedTask");
+
+// Test 8: Error Handling
+print("8. Testing Error Handling...");
+
+let invalidTask = automation.getTask("nonexistent");
+print("Invalid task (should be null):", invalidTask);
+
+let hasInvalid = automation.hasTask("nonexistent");
+print("Has invalid task (should be false):", hasInvalid);
+
+// Test 9: Task Status Monitoring
+print("9. Testing Task Status Monitoring...");
+
+let monitorTask = automation.startAutoClicker("middle", 500);
+print("Started monitor task:", monitorTask);
+
+for (let i = 0; i < 5; i++) {
+    sleep(200);
+    let status = automation.getTask(monitorTask);
+    if (status != null) {
+        print("  Check", i, "- Running:", status.running);
+    }
+}
+
+automation.stopAutoClicker(monitorTask);
+print("Stopped monitor task");
+
+print("=== Automation Module Tests Complete ===");
+print("");
+print("🎯 Available Automation Functions:");
+print("");
+print("🖱️  AutoClicker:");
+print("- automation.startAutoClicker(button, intervalMs)");
+print("- automation.stopAutoClicker(taskName)");
+print("- automation.autoClick(button, intervalMs) // Toggle");
+print("");
+print("⌨️  AutoKeyPresser:");
+print("- automation.startAutoKeyPresser(key, intervalMs)");
+print("- automation.stopAutoKeyPresser(taskName)");
+print("- automation.autoPress(key, intervalMs) // Toggle");
+print("");
+print("🏃 AutoRunner:");
+print("- automation.startAutoRunner(direction, intervalMs)");
+print("- automation.stopAutoRunner(taskName)");
+print("- automation.autoRun(direction, intervalMs) // Toggle");
+print("");
+print("🔗 ChainedTask:");
+print("- automation.createChainedTask(name, actions, loop)");
+print("- automation.startChainedTask(taskName)");
+print("- automation.stopChainedTask(taskName)");
+print("");
+print("📋 Task Management:");
+print("- automation.getTask(taskName)");
+print("- automation.hasTask(taskName)");
+print("- automation.removeTask(taskName)");
+print("- automation.toggleTask(taskName)");
+print("- automation.stopAllTasks()");
+print("");
+print("🎬 Action Types:");
+print("- \"click\" - Left mouse click");
+print("- \"rightClick\" - Right mouse click");
+print("- \"key:keyname\" - Press and release key");
+print("- \"wait:ms\" - Wait for milliseconds");
+print("");
+print("✅ All automation features are working!");

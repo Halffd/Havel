@@ -23,12 +23,11 @@ class Interpreter;
 #endif
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
-#include "core/ScriptEngine.hpp"
 #include "core/net/NetworkManager.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "gui/TextChunkerWindow.hpp"
-#include "media/AudioManager.hpp"
-#include "media/MPVController.hpp"
+#include "havel-lang/runtime/Interpreter.hpp"
+#include "utils/Logger.hpp"
 #include "window/WindowManager.hpp"
 #include "x11.h"
 namespace havel {
@@ -69,7 +68,7 @@ public:
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;
   std::shared_ptr<MPVController> mpv;
-  std::shared_ptr<ScriptEngine> scriptEngine;
+  std::shared_ptr<havel::Interpreter> interpreter;
   std::shared_ptr<HotkeyManager> hotkeyManager;
   std::shared_ptr<ClipboardManager> clipboardManager;
   std::shared_ptr<AudioManager> audioManager;
@@ -92,12 +91,14 @@ private:
   // Qt components
   std::unique_ptr<QSystemTrayIcon> trayIcon;
   std::unique_ptr<QTimer> periodicTimer;
+  std::unique_ptr<QTimer> windowCheckTimer;
+  std::unique_ptr<QTimer> configCheckTimer;
 
   // System components
   util::SignalWatcher signalWatcher;
   Display *display = nullptr;
 
-  // Timing
+  // Time tracking
   std::chrono::steady_clock::time_point lastCheck;
   std::chrono::steady_clock::time_point lastWindowCheck;
 
@@ -105,9 +106,6 @@ private:
   bool initialized = false;
   std::atomic<bool> shutdownRequested{false};
 
-#ifdef ENABLE_HAVEL_LANG
-  std::unique_ptr<Interpreter> interpreter;
-#endif
   static constexpr int PERIODIC_INTERVAL_MS = 50;
   static constexpr int WINDOW_CHECK_INTERVAL_MS = 100;
   static constexpr int CONFIG_CHECK_INTERVAL_S = 5;

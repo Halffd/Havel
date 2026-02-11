@@ -135,8 +135,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   }
   info("NetworkManager initialized successfully");
 
+  // Create interpreter (replaces ScriptEngine)
+  interpreter = std::make_shared<havel::Interpreter>();
+  if (!interpreter) {
+    throw std::runtime_error("Failed to create Interpreter");
+  }
+  info("Havel interpreter initialized successfully");
+
   hotkeyManager = std::make_shared<HotkeyManager>(
-      *io, *windowManager, *mpv, *audioManager, *scriptEngine,
+      *io, *windowManager, *mpv, *audioManager, *interpreter,
       *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager,
       networkManager);
   if (!hotkeyManager) {
@@ -349,16 +356,19 @@ void HavelApp::setupSignalHandling() {
 
         if (hotkeyManager) {
           hotkeyManager->cleanup();
-          hotkeyManager.reset();
         }
-
-        scriptEngine.reset();
+        hotkeyManager.reset();
         mpv.reset();
 
         // Skip compositor and window manager cleanup for speed
         // WindowManager::ShutdownCompositorBridge();
         windowManager.reset();
 
+        // Reset IO safely
+        if (io) {
+          io->cleanup();
+          io.reset();
+        }
         // Don't call full io->cleanup() since we already did emergency cleanup
         io.reset();
 
@@ -465,7 +475,6 @@ void HavelApp::cleanup() noexcept {
     hotkeyManager.reset();
   }
 
-  scriptEngine.reset();
   mpv.reset();
 
   // Shutdown compositor bridge before window manager

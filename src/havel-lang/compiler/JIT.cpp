@@ -8,7 +8,7 @@ JIT::JIT() {
 }
 
 // JIT Hotkey Manager - ULTIMATE PERFORMANCE! ⚡
-void JIT::CompileHotkey(const std::string& combination, const ast::Expression& action) {
+void JIT::CompileHotkey(const std::string& \ombination, const ast::Expression& action) {
     // 1. Generate unique function name
     std::string funcName = "hotkey_" + combination;
     std::replace(funcName.begin(), funcName.end(), '+', '_');

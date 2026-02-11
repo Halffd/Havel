@@ -105,19 +105,19 @@ void HotkeyManager::Zoom(int zoom) {
   else if (zoom > 4)
     zoom = 4;
 
-    if (zoom == 1) {
-      io.Send("@^{Up}");
-      zoomLevel += 0.1;
-    } else if (zoom == 0) {
-      io.Send("@^{Down}");
-      zoomLevel -= 0.1;
-    } else if (zoom == 2) {
-      io.Send("@^/");
-      zoomLevel = 1.0;
-    } else if (zoom == 3) {
-      io.Send("@^+/");
-      zoomLevel = 1.5;
-    }
+  if (zoom == 1) {
+    io.Send("@^{Up}");
+    zoomLevel += 0.1;
+  } else if (zoom == 0) {
+    io.Send("@^{Down}");
+    zoomLevel -= 0.1;
+  } else if (zoom == 2) {
+    io.Send("@^/");
+    zoomLevel = 1.0;
+  } else if (zoom == 3) {
+    io.Send("@^+/");
+    zoomLevel = 1.5;
+  }
   if (zoomLevel < 1.0) {
     zoomLevel = 1.0;
   } else if (zoomLevel > 100.0) {
@@ -190,11 +190,11 @@ void HotkeyManager::printHotkeys() const {
 }
 HotkeyManager::HotkeyManager(
     IO &io, WindowManager &windowManager, MPVController &mpv,
-    AudioManager &audioManager, ScriptEngine &scriptEngine,
+    AudioManager &audioManager, havel::Interpreter &interpreter,
     ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager,
     std::shared_ptr<net::NetworkManager> networkManager)
     : io(io), windowManager(windowManager), mpv(mpv),
-      audioManager(audioManager), scriptEngine(scriptEngine),
+      audioManager(audioManager), interpreter(interpreter),
       brightnessManager(brightnessManager),
       screenshotManager(screenshotManager), networkManager(networkManager) {
   mouseController = std::make_unique<MouseController>(io);
@@ -507,7 +507,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       [this]() {
-          Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+        Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
       },                 // Tap action
       [this]() -> bool { // Tap condition function
         // Don't trigger in gaming mode
@@ -532,10 +532,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
-      io, *this, "ralt",
-      [this]() {
-          WindowManager::MoveWindowToNextMonitor();
-      },
+      io, *this, "ralt", [this]() { WindowManager::MoveWindowToNextMonitor(); },
       "", nullptr, "", false, true);
   ralt->setup();
 
@@ -632,15 +629,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
   });
   // Context-sensitive hotkeys
-  AddHotkey(
-      "@|kc89",
-      [this]() { 
-        if (zoomLevel <= 1.0) {
-          Zoom(3);
-        } else {
-          Zoom(2);
-        }
-      });
+  AddHotkey("@|kc89", [this]() {
+    if (zoomLevel <= 1.0) {
+      Zoom(3);
+    } else {
+      Zoom(2);
+    }
+  });
   AddContextualHotkey(
       "!x", "!(window.title ~ 'emacs' || window.title ~c 'alacritty')",
       [=]() {
@@ -877,10 +872,12 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
 
   AddHotkey("~^Down", [this]() {
-    if(zoomLevel > 1.0) zoomLevel -= 0.1;
+    if (zoomLevel > 1.0)
+      zoomLevel -= 0.1;
   });
   AddHotkey("~^Up", [this]() {
-    if(zoomLevel < 2.0) zoomLevel += 0.1;
+    if (zoomLevel < 2.0)
+      zoomLevel += 0.1;
   });
   // Mouse wheel + click combinations
   io.Hotkey("@^#WheelUp", [this]() { io.Send("#{PgUp}"); });

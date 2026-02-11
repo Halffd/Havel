@@ -7,13 +7,13 @@
 #include "ConditionalHotkeyManager.hpp"
 #include "ConfigManager.hpp"
 #include "IO.hpp"
-#include "ScriptEngine.hpp"
 #include "automation/AutoClicker.hpp"
 #include "automation/AutoKeyPresser.hpp"
 #include "automation/AutoRunner.hpp"
 #include "automation/AutomationManager.hpp"
 #include "core/io/KeyTap.hpp"
 #include "gui/ScreenshotManager.hpp"
+#include "havel-lang/runtime/Interpreter.hpp"
 #include "io/MouseController.hpp"
 #include "media/AudioManager.hpp"
 #include "net/NetworkManager.hpp"
@@ -46,7 +46,7 @@ class MPVController; // Forward declaration
 class HotkeyManager {
 public:
   HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
-                AudioManager &audioManager, ScriptEngine &scriptEngine,
+                AudioManager &audioManager, havel::Interpreter &interpreter,
                 ScreenshotManager &screenshotManager,
                 BrightnessManager &brightnessManager,
                 std::shared_ptr<net::NetworkManager> networkManager);
@@ -253,7 +253,7 @@ private:
   WindowManager &windowManager;
   MPVController &mpv;
   AudioManager &audioManager;
-  ScriptEngine &scriptEngine;
+  havel::Interpreter &interpreter;
   ScreenshotManager &screenshotManager;
   BrightnessManager &brightnessManager;
   std::shared_ptr<net::NetworkManager> networkManager;

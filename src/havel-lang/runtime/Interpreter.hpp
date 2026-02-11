@@ -74,12 +74,15 @@ using BuiltinFunction =
 // Forward declaration for Promise
 // struct Promise; // Temporarily disabled to fix build
 
+// Forward declarations
+class Channel;
+template <typename T> class Atomic;
+
 // Value type for the interpreter
 struct HavelValue
     : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
                    HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   // std::shared_ptr<Promise>, // Temporarily disabled
-                   BuiltinFunction> {
+                   std::shared_ptr<Channel>, BuiltinFunction> {
   using std::variant::variant;
 };
 
@@ -94,66 +97,151 @@ struct BreakValue {};
 // Continue value wrapper
 struct ContinueValue {};
 
-/*
-// Promise for async/await - Temporarily disabled
-struct Promise {
-  enum class State { Pending, Fulfilled, Rejected } state = State::Pending;
-  HavelValue value;
-  std::string error;
-  std::vector<std::function<void()>> thenCallbacks;
-  std::vector<std::function<void(const std::string &)>> catchCallbacks;
+// Cooperative async scheduler
+class AsyncScheduler {
+public:
+  struct Task {
+    std::function<HavelResult()> func;
+    std::string id;
+    bool completed = false;
+    HavelResult result;
 
-  Promise() = default;
+    Task(std::function<HavelResult()> f, const std::string &name = "")
+        : func(std::move(f)), id(name) {}
+  };
 
-  void fulfill(const HavelValue &result) {
-    if (state == State::Pending) {
-      state = State::Fulfilled;
-      value = result;
-      for (auto &callback : thenCallbacks) {
-        callback();
+private:
+  std::queue<std::unique_ptr<Task>> taskQueue;
+  std::unique_ptr<Task> currentTask;
+  std::unordered_map<std::string, std::unique_ptr<Task>> waitingTasks;
+
+public:
+  static AsyncScheduler &getInstance() {
+    static AsyncScheduler instance;
+    return instance;
+  }
+
+  void spawn(std::function<HavelResult()> func, const std::string &name = "") {
+    auto task = std::make_unique<Task>(std::move(func), name);
+    taskQueue.push(std::move(task));
+  }
+
+  HavelResult await(const std::string &taskId) {
+    auto it = waitingTasks.find(taskId);
+    if (it != waitingTasks.end()) {
+      auto task = std::move(it->second);
+      waitingTasks.erase(it);
+      currentTask = std::move(task);
+
+      // Execute the task cooperatively
+      while (!currentTask->completed) {
+        auto result = currentTask->func();
+        if (std::holds_alternative<ReturnValue>(result)) {
+          // Task yielded, continue later
+          break;
+        } else {
+          // Task completed
+          currentTask->completed = true;
+          currentTask->result = result;
+        }
       }
-      thenCallbacks.clear();
-      catchCallbacks.clear();
+
+      return currentTask->result;
     }
+    return HavelRuntimeError("Task not found: " + taskId);
   }
 
-  void reject(const std::string &errorMsg) {
-    if (state == State::Pending) {
-      state = State::Rejected;
-      error = errorMsg;
-      for (auto &callback : catchCallbacks) {
-        callback(errorMsg);
+  void yield() {
+    // Cooperative yielding - return control to scheduler
+  }
+
+  bool step() {
+    if (currentTask && !currentTask->completed) {
+      auto result = currentTask->func();
+      if (std::holds_alternative<ReturnValue>(result)) {
+        return true; // Continue running current task
+      } else {
+        currentTask->completed = true;
+        currentTask->result = result;
+        currentTask.reset();
+        return true;
       }
-      thenCallbacks.clear();
-      catchCallbacks.clear();
     }
+
+    if (!taskQueue.empty()) {
+      currentTask = std::move(taskQueue.front());
+      taskQueue.pop();
+      return true;
+    }
+
+    return false;
   }
 
-  void then(std::function<void()> callback) {
-    if (state == State::Fulfilled) {
-      callback();
-    } else if (state == State::Pending) {
-      thenCallbacks.push_back(callback);
-    }
-  }
-
-  void catch_(std::function<void(const std::string &)> callback) {
-    if (state == State::Rejected) {
-      callback(error);
-    } else if (state == State::Pending) {
-      catchCallbacks.push_back(callback);
-    }
+  std::string getCurrentTaskId() const {
+    return currentTask ? currentTask->id : "";
   }
 };
-*/
 
-// Value type for interpreter
-struct HavelValue
-    : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
-                   HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   // std::shared_ptr<Promise>, // Temporarily disabled
-                   BuiltinFunction> {
-  using std::variant::variant;
+// Channel for message passing
+class Channel {
+private:
+  std::queue<HavelValue> messages;
+  std::vector<std::function<void()>> waiters;
+
+public:
+  void send(const HavelValue &msg) {
+    messages.push(msg);
+    if (!waiters.empty()) {
+      auto waiter = waiters.back();
+      waiters.pop_back();
+      waiter();
+    }
+  }
+
+  std::function<HavelResult()> recv() {
+    return [this]() -> HavelResult {
+      if (messages.empty()) {
+        return HavelRuntimeError("No message available");
+      }
+      auto msg = messages.front();
+      messages.pop();
+      return msg;
+    };
+  }
+
+  bool isEmpty() const { return messages.empty(); }
+};
+
+// Atomic values (simple numbers and booleans only)
+template <typename T> class Atomic {
+private:
+  T value;
+  std::atomic<bool> lock{false};
+
+public:
+  Atomic(T initial) : value(initial) {}
+
+  T get() const {
+    while (lock.exchange(true)) {
+    } // Spin wait
+    T result = value;
+    lock.store(false);
+    return result;
+  }
+
+  void set(T newValue) {
+    while (lock.exchange(true)) {
+    } // Spin wait
+    value = newValue;
+    lock.store(false);
+  }
+
+  Atomic &operator=(const T &newValue) {
+    set(newValue);
+    return *this;
+  }
+
+  operator T() const { return get(); }
 };
 
 // Environment class
@@ -325,6 +413,7 @@ private:
   void InitializeScreenshotBuiltins();
   void InitializeTimerBuiltins();
   void InitializeAutomationBuiltins();
+  void InitializeAsyncBuiltins();
   void InitializeHelpBuiltin();
 };
 

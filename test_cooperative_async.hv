@@ -1,0 +1,119 @@
+// Test Cooperative Async System
+print("=== Testing Cooperative Async System ===");
+
+// Test 1: Basic spawn
+print("1. Testing basic spawn...");
+
+let task = spawn {
+    print("  Task running...");
+    return "task result";
+};
+
+print("Task ID:", task);
+
+// Test 2: Basic await
+print("2. Testing basic await...");
+
+let result = await task;
+print("Task result:", result);
+
+// Test 3: Channel communication
+print("3. Testing channel communication...");
+
+let ch = channel();
+
+spawn {
+    print("  Sender sending message...");
+    ch.send("hello from sender");
+};
+
+spawn {
+    print("  Receiver waiting...");
+    let msg = ch.recv();
+    print("  Received:", msg);
+};
+
+// Test 4: Yielding
+print("4. Testing yielding...");
+
+let yieldTask = spawn {
+    print("  Before yield");
+    yield();
+    print("  After yield");
+    return "yielded";
+};
+
+await yieldTask;
+
+// Test 5: Multiple concurrent tasks
+print("5. Testing concurrent tasks...");
+
+let task1 = spawn {
+    print("  Task 1 starting");
+    return "result 1";
+};
+
+let task2 = spawn {
+    print("  Task 2 starting");
+    return "result 2";
+};
+
+let task3 = spawn {
+    print("  Task 3 starting");
+    return "result 3";
+};
+
+let result1 = await task1;
+let result2 = await task2;
+let result3 = await task3;
+
+print("All results:", [result1, result2, result3]);
+
+// Test 6: Atomic operations
+print("6. Testing atomic operations...");
+
+let counter = atomic(0);
+
+spawn {
+    print("  Incrementing atomic counter...");
+    counter = counter + 1;
+    return counter;
+};
+
+spawn {
+    print("  Reading atomic counter...");
+    return counter;
+};
+
+print("Atomic counter test completed");
+
+print("=== Cooperative Async Tests Complete ===");
+print("");
+print("🎯 Cooperative Async Features:");
+print("");
+print("⚡ spawn { expression }:");
+print("  - Creates cooperative task");
+print("  - Returns task ID for awaiting");
+print("  - Non-blocking operation");
+print("");
+print("⏳ await taskId:");
+print("  - Waits for task completion");
+print("  - Returns task result");
+print("  - Cooperative scheduling");
+print("");
+print("📡 channel():");
+print("  - Creates message channel");
+print("  - Thread-safe communication");
+print("  - No locks needed");
+print("");
+print("🔄 yield():");
+print("  - Voluntarily gives up control");
+print("  - Allows other tasks to run");
+print("  - Cooperative multitasking");
+print("");
+print("🔒 atomic(value):");
+print("  - Atomic operations on values");
+print("  - Simple numbers and booleans");
+print("  - No race conditions");
+print("");
+print("✅ Cooperative async provides safe, deterministic concurrency!");

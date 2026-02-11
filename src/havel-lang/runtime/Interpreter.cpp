@@ -1941,6 +1941,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeScreenshotBuiltins();
   InitializeTimerBuiltins();
   InitializeAutomationBuiltins();
+  InitializeAsyncBuiltins();
   InitializeHelpBuiltin();
   // Debug flag
   environment->Define("debug", HavelValue(false));
@@ -6320,6 +6321,76 @@ void Interpreter::InitializeAutomationBuiltins() {
       });
 
   environment->Define("automation", HavelValue(automationMod));
+}
+
+// Async builtins
+void Interpreter::InitializeAsyncBuiltins() {
+  // spawn function
+  environment->Define(
+      "spawn",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 1) {
+          return HavelRuntimeError("spawn requires 1 argument");
+        }
+
+        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
+          return HavelRuntimeError("spawn requires a function");
+        }
+
+        auto func = std::get<std::shared_ptr<HavelFunction>>(args[0]);
+        std::string taskId = "task_" + std::to_string(std::rand());
+
+        AsyncScheduler::getInstance().spawn(
+            [this, func]() -> HavelResult {
+              return Evaluate(*func->declaration->body);
+            },
+            taskId);
+
+        return taskId;
+      }));
+
+  // await function
+  environment->Define(
+      "await",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() != 1) {
+              return HavelRuntimeError("await requires 1 argument");
+            }
+
+            if (!std::holds_alternative<std::string>(args[0])) {
+              return HavelRuntimeError("await requires a task ID string");
+            }
+
+            std::string taskId = std::get<std::string>(args[0]);
+            return AsyncScheduler::getInstance().await(taskId);
+          }));
+
+  // channel function
+  environment->Define(
+      "channel",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() != 0) {
+              return HavelRuntimeError("channel takes no arguments");
+            }
+
+            auto channel = std::make_shared<Channel>();
+            return HavelValue(channel);
+          }));
+
+  // yield function
+  environment->Define(
+      "yield", BuiltinFunction(
+                   [this](const std::vector<HavelValue> &args) -> HavelResult {
+                     if (args.size() != 0) {
+                       return HavelRuntimeError("yield takes no arguments");
+                     }
+
+                     AsyncScheduler::getInstance().yield();
+                     return HavelValue(nullptr);
+                   }));
 }
 
 void Interpreter::InitializeTimerBuiltins() {

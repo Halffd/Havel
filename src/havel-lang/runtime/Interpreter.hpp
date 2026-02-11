@@ -71,12 +71,16 @@ using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue,
 using BuiltinFunction =
     std::function<HavelResult(const std::vector<HavelValue> &)>;
 
+// Forward declaration for Promise
+// struct Promise; // Temporarily disabled to fix build
+
 // Value type for the interpreter
 struct HavelValue
     : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
                    HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   std::shared_ptr<Promise>, BuiltinFunction> {
-  using variant::variant;
+                   // std::shared_ptr<Promise>, // Temporarily disabled
+                   BuiltinFunction> {
+  using std::variant::variant;
 };
 
 // Return value wrapper
@@ -90,7 +94,8 @@ struct BreakValue {};
 // Continue value wrapper
 struct ContinueValue {};
 
-// Promise for async/await
+/*
+// Promise for async/await - Temporarily disabled
 struct Promise {
   enum class State { Pending, Fulfilled, Rejected } state = State::Pending;
   HavelValue value;
@@ -140,12 +145,14 @@ struct Promise {
     }
   }
 };
+*/
 
-// Value type for the interpreter
+// Value type for interpreter
 struct HavelValue
     : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
                    HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   std::shared_ptr<Promise>, BuiltinFunction> {
+                   // std::shared_ptr<Promise>, // Temporarily disabled
+                   BuiltinFunction> {
   using std::variant::variant;
 };
 

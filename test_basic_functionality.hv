@@ -1,0 +1,20 @@
+// Simple test to verify basic functionality
+print("Testing basic Havel functionality...");
+
+// Test basic math
+print("2 + 3 =", 2 + 3);
+
+// Test string operations
+let greeting = "Hello, World!";
+print("Greeting:", greeting);
+
+// Test array operations
+let numbers = [1, 2, 3, 4, 5];
+print("Numbers:", numbers);
+print("Length:", numbers.length);
+
+// Test function definition
+let add = (a, b) => a + b;
+print("add(10, 20) =", add(10, 20));
+
+print("Basic test completed successfully!");

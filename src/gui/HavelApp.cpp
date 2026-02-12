@@ -135,10 +135,21 @@ void HavelApp::initializeComponents(bool isStartup) {
   }
   info("NetworkManager initialized successfully");
 
-  interpreter = std::make_shared<havel::Interpreter>();
+#ifdef ENABLE_HAVEL_LANG
+  std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
+  interpreter = std::make_unique<Interpreter>(
+      *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
+      audioManager.get(), guiManager.get(),
+      AutomationSuite::Instance()->getScreenshotManager());
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
+  std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+#else
+  interpreter = nullptr;
+  std::cerr << "[DEBUG] Havel language disabled, interpreter is null"
+            << std::endl;
+#endif
   info("Havel interpreter initialized successfully");
 
   hotkeyManager = std::make_shared<HotkeyManager>(
@@ -292,6 +303,10 @@ void HavelApp::initializeComponents(bool isStartup) {
         audioManager.get(), guiManager.get(),
         AutomationSuite::Instance()->getScreenshotManager());
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+#else
+    interpreter = nullptr;
+    std::cerr << "[DEBUG] Havel language disabled, interpreter is null"
+              << std::endl;
 #endif
   }
 

@@ -1,0 +1,276 @@
+// Jest-like Test Suite for Havel
+print("🧪 Havel Test Suite");
+
+// Test 1: Basic arithmetic
+describe("Basic Arithmetic", () => {
+    test("addition works", () => {
+        expect(2 + 3).toEqual(5);
+        expect(10 + 20).toEqual(30);
+    });
+    
+    test("subtraction works", () => {
+        expect(10 - 3).toEqual(7);
+        expect(5 - 5).toEqual(0);
+    });
+    
+    test("multiplication works", () => {
+        expect(4 * 5).toEqual(20);
+        expect(0 * 100).toEqual(0);
+    });
+    
+    test("division works", () => {
+        expect(20 / 4).toEqual(5);
+        expect(7 / 2).toEqual(3.5);
+    });
+});
+
+// Test 2: String operations
+describe("String Operations", () => {
+    test("string concatenation", () => {
+        expect("hello" + " " + "world").toEqual("hello world");
+        expect("a" + "b" + "c").toEqual("abc");
+    });
+    
+    test("string length", () => {
+        expect("hello".length).toEqual(5);
+        expect("".length).toEqual(0);
+    });
+    
+    test("string methods", () => {
+        expect("hello world".includes("world")).toBe(true);
+        expect("hello world".startsWith("hello")).toBe(true);
+        expect("hello world".endsWith("world")).toBe(true);
+    });
+});
+
+// Test 3: Array operations
+describe("Array Operations", () => {
+    test("array creation and access", () => {
+        let arr = [1, 2, 3, 4, 5];
+        expect(arr.length).toEqual(5);
+        expect(arr[0]).toEqual(1);
+        expect(arr[4]).toEqual(5);
+    });
+    
+    test("array methods", () => {
+        let arr = [1, 2, 3, 4, 5];
+        expect(arr.includes(3)).toBe(true);
+        expect(arr.indexOf(4)).toEqual(3);
+    });
+    
+    test("array push and pop", () => {
+        let arr = [1, 2, 3];
+        arr.push(4);
+        expect(arr.length).toEqual(4);
+        expect(arr[3]).toEqual(4);
+        
+        let popped = arr.pop();
+        expect(popped).toEqual(4);
+        expect(arr.length).toEqual(3);
+    });
+});
+
+// Test 4: Object operations
+describe("Object Operations", () => {
+    test("object creation and access", () => {
+        let obj = {name: "Alice", age: 30, city: "New York"};
+        expect(obj.name).toEqual("Alice");
+        expect(obj.age).toEqual(30);
+        expect(obj.city).toEqual("New York");
+    });
+    
+    test("object methods", () => {
+        let obj = {name: "Bob", age: 25};
+        expect(obj.hasOwnProperty("name")).toBe(true);
+        expect(obj.hasOwnProperty("email")).toBe(false);
+    });
+    
+    test("object property modification", () => {
+        let obj = {count: 0};
+        obj.count = obj.count + 1;
+        expect(obj.count).toEqual(1);
+    });
+});
+
+// Test 5: Function operations
+describe("Function Operations", () => {
+    test("function definition and call", () => {
+        let add = (a, b) => a + b;
+        expect(add(2, 3)).toEqual(5);
+        expect(add(10, 20)).toEqual(30);
+    });
+    
+    test("function with default parameters", () => {
+        let greet = (name = "World") => "Hello, " + name + "!";
+        expect(greet()).toEqual("Hello, World!");
+        expect(greet("Alice")).toEqual("Hello, Alice!");
+    });
+    
+    test("function closure", () => {
+        let makeCounter = () => {
+            let count = 0;
+            return () => {
+                count = count + 1;
+                return count;
+            };
+        };
+        
+        let counter = makeCounter();
+        expect(counter()).toEqual(1);
+        expect(counter()).toEqual(2);
+        expect(counter()).toEqual(3);
+    });
+});
+
+// Test 6: Control flow
+describe("Control Flow", () => {
+    test("if-else statements", () => {
+        let result = "";
+        if (true) {
+            result = "true";
+        } else {
+            result = "false";
+        }
+        expect(result).toEqual("true");
+    });
+    
+    test("for loops", () => {
+        let sum = 0;
+        for (let i = 1; i <= 5; i++) {
+            sum = sum + i;
+        }
+        expect(sum).toEqual(15); // 1+2+3+4+5 = 15
+    });
+    
+    test("while loops", () => {
+        let count = 0;
+        while (count < 3) {
+            count = count + 1;
+        }
+        expect(count).toEqual(3);
+    });
+});
+
+// Test 7: Type checking
+describe("Type Checking", () => {
+    test("typeof operator", () => {
+        expect(typeof 42).toEqual("number");
+        expect(typeof "hello").toEqual("string");
+        expect(typeof true).toEqual("boolean");
+        expect(typeof null).toEqual("null");
+        expect(typeof undefined).toEqual("undefined");
+    });
+    
+    test("type conversion", () => {
+        expect(String(42)).toEqual("42");
+        expect(Number("123")).toEqual(123);
+        expect(Boolean(1)).toEqual(true);
+        expect(Boolean(0)).toEqual(false);
+    });
+});
+
+// Test 8: Error handling
+describe("Error Handling", () => {
+    test("try-catch blocks", () => {
+        let caught = false;
+        try {
+            throw "test error";
+        } catch (error) {
+            caught = true;
+            expect(error).toEqual("test error");
+        }
+        expect(caught).toBe(true);
+    });
+    
+    test("division by zero handling", () => {
+        let caught = false;
+        try {
+            let result = 10 / 0;
+        } catch (error) {
+            caught = true;
+            expect(error).toContain("division by zero");
+        }
+        expect(caught).toBe(true);
+    });
+});
+
+// Test 9: Mathematical functions
+describe("Mathematical Functions", () => {
+    test("Math.abs", () => {
+        expect(Math.abs(-5)).toEqual(5);
+        expect(Math.abs(0)).toEqual(0);
+        expect(Math.abs(10)).toEqual(10);
+    });
+    
+    test("Math.round", () => {
+        expect(Math.round(3.7)).toEqual(4);
+        expect(Math.round(3.2)).toEqual(3);
+        expect(Math.round(3.5)).toEqual(4);
+    });
+    
+    test("Math.max and Math.min", () => {
+        expect(Math.max(1, 5, 3, 2)).toEqual(5);
+        expect(Math.min(1, 5, 3, 2)).toEqual(1);
+    });
+});
+
+// Test 10: Async operations (if supported)
+describe("Async Operations", () => {
+    test("setTimeout basic", (done) => {
+        let executed = false;
+        setTimeout(() => {
+            executed = true;
+            expect(executed).toBe(true);
+            done();
+        }, 100);
+    });
+    
+    test("Promise creation", () => {
+        let promise = new Promise((resolve, reject) => {
+            resolve("success");
+        });
+        
+        promise.then((result) => {
+            expect(result).toEqual("success");
+        });
+    });
+});
+
+// Test utilities
+function expect(actual) {
+    return {
+        toEqual: (expected) => {
+            if (actual !== expected) {
+                throw new Error("Expected " + expected + " but got " + actual);
+            }
+        },
+        
+        toBe: (expected) => {
+            if (actual !== expected) {
+                throw new Error("Expected " + expected + " but got " + actual);
+            }
+        },
+        
+        toContain: (expected) => {
+            if (!actual.includes(expected)) {
+                throw new Error("Expected " + actual + " to contain " + expected);
+            }
+        }
+    };
+}
+
+function describe(description, callback) {
+    print("📋 " + description);
+    callback();
+}
+
+function test(name, callback) {
+    try {
+        callback();
+        print("  ✅ " + name);
+    } catch (error) {
+        print("  ❌ " + name + " - " + error.message);
+    }
+}
+
+print("🎉 Test suite completed!");

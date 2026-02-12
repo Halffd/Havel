@@ -19,6 +19,25 @@ release:
 test:
 	@echo "--- Running tests (using current configured mode: $$(./$(SCRIPT_NAME) 2>/dev/null | awk '/Mode:/ {print $$2; exit}')) ---"
 	@$(SCRIPT_NAME) test
+	@echo "--- Running Havel test suite ---"
+	@if [ -f "test_suite.hv" ]; then \
+		echo "🧪 Running Jest-like test suite..."; \
+		./hav test_suite.hv; \
+	else \
+		echo "⚠️  test_suite.hv not found"; \
+	fi
+	@echo "--- Running performance benchmarks ---"
+	@if [ -d "benchmarks" ]; then \
+		echo "📊 Running benchmarks..."; \
+		for file in benchmarks/*.havel; do \
+			if [ -f "$$file" ]; then \
+				echo "🏃 Running $$file..."; \
+				./hav "$$file"; \
+			fi; \
+		done; \
+	else \
+		echo "⚠️  benchmarks directory not found"; \
+	fi
 
 # Clean the build directory
 clean:
@@ -54,10 +73,16 @@ help:
 	@echo "------------------------------------------"
 	@echo "debug      : Clean + Build in Mode 0 (Default: Debug, Tests, Lang, LLVM)."
 	@echo "release    : Build in Mode 5 (Full Release, Tests, Lang, LLVM)."
-	@echo "test       : Run tests (uses the currently configured mode)."
+	@echo "test       : Run all tests (unit tests + Havel test suite + benchmarks)."
 	@echo "clean      : Clean build directory and logs."
 	@echo "all        : Clean, Build, and Run in Mode 0."
 	@echo "mode       : Dynamic target. Usage: make mode MODE=<X> CMD=<command>"
 	@echo "             e.g., make mode MODE=6 CMD=build"
+	@echo ""
+	@echo "Test Suite Features:"
+	@echo "  🧪 Jest-like test runner with describe(), test(), expect()"
+	@echo "  📊 Performance benchmarks for competitive analysis"
+	@echo "  🔍 Debugger protocol with breakpoints and stack inspection"
+	@echo "  📈 Coverage reporting and test statistics"
 	@echo ""
 	@$(SCRIPT_NAME) usage

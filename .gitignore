@@ -28,7 +28,8 @@ log/*.log.*
 *.log
 crash*
 hav
-havelsrc/wm/build/
+havel
+src/wm/build/
 src/wm/protocols/
 src/wm/xdg*
 .qwen

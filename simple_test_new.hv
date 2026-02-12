@@ -1,0 +1,174 @@
+// Simple Test Suite for Havel
+print("🧪 Havel Simple Test Suite");
+
+// Test 1: Basic arithmetic
+print("📋 Testing Basic Arithmetic...");
+let test1 = 2 + 3;
+if (test1 == 5) {
+    print("  ✅ addition works");
+} else {
+    print("  ❌ addition failed: expected 5, got " + test1);
+}
+
+let test2 = 10 - 3;
+if (test2 == 7) {
+    print("  ✅ subtraction works");
+} else {
+    print("  ❌ subtraction failed: expected 7, got " + test2);
+}
+
+let test3 = 4 * 5;
+if (test3 == 20) {
+    print("  ✅ multiplication works");
+} else {
+    print("  ❌ multiplication failed: expected 20, got " + test3);
+}
+
+// Test 2: String operations
+print("📋 Testing String Operations...");
+let test4 = "hello" + " " + "world";
+if (test4 == "hello world") {
+    print("  ✅ string concatenation works");
+} else {
+    print("  ❌ string concatenation failed: expected 'hello world', got '" + test4 + "'");
+}
+
+let test5 = "hello".length;
+if (test5 == 5) {
+    print("  ✅ string length works");
+} else {
+    print("  ❌ string length failed: expected 5, got " + test5);
+}
+
+// Test 3: Array operations
+print("📋 Testing Array Operations...");
+let test6 = [1, 2, 3, 4, 5];
+if (test6.length == 5) {
+    print("  ✅ array creation works");
+} else {
+    print("  ❌ array creation failed: expected length 5, got " + test6.length);
+}
+
+if (test6[0] == 1 && test6[4] == 5) {
+    print("  ✅ array access works");
+} else {
+    print("  ❌ array access failed");
+}
+
+// Test 4: Object operations
+print("📋 Testing Object Operations...");
+let test7 = {name: "Alice", age: 30};
+if (test7.name == "Alice" && test7.age == 30) {
+    print("  ✅ object creation works");
+} else {
+    print("  ❌ object creation failed");
+}
+
+// Test 5: Function operations
+print("📋 Testing Function Operations...");
+let add = (a, b) => a + b;
+let test8 = add(2, 3);
+if (test8 == 5) {
+    print("  ✅ function definition works");
+} else {
+    print("  ❌ function definition failed: expected 5, got " + test8);
+}
+
+// Test 6: Control flow
+print("📋 Testing Control Flow...");
+let test9 = "";
+if (true) {
+    test9 = "true";
+} else {
+    test9 = "false";
+}
+if (test9 == "true") {
+    print("  ✅ if-else works");
+} else {
+    print("  ❌ if-else failed");
+}
+
+let test10 = 0;
+for (let i = 1; i <= 3; i++) {
+    test10 = test10 + i;
+}
+if (test10 == 6) {
+    print("  ✅ for loop works");
+} else {
+    print("  ❌ for loop failed: expected 6, got " + test10);
+}
+
+// Test 7: Type checking
+print("📋 Testing Type Checking...");
+if (typeof 42 == "number") {
+    print("  ✅ typeof number works");
+} else {
+    print("  ❌ typeof number failed");
+}
+
+if (typeof "hello" == "string") {
+    print("  ✅ typeof string works");
+} else {
+    print("  ❌ typeof string failed");
+}
+
+if (typeof true == "boolean") {
+    print("  ✅ typeof boolean works");
+} else {
+    print("  ❌ typeof boolean failed");
+}
+
+// Test 8: Mathematical functions
+print("📋 Testing Mathematical Functions...");
+if (Math.abs(-5) == 5) {
+    print("  ✅ Math.abs works");
+} else {
+    print("  ❌ Math.abs failed");
+}
+
+if (Math.round(3.7) == 4) {
+    print("  ✅ Math.round works");
+} else {
+    print("  ❌ Math.round failed");
+}
+
+if (Math.max(1, 5, 3) == 5) {
+    print("  ✅ Math.max works");
+} else {
+    print("  ❌ Math.max failed");
+}
+
+// Test 9: Error handling
+print("📋 Testing Error Handling...");
+let caught = false;
+try {
+    throw "test error";
+} catch (error) {
+    caught = true;
+    if (error == "test error") {
+        print("  ✅ try-catch works");
+    } else {
+        print("  ❌ try-catch failed: wrong error message");
+    }
+}
+if (!caught) {
+    print("  ❌ try-catch failed: no exception caught");
+}
+
+// Test 10: Performance test
+print("📋 Testing Performance...");
+let start = time();
+let sum = 0;
+for (let i = 0; i < 10000; i++) {
+    sum = sum + i;
+}
+let end = time();
+let duration = end - start;
+if (duration < 1000) { // Less than 1 second
+    print("  ✅ performance test passed (" + duration + "ms)");
+} else {
+    print("  ❌ performance test failed: too slow (" + duration + "ms)");
+}
+
+print("🎉 Simple Test Suite Completed!");
+print("📊 All basic functionality tests executed successfully!");

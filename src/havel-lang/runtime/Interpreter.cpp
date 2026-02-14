@@ -503,28 +503,28 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
                  static_cast<int>(ValueToNumber(right));
     break;
   case ast::BinaryOperator::Equal:
-    lastResult = (ValueToString(left) == ValueToString(right));
+    lastResult = HavelValue(ValueToString(left) == ValueToString(right));
     break;
   case ast::BinaryOperator::NotEqual:
-    lastResult = (ValueToString(left) != ValueToString(right));
+    lastResult = HavelValue(ValueToString(left) != ValueToString(right));
     break;
   case ast::BinaryOperator::Less:
-    lastResult = ValueToNumber(left) < ValueToNumber(right);
+    lastResult = HavelValue(ValueToNumber(left) < ValueToNumber(right));
     break;
   case ast::BinaryOperator::Greater:
-    lastResult = ValueToNumber(left) > ValueToNumber(right);
+    lastResult = HavelValue(ValueToNumber(left) > ValueToNumber(right));
     break;
   case ast::BinaryOperator::LessEqual:
-    lastResult = ValueToNumber(left) <= ValueToNumber(right);
+    lastResult = HavelValue(ValueToNumber(left) <= ValueToNumber(right));
     break;
   case ast::BinaryOperator::GreaterEqual:
-    lastResult = ValueToNumber(left) >= ValueToNumber(right);
+    lastResult = HavelValue(ValueToNumber(left) >= ValueToNumber(right));
     break;
   case ast::BinaryOperator::And:
-    lastResult = ValueToBool(left) && ValueToBool(right);
+    lastResult = HavelValue(ValueToBool(left) && ValueToBool(right));
     break;
   case ast::BinaryOperator::Or:
-    lastResult = ValueToBool(left) || ValueToBool(right);
+    lastResult = HavelValue(ValueToBool(left) || ValueToBool(right));
     break;
   default:
     lastResult = HavelRuntimeError("Unsupported binary operator");
@@ -1035,8 +1035,21 @@ void Interpreter::visitNumberLiteral(const ast::NumberLiteral &node) {
   lastResult = node.value;
 }
 void Interpreter::visitHotkeyLiteral(const ast::HotkeyLiteral &node) {
-  lastResult = node.combination;
+  lastResult = HavelValue(node.combination);
 }
+
+void Interpreter::visitAsyncExpression(const ast::AsyncExpression &node) {
+  // For now, just execute the expression synchronously
+  // TODO: Implement proper async/await support
+  node.expression->accept(*this);
+}
+
+void Interpreter::visitAwaitExpression(const ast::AwaitExpression &node) {
+  // For now, just return the awaited value
+  // TODO: Implement proper async/await support
+  node.expression->accept(*this);
+}
+
 void Interpreter::visitIdentifier(const ast::Identifier &node) {
   if (auto val = environment->Get(node.symbol)) {
     lastResult = *val;

@@ -54,6 +54,16 @@ using HavelArray = std::shared_ptr<std::vector<HavelValue>>;
 using HavelObject =
     std::shared_ptr<std::unordered_map<std::string, HavelValue>>;
 
+// User-defined function representation (closure + declaration)
+struct HavelFunction {
+  std::shared_ptr<Environment> closure;
+  const ast::FunctionDeclaration *declaration;
+
+  HavelFunction(std::shared_ptr<Environment> env,
+                const ast::FunctionDeclaration *decl)
+      : closure(std::move(env)), declaration(decl) {}
+};
+
 // Set wrapper to distinguish from Array
 struct HavelSet {
   std::shared_ptr<std::vector<HavelValue>> elements;
@@ -78,12 +88,14 @@ using BuiltinFunction =
 class Channel;
 template <typename T> class Atomic;
 
-// Value type for the interpreter
-struct HavelValue
-    : std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
-                   HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
-                   std::shared_ptr<Channel>, BuiltinFunction> {
-  using std::variant::variant;
+// Value type for interpreter
+using HavelValueBase =
+    std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
+                 HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
+                 std::shared_ptr<Channel>, BuiltinFunction>;
+
+struct HavelValue : HavelValueBase {
+  using HavelValueBase::HavelValueBase;
 };
 
 // Return value wrapper
@@ -216,7 +228,7 @@ public:
 template <typename T> class Atomic {
 private:
   T value;
-  std::atomic<bool> lock{false};
+  mutable std::atomic<bool> lock{false};
 
 public:
   Atomic(T initial) : value(initial) {}
@@ -311,6 +323,8 @@ public:
   void visitCallExpression(const ast::CallExpression &node) override;
   void visitMemberExpression(const ast::MemberExpression &node) override;
   void visitLambdaExpression(const ast::LambdaExpression &node) override;
+  void visitAsyncExpression(const ast::AsyncExpression &node) override;
+  void visitAwaitExpression(const ast::AwaitExpression &node) override;
   void visitStringLiteral(const ast::StringLiteral &node) override;
   void visitInterpolatedStringExpression(
       const ast::InterpolatedStringExpression &node) override;

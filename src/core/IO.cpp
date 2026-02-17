@@ -482,7 +482,7 @@ void IO::cleanup() {
   // Ungrab all hotkeys before closing
 #ifdef __linux__
   if (display && !globalEvdev) {
-    Window root = DefaultRootWindow(display);
+    x11::Window root = DefaultRootWindow(display);
 
     // First, ungrab all hotkeys from the instance
     for (const auto &[id, hotkey] : instanceHotkeys) {
@@ -591,7 +591,7 @@ bool IO::GrabKeyboard() {
   error("Cannot grab keyboard after 1000 attempts");
   return false;
 }
-bool IO::Grab(Key input, unsigned int modifiers, Window root, bool grab,
+bool IO::Grab(Key input, unsigned int modifiers, x11::Window root, bool grab,
               bool isMouse) {
   if (!display)
     return false;
@@ -658,7 +658,7 @@ bool IO::GrabAllHotkeys() {
   return success;
 }
 
-void IO::Ungrab(Key input, unsigned int modifiers, Window root, bool isMouse) {
+void IO::Ungrab(Key input, unsigned int modifiers, x11::Window root, bool isMouse) {
   if (!display)
     return;
 
@@ -689,7 +689,7 @@ void IO::UngrabAll() {
 }
 
 // Fast version - no retries
-bool IO::FastGrab(Key input, unsigned int modifiers, Window root) {
+bool IO::FastGrab(Key input, unsigned int modifiers, x11::Window root) {
   if (!display)
     return false;
 
@@ -3562,7 +3562,7 @@ void IO::AssignHotkey(HotKey hotkey, int id) {
   if (!display)
     return;
 
-  Window root = DefaultRootWindow(display);
+  x11::Window root = DefaultRootWindow(display);
 
   KeyCode keycode = XKeysymToKeycode(display, hotkey.key);
   if (keycode == 0) {
@@ -3631,7 +3631,7 @@ int IO::GetKeyboard() {
     }
   }
 
-  Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
+  x11::Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
                                       1, 1, 0, 0, 0);
   if (XGrabKeyboard(display, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
                     CurrentTime) != GrabSuccess) {
@@ -3911,7 +3911,7 @@ bool IO::GrabHotkey(int hotkeyId) {
   }
 
   const HotKey &hotkey = it->second;
-  Window root = DefaultRootWindow(display);
+  x11::Window root = DefaultRootWindow(display);
   KeyCode keycode = hotkey.key;
 
   if (keycode == 0) {
@@ -3952,7 +3952,7 @@ bool IO::UngrabHotkey(int hotkeyId) {
 
   // Only ungrab X11 hotkeys (evdev hotkeys don't need ungrabbing)
   if (!hotkey.evdev && display) {
-    Window root = DefaultRootWindow(display);
+    x11::Window root = DefaultRootWindow(display);
 
     // Check if any OTHER hotkeys are using the same key+modifiers
     bool hasOtherSameHotkey = false;

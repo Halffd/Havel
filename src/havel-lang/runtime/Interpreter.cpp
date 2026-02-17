@@ -1041,13 +1041,21 @@ void Interpreter::visitHotkeyLiteral(const ast::HotkeyLiteral &node) {
 void Interpreter::visitAsyncExpression(const ast::AsyncExpression &node) {
   // For now, just execute the expression synchronously
   // TODO: Implement proper async/await support
-  node.expression->accept(*this);
+  if (node.body) {
+    node.body->accept(*this);
+  } else {
+    lastResult = nullptr;
+  }
 }
 
 void Interpreter::visitAwaitExpression(const ast::AwaitExpression &node) {
   // For now, just return the awaited value
   // TODO: Implement proper async/await support
-  node.expression->accept(*this);
+  if (node.argument) {
+    node.argument->accept(*this);
+  } else {
+    lastResult = nullptr;
+  }
 }
 
 void Interpreter::visitIdentifier(const ast::Identifier &node) {

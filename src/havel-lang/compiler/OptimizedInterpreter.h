@@ -126,7 +126,8 @@ private:
     return result;
   }
 
-  // Threaded dispatch using computed goto
+  // Threaded dispatch using computed goto (disabled - incomplete implementation)
+  /*
   void executeThreaded() {
 #define DISPATCH() goto *dispatch_table[static_cast<uint8_t>(current_opcode)]
 
@@ -153,27 +154,30 @@ private:
   UNKNOWN_HANDLER:
     throw std::runtime_error("Unknown opcode");
   }
+  */
 
 public:
   OptimizedBytecodeInterpreter() {
-// Initialize threaded dispatch table
+// Initialize threaded dispatch table (disabled)
+/*
 #define HANDLER(op) &&op##_HANDLER
     dispatch_table[static_cast<uint8_t>(OpCode::LOAD_CONST)] =
         HANDLER(LOAD_CONST);
     dispatch_table[static_cast<uint8_t>(OpCode::ADD)] = HANDLER(ADD);
-    // ... initialize all handlers
+*/
   }
 
   void setDebugMode(bool enabled) override { debug_mode = enabled; }
 
   BytecodeValue execute(const BytecodeChunk &chunk,
-                        const std::string &entry_point) override {
-    const auto *function = chunk.getFunction(entry_point);
+                        const std::string &function_name,
+                        const std::vector<BytecodeValue> &args = {}) override {
+    const auto *function = chunk.getFunction(function_name);
     if (!function) {
-      throw std::runtime_error("Function not found: " + entry_point);
+      throw std::runtime_error("Function not found: " + function_name);
     }
 
-    // Setup execution state
+    // Setup execução state
     constants = function->constants;
     locals.resize(function->local_count);
     instruction_pointer = 0;
@@ -183,7 +187,7 @@ public:
       stack.pop();
 
     if (debug_mode) {
-      std::cout << "=== Optimized Execution: " << entry_point
+      std::cout << "=== Optimized Execution: " << function_name
                 << " ===" << std::endl;
     }
 
@@ -193,10 +197,11 @@ public:
 
       // Check if this block should be JIT compiled
       uint32_t exec_count = ++execution_counts[instruction_pointer];
+      uint32_t block_end = instruction_pointer;
       if (exec_count == jit_threshold &&
           getCompiledBlock(instruction_pointer) == nullptr) {
         // Find basic block boundaries
-        uint32_t block_end = instruction_pointer + 1;
+        block_end = instruction_pointer + 1;
         while (
             block_end < function->instructions.size() &&
             function->instructions[block_end].opcode != OpCode::JUMP &&
@@ -265,6 +270,38 @@ public:
   }
 
 private:
+  // Helper method for binary operations
+  BytecodeValue performBinaryOp(OpCode op, const BytecodeValue &left,
+                                const BytecodeValue &right) {
+    if (std::holds_alternative<int64_t>(left) &&
+        std::holds_alternative<int64_t>(right)) {
+      int64_t l = std::get<int64_t>(left);
+      int64_t r = std::get<int64_t>(right);
+      if (op == OpCode::ADD)
+        return BytecodeValue(l + r);
+      if (op == OpCode::MUL)
+        return BytecodeValue(l * r);
+      if (op == OpCode::SUB)
+        return BytecodeValue(l - r);
+      if (op == OpCode::DIV)
+        return BytecodeValue(l / r);
+    }
+    if (std::holds_alternative<double>(left) &&
+        std::holds_alternative<double>(right)) {
+      double l = std::get<double>(left);
+      double r = std::get<double>(right);
+      if (op == OpCode::ADD)
+        return BytecodeValue(l + r);
+      if (op == OpCode::MUL)
+        return BytecodeValue(l * r);
+      if (op == OpCode::SUB)
+        return BytecodeValue(l - r);
+      if (op == OpCode::DIV)
+        return BytecodeValue(l / r);
+    }
+    return BytecodeValue(int64_t(0));
+  }
+
   void executeInstruction(const Instruction &instruction) {
     // Optimized instruction execution with inline caching
     switch (instruction.opcode) {

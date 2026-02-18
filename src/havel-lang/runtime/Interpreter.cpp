@@ -2025,78 +2025,31 @@ void Interpreter::InitializeStandardLibrary() {
       }));
 
   environment->Define("debug", HavelValue(debugObj));
-}
 
-InitializeSystemBuiltins();
-InitializeWindowBuiltins();
-InitializeClipboardBuiltins();
-InitializeTextBuiltins();
-InitializeFileBuiltins();
-InitializeArrayBuiltins();
-InitializeIOBuiltins();
-InitializeBrightnessBuiltins();
-InitializeMathBuiltins();
-InitializeHelpBuiltin();
-InitializeAudioBuiltins();
-InitializeMediaBuiltins();
-InitializeFileManagerBuiltins();
-InitializeLauncherBuiltins();
-InitializeGUIBuiltins();
-InitializeScreenshotBuiltins();
-InitializeTimerBuiltins();
-InitializeAutomationBuiltins();
-InitializeAsyncBuiltins();
-InitializePhysicsBuiltins();
-InitializeHelpBuiltin();
-// Debug flag
-environment->Define("debug", HavelValue(false));
+  // Initialize all builtin modules
+  InitializeSystemBuiltins();
+  InitializeWindowBuiltins();
+  InitializeClipboardBuiltins();
+  InitializeTextBuiltins();
+  InitializeFileBuiltins();
+  InitializeArrayBuiltins();
+  InitializeIOBuiltins();
+  InitializeBrightnessBuiltins();
+  InitializeMathBuiltins();
+  InitializeHelpBuiltin();
+  InitializeAudioBuiltins();
+  InitializeMediaBuiltins();
+  InitializeFileManagerBuiltins();
+  InitializeLauncherBuiltins();
+  InitializeGUIBuiltins();
+  InitializeScreenshotBuiltins();
+  InitializeTimerBuiltins();
+  InitializeAutomationBuiltins();
+  InitializeAsyncBuiltins();
+  InitializePhysicsBuiltins();
 
-// Debug print with conditional execution
-environment->Define(
-    "debug.print",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      auto debugFlag = environment->Get("debug");
-      bool isDebug = debugFlag && ValueToBool(*debugFlag);
-
-      if (isDebug) {
-        std::cout << "[DEBUG] ";
-        for (const auto &arg : args) {
-          std::cout << this->ValueToString(arg) << " ";
-        }
-        std::cout << std::endl;
-      }
-      return HavelValue(nullptr);
-    }));
-
-// Assert function
-environment->Define(
-    "assert",
-    BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
-      if (args.empty())
-        return HavelRuntimeError("assert() requires condition");
-      if (!ValueToBool(args[0])) {
-        std::string msg =
-            args.size() > 1 ? ValueToString(args[1]) : "Assertion failed";
-        return HavelRuntimeError(msg);
-      }
-      return HavelValue(nullptr);
-    }));
-InitializeBrightnessBuiltins();
-InitializeMathBuiltins();
-InitializeHelpBuiltin();
-InitializeAudioBuiltins();
-InitializeMediaBuiltins();
-InitializeFileManagerBuiltins();
-InitializeLauncherBuiltins();
-InitializeGUIBuiltins();
-InitializeScreenshotBuiltins();
-InitializeTimerBuiltins();
-InitializeAutomationBuiltins();
-InitializeAsyncBuiltins();
-InitializePhysicsBuiltins();
-InitializeHelpBuiltin();
-// Debug flag
-environment->Define("debug", HavelValue(false));
+  // Debug flag
+  environment->Define("debug", HavelValue(false));
 
 // Debug print with conditional execution
 environment->Define(
@@ -2129,7 +2082,7 @@ environment->Define(
       return HavelValue(nullptr);
     }));
 
-// Create io module at the end after all io functions are defined
+  // Create io module at the end after all io functions are defined
 auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 if (auto v = environment->Get("io.mouseMove"))
   (*ioMod)["mouseMove"] = *v;
@@ -2271,7 +2224,7 @@ environment->Define(
                                      comboCondition, onCombo, grabDown, grabUp);
           return HavelValue(keyName + " KeyTap created");
         })));
-} // namespace havel
+}
 
 void Interpreter::InitializeSystemBuiltins() {
   // Define boolean constants
@@ -6565,9 +6518,10 @@ void Interpreter::InitializeAsyncBuiltins() {
                      AsyncScheduler::getInstance().yield();
                      return HavelValue(nullptr);
                    }));
+}
 
-  // Physics builtins
-  void Interpreter::InitializePhysicsBuiltins() {
+// Physics builtins
+void Interpreter::InitializePhysicsBuiltins() {
     auto physics =
         std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
@@ -6623,9 +6577,9 @@ void Interpreter::InitializeAsyncBuiltins() {
     (*physics)["re"] = HavelValue(2.8179403227e-15);
 
     environment->Define("physics", HavelValue(physics));
-  }
+}
 
-  void Interpreter::InitializeTimerBuiltins() {
+void Interpreter::InitializeTimerBuiltins() {
     // === TIMER MODULE ===
     auto timerMod =
         std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -6640,12 +6594,12 @@ void Interpreter::InitializeAsyncBuiltins() {
           int delayMs = static_cast<int>(ValueToNumber(args[0]));
 
           // Validate callback
-          if (!std::holds_alternative<HavelFunction>(args[1])) {
+          if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[1])) {
             return HavelRuntimeError(
                 "setTimeout second argument must be a function");
           }
 
-          auto callback = std::get<HavelFunction>(args[1]);
+          auto callback = std::get<std::shared_ptr<HavelFunction>>(args[1]);
 
           // Thread-safe timer creation and management
           int timerId;
@@ -6661,10 +6615,13 @@ void Interpreter::InitializeAsyncBuiltins() {
                   // Execute callback with thread safety
                   try {
                     // Direct callback execution with empty args
-                    auto result = callback({});
+                    ast::CallExpression callExpr(
+                        std::make_unique<ast::Identifier>(
+                            callback->declaration->name->symbol));
+                    auto result = Evaluate(callExpr);
                     if (std::holds_alternative<HavelRuntimeError>(result)) {
                       error("Timer {} callback failed: {}", timerId,
-                            std::get<HavelRuntimeError>(result).message);
+                            std::get<HavelRuntimeError>(result).what());
                     }
                   } catch (const std::exception &e) {
                     error("Timer {} callback threw exception: {}", timerId,
@@ -6704,12 +6661,12 @@ void Interpreter::InitializeAsyncBuiltins() {
           int intervalMs = static_cast<int>(ValueToNumber(args[0]));
 
           // Validate callback
-          if (!std::holds_alternative<HavelFunction>(args[1])) {
+          if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[1])) {
             return HavelRuntimeError(
                 "setInterval second argument must be a function");
           }
 
-          auto callback = std::get<HavelFunction>(args[1]);
+          auto callback = std::get<std::shared_ptr<HavelFunction>>(args[1]);
 
           // Thread-safe timer creation and management
           int timerId;
@@ -6725,13 +6682,13 @@ void Interpreter::InitializeAsyncBuiltins() {
               // Execute callback with thread safety
               try {
                 // Create a call expression to execute the function
-                ast::CallExpression callExpr;
-                callExpr.callee = std::make_unique<ast::Identifier>(
-                    callback->declaration->symbol);
+                ast::CallExpression callExpr(
+                    std::make_unique<ast::Identifier>(
+                        callback->declaration->name->symbol));
                 auto result = Evaluate(callExpr);
                 if (std::holds_alternative<HavelRuntimeError>(result)) {
                   error("Interval {} callback failed: {}", timerId,
-                        std::get<HavelRuntimeError>(result).message);
+                        std::get<HavelRuntimeError>(result).what());
                 }
               } catch (const std::exception &e) {
                 error("Interval {} callback threw exception: {}", timerId,
@@ -6894,9 +6851,9 @@ void Interpreter::InitializeAsyncBuiltins() {
         });
 
     environment->Define("timer", HavelValue(timerMod));
-  }
+}
 
-  void Interpreter::InitializeHelpBuiltin() {
+void Interpreter::InitializeHelpBuiltin() {
     environment->Define(
         "help",
         BuiltinFunction(
@@ -7296,9 +7253,9 @@ void Interpreter::InitializeAsyncBuiltins() {
               std::cout << help.str();
               return HavelValue(nullptr);
             }));
-  }
+}
 
-  void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
+void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
     // Extract the hotkey string for use with HotkeyManager
     std::string hotkeyStr;
     if (!node.binding->hotkeys.empty()) {
@@ -7366,9 +7323,9 @@ void Interpreter::InitializeAsyncBuiltins() {
         lastResult = nullptr;
       }
     }
-  }
+}
 
-  void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
+void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
     // For each statement in the when block, wrap it with the shared
     // condition
     for (const auto &stmt : node.statements) {

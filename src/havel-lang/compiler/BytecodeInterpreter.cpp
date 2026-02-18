@@ -199,12 +199,13 @@ public:
   void setDebugMode(bool enabled) override { debug_mode = enabled; }
 
   BytecodeValue execute(const BytecodeChunk &chunk,
-                        const std::string &entry_point) override {
+                        const std::string &function_name,
+                        const std::vector<BytecodeValue> &args = {}) override {
     current_chunk = &chunk;
 
-    const auto *entry = chunk.getFunction(entry_point);
+    const auto *entry = chunk.getFunction(function_name);
     if (!entry) {
-      throw std::runtime_error("Function not found: " + entry_point);
+      throw std::runtime_error("Function not found: " + function_name);
     }
 
     // Clear execution state
@@ -219,7 +220,7 @@ public:
     locals.resize(entry->local_count);
 
     if (debug_mode) {
-      std::cout << "=== Executing function: " << entry_point
+      std::cout << "=== Executing function: " << function_name
                 << " ===" << std::endl;
     }
 

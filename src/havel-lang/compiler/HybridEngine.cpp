@@ -32,7 +32,7 @@ public:
 HybridEngine::HybridEngine(std::unique_ptr<BytecodeCompiler> comp,
                            std::unique_ptr<BytecodeInterpreter> interp,
                            std::unique_ptr<JITCompiler> jcomp)
-    : compiler(std::move(comp)), interpre           ter(std::move(interp)),
+    : compiler(std::move(comp)), interpreter(std::move(interp)),
       jit(std::move(jcomp)) {}
 
 bool HybridEngine::compile(const ast::Program &program) {

@@ -1,7 +1,14 @@
 #include "OptimizedInterpreter.h"
 #include <iostream>
+#include <cstring>
+#include <chrono>
+#include <sys/mman.h>
 
 namespace havel::compiler {
+
+// Forward declaration
+std::unique_ptr<BytecodeInterpreter> createBytecodeInterpreter();
+std::unique_ptr<BytecodeInterpreter> createOptimizedBytecodeInterpreter();
 
 // Static initialization of threaded dispatch table
 void* OptimizedBytecodeInterpreter::dispatch_table[256];
@@ -313,16 +320,17 @@ public:
     ThreadedCodeInterpreter() : OptimizedBytecodeInterpreter() {
         std::cout << "ThreadedCodeInterpreter: Initialized with computed goto dispatch" << std::endl;
     }
-    
-    BytecodeValue execute(const BytecodeChunk& chunk, const std::string& entry_point) override {
+
+    BytecodeValue execute(const BytecodeChunk& chunk, const std::string& function_name,
+                          const std::vector<BytecodeValue>& args = {}) override {
         std::cout << "=== Threaded Execution with JIT ===" << std::endl;
-        
+
         // For now, just demonstrate the concept
         std::cout << "Using computed goto dispatch..." << std::endl;
         std::cout << "Inline caching enabled..." << std::endl;
         std::cout << "Hot path JIT compilation enabled..." << std::endl;
-        
-        return OptimizedBytecodeInterpreter::execute(chunk, entry_point);
+
+        return OptimizedBytecodeInterpreter::execute(chunk, function_name, args);
     }
     
     // Performance comparison

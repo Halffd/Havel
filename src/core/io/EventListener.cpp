@@ -3,6 +3,7 @@
 #include "../core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include "../io/HotkeyExecutor.hpp"
 #include "../utils/Logger.hpp"
+#include "KeyMap.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -10,8 +11,8 @@
 #include <fmt/format.h>
 #include <linux/uinput.h>
 #include <shared_mutex>
+#include <signal.h>
 #include <sstream>
-#include <sstream> // for istringstream
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/signalfd.h>
@@ -155,6 +156,9 @@ void EventListener::Stop() {
     eventThread.join();
   }
 
+  // Release all pressed virtual keys before ungrabbing devices
+  ReleaseAllVirtualKeys();
+
   // Ungrab and close all devices
   for (auto &device : devices) {
     if (device.fd >= 0) {
@@ -232,6 +236,15 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
   if (uinputFd < 0) {
     error("Cannot send event: uinput not initialized (fd={})", uinputFd);
     return;
+  }
+
+  // Track pressed virtual keys for cleanup on shutdown
+  if (type == EV_KEY) {
+    if (value == 1 || value == 2) {
+      pressedVirtualKeys.insert(code);
+    } else if (value == 0) {
+      pressedVirtualKeys.erase(code);
+    }
   }
 
   struct timespec ts;
@@ -1949,6 +1962,23 @@ bool EventListener::MatchGesturePattern(
   return true;
 }
 
+// Release all pressed virtual keys (for clean shutdown)
+void EventListener::ReleaseAllVirtualKeys() {
+  if (pressedVirtualKeys.empty())
+    return;
+
+  info("Releasing {} pressed virtual keys", pressedVirtualKeys.size());
+
+  for (int code : pressedVirtualKeys) {
+    SendUinputEvent(EV_KEY, code, 0);
+  }
+
+  // Send final SYN_REPORT
+  SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+
+  pressedVirtualKeys.clear();
+}
+
 // Helper function to convert gesture pattern string to directions
 std::vector<MouseGestureDirection>
 EventListener::ParseGesturePattern(const std::string &patternStr) const {
@@ -2104,6 +2134,9 @@ void EventListener::ProcessSignal() {
   case SIGQUIT:
     info("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
+
+    // Release all pressed virtual keys before ungrabbing devices
+    ReleaseAllVirtualKeys();
 
     // Ungrab all input devices to release grabs
     for (auto &device : devices) {

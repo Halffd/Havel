@@ -119,7 +119,7 @@ struct Token {
 
 class Lexer {
 public:
-  Lexer(const std::string &sourceCode);
+  Lexer(const std::string &sourceCode, bool debug_lexer = false);
   std::vector<Token> tokenize();
   void printTokens(const std::vector<Token> &tokens) const;
 
@@ -130,6 +130,8 @@ private:
   size_t position = 0;
   size_t line = 1;
   size_t column = 1;
+
+  bool debug_lexer = false;
 
   static const std::unordered_map<char, TokenType> SINGLE_CHAR_TOKENS;
 

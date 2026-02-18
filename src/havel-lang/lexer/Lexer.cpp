@@ -54,7 +54,8 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {'*', TokenType::Multiply},    {'/', TokenType::Divide},
     {'%', TokenType::Modulo},      {'\n', TokenType::NewLine}};
 
-Lexer::Lexer(const std::string &sourceCode) : source(sourceCode) {}
+Lexer::Lexer(const std::string &sourceCode, bool debug_lexer)
+    : source(sourceCode), debug_lexer(debug_lexer) {}
 
 char Lexer::peek(size_t offset) const {
   size_t pos = position + offset;
@@ -392,23 +393,35 @@ std::vector<Token> Lexer::tokenize() {
       // If the next char is '{', treat as set literal start
       if (peek() == '{') {
         tokens.push_back(makeToken("#", TokenType::Hash));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
         continue;
       }
 
       // Otherwise, allow '#' to start a modifier hotkey (e.g. "#f1", "#!Esc")
       tokens.push_back(scanHotkey());
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
     // Handle numbers (including negative numbers in certain contexts)
     if (isDigit(c) || (c == '-' && isDigit(peek()))) {
       tokens.push_back(scanNumber());
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
     // Handle strings
     if (c == '"' || c == '\'') {
       tokens.push_back(scanString());
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
@@ -423,11 +436,17 @@ std::vector<Token> Lexer::tokenize() {
     if (c == '+' && peek() == '+') {
       advance();
       tokens.push_back(makeToken("++", TokenType::PlusPlus));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '-' && peek() == '-') {
       advance();
       tokens.push_back(makeToken("--", TokenType::MinusMinus));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
@@ -435,21 +454,33 @@ std::vector<Token> Lexer::tokenize() {
     if (c == '+' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("+=", TokenType::PlusAssign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '-' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("-=", TokenType::MinusAssign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '*' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("*=", TokenType::MultiplyAssign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '/' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("/=", TokenType::DivideAssign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
@@ -457,11 +488,17 @@ std::vector<Token> Lexer::tokenize() {
     if (c == '=' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("==", TokenType::Equals));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '!' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("!=", TokenType::NotEquals));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
@@ -469,11 +506,17 @@ std::vector<Token> Lexer::tokenize() {
     if (c == '&' && peek() == '&') {
       advance();
       tokens.push_back(makeToken("&&", TokenType::And));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '|' && peek() == '|') {
       advance();
       tokens.push_back(makeToken("||", TokenType::Or));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
@@ -481,27 +524,42 @@ std::vector<Token> Lexer::tokenize() {
     if (c == '<' && peek() == '=') {
       advance();
       tokens.push_back(makeToken("<=", TokenType::LessEquals));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '>' && peek() == '=') {
       advance();
       tokens.push_back(makeToken(">=", TokenType::GreaterEquals));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
     // Handle single < and >
     if (c == '<') {
       tokens.push_back(makeToken("<", TokenType::Less));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
     if (c == '>') {
       tokens.push_back(makeToken(">", TokenType::Greater));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 
     // Handle single equals (assignment)
     if (c == '=') {
       tokens.push_back(makeToken("=", TokenType::Assign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
       continue;
     }
 

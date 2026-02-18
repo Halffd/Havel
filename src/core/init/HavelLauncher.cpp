@@ -1,17 +1,13 @@
 #include "HavelLauncher.hpp"
-#include "core/IO.hpp"
 #include "gui/HavelApp.hpp"
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/runtime/Engine.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "utils/Logger.hpp"
-#include "window/WindowManager.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
-#include <thread>
 
 #ifdef HAVE_READLINE
 #include <readline/history.h>
@@ -35,6 +31,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runScript(cfg);
     case Mode::REPL:
       return runRepl(cfg);
+    case Mode::SCRIPT_AND_REPL:
+      return runScriptAndRepl(cfg);
     case Mode::CLI:
       return runCli(argc, argv);
     default:
@@ -298,6 +296,157 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
           }
         } else {
           std::cerr << "Error: Interpreter is not available\n";
+        }
+      } catch (const std::exception &e) {
+        std::cerr << "Error: " << e.what() << "\n";
+      }
+
+      multiline.clear();
+    }
+  }
+
+  return 0;
+}
+
+int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
+  info("Running Havel script and entering REPL: {}", cfg.scriptFile);
+
+  // Read script file
+  std::ifstream file(cfg.scriptFile);
+  if (!file) {
+    error("Cannot open script file: {}", cfg.scriptFile);
+    return 2;
+  }
+
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string code = buffer.str();
+
+  int dummy_argc = 1;
+  char dummy_name[] = "havel-script";
+  char *dummy_argv[] = {dummy_name, nullptr};
+  QApplication app(dummy_argc, dummy_argv);
+
+  HavelApp havelApp(false, cfg.scriptFile); // Don't show GUI
+
+  if (!havelApp.isInitialized()) {
+    error("Failed to initialize HavelApp");
+    return 1;
+  }
+
+  // Use HavelApp's interpreter
+  auto *interpreter = havelApp.getInterpreter();
+  if (!interpreter) {
+    error("Interpreter is not available");
+    return 1;
+  }
+
+  // Execute the script first
+  auto result = interpreter->Execute(code);
+  if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+    error("Script runtime error: {}",
+          std::get<havel::HavelRuntimeError>(result).what());
+    return 1;
+  }
+
+  info("Script executed successfully. Entering REPL...");
+
+  // Now enter REPL with the same interpreter and environment
+  // Reuse the REPL logic but without creating a new interpreter
+  std::cout << "Havel Language REPL v1.0\n";
+  std::cout << "Type 'exit' or 'quit' to exit, 'help' for help\n\n";
+
+  std::string line;
+  std::string multiline;
+  int braceCount = 0;
+
+  // REPL log file
+  std::string home =
+      std::getenv("HOME") ? std::getenv("HOME") : std::string(".");
+  std::string logPath = home + "/.havel_repl.log";
+  std::ofstream replLog(logPath, std::ios::app);
+
+  while (true) {
+    std::string prompt = (braceCount > 0) ? "... " : ">>> ";
+
+#ifdef HAVE_READLINE
+    char *input = readline(prompt.c_str());
+    if (!input)
+      break;
+    line = std::string(input);
+    free(input);
+    if (!line.empty())
+      add_history(line.c_str());
+#else
+    std::cout << prompt;
+    if (!std::getline(std::cin, line))
+      break;
+#endif
+
+    // Trim whitespace
+    size_t start = line.find_first_not_of(" \t");
+    if (start == std::string::npos) {
+      if (braceCount == 0)
+        continue;
+      line = "";
+    } else {
+      line = line.substr(start);
+    }
+
+    // Log input
+    if (replLog.is_open()) {
+      replLog << line << '\n';
+      replLog.flush();
+    }
+
+    // Commands
+    if (braceCount == 0) {
+      if (line == "exit" || line == "quit") {
+        std::cout << "Goodbye!\n";
+        return 0;
+      }
+      if (line == "help") {
+        std::cout << "Available commands:\n";
+        std::cout << "  exit, quit  - Exit REPL\n";
+        std::cout << "  help        - Show this help\n";
+        std::cout << "  clear       - Clear screen\n";
+        std::cout << "\nType any Havel expression or statement to evaluate.\n";
+        continue;
+      }
+      if (line == "clear") {
+        std::cout << "\033[2J\033[1;1H";
+        continue;
+      }
+      if (line.empty()) {
+        continue;
+      }
+    }
+
+    // Track braces
+    for (char c : line) {
+      if (c == '{')
+        braceCount++;
+      else if (c == '}')
+        braceCount--;
+    }
+
+    multiline += line + "\n";
+
+    // Execute when balanced
+    if (braceCount == 0 && !multiline.empty()) {
+      try {
+        auto result = interpreter->Execute(multiline);
+
+        if (std::holds_alternative<havel::HavelValue>(result)) {
+          auto val = std::get<havel::HavelValue>(result);
+          if (!std::holds_alternative<std::nullptr_t>(val)) {
+            std::cout << "=> " << havel::Interpreter::ValueToString(val)
+                      << "\n";
+          }
+        } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+          std::cerr << "Error: "
+                    << std::get<havel::HavelRuntimeError>(result).what()
+                    << "\n";
         }
       } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << "\n";

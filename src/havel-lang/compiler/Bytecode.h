@@ -136,8 +136,9 @@ public:
 class BytecodeInterpreter {
 public:
   virtual ~BytecodeInterpreter() = default;
-  virtual BytecodeValue execute(const BytecodeChunk &chunk,
-                                const std::string &entry_point = "main") = 0;
+  virtual BytecodeValue
+  execute(const BytecodeChunk &chunk, const std::string &function_name,
+          const std::vector<BytecodeValue> &args = {}) = 0;
   virtual void setDebugMode(bool enabled) = 0;
 };
 
@@ -154,7 +155,7 @@ public:
 
 // Hybrid execution engine (Compiler + Interpreter + JIT)
 class HybridEngine {
-private:
+protected:
   std::unique_ptr<BytecodeCompiler> compiler;
   std::unique_ptr<BytecodeInterpreter> interpreter;
   std::unique_ptr<JITCompiler> jit;
@@ -170,12 +171,11 @@ public:
                std::unique_ptr<BytecodeInterpreter> interp,
                std::unique_ptr<JITCompiler> jcomp = nullptr);
 
-  // Compile AST to bytecode
-  bool compile(const ast::Program &program);
+  virtual ~HybridEngine() = default;
 
-  // Execute function with automatic JIT optimization
-  BytecodeValue execute(const std::string &function_name,
-                        const std::vector<BytecodeValue> &args = {});
+  virtual bool compile(const ast::Program &program);
+  virtual BytecodeValue execute(const std::string &function_name,
+                                const std::vector<BytecodeValue> &args = {});
 
   // Configure JIT
   void setJITEnabled(bool enabled) { jit_enabled = enabled; }

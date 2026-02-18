@@ -1449,9 +1449,6 @@ void WindowManager::ToggleFullscreen(wID windowId) {
 
   debug("Nuclear fullscreen toggle for stubborn game: {}", windowId);
 
-  // Step 1: Try to break the game's exclusive fullscreen first
-  XGrabServer(display); // Block other X11 operations temporarily
-
   // Force the window to be windowed by removing fullscreen properties
   Atom stateAtom = XInternAtom(display, "_NET_WM_STATE", x11::XFalse);
   Atom fsAtom = XInternAtom(display, "_NET_WM_STATE_FULLSCREEN", x11::XFalse);

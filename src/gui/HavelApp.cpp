@@ -15,10 +15,23 @@
 #include <QPixmap>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <csignal>
 #include <fstream>
 #include <stdexcept>
+#include <system_error>
 
 namespace havel {
+
+// Block all signals in the calling thread
+void blockAllSignals() {
+  sigset_t set;
+  sigfillset(&set);
+  if (pthread_sigmask(SIG_BLOCK, &set, nullptr) != 0) {
+    throw std::system_error(errno, std::system_category(),
+                            "Failed to block signals");
+  }
+}
+
 HavelApp::HavelApp(bool isStartup, std::string scriptFile, bool repl, bool gui,
                    QObject *parent)
     : QObject(parent), lastCheck(std::chrono::steady_clock::now()),
@@ -334,71 +347,14 @@ void HavelApp::setupTimers() {
 
 void HavelApp::setupSignalHandling() {
   try {
-    havel::util::blockAllSignals();
+    blockAllSignals();
     // signalWatcher.start(); // DISABLED - EventListener handles signals
     info("Signal handling initialized - EventListener manages signals");
 
     // Set up immediate cleanup on signal reception - prioritize evdev
     // ungrabbing
-    signalWatcher.setCleanupCallback([this]() {
-      info("Signal received - EMERGENCY SHUTDOWN (evdev ungrab first)");
-      // Force immediate cleanup on signal
-      if (!shutdownRequested.load()) {
-        shutdownRequested = true;
-
-        // EMERGENCY: Ungrab evdev devices IMMEDIATELY - highest priority
-        if (io) {
-          info("EMERGENCY: Forcing immediate evdev ungrab...");
-
-          // EventListener handles emergency cleanup now
-          io->StopEvdevMouseListener();
-
-          // Stop EventListener if using new event system
-          if (io->GetEventListener()) {
-            io->GetEventListener()->Stop();
-          }
-
-          // Ungrab all X11 hotkeys immediately
-          io->UngrabAll();
-
-          info("Evdev devices successfully ungrabbed - system should be "
-               "responsive now");
-        }
-
-        // Fast cleanup of other components (skip slow operations)
-        clipboardManager.reset();
-
-        if (hotkeyManager) {
-          hotkeyManager->cleanup();
-        }
-        hotkeyManager.reset();
-        mpv.reset();
-
-        // Skip compositor and window manager cleanup for speed
-        // WindowManager::ShutdownCompositorBridge();
-        windowManager.reset();
-
-        // Reset IO safely
-        if (io) {
-          io->cleanup();
-          io.reset();
-        }
-        // Don't call full io->cleanup() since we already did emergency cleanup
-        io.reset();
-
-        if (trayMenu) {
-          trayMenu.reset();
-        }
-
-        info("Emergency shutdown complete - exiting now");
-
-        // Force immediate exit
-        if (QApplication::instance()) {
-          QApplication::quit();
-        }
-        std::exit(0);
-      }
-    });
+    // signalWatcher.setCleanupCallback([this]() { ... }); // Removed -
+    // EventListener handles this
   } catch (const std::exception &e) {
     throw std::runtime_error("Failed to set up signal handling: " +
                              std::string(e.what()));
@@ -410,12 +366,7 @@ void HavelApp::onPeriodicCheck() {
   }
 
   try {
-    // Check for termination signals
-    if (signalWatcher.shouldExitNow()) {
-      info("Termination signal received. Initiating shutdown...");
-      exitApp();
-      return;
-    }
+    // Check for termination signals - handled by EventListener now
 
     auto now = std::chrono::steady_clock::now();
 

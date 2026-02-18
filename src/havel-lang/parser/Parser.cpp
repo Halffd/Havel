@@ -32,9 +32,14 @@ bool Parser::notEOF() const { return at().type != havel::TokenType::EOF_TOKEN; }
 std::unique_ptr<havel::ast::Program>
 Parser::produceAST(const std::string &sourceCode) {
   // Tokenize source code
-  havel::Lexer lexer(sourceCode);
+  havel::Lexer lexer(sourceCode, debug.lexer);
   tokens = lexer.tokenize();
   position = 0;
+
+  if (debug.parser) {
+    std::cout << "PARSE: Starting to parse program with " << tokens.size()
+              << " tokens" << std::endl;
+  }
 
   // Create program AST node
   auto program = std::make_unique<havel::ast::Program>();
@@ -46,6 +51,11 @@ Parser::produceAST(const std::string &sourceCode) {
         at().type == havel::TokenType::Semicolon) {
       advance();
       continue;
+    }
+
+    if (debug.parser) {
+      std::cout << "PARSE: Parsing statement at token " << at().toString()
+                << std::endl;
     }
 
     try {

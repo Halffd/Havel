@@ -13,7 +13,6 @@
 #include <chrono>
 #include <memory>
 
-#include "core/util/SignalWatcher.hpp"
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
 #else
@@ -95,7 +94,6 @@ private:
   std::unique_ptr<QTimer> configCheckTimer;
 
   // System components
-  util::SignalWatcher signalWatcher;
   Display *display = nullptr;
 
   // Time tracking

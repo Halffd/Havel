@@ -6,6 +6,11 @@
 
 namespace havel::compiler {
 
+// Debug options for bytecode compiler
+struct DebugOptions {
+  bool bytecode = false;
+};
+
 // Bytecode compiler implementation
 class HavelBytecodeCompiler : public BytecodeCompiler {
 private:
@@ -13,6 +18,9 @@ private:
   BytecodeFunction *current_function;
   std::unordered_map<std::string, uint32_t> variable_indices;
   uint32_t next_var_index = 0;
+
+  // Debug options
+  DebugOptions debug;
 
   uint32_t addConstant(const BytecodeValue &value) {
     current_function->constants.push_back(value);
@@ -38,7 +46,8 @@ private:
   }
 
 public:
-  HavelBytecodeCompiler() : chunk(std::make_unique<BytecodeChunk>()) {}
+  HavelBytecodeCompiler(const DebugOptions &debug_opts = {})
+      : debug(debug_opts) {}
 
   std::unique_ptr<BytecodeChunk> compile(const ast::Program &program) override {
     // Create main function
@@ -56,6 +65,48 @@ public:
 
     chunk->addFunction(*current_function);
     delete current_function;
+
+    if (debug.bytecode) {
+      std::cout << "BYTECODE: Compiled " << chunk->getFunctionCount()
+                << " functions:" << std::endl;
+      for (const auto &func : chunk->getAllFunctions()) {
+        std::cout << "  Function '" << func.name
+                  << "' (params: " << func.param_count
+                  << ", locals: " << func.local_count
+                  << ", instructions: " << func.instructions.size() << ")"
+                  << std::endl;
+        for (size_t i = 0; i < func.instructions.size(); ++i) {
+          const auto &inst = func.instructions[i];
+          std::cout << "    " << i << ": " << static_cast<int>(inst.opcode);
+          if (!inst.operands.empty()) {
+            std::cout << " [";
+            for (size_t j = 0; j < inst.operands.size(); ++j) {
+              if (j > 0)
+                std::cout << ", ";
+              std::visit(
+                  [](auto &&arg) {
+                    using T = std::decay_t<decltype(arg)>;
+                    if constexpr (std::is_same_v<T, std::nullptr_t>)
+                      std::cout << "null";
+                    else if constexpr (std::is_same_v<T, bool>)
+                      std::cout << (arg ? "true" : "false");
+                    else if constexpr (std::is_same_v<T, int64_t>)
+                      std::cout << arg;
+                    else if constexpr (std::is_same_v<T, double>)
+                      std::cout << arg;
+                    else if constexpr (std::is_same_v<T, std::string>)
+                      std::cout << "\"" << arg << "\"";
+                    else if constexpr (std::is_same_v<T, uint32_t>)
+                      std::cout << "const[" << arg << "]";
+                  },
+                  inst.operands[j]);
+            }
+            std::cout << "]";
+          }
+          std::cout << std::endl;
+        }
+      }
+    }
 
     return std::move(chunk);
   }
@@ -91,21 +142,23 @@ private:
   }
 
   void compileExpression(const ast::Expression &expr) {
-    if (auto literal = dynamic_cast<const ast::NumberLiteral *>(&expr)) {
-      emit(OpCode::LOAD_CONST, {addConstant(literal->value)});
+    if (auto number_literal = dynamic_cast<const ast::NumberLiteral *>(&expr)) {
+      emit(OpCode::LOAD_CONST, {addConstant(number_literal->value)});
     } else if (auto string_literal =
                    dynamic_cast<const ast::StringLiteral *>(&expr)) {
       emit(OpCode::LOAD_CONST, {addConstant(string_literal->value)});
     } else if (auto bool_literal =
-                   dynamic_cast<const ast::BooleanLiteral *>(&expr)) {
-      emit(OpCode::LOAD_CONST, {addConstant(bool_literal->value)});
-    } else if (auto id = dynamic_cast<const ast::Identifier *>(&expr)) {
-      if (id->symbol == "null") {
-        emit(OpCode::LOAD_CONST, {addConstant(nullptr)});
+                   dynamic_cast<const ast::Identifier *>(&expr)) {
+      if (bool_literal->symbol == "true") {
+        emit(OpCode::LOAD_CONST, {addConstant(true)});
+      } else if (bool_literal->symbol == "false") {
+        emit(OpCode::LOAD_CONST, {addConstant(false)});
       } else {
-        uint32_t var_index = getVariableIndex(id->symbol);
-        emit(OpCode::LOAD_VAR, {var_index});
+        // Handle as regular identifier
+        emit(OpCode::LOAD_VAR, {getVariableIndex(bool_literal->symbol)});
       }
+    } else if (auto identifier = dynamic_cast<const ast::Identifier *>(&expr)) {
+      emit(OpCode::LOAD_VAR, {getVariableIndex(identifier->symbol)});
     } else if (auto binary =
                    dynamic_cast<const ast::BinaryExpression *>(&expr)) {
       compileBinaryExpression(*binary);
@@ -139,8 +192,8 @@ private:
     case ast::BinaryOperator::Mod:
       emit(OpCode::MOD);
       break;
-    case ast::BinaryOperator::Power:
-      emit(OpCode::POW);
+    case ast::BinaryOperator::Pow:
+      // TODO: implement power operation
       break;
     case ast::BinaryOperator::Equal:
       emit(OpCode::EQ);
@@ -148,13 +201,13 @@ private:
     case ast::BinaryOperator::NotEqual:
       emit(OpCode::NEQ);
       break;
-    case ast::BinaryOperator::LessThan:
+    case ast::BinaryOperator::Less:
       emit(OpCode::LT);
       break;
     case ast::BinaryOperator::LessEqual:
       emit(OpCode::LTE);
       break;
-    case ast::BinaryOperator::GreaterThan:
+    case ast::BinaryOperator::Greater:
       emit(OpCode::GT);
       break;
     case ast::BinaryOperator::GreaterEqual:
@@ -165,6 +218,9 @@ private:
       break;
     case ast::BinaryOperator::Or:
       emit(OpCode::OR);
+      break;
+    default:
+      // TODO: handle other operators
       break;
     }
   }

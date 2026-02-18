@@ -19,6 +19,13 @@ public:
   size_t column;
 };
 
+// Debug options for parser and lexer
+struct DebugOptions {
+  bool lexer = false;
+  bool parser = false;
+  bool ast = false;
+};
+
 class Parser {
 private:
   std::vector<Token> tokens;
@@ -28,6 +35,9 @@ private:
   // This must be disabled when parsing conditions for statements like
   // `if/while/when` to ensure the `{` starts the statement body.
   bool allowBraceCallSugar = true;
+
+  // Debug options
+  DebugOptions debug;
 
   [[noreturn]] void fail(const std::string &message);
   [[noreturn]] void failAt(const Token &token, const std::string &message);
@@ -109,7 +119,7 @@ private:
   bool isAtEndOfBlock();
 
 public:
-  explicit Parser() = default;
+  explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}
 
   // Main entry point (like Tyler's produceAST)
   std::unique_ptr<ast::Program> produceAST(const std::string &sourceCode);

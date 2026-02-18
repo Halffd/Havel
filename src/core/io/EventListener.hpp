@@ -1,6 +1,5 @@
 #pragma once
-#include "HotkeyExecutor.hpp" // Include HotkeyExecutor
-#include "KeyMap.hpp"
+#include "HotkeyExecutor.hpp"         // Include HotkeyExecutor
 #include "core/CallbackTypes.hpp"     // Include callback types
 #include "core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
@@ -12,8 +11,6 @@
 #include <mutex>
 #include <queue>
 #include <shared_mutex>
-#include <signal.h>
-#include <sstream>
 #include <string>
 #include <sys/eventfd.h>
 #include <thread>
@@ -173,6 +170,9 @@ public:
   std::vector<MouseGestureDirection>
   ParseGesturePattern(const HotKey &hotkey) const;
 
+  // Release all pressed virtual keys (for clean shutdown)
+  void ReleaseAllVirtualKeys();
+
   // Signal handling methods
   void SetupSignalHandling();
   void HandleSignal(int sig);
@@ -258,6 +258,9 @@ private:
   // modifier state
   std::unordered_map<int, bool>
       physicalKeyStates; // Maps evdev code to pressed/released state
+
+  // Track pressed virtual keys sent to uinput to release on shutdown
+  std::unordered_set<int> pressedVirtualKeys;
 
   // Hotkey management (exact from IO.cpp)
   mutable std::shared_mutex hotkeyMutex;

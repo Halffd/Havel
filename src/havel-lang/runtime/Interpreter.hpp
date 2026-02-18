@@ -301,7 +301,8 @@ public:
               HotkeyManager *hotkey_mgr = nullptr,
               BrightnessManager *brightness_mgr = nullptr,
               AudioManager *audio_mgr = nullptr, GUIManager *gui_mgr = nullptr,
-              ScreenshotManager *screenshot_mgr = nullptr);
+              ScreenshotManager *screenshot_mgr = nullptr,
+              const std::vector<std::string> &cli_args = {});
   ~Interpreter() = default;
 
   HavelResult Execute(const std::string &sourceCode);
@@ -387,6 +388,17 @@ private:
   ScreenshotManager *screenshotManager;
   HavelResult lastResult;
   std::mutex interpreterMutex; // Protect interpreter state
+
+  std::vector<std::string> cliArgs;
+
+  // Debug control options
+  struct DebugOptions {
+    bool lexer = false;
+    bool parser = false;
+    bool ast = false;
+    bool bytecode = false;
+    bool jit = false;
+  } debug;
 
   // KeyTap instances for advanced hotkey functionality
   std::vector<std::unique_ptr<KeyTap>> keyTaps;

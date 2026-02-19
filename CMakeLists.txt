@@ -362,6 +362,8 @@ target_precompile_headers(havel PRIVATE
     <thread>
 )
 
+target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+target_link_options(havel PRIVATE -fsanitize=address,undefined)
 # Include directories
 target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -618,3 +620,6 @@ endif()
 if(ALSA_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_ALSA)
 endif()
+target_include_directories(havel_lang PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)

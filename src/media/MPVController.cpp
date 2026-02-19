@@ -49,10 +49,10 @@ bool MPVController::EnsureInitialized() {
         return Initialize();
     return true;
 }
-
 bool MPVController::ConnectSocket() {
     if (socket_fd != -1) {
         close(socket_fd);
+        socket_fd = -1;
     }
 
     socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -65,10 +65,18 @@ bool MPVController::ConnectSocket() {
 
     int retries = 0;
     while (connect(socket_fd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
-        if (++retries >= max_retries) return false;
+        if (errno == ECONNREFUSED) {
+            // Stale socket – try to remove it
+            unlink(socket_path.c_str());
+            // Optional: small delay before retry
+        }
+        if (++retries >= max_retries) {
+            close(socket_fd);
+            socket_fd = -1;
+            return false;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(retry_delay_ms));
     }
-
     return true;
 }
     void MPVController::SendCommand(const std::vector<std::string>& cmd) {
@@ -114,7 +122,9 @@ bool MPVController::ConnectSocket() {
 }
 
 bool MPVController::IsSocketAlive() {
-    if (socket_fd == -1) return false;
+    if (socket_fd == -1) {
+        return ConnectSocket();
+    }
     char buf;
     ssize_t ret = recv(socket_fd, &buf, 1, MSG_PEEK | MSG_DONTWAIT);
     if (ret == 0 || (ret == -1 && errno != EAGAIN && errno != EWOULDBLOCK)) {

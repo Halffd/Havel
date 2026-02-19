@@ -105,19 +105,82 @@ void HotkeyManager::Zoom(int zoom) {
   else if (zoom > 4)
     zoom = 4;
 
-  if (zoom == 1) {
-    io.Send("@^{Up}");
-    zoomLevel += 0.1;
-  } else if (zoom == 0) {
-    io.Send("@^{Down}");
-    zoomLevel -= 0.1;
-  } else if (zoom == 2) {
-    io.Send("@^/");
-    zoomLevel = 1.0;
-  } else if (zoom == 3) {
-    io.Send("@^+/");
-    zoomLevel = 1.5;
+  // Check if running on KDE/KWin and use qdbus for zoom commands
+  if (CompositorBridge::IsKDERunning()) {
+    std::string command;
+    switch (zoom) {
+    case 0: // zoomOut (from original function: zoom = 0 calls
+            // io.Send("@^{Down}"))
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomOutDBus";
+      break;
+    case 1: // zoomIn (from original function: zoom = 1 calls io.Send("@^{Up}"))
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomInDBus";
+      break;
+    case 2: // resetZoom
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.resetZoomDBus";
+      break;
+    case 3:
+      char buffer[128];
+      std::snprintf(
+          buffer, sizeof(buffer),
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomToValueDBus %f",
+          Configs::Get().Get<double>("Zoom.Zoom3", 2.0));
+      command = std::string(buffer);
+      break;
+    case 4: // zoomTo140
+      command = "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.zoomTo140DBus";
+      break;
+    default:
+      break;
+    }
+
+    if (!command.empty()) {
+      if (CompositorBridge::SendKWinZoomCommand(command)) {
+        info("KWin zoom command executed: {}", command);
+        try {
+          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+              "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+          if (!result.empty()) {
+            zoomLevel = std::stod(result);
+          }
+        } catch (const std::exception &e) {
+          warn("Failed to parse zoom level after zoom command: {}", e.what());
+        }
+      } else {
+        warn("KWin zoom command failed, falling back to hotkeys: {}", command);
+        // Fall back to original hotkey methods
+        if (zoom == 1) {
+          io.Send("@^{Up}");
+          zoomLevel += 0.1;
+        } else if (zoom == 0) {
+          io.Send("@^{Down}");
+          zoomLevel -= 0.1;
+        } else if (zoom == 2) {
+          io.Send("@^/");
+          zoomLevel = 1.0;
+        } else if (zoom == 3) {
+          io.Send("@^+/");
+          zoomLevel = 1.5;
+        }
+      }
+    }
+  } else {
+    // Use original hotkey methods
+    if (zoom == 1) {
+      io.Send("@^{Up}");
+      zoomLevel += 0.1;
+    } else if (zoom == 0) {
+      io.Send("@^{Down}");
+      zoomLevel -= 0.1;
+    } else if (zoom == 2) {
+      io.Send("@^/");
+      zoomLevel = 1.0;
+    } else if (zoom == 3) {
+      io.Send("@^+/");
+      zoomLevel = 1.5;
+    }
   }
+
   if (zoomLevel < 1.0) {
     zoomLevel = 1.0;
   } else if (zoomLevel > 100.0) {
@@ -190,7 +253,7 @@ void HotkeyManager::printHotkeys() const {
 }
 HotkeyManager::HotkeyManager(
     IO &io, WindowManager &windowManager, MPVController &mpv,
-    AudioManager &audioManager, havel::Interpreter &interpreter,
+    AudioManager &audioManager, Interpreter &interpreter,
     ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager,
     std::shared_ptr<net::NetworkManager> networkManager)
     : io(io), windowManager(windowManager), mpv(mpv),
@@ -507,7 +570,13 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       [this]() {
-        Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+        if (!CompositorBridge::IsKDERunning()) {
+          Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
+        } else {
+          CompositorBridge::SendKWinZoomCommand(
+              "org.kde.plasmashell /PlasmaShell "
+              "org.kde.PlasmaShell.activateLauncherMenu");
+        }
       },                 // Tap action
       [this]() -> bool { // Tap condition function
         // Don't trigger in gaming mode
@@ -532,7 +601,19 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
-      io, *this, "ralt", [this]() { WindowManager::MoveWindowToNextMonitor(); },
+      io, *this, "ralt",
+      [this]() {
+        if (CompositorBridge::IsKDERunning()) {
+          auto win = havel::Window(WindowManager::GetActiveWindow());
+          if (win.Pos().x < 0) {
+            io.Send("#+{Right}");
+          } else {
+            io.Send("#+{Left}");
+          }
+        } else {
+          WindowManager::MoveWindowToNextMonitor();
+        }
+      },
       "", nullptr, "", false, true);
   ralt->setup();
 
@@ -585,6 +666,15 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
   // Mouse forward button to reset zoom
   io.Hotkey("@|*f13", [this]() { // When zooming
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception &e) {
+      warn("Failed to parse zoom level for @kc89: {}", e.what());
+    }
     if (zoomLevel <= 1.0) {
       Zoom(3);
     } else {
@@ -629,13 +719,24 @@ void HotkeyManager::RegisterDefaultHotkeys() {
     ProcessManager::sendSignal(static_cast<pid_t>(activePid), SIGKILL);
   });
   // Context-sensitive hotkeys
-  AddHotkey("@|kc89", [this]() {
-    if (zoomLevel <= 1.0) {
-      Zoom(3);
-    } else {
-      Zoom(2);
-    }
-  });
+  AddHotkey(
+      "@|kc89",
+      [this]() { // When zooming
+        try {
+          std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+              "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+          if (!result.empty()) {
+            zoomLevel = std::stod(result);
+          }
+        } catch (const std::exception &e) {
+          warn("Failed to parse zoom level for @kc89: {}", e.what());
+        }
+        if (zoomLevel <= 1.0) {
+          Zoom(3);
+        } else {
+          Zoom(2);
+        }
+      });
   AddContextualHotkey(
       "!x", "!(window.title ~ 'emacs' || window.title ~c 'alacritty')",
       [=]() {
@@ -872,12 +973,32 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
 
   AddHotkey("~^Down", [this]() {
-    if (zoomLevel > 1.0)
-      zoomLevel -= 0.1;
+    // if(zoomLevel > 1.0) zoomLevel -= 0.1;
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception &e) {
+      // Handle the exception gracefully - use default zoom level or keep
+      // current
+      warn("Failed to parse zoom level for ~^Down: {}", e.what());
+    }
   });
   AddHotkey("~^Up", [this]() {
-    if (zoomLevel < 2.0)
-      zoomLevel += 0.1;
+    // if(zoomLevel < 2.0) zoomLevel += 0.1;
+    try {
+      std::string result = CompositorBridge::SendKWinZoomCommandWithOutput(
+          "org.kde.KWin /Zoom org.kde.KWin.Effect.Zoom.getZoomLevelDBus");
+      if (!result.empty()) {
+        zoomLevel = std::stod(result);
+      }
+    } catch (const std::exception &e) {
+      // Handle the exception gracefully - use default zoom level or keep
+      // current
+      warn("Failed to parse zoom level for ~^Up: {}", e.what());
+    }
   });
   // Mouse wheel + click combinations
   io.Hotkey("@^#WheelUp", [this]() { io.Send("#{PgUp}"); });
@@ -1449,8 +1570,25 @@ void HotkeyManager::RegisterMediaHotkeys() {
 
 void HotkeyManager::RegisterWindowHotkeys() {
   // Window movement
+  io.Hotkey("^!Up", []() { WindowManager::MoveToCorners(1); });
+
+  io.Hotkey("^!Down", []() { WindowManager::MoveToCorners(2); });
+
+  io.Hotkey("^!Left", []() { WindowManager::MoveToCorners(3); });
+
+  io.Hotkey("^!Right", []() { WindowManager::MoveToCorners(4); });
+
+  // Window resizing
+  io.Hotkey("+!Up", []() { WindowManager::ResizeToCorner(1); });
+
+  io.Hotkey("!+Down", []() { WindowManager::ResizeToCorner(2); });
+
+  io.Hotkey("!+Left", []() { WindowManager::ResizeToCorner(3); });
+
+  io.Hotkey("!+Right", []() { WindowManager::ResizeToCorner(4); });
+
   // Window always on top
-  io.Hotkey("!a", []() { WindowManager::ToggleAlwaysOnTop(); });
+  io.Hotkey("!a", [this]() { io.Send("!#A"); });
 }
 
 void HotkeyManager::registerAutomationHotkeys() {

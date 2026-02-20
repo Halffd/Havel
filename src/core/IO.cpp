@@ -8,6 +8,7 @@
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
+#include "window/WindowManagerDetector.hpp"
 #include <chrono>
 #include <fcntl.h>
 #include <future>
@@ -658,7 +659,8 @@ bool IO::GrabAllHotkeys() {
   return success;
 }
 
-void IO::Ungrab(Key input, unsigned int modifiers, x11::Window root, bool isMouse) {
+void IO::Ungrab(Key input, unsigned int modifiers, x11::Window root,
+                bool isMouse) {
   if (!display)
     return;
 
@@ -1069,6 +1071,76 @@ bool IO::EmitClick(int btnCode, int action) {
   }
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
+  if (eventListener && useNewEventListener) {
+    // Get screen dimensions for absolute coordinates
+    auto monitors = DisplayManager::GetMonitors();
+    if (monitors.empty())
+      return false;
+
+    // Assume primary monitor for coordinate system
+    int screenWidth = monitors[0].width;
+    int screenHeight = monitors[0].height;
+
+    // Get current position
+    int currentX = 0, currentY = 0;
+    if (!WindowManagerDetector::IsX11()) {
+      // On Wayland, get from EventListener
+      if (eventListener) {
+        auto [x, y] = eventListener->GetMousePosition();
+        currentX = (x * screenWidth) / 65535;
+        currentY = (y * screenHeight) / 65535;
+      }
+    } else {
+      Display *display = DisplayManager::GetDisplay();
+      if (display) {
+        ::Window root, child;
+        int rootX, rootY;
+        unsigned int mask;
+        XQueryPointer(display, DefaultRootWindow(display), &root, &child,
+                      &rootX, &rootY, &currentX, &currentY, &mask);
+      }
+    }
+
+    // Animate to target with steps
+    int steps = std::max(10, static_cast<int>(std::abs(targetX - currentX) +
+                                              std::abs(targetY - currentY)) /
+                                 speed);
+
+    for (int i = 0; i <= steps; i++) {
+      double progress = static_cast<double>(i) / steps;
+
+      // Ease in-out curve
+      double easedProgress;
+      if (progress < 0.5) {
+        easedProgress = 2 * progress * progress;
+      } else {
+        easedProgress = -1 + (4 - 2 * progress) * progress;
+      }
+
+      int currentTargetX =
+          currentX + static_cast<int>((targetX - currentX) * easedProgress);
+      int currentTargetY =
+          currentY + static_cast<int>((targetY - currentY) * easedProgress);
+
+      // Send absolute position events
+      eventListener->SendUinputEvent(EV_ABS, ABS_X,
+                                     (currentTargetX * 65535) / screenWidth);
+      eventListener->SendUinputEvent(EV_ABS, ABS_Y,
+                                     (currentTargetY * 65535) / screenHeight);
+
+      // Sync
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+
+      // Sleep based on acceleration
+      double currentSpeed =
+          speed * (1.0 + (accel - 1.0) * std::min(progress * 2.0, 1.0));
+      int sleepMs = std::max(1, static_cast<int>(20 / currentSpeed));
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return true;
+  }
+
   if (mouseUinputFd < 0)
     return false;
 
@@ -1115,7 +1187,6 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
 
     // Send absolute position events
     input_event ev = {};
-
     ev.type = EV_ABS;
     ev.code = ABS_X;
     ev.value = (currentTargetX * 65535) / screenWidth; // Scale to device range
@@ -3631,8 +3702,8 @@ int IO::GetKeyboard() {
     }
   }
 
-  x11::Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0,
-                                      1, 1, 0, 0, 0);
+  x11::Window window = XCreateSimpleWindow(display, DefaultRootWindow(display),
+                                           0, 0, 1, 1, 0, 0, 0);
   if (XGrabKeyboard(display, window, x11::XTrue, GrabModeAsync, GrabModeAsync,
                     CurrentTime) != GrabSuccess) {
     std::cerr << "Unable to grab keyboard!" << std::endl;

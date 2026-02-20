@@ -442,7 +442,7 @@ public:
   bool MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
     if (!MouseMove(dx, dy, speed, accel))
       return false;
-    return Click(btnCode, MouseAction::Click);
+    return EmitClick(static_cast<int>(btnCode), 2);
   }
   bool Scroll(double dy, double dx = 0);
 
@@ -485,6 +485,8 @@ private:
 
   void UpdateNumLockMask();
   bool ModifierMatch(unsigned int expected, unsigned int actual);
+
+public:
   bool EmitClick(int btnCode, int action);
 
   bool SetupUinputDevice();

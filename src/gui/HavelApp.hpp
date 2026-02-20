@@ -34,6 +34,13 @@ class HavelApp : public QObject {
   Q_OBJECT
 
 public:
+  template <typename T>
+  bool MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
+    if (!io->MouseMove(dx, dy, speed, accel))
+      return false;
+    return io->EmitClick(btnCode, 2);
+  }
+
   explicit HavelApp(bool isStartup, std::string scriptFile = "",
                     bool repl = false, bool gui = true,
                     QObject *parent = nullptr);

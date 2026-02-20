@@ -2705,40 +2705,109 @@ void Interpreter::InitializeSystemBuiltins() {
     (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
 
-  environment->Define(
-      "Hotkey",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 2 || args.size() > 3)
-          return HavelRuntimeError("Hotkey requires two or three arguments");
-        std::string key = ValueToString(args[0]);
-        std::string key2 = ValueToString(args[1]);
-        std::variant<std::string, std::shared_ptr<ast::Expression>> condition;
-        if (args.size() == 3) {
-          condition = ValueToString(args[2]);
-        }
-        if (hotkeyManager) {
-          if (condition) {
-            std::function callback;
-            if (std::holds_alternative<std::shared_ptr<ast::Expression>>(
-                    condition = condition)) {
-              callback = [this,
-                          expr = std::get<std::shared_ptr<ast::Expression>>(
-                              condition)]() { this->Evaluate(expr); };
-            } else {
-              callback = nullptr;
-            }
-            auto hotkey =
-                hotkeyManager->AddContextualHotkey(key, callback, key2);
-            return HavelValue(std::move(hotkey));
-          } else {
-            auto hotkey = hotkeyManager->AddHotkey(key, key2);
-            return HavelValue(std::move(hotkey));
-          }
-        }
-        return HavelValue(nullptr);
-      }));
+environment->Define(
+    "Hotkey",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
 
+        if (args.size() < 2 || args.size() > 4)
+            return HavelRuntimeError("Hotkey requires 2–4 arguments");
+
+        if (!hotkeyManager)
+            return HavelValue(nullptr);
+
+        std::string key = ValueToString(args[0]);
+
+        // --- helper: convert value → void() ---
+        auto toVoidAction = [this](const HavelValue& v)
+            -> std::function<void()> {
+
+            if (std::holds_alternative<std::string>(v)) {
+                std::string cmd = std::get<std::string>(v);
+                return [cmd]() {
+                    Launcher::runShellDetached(cmd.c_str());
+                };
+            }
+
+            if (std::holds_alternative<std::shared_ptr<HavelFunction>>(v)) {
+                auto fn = std::get<std::shared_ptr<HavelFunction>>(v);
+                return [this, fn]() {
+                    this->Evaluate(*fn->declaration);
+                };
+            }
+
+            if (std::holds_alternative<BuiltinFunction>(v)) {
+                auto fn = std::get<BuiltinFunction>(v);
+                return [fn]() {
+                    fn({});
+                };
+            }
+
+            throw HavelRuntimeError("Invalid action type");
+        };
+
+        // --- helper: convert value → bool() ---
+        auto toBoolCondition = [this](const HavelValue& v)
+            -> std::variant<std::string, std::function<bool()>> {
+
+            if (std::holds_alternative<std::string>(v)) {
+                return std::get<std::string>(v);
+            }
+
+            if (std::holds_alternative<std::shared_ptr<HavelFunction>>(v)) {
+                auto fn = std::get<std::shared_ptr<HavelFunction>>(v);
+                return [this, fn]() {
+                    auto result = this->Evaluate(*fn->declaration);
+                    return ExecResultToBool(result);
+                };
+            }
+
+            if (std::holds_alternative<BuiltinFunction>(v)) {
+                auto fn = std::get<BuiltinFunction>(v);
+                return [this, fn]() {
+                    auto result = fn({});
+                    return ExecResultToBool(result);
+                };
+            }
+
+            throw HavelRuntimeError("Invalid condition type");
+        };
+
+        // ---------- CASE 2 args ----------
+        if (args.size() == 2) {
+            hotkeyManager->AddHotkey(key, toVoidAction(args[1]));
+            return HavelValue(nullptr);
+        }
+
+        // ---------- CASE 3 or 4 args ----------
+        auto condition = toBoolCondition(args[2]);
+        auto trueAction = toVoidAction(args[1]);
+
+        std::function<void()> falseAction = nullptr;
+        if (args.size() == 4)
+            falseAction = toVoidAction(args[3]);
+
+        // string condition
+        if (std::holds_alternative<std::string>(condition)) {
+            return HavelValue(
+                hotkeyManager->AddContextualHotkey(
+                    key,
+                    std::get<std::string>(condition),
+                    trueAction,
+                    falseAction
+                )
+            );
+        }
+
+        // lambda condition
+        return HavelValue(
+            hotkeyManager->AddContextualHotkey(
+                key,
+                std::get<std::function<bool()>>(condition),
+                trueAction,
+                falseAction
+            )
+        );
+    }));
   // Process helpers
   environment->Define(
       "process.getState",

@@ -4,7 +4,7 @@ This file provides guidance to WARP (warp.dev) when working with code in this re
 
 ## Project Overview
 
-Havel (also known as HvC - Hotkey vs Control) is a comprehensive hotkey management and window automation system for Linux X11 environments. The project consists of two main components:
+Havel (also known as HvC - Hotkeys via C++) is a comprehensive hotkey management and window automation system for Linux X11 environments. The project consists of two main components:
 
 1. **HvC System**: A powerful C++23 application for managing hotkeys, window control, and media playback
 2. **Havel Language**: A declarative automation scripting language designed for hotkey management and workflow automation

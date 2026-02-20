@@ -47,9 +47,6 @@ HavelApp::HavelApp(bool isStartup, std::string scriptFile, bool repl, bool gui,
 
   try {
     setupSignalHandling();
-    if (gui) {
-      setupTrayIcon();
-    }
     initializeComponents(isStartup);
     setupTimers();
     initialized = true;
@@ -67,40 +64,6 @@ HavelApp::~HavelApp() {
     instance = nullptr;
   }
   debug("HavelApp destroyed");
-}
-
-void HavelApp::setupTrayIcon() {
-  if (!QSystemTrayIcon::isSystemTrayAvailable()) {
-    warn("System tray is not available on this system");
-    return;
-  }
-
-  trayIcon = std::make_unique<QSystemTrayIcon>(this);
-
-  // Create icon
-  QIcon icon(":/icons/havel.png");
-  if (icon.isNull()) {
-    // Fallback icon
-    QPixmap pixmap(16, 16);
-    pixmap.fill(QColor(0, 120, 215)); // Windows blue
-    icon = QIcon(pixmap);
-  }
-  trayIcon->setIcon(icon);
-  trayIcon->setToolTip("HvC - Havel Control");
-
-  // Create context menu
-  trayMenu = std::make_unique<QMenu>();
-  trayMenu->addAction("Settings", this, &HavelApp::showSettings);
-  trayMenu->addSeparator();
-  trayMenu->addAction("Exit", this, &HavelApp::exitApp);
-
-  trayIcon->setContextMenu(trayMenu.get());
-
-  connect(trayIcon.get(), &QSystemTrayIcon::activated, this,
-          &HavelApp::onTrayActivated);
-
-  trayIcon->show();
-  info("System tray icon created");
 }
 
 void HavelApp::initializeComponents(bool isStartup) {
@@ -347,12 +310,7 @@ void HavelApp::setupTimers() {
 
 void HavelApp::setupSignalHandling() {
   try {
-    auto start = std::chrono::high_resolution_clock::now();
     blockAllSignals();
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    info("blockAllSignals took {} ms", duration.count());
     // signalWatcher.start(); // DISABLED - EventListener handles signals
     info("Signal handling initialized - EventListener manages signals");
 
@@ -393,12 +351,6 @@ void HavelApp::onPeriodicCheck() {
 
   } catch (const std::exception &e) {
     error("Error in periodic check: {}", e.what());
-  }
-}
-
-void HavelApp::onTrayActivated(QSystemTrayIcon::ActivationReason reason) {
-  if (reason == QSystemTrayIcon::DoubleClick) {
-    showSettings();
   }
 }
 
@@ -458,9 +410,6 @@ void HavelApp::cleanup() noexcept {
     io.reset();
   }
 
-  // Clean up Qt components
-  trayMenu.reset();
-
   info("HavelApp cleanup complete");
 }
 void HavelApp::showTextChunker() {
@@ -468,10 +417,7 @@ void HavelApp::showTextChunker() {
   std::string text = clipboard->text().toStdString();
 
   if (text.empty()) {
-    if (trayIcon) {
-      trayIcon->showMessage("Text Chunker", "Clipboard is empty.",
-                            QSystemTrayIcon::Warning);
-    }
+    warn("Clipboard is empty");
     return;
   }
 

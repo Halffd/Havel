@@ -31,7 +31,7 @@ void KeyTap::setup() {
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
-        hotkeyManager.io.Hotkey(keyDown, [this, func]() {
+        hotkeyManager.AddHotkey(keyDown, [this, func]() {
             if (func && func()) {
                 keyHeld = true;
                 combo = false;
@@ -62,7 +62,7 @@ void KeyTap::setup() {
         if (std::holds_alternative<std::function<bool()>>(comboCondition)) {
             // Using function-based condition for combo
             auto func = std::get<std::function<bool()>>(comboCondition);
-            hotkeyManager.io.Hotkey("@|" + keyName, [this, func]() {
+            hotkeyManager.AddHotkey("@|" + keyName, [this, func]() {
                 if (func && func()) {
                     onCombo();
                 }
@@ -89,7 +89,7 @@ void KeyTap::setup() {
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
-        hotkeyManager.io.Hotkey(keyUp, [this, func]() {
+        hotkeyManager.AddHotkey(keyUp, [this, func]() {
             if (keyHeld && !combo && func && func()) {
                 onTap();   // clean tap
             }

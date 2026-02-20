@@ -5466,17 +5466,21 @@ void Interpreter::InitializeBrightnessBuiltins() {
 }
 
 // KeyTap constructor implementation
-std::unique_ptr<KeyTap> Interpreter::createKeyTap(
+KeyTap* Interpreter::createKeyTap(
     const std::string &keyName, std::function<void()> onTap,
     std::variant<std::string, std::function<bool()>> tapCondition,
     std::variant<std::string, std::function<bool()>> comboCondition,
     std::function<void()> onCombo, bool grabDown, bool grabUp) {
-  auto keyTap =
-      std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
-                               onCombo, comboCondition, grabDown, grabUp);
+  auto keyTap = std::make_unique<KeyTap>(
+      io, *hotkeyManager, keyName, onTap, tapCondition, comboCondition, onCombo,
+      grabDown, grabUp);
+
+  KeyTap *rawPtr = keyTap.get();
+
   keyTaps.push_back(std::move(keyTap));
-  keyTaps.back()->setup();
-  return std::move(keyTaps.back());
+  rawPtr->setup();
+
+    return rawPtr;
 }
 
 void Interpreter::InitializeAudioBuiltins() {

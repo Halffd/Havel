@@ -416,7 +416,7 @@ private:
   HavelResult Evaluate(const ast::ASTNode &node);
 
   // KeyTap constructor for advanced hotkey functionality
-  std::unique_ptr<KeyTap> createKeyTap(
+  KeyTap* createKeyTap(
       const std::string &keyName, std::function<void()> onTap,
       std::variant<std::string, std::function<bool()>> tapCondition = {},
       std::variant<std::string, std::function<bool()>> comboCondition = {},

@@ -451,5 +451,13 @@ private:
   std::mutex updateLoopMutex;
   void UpdateLoop();
   void WatchdogLoop();
+  
+  // Thread to resume update loop after window change (replaces detached thread)
+  std::thread windowChangeResumeThread;
+  std::mutex windowChangeResumeThreadMutex;
+  
+  // Thread for emergency EventListener restart (replaces detached thread)
+  std::thread emergencyRestartThread;
+  std::mutex emergencyRestartThreadMutex;
 };
 } // namespace havel

@@ -1925,7 +1925,15 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
 
   // Resume update loop after a delay to avoid redundant checks using condition
   // variable
-  std::thread([this]() {
+  // Use a member variable to track the resume thread so we can join it in cleanup
+  {
+    std::lock_guard<std::mutex> lock(windowChangeResumeThreadMutex);
+    if (windowChangeResumeThread.joinable()) {
+      windowChangeResumeThread.join();
+    }
+  }
+  
+  windowChangeResumeThread = std::thread([this]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     {
@@ -1933,7 +1941,7 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
       updateLoopPaused.store(false);
     }
     updateLoopCv.notify_one(); // Wake up the update loop
-  }).detach();
+  });
 }
 
 void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
@@ -3374,6 +3382,22 @@ void HotkeyManager::cleanup() {
     watchdogThread.join();
   }
 
+  // Join window change resume thread if running
+  {
+    std::lock_guard<std::mutex> lock(windowChangeResumeThreadMutex);
+    if (windowChangeResumeThread.joinable()) {
+      windowChangeResumeThread.join();
+    }
+  }
+
+  // Join emergency restart thread if running
+  {
+    std::lock_guard<std::mutex> lock(emergencyRestartThreadMutex);
+    if (emergencyRestartThread.joinable()) {
+      emergencyRestartThread.join();
+    }
+  }
+
   if (verboseWindowLogging) {
     logWindowEvent("CLEANUP", "HotkeyManager resources cleaned up");
   }
@@ -3527,43 +3551,49 @@ void HotkeyManager::WatchdogLoop() {
 
       // Try non-blocking restart in a separate thread to avoid watchdog
       // blocking
-      std::thread([this]() {
-        error("Emergency restart of input system...");
-
-        try {
-          auto *listener = io.GetEventListener();
-          if (!listener) {
-            error("EventListener not available");
-            return;
-          }
-
-          // Stop first
-          listener->Stop();
-
-          // Get devices (cached, no locks)
-          std::vector<std::string> devices = io.GetInputDevices();
-
-          if (devices.empty()) {
-            error("No input devices found");
-            return;
-          }
-
-          // Restart
-          listener->Start(devices, true);
-
-          // Re-establish callback
-          if (io.IsUsingNewEventListener()) {
-            listener->inputNotificationCallback = [this]() {
-              NotifyInputReceived();
-            };
-          }
-
-          info("EventListener restarted successfully");
-
-        } catch (const std::exception &e) {
-          error("Failed to restart EventListener: {}", e.what());
+      {
+        std::lock_guard<std::mutex> lock(emergencyRestartThreadMutex);
+        if (emergencyRestartThread.joinable()) {
+          emergencyRestartThread.join();
         }
-      }).detach(); // Detach to avoid blocking watchdog
+        emergencyRestartThread = std::thread([this]() {
+          error("Emergency restart of input system...");
+
+          try {
+            auto *listener = io.GetEventListener();
+            if (!listener) {
+              error("EventListener not available");
+              return;
+            }
+
+            // Stop first
+            listener->Stop();
+
+            // Get devices (cached, no locks)
+            std::vector<std::string> devices = io.GetInputDevices();
+
+            if (devices.empty()) {
+              error("No input devices found");
+              return;
+            }
+
+            // Restart
+            listener->Start(devices, true);
+
+            // Re-establish callback
+            if (io.IsUsingNewEventListener()) {
+              listener->inputNotificationCallback = [this]() {
+                NotifyInputReceived();
+              };
+            }
+
+            info("EventListener restarted successfully");
+
+          } catch (const std::exception &e) {
+            error("Failed to restart EventListener: {}", e.what());
+          }
+        });
+      }
 
       lastInputTime.store(now);
     }

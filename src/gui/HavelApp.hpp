@@ -7,7 +7,6 @@
 #include <QIcon>
 #include <QMenu>
 #include <QObject>
-#include <QSystemTrayIcon>
 #include <QTimer>
 #include <atomic>
 #include <chrono>
@@ -49,7 +48,6 @@ public:
   bool isInitialized() const noexcept { return initialized; }
   // Singleton instance
   inline static HavelApp *instance = nullptr;
-  void setupTrayIcon();
   void initializeComponents(bool isStartup);
   void setupTimers();
   void setupSignalHandling();
@@ -77,18 +75,14 @@ public:
 #ifdef ENABLE_HAVEL_LANG
   std::unique_ptr<GUIManager> guiManager;
 #endif
-  std::shared_ptr<QMenu> trayMenu;
-
 private slots:
   void showTextChunker();
   void onPeriodicCheck();
-  void onTrayActivated(QSystemTrayIcon::ActivationReason reason);
   void showSettings();
   void exitApp();
 
 private:
   // Qt components
-  std::unique_ptr<QSystemTrayIcon> trayIcon;
   std::unique_ptr<QTimer> periodicTimer;
   std::unique_ptr<QTimer> windowCheckTimer;
   std::unique_ptr<QTimer> configCheckTimer;

@@ -5,13 +5,11 @@
 havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QMainWindow(parent) {
     setupUI();
 
-    //scheduleTimer = new QTimer(this);
-    //connect(scheduleTimer, &QTimer::timeout, this, &BrightnessPanel::scheduleAdjustment);
-    //scheduleTimer->start(60000); // Check every minute
-
-    trayIcon = new QSystemTrayIcon(this);
-    trayIcon->setIcon(QIcon::fromTheme("display-brightness"));
-    trayIcon->show();
+    if(tray) {
+        trayIcon = new QSystemTrayIcon(this);
+        trayIcon->setIcon(QIcon::fromTheme("display-brightness"));
+        trayIcon->show();
+    }
 
     auto brightnessUp = new QShortcut(QKeySequence("Ctrl+Alt+Up"), this);
     auto brightnessDown = new QShortcut(QKeySequence("Ctrl+Alt+Down"), this);
@@ -46,7 +44,9 @@ void havel::BrightnessPanel::setBrightness(int value) {
     double brightness = value / 100.0;
     brightnessManager.setBrightness(brightness);
     percentageLabel->setText(QString("%1%").arg(value));
-    trayIcon->setToolTip(QString("Brightness: %1%").arg(value));
+    if(tray && trayIcon) {
+        trayIcon->setToolTip(QString("Brightness: %1%").arg(value));
+    }
     brightnessSlider->setValue(value);
 }
 

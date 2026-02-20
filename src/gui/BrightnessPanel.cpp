@@ -26,9 +26,10 @@ havel::BrightnessPanel::BrightnessPanel(QWidget *parent) : QMainWindow(parent) {
 }
 
 void havel::BrightnessPanel::setupUI() {
-    setWindowTitle("Brightness Manager");
-    setMinimumSize(300, 100);
-
+    if(tray){
+        setWindowTitle("Brightness Manager");
+        setMinimumSize(300, 100);
+    }
     auto mainLayout = new QVBoxLayout(this);
     brightnessSlider = new ::QSlider(Qt::Horizontal, this);
     brightnessSlider->setRange(0, 100);

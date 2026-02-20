@@ -431,34 +431,34 @@ ClipboardManager::ClipboardManager(IO* io, QWidget* parent)
     
     // Setup UI with custom font size and window size
     setupUI();
-
-    // Setup system tray icon
-    trayIcon = new QSystemTrayIcon(this);
-    QIcon icon = QIcon::fromTheme("edit-paste");
-    if (icon.isNull()) {
-        // Create a better fallback icon
-        QPixmap pixmap(32, 32);
-        pixmap.fill(Qt::transparent);
-        
-        QPainter painter(&pixmap);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setBrush(QColor(100, 150, 200));
-        painter.setPen(Qt::NoPen);
-        painter.drawEllipse(2, 2, 28, 28);
-        
-        // Add a simple "P" for paste
-        painter.setPen(Qt::white);
-        painter.setFont(QFont("Arial", 16, QFont::Bold));
-        painter.drawText(pixmap.rect(), Qt::AlignCenter, "P");
-        
-        icon = QIcon(pixmap);
+    if(tray){
+        // Setup system tray icon
+        trayIcon = new QSystemTrayIcon(this);
+        QIcon icon = QIcon::fromTheme("edit-paste");
+        if (icon.isNull()) {
+            // Create a better fallback icon
+            QPixmap pixmap(32, 32);
+            pixmap.fill(Qt::transparent);
+            
+            QPainter painter(&pixmap);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setBrush(QColor(100, 150, 200));
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(2, 2, 28, 28);
+            
+            // Add a simple "P" for paste
+            painter.setPen(Qt::white);
+            painter.setFont(QFont("Arial", 16, QFont::Bold));
+            painter.drawText(pixmap.rect(), Qt::AlignCenter, "P");
+            
+            icon = QIcon(pixmap);
+        }
+        trayIcon->setIcon(icon);
+        trayIcon->setToolTip("Clipboard Manager");
+        trayIcon->show();
+        connect(trayIcon, &QSystemTrayIcon::activated,
+                this, &ClipboardManager::onTrayIconActivated);
     }
-    trayIcon->setIcon(icon);
-    trayIcon->setToolTip("Clipboard Manager");
-    trayIcon->show();
-    connect(trayIcon, &QSystemTrayIcon::activated,
-            this, &ClipboardManager::onTrayIconActivated);
-
     // Setup hotkey for showing/hiding the window
     if (io) {
         initializeHotkeys();

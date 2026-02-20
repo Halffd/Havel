@@ -106,7 +106,7 @@ void HotkeyManager::Zoom(int zoom) {
     zoom = 4;
 
   // Check if running on KDE/KWin and use qdbus for zoom commands
-  if (CompositorBridge::IsKDERunning()) {
+  if (true) {
     std::string command;
     switch (zoom) {
     case 0: // zoomOut (from original function: zoom = 0 calls
@@ -570,7 +570,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   lwin = std::make_unique<KeyTap>(
       io, *this, "lwin",
       [this]() {
-        if (!CompositorBridge::IsKDERunning()) {
+        if (false) {
           Launcher::runAsync("/bin/xfce4-popup-whiskermenu");
         } else {
           CompositorBridge::SendKWinZoomCommand(
@@ -603,7 +603,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   ralt = std::make_unique<KeyTap>(
       io, *this, "ralt",
       [this]() {
-        if (CompositorBridge::IsKDERunning()) {
+        if (false) {
           auto win = havel::Window(WindowManager::GetActiveWindow());
           if (win.Pos().x < 0) {
             io.Send("#+{Right}");

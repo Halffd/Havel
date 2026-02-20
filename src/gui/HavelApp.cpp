@@ -347,7 +347,12 @@ void HavelApp::setupTimers() {
 
 void HavelApp::setupSignalHandling() {
   try {
+    auto start = std::chrono::high_resolution_clock::now();
     blockAllSignals();
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    info("blockAllSignals took {} ms", duration.count());
     // signalWatcher.start(); // DISABLED - EventListener handles signals
     info("Signal handling initialized - EventListener manages signals");
 

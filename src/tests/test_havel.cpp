@@ -378,6 +378,24 @@ void testInterpreter(Tests& tf) {
         interpreter.RegisterHotkeys(havelCode);
         return true;
     });
+
+    tf.test("Recursive Function - Factorial", [&]() {
+        havel::Interpreter interpreter(io, wm);
+        std::string code = R"(
+fn factorial(n) {
+    if n <= 1 { return 1 }
+    return n * factorial(n - 1)
+}
+factorial(5)
+)";
+        auto result = interpreter.Execute(code);
+        if (auto* value = std::get_if<havel::HavelValue>(&result)) {
+            if (std::holds_alternative<double>(*value)) {
+                return std::get<double>(*value) == 120.0;
+            }
+        }
+        return false;
+    });
 }
 
 #ifdef HAVEL_ENABLE_LLVM

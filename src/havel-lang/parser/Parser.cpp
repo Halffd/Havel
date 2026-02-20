@@ -822,9 +822,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 
   if (at().type != havel::TokenType::Assign) {
     // Allow declarations without assignment, e.g., `let x;`
-    if (auto *ident = dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-      return std::make_unique<havel::ast::LetDeclaration>(
-          std::unique_ptr<havel::ast::Identifier>(ident));
+    if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
+      return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern));
     } else {
       failAt(at(), "Destructuring patterns require initialization");
     }

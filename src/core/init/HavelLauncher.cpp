@@ -267,12 +267,28 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
       }
     }
 
-    // Track braces
+    // Track braces (ignoring braces inside strings)
+    bool inString = false;
+    bool escaped = false;
     for (char c : line) {
-      if (c == '{')
-        braceCount++;
-      else if (c == '}')
-        braceCount--;
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (c == '\\') {
+        escaped = true;
+        continue;
+      }
+      if (c == '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (c == '{')
+          braceCount++;
+        else if (c == '}')
+          braceCount--;
+      }
     }
 
     multiline += line + "\n";

@@ -377,6 +377,9 @@ public:
   static double ValueToNumber(const HavelValue &value);
   static bool ExecResultToBool(const HavelResult &result);
 
+  // Helper method for format() builtin
+  std::string FormatValue(const HavelValue &value, const std::string &formatSpec);
+
 private:
   std::shared_ptr<Environment> environment;
   IO &io;

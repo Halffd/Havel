@@ -119,6 +119,81 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
       value);
 }
 
+std::string Interpreter::FormatValue(const HavelValue &value,
+                                     const std::string &formatSpec) {
+  // Parse format specifier: [.][precision][type]
+  // Examples: .4f, .2, d, s
+  std::string result;
+  char type = 'g';    // Default: general number format
+  int precision = -1; // Default: auto
+
+  if (!formatSpec.empty()) {
+    size_t pos = 0;
+
+    // Check for type character at the end
+    char lastChar = formatSpec.back();
+    if (lastChar == 'f' || lastChar == 'd' || lastChar == 's' ||
+        lastChar == 'g' || lastChar == 'e') {
+      type = lastChar;
+      if (formatSpec.length() > 1) {
+        // Parse precision from remaining part
+        std::string precStr = formatSpec.substr(0, formatSpec.length() - 1);
+        if (!precStr.empty() && precStr[0] == '.') {
+          if (precStr.length() > 1) {
+            try {
+              precision = std::stoi(precStr.substr(1));
+            } catch (...) {
+              precision = -1;
+            }
+          }
+        }
+      }
+    } else if (formatSpec[0] == '.') {
+      // Just precision like .4 or .2f handled above
+      try {
+        precision = std::stoi(formatSpec.substr(1));
+      } catch (...) {
+        precision = -1;
+      }
+    }
+  }
+
+  // Format based on value type
+  if (std::holds_alternative<double>(value)) {
+    double num = std::get<double>(value);
+    if (type == 'f' || precision >= 0) {
+      int prec = precision >= 0 ? precision : 6;
+      char buf[64];
+      snprintf(buf, sizeof(buf), "%.*f", prec, num);
+      result = buf;
+    } else if (type == 'e') {
+      char buf[64];
+      snprintf(buf, sizeof(buf), "%e", num);
+      result = buf;
+    } else if (type == 'g') {
+      // Default: nice formatting without trailing zeros
+      result = ValueToString(value);
+    } else {
+      result = std::to_string(static_cast<long long>(num));
+    }
+  } else if (std::holds_alternative<int>(value)) {
+    int num = std::get<int>(value);
+    if (type == 'f') {
+      int prec = precision >= 0 ? precision : 6;
+      char buf[64];
+      snprintf(buf, sizeof(buf), "%.*f", prec, static_cast<double>(num));
+      result = buf;
+    } else {
+      result = std::to_string(num);
+    }
+  } else {
+    // For strings and other types, just use ValueToString
+    result = ValueToString(value);
+  }
+
+  return result;
+}
+
 bool Interpreter::ExecResultToBool(const HavelResult &result) {
   if (std::holds_alternative<HavelValue>(result)) {
     return ValueToBool(std::get<HavelValue>(result));
@@ -327,11 +402,14 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
 
 void Interpreter::visitFunctionDeclaration(
     const ast::FunctionDeclaration &node) {
+  // Create function with current environment
   auto func = std::make_shared<HavelFunction>(
       HavelFunction{this->environment, // Capture closure
                     &node});
+  // Define the function name in the current environment FIRST
   environment->Define(node.name->symbol, func);
-  lastResult = nullptr;
+  // Then update the function's closure to include itself for recursion
+  func->closure = this->environment;
 }
 
 void Interpreter::visitReturnStatement(const ast::ReturnStatement &node) {
@@ -2627,6 +2705,40 @@ void Interpreter::InitializeSystemBuiltins() {
     (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
 
+  environment->Define(
+      "Hotkey",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2 || args.size() > 3)
+          return HavelRuntimeError("Hotkey requires two or three arguments");
+        std::string key = ValueToString(args[0]);
+        std::string key2 = ValueToString(args[1]);
+        std::variant<std::string, std::shared_ptr<ast::Expression>> condition;
+        if (args.size() == 3) {
+          condition = ValueToString(args[2]);
+        }
+        if (hotkeyManager) {
+          if (condition) {
+            std::function callback;
+            if (std::holds_alternative<std::shared_ptr<ast::Expression>>(
+                    condition = condition)) {
+              callback = [this,
+                          expr = std::get<std::shared_ptr<ast::Expression>>(
+                              condition)]() { this->Evaluate(expr); };
+            } else {
+              callback = nullptr;
+            }
+            auto hotkey =
+                hotkeyManager->AddContextualHotkey(key, callback, key2);
+            return HavelValue(std::move(hotkey));
+          } else {
+            auto hotkey = hotkeyManager->AddHotkey(key, key2);
+            return HavelValue(std::move(hotkey));
+          }
+        }
+        return HavelValue(nullptr);
+      }));
+
   // Process helpers
   environment->Define(
       "process.getState",
@@ -3750,6 +3862,84 @@ void Interpreter::InitializeClipboardBuiltins() {
 }
 
 void Interpreter::InitializeTextBuiltins() {
+  // format(formatString, arg0, arg1, ...) - Python-style string formatting
+  // Supports: {0}, {0:.4f}, {0:.2}, {0:d}, etc.
+  environment->Define(
+      "format",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError(
+              "format() requires at least a format string");
+
+        std::string formatStr = this->ValueToString(args[0]);
+        std::string result;
+        size_t pos = 0;
+        size_t argIndex = 0;
+
+        while (pos < formatStr.length()) {
+          size_t openBrace = formatStr.find('{', pos);
+
+          // No more placeholders, append rest of string
+          if (openBrace == std::string::npos) {
+            result += formatStr.substr(pos);
+            break;
+          }
+
+          // Append text before placeholder
+          result += formatStr.substr(pos, openBrace - pos);
+
+          // Find closing brace
+          size_t closeBrace = formatStr.find('}', openBrace);
+          if (closeBrace == std::string::npos) {
+            return HavelRuntimeError("Unclosed placeholder in format string");
+          }
+
+          // Parse placeholder: {index[:format]}
+          std::string placeholder =
+              formatStr.substr(openBrace + 1, closeBrace - openBrace - 1);
+
+          // Extract index and format specifier
+          size_t colonPos = placeholder.find(':');
+          size_t index = 0;
+          std::string formatSpec;
+
+          if (colonPos == std::string::npos) {
+            // Just index: {0} or empty: {}
+            if (!placeholder.empty()) {
+              try {
+                index = std::stoul(placeholder);
+              } catch (...) {
+                return HavelRuntimeError("Invalid placeholder index");
+              }
+            } else {
+              index = argIndex++;
+            }
+          } else {
+            // Index with format: {0:.4f}
+            try {
+              index = std::stoul(placeholder.substr(0, colonPos));
+            } catch (...) {
+              return HavelRuntimeError("Invalid placeholder index");
+            }
+            formatSpec = placeholder.substr(colonPos + 1);
+          }
+
+          // Get argument value
+          if (index + 1 > args.size()) {
+            return HavelRuntimeError("Placeholder index out of range");
+          }
+
+          const HavelValue &value = args[index + 1];
+          result += this->FormatValue(value, formatSpec);
+          argIndex++;
+
+          pos = closeBrace + 1;
+        }
+
+        return HavelValue(result);
+      }));
+
   environment->Define(
       "upper", BuiltinFunction(
                    [this](const std::vector<HavelValue> &args) -> HavelResult {

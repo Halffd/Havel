@@ -1072,6 +1072,13 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       if (!blockInput.load()) {
         SendUinputEvent(EV_REL, ev.code, scaledInt);
       }
+
+      // Track mouse position from relative movements for Wayland support
+      if (ev.code == REL_X) {
+        currentMouseX += scaledInt;
+      } else if (ev.code == REL_Y) {
+        currentMouseY += scaledInt;
+      }
     }
     // Mouse wheel
     else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
@@ -1217,6 +1224,12 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
   } else if (ev.type == EV_ABS) {
     // Absolute positioning or joystick axes
+    // Track mouse position for Wayland support
+    if (ev.code == ABS_X) {
+      currentMouseX = ev.value;
+    } else if (ev.code == ABS_Y) {
+      currentMouseY = ev.value;
+    }
     if (!blockInput.load()) {
       SendUinputEvent(ev.type, ev.code, ev.value);
     }

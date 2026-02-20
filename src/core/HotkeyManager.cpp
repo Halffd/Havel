@@ -21,8 +21,10 @@
 #include "window/CompositorBridge.hpp"
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
+#include "window/WindowManagerDetector.hpp"
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QMessageBox>
 #include <fstream>
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
@@ -596,8 +598,9 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
         return true; // Allow tap
       },
+      "mode == 'gaming'",        // Combo condition
       [this]() { PlayPause(); }, // Combo action
-      "mode == 'gaming'", false, true);
+      false, true);
   lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
@@ -614,7 +617,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
           WindowManager::MoveWindowToNextMonitor();
         }
       },
-      "", nullptr, "", false, true);
+      "", "", nullptr, false, true);
   ralt->setup();
 
   // Browser navigation hotkeys
@@ -1925,14 +1928,15 @@ void HotkeyManager::onActiveWindowChanged(wID newWindow) {
 
   // Resume update loop after a delay to avoid redundant checks using condition
   // variable
-  // Use a member variable to track the resume thread so we can join it in cleanup
+  // Use a member variable to track the resume thread so we can join it in
+  // cleanup
   {
     std::lock_guard<std::mutex> lock(windowChangeResumeThreadMutex);
     if (windowChangeResumeThread.joinable()) {
       windowChangeResumeThread.join();
     }
   }
-  
+
   windowChangeResumeThread = std::thread([this]() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
@@ -3237,12 +3241,66 @@ void HotkeyManager::showBlackOverlay() {
 }
 
 void HotkeyManager::printActiveWindowInfo() {
+  int rootX, rootY, winX, winY;
+  x11::Window rootWindow, childWindow;
+  unsigned int mask;
+  try {
+    if (WindowManagerDetector::IsX11()) {
+      XQueryPointer(DisplayManager::GetDisplay(),
+                    DisplayManager::GetRootWindow(), &rootWindow, &childWindow,
+                    &rootX, &rootY, &winX, &winY, &mask);
+    } else if (WindowManagerDetector::IsWayland()) {
+      auto mousePos = io.GetEventListener()->GetMousePosition();
+      rootX = mousePos.first;
+      rootY = mousePos.second;
+      winX = mousePos.first;
+      winY = mousePos.second;
+    }
+  } catch (const std::exception &e) {
+    error("Failed to query pointer: {}", e.what());
+    rootX = rootY = winX = winY = -1;
+    rootWindow = childWindow = 0;
+    mask = 0;
+  } catch (...) {
+    error("Unknown error querying pointer");
+    rootX = rootY = winX = winY = -1;
+    rootWindow = childWindow = 0;
+    mask = 0;
+  }
+  auto mousePosition = QPoint(rootX, rootY);
+  auto mouseWinPosition = QPoint(winX, winY);
+  auto mouseWindow = childWindow;
+  std::string displayServer =
+      WindowManagerDetector::IsWayland() ? "Wayland" : "X11";
+  std::string de =
+      getenv("XDG_CURRENT_DESKTOP") ? getenv("XDG_CURRENT_DESKTOP") : "Unknown";
+  std::string wm = WindowManagerDetector::GetWMName();
+  std::string messageText =
+      "Mouse position: " + std::to_string(mousePosition.x()) + ", " +
+      std::to_string(mousePosition.y()) + "\n";
+  messageText +=
+      "Mouse window position: " + std::to_string(mouseWinPosition.x()) + ", " +
+      std::to_string(mouseWinPosition.y()) + "\n";
+  messageText += "Mouse window: " + std::to_string(mouseWindow) + "\n";
+  messageText += "Display Server: " + displayServer + "\n";
+  messageText += "Desktop Environment: " + de + "\n";
+  messageText += "Window Manager: " + wm + "\n\n";
+  info("Mouse position: " + std::to_string(mousePosition.x()) + ", " +
+       std::to_string(mousePosition.y()));
+  info("Mouse window position: " + std::to_string(mouseWinPosition.x()) + ", " +
+       std::to_string(mouseWinPosition.y()));
+  info("Mouse window: " + std::to_string(mouseWindow));
+  info("Display Server: " + displayServer);
+  info("Desktop Environment: " + de);
+  info("Window Manager: " + wm);
   wID activeWin = windowManager.GetActiveWindow();
   if (activeWin == 0) {
+    messageText += "╔══════════════════════════════════════╗\n";
+    messageText += "║      NO ACTIVE WINDOW DETECTED       ║\n";
+    messageText += "╚══════════════════════════════════════╝\n";
     info("╔══════════════════════════════════════╗");
     info("║      NO ACTIVE WINDOW DETECTED       ║");
     info("╚══════════════════════════════════════╝");
-    return;
   }
   std::string windowClass = WindowManager::GetActiveWindowClass();
   std::string windowTitle;
@@ -3278,8 +3336,29 @@ void HotkeyManager::printActiveWindowInfo() {
     if (line.length() > 52) {
       line = line.substr(0, 49) + "...";
     }
-    return "║ " + line + std::string(52 - line.length(), ' ') + "║";
+    return "║ " + line + std::string(52 - line.length(), ' ') + "║\n";
   };
+
+  messageText +=
+      "╔══════════════════════════════════════════════════════════╗\n";
+  messageText +=
+      "║             ACTIVE WINDOW INFORMATION                    ║\n";
+  messageText +=
+      "╠══════════════════════════════════════════════════════════╣\n";
+  messageText += formatLine("Window ID: ", std::to_string(activeWin));
+  messageText += formatLine("Window Title: \"", windowTitle + "\"");
+  messageText += formatLine("Window Class: \"", windowClass + "\"");
+  messageText += formatLine("Window Geometry: ", geometry);
+
+  std::string gamingStatus = isGaming ? "YES ✓" : "NO ✗";
+  messageText += formatLine("Is Gaming Window: ", gamingStatus);
+
+  {
+    std::lock_guard<std::mutex> lock(modeMutex);
+    messageText += formatLine("Current Mode: ", currentMode);
+  }
+  messageText +=
+      "╚══════════════════════════════════════════════════════════╝\n";
 
   info("╔══════════════════════════════════════════════════════════╗");
   info("║             ACTIVE WINDOW INFORMATION                    ║");
@@ -3289,16 +3368,30 @@ void HotkeyManager::printActiveWindowInfo() {
   info(formatLine("Window Class: \"", windowClass + "\""));
   info(formatLine("Window Geometry: ", geometry));
 
-  std::string gamingStatus =
+  std::string gamingStatusConsole =
       isGaming ? (COLOR_GREEN + std::string("YES ✓") + COLOR_RESET)
                : (COLOR_RED + std::string("NO ✗") + COLOR_RESET);
-  info(formatLine("Is Gaming Window: ", gamingStatus));
+  info(formatLine("Is Gaming Window: ", gamingStatusConsole));
 
   {
     std::lock_guard<std::mutex> lock(modeMutex);
     info(formatLine("Current Mode: ", currentMode));
   }
   info("╚══════════════════════════════════════════════════════════╝");
+
+  QMessageBox msgBox;
+  msgBox.setWindowTitle("Active Window Information");
+  msgBox.setText(QString::fromStdString(messageText));
+  QFont font = msgBox.font();
+  font.setPointSize(40);
+  msgBox.setFont(font);
+  QScreen *screen = QGuiApplication::primaryScreen();
+  QRect screenGeometry = screen->geometry();
+  int uiWidth = screenGeometry.width() * 0.7;
+  msgBox.setFixedWidth(uiWidth);
+  QPoint center = screenGeometry.center();
+  msgBox.move(center.x() - uiWidth / 2, center.y() - msgBox.height() / 2);
+  msgBox.exec();
 
   logWindowEvent("WINDOW_INFO",
                  "Title: \"" + windowTitle + "\", Class: \"" + windowClass +
@@ -3453,7 +3546,8 @@ void HotkeyManager::UpdateLoop() {
       error("Unknown exception in UpdateLoop");
     }
 
-    // Sleep for the remaining time in the update interval (only if not paused)
+    // Sleep for the remaining time in the update interval (only if not
+    // paused)
     if (!updateLoopPaused.load()) {
       auto endTime = std::chrono::steady_clock::now();
       auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -3932,8 +4026,8 @@ void HotkeyManager::makeHttpRequestShell(const std::string &url,
                                          const std::string &method,
                                          const std::string &data) {
   try {
-    std::string cmd =
-        "curl -s -w '\\nHTTP Status: %{http_code}\\nTime: %{time_total}s\\n' ";
+    std::string cmd = "curl -s -w '\\nHTTP Status: %{http_code}\\nTime: "
+                      "%{time_total}s\\n' ";
 
     if (method == "GET") {
       cmd += "'" + url + "'";

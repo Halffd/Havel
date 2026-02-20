@@ -147,6 +147,11 @@ public:
 
   int uinputFd = -1;
 
+  // Get current mouse position (from evdev ABS events)
+  std::pair<int, int> GetMousePosition() const {
+    return {currentMouseX, currentMouseY};
+  }
+
   // Callback for any key press
   std::function<void(const std::string &key)> anyKeyPressCallback = nullptr;
 
@@ -186,6 +191,10 @@ private:
 
   // Signal handling for device cleanup
   std::atomic<int> pendingSignal{0};
+
+  // Mouse position tracking
+  int currentMouseX = 0;
+  int currentMouseY = 0;
 
 private:
   // Device info

@@ -237,6 +237,7 @@ private:
     int displayedItemsLimit = 50;  // Limit of items to display
     bool enabled = true;           // Whether the clipboard manager is enabled
     bool showPreviewPane = false;  // Whether to show the preview pane (now single panel)
+    bool tray = false;
 };
 
 } // namespace havel

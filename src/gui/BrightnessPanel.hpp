@@ -30,6 +30,7 @@ private:
     QSystemTrayIcon* trayIcon;
     QTimer* scheduleTimer;
     BrightnessManager brightnessManager;
+    bool tray = false;
 };
 
 } // namespace havel

@@ -40,5 +40,6 @@ private:
     QMenu* trayMenu;
     
     std::unique_ptr<SettingsWindow> settingsWindow;
+    bool tray = false;
 };
 }

@@ -2,11 +2,26 @@
 #include "../runtime/Interpreter.hpp"
 #include "Bytecode.h"
 #include "BytecodeCompiler.hpp"
-#include "BytecodeInterpreter.hpp"
 #include <iostream>
 #include <unordered_map>
 
 namespace havel::compiler {
+
+// Simple bytecode interpreter (placeholder implementation)
+class HavelBytecodeInterpreter : public BytecodeInterpreter {
+private:
+  bool debug_mode = false;
+
+public:
+  HavelBytecodeInterpreter() = default;
+  BytecodeValue execute(const BytecodeChunk &chunk,
+                        const std::string &function_name,
+                        const std::vector<BytecodeValue> &args = {}) override {
+    // Placeholder: return null for now
+    return BytecodeValue{std::in_place_index<0>};
+  }
+  void setDebugMode(bool enabled) override { debug_mode = enabled; }
+};
 
 // Simple JIT compiler (placeholder implementation)
 class HavelJITCompiler : public JITCompiler {
@@ -15,15 +30,14 @@ private:
 
 public:
   HavelJITCompiler() = default;
-  void compileFunction(const BytecodeFunction &func) override {
+  void compileFunction(const BytecodeFunction &func) {
     compiled_functions[func.name] = true;
   }
-  BytecodeValue
-  executeCompiled(const std::string &func_name,
-                  const std::vector<BytecodeValue> &args) override {
-    return BytecodeValue(nullptr); // Placeholder
+  BytecodeValue executeCompiled(const std::string &func_name,
+                                const std::vector<BytecodeValue> &args) {
+    return BytecodeValue{std::in_place_index<0>}; // Placeholder
   }
-  bool isCompiled(const std::string &func_name) const override {
+  bool isCompiled(const std::string &func_name) const {
     return compiled_functions.count(func_name) > 0;
   }
 };
@@ -61,7 +75,8 @@ struct HybridDebugOptions {
 
 // Factory function (placeholder)
 std::unique_ptr<HybridEngine> createHybridEngine() {
-  auto compiler = std::make_unique<HavelBytecodeCompiler>();
+  std::unique_ptr<BytecodeCompiler> compiler;
+  compiler.reset(new HavelBytecodeCompiler());
   auto interpreter = std::make_unique<HavelBytecodeInterpreter>();
   auto jit = std::make_unique<HavelJITCompiler>();
   return std::make_unique<HybridEngine>(std::move(compiler),

@@ -932,87 +932,12 @@ bool BrowserModule::disableExtension(const std::string &extensionId) {
   return true;
 }
 
-bool BrowserModule::setWindowSize(int width, int height) {
-  if (!connected)
-    return false;
-
-  int targetWindowId = currentWindowId;
-  if (targetWindowId < 0)
-    targetWindowId = currentTabId;
-
-  std::string response =
-      sendCdpCommand("Browser.setWindowBounds",
-                     "{\"windowId\":" + std::to_string(targetWindowId) +
-                         ",\"bounds\":{\"width\":" + std::to_string(width) +
-                         ",\"height\":" + std::to_string(height) + "}}");
-
-  return !response.empty();
-}
-
-bool BrowserModule::setWindowPosition(int x, int y) {
-  if (!connected)
-    return false;
-
-  int targetWindowId = currentWindowId;
-  if (targetWindowId < 0)
-    targetWindowId = currentTabId;
-
-  std::string response =
-      sendCdpCommand("Browser.setWindowBounds",
-                     "{\"windowId\":" + std::to_string(targetWindowId) +
-                         ",\"bounds\":{\"left\":" + std::to_string(x) +
-                         ",\"top\":" + std::to_string(y) + "}}");
-
-  return !response.empty();
-}
-
-bool BrowserModule::maximizeWindow() {
-  if (!connected)
-    return false;
-
-  int targetWindowId = currentWindowId;
-  if (targetWindowId < 0)
-    targetWindowId = currentTabId;
-
-  std::string response =
-      sendCdpCommand("Browser.setWindowBounds",
-                     "{\"windowId\":" + std::to_string(targetWindowId) +
-                         ",\"bounds\":{\"windowState\":\"maximized\"}}");
-
-  return !response.empty();
-}
-
-bool BrowserModule::minimizeWindow() {
-  if (!connected)
-    return false;
-
-  int targetWindowId = currentWindowId;
-  if (targetWindowId < 0)
-    targetWindowId = currentTabId;
-
-  std::string response =
-      sendCdpCommand("Browser.setWindowBounds",
-                     "{\"windowId\":" + std::to_string(targetWindowId) +
-                         ",\"bounds\":{\"windowState\":\"minimized\"}}");
-
-  return !response.empty();
-}
-
-bool BrowserModule::fullscreenWindow() {
-  if (!connected)
-    return false;
-
-  int targetWindowId = currentWindowId;
-  if (targetWindowId < 0)
-    targetWindowId = currentTabId;
-
-  std::string response =
-      sendCdpCommand("Browser.setWindowBounds",
-                     "{\"windowId\":" + std::to_string(targetWindowId) +
-                         ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
-
-  return !response.empty();
-}
+// Old window functions removed - use new versions with windowId parameter
+// setWindowSize(int, int) - REMOVED
+// setWindowPosition(int, int) - REMOVED  
+// maximizeWindow() - REMOVED
+// minimizeWindow() - REMOVED
+// fullscreenWindow() - REMOVED
 
 // === Browser Detection Helpers ===
 

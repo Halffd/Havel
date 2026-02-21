@@ -5,6 +5,7 @@
 #include "core/browser/BrowserModule.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
+#include "core/io/MapManager.hpp"
 #include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
@@ -6965,6 +6966,215 @@ void Interpreter::InitializeGUIBuiltins() {
   if (auto v = environment->Get("mapmanager.show")) (*mapManagerMod)["show"] = *v;
   if (auto v = environment->Get("mapmanager.hide")) (*mapManagerMod)["hide"] = *v;
   environment->Define("mapmanager", HavelValue(mapManagerMod));
+
+  // === MAPMANAGER CORE MODULE ===
+  // MapManager for programmatic profile/mapping management
+  static std::unique_ptr<MapManager> coreMapManager;
+  
+  environment->Define(
+      "mapmanager.init",
+      BuiltinFunction([this, &coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (!coreMapManager && io) {
+          coreMapManager = std::make_unique<MapManager>(&io);
+        }
+        return HavelValue(coreMapManager != nullptr);
+      }));
+  
+  environment->Define(
+      "mapmanager.addProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized. Call mapmanager.init() first");
+        if (args.size() < 2)
+          return HavelRuntimeError("mapmanager.addProfile() requires (id, name)");
+        
+        std::string id = ValueToString(args[0]);
+        std::string name = ValueToString(args[1]);
+        std::string desc = args.size() > 2 ? ValueToString(args[2]) : "";
+        
+        Profile profile;
+        profile.id = id;
+        profile.name = name;
+        profile.description = desc;
+        
+        coreMapManager->AddProfile(profile);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.removeProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.empty())
+          return HavelRuntimeError("mapmanager.removeProfile() requires profileId");
+        
+        std::string id = ValueToString(args[0]);
+        coreMapManager->RemoveProfile(id);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.setActiveProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.empty())
+          return HavelRuntimeError("mapmanager.setActiveProfile() requires profileId");
+        
+        std::string id = ValueToString(args[0]);
+        coreMapManager->SetActiveProfile(id);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.getActiveProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        
+        return HavelValue(coreMapManager->GetActiveProfileId());
+      }));
+  
+  environment->Define(
+      "mapmanager.getProfileIds",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        if (coreMapManager) {
+          auto ids = coreMapManager->GetProfileIds();
+          for (const auto& id : ids) {
+            arr->push_back(HavelValue(id));
+          }
+        }
+        return HavelValue(arr);
+      }));
+  
+  environment->Define(
+      "mapmanager.addMapping",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.size() < 3)
+          return HavelRuntimeError("mapmanager.addMapping() requires (profileId, sourceKey, targetKey)");
+        
+        std::string profileId = ValueToString(args[0]);
+        std::string sourceKey = ValueToString(args[1]);
+        std::string targetKey = ValueToString(args[2]);
+        
+        Mapping mapping;
+        mapping.id = sourceKey + "_to_" + targetKey;
+        mapping.name = sourceKey + " -> " + targetKey;
+        mapping.sourceKey = sourceKey;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Press;
+        
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.removeMapping",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.size() < 2)
+          return HavelRuntimeError("mapmanager.removeMapping() requires (profileId, mappingId)");
+        
+        std::string profileId = ValueToString(args[0]);
+        std::string mappingId = ValueToString(args[1]);
+        coreMapManager->RemoveMapping(profileId, mappingId);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.enableProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.size() < 2)
+          return HavelRuntimeError("mapmanager.enableProfile() requires (profileId, enable)");
+        
+        std::string profileId = ValueToString(args[0]);
+        bool enable = ValueToBool(args[1]);
+        coreMapManager->EnableProfile(profileId, enable);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.nextProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (coreMapManager) {
+          coreMapManager->NextProfile();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "mapmanager.previousProfile",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (coreMapManager) {
+          coreMapManager->PreviousProfile();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "mapmanager.saveProfiles",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.empty())
+          return HavelRuntimeError("mapmanager.saveProfiles() requires filepath");
+        
+        std::string path = ValueToString(args[0]);
+        coreMapManager->SaveProfiles(path);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.loadProfiles",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager)
+          return HavelRuntimeError("MapManager not initialized");
+        if (args.empty())
+          return HavelRuntimeError("mapmanager.loadProfiles() requires filepath");
+        
+        std::string path = ValueToString(args[0]);
+        coreMapManager->LoadProfiles(path);
+        return HavelValue(true);
+      }));
+  
+  environment->Define(
+      "mapmanager.clearAllMappings",
+      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (coreMapManager) {
+          coreMapManager->ClearAllMappings();
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Add mapmanager core functions to module
+  if (auto v = environment->Get("mapmanager.init")) (*mapManagerMod)["init"] = *v;
+  if (auto v = environment->Get("mapmanager.addProfile")) (*mapManagerMod)["addProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.removeProfile")) (*mapManagerMod)["removeProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.setActiveProfile")) (*mapManagerMod)["setActiveProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.getActiveProfile")) (*mapManagerMod)["getActiveProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.getProfileIds")) (*mapManagerMod)["getProfileIds"] = *v;
+  if (auto v = environment->Get("mapmanager.addMapping")) (*mapManagerMod)["addMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.removeMapping")) (*mapManagerMod)["removeMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.enableProfile")) (*mapManagerMod)["enableProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.nextProfile")) (*mapManagerMod)["nextProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.previousProfile")) (*mapManagerMod)["previousProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.saveProfiles")) (*mapManagerMod)["saveProfiles"] = *v;
+  if (auto v = environment->Get("mapmanager.loadProfiles")) (*mapManagerMod)["loadProfiles"] = *v;
+  if (auto v = environment->Get("mapmanager.clearAllMappings")) (*mapManagerMod)["clearAllMappings"] = *v;
 }
 
 void Interpreter::InitializeScreenshotBuiltins() {

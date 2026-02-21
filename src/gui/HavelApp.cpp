@@ -378,9 +378,17 @@ void HavelApp::exitApp() {
     periodicTimer->stop();
   }
 
+  // Stop EventListener FIRST before any static destructors run
+  // This prevents use-after-free in KeyMap access from EventListener thread
+  if (io && io->GetEventListener()) {
+    info("Stopping EventListener before exit...");
+    io->GetEventListener()->Stop();
+    info("EventListener stopped");
+  }
+
   // Call cleanup to stop all threads gracefully
   cleanup();
-  
+
   // Hard exit to ensure all threads are killed
   info("Exit requested - terminating process");
   std::exit(0);

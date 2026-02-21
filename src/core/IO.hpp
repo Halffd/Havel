@@ -323,8 +323,8 @@ public:
                           float accel = 1.5f);
 
   void MouseClick(int button);
-  void MouseDown(int button);
-  void MouseUp(int button);
+  bool MouseDown(int button);
+  bool MouseUp(int button);
   void MouseWheel(int amount);
 
   // State methods
@@ -343,8 +343,12 @@ public:
 
   // Convenience overloads for MouseButton enum
   void MouseClick(MouseButton button) { Click(button, MouseAction::Click); }
-  void MouseDown(MouseButton button) { Click(button, MouseAction::Hold); }
-  void MouseUp(MouseButton button) { Click(button, MouseAction::Release); }
+  bool MouseDown(MouseButton button) {
+    return Click(button, MouseAction::Hold);
+  }
+  bool MouseUp(MouseButton button) {
+    return Click(button, MouseAction::Release);
+  }
 
   static void PressKey(const std::string &keyName, bool press);
 

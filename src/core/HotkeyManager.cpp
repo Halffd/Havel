@@ -261,8 +261,8 @@ HotkeyManager::HotkeyManager(
     std::shared_ptr<net::NetworkManager> networkManager)
     : io(io), windowManager(windowManager), mpv(mpv),
       audioManager(audioManager), interpreter(interpreter),
-      brightnessManager(brightnessManager),
-      screenshotManager(screenshotManager), networkManager(networkManager) {
+      screenshotManager(screenshotManager), brightnessManager(brightnessManager),
+      networkManager(networkManager) {
   mouseController = std::make_unique<MouseController>(io);
   conditionEngine = std::make_unique<ConditionEngine>();
   setupConditionEngine();

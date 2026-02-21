@@ -12,6 +12,7 @@ Havel is a declarative automation scripting language designed for hotkey managem
 - [Keywords](#keywords)
 - [Ergonomic Syntax Features](#ergonomic-syntax-features)
 - [Conditional Hotkeys](#conditional-hotkeys)
+- [Built-in Help](#built-in-help)
 - [Examples](#examples)
 
 ----
@@ -240,6 +241,85 @@ throw {type: "custom", code: 123} // Object
 - **Any value type** - Throw strings, numbers, objects
 - **Structured error propagation** - Clean control flow
 - **Nested try blocks** - Support for complex error handling
+
+## Built-in Help
+
+### Help Command
+Get documentation for any module or function:
+
+```havel
+help()              // Show all available modules
+help("http")        // Show HTTP module documentation
+help("browser")     // Show browser module documentation
+help("mouse")       // Show mouse module documentation
+help("http.get")    // Show specific function documentation
+```
+
+### Available Modules
+
+| Module | Description | Example |
+|--------|-------------|---------|
+| `http` | HTTP client for REST APIs | `http.get(url)` |
+| `browser` | Browser automation via CDP | `browser.setZoom(1.5)` |
+| `mouse` | Mouse control | `mouse.click("left")` |
+| `audio` | Audio/volume control | `audio.setVolume(0.5)` |
+| `window` | Window management | `window.maximize()` |
+| `process` | Process management | `process.find("chrome")` |
+| `clipboard` | Clipboard operations | `clipboard.get()` |
+| `text` | Text processing | `text.upper("hello")` |
+| `system` | System integration | `system.notify("msg")` |
+
+### Quick Reference
+
+#### HTTP Module
+```havel
+// GET request
+response = http.get("https://api.example.com")
+print(response.statusCode)  // 200
+print(response.body)        // Response content
+print(response.ok)          // true if 2xx
+
+// POST with JSON
+data = "{\"key\":\"value\"}"
+response = http.post("https://api.example.com", data)
+
+// Download file
+http.download("https://example.com/file.zip", "/tmp/file.zip")
+```
+
+#### Browser Module
+```havel
+// Setup: Start Chrome with --remote-debugging-port=9222
+browser.connect()
+browser.open("https://example.com")
+
+// Zoom control
+browser.setZoom(1.5)   // 150%
+zoom = browser.getZoom()
+browser.resetZoom()
+
+// Interact with page
+browser.click("#button")
+browser.type("#input", "text")
+result = browser.eval("document.title")
+```
+
+#### Mouse Module
+```havel
+// Clicking
+mouse.click()          // Left click
+mouse.click("right")   // Right click
+mouse.down("left")     // Press and hold
+mouse.up("left")       // Release
+
+// Movement
+mouse.move(100, 200)       // Absolute position
+mouse.moveRel(10, -5)      // Relative movement
+
+// Scrolling
+mouse.wheel(3)         // Scroll up
+mouse.wheel(-3)        // Scroll down
+```
 
 ## Keywords
 
@@ -658,12 +738,155 @@ process.ionice(1234, 2, 4)      // Best-effort I/O, priority 4
 Process Information Object
 When using process.find(), each process object contains:
 - pid: Process ID
-- ppid: Parent process ID  
+- ppid: Parent process ID
 - name: Process name
 - command: Full command line
 - user: Process owner
 - cpu_usage: CPU usage percentage
 - memory_usage: Memory usage in bytes
+
+HTTP Client Module
+http.get(url)              // GET request
+http.post(url, data)       // POST request with body
+http.put(url, data)        // PUT request with body
+http.delete(url)           // DELETE request
+http.patch(url, data)      // PATCH request with body
+http.download(url, path)   // Download file to path
+http.upload(url, path)     // Upload file
+http.setTimeout(ms)        // Set request timeout (default: 30000ms)
+
+Response Object
+All HTTP methods return an object with:
+- statusCode: HTTP status code (200, 404, etc.)
+- body: Response body as string
+- ok: true if statusCode is 2xx
+- error: Error message (empty on success)
+
+REST API Integration
+// Simple GET request
+response = http.get("https://api.github.com/users/halffd")
+if (response.ok) {
+    print("User found: " + response.body)
+} else {
+    print("Error: " + response.error)
+}
+
+// POST with JSON data
+data = "{\"name\":\"test\",\"value\":123}"
+response = http.post("https://api.example.com/items", data)
+
+// Download a file
+if (http.download("https://example.com/image.png", "/tmp/image.png")) {
+    print("Download complete")
+}
+
+// Set custom timeout for slow endpoints
+http.setTimeout(60000)  // 60 seconds
+response = http.get("https://slow-api.example.com/data")
+
+Browser Automation Module (CDP)
+browser.connect(url)           // Connect to Chrome (default: localhost:9222)
+browser.disconnect()           // Disconnect from browser
+browser.isConnected()          // Check connection status
+browser.open(url)              // Open URL in new tab
+browser.newTab(url)            // Create new tab
+browser.goto(url)              // Navigate to URL
+browser.back()                 // Go back
+browser.forward()              // Go forward
+browser.reload(ignoreCache)    // Reload page
+browser.click(selector)        // Click element
+browser.type(selector, text)   // Type text into input
+browser.setZoom(level)         // Set zoom (0.5 - 3.0)
+browser.getZoom()              // Get current zoom level
+browser.resetZoom()            // Reset zoom to 100%
+browser.eval(js)               // Execute JavaScript
+browser.screenshot(path)       // Take screenshot
+browser.getCurrentUrl()        // Get current URL
+browser.getTitle()             // Get page title
+browser.listTabs()             // List all tabs
+browser.activate(tabId)        // Activate tab
+browser.close(tabId)           // Close tab (-1 for current)
+browser.closeAll()             // Close all tabs
+
+Chrome Setup
+Start Chrome/Chromium with remote debugging enabled:
+
+    google-chrome --remote-debugging-port=9222
+    # or
+    chromium-browser --remote-debugging-port=9222
+
+Browser Automation Examples
+// Connect and navigate
+browser.connect()  // Connects to localhost:9222
+browser.open("https://example.com")
+
+// Zoom control (as requested)
+browser.setZoom(1.5)   // Set zoom to 150%
+currentZoom = browser.getZoom()
+browser.resetZoom()    // Reset to 100%
+
+// Element interaction
+browser.click("#submit-button")
+browser.type("#username", "myuser")
+browser.type("#password", "mypassword")
+
+// JavaScript execution
+title = browser.eval("document.title")
+browser.eval("document.body.style.zoom = '150%'")
+
+// Tab management
+tabs = browser.listTabs()
+for tab in tabs {
+    print("Tab: " + tab.title + " - " + tab.url)
+}
+browser.activate(tabs[0].id)
+browser.close(-1)  // Close current tab
+
+// Screenshot
+browser.screenshot("/tmp/page.png")
+
+Mouse Control Module
+mouse.click(button)        // Click mouse button (left, right, middle)
+mouse.down(button)         // Press and hold button
+mouse.up(button)           // Release button
+mouse.move(x, y)           // Move to absolute position
+mouse.moveRel(dx, dy)      // Move relative to current position
+mouse.wheel(amount)        // Scroll wheel (positive=up, negative=down)
+mouse.getPosition()        // Get current position {x, y}
+mouse.setSpeed(speed)      // Set mouse speed (default: 5)
+mouse.setAccel(accel)      // Set acceleration (default: 1.0)
+
+Mouse Button Values
+- "left" or "L" or 1 - Left button
+- "right" or "R" or 2 - Right button
+- "middle" or "M" or 3 - Middle button
+- "back" or "B" or 4 - Back button
+- "forward" or "F" or 5 - Forward button
+
+Mouse Control Examples
+// Basic clicking
+mouse.click("left")
+mouse.click("right")
+mouse.click()  // Default: left button
+
+// Drag and drop
+mouse.move(100, 100)
+mouse.down("left")
+mouse.move(200, 200)
+mouse.up("left")
+
+// Scrolling
+mouse.wheel(3)    // Scroll up 3 notches
+mouse.wheel(-5)   // Scroll down 5 notches
+
+// Precise positioning
+mouse.move(500, 300)
+pos = mouse.getPosition()
+print("Mouse at: " + pos.x + ", " + pos.y)
+
+// Speed and acceleration
+mouse.setSpeed(10)     // Faster movement
+mouse.setAccel(2.0)    // More acceleration
 
 🛠️ Development Tools
 IDE Integration

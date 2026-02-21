@@ -5,6 +5,7 @@
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "utils/Logger.hpp"
+#include <QProcess>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -108,7 +109,17 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
   }
 
   info("Havel started successfully - running in system tray");
-  return app.exec();
+  int exitCode = app.exec();
+  
+  // Handle restart exit code
+  if (exitCode == 42) {
+    info("Restart requested - relaunching application");
+    QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                            QCoreApplication::arguments());
+    return 0;
+  }
+  
+  return exitCode;
 }
 
 int HavelLauncher::runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]) {

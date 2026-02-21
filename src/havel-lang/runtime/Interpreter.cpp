@@ -18,6 +18,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -3044,15 +3045,12 @@ environment->Define(
   // Create app module object
   auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  // Add quit function to app module
+  // Add quit function to app module - hard exit to kill all threads
   (*appObj)["quit"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
-        if (App::instance()) {
-          App::quit();
-          return HavelValue(true);
-        }
-        return HavelRuntimeError("App is not running");
+        info("Quit requested - performing hard exit");
+        std::exit(0);
       });
 
   // Add restart function to app module
@@ -3060,7 +3058,7 @@ environment->Define(
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
 
-        if (App::instance()) {
+        if (QApplication::instance()) {
           // Use Qt's proper restart mechanism
           QCoreApplication::exit(42); // Use special exit code for restart
           return HavelValue(true);

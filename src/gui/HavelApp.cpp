@@ -15,6 +15,7 @@
 #include <QPixmap>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <cstdlib>
 #include <csignal>
 #include <fstream>
 #include <stdexcept>
@@ -377,7 +378,12 @@ void HavelApp::exitApp() {
     periodicTimer->stop();
   }
 
-  QApplication::quit();
+  // Call cleanup to stop all threads gracefully
+  cleanup();
+  
+  // Hard exit to ensure all threads are killed
+  info("Exit requested - terminating process");
+  std::exit(0);
 }
 
 void HavelApp::cleanup() noexcept {

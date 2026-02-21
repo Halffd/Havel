@@ -784,16 +784,48 @@ if (http.download("https://example.com/image.png", "/tmp/image.png")) {
 http.setTimeout(60000)  // 60 seconds
 response = http.get("https://slow-api.example.com/data")
 
-Browser Automation Module (CDP)
+Browser Automation Module (CDP/Marionette)
+// Connection
 browser.connect(url)           // Connect to Chrome (default: localhost:9222)
+browser.connectFirefox(port)   // Connect to Firefox (default port: 2828)
 browser.disconnect()           // Disconnect from browser
 browser.isConnected()          // Check connection status
+browser.getBrowserType()       // Get type: "chrome", "firefox", "chromium"
+browser.setPort(port)          // Set CDP port number
+browser.getPort()              // Get current CDP port
+
+// Browser Discovery
+browser.getOpenBrowsers()      // List all running browser instances
+browser.getDefaultBrowser()    // Get system default browser info
+
+// Navigation
 browser.open(url)              // Open URL in new tab
 browser.newTab(url)            // Create new tab
 browser.goto(url)              // Navigate to URL
 browser.back()                 // Go back
 browser.forward()              // Go forward
 browser.reload(ignoreCache)    // Reload page
+
+// Tab Management
+browser.listTabs()             // List all open tabs
+browser.activate(tabId)        // Activate tab
+browser.closeTab(tabId)        // Close tab (-1 for current)
+browser.closeAll()             // Close all tabs
+
+// Window Management
+browser.listWindows()          // List all browser windows
+browser.setWindowSize(id, w, h)    // Set window dimensions
+browser.setWindowPosition(id, x, y) // Set window position
+browser.maximizeWindow(id)     // Maximize window
+browser.minimizeWindow(id)     // Minimize window
+browser.fullscreenWindow(id)   // Toggle fullscreen
+
+// Extension Management (Chrome only)
+browser.listExtensions()       // List installed extensions
+browser.enableExtension(id)    // Enable extension
+browser.disableExtension(id)   // Disable extension
+
+// Element Interaction
 browser.click(selector)        // Click element
 browser.type(selector, text)   // Type text into input
 browser.setZoom(level)         // Set zoom (0.5 - 3.0)
@@ -803,17 +835,15 @@ browser.eval(js)               // Execute JavaScript
 browser.screenshot(path)       // Take screenshot
 browser.getCurrentUrl()        // Get current URL
 browser.getTitle()             // Get page title
-browser.listTabs()             // List all tabs
-browser.activate(tabId)        // Activate tab
-browser.close(tabId)           // Close tab (-1 for current)
-browser.closeAll()             // Close all tabs
 
-Chrome Setup
-Start Chrome/Chromium with remote debugging enabled:
+Browser Setup
+// Chrome/Chromium - Start with remote debugging
+google-chrome --remote-debugging-port=9222
+# or
+chromium-browser --remote-debugging-port=9222
 
-    google-chrome --remote-debugging-port=9222
-    # or
-    chromium-browser --remote-debugging-port=9222
+// Firefox - Start with Marionette
+firefox --marionette --marionette-port 2828
 
 Browser Automation Examples
 // Connect and navigate
@@ -844,6 +874,38 @@ browser.close(-1)  // Close current tab
 
 // Screenshot
 browser.screenshot("/tmp/page.png")
+
+// Firefox support
+browser.connectFirefox(2828)
+browser.open("https://firefox.com")
+
+// Browser discovery
+browsers = browser.getOpenBrowsers()
+for b in browsers {
+    print(b.type + " PID: " + b.pid + " Port: " + b.cdpPort)
+}
+
+// Get default browser
+default = browser.getDefaultBrowser()
+print("Default: " + default.name + " at " + default.path)
+
+// Window management
+windows = browser.listWindows()
+if (windows.length > 0) {
+    browser.maximizeWindow(windows[0].id)
+    browser.setWindowSize(windows[0].id, 1920, 1080)
+}
+
+// Extension management (Chrome)
+extensions = browser.listExtensions()
+for ext in extensions {
+    print(ext.name + " v" + ext.version + " (enabled: " + ext.enabled + ")")
+}
+browser.disableExtension(extensions[0].id)
+
+// Custom port
+browser.setPort(9223)
+browser.connect()
 
 Mouse Control Module
 mouse.click(button)        // Click mouse button (left, right, middle)

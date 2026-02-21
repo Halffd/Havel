@@ -2,6 +2,7 @@
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/automation/AutomationManager.hpp"
+#include "core/browser/BrowserModule.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
@@ -3481,6 +3482,172 @@ void Interpreter::InitializeSystemBuiltins() {
   if (auto v = environment->Get("audio.playTestSound"))
     (*audioMod)["playTestSound"] = *v;
   environment->Define("audio", HavelValue(audioMod));
+
+  // === BROWSER MODULE ===
+  // Browser automation via Chrome DevTools Protocol
+  auto browserMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  
+  (*browserMod)["connect"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        std::string url = args.empty() ? "http://localhost:9222" 
+                                        : this->ValueToString(args[0]);
+        return HavelValue(getBrowser().connect(url));
+      }));
+  
+  (*browserMod)["disconnect"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        getBrowser().disconnect();
+        return HavelValue(true);
+      }));
+  
+  (*browserMod)["isConnected"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().isConnected());
+      }));
+  
+  (*browserMod)["open"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.open() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().open(url));
+      }));
+  
+  (*browserMod)["newTab"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        std::string url = args.empty() ? "" : this->ValueToString(args[0]);
+        return HavelValue(getBrowser().newTab(url));
+      }));
+  
+  (*browserMod)["goto"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.goto() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().gotoUrl(url));
+      }));
+  
+  (*browserMod)["back"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().back());
+      }));
+  
+  (*browserMod)["forward"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().forward());
+      }));
+  
+  (*browserMod)["reload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        bool ignoreCache = !args.empty() && std::get<double>(args[0]) != 0;
+        return HavelValue(getBrowser().reload(ignoreCache));
+      }));
+  
+  (*browserMod)["click"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.click() requires selector");
+        std::string selector = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().click(selector));
+      }));
+  
+  (*browserMod)["type"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("browser.type() requires (selector, text)");
+        std::string selector = this->ValueToString(args[0]);
+        std::string text = this->ValueToString(args[1]);
+        return HavelValue(getBrowser().type(selector, text));
+      }));
+  
+  (*browserMod)["setZoom"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.setZoom() requires level (0.5-3.0)");
+        double level = std::get<double>(args[0]);
+        return HavelValue(getBrowser().setZoom(level));
+      }));
+  
+  (*browserMod)["getZoom"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getZoom());
+      }));
+  
+  (*browserMod)["resetZoom"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().resetZoom());
+      }));
+  
+  (*browserMod)["eval"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.eval() requires JavaScript code");
+        std::string js = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().eval(js));
+      }));
+  
+  (*browserMod)["screenshot"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        std::string path = args.empty() ? "" : this->ValueToString(args[0]);
+        return HavelValue(getBrowser().screenshot(path));
+      }));
+  
+  (*browserMod)["getCurrentUrl"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getCurrentUrl());
+      }));
+  
+  (*browserMod)["getTitle"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getTitle());
+      }));
+  
+  (*browserMod)["listTabs"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto tabs = getBrowser().listTabs();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& tab : tabs) {
+          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*obj)["id"] = HavelValue(static_cast<double>(tab.id));
+          (*obj)["title"] = HavelValue(tab.title);
+          (*obj)["url"] = HavelValue(tab.url);
+          (*obj)["type"] = HavelValue(tab.type);
+          arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+      }));
+  
+  (*browserMod)["activate"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.activate() requires tabId");
+        int tabId = static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().activate(tabId));
+      }));
+  
+  (*browserMod)["close"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int tabId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().close(tabId));
+      }));
+  
+  (*browserMod)["closeAll"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().closeAll());
+      }));
+  
+  environment->Define("browser", HavelValue(browserMod));
 }
 
 void Interpreter::InitializeWindowBuiltins() {

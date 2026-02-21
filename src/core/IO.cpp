@@ -509,8 +509,7 @@ void IO::cleanup() {
     XSync(display, x11::XFalse);
   }
 #endif
-  CleanupUinputDevice();
-  // Don't close the display here, it's managed by DisplayManager
+  // uinput cleanup handled by EventListener
   display = nullptr;
 
   // Additional safety: Force ungrab any remaining evdev devices
@@ -1005,7 +1004,7 @@ void IO::removeSpecialCharacters(str &keyName) {
                 keyName.end());
 }
 bool IO::EmitClick(int btnCode, int action) {
-  // Use EventListener's uinput if available, otherwise use old method
+  // Use EventListener's uinput for all mouse events
   if (eventListener && useNewEventListener) {
     // Send events through EventListener
     switch (action) {
@@ -1031,44 +1030,9 @@ bool IO::EmitClick(int btnCode, int action) {
       return false;
     }
   }
-
-  // Fallback to old method using mouseUinputFd
-  if (mouseUinputFd < 0) {
-    return false;
-  }
-
-  static std::mutex uinputMutex;
-  std::lock_guard<std::mutex> lock(uinputMutex);
-
-  auto writeEvent = [&](uint16_t type, uint16_t code, int32_t value) -> bool {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    input_event ev = {
-        .time = {.tv_sec = ts.tv_sec, .tv_usec = ts.tv_nsec / 1000},
-        .type = type,
-        .code = code,
-        .value = value};
-    return write(mouseUinputFd, &ev, sizeof(ev)) == sizeof(ev);
-  };
-
-  auto sync = [&]() -> bool { return writeEvent(EV_SYN, SYN_REPORT, 0); };
-
-  switch (action) {
-  case 0: // Release
-    return writeEvent(EV_KEY, btnCode, 0) && sync();
-
-  case 1: // Hold
-    return writeEvent(EV_KEY, btnCode, 1) && sync();
-
-  case 2: // Click (FAST)
-    return writeEvent(EV_KEY, btnCode, 1) && sync() &&
-           writeEvent(EV_KEY, btnCode, 0) && sync();
-    // No delay = instant click ⚡
-
-  default:
-    error("Invalid mouse action: {}", action);
-    return false;
-  }
+  
+  error("EmitClick: EventListener not available");
+  return false;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
   if (eventListener) {
@@ -1135,79 +1099,11 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     return true;
   }
 
-  if (mouseUinputFd < 0)
-    return false;
-
-  // Get screen dimensions for absolute coordinates
-  auto monitors = DisplayManager::GetMonitors();
-  if (monitors.empty())
-    return false;
-
-  // Assume primary monitor for coordinate system
-  int screenWidth = monitors[0].width;
-  int screenHeight = monitors[0].height;
-
-  // Get current position
-  Display *display = DisplayManager::GetDisplay();
-  int currentX = 0, currentY = 0;
-  if (display) {
-    ::Window root, child;
-    int rootX, rootY;
-    unsigned int mask;
-    XQueryPointer(display, DefaultRootWindow(display), &root, &child, &rootX,
-                  &rootY, &currentX, &currentY, &mask);
-  }
-
-  // Animate to target with steps
-  int steps = std::max(10, static_cast<int>(std::abs(targetX - currentX) +
-                                            std::abs(targetY - currentY)) /
-                               speed);
-
-  for (int i = 0; i <= steps; i++) {
-    double progress = static_cast<double>(i) / steps;
-
-    // Ease in-out curve
-    double easedProgress;
-    if (progress < 0.5) {
-      easedProgress = 2 * progress * progress;
-    } else {
-      easedProgress = -1 + (4 - 2 * progress) * progress;
-    }
-
-    int currentTargetX =
-        currentX + static_cast<int>((targetX - currentX) * easedProgress);
-    int currentTargetY =
-        currentY + static_cast<int>((targetY - currentY) * easedProgress);
-
-    // Send absolute position events
-    input_event ev = {};
-    ev.type = EV_ABS;
-    ev.code = ABS_X;
-    ev.value = (currentTargetX * 65535) / screenWidth; // Scale to device range
-    write(mouseUinputFd, &ev, sizeof(ev));
-
-    ev.type = EV_ABS;
-    ev.code = ABS_Y;
-    ev.value = (currentTargetY * 65535) / screenHeight; // Scale to device range
-    write(mouseUinputFd, &ev, sizeof(ev));
-
-    // Sync
-    ev.type = EV_SYN;
-    ev.code = SYN_REPORT;
-    ev.value = 0;
-    write(mouseUinputFd, &ev, sizeof(ev));
-
-    // Sleep based on acceleration
-    double currentSpeed =
-        speed * (1.0 + (accel - 1.0) * std::min(progress * 2.0, 1.0));
-    int sleepMs = std::max(1, static_cast<int>(20 / currentSpeed));
-    std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-  }
-
-  return true;
+  error("MouseMoveTo: EventListener not available");
+  return false;
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
-  // Use EventListener's uinput if available, otherwise use old method
+  // Use EventListener's uinput if available
   if (eventListener && useNewEventListener) {
     // Apply speed and acceleration (but NO sensitivity scaling)
     if (speed <= 0)
@@ -1242,71 +1138,8 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
     return true;
   }
 
-  // Fallback to old method using mouseUinputFd
-  if (mouseUinputFd < 0) {
-    error("mouseUinputFd is borked: {}", mouseUinputFd);
-    return false;
-  }
-
-  static std::mutex uinputMutex;
-  std::lock_guard<std::mutex> ioLock(uinputMutex);
-
-  // Apply speed and acceleration (but NO sensitivity scaling)
-  if (speed <= 0)
-    speed = 1;
-  if (accel <= 0.0f)
-    accel = 1.0f;
-
-  // Apply acceleration curve
-  float acceleratedSpeed = speed * std::pow(accel, 1.5f);
-
-  // Calculate final movement
-  int actualDx = static_cast<int>(dx * acceleratedSpeed);
-  int actualDy = static_cast<int>(dy * acceleratedSpeed);
-
-  // Preserve direction for tiny movements
-  if (actualDx == 0 && dx != 0)
-    actualDx = (dx > 0) ? 1 : -1;
-  if (actualDy == 0 && dy != 0)
-    actualDy = (dy > 0) ? 1 : -1;
-
-  debug("Mouse move: {} {}", actualDx, actualDy);
-
-  // Send X movement
-  if (actualDx != 0) {
-    input_event ev = {};
-    ev.type = EV_REL;
-    ev.code = REL_X;
-    ev.value = actualDx;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
-      error("Failed to write X movement: {}", strerror(errno));
-      return false;
-    }
-  }
-
-  // Send Y movement
-  if (actualDy != 0) {
-    input_event ev = {};
-    ev.type = EV_REL;
-    ev.code = REL_Y;
-    ev.value = actualDy;
-    if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
-      error("Failed to write Y movement: {}", strerror(errno));
-      return false;
-    }
-  }
-
-  // Send sync event
-  input_event ev = {};
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  if (write(mouseUinputFd, &ev, sizeof(ev)) < 0) {
-    error("Failed to write sync event: {}", strerror(errno));
-    return false;
-  }
-
-  return true;
+  error("MouseMove: EventListener not available");
+  return false;
 }
 // Set mouse sensitivity (0.1 - 10.0)
 void IO::SetMouseSensitivity(double sensitivity) {
@@ -4304,6 +4137,7 @@ bool IO::IsKeyRemappedTo(int targetKey) {
   return false;
 }
 
+// Commented out - old evdev hotkey listener replaced by EventListener
 /*
 bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
   if (evdevRunning)
@@ -4697,8 +4531,7 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
 
   return true;
 }
-*/
-/*
+
 void IO::StopEvdevHotkeyListener() {
   if (!evdevRunning)
     return;
@@ -4722,18 +4555,6 @@ void IO::StopEvdevHotkeyListener() {
 }
 */
 
-void IO::CleanupUinputDevice() {
-  if (mouseUinputFd >= 0) {
-    ioctl(mouseUinputFd, UI_DEV_DESTROY);
-    close(mouseUinputFd);
-    mouseUinputFd = -1;
-  }
-  if (uinputFd >= 0) {
-    ioctl(uinputFd, UI_DEV_DESTROY);
-    close(uinputFd);
-    uinputFd = -1;
-  }
-}
 void IO::StartEvdevGamepadListener(const std::string &devicePath) {
   // Similar to StartEvdevHotkeyListener but for gamepad events
   info("Starting gamepad listener for device: {}", devicePath);
@@ -4817,13 +4638,6 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
         info("Successfully grabbed mouse exclusively");
       }
 
-      if (!SetupMouseUinputDevice()) {
-        close(mouseDeviceFd);
-        mouseEvdevRunning = false;
-        error("mouse evdev: failed to setup uinput device");
-        return;
-      }
-
       struct input_event ev{};
       fd_set fds;
       struct timeval tv;
@@ -4903,22 +4717,9 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
           break;
 
         default:
-          // Forward other events when not blocking
-          if (!shouldBlock && mouseUinputFd >= 0) {
-            if (write(mouseUinputFd, &ev, sizeof(ev)) != sizeof(ev)) {
-              error("Failed to forward event (type={}, code={}): {}", ev.type,
-                    ev.code, strerror(errno));
-            }
-          } else {
-            debug("Unhandled event type: {}, code: {}, value: {}", ev.type,
-                  ev.code, ev.value);
-          }
+          debug("Unhandled event type: {}, code: {}, value: {}", ev.type,
+                ev.code, ev.value);
           break;
-        }
-
-        // Forward non-blocked events to uinput
-        if (!shouldBlock) {
-          SendMouseUInput(ev);
         }
       }
 
@@ -4935,29 +4736,6 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
         warning("Failed to release exclusive grab: {}", strerror(errno));
       }
       close(mouseDeviceFd);
-    }
-
-    if (mouseUinputFd >= 0) {
-      try {
-        // Send a sync event to ensure all pending events are processed
-        struct input_event syn = {};
-        syn.type = EV_SYN;
-        syn.code = SYN_REPORT;
-        syn.value = 0;
-        if (write(mouseUinputFd, &syn, sizeof(syn)) != sizeof(syn)) {
-          error("Failed to send final sync event: {}", strerror(errno));
-        }
-
-        if (ioctl(mouseUinputFd, UI_DEV_DESTROY) < 0) {
-          error("Failed to destroy uinput device: {}", strerror(errno));
-        }
-
-        close(mouseUinputFd);
-        mouseUinputFd = -1;
-        info("Successfully cleaned up uinput device");
-      } catch (const std::exception &e) {
-        error("Exception during uinput cleanup: {}", e.what());
-      }
     }
 
     mouseEvdevRunning = false;
@@ -5241,8 +5019,12 @@ bool IO::handleMouseRelative(const input_event &ev) {
     debug("Scaling mouse movement: original={}, sensitivity={}x, scaled={}",
           ev.value, mouseSensitivity, scaledInt);
 
-    // Forward the scaled event
-    SendMouseUInput(scaledEvent);
+    // Forward the scaled event using EventListener
+    if (eventListener && useNewEventListener) {
+      eventListener->SendUinputEvent(scaledEvent.type, scaledEvent.code,
+                                     scaledEvent.value);
+      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    }
     return true;
   }
 
@@ -5371,58 +5153,6 @@ bool havel::IO::handleMouseAbsolute(const input_event &ev) {
   return false;
 }
 
-bool havel::IO::SetupMouseUinputDevice() {
-  mouseUinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-  if (mouseUinputFd < 0) {
-    error("mouse uinput: failed to open /dev/uinput: {}", strerror(errno));
-    return false;
-  }
-
-  struct uinput_setup usetup = {};
-  usetup.id.bustype = BUS_USB;
-  usetup.id.vendor = 0x1234;
-  usetup.id.product = 0x5679;
-  strcpy(usetup.name, "havel-uinput-mouse");
-
-  // Enable mouse events
-  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_KEY);
-  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_REL);
-
-  ioctl(mouseUinputFd, UI_SET_EVBIT, EV_SYN);
-
-  // Enable mouse buttons
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_LEFT);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_RIGHT);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_MIDDLE);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_SIDE);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_EXTRA);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_FORWARD);
-  ioctl(mouseUinputFd, UI_SET_KEYBIT, BTN_BACK);
-
-  // Enable mouse movement and scroll
-  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_X);
-  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_Y);
-  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_WHEEL);
-  ioctl(mouseUinputFd, UI_SET_RELBIT, REL_HWHEEL);
-
-  if (ioctl(mouseUinputFd, UI_DEV_SETUP, &usetup) < 0) {
-    error("mouse uinput: device setup failed: {}", strerror(errno));
-    close(mouseUinputFd);
-    mouseUinputFd = -1;
-    return false;
-  }
-
-  if (ioctl(mouseUinputFd, UI_DEV_CREATE) < 0) {
-    error("mouse uinput: device creation failed: {}", strerror(errno));
-    close(mouseUinputFd);
-    mouseUinputFd = -1;
-    return false;
-  }
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  return true;
-}
-
 std::pair<int, int> IO::GetMousePositionX11() {
   Display *display = DisplayManager::GetDisplay();
   if (!display) {
@@ -5506,118 +5236,35 @@ void IO::MouseClick(int button) {
 }
 
 void IO::MouseDown(int button) {
-  // OPTIMIZATION: Use EventListener's batched uinput
+  // Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     // Single combined write: press + sync
     eventListener->SendUinputEvent(EV_KEY, button, 1);     // Press
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else if (mouseUinputFd >= 0) {
-    static std::mutex uinputWriteMutex;
-    std::lock_guard<std::mutex> lk(uinputWriteMutex);
-
-    // OPTIMIZATION #1: Batch press and sync into one write operation
-    struct input_event events[2];
-    gettimeofday(&events[0].time, nullptr);
-    events[0].type = EV_KEY;
-    events[0].code = button;
-    events[0].value = 1; // Press
-
-    gettimeofday(&events[1].time, nullptr);
-    events[1].type = EV_SYN;
-    events[1].code = SYN_REPORT;
-    events[1].value = 0;
-
-    // ONE syscall for press + sync
-    ssize_t res = write(mouseUinputFd, events, sizeof(events));
-    if (res != (ssize_t)sizeof(events)) {
-      error("Failed to write batched mouse down events: {}", strerror(errno));
-    }
+  } else {
+    error("MouseDown: EventListener not available");
   }
 }
 
 void IO::MouseUp(int button) {
-  // OPTIMIZATION: Use EventListener's batched uinput
+  // Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     // Single combined write: release + sync
     eventListener->SendUinputEvent(EV_KEY, button, 0);     // Release
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else if (mouseUinputFd >= 0) {
-    static std::mutex uinputWriteMutex;
-    std::lock_guard<std::mutex> lk(uinputWriteMutex);
-
-    // OPTIMIZATION #1: Batch release and sync into one write operation
-    struct input_event events[2];
-    gettimeofday(&events[0].time, nullptr);
-    events[0].type = EV_KEY;
-    events[0].code = button;
-    events[0].value = 0; // Release
-
-    gettimeofday(&events[1].time, nullptr);
-    events[1].type = EV_SYN;
-    events[1].code = SYN_REPORT;
-    events[1].value = 0;
-
-    // ONE syscall for release + sync
-    ssize_t res = write(mouseUinputFd, events, sizeof(events));
-    if (res != (ssize_t)sizeof(events)) {
-      error("Failed to write batched mouse up events: {}", strerror(errno));
-    }
+  } else {
+    error("MouseUp: EventListener not available");
   }
 }
 
 void IO::MouseWheel(int amount) {
-  // OPTIMIZATION: Use EventListener's batched uinput
+  // Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     int wheelValue = amount > 0 ? 1 : -1;
     eventListener->SendUinputEvent(EV_REL, REL_WHEEL, wheelValue);
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else if (mouseUinputFd >= 0) {
-    static std::mutex uinputWriteMutex;
-    std::lock_guard<std::mutex> lk(uinputWriteMutex);
-
-    // OPTIMIZATION #1: Batch wheel and sync into one write operation
-    struct input_event events[2];
-    gettimeofday(&events[0].time, nullptr);
-    events[0].type = EV_REL;
-    events[0].code = REL_WHEEL;
-    events[0].value = amount > 0 ? 1 : -1;
-
-    gettimeofday(&events[1].time, nullptr);
-    events[1].type = EV_SYN;
-    events[1].code = SYN_REPORT;
-    events[1].value = 0;
-
-    // ONE syscall for wheel + sync
-    ssize_t res = write(mouseUinputFd, events, sizeof(events));
-    if (res != (ssize_t)sizeof(events)) {
-      error("Failed to write batched mouse wheel events: {}", strerror(errno));
-    }
-  }
-}
-
-// Send mouse event via uinput (legacy fallback when EventListener not available)
-void IO::SendMouseUInput(const input_event &ev) {
-  if (mouseUinputFd >= 0) {
-    static std::mutex uinputWriteMutex;
-    std::lock_guard<std::mutex> lk(uinputWriteMutex);
-    
-    struct input_event event = ev;
-    ssize_t written = write(mouseUinputFd, &event, sizeof(event));
-    if (written != sizeof(event)) {
-      error("Failed to write mouse uinput event: {}", strerror(errno));
-    }
-    
-    // Send SYN_REPORT after each event
-    struct input_event syn = {};
-    gettimeofday(&syn.time, nullptr);
-    syn.type = EV_SYN;
-    syn.code = SYN_REPORT;
-    syn.value = 0;
-    
-    written = write(mouseUinputFd, &syn, sizeof(syn));
-    if (written != sizeof(syn)) {
-      error("Failed to write mouse uinput SYN: {}", strerror(errno));
-    }
+  } else {
+    error("MouseWheel: EventListener not available");
   }
 }
 

@@ -186,7 +186,6 @@ class IO {
   std::string mouseEvdevDevicePath;
   int mouseDeviceFd = -1; // Track the mouse device file descriptor
   std::thread mouseEvdevThread;
-  int mouseUinputFd = -1;
   std::atomic<bool> globalAltPressed{false};
   std::chrono::steady_clock::time_point lastLeftPress;
   std::chrono::steady_clock::time_point lastRightPress;
@@ -292,12 +291,9 @@ public:
   bool handleMouseButton(const input_event &ev);
   bool handleMouseRelative(const input_event &ev);
   bool handleMouseAbsolute(const input_event &ev);
-  bool SetupMouseUinputDevice();
-  void SendMouseUInput(const input_event &ev);
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
   void executeComboAction(const std::string &action);
-  void CleanupUinputDevice();
   // Access current modifier bitmask (ShiftMask|ControlMask|Mod1Mask|Mod4Mask)
   int GetCurrentModifiers() const {
     if (currentModifierState.leftCtrl || currentModifierState.rightCtrl)

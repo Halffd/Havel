@@ -1,0 +1,5 @@
+io.mouseMoveTo(0,0)
+io.mouseMoveTo(800,700)
+io.click()
+io.mouseMoveTo(300,220,1,1)
+io.click("right")

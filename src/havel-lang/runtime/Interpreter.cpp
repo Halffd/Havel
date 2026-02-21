@@ -5,6 +5,7 @@
 #include "core/browser/BrowserModule.hpp"
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
+#include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
 #include "gui/GUIManager.hpp"
@@ -3646,8 +3647,139 @@ void Interpreter::InitializeSystemBuiltins() {
         (void)args;
         return HavelValue(getBrowser().closeAll());
       }));
-  
+
   environment->Define("browser", HavelValue(browserMod));
+
+  // === HTTP MODULE ===
+  // HTTP client for REST API calls
+  auto httpMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  
+  (*httpMod)["get"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.get() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        auto response = getHttp().get(url);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["post"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.post() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
+        auto response = getHttp().post(url, data);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["put"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.put() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
+        auto response = getHttp().put(url, data);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["delete"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.delete() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        auto response = getHttp().del(url);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["patch"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.patch() requires URL");
+        std::string url = this->ValueToString(args[0]);
+        std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
+        auto response = getHttp().patch(url, data);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["download"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("http.download() requires (url, path)");
+        std::string url = this->ValueToString(args[0]);
+        std::string path = this->ValueToString(args[1]);
+        return HavelValue(getHttp().download(url, path));
+      }));
+  
+  (*httpMod)["upload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("http.upload() requires (url, path)");
+        std::string url = this->ValueToString(args[0]);
+        std::string path = this->ValueToString(args[1]);
+        auto response = getHttp().upload(url, path);
+        
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+        (*obj)["body"] = HavelValue(response.body);
+        (*obj)["ok"] = HavelValue(response.ok());
+        if (!response.error.empty()) {
+          (*obj)["error"] = HavelValue(response.error);
+        }
+        return HavelValue(obj);
+      }));
+  
+  (*httpMod)["setTimeout"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("http.setTimeout() requires timeout in ms");
+        int timeout = static_cast<int>(std::get<double>(args[0]));
+        getHttp().setTimeout(timeout);
+        return HavelValue(true);
+      }));
+  
+  environment->Define("http", HavelValue(httpMod));
 }
 
 void Interpreter::InitializeWindowBuiltins() {

@@ -454,6 +454,9 @@ public:
   static double scrollSpeed;
   bool shutdown = false;
 
+  // X11 specific functions
+  std::pair<int, int> GetMousePositionX11();
+
   // Performance optimization: Keycode caching and batch event helpers
   static int GetKeyCacheLookup(const std::string &keyName);
   static std::vector<KeyToken> ParseKeyString(const std::string &keys);

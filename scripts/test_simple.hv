@@ -1,1 +1,1 @@
-print "Hello World"
+print("Testing function overriding..."); function abs(x) { return "custom: " + x; } print(abs(-5));

@@ -22,7 +22,12 @@ build*
 *-server-protocol.h
 # Precompiled headers
 *.gch
-*.pch# Log files
+*.pch
+*.o
+*.s
+*.S
+*.ko
+*.cmd
 log/*.log
 log/*.log.*
 *.log
@@ -33,3 +38,8 @@ src/wm/build/
 src/wm/protocols/
 src/wm/xdg*
 .qwen
+benchmarks
+benchmark
+protocols
+generated
+scripts/user

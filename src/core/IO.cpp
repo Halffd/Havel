@@ -5594,4 +5594,31 @@ void IO::MouseWheel(int amount) {
     }
   }
 }
+
+// Send mouse event via uinput (legacy fallback when EventListener not available)
+void IO::SendMouseUInput(const input_event &ev) {
+  if (mouseUinputFd >= 0) {
+    static std::mutex uinputWriteMutex;
+    std::lock_guard<std::mutex> lk(uinputWriteMutex);
+    
+    struct input_event event = ev;
+    ssize_t written = write(mouseUinputFd, &event, sizeof(event));
+    if (written != sizeof(event)) {
+      error("Failed to write mouse uinput event: {}", strerror(errno));
+    }
+    
+    // Send SYN_REPORT after each event
+    struct input_event syn = {};
+    gettimeofday(&syn.time, nullptr);
+    syn.type = EV_SYN;
+    syn.code = SYN_REPORT;
+    syn.value = 0;
+    
+    written = write(mouseUinputFd, &syn, sizeof(syn));
+    if (written != sizeof(syn)) {
+      error("Failed to write mouse uinput SYN: {}", strerror(errno));
+    }
+  }
+}
+
 } // namespace havel

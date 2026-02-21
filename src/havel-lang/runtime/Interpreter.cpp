@@ -2983,7 +2983,7 @@ void Interpreter::InitializeSystemBuiltins() {
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         try {
           auto &config = Configs::Get();
-          if(args.empty()){
+          if (args.empty()) {
             config.Reload();
           } else {
             config.Load(ValueToString(args[0]));
@@ -3488,27 +3488,27 @@ void Interpreter::InitializeSystemBuiltins() {
   // Browser automation via Chrome DevTools Protocol
   auto browserMod =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  
+
   (*browserMod)["connect"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        std::string url = args.empty() ? "http://localhost:9222" 
-                                        : this->ValueToString(args[0]);
+        std::string url = args.empty() ? "http://localhost:9222"
+                                       : this->ValueToString(args[0]);
         return HavelValue(getBrowser().connect(url));
       }));
-  
+
   (*browserMod)["disconnect"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         getBrowser().disconnect();
         return HavelValue(true);
       }));
-  
+
   (*browserMod)["isConnected"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().isConnected());
       }));
-  
+
   (*browserMod)["open"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3516,13 +3516,13 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         return HavelValue(getBrowser().open(url));
       }));
-  
+
   (*browserMod)["newTab"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         std::string url = args.empty() ? "" : this->ValueToString(args[0]);
         return HavelValue(getBrowser().newTab(url));
       }));
-  
+
   (*browserMod)["goto"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3530,25 +3530,25 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         return HavelValue(getBrowser().gotoUrl(url));
       }));
-  
+
   (*browserMod)["back"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().back());
       }));
-  
+
   (*browserMod)["forward"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().forward());
       }));
-  
+
   (*browserMod)["reload"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         bool ignoreCache = !args.empty() && std::get<double>(args[0]) != 0;
         return HavelValue(getBrowser().reload(ignoreCache));
       }));
-  
+
   (*browserMod)["click"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3556,7 +3556,7 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string selector = this->ValueToString(args[0]);
         return HavelValue(getBrowser().click(selector));
       }));
-  
+
   (*browserMod)["type"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
@@ -3565,27 +3565,28 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string text = this->ValueToString(args[1]);
         return HavelValue(getBrowser().type(selector, text));
       }));
-  
+
   (*browserMod)["setZoom"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
-          return HavelRuntimeError("browser.setZoom() requires level (0.5-3.0)");
+          return HavelRuntimeError(
+              "browser.setZoom() requires level (0.5-3.0)");
         double level = std::get<double>(args[0]);
         return HavelValue(getBrowser().setZoom(level));
       }));
-  
+
   (*browserMod)["getZoom"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().getZoom());
       }));
-  
+
   (*browserMod)["resetZoom"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().resetZoom());
       }));
-  
+
   (*browserMod)["eval"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3593,32 +3594,33 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string js = this->ValueToString(args[0]);
         return HavelValue(getBrowser().eval(js));
       }));
-  
+
   (*browserMod)["screenshot"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         std::string path = args.empty() ? "" : this->ValueToString(args[0]);
         return HavelValue(getBrowser().screenshot(path));
       }));
-  
+
   (*browserMod)["getCurrentUrl"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().getCurrentUrl());
       }));
-  
+
   (*browserMod)["getTitle"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().getTitle());
       }));
-  
+
   (*browserMod)["listTabs"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto tabs = getBrowser().listTabs();
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        for (const auto& tab : tabs) {
-          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        for (const auto &tab : tabs) {
+          auto obj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*obj)["id"] = HavelValue(static_cast<double>(tab.id));
           (*obj)["title"] = HavelValue(tab.title);
           (*obj)["url"] = HavelValue(tab.url);
@@ -3627,7 +3629,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   (*browserMod)["activate"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3635,11 +3637,12 @@ void Interpreter::InitializeSystemBuiltins() {
         int tabId = static_cast<int>(std::get<double>(args[0]));
         return HavelValue(getBrowser().activate(tabId));
       }));
-  
+
   (*browserMod)["close"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int tabId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
-        return HavelValue(getBrowser().close(tabId));
+        int tabId =
+            args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().closeTab(tabId));
       }));
 
   (*browserMod)["closeAll"] = HavelValue(BuiltinFunction(
@@ -3649,13 +3652,14 @@ void Interpreter::InitializeSystemBuiltins() {
       }));
 
   // === New Browser Functions ===
-  
+
   (*browserMod)["connectFirefox"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int port = args.empty() ? 2828 : static_cast<int>(std::get<double>(args[0]));
+        int port =
+            args.empty() ? 2828 : static_cast<int>(std::get<double>(args[0]));
         return HavelValue(getBrowser().connectFirefox(port));
       }));
-  
+
   (*browserMod)["setPort"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3664,34 +3668,38 @@ void Interpreter::InitializeSystemBuiltins() {
         getBrowser().setPort(port);
         return HavelValue(true);
       }));
-  
+
   (*browserMod)["getPort"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().getPort());
       }));
-  
+
   (*browserMod)["getBrowserType"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto type = getBrowser().getBrowserType();
-        std::string typeName = type == BrowserType::Firefox ? "firefox" :
-                               type == BrowserType::Chrome ? "chrome" :
-                               type == BrowserType::Chromium ? "chromium" :
-                               type == BrowserType::Edge ? "edge" :
-                               type == BrowserType::Brave ? "brave" : "unknown";
+        std::string typeName = type == BrowserType::Firefox    ? "firefox"
+                               : type == BrowserType::Chrome   ? "chrome"
+                               : type == BrowserType::Chromium ? "chromium"
+                               : type == BrowserType::Edge     ? "edge"
+                               : type == BrowserType::Brave    ? "brave"
+                                                               : "unknown";
         return HavelValue(typeName);
       }));
-  
+
   (*browserMod)["getOpenBrowsers"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto browsers = getBrowser().getOpenBrowsers();
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        for (const auto& b : browsers) {
-          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-          (*obj)["type"] = HavelValue(b.type == BrowserType::Firefox ? "firefox" : 
-                                       b.type == BrowserType::Chrome ? "chrome" : "chromium");
+        for (const auto &b : browsers) {
+          auto obj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*obj)["type"] =
+              HavelValue(b.type == BrowserType::Firefox  ? "firefox"
+                         : b.type == BrowserType::Chrome ? "chrome"
+                                                         : "chromium");
           (*obj)["name"] = HavelValue(b.name);
           (*obj)["pid"] = HavelValue(static_cast<double>(b.pid));
           (*obj)["cdpPort"] = HavelValue(static_cast<double>(b.cdpPort));
@@ -3699,26 +3707,30 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   (*browserMod)["getDefaultBrowser"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto browser = getBrowser().getDefaultBrowser();
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["type"] = HavelValue(browser.type == BrowserType::Firefox ? "firefox" : 
-                                     browser.type == BrowserType::Chrome ? "chrome" : "chromium");
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["type"] =
+            HavelValue(browser.type == BrowserType::Firefox  ? "firefox"
+                       : browser.type == BrowserType::Chrome ? "chrome"
+                                                             : "chromium");
         (*obj)["name"] = HavelValue(browser.name);
         (*obj)["path"] = HavelValue(browser.path);
         return HavelValue(obj);
       }));
-  
+
   (*browserMod)["listWindows"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto windows = getBrowser().listWindows();
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        for (const auto& w : windows) {
-          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        for (const auto &w : windows) {
+          auto obj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*obj)["id"] = HavelValue(static_cast<double>(w.id));
           (*obj)["x"] = HavelValue(static_cast<double>(w.x));
           (*obj)["y"] = HavelValue(static_cast<double>(w.y));
@@ -3728,14 +3740,15 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   (*browserMod)["listExtensions"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto extensions = getBrowser().listExtensions();
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        for (const auto& e : extensions) {
-          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        for (const auto &e : extensions) {
+          auto obj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*obj)["id"] = HavelValue(e.id);
           (*obj)["name"] = HavelValue(e.name);
           (*obj)["version"] = HavelValue(e.version);
@@ -3744,55 +3757,57 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   (*browserMod)["enableExtension"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
-          return HavelRuntimeError("browser.enableExtension() requires extensionId");
+          return HavelRuntimeError(
+              "browser.enableExtension() requires extensionId");
         std::string extId = this->ValueToString(args[0]);
         return HavelValue(getBrowser().enableExtension(extId));
       }));
-  
+
   (*browserMod)["disableExtension"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
-          return HavelRuntimeError("browser.disableExtension() requires extensionId");
+          return HavelRuntimeError(
+              "browser.disableExtension() requires extensionId");
         std::string extId = this->ValueToString(args[0]);
         return HavelValue(getBrowser().disableExtension(extId));
       }));
-  
+
   (*browserMod)["setWindowSize"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 3)
-          return HavelRuntimeError("browser.setWindowSize() requires (windowId, width, height)");
-        int windowId = static_cast<int>(std::get<double>(args[0]));
-        int width = static_cast<int>(std::get<double>(args[1]));
-        int height = static_cast<int>(std::get<double>(args[2]));
-        return HavelValue(getBrowser().setWindowSize(windowId, width, height));
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "browser.setWindowSize() requires (width, height)");
+        int width = static_cast<int>(std::get<double>(args[0]));
+        int height = static_cast<int>(std::get<double>(args[1]));
+        return HavelValue(getBrowser().setWindowSize(-1, width, height));
       }));
-  
+
   (*browserMod)["setWindowPosition"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 3)
-          return HavelRuntimeError("browser.setWindowPosition() requires (windowId, x, y)");
-        int windowId = static_cast<int>(std::get<double>(args[0]));
-        int x = static_cast<int>(std::get<double>(args[1]));
-        int y = static_cast<int>(std::get<double>(args[2]));
-        return HavelValue(getBrowser().setWindowPosition(windowId, x, y));
+        if (args.size() < 2)
+          return HavelRuntimeError(
+              "browser.setWindowPosition() requires (x, y)");
+        int x = static_cast<int>(std::get<double>(args[0]));
+        int y = static_cast<int>(std::get<double>(args[1]));
+        return HavelValue(getBrowser().setWindowPosition(-1, x, y));
       }));
-  
+
   (*browserMod)["maximizeWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
         return HavelValue(getBrowser().maximizeWindow(windowId));
       }));
-  
+
   (*browserMod)["minimizeWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
         return HavelValue(getBrowser().minimizeWindow(windowId));
       }));
-  
+
   (*browserMod)["fullscreenWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
@@ -3805,16 +3820,18 @@ void Interpreter::InitializeSystemBuiltins() {
   // HTTP client for REST API calls
   auto httpMod =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  
+
   (*httpMod)["get"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("http.get() requires URL");
         std::string url = this->ValueToString(args[0]);
         auto response = getHttp().get(url);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3822,7 +3839,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["post"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3830,9 +3847,11 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
         auto response = getHttp().post(url, data);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3840,7 +3859,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["put"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3848,9 +3867,11 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
         auto response = getHttp().put(url, data);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3858,16 +3879,18 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["delete"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("http.delete() requires URL");
         std::string url = this->ValueToString(args[0]);
         auto response = getHttp().del(url);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3875,7 +3898,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["patch"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3883,9 +3906,11 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         std::string data = args.size() > 1 ? this->ValueToString(args[1]) : "";
         auto response = getHttp().patch(url, data);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3893,7 +3918,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["download"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
@@ -3902,7 +3927,7 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string path = this->ValueToString(args[1]);
         return HavelValue(getHttp().download(url, path));
       }));
-  
+
   (*httpMod)["upload"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
@@ -3910,9 +3935,11 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string url = this->ValueToString(args[0]);
         std::string path = this->ValueToString(args[1]);
         auto response = getHttp().upload(url, path);
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["statusCode"] = HavelValue(static_cast<double>(response.statusCode));
+
+        auto obj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["statusCode"] =
+            HavelValue(static_cast<double>(response.statusCode));
         (*obj)["body"] = HavelValue(response.body);
         (*obj)["ok"] = HavelValue(response.ok());
         if (!response.error.empty()) {
@@ -3920,7 +3947,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(obj);
       }));
-  
+
   (*httpMod)["setTimeout"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -3929,7 +3956,7 @@ void Interpreter::InitializeSystemBuiltins() {
         getHttp().setTimeout(timeout);
         return HavelValue(true);
       }));
-  
+
   environment->Define("http", HavelValue(httpMod));
 }
 
@@ -4965,209 +4992,214 @@ void Interpreter::InitializeIOBuiltins() {
         return HavelValue(static_cast<double>(this->io.mouseSensitivity));
       });
 
-(*mouseObj)["setSensitivity"] =
+  (*mouseObj)["setSensitivity"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("io.setMouseSensitivity() requires value");
+        this->io.mouseSensitivity = ValueToNumber(args[0]);
+        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+      });
+  environment->Define("mouse", mouseObj);
+  environment->Define("click", (*mouseObj)["click"]);
+  environment->Define(
+      "io.emergencyReleaseAllKeys",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            this->io.EmergencyReleaseAllKeys();
+            return HavelValue(nullptr);
+          }));
+
+  // Hotkey management builtins
+  environment->Define(
+      "io.enableHotkey",
       BuiltinFunction([this](
                           const std::vector<HavelValue> &args) -> HavelResult {
-    if (args.empty())
-      return HavelRuntimeError("io.setMouseSensitivity() requires value");
-    this->io.mouseSensitivity = ValueToNumber(args[0]);
-    return HavelValue(static_cast<double>(this->io.mouseSensitivity));
-      });
-environment->Define("mouse", mouseObj);
-environment->Define("click", (*mouseObj)["click"]);
-environment->Define(
-    "io.emergencyReleaseAllKeys",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      (void)args;
-      this->io.EmergencyReleaseAllKeys();
-      return HavelValue(nullptr);
-    }));
+        if (args.empty())
+          return HavelRuntimeError("io.enableHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.EnableHotkey(hotkey));
+      }));
 
-// Hotkey management builtins
-environment->Define(
-    "io.enableHotkey",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      if (args.empty())
-        return HavelRuntimeError("io.enableHotkey() requires hotkey name");
-      std::string hotkey = ValueToString(args[0]);
-      return HavelValue(this->io.EnableHotkey(hotkey));
-    }));
+  environment->Define(
+      "io.disableHotkey",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("io.disableHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.DisableHotkey(hotkey));
+      }));
 
-environment->Define(
-    "io.disableHotkey",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      if (args.empty())
-        return HavelRuntimeError("io.disableHotkey() requires hotkey name");
-      std::string hotkey = ValueToString(args[0]);
-      return HavelValue(this->io.DisableHotkey(hotkey));
-    }));
+  environment->Define(
+      "io.toggleHotkey",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
+        std::string hotkey = ValueToString(args[0]);
+        return HavelValue(this->io.ToggleHotkey(hotkey));
+      }));
 
-environment->Define(
-    "io.toggleHotkey",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      if (args.empty())
-        return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
-      std::string hotkey = ValueToString(args[0]);
-      return HavelValue(this->io.ToggleHotkey(hotkey));
-    }));
+  environment->Define(
+      "io.removeHotkey",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.empty())
+              return HavelRuntimeError(
+                  "io.removeHotkey() requires hotkey name or ID");
 
-environment->Define(
-    "io.removeHotkey",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      if (args.empty())
-        return HavelRuntimeError(
-            "io.removeHotkey() requires hotkey name or ID");
+            // Try to parse as number first (ID), then as string (name)
+            const HavelValue &arg = args[0];
 
-      // Try to parse as number first (ID), then as string (name)
-      const HavelValue &arg = args[0];
+            // Check if it's a number by trying to get it as a number
+            double numVal = ValueToNumber(arg);
 
-      // Check if it's a number by trying to get it as a number
-      double numVal = ValueToNumber(arg);
+            // If it holds an int or double, use as ID
+            bool isNumber = std::holds_alternative<int>(arg) ||
+                            std::holds_alternative<double>(arg);
 
-      // If it holds an int or double, use as ID
-      bool isNumber = std::holds_alternative<int>(arg) ||
-                      std::holds_alternative<double>(arg);
+            if (isNumber) {
+              int id = static_cast<int>(numVal);
+              return HavelValue(this->io.RemoveHotkey(id));
+            } else {
+              std::string name = ValueToString(args[0]);
+              return HavelValue(this->io.RemoveHotkey(name));
+            }
+          }));
 
-      if (isNumber) {
-        int id = static_cast<int>(numVal);
-        return HavelValue(this->io.RemoveHotkey(id));
-      } else {
-        std::string name = ValueToString(args[0]);
-        return HavelValue(this->io.RemoveHotkey(name));
-      }
-    }));
+  // Expose as module object: audioManager
+  auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("audio.getVolume"))
+    (*am)["getVolume"] = *v;
+  if (auto v = environment->Get("audio.setVolume"))
+    (*am)["setVolume"] = *v;
+  if (auto v = environment->Get("audio.increaseVolume"))
+    (*am)["increaseVolume"] = *v;
+  if (auto v = environment->Get("audio.decreaseVolume"))
+    (*am)["decreaseVolume"] = *v;
+  if (auto v = environment->Get("audio.toggleMute"))
+    (*am)["toggleMute"] = *v;
+  if (auto v = environment->Get("audio.setMute"))
+    (*am)["setMute"] = *v;
+  if (auto v = environment->Get("audio.isMuted"))
+    (*am)["isMuted"] = *v;
+  environment->Define("audioManager", HavelValue(am));
 
-// Expose as module object: audioManager
-auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-if (auto v = environment->Get("audio.getVolume"))
-  (*am)["getVolume"] = *v;
-if (auto v = environment->Get("audio.setVolume"))
-  (*am)["setVolume"] = *v;
-if (auto v = environment->Get("audio.increaseVolume"))
-  (*am)["increaseVolume"] = *v;
-if (auto v = environment->Get("audio.decreaseVolume"))
-  (*am)["decreaseVolume"] = *v;
-if (auto v = environment->Get("audio.toggleMute"))
-  (*am)["toggleMute"] = *v;
-if (auto v = environment->Get("audio.setMute"))
-  (*am)["setMute"] = *v;
-if (auto v = environment->Get("audio.isMuted"))
-  (*am)["isMuted"] = *v;
-environment->Define("audioManager", HavelValue(am));
+  // Add comprehensive help function
+  environment->Define(
+      "help",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            std::stringstream help;
 
-// Add comprehensive help function
-environment->Define(
-    "help",
-    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-      std::stringstream help;
+            if (args.empty()) {
+              // Show general help
+              help << "\n=== Havel Language Help ===\n\n";
+              help << "Navigation:\n";
+              help << "  - help()           : Show this main help page\n";
+              help << "  - help(\"syntax\")   : Show syntax reference\n";
+              help << "  - help(\"keywords\"): Show all keywords and usage\n";
+              help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
+              help << "  - help(\"modules\")  : Show available modules\n";
+              help << "  - help(\"process\")  : Show process management\n\n";
+              help << "Conditional Hotkeys:\n";
+              help << "  - Basic: hotkey => action\n";
+              help << "  - Postfix: hotkey => action if condition\n";
+              help << "  - Prefix: hotkey if condition => action\n";
+              help << "  - Grouped: when condition { hotkey => action }\n\n";
+              help << "For detailed documentation, see Havel.md\n";
+            } else {
+              std::string topic = ValueToString(args[0]);
 
-      if (args.empty()) {
-        // Show general help
-        help << "\n=== Havel Language Help ===\n\n";
-        help << "Navigation:\n";
-        help << "  - help()           : Show this main help page\n";
-        help << "  - help(\"syntax\")   : Show syntax reference\n";
-        help << "  - help(\"keywords\"): Show all keywords and usage\n";
-        help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
-        help << "  - help(\"modules\")  : Show available modules\n";
-        help << "  - help(\"process\")  : Show process management\n\n";
-        help << "Conditional Hotkeys:\n";
-        help << "  - Basic: hotkey => action\n";
-        help << "  - Postfix: hotkey => action if condition\n";
-        help << "  - Prefix: hotkey if condition => action\n";
-        help << "  - Grouped: when condition { hotkey => action }\n\n";
-        help << "For detailed documentation, see Havel.md\n";
-      } else {
-        std::string topic = ValueToString(args[0]);
+              if (topic == "syntax" || topic == "SYNTAX") {
+                help << "\n=== Syntax Reference ===\n\n";
+                help << "Basic Hotkey: hotkey => action\n";
+                help << "Pipeline: data | transform1 | transform2\n";
+                help << "Blocks: { statement1; statement2; }\n";
+                help << "Variables: let name = value\n";
+                help << "Conditionals: if condition { block } else { block "
+                        "}\n";
+                help << "Functions: fn name(param) => { block }\n";
+              } else if (topic == "keywords" || topic == "KEYWORDS") {
+                help << "\n=== Keywords ===\n\n";
+                help << "let    : Variable declaration (let x = 5)\n";
+                help << "if     : Conditional (if x > 0 { ... })\n";
+                help << "else   : Alternative (if x > 0 { ... } else { ... "
+                        "})\n";
+                help << "when   : Conditional block (when condition { ... "
+                        "})\n";
+                help << "fn     : Function definition (fn name() => { ... "
+                        "})\n";
+                help << "return : Function return (return value)\n";
+                help << "import : Module import (import module from "
+                        "\"file\")\n";
+                help << "config : Config block (config { ... })\n";
+                help << "devices: Device config block (devices { ... })\n";
+                help << "modes  : Modes config block (modes { ... })\n";
+              } else if (topic == "hotkeys" || topic == "HOTKEYS") {
+                help << "\n=== Conditional Hotkeys ===\n\n";
+                help << "Postfix: F1 => send(\"hello\") if mode == "
+                        "\"gaming\"\n";
+                help << "Prefix:  F1 if mode == \"gaming\" => "
+                        "send(\"hello\")\n";
+                help << "Grouped: when mode == \"gaming\" { F1 => "
+                        "send(\"hi\"); F2 "
+                        "=> send(\"bye\"); }\n";
+                help << "Nested:  when condition1 { F1 if condition2 => "
+                        "action }\n";
+                help << "All conditions are evaluated dynamically at "
+                        "runtime!\n";
+              } else if (topic == "modules" || topic == "MODULES") {
+                help << "\n=== Available Modules ===\n\n";
+                help << "clipboard : Clipboard operations (get, set, clear)\n";
+                help << "window    : Window management (focus, move, "
+                        "resize)\n";
+                help << "io        : Input/output operations (mouse, "
+                        "keyboard)\n";
+                help << "audio     : Audio control (volume, mute, apps)\n";
+                help << "text      : Text processing (upper, lower, trim, "
+                        "etc.)\n";
+                help << "file      : File I/O operations\n";
+                help << "system    : System operations (run, notify, sleep)\n";
+                help << "process   : Process management (find, kill, nice, "
+                        "ionice)\n";
+                help << "launcher  : Process execution (run, runShell, "
+                        "runDetached)\n";
+              } else if (topic == "process" || topic == "PROCESS") {
+                help << "\n=== Process Management Module ===\n\n";
+                help << "Process Discovery:\n";
+                help << "  process.find(name)           : Find processes by "
+                        "name\n";
+                help << "  process.exists(pid|name)     : Check if process "
+                        "exists\n\n";
+                help << "Process Control:\n";
+                help << "  process.kill(pid, signal)    : Send signal to "
+                        "process\n";
+                help << "  process.nice(pid, value)     : Set CPU priority "
+                        "(-20 to "
+                        "19)\n";
+                help << "  process.ionice(pid, class, data) : Set I/O "
+                        "priority\n\n";
+                help << "Examples:\n";
+                help << "  let procs = process.find(\"firefox\")\n";
+                help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
+                help << "  process.nice(1234, 10)           // Lower CPU "
+                        "priority\n";
+                help << "  process.ionice(1234, 2, 4)      // Best-effort "
+                        "I/O\n\n";
+                help << "Process Object Fields:\n";
+                help << "  pid, ppid, name, command, user\n";
+                help << "  cpu_usage, memory_usage\n";
+              } else {
+                help << "\nUnknown topic: " << topic << "\n";
+                help << "Use help() to see available topics.\n";
+              }
+            }
 
-        if (topic == "syntax" || topic == "SYNTAX") {
-          help << "\n=== Syntax Reference ===\n\n";
-          help << "Basic Hotkey: hotkey => action\n";
-          help << "Pipeline: data | transform1 | transform2\n";
-          help << "Blocks: { statement1; statement2; }\n";
-          help << "Variables: let name = value\n";
-          help << "Conditionals: if condition { block } else { block "
-                  "}\n";
-          help << "Functions: fn name(param) => { block }\n";
-        } else if (topic == "keywords" || topic == "KEYWORDS") {
-          help << "\n=== Keywords ===\n\n";
-          help << "let    : Variable declaration (let x = 5)\n";
-          help << "if     : Conditional (if x > 0 { ... })\n";
-          help << "else   : Alternative (if x > 0 { ... } else { ... "
-                  "})\n";
-          help << "when   : Conditional block (when condition { ... "
-                  "})\n";
-          help << "fn     : Function definition (fn name() => { ... "
-                  "})\n";
-          help << "return : Function return (return value)\n";
-          help << "import : Module import (import module from "
-                  "\"file\")\n";
-          help << "config : Config block (config { ... })\n";
-          help << "devices: Device config block (devices { ... })\n";
-          help << "modes  : Modes config block (modes { ... })\n";
-        } else if (topic == "hotkeys" || topic == "HOTKEYS") {
-          help << "\n=== Conditional Hotkeys ===\n\n";
-          help << "Postfix: F1 => send(\"hello\") if mode == "
-                  "\"gaming\"\n";
-          help << "Prefix:  F1 if mode == \"gaming\" => "
-                  "send(\"hello\")\n";
-          help << "Grouped: when mode == \"gaming\" { F1 => "
-                  "send(\"hi\"); F2 "
-                  "=> send(\"bye\"); }\n";
-          help << "Nested:  when condition1 { F1 if condition2 => "
-                  "action }\n";
-          help << "All conditions are evaluated dynamically at "
-                  "runtime!\n";
-        } else if (topic == "modules" || topic == "MODULES") {
-          help << "\n=== Available Modules ===\n\n";
-          help << "clipboard : Clipboard operations (get, set, clear)\n";
-          help << "window    : Window management (focus, move, "
-                  "resize)\n";
-          help << "io        : Input/output operations (mouse, "
-                  "keyboard)\n";
-          help << "audio     : Audio control (volume, mute, apps)\n";
-          help << "text      : Text processing (upper, lower, trim, "
-                  "etc.)\n";
-          help << "file      : File I/O operations\n";
-          help << "system    : System operations (run, notify, sleep)\n";
-          help << "process   : Process management (find, kill, nice, "
-                  "ionice)\n";
-          help << "launcher  : Process execution (run, runShell, "
-                  "runDetached)\n";
-        } else if (topic == "process" || topic == "PROCESS") {
-          help << "\n=== Process Management Module ===\n\n";
-          help << "Process Discovery:\n";
-          help << "  process.find(name)           : Find processes by "
-                  "name\n";
-          help << "  process.exists(pid|name)     : Check if process "
-                  "exists\n\n";
-          help << "Process Control:\n";
-          help << "  process.kill(pid, signal)    : Send signal to "
-                  "process\n";
-          help << "  process.nice(pid, value)     : Set CPU priority "
-                  "(-20 to "
-                  "19)\n";
-          help << "  process.ionice(pid, class, data) : Set I/O "
-                  "priority\n\n";
-          help << "Examples:\n";
-          help << "  let procs = process.find(\"firefox\")\n";
-          help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
-          help << "  process.nice(1234, 10)           // Lower CPU "
-                  "priority\n";
-          help << "  process.ionice(1234, 2, 4)      // Best-effort "
-                  "I/O\n\n";
-          help << "Process Object Fields:\n";
-          help << "  pid, ppid, name, command, user\n";
-          help << "  cpu_usage, memory_usage\n";
-        } else {
-          help << "\nUnknown topic: " << topic << "\n";
-          help << "Use help() to see available topics.\n";
-        }
-      }
-
-      std::cout << help.str();
-      return HavelValue(nullptr);
-    }));
+            std::cout << help.str();
+            return HavelValue(nullptr);
+          }));
 }
 
 void Interpreter::InitializeMathBuiltins() {

@@ -1030,7 +1030,7 @@ bool IO::EmitClick(int btnCode, int action) {
       return false;
     }
   }
-  
+
   error("EmitClick: EventListener not available");
   return false;
 }
@@ -4236,7 +4236,7 @@ void IO::MouseClick(int button) {
   MouseUp(button);
 }
 
-void IO::MouseDown(int button) {
+bool IO::MouseDown(int button) {
   // Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     // Single combined write: press + sync
@@ -4245,9 +4245,10 @@ void IO::MouseDown(int button) {
   } else {
     error("MouseDown: EventListener not available");
   }
+  return true;
 }
 
-void IO::MouseUp(int button) {
+bool IO::MouseUp(int button) {
   // Use EventListener's batched uinput
   if (eventListener && useNewEventListener) {
     // Single combined write: release + sync
@@ -4256,6 +4257,7 @@ void IO::MouseUp(int button) {
   } else {
     error("MouseUp: EventListener not available");
   }
+  return true;
 }
 
 void IO::MouseWheel(int amount) {

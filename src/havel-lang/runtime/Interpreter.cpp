@@ -2,6 +2,7 @@
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/automation/AutomationManager.hpp"
+#include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
@@ -9,7 +10,6 @@
 #include "gui/HavelApp.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
-#include "core/io/EventListener.hpp"
 #include "process/Launcher.hpp"
 #include "qt.hpp"
 #include "window/WindowManagerDetector.hpp"
@@ -2405,7 +2405,6 @@ void Interpreter::InitializeSystemBuiltins() {
                      }
                    }));
 
-
   // repeat(n, fn)
   environment->Define(
       "repeat",
@@ -2967,13 +2966,26 @@ void Interpreter::InitializeSystemBuiltins() {
         }
         return HavelValue(true);
       });
-
+  // config.setPath
+  (*configObj)["setPath"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 1)
+          return HavelRuntimeError("config.setPath() requires (path)");
+        std::string path = ValueToString(args[0]);
+        auto &config = Configs::Get();
+        config.SetPath(path);
+        return HavelValue(true);
+      });
   // Add load function to config object
   (*configObj)["load"] =
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         try {
           auto &config = Configs::Get();
-          config.Reload(); // Load is same as reload for now
+          if(args.empty()){
+            config.Reload();
+          } else {
+            config.Load(ValueToString(args[0]));
+          }
           std::cout << "[INFO] Configuration loaded successfully" << std::endl;
           return HavelValue(true);
         } catch (const std::exception &e) {
@@ -4365,345 +4377,347 @@ void Interpreter::InitializeIOBuiltins() {
         return HavelValue(nullptr);
       }));
   auto mouseObj =
-    std::make_shared<std::unordered_map<std::string, HavelValue>>();
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-//
-// mouse.move(dx, dy)
-//
-(*mouseObj)["move"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+  //
+  // mouse.move(dx, dy)
+  //
+  (*mouseObj)["move"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
-            return HavelRuntimeError("mouse.move(dx, dy) requires 2 arguments");
+          return HavelRuntimeError("mouse.move(dx, dy) requires 2 arguments");
 
         int dx = static_cast<int>(ValueToNumber(args[0]));
         int dy = static_cast<int>(ValueToNumber(args[1]));
 
         if (!io.MouseMove(dx, dy))
-            return HavelRuntimeError("MouseMove failed");
+          return HavelRuntimeError("MouseMove failed");
 
         return HavelValue(true);
-    });
+      });
 
-//
-// mouse.moveTo(x, y)
-//
-(*mouseObj)["moveTo"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+  //
+  // mouse.moveTo(x, y)
+  //
+  (*mouseObj)["moveTo"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() != 2)
-            return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
+          return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
 
         int x = static_cast<int>(ValueToNumber(args[0]));
         int y = static_cast<int>(ValueToNumber(args[1]));
 
         if (!io.MouseMoveTo(x, y))
-            return HavelRuntimeError("MouseMoveTo failed");
+          return HavelRuntimeError("MouseMoveTo failed");
 
         return HavelValue(true);
-    });
+      });
 
-//
-// mouse.down(button)
-//
-(*mouseObj)["down"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1
-                                  : static_cast<int>(ValueToNumber(args[0]));
+  //
+  // mouse.down(button)
+  //
+  (*mouseObj)["down"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int button =
+            args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
         if (!io.MouseDown(button))
-            return HavelRuntimeError("MouseDown failed");
+          return HavelRuntimeError("MouseDown failed");
 
         return HavelValue(true);
-    });
+      });
 
-//
-// mouse.up(button)
-//
-(*mouseObj)["up"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1
-                                  : static_cast<int>(ValueToNumber(args[0]));
+  //
+  // mouse.up(button)
+  //
+  (*mouseObj)["up"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int button =
+            args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
         if (!io.MouseUp(button))
-            return HavelRuntimeError("MouseUp failed");
+          return HavelRuntimeError("MouseUp failed");
 
         return HavelValue(true);
-    });
+      });
 
-//
-// mouse.click(button?, down?)
-// button default = 1
-// down:
-//   - true  -> press only
-//   - false -> release only
-//   - null  -> full click (default)
-//
-(*mouseObj)["click"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-
+  //
+  // mouse.click(button?, down?)
+  // button default = 1
+  // down:
+  //   - true  -> press only
+  //   - false -> release only
+  //   - null  -> full click (default)
+  //
+  (*mouseObj)["click"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         bool doDown = true;
-        bool doUp   = true;
+        bool doUp = true;
 
-        if (!args.empty())
+        if (!args.empty()) {
+          std::string buttonStr = toLower(ValueToString(args[0]));
+          if (buttonStr == "left") {
+            button = 1;
+          } else if (buttonStr == "right") {
+            button = 2;
+          } else if (buttonStr == "middle") {
+            button = 3;
+          } else {
             button = static_cast<int>(ValueToNumber(args[0]));
+          }
+        }
 
         if (args.size() >= 2) {
-            bool down = ValueToNumber(args[1]) != 0;
-            if (down) {
-                doUp = false;   // press only
-            } else {
-                doDown = false; // release only
-            }
+          bool down = ValueToNumber(args[1]) != 0;
+          if (down) {
+            doUp = false; // press only
+          } else {
+            doDown = false; // release only
+          }
         }
 
         bool ok = true;
 
         if (doDown)
-            ok &= io.MouseDown(button);
+          ok &= io.MouseDown(button);
 
         if (doUp)
-            ok &= io.MouseUp(button);
+          ok &= io.MouseUp(button);
 
         if (!ok)
-            return HavelRuntimeError("MouseClick failed");
+          return HavelRuntimeError("MouseClick failed");
 
         return HavelValue(true);
-    });
+      });
 
-//
-// mouse.scroll(dy, dx?)
-//
-(*mouseObj)["scroll"] =
-    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
-
+  //
+  // mouse.scroll(dy, dx?)
+  //
+  (*mouseObj)["scroll"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
-            return HavelRuntimeError("mouse.scroll(dy, dx?) requires at least dy");
+          return HavelRuntimeError(
+              "mouse.scroll(dy, dx?) requires at least dy");
 
         double dy = ValueToNumber(args[0]);
         double dx = args.size() >= 2 ? ValueToNumber(args[1]) : 0.0;
 
         if (!io.Scroll(dy, dx))
-            return HavelRuntimeError("Scroll failed");
+          return HavelRuntimeError("Scroll failed");
 
         return HavelValue(true);
-    });
+      });
 
-  (*mouseObj)["getSensitivity"] =
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            (void)args;
-            return HavelValue(static_cast<double>(this->io.mouseSensitivity));
-          });
+  (*mouseObj)["getSensitivity"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+      });
 
 (*mouseObj)["setSensitivity"] =
       BuiltinFunction([this](
                           const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty())
-          return HavelRuntimeError("io.setMouseSensitivity() requires value");
-        this->io.mouseSensitivity = ValueToNumber(args[0]);
-        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
-      }));
-  environment->Define("mouse", mouseObj);
+    if (args.empty())
+      return HavelRuntimeError("io.setMouseSensitivity() requires value");
+    this->io.mouseSensitivity = ValueToNumber(args[0]);
+    return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+      });
+environment->Define("mouse", mouseObj);
+environment->Define("click", (*mouseObj)["click"]);
+environment->Define(
+    "io.emergencyReleaseAllKeys",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      (void)args;
+      this->io.EmergencyReleaseAllKeys();
+      return HavelValue(nullptr);
+    }));
 
-  environment->Define(
-      "io.emergencyReleaseAllKeys",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            (void)args;
-            this->io.EmergencyReleaseAllKeys();
-            return HavelValue(nullptr);
-          }));
+// Hotkey management builtins
+environment->Define(
+    "io.enableHotkey",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      if (args.empty())
+        return HavelRuntimeError("io.enableHotkey() requires hotkey name");
+      std::string hotkey = ValueToString(args[0]);
+      return HavelValue(this->io.EnableHotkey(hotkey));
+    }));
 
-  // Hotkey management builtins
-  environment->Define(
-      "io.enableHotkey",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty())
-          return HavelRuntimeError("io.enableHotkey() requires hotkey name");
-        std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.EnableHotkey(hotkey));
-      }));
+environment->Define(
+    "io.disableHotkey",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      if (args.empty())
+        return HavelRuntimeError("io.disableHotkey() requires hotkey name");
+      std::string hotkey = ValueToString(args[0]);
+      return HavelValue(this->io.DisableHotkey(hotkey));
+    }));
 
-  environment->Define(
-      "io.disableHotkey",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty())
-          return HavelRuntimeError("io.disableHotkey() requires hotkey name");
-        std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.DisableHotkey(hotkey));
-      }));
+environment->Define(
+    "io.toggleHotkey",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      if (args.empty())
+        return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
+      std::string hotkey = ValueToString(args[0]);
+      return HavelValue(this->io.ToggleHotkey(hotkey));
+    }));
 
-  environment->Define(
-      "io.toggleHotkey",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.empty())
-          return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
-        std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.ToggleHotkey(hotkey));
-      }));
+environment->Define(
+    "io.removeHotkey",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      if (args.empty())
+        return HavelRuntimeError(
+            "io.removeHotkey() requires hotkey name or ID");
 
-  environment->Define(
-      "io.removeHotkey",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.empty())
-              return HavelRuntimeError(
-                  "io.removeHotkey() requires hotkey name or ID");
+      // Try to parse as number first (ID), then as string (name)
+      const HavelValue &arg = args[0];
 
-            // Try to parse as number first (ID), then as string (name)
-            const HavelValue &arg = args[0];
+      // Check if it's a number by trying to get it as a number
+      double numVal = ValueToNumber(arg);
 
-            // Check if it's a number by trying to get it as a number
-            double numVal = ValueToNumber(arg);
+      // If it holds an int or double, use as ID
+      bool isNumber = std::holds_alternative<int>(arg) ||
+                      std::holds_alternative<double>(arg);
 
-            // If it holds an int or double, use as ID
-            bool isNumber = std::holds_alternative<int>(arg) ||
-                            std::holds_alternative<double>(arg);
+      if (isNumber) {
+        int id = static_cast<int>(numVal);
+        return HavelValue(this->io.RemoveHotkey(id));
+      } else {
+        std::string name = ValueToString(args[0]);
+        return HavelValue(this->io.RemoveHotkey(name));
+      }
+    }));
 
-            if (isNumber) {
-              int id = static_cast<int>(numVal);
-              return HavelValue(this->io.RemoveHotkey(id));
-            } else {
-              std::string name = ValueToString(args[0]);
-              return HavelValue(this->io.RemoveHotkey(name));
-            }
-          }));
+// Expose as module object: audioManager
+auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+if (auto v = environment->Get("audio.getVolume"))
+  (*am)["getVolume"] = *v;
+if (auto v = environment->Get("audio.setVolume"))
+  (*am)["setVolume"] = *v;
+if (auto v = environment->Get("audio.increaseVolume"))
+  (*am)["increaseVolume"] = *v;
+if (auto v = environment->Get("audio.decreaseVolume"))
+  (*am)["decreaseVolume"] = *v;
+if (auto v = environment->Get("audio.toggleMute"))
+  (*am)["toggleMute"] = *v;
+if (auto v = environment->Get("audio.setMute"))
+  (*am)["setMute"] = *v;
+if (auto v = environment->Get("audio.isMuted"))
+  (*am)["isMuted"] = *v;
+environment->Define("audioManager", HavelValue(am));
 
-  // Expose as module object: audioManager
-  auto am = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("audio.getVolume"))
-    (*am)["getVolume"] = *v;
-  if (auto v = environment->Get("audio.setVolume"))
-    (*am)["setVolume"] = *v;
-  if (auto v = environment->Get("audio.increaseVolume"))
-    (*am)["increaseVolume"] = *v;
-  if (auto v = environment->Get("audio.decreaseVolume"))
-    (*am)["decreaseVolume"] = *v;
-  if (auto v = environment->Get("audio.toggleMute"))
-    (*am)["toggleMute"] = *v;
-  if (auto v = environment->Get("audio.setMute"))
-    (*am)["setMute"] = *v;
-  if (auto v = environment->Get("audio.isMuted"))
-    (*am)["isMuted"] = *v;
-  environment->Define("audioManager", HavelValue(am));
+// Add comprehensive help function
+environment->Define(
+    "help",
+    BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+      std::stringstream help;
 
-  // Add comprehensive help function
-  environment->Define(
-      "help",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            std::stringstream help;
+      if (args.empty()) {
+        // Show general help
+        help << "\n=== Havel Language Help ===\n\n";
+        help << "Navigation:\n";
+        help << "  - help()           : Show this main help page\n";
+        help << "  - help(\"syntax\")   : Show syntax reference\n";
+        help << "  - help(\"keywords\"): Show all keywords and usage\n";
+        help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
+        help << "  - help(\"modules\")  : Show available modules\n";
+        help << "  - help(\"process\")  : Show process management\n\n";
+        help << "Conditional Hotkeys:\n";
+        help << "  - Basic: hotkey => action\n";
+        help << "  - Postfix: hotkey => action if condition\n";
+        help << "  - Prefix: hotkey if condition => action\n";
+        help << "  - Grouped: when condition { hotkey => action }\n\n";
+        help << "For detailed documentation, see Havel.md\n";
+      } else {
+        std::string topic = ValueToString(args[0]);
 
-            if (args.empty()) {
-              // Show general help
-              help << "\n=== Havel Language Help ===\n\n";
-              help << "Navigation:\n";
-              help << "  - help()           : Show this main help page\n";
-              help << "  - help(\"syntax\")   : Show syntax reference\n";
-              help << "  - help(\"keywords\"): Show all keywords and usage\n";
-              help << "  - help(\"hotkeys\")  : Show hotkey functionality\n";
-              help << "  - help(\"modules\")  : Show available modules\n";
-              help << "  - help(\"process\")  : Show process management\n\n";
-              help << "Conditional Hotkeys:\n";
-              help << "  - Basic: hotkey => action\n";
-              help << "  - Postfix: hotkey => action if condition\n";
-              help << "  - Prefix: hotkey if condition => action\n";
-              help << "  - Grouped: when condition { hotkey => action }\n\n";
-              help << "For detailed documentation, see Havel.md\n";
-            } else {
-              std::string topic = ValueToString(args[0]);
+        if (topic == "syntax" || topic == "SYNTAX") {
+          help << "\n=== Syntax Reference ===\n\n";
+          help << "Basic Hotkey: hotkey => action\n";
+          help << "Pipeline: data | transform1 | transform2\n";
+          help << "Blocks: { statement1; statement2; }\n";
+          help << "Variables: let name = value\n";
+          help << "Conditionals: if condition { block } else { block "
+                  "}\n";
+          help << "Functions: fn name(param) => { block }\n";
+        } else if (topic == "keywords" || topic == "KEYWORDS") {
+          help << "\n=== Keywords ===\n\n";
+          help << "let    : Variable declaration (let x = 5)\n";
+          help << "if     : Conditional (if x > 0 { ... })\n";
+          help << "else   : Alternative (if x > 0 { ... } else { ... "
+                  "})\n";
+          help << "when   : Conditional block (when condition { ... "
+                  "})\n";
+          help << "fn     : Function definition (fn name() => { ... "
+                  "})\n";
+          help << "return : Function return (return value)\n";
+          help << "import : Module import (import module from "
+                  "\"file\")\n";
+          help << "config : Config block (config { ... })\n";
+          help << "devices: Device config block (devices { ... })\n";
+          help << "modes  : Modes config block (modes { ... })\n";
+        } else if (topic == "hotkeys" || topic == "HOTKEYS") {
+          help << "\n=== Conditional Hotkeys ===\n\n";
+          help << "Postfix: F1 => send(\"hello\") if mode == "
+                  "\"gaming\"\n";
+          help << "Prefix:  F1 if mode == \"gaming\" => "
+                  "send(\"hello\")\n";
+          help << "Grouped: when mode == \"gaming\" { F1 => "
+                  "send(\"hi\"); F2 "
+                  "=> send(\"bye\"); }\n";
+          help << "Nested:  when condition1 { F1 if condition2 => "
+                  "action }\n";
+          help << "All conditions are evaluated dynamically at "
+                  "runtime!\n";
+        } else if (topic == "modules" || topic == "MODULES") {
+          help << "\n=== Available Modules ===\n\n";
+          help << "clipboard : Clipboard operations (get, set, clear)\n";
+          help << "window    : Window management (focus, move, "
+                  "resize)\n";
+          help << "io        : Input/output operations (mouse, "
+                  "keyboard)\n";
+          help << "audio     : Audio control (volume, mute, apps)\n";
+          help << "text      : Text processing (upper, lower, trim, "
+                  "etc.)\n";
+          help << "file      : File I/O operations\n";
+          help << "system    : System operations (run, notify, sleep)\n";
+          help << "process   : Process management (find, kill, nice, "
+                  "ionice)\n";
+          help << "launcher  : Process execution (run, runShell, "
+                  "runDetached)\n";
+        } else if (topic == "process" || topic == "PROCESS") {
+          help << "\n=== Process Management Module ===\n\n";
+          help << "Process Discovery:\n";
+          help << "  process.find(name)           : Find processes by "
+                  "name\n";
+          help << "  process.exists(pid|name)     : Check if process "
+                  "exists\n\n";
+          help << "Process Control:\n";
+          help << "  process.kill(pid, signal)    : Send signal to "
+                  "process\n";
+          help << "  process.nice(pid, value)     : Set CPU priority "
+                  "(-20 to "
+                  "19)\n";
+          help << "  process.ionice(pid, class, data) : Set I/O "
+                  "priority\n\n";
+          help << "Examples:\n";
+          help << "  let procs = process.find(\"firefox\")\n";
+          help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
+          help << "  process.nice(1234, 10)           // Lower CPU "
+                  "priority\n";
+          help << "  process.ionice(1234, 2, 4)      // Best-effort "
+                  "I/O\n\n";
+          help << "Process Object Fields:\n";
+          help << "  pid, ppid, name, command, user\n";
+          help << "  cpu_usage, memory_usage\n";
+        } else {
+          help << "\nUnknown topic: " << topic << "\n";
+          help << "Use help() to see available topics.\n";
+        }
+      }
 
-              if (topic == "syntax" || topic == "SYNTAX") {
-                help << "\n=== Syntax Reference ===\n\n";
-                help << "Basic Hotkey: hotkey => action\n";
-                help << "Pipeline: data | transform1 | transform2\n";
-                help << "Blocks: { statement1; statement2; }\n";
-                help << "Variables: let name = value\n";
-                help << "Conditionals: if condition { block } else { block "
-                        "}\n";
-                help << "Functions: fn name(param) => { block }\n";
-              } else if (topic == "keywords" || topic == "KEYWORDS") {
-                help << "\n=== Keywords ===\n\n";
-                help << "let    : Variable declaration (let x = 5)\n";
-                help << "if     : Conditional (if x > 0 { ... })\n";
-                help << "else   : Alternative (if x > 0 { ... } else { ... "
-                        "})\n";
-                help << "when   : Conditional block (when condition { ... "
-                        "})\n";
-                help << "fn     : Function definition (fn name() => { ... "
-                        "})\n";
-                help << "return : Function return (return value)\n";
-                help << "import : Module import (import module from "
-                        "\"file\")\n";
-                help << "config : Config block (config { ... })\n";
-                help << "devices: Device config block (devices { ... })\n";
-                help << "modes  : Modes config block (modes { ... })\n";
-              } else if (topic == "hotkeys" || topic == "HOTKEYS") {
-                help << "\n=== Conditional Hotkeys ===\n\n";
-                help << "Postfix: F1 => send(\"hello\") if mode == "
-                        "\"gaming\"\n";
-                help << "Prefix:  F1 if mode == \"gaming\" => "
-                        "send(\"hello\")\n";
-                help << "Grouped: when mode == \"gaming\" { F1 => "
-                        "send(\"hi\"); F2 "
-                        "=> send(\"bye\"); }\n";
-                help << "Nested:  when condition1 { F1 if condition2 => "
-                        "action }\n";
-                help << "All conditions are evaluated dynamically at "
-                        "runtime!\n";
-              } else if (topic == "modules" || topic == "MODULES") {
-                help << "\n=== Available Modules ===\n\n";
-                help << "clipboard : Clipboard operations (get, set, clear)\n";
-                help << "window    : Window management (focus, move, "
-                        "resize)\n";
-                help << "io        : Input/output operations (mouse, "
-                        "keyboard)\n";
-                help << "audio     : Audio control (volume, mute, apps)\n";
-                help << "text      : Text processing (upper, lower, trim, "
-                        "etc.)\n";
-                help << "file      : File I/O operations\n";
-                help << "system    : System operations (run, notify, sleep)\n";
-                help << "process   : Process management (find, kill, nice, "
-                        "ionice)\n";
-                help << "launcher  : Process execution (run, runShell, "
-                        "runDetached)\n";
-              } else if (topic == "process" || topic == "PROCESS") {
-                help << "\n=== Process Management Module ===\n\n";
-                help << "Process Discovery:\n";
-                help << "  process.find(name)           : Find processes by "
-                        "name\n";
-                help << "  process.exists(pid|name)     : Check if process "
-                        "exists\n\n";
-                help << "Process Control:\n";
-                help << "  process.kill(pid, signal)    : Send signal to "
-                        "process\n";
-                help << "  process.nice(pid, value)     : Set CPU priority "
-                        "(-20 to "
-                        "19)\n";
-                help << "  process.ionice(pid, class, data) : Set I/O "
-                        "priority\n\n";
-                help << "Examples:\n";
-                help << "  let procs = process.find(\"firefox\")\n";
-                help << "  process.kill(procs[0].pid, \"SIGTERM\")\n";
-                help << "  process.nice(1234, 10)           // Lower CPU "
-                        "priority\n";
-                help << "  process.ionice(1234, 2, 4)      // Best-effort "
-                        "I/O\n\n";
-                help << "Process Object Fields:\n";
-                help << "  pid, ppid, name, command, user\n";
-                help << "  cpu_usage, memory_usage\n";
-              } else {
-                help << "\nUnknown topic: " << topic << "\n";
-                help << "Use help() to see available topics.\n";
-              }
-            }
-
-            std::cout << help.str();
-            return HavelValue(nullptr);
-          }));
+      std::cout << help.str();
+      return HavelValue(nullptr);
+    }));
 }
 
 void Interpreter::InitializeMathBuiltins() {

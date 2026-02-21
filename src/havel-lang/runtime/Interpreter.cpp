@@ -8,8 +8,10 @@
 #include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "fs/FileManager.hpp"
+#include "gui/AltTab.hpp"
 #include "gui/GUIManager.hpp"
 #include "gui/HavelApp.hpp"
+#include "gui/MapManagerWindow.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
 #include "process/Launcher.hpp"
@@ -6835,6 +6837,134 @@ void Interpreter::InitializeGUIBuiltins() {
   environment->Define("gui", HavelValue(gui));
   // Note: window module is already defined in InitializeWindowBuiltins()
   // Don't overwrite it here as it would remove all other window functions
+
+  // === ALTTAB MODULE ===
+  // AltTab window switcher
+  static std::unique_ptr<AltTabWindow> altTabWindow;
+  
+  environment->Define(
+      "altTab.show",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (!altTabWindow) {
+          altTabWindow = std::make_unique<AltTabWindow>();
+        }
+        altTabWindow->showAltTab();
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.hide",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (altTabWindow) {
+          altTabWindow->hideAltTab();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.next",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (altTabWindow) {
+          altTabWindow->nextWindow();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.prev",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (altTabWindow) {
+          altTabWindow->prevWindow();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.select",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (altTabWindow) {
+          altTabWindow->selectCurrentWindow();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.refresh",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (altTabWindow) {
+          altTabWindow->refreshWindows();
+        }
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "altTab.setThumbnailSize",
+      BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("altTab.setThumbnailSize() requires (width, height)");
+        int width = static_cast<int>(ValueToNumber(args[0]));
+        int height = static_cast<int>(ValueToNumber(args[1]));
+        if (altTabWindow) {
+          altTabWindow->setThumbnailSize(width, height);
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Note: getWindows() is private in AltTabWindow
+
+  // Create altTab module object
+  auto altTabMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("altTab.show")) (*altTabMod)["show"] = *v;
+  if (auto v = environment->Get("altTab.hide")) (*altTabMod)["hide"] = *v;
+  if (auto v = environment->Get("altTab.next")) (*altTabMod)["next"] = *v;
+  if (auto v = environment->Get("altTab.prev")) (*altTabMod)["prev"] = *v;
+  if (auto v = environment->Get("altTab.select")) (*altTabMod)["select"] = *v;
+  if (auto v = environment->Get("altTab.refresh")) (*altTabMod)["refresh"] = *v;
+  if (auto v = environment->Get("altTab.setThumbnailSize")) (*altTabMod)["setThumbnailSize"] = *v;
+  environment->Define("altTab", HavelValue(altTabMod));
+
+  // === MAPMANAGER MODULE ===
+  // MapManagerWindow for managing input mappings
+  static std::unique_ptr<MapManagerWindow> mapManagerWindow;
+  
+  environment->Define(
+      "mapmanager.show",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (!mapManagerWindow) {
+          // Note: MapManagerWindow requires MapManager instance
+          // For now, create with null - full implementation needs MapManager integration
+          mapManagerWindow = std::make_unique<MapManagerWindow>(nullptr, nullptr);
+        }
+        mapManagerWindow->show();
+        mapManagerWindow->raise();
+        mapManagerWindow->activateWindow();
+        return HavelValue(nullptr);
+      }));
+  
+  environment->Define(
+      "mapmanager.hide",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        if (mapManagerWindow) {
+          mapManagerWindow->hide();
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Note: MapManagerWindow methods (refresh, saveAll, loadAll, etc.) are private Qt slots
+
+  // Create mapmanager module object
+  auto mapManagerMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("mapmanager.show")) (*mapManagerMod)["show"] = *v;
+  if (auto v = environment->Get("mapmanager.hide")) (*mapManagerMod)["hide"] = *v;
+  environment->Define("mapmanager", HavelValue(mapManagerMod));
 }
 
 void Interpreter::InitializeScreenshotBuiltins() {

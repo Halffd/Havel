@@ -1071,7 +1071,7 @@ bool IO::EmitClick(int btnCode, int action) {
   }
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     // Get screen dimensions for absolute coordinates
     auto monitors = DisplayManager::GetMonitors();
     if (monitors.empty())
@@ -1091,20 +1091,14 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
         currentY = (y * screenHeight) / 65535;
       }
     } else {
-      Display *display = DisplayManager::GetDisplay();
-      if (display) {
-        ::Window root, child;
-        int rootX, rootY;
-        unsigned int mask;
-        XQueryPointer(display, DefaultRootWindow(display), &root, &child,
-                      &rootX, &rootY, &currentX, &currentY, &mask);
-      }
+      auto pos = GetMousePositionX11();
+      currentX = pos.first;
+      currentY = pos.second;
     }
 
-    // Animate to target with steps
-    int steps = std::max(10, static_cast<int>(std::abs(targetX - currentX) +
-                                              std::abs(targetY - currentY)) /
-                                 speed);
+    // Animate to target with steps (capped to prevent excessive time)
+    int distance = std::abs(targetX - currentX) + std::abs(targetY - currentY);
+    int steps = std::min(100, std::max(10, distance / speed));
 
     for (int i = 0; i <= steps; i++) {
       double progress = static_cast<double>(i) / steps;
@@ -1825,7 +1819,7 @@ bool IO::Suspend() {
           std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
           // Restore to the original state before suspension
           for (const auto &state : suspendedConditionalHotkeyStates) {
-            auto &ch = hotkeyManager->conditionalHotkeys;
+            auto &ch = hotkeyManager->activeConditionalHotkeys;
             auto it = std::find_if(ch.begin(), ch.end(),
                                    [state](const auto &ch_item) {
                                      return ch_item.id == state.id;
@@ -1870,7 +1864,7 @@ bool IO::Suspend() {
         hotkeyManager->conditionalHotkeysEnabled = false;
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
-        for (auto &ch : hotkeyManager->conditionalHotkeys) {
+        for (auto &ch : hotkeyManager->activeConditionalHotkeys) {
           ConditionalHotkeyState state;
           state.id = ch.id;
           state.wasGrabbed = ch.currentlyGrabbed;
@@ -2329,9 +2323,22 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     }
   }
 
-  // Add to maps if has action (skip for combo subs)
+  // Add to maps if has action (skip for combo subs) - keyboard hotkey path
   if (hasAction) {
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
+
+    // Check for duplicate alias (case-insensitive) to prevent double
+    // registration
+    std::string normalizedAlias = toLower(rawInput);
+    for (const auto &[existingId, existingHotkey] : hotkeys) {
+      if (toLower(existingHotkey.alias) == normalizedAlias) {
+        warn("Duplicate hotkey alias detected: '{}' (registered as '{}'). "
+             "Skipping duplicate registration.",
+             rawInput, existingHotkey.alias);
+        return hotkey; // Return existing hotkey without re-registering
+      }
+    }
+
     if (id == 0)
       id = ++hotkeyCount;
     hotkey.id = id; // Set the hotkey's id
@@ -2461,9 +2468,22 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
     }
   }
 
-  // Add to maps if has action (skip for combo subs)
+  // Add to maps if has action (skip for combo subs) - mouse hotkey path
   if (hasAction) {
     std::lock_guard<std::timed_mutex> lock(hotkeyMutex);
+
+    // Check for duplicate alias (case-insensitive) to prevent double
+    // registration
+    std::string normalizedAlias = toLower(hotkeyStr);
+    for (const auto &[existingId, existingHotkey] : hotkeys) {
+      if (toLower(existingHotkey.alias) == normalizedAlias) {
+        warn("Duplicate mouse hotkey alias detected: '{}' (registered as "
+             "'{}'). Skipping duplicate registration.",
+             hotkeyStr, existingHotkey.alias);
+        return hotkey; // Return existing hotkey without re-registering
+      }
+    }
+
     if (id == 0)
       id = ++hotkeyCount;
     hotkey.id = id; // Set the hotkey's id
@@ -5403,32 +5423,39 @@ bool havel::IO::SetupMouseUinputDevice() {
   return true;
 }
 
-void havel::IO::SendMouseUInput(const input_event &ev) {
-  // Use EventListener's uinput if available, otherwise use old method
-  if (eventListener && useNewEventListener) {
-    eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
-  } else if (mouseUinputFd >= 0) {
-    // Use a mutex to serialize all uinput writes (REL/SYN pairs must be
-    // atomic).
-    static std::mutex uinputWriteMutex;
-    std::lock_guard<std::mutex> lk(uinputWriteMutex);
+std::pair<int, int> IO::GetMousePositionX11() {
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) {
+    error("GetMousePositionX11: Display is null");
+    return {0, 0};
+  }
 
-    ssize_t res = write(mouseUinputFd, &ev, sizeof(ev));
-    if (res != (ssize_t)sizeof(ev)) {
-      error("Failed to write uinput event (type={}, code={}, value={}): {}",
-            ev.type, ev.code, ev.value, strerror(errno));
-      return;
+  // Prefer XInput2 if available
+  if (xinput2Available && xinput2DeviceId != -1) {
+    ::Window root_return, child_return;
+    double root_x, root_y, win_x, win_y;
+    XIButtonState buttons;
+    XIModifierState mods;
+    XIGroupState group;
+    if (XIQueryPointer(display, xinput2DeviceId, DefaultRootWindow(display),
+                       &root_return, &child_return, &root_x, &root_y, &win_x,
+                       &win_y, &buttons, &mods, &group) == x11::XTrue) {
+      return {(int)root_x, (int)root_y};
     }
+  }
 
-    struct input_event syn = {};
-    syn.type = EV_SYN;
-    syn.code = SYN_REPORT;
-    syn.value = 0;
+  // Fallback to legacy XQueryPointer
+  ::Window root = DefaultRootWindow(display);
+  ::Window root_return, child_return;
+  int root_x, root_y, win_x, win_y;
+  unsigned int mask;
 
-    res = write(mouseUinputFd, &syn, sizeof(syn));
-    if (res != (ssize_t)sizeof(syn)) {
-      error("Failed to write uinput SYN: {}", strerror(errno));
-    }
+  if (XQueryPointer(display, root, &root_return, &child_return, &root_x,
+                    &root_y, &win_x, &win_y, &mask)) {
+    return {root_x, root_y};
+  } else {
+    error("GetMousePositionX11: XQueryPointer failed");
+    return {0, 0};
   }
 }
 

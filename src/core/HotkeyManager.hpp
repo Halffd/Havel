@@ -171,6 +171,11 @@ public:
   IO &io;
   bool conditionalHotkeysEnabled = true;
 
+  // Double-buffer for thread-safe conditional hotkey updates (public for IO.cpp access)
+  std::vector<ConditionalHotkey> activeConditionalHotkeys;
+  std::vector<ConditionalHotkey> pendingConditionalHotkeys;
+  std::mutex pendingHotkeysMutex; // Protects pendingConditionalHotkeys
+
 private:
   bool altTabPressed = false;
   std::thread monitorThread;

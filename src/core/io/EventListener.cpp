@@ -1982,7 +1982,10 @@ void EventListener::ReleaseAllVirtualKeys() {
 
   info("Releasing {} pressed virtual keys", pressedVirtualKeys.size());
 
-  for (int code : pressedVirtualKeys) {
+  // Copy the set to avoid use-after-free if SendUinputEvent modifies it
+  std::unordered_set<int> keysToRelease = pressedVirtualKeys;
+
+  for (int code : keysToRelease) {
     SendUinputEvent(EV_KEY, code, 0);
   }
 
@@ -2145,6 +2148,8 @@ void EventListener::ProcessSignal() {
   case SIGINT:
   case SIGHUP:
   case SIGQUIT:
+  case SIGKILL:
+  case SIGSTOP:
     info("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
 
@@ -2169,6 +2174,7 @@ void EventListener::ProcessSignal() {
     }
 
     info("Emergency shutdown complete in EventListener thread");
+    std::exit(sig);
     break;
   default:
     // Other signals, just log

@@ -29,11 +29,13 @@
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
 #endif
+#include <QTimer>
 #include <X11/XKBlib.h>
 #include <X11/keysym.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <ctime>
 #include <iostream>
 #include <map>
@@ -53,7 +55,6 @@ namespace havel {
 std::string HotkeyManager::currentMode = "default";
 std::mutex HotkeyManager::modeMutex;
 std::mutex HotkeyManager::conditionCacheMutex;
-std::vector<ConditionalHotkey> HotkeyManager::conditionalHotkeys;
 
 std::string HotkeyManager::getMode() const {
   std::lock_guard<std::mutex> lock(modeMutex);
@@ -66,7 +67,7 @@ bool HotkeyManager::getCurrentGamingWindowStatus() const {
 
 void HotkeyManager::reevaluateConditionalHotkeys(IO &io) {
   std::lock_guard<std::mutex> lock(hotkeyMutex);
-  for (auto &ch : conditionalHotkeys) {
+  for (auto &ch : activeConditionalHotkeys) {
     // Evaluate condition based on common patterns
     bool shouldGrab = false;
 
@@ -397,10 +398,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
   });
 
   io.Hotkey("!Esc", [this]() {
-    if (App::instance()) {
-      info("Quitting application");
-      App::quit();
-    }
+    info("Quit requested via !Esc - performing hard exit");
+    std::exit(0);
   });
   io.Hotkey("#!Esc", [this]() {
     auto pid = ProcessManager::getCurrentPid();
@@ -419,9 +418,7 @@ void HotkeyManager::RegisterDefaultHotkeys() {
 
     // If we get here, exec failed.
     error("Failed to exec: {}", strerror(errno));
-    if (App::instance()) {
-      App::quit();
-    }
+    std::exit(1);
   });
 
   // Media Controls
@@ -2062,63 +2059,56 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     return;
   }
 
-  std::vector<int> toGrab;
-  std::vector<int> toUngrab;
-  std::vector<ConditionalHotkey *> updatedHotkeys;
-
-  // First pass: determine what needs to change and collect hotkeys to update
+  // Step 1: Merge pending hotkeys into active buffer with ID deduplication
   {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
+    std::lock_guard<std::mutex> lock(pendingHotkeysMutex);
+    for (auto &newCh : pendingConditionalHotkeys) {
+      // Check if this ID already exists in active buffer
+      auto it = std::find_if(
+          activeConditionalHotkeys.begin(), activeConditionalHotkeys.end(),
+          [&](const auto &existing) { return existing.id == newCh.id; });
 
-    // Process deferred updates first
-    std::queue<int> localQueue;
-    {
-      std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
-      std::swap(localQueue, deferredUpdateQueue);
-    }
-
-    while (!localQueue.empty()) {
-      int id = localQueue.front();
-      localQueue.pop();
-
-      for (auto &ch : conditionalHotkeys) {
-        if (ch.id == id) {
-          updatedHotkeys.push_back(&ch);
-          break;
-        }
+      if (it == activeConditionalHotkeys.end()) {
+        // New hotkey - add it
+        activeConditionalHotkeys.push_back(newCh);
+      } else {
+        // Existing hotkey - update its state
+        *it = newCh;
       }
     }
-
-    // Process all conditional hotkeys that need evaluation
-    for (auto &ch : conditionalHotkeys) {
-      // If it's not in our update list and doesn't depend on mode, skip it
-      bool needsUpdate = false;
-      for (auto *hotkey : updatedHotkeys) {
-        if (hotkey->id == ch.id) {
-          needsUpdate = true;
-          break;
-        }
-      }
-
-      // Always add hotkeys that have "mode" in their condition to be updated
-      if (!needsUpdate && ch.condition.find("mode") != std::string::npos) {
-        needsUpdate = true;
-        updatedHotkeys.push_back(&ch);
-      }
-
-      if (needsUpdate) {
-        bool shouldGrab = evaluateCondition(ch.condition);
-
-        if (shouldGrab && !ch.currentlyGrabbed) {
-          toGrab.push_back(ch.id);
-        } else if (!shouldGrab && ch.currentlyGrabbed) {
-          toUngrab.push_back(ch.id);
-        }
-      }
-    }
+    pendingConditionalHotkeys.clear();
   }
 
-  // Second pass: actually grab/ungrab (without holding hotkey lock)
+  std::vector<int> toGrab;
+  std::vector<int> toUngrab;
+
+  // Step 2: Evaluate all active conditional hotkeys
+  for (auto &ch : activeConditionalHotkeys) {
+    // Evaluate condition
+    bool shouldGrab = false;
+
+    if (ch.usesFunctionCondition) {
+      if (ch.conditionFunc) {
+        shouldGrab = ch.conditionFunc();
+      }
+    } else {
+      // For string-based conditions
+      shouldGrab = evaluateCondition(ch.condition);
+    }
+
+    // Determine if we need to grab/ungrab
+    if (shouldGrab && !ch.currentlyGrabbed) {
+      toGrab.push_back(ch.id);
+    } else if (!shouldGrab && ch.currentlyGrabbed) {
+      toUngrab.push_back(ch.id);
+    }
+
+    // Update internal state immediately (we own this vector)
+    ch.currentlyGrabbed = shouldGrab;
+    ch.lastConditionResult = shouldGrab;
+  }
+
+  // Step 3: Apply grab/ungrab (no locks held)
   for (int id : toUngrab) {
     io.UngrabHotkey(id);
   }
@@ -2127,44 +2117,16 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     io.GrabHotkey(id);
   }
 
-  // Third pass: update state (with minimal locking)
-  {
-    std::lock_guard<std::mutex> lock(hotkeyMutex);
-
-    for (int id : toUngrab) {
-      for (auto &ch : conditionalHotkeys) {
-        if (ch.id == id) {
-          ch.currentlyGrabbed = false;
-          ch.lastConditionResult = false;
-          break;
-        }
-      }
-    }
-
-    for (int id : toGrab) {
-      for (auto &ch : conditionalHotkeys) {
-        if (ch.id == id) {
-          ch.currentlyGrabbed = true;
-          ch.lastConditionResult = true;
-          break;
-        }
-      }
-    }
-  }
-
   if (!toGrab.empty() || !toUngrab.empty()) {
     if (verboseConditionLogging) {
       debug("Batch hotkey update: grabbed={}, ungrabbed={}", toGrab.size(),
             toUngrab.size());
-    } else {
-      info("Batch hotkey update: grabbed={}, ungrabbed={}", toGrab.size(),
-           toUngrab.size());
     }
   }
 }
 
 ConditionalHotkey *HotkeyManager::findConditionalHotkey(int id) {
-  for (auto &ch : conditionalHotkeys) {
+  for (auto &ch : activeConditionalHotkeys) {
     if (ch.id == id) {
       return &ch;
     }
@@ -2202,7 +2164,7 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
     }
   };
 
-  // Store the conditional hotkey for dynamic management
+  // Store the conditional hotkey in pending buffer for thread-safe addition
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
@@ -2211,16 +2173,18 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
       nullptr; // No function condition for string-based condition
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
-  ch.currentlyGrabbed = true;
+  ch.currentlyGrabbed = true; // Will be set after evaluation
   ch.usesFunctionCondition = false;
 
-  conditionalHotkeys.push_back(ch);
+  // Add to pending buffer (thread-safe)
+  {
+    std::lock_guard<std::mutex> lock(pendingHotkeysMutex);
+    pendingConditionalHotkeys.push_back(ch);
+  }
+
   conditionalHotkeyIds.push_back(id);
   // Register but don't grab yet
   io.Hotkey(key, action, condition, id);
-
-  // Initial evaluation and grab if needed
-  updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;
 }
@@ -2247,7 +2211,7 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
     }
   };
 
-  // Store the conditional hotkey for dynamic management
+  // Store the conditional hotkey in pending buffer for thread-safe addition
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
@@ -2255,17 +2219,18 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.conditionFunc = condition; // Store the condition function
   ch.trueAction = trueAction;
   ch.falseAction = falseAction;
-  ch.currentlyGrabbed = true;
+  ch.currentlyGrabbed = true;     // Start in ungrabbed state
   ch.usesFunctionCondition = true; // Mark as function-based condition
 
-  conditionalHotkeys.push_back(ch);
+  // Add to pending buffer (thread-safe)
+  {
+    std::lock_guard<std::mutex> lock(pendingHotkeysMutex);
+    pendingConditionalHotkeys.push_back(ch);
+  }
+
   conditionalHotkeyIds.push_back(id);
   // Register but don't grab yet
   io.Hotkey(key, action, "<function>", id);
-
-  // For function-based conditions, we need to update them separately
-  // The conditional hotkey update logic will handle grabbing/ungrabbing
-  updateConditionalHotkey(conditionalHotkeys.back());
 
   return id;
 }
@@ -2842,12 +2807,26 @@ void HotkeyManager::setMode(const std::string &newMode) {
 
   logModeSwitch(oldMode, newMode);
 
+  // Stop automation tasks on mode switch to prevent stuck keys
+  if (autoRunner) {
+    autoRunner->stop();
+    info("AutoRunner stopped due to mode switch");
+  }
+  if (autoClicker) {
+    autoClicker->stop();
+    info("AutoClicker stopped due to mode switch");
+  }
+  if (autoKeyPresser) {
+    autoKeyPresser->stop();
+    info("AutoKeyPresser stopped due to mode switch");
+  }
+
   // Invalidate condition cache for mode-dependent hotkeys
   {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
 
     // Only update hotkeys that actually depend on mode
-    for (auto &ch : conditionalHotkeys) {
+    for (auto &ch : activeConditionalHotkeys) {
       if (ch.condition.find("mode") != std::string::npos) {
         // Add to deferred update queue instead of immediate update
         std::lock_guard<std::mutex> queueLock(deferredUpdateMutex);
@@ -3249,6 +3228,9 @@ void HotkeyManager::printActiveWindowInfo() {
       XQueryPointer(DisplayManager::GetDisplay(),
                     DisplayManager::GetRootWindow(), &rootWindow, &childWindow,
                     &rootX, &rootY, &winX, &winY, &mask);
+      auto pos = io.GetMousePositionX11();
+      rootX = pos.first;
+      rootY = pos.second;
     } else if (WindowManagerDetector::IsWayland()) {
       auto mousePos = io.GetEventListener()->GetMousePosition();
       rootX = mousePos.first;
@@ -3272,8 +3254,9 @@ void HotkeyManager::printActiveWindowInfo() {
   auto mouseWindow = childWindow;
   std::string displayServer =
       WindowManagerDetector::IsWayland() ? "Wayland" : "X11";
-  std::string de =
-      getenv("XDG_CURRENT_DESKTOP") ? getenv("XDG_CURRENT_DESKTOP") : "Unknown";
+  std::string de = WindowManagerDetector::wmName.empty()
+                       ? "Unknown"
+                       : WindowManagerDetector::wmName;
   std::string wm = WindowManagerDetector::GetWMName();
   std::string messageText =
       "Mouse position: " + std::to_string(mousePosition.x()) + ", " +
@@ -3379,19 +3362,22 @@ void HotkeyManager::printActiveWindowInfo() {
   }
   info("╚══════════════════════════════════════════════════════════╝");
 
-  QMessageBox msgBox;
-  msgBox.setWindowTitle("Active Window Information");
-  msgBox.setText(QString::fromStdString(messageText));
-  QFont font = msgBox.font();
-  font.setPointSize(40);
-  msgBox.setFont(font);
-  QScreen *screen = QGuiApplication::primaryScreen();
-  QRect screenGeometry = screen->geometry();
-  int uiWidth = screenGeometry.width() * 0.7;
-  msgBox.setFixedWidth(uiWidth);
-  QPoint center = screenGeometry.center();
-  msgBox.move(center.x() - uiWidth / 2, center.y() - msgBox.height() / 2);
-  msgBox.exec();
+  QTimer::singleShot(0, [messageText]() {
+    QMessageBox msgBox;
+    msgBox.setWindowTitle("Active Window Information");
+    msgBox.setText(QString::fromStdString(messageText));
+    QFont font = msgBox.font();
+    font.setPointSize(40);
+    msgBox.setFont(font);
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen->geometry();
+    int uiWidth = screenGeometry.width() * 0.7;
+    msgBox.setFixedWidth(uiWidth);
+    msgBox.setMaximumHeight(screenGeometry.height() * 0.8);
+    QPoint center = screenGeometry.center();
+    msgBox.move(center.x() - uiWidth / 2, center.y() - msgBox.height() / 2);
+    msgBox.exec();
+  });
 
   logWindowEvent("WINDOW_INFO",
                  "Title: \"" + windowTitle + "\", Class: \"" + windowClass +

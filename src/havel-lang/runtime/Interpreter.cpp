@@ -3641,11 +3641,162 @@ void Interpreter::InitializeSystemBuiltins() {
         int tabId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
         return HavelValue(getBrowser().close(tabId));
       }));
-  
+
   (*browserMod)["closeAll"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         return HavelValue(getBrowser().closeAll());
+      }));
+
+  // === New Browser Functions ===
+  
+  (*browserMod)["connectFirefox"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int port = args.empty() ? 2828 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().connectFirefox(port));
+      }));
+  
+  (*browserMod)["setPort"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.setPort() requires port number");
+        int port = static_cast<int>(std::get<double>(args[0]));
+        getBrowser().setPort(port);
+        return HavelValue(true);
+      }));
+  
+  (*browserMod)["getPort"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getPort());
+      }));
+  
+  (*browserMod)["getBrowserType"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto type = getBrowser().getBrowserType();
+        std::string typeName = type == BrowserType::Firefox ? "firefox" :
+                               type == BrowserType::Chrome ? "chrome" :
+                               type == BrowserType::Chromium ? "chromium" :
+                               type == BrowserType::Edge ? "edge" :
+                               type == BrowserType::Brave ? "brave" : "unknown";
+        return HavelValue(typeName);
+      }));
+  
+  (*browserMod)["getOpenBrowsers"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto browsers = getBrowser().getOpenBrowsers();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& b : browsers) {
+          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*obj)["type"] = HavelValue(b.type == BrowserType::Firefox ? "firefox" : 
+                                       b.type == BrowserType::Chrome ? "chrome" : "chromium");
+          (*obj)["name"] = HavelValue(b.name);
+          (*obj)["pid"] = HavelValue(static_cast<double>(b.pid));
+          (*obj)["cdpPort"] = HavelValue(static_cast<double>(b.cdpPort));
+          arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+      }));
+  
+  (*browserMod)["getDefaultBrowser"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto browser = getBrowser().getDefaultBrowser();
+        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*obj)["type"] = HavelValue(browser.type == BrowserType::Firefox ? "firefox" : 
+                                     browser.type == BrowserType::Chrome ? "chrome" : "chromium");
+        (*obj)["name"] = HavelValue(browser.name);
+        (*obj)["path"] = HavelValue(browser.path);
+        return HavelValue(obj);
+      }));
+  
+  (*browserMod)["listWindows"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto windows = getBrowser().listWindows();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& w : windows) {
+          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*obj)["id"] = HavelValue(static_cast<double>(w.id));
+          (*obj)["x"] = HavelValue(static_cast<double>(w.x));
+          (*obj)["y"] = HavelValue(static_cast<double>(w.y));
+          (*obj)["width"] = HavelValue(static_cast<double>(w.width));
+          (*obj)["height"] = HavelValue(static_cast<double>(w.height));
+          arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+      }));
+  
+  (*browserMod)["listExtensions"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        auto extensions = getBrowser().listExtensions();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& e : extensions) {
+          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*obj)["id"] = HavelValue(e.id);
+          (*obj)["name"] = HavelValue(e.name);
+          (*obj)["version"] = HavelValue(e.version);
+          (*obj)["enabled"] = HavelValue(e.enabled);
+          arr->push_back(HavelValue(obj));
+        }
+        return HavelValue(arr);
+      }));
+  
+  (*browserMod)["enableExtension"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.enableExtension() requires extensionId");
+        std::string extId = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().enableExtension(extId));
+      }));
+  
+  (*browserMod)["disableExtension"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.disableExtension() requires extensionId");
+        std::string extId = this->ValueToString(args[0]);
+        return HavelValue(getBrowser().disableExtension(extId));
+      }));
+  
+  (*browserMod)["setWindowSize"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("browser.setWindowSize() requires (windowId, width, height)");
+        int windowId = static_cast<int>(std::get<double>(args[0]));
+        int width = static_cast<int>(std::get<double>(args[1]));
+        int height = static_cast<int>(std::get<double>(args[2]));
+        return HavelValue(getBrowser().setWindowSize(windowId, width, height));
+      }));
+  
+  (*browserMod)["setWindowPosition"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("browser.setWindowPosition() requires (windowId, x, y)");
+        int windowId = static_cast<int>(std::get<double>(args[0]));
+        int x = static_cast<int>(std::get<double>(args[1]));
+        int y = static_cast<int>(std::get<double>(args[2]));
+        return HavelValue(getBrowser().setWindowPosition(windowId, x, y));
+      }));
+  
+  (*browserMod)["maximizeWindow"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().maximizeWindow(windowId));
+      }));
+  
+  (*browserMod)["minimizeWindow"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().minimizeWindow(windowId));
+      }));
+  
+  (*browserMod)["fullscreenWindow"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        return HavelValue(getBrowser().fullscreenWindow(windowId));
       }));
 
   environment->Define("browser", HavelValue(browserMod));

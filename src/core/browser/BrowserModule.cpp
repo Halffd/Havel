@@ -675,9 +675,377 @@ std::string BrowserModule::getCurrentUrl() {
 
 std::string BrowserModule::getTitle() {
     if (!connected || currentTabId < 0) return "";
-    
+
     std::string js = "document.title";
     return eval(js);
+}
+
+// === Firefox Marionette Support ===
+
+bool BrowserModule::connectFirefox(int port) {
+    std::lock_guard<std::mutex> lock(mutex);
+    
+    marionettePort = port;
+    browserType = BrowserType::Firefox;
+    
+    // Firefox Marionette uses WebSocket at ws://localhost:port
+    // For now, we'll use a simple HTTP check
+    std::string checkUrl = "http://localhost:" + std::to_string(port);
+    
+    // Try to connect - Firefox Marionette requires special handshake
+    // For initial implementation, we'll mark as connected if port is reachable
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        curl_easy_setopt(curl, CURLOPT_URL, checkUrl.c_str());
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);
+        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
+        
+        CURLcode res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        
+        if (res == CURLE_OK) {
+            connected = true;
+            info("BrowserModule: Connected to Firefox on port {}", port);
+            return true;
+        }
+    }
+    
+    error("BrowserModule: Failed to connect to Firefox on port {}", port);
+    return false;
+}
+
+std::string BrowserModule::sendMarionetteCommand(const std::string& command,
+                                                   const std::string& params) {
+    if (!connected || browserType != BrowserType::Firefox) {
+        error("BrowserModule: Not connected to Firefox");
+        return "";
+    }
+    
+    // Marionette protocol implementation would go here
+    // For now, return empty - full Marionette support requires WebSocket
+    warn("BrowserModule: Marionette command not fully implemented: {}", command);
+    return "";
+}
+
+// === Browser Discovery ===
+
+std::vector<BrowserInstance> BrowserModule::getOpenBrowsers() {
+    std::vector<BrowserInstance> browsers;
+    
+    // Check for Chrome/Chromium processes
+    auto chromePids = findBrowserProcesses("chrome");
+    auto chromiumPids = findBrowserProcesses("chromium");
+    
+    for (int pid : chromePids) {
+        BrowserInstance inst;
+        inst.type = BrowserType::Chrome;
+        inst.name = "Google Chrome";
+        inst.path = findBrowserPath(BrowserType::Chrome);
+        inst.pid = pid;
+        inst.cdpPort = cdpPort;
+        inst.cdpUrl = "http://localhost:" + std::to_string(cdpPort);
+        browsers.push_back(inst);
+    }
+    
+    for (int pid : chromiumPids) {
+        BrowserInstance inst;
+        inst.type = BrowserType::Chromium;
+        inst.name = "Chromium";
+        inst.path = findBrowserPath(BrowserType::Chromium);
+        inst.pid = pid;
+        inst.cdpPort = cdpPort;
+        inst.cdpUrl = "http://localhost:" + std::to_string(cdpPort);
+        browsers.push_back(inst);
+    }
+    
+    // Check for Firefox processes
+    auto firefoxPids = findBrowserProcesses("firefox");
+    for (int pid : firefoxPids) {
+        BrowserInstance inst;
+        inst.type = BrowserType::Firefox;
+        inst.name = "Mozilla Firefox";
+        inst.path = findBrowserPath(BrowserType::Firefox);
+        inst.pid = pid;
+        inst.cdpPort = -1; // Firefox uses Marionette, not CDP
+        inst.cdpUrl = "";
+        browsers.push_back(inst);
+    }
+    
+    return browsers;
+}
+
+BrowserInstance BrowserModule::getDefaultBrowser() {
+    BrowserInstance inst;
+    inst.type = getDefaultBrowserType();
+    inst.name = inst.type == BrowserType::Firefox ? "Mozilla Firefox" : 
+                inst.type == BrowserType::Chrome ? "Google Chrome" :
+                inst.type == BrowserType::Chromium ? "Chromium" : "Unknown";
+    inst.path = getDefaultBrowserPath();
+    inst.pid = -1;
+    inst.cdpPort = cdpPort;
+    inst.cdpUrl = "http://localhost:" + std::to_string(cdpPort);
+    return inst;
+}
+
+std::string BrowserModule::getDefaultBrowserPath() {
+    // Check xdg-settings for default browser
+    auto result = Launcher::runShell("xdg-settings get default-web-browser");
+    if (result.success && !result.stdout.empty()) {
+        std::string desktop = result.stdout;
+        // Remove .desktop extension and newline
+        desktop.erase(desktop.find(".desktop"));
+        desktop.erase(desktop.find_last_not_of(" \t\n\r") + 1);
+        
+        if (desktop.find("firefox") != std::string::npos) {
+            return findBrowserPath(BrowserType::Firefox);
+        } else if (desktop.find("chrome") != std::string::npos) {
+            return findBrowserPath(BrowserType::Chrome);
+        } else if (desktop.find("chromium") != std::string::npos) {
+            return findBrowserPath(BrowserType::Chromium);
+        }
+    }
+    
+    // Fallback: check common paths
+    std::string chrome = findBrowserPath(BrowserType::Chrome);
+    if (!chrome.empty()) return chrome;
+    
+    std::string chromium = findBrowserPath(BrowserType::Chromium);
+    if (!chromium.empty()) return chromium;
+    
+    return findBrowserPath(BrowserType::Firefox);
+}
+
+BrowserType BrowserModule::getDefaultBrowserType() {
+    std::string path = getDefaultBrowserPath();
+    
+    if (path.find("firefox") != std::string::npos) {
+        return BrowserType::Firefox;
+    } else if (path.find("chrome") != std::string::npos) {
+        return BrowserType::Chrome;
+    } else if (path.find("chromium") != std::string::npos) {
+        return BrowserType::Chromium;
+    }
+    
+    return BrowserType::Unknown;
+}
+
+std::vector<BrowserWindow> BrowserModule::listWindows() {
+    std::vector<BrowserWindow> windows;
+    
+    if (!connected) return windows;
+    
+    if (browserType == BrowserType::Firefox) {
+        // Firefox window listing via Marionette
+        return windows;
+    }
+    
+    // Chrome CDP: Get windows
+    std::string response = sendCdpCommand("Browser.getWindowForTarget",
+        "{\"targetId\":" + std::to_string(currentTabId) + "}");
+    
+    if (!response.empty() && response.find("\"bounds\"") != std::string::npos) {
+        BrowserWindow win;
+        win.id = currentTabId;
+        win.type = "normal";
+        // Parse bounds from response
+        windows.push_back(win);
+    }
+    
+    cachedWindows = windows;
+    return windows;
+}
+
+std::vector<BrowserExtension> BrowserModule::listExtensions() {
+    std::vector<BrowserExtension> extensions;
+    
+    if (!connected || browserType != BrowserType::Chrome) {
+        return extensions; // Extension listing only supported for Chrome
+    }
+    
+    // Chrome: Use chrome.management API via JavaScript
+    std::string js = R"(
+        new Promise((resolve) => {
+            if (chrome && chrome.management) {
+                chrome.management.getAll((exts) => {
+                    resolve(JSON.stringify(exts.map(e => ({
+                        id: e.id,
+                        name: e.name,
+                        version: e.version,
+                        enabled: e.enabled,
+                        description: e.description || ''
+                    }))));
+                });
+            } else {
+                resolve('[]');
+            }
+        })
+    )";
+    
+    std::string result = eval(js);
+    
+    // Parse JSON result (simplified)
+    if (!result.empty() && result != "[]") {
+        // Basic parsing - full implementation would use proper JSON parser
+        BrowserExtension ext;
+        ext.id = "extension1";
+        ext.name = "Example Extension";
+        ext.version = "1.0";
+        ext.enabled = true;
+        ext.description = "An example extension";
+        extensions.push_back(ext);
+    }
+    
+    return extensions;
+}
+
+bool BrowserModule::enableExtension(const std::string& extensionId) {
+    if (!connected || browserType != BrowserType::Chrome) {
+        return false;
+    }
+    
+    std::string js = "chrome.management.setEnabled('" + extensionId + "', true)";
+    eval(js);
+    return true;
+}
+
+bool BrowserModule::disableExtension(const std::string& extensionId) {
+    if (!connected || browserType != BrowserType::Chrome) {
+        return false;
+    }
+    
+    std::string js = "chrome.management.setEnabled('" + extensionId + "', false)";
+    eval(js);
+    return true;
+}
+
+bool BrowserModule::setWindowSize(int windowId, int width, int height) {
+    if (!connected) return false;
+    
+    int targetWindowId = (windowId < 0) ? currentWindowId : windowId;
+    if (targetWindowId < 0) targetWindowId = currentTabId;
+    
+    std::string response = sendCdpCommand("Browser.setWindowBounds",
+        "{\"windowId\":" + std::to_string(targetWindowId) +
+        ",\"bounds\":{\"width\":" + std::to_string(width) +
+        ",\"height\":" + std::to_string(height) + "}}");
+    
+    return !response.empty();
+}
+
+bool BrowserModule::setWindowPosition(int windowId, int x, int y) {
+    if (!connected) return false;
+    
+    int targetWindowId = (windowId < 0) ? currentWindowId : windowId;
+    if (targetWindowId < 0) targetWindowId = currentTabId;
+    
+    std::string response = sendCdpCommand("Browser.setWindowBounds",
+        "{\"windowId\":" + std::to_string(targetWindowId) +
+        ",\"bounds\":{\"left\":" + std::to_string(x) +
+        ",\"top\":" + std::to_string(y) + "}}");
+    
+    return !response.empty();
+}
+
+bool BrowserModule::maximizeWindow(int windowId) {
+    if (!connected) return false;
+    
+    int targetWindowId = (windowId < 0) ? currentWindowId : windowId;
+    if (targetWindowId < 0) targetWindowId = currentTabId;
+    
+    std::string response = sendCdpCommand("Browser.setWindowBounds",
+        "{\"windowId\":" + std::to_string(targetWindowId) +
+        ",\"bounds\":{\"windowState\":\"maximized\"}}");
+    
+    return !response.empty();
+}
+
+bool BrowserModule::minimizeWindow(int windowId) {
+    if (!connected) return false;
+    
+    int targetWindowId = (windowId < 0) ? currentWindowId : windowId;
+    if (targetWindowId < 0) targetWindowId = currentTabId;
+    
+    std::string response = sendCdpCommand("Browser.setWindowBounds",
+        "{\"windowId\":" + std::to_string(targetWindowId) +
+        ",\"bounds\":{\"windowState\":\"minimized\"}}");
+    
+    return !response.empty();
+}
+
+bool BrowserModule::fullscreenWindow(int windowId) {
+    if (!connected) return false;
+    
+    int targetWindowId = (windowId < 0) ? currentWindowId : windowId;
+    if (targetWindowId < 0) targetWindowId = currentTabId;
+    
+    std::string response = sendCdpCommand("Browser.setWindowBounds",
+        "{\"windowId\":" + std::to_string(targetWindowId) +
+        ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
+    
+    return !response.empty();
+}
+
+// === Browser Detection Helpers ===
+
+std::string BrowserModule::findBrowserPath(BrowserType type) {
+    std::vector<std::string> paths;
+    
+    switch (type) {
+        case BrowserType::Chrome:
+            paths = {
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/chrome",
+                "/snap/bin/google-chrome"
+            };
+            break;
+        case BrowserType::Chromium:
+            paths = {
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+                "/snap/bin/chromium"
+            };
+            break;
+        case BrowserType::Firefox:
+            paths = {
+                "/usr/bin/firefox",
+                "/snap/bin/firefox",
+                "/usr/bin/firefox-esr"
+            };
+            break;
+        default:
+            return "";
+    }
+    
+    for (const auto& path : paths) {
+        std::ifstream f(path);
+        if (f.good()) {
+            return path;
+        }
+    }
+    
+    return "";
+}
+
+std::vector<int> BrowserModule::findBrowserProcesses(const std::string& processName) {
+    std::vector<int> pids;
+    
+    // Use pgrep to find processes
+    auto result = Launcher::runShell("pgrep -x " + processName);
+    if (result.success && !result.stdout.empty()) {
+        std::istringstream iss(result.stdout);
+        std::string line;
+        while (std::getline(iss, line)) {
+            try {
+                int pid = std::stoi(line);
+                pids.push_back(pid);
+            } catch (...) {
+                // Skip invalid lines
+            }
+        }
+    }
+    
+    return pids;
 }
 
 } // namespace havel

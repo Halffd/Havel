@@ -14,6 +14,12 @@ struct Program;
 
 namespace havel::compiler {
 
+// Forward declarations
+class BytecodeCompiler;
+class BytecodeInterpreter;
+class JITCompiler;
+class HavelBytecodeCompiler;
+
 // Bytecode instruction format
 enum class OpCode : uint8_t {
   // Stack operations

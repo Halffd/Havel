@@ -9,6 +9,7 @@
 #include "gui/HavelApp.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
+#include "core/io/EventListener.hpp"
 #include "process/Launcher.hpp"
 #include "qt.hpp"
 #include "window/WindowManagerDetector.hpp"
@@ -2404,43 +2405,6 @@ void Interpreter::InitializeSystemBuiltins() {
                      }
                    }));
 
-  // Global click function
-  environment->Define(
-      "click",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.empty()) {
-              return HavelRuntimeError(
-                  "click() requires at least one argument: button (int)");
-            }
-            if (args.size() > 2) {
-              return HavelRuntimeError("click() accepts at most 2 arguments: "
-                                       "button (int/string) and action (int)");
-            }
-            int button = ValueToString(args[0]);
-            if 
-              int action = args.size() > 1
-                               ? static_cast<int>(ValueToNumber(args[1]))
-                               : 2; // default click
-
-            if (!io.EmitClick(button, action))
-              return HavelRuntimeError("Click failed");
-
-            return HavelValue(true);
-          }));
-
-  // Global mouseMove function
-  environment->Define(
-      "mouseMove",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("mouseMove() requires x, y coordinates");
-            int x = static_cast<int>(ValueToNumber(args[0]));
-            int y = static_cast<int>(ValueToNumber(args[1]));
-            io.MouseMoveTo(x, y);
-            return HavelValue(nullptr);
-          }));
 
   // repeat(n, fn)
   environment->Define(
@@ -3104,119 +3068,6 @@ void Interpreter::InitializeSystemBuiltins() {
   environment->Define("app", HavelValue(appObj));
 
   // === IO METHODS ===
-  // Mouse methods
-  environment->Define(
-      "io.mouseMove",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.mouseMove() requires (dx, dy)");
-            int dx = static_cast<int>(std::get<double>(args[0]));
-            int dy = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMove(dx, dy);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.mouseMoveTo",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.mouseMoveTo() requires (x, y)");
-            int x = static_cast<int>(std::get<double>(args[0]));
-            int y = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMoveTo(x, y);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.move",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.move() requires (dx, dy)");
-            int dx = static_cast<int>(std::get<double>(args[0]));
-            int dy = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMove(dx, dy);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.moveTo",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("io.moveTo() requires (x, y)");
-            int x = static_cast<int>(std::get<double>(args[0]));
-            int y = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMoveTo(x, y);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "mouse.move",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("mouse.move() requires (dx, dy)");
-            int dx = static_cast<int>(std::get<double>(args[0]));
-            int dy = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMove(dx, dy);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "mouse.moveTo",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.size() < 2)
-              return HavelRuntimeError("mouse.moveTo() requires (x, y)");
-            int x = static_cast<int>(std::get<double>(args[0]));
-            int y = static_cast<int>(std::get<double>(args[1]));
-            this->io.MouseMoveTo(x, y);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.mouseClick",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            int button =
-                args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
-            this->io.MouseClick(button);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.mouseDown",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            int button =
-                args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
-            this->io.MouseDown(button);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.mouseUp",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            int button =
-                args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
-            this->io.MouseUp(button);
-            return HavelValue(nullptr);
-          }));
-
-  environment->Define(
-      "io.mouseWheel",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            int amount =
-                args.empty() ? 1 : static_cast<int>(std::get<double>(args[0]));
-            this->io.MouseWheel(amount);
-            return HavelValue(nullptr);
-          }));
-
   // Key state methods
   environment->Define(
       "io.getKeyState",
@@ -4513,30 +4364,138 @@ void Interpreter::InitializeIOBuiltins() {
         // TODO: Implement keycode testing mode
         return HavelValue(nullptr);
       }));
+  auto mouseObj =
+    std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  environment->Define(
-      "io.scroll",
-      BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
-            if (args.empty())
-              return HavelRuntimeError("io.scroll() requires dy, [dx]");
+//
+// mouse.move(dx, dy)
+//
+(*mouseObj)["move"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() != 2)
+            return HavelRuntimeError("mouse.move(dx, dy) requires 2 arguments");
 
-            double dy = ValueToNumber(args[0]);
-            double dx = args.size() >= 2 ? ValueToNumber(args[1]) : 0.0;
-            bool ok = this->io.Scroll(dy, dx);
-            return HavelValue(ok);
-          }));
+        int dx = static_cast<int>(ValueToNumber(args[0]));
+        int dy = static_cast<int>(ValueToNumber(args[1]));
 
-  environment->Define(
-      "io.getMouseSensitivity",
+        if (!io.MouseMove(dx, dy))
+            return HavelRuntimeError("MouseMove failed");
+
+        return HavelValue(true);
+    });
+
+//
+// mouse.moveTo(x, y)
+//
+(*mouseObj)["moveTo"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() != 2)
+            return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
+
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+
+        if (!io.MouseMoveTo(x, y))
+            return HavelRuntimeError("MouseMoveTo failed");
+
+        return HavelValue(true);
+    });
+
+//
+// mouse.down(button)
+//
+(*mouseObj)["down"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int button = args.empty() ? 1
+                                  : static_cast<int>(ValueToNumber(args[0]));
+
+        if (!io.MouseDown(button))
+            return HavelRuntimeError("MouseDown failed");
+
+        return HavelValue(true);
+    });
+
+//
+// mouse.up(button)
+//
+(*mouseObj)["up"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+        int button = args.empty() ? 1
+                                  : static_cast<int>(ValueToNumber(args[0]));
+
+        if (!io.MouseUp(button))
+            return HavelRuntimeError("MouseUp failed");
+
+        return HavelValue(true);
+    });
+
+//
+// mouse.click(button?, down?)
+// button default = 1
+// down:
+//   - true  -> press only
+//   - false -> release only
+//   - null  -> full click (default)
+//
+(*mouseObj)["click"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+
+        int button = 1;
+        bool doDown = true;
+        bool doUp   = true;
+
+        if (!args.empty())
+            button = static_cast<int>(ValueToNumber(args[0]));
+
+        if (args.size() >= 2) {
+            bool down = ValueToNumber(args[1]) != 0;
+            if (down) {
+                doUp = false;   // press only
+            } else {
+                doDown = false; // release only
+            }
+        }
+
+        bool ok = true;
+
+        if (doDown)
+            ok &= io.MouseDown(button);
+
+        if (doUp)
+            ok &= io.MouseUp(button);
+
+        if (!ok)
+            return HavelRuntimeError("MouseClick failed");
+
+        return HavelValue(true);
+    });
+
+//
+// mouse.scroll(dy, dx?)
+//
+(*mouseObj)["scroll"] =
+    BuiltinFunction([this](const std::vector<HavelValue>& args) -> HavelResult {
+
+        if (args.empty())
+            return HavelRuntimeError("mouse.scroll(dy, dx?) requires at least dy");
+
+        double dy = ValueToNumber(args[0]);
+        double dx = args.size() >= 2 ? ValueToNumber(args[1]) : 0.0;
+
+        if (!io.Scroll(dy, dx))
+            return HavelRuntimeError("Scroll failed");
+
+        return HavelValue(true);
+    });
+
+  (*mouseObj)["getSensitivity"] =
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
             return HavelValue(static_cast<double>(this->io.mouseSensitivity));
-          }));
+          });
 
-  environment->Define(
-      "io.setMouseSensitivity",
+(*mouseObj)["setSensitivity"] =
       BuiltinFunction([this](
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
@@ -4544,6 +4503,7 @@ void Interpreter::InitializeIOBuiltins() {
         this->io.mouseSensitivity = ValueToNumber(args[0]);
         return HavelValue(static_cast<double>(this->io.mouseSensitivity));
       }));
+  environment->Define("mouse", mouseObj);
 
   environment->Define(
       "io.emergencyReleaseAllKeys",

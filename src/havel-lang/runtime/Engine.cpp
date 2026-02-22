@@ -15,7 +15,7 @@ static havel::HavelValue unwrapHavelResult(const havel::HavelResult &result) {
     return *val;
   }
   if (auto *ret = std::get_if<havel::ReturnValue>(&result)) {
-    return ret->value;
+    return ret->value ? *ret->value : havel::HavelValue();
   }
   if (auto *brk = std::get_if<havel::BreakValue>(&result)) {
     return nullptr;

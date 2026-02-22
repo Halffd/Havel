@@ -450,6 +450,15 @@ public:
   void visitObjectPattern(const ast::ObjectPattern &node) override;
   void visitTryExpression(const ast::TryExpression &node) override;
   void visitThrowStatement(const ast::ThrowStatement &node) override;
+
+  // Type system - struct/enum support
+  void visitStructFieldDef(const ast::StructFieldDef &node) override;
+  void visitStructDefinition(const ast::StructDefinition &node) override;
+  void visitStructDeclaration(const ast::StructDeclaration &node) override;
+  void visitEnumVariantDef(const ast::EnumVariantDef &node) override;
+  void visitEnumDefinition(const ast::EnumDefinition &node) override;
+  void visitEnumDeclaration(const ast::EnumDeclaration &node) override;
+
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;
   void visitForStatement(const ast::ForStatement &node) override;

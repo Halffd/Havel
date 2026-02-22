@@ -1867,6 +1867,51 @@ void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
       HavelRuntimeError("Thrown: " + ValueToString(unwrap(valueResult)));
 }
 
+// Type system - struct/enum support (stub implementations for now)
+void Interpreter::visitStructFieldDef(const ast::StructFieldDef &node) {
+  lastResult = HavelRuntimeError("StructFieldDef evaluation not implemented");
+}
+
+void Interpreter::visitStructDefinition(const ast::StructDefinition &node) {
+  lastResult = HavelRuntimeError("StructDefinition evaluation not implemented");
+}
+
+void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
+  // Register struct type in TypeRegistry
+  auto structType = std::make_shared<HavelStructType>(node.name);
+  for (const auto& field : node.definition.fields) {
+    // Convert ast::StructFieldDef to StructField
+    StructField havelField;
+    havelField.name = field.name;
+    // For now, just store field names without type validation
+    structType->addField(havelField);
+  }
+  TypeRegistry::getInstance().registerStructType(structType);
+  lastResult = nullptr;
+}
+
+void Interpreter::visitEnumVariantDef(const ast::EnumVariantDef &node) {
+  lastResult = HavelRuntimeError("EnumVariantDef evaluation not implemented");
+}
+
+void Interpreter::visitEnumDefinition(const ast::EnumDefinition &node) {
+  lastResult = HavelRuntimeError("EnumDefinition evaluation not implemented");
+}
+
+void Interpreter::visitEnumDeclaration(const ast::EnumDeclaration &node) {
+  // Register enum type in TypeRegistry
+  auto enumType = std::make_shared<HavelEnumType>(node.name);
+  for (const auto& variant : node.definition.variants) {
+    // Convert ast::EnumVariantDef to EnumVariant
+    EnumVariant havelVariant;
+    havelVariant.name = variant.name;
+    havelVariant.hasPayload = variant.payloadType.has_value();
+    enumType->addVariant(havelVariant);
+  }
+  TypeRegistry::getInstance().registerEnumType(enumType);
+  lastResult = nullptr;
+}
+
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
   // Evaluate the iterable expression
   auto iterableResult = Evaluate(*node.iterable);

@@ -450,6 +450,66 @@ public:
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }
+
+  void visitStructFieldDef(const StructFieldDef &node) override {
+    out << getIndent() << "StructFieldDef { name: " << node.name;
+    if (node.type) {
+      out << ", type: " << (*node.type)->toString();
+    }
+    out << " }" << std::endl;
+  }
+
+  void visitStructDefinition(const StructDefinition &node) override {
+    out << getIndent() << "StructDefinition {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "fields: [" << std::endl;
+    indentLevel++;
+    for (const auto &field : node.fields) {
+      field.accept(*this);
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitStructDeclaration(const StructDeclaration &node) override {
+    out << getIndent() << "StructDeclaration { name: " << node.name << std::endl;
+    indentLevel++;
+    node.definition.accept(*this);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitEnumVariantDef(const EnumVariantDef &node) override {
+    out << getIndent() << "EnumVariantDef { name: " << node.name;
+    if (node.payloadType) {
+      out << ", payload: " << (*node.payloadType)->toString();
+    }
+    out << " }" << std::endl;
+  }
+
+  void visitEnumDefinition(const EnumDefinition &node) override {
+    out << getIndent() << "EnumDefinition {" << std::endl;
+    indentLevel++;
+    out << getIndent() << "variants: [" << std::endl;
+    indentLevel++;
+    for (const auto &variant : node.variants) {
+      variant.accept(*this);
+    }
+    indentLevel--;
+    out << getIndent() << "]" << std::endl;
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitEnumDeclaration(const EnumDeclaration &node) override {
+    out << getIndent() << "EnumDeclaration { name: " << node.name << std::endl;
+    indentLevel++;
+    node.definition.accept(*this);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
 };
 
 } // namespace havel::ast

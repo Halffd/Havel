@@ -364,6 +364,7 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
   if (auto *ident = dynamic_cast<const ast::Identifier *>(node.pattern.get())) {
     // Simple variable declaration: let x = value
     environment->Define(ident->symbol, value);
+    lastResult = value; // Set result for potential chaining
   } else if (auto *arrayPattern =
                  dynamic_cast<const ast::ArrayPattern *>(node.pattern.get())) {
     // Array destructuring: let [a, b] = arr

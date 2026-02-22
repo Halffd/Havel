@@ -295,16 +295,16 @@ HotkeyManager::HotkeyManager(
   // Initialize lastInputTime to current time
   lastInputTime.store(std::chrono::steady_clock::now());
 
-  // Load configurable input freeze timeout (default to 300 seconds = 5 minutes)
+  // Load configurable input freeze timeout
   inputFreezeTimeoutSeconds =
-      Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
+      Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 0);
 
   // Start the watchdog thread
   watchdogRunning.store(true);
   watchdogThread = std::thread(&HotkeyManager::WatchdogLoop, this);
 
   // Set up input notification callback if using EventListener
-  if (io.GetEventListener() && io.IsUsingNewEventListener()) {
+  if (io.GetEventListener()) {
     io.GetEventListener()->inputNotificationCallback = [this]() {
       NotifyInputReceived();
     };
@@ -3625,7 +3625,7 @@ void HotkeyManager::WatchdogLoop() {
     auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
         now - lastInputTime.load());
 
-    if (elapsed.count() > inputFreezeTimeoutSeconds) {
+    if (elapsed.count() > inputFreezeTimeoutSeconds && inputFreezeTimeoutSeconds != 0) {
       error("INPUT FREEZE DETECTED! No input for {} seconds (threshold: {}s)",
             elapsed.count(), inputFreezeTimeoutSeconds);
 
@@ -3661,11 +3661,9 @@ void HotkeyManager::WatchdogLoop() {
             listener->Start(devices, true);
 
             // Re-establish callback
-            if (io.IsUsingNewEventListener()) {
-              listener->inputNotificationCallback = [this]() {
+            listener->inputNotificationCallback = [this]() {
                 NotifyInputReceived();
               };
-            }
 
             info("EventListener restarted successfully");
 

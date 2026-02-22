@@ -1,0 +1,3 @@
+// Test object literal
+let obj = { name: "test" }
+print(obj.name)

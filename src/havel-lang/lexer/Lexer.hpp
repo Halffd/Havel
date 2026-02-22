@@ -37,6 +37,8 @@ enum class TokenType {
   Config,
   Devices,
   Modes,
+  Struct,     // struct
+  Enum,       // enum
   On,
   Off,
   When,

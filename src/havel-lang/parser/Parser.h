@@ -79,6 +79,15 @@ private:
   std::unique_ptr<ast::Statement> parseConfigBlock();
   std::unique_ptr<ast::Statement> parseDevicesBlock();
   std::unique_ptr<ast::Statement> parseModesBlock();
+  
+  // Type system parsers
+  std::unique_ptr<ast::Statement> parseStructDeclaration();
+  std::unique_ptr<ast::Statement> parseEnumDeclaration();
+  std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
+  std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
+  std::vector<ast::StructFieldDef> parseStructFields();
+  std::vector<ast::EnumVariantDef> parseEnumVariants();
+  
   std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>
   parseKeyValueBlock();
   ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);

@@ -298,6 +298,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseOffModeStatement();
   case havel::TokenType::Fn:
     return parseFunctionDeclaration();
+  case havel::TokenType::Struct:
+    return parseStructDeclaration();
+  case havel::TokenType::Enum:
+    return parseEnumDeclaration();
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
     return parseReturnStatement();
@@ -422,6 +426,162 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
   }
 
   return std::make_unique<havel::ast::ReturnStatement>(std::move(value));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
+  advance(); // consume 'struct'
+  
+  // Parse struct name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected struct name after 'struct'");
+  }
+  std::string structName = advance().value;
+  
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after struct name");
+  }
+  advance(); // consume '{'
+  
+  // Parse fields
+  auto fields = parseStructFields();
+  
+  // Parse closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close struct definition");
+  }
+  advance(); // consume '}'
+  
+  // Create struct definition
+  ast::StructDefinition def(std::move(fields));
+  
+  return std::make_unique<ast::StructDeclaration>(structName, std::move(def));
+}
+
+std::vector<ast::StructFieldDef> Parser::parseStructFields() {
+  std::vector<ast::StructFieldDef> fields;
+  
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (at().type == havel::TokenType::NewLine || 
+        at().type == havel::TokenType::Comment) {
+      advance();
+      continue;
+    }
+    
+    // Parse field name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected field name in struct");
+    }
+    std::string fieldName = advance().value;
+    
+    // Optional type annotation
+    std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      fieldType = parseTypeDefinition();
+    }
+    
+    fields.emplace_back(fieldName, std::move(fieldType));
+    
+    // Optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+  
+  return fields;
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {
+  advance(); // consume 'enum'
+  
+  // Parse enum name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected enum name after 'enum'");
+  }
+  std::string enumName = advance().value;
+  
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after enum name");
+  }
+  advance(); // consume '{'
+  
+  // Parse variants
+  auto variants = parseEnumVariants();
+  
+  // Parse closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close enum definition");
+  }
+  advance(); // consume '}'
+  
+  // Create enum definition
+  ast::EnumDefinition def(std::move(variants));
+  
+  return std::make_unique<ast::EnumDeclaration>(enumName, std::move(def));
+}
+
+std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
+  std::vector<ast::EnumVariantDef> variants;
+  
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (at().type == havel::TokenType::NewLine || 
+        at().type == havel::TokenType::Comment) {
+      advance();
+      continue;
+    }
+    
+    // Parse variant name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected variant name in enum");
+    }
+    std::string variantName = advance().value;
+    
+    // Optional payload type
+    std::optional<std::unique_ptr<ast::TypeDefinition>> payloadType;
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      payloadType = parseTypeDefinition();
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after payload type");
+      }
+      advance(); // consume ')'
+    }
+    
+    variants.emplace_back(variantName, std::move(payloadType));
+    
+    // Optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+  }
+  
+  return variants;
+}
+
+std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
+  // Parse type reference (simple type name)
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected type name");
+  }
+  std::string typeName = advance().value;
+  
+  // For now, just create a type reference
+  // Could be extended to parse generic types like List(Int)
+  return std::make_unique<ast::TypeReference>(typeName);
+}
+
+std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {
+  if (at().type != havel::TokenType::Colon) {
+    failAt(at(), "Expected ':' for type annotation");
+  }
+  advance(); // consume ':'
+  
+  auto type = parseTypeDefinition();
+  return std::make_unique<ast::TypeAnnotation>(std::move(type));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseThrowStatement() {

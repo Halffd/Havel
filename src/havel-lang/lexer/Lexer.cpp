@@ -574,25 +574,22 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle modifier-based hotkeys starting with special characters like ^ + !
     // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
-    // as Plus. BUT: if previous token suggests expression context, treat as operator
+    // as Plus. EXCEPTION: + after expression context should be Plus operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-      // Check if this looks like an expression context (previous token was value)
-      bool isExpressionContext = false;
-      if (!tokens.empty()) {
+      // Special case for + : if previous token suggests expression, treat as Plus
+      if (c == '+' && !tokens.empty()) {
         TokenType prevType = tokens.back().type;
-        // If previous token was a value (number, identifier, string, closing paren/bracket)
-        // then + should be an operator, not a hotkey modifier
         if (prevType == TokenType::Number || 
             prevType == TokenType::Identifier ||
             prevType == TokenType::String ||
             prevType == TokenType::CloseParen ||
-            prevType == TokenType::CloseBracket) {
-          isExpressionContext = true;
+            prevType == TokenType::CloseBracket ||
+            prevType == TokenType::CloseBrace) {
+          // Fall through to SINGLE_CHAR_TOKENS to get Plus
+        } else {
+          tokens.push_back(scanHotkey());
+          continue;
         }
-      }
-      
-      if (isExpressionContext) {
-        // Fall through to SINGLE_CHAR_TOKENS handling
       } else {
         tokens.push_back(scanHotkey());
         continue;
@@ -629,23 +626,7 @@ std::vector<Token> Lexer::tokenize() {
         }
         tokens.push_back(scanHotkey());
       } else {
-        // Detect combo-style hotkeys like "RShift & WheelDown" or "LButton &
-        // RButton:" These start with an identifier, but should be tokenized as
-        // a Hotkey.
-        size_t look = position;
-        while (look < source.length() && isAlphaNumeric(source[look])) {
-          look++;
-        }
-        size_t ws = look;
-        while (ws < source.length() &&
-               (source[ws] == ' ' || source[ws] == '\t')) {
-          ws++;
-        }
-        if (ws < source.length() && (source[ws] == '&' || source[ws] == ':')) {
-          tokens.push_back(scanHotkey());
-        } else {
-          tokens.push_back(scanIdentifier());
-        }
+        tokens.push_back(scanIdentifier());
       }
       continue;
     }

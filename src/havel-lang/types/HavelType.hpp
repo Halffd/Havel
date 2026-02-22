@@ -306,12 +306,12 @@ public:
     TypeMode getMode() const { return mode_; }
     void setMode(TypeMode mode) { mode_ = mode; }
 
-    // Type compatibility check
-    bool checkCompatibility(const HavelValue& value, 
+    // Type compatibility check - implemented in Interpreter.cpp
+    bool checkCompatibility(const HavelValue& value,
                            const std::shared_ptr<HavelType>& expectedType,
                            const std::string& context = "");
 
-    // Validate object/struct has required fields
+    // Validate object/struct has required fields - implemented in Interpreter.cpp
     bool validateStructFields(const HavelValue& value,
                              const HavelStructType& structType,
                              const std::string& context = "");

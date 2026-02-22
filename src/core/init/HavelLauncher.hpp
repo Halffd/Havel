@@ -9,7 +9,8 @@ public:
   enum class Mode {
     DAEMON,          // Full system with hotkeys + GUI (default)
     GUI_ONLY,        // Just GUI tools
-    SCRIPT,          // Execute .hv script file
+    SCRIPT,          // Execute .hv script file with full IO
+    SCRIPT_ONLY,     // Execute .hv script without IO/hotkeys (pure testing)
     REPL,            // Interactive REPL
     SCRIPT_AND_REPL, // Execute script then enter REPL
     CLI              // Command-line tools
@@ -32,6 +33,7 @@ private:
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);
   int runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]);
   int runScript(const LaunchConfig &cfg);
+  int runScriptOnly(const LaunchConfig &cfg);  // Pure script execution without IO
   int runScriptAndRepl(const LaunchConfig &cfg);
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);

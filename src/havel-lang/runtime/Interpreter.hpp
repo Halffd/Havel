@@ -352,12 +352,17 @@ private:
 // Main Interpreter class implementing the visitor pattern
 class Interpreter : public ast::ASTVisitor {
 public:
+  // Full interpreter with IO and all managers
   Interpreter(IO &io_system, WindowManager &window_mgr,
               HotkeyManager *hotkey_mgr = nullptr,
               BrightnessManager *brightness_mgr = nullptr,
               AudioManager *audio_mgr = nullptr, GUIManager *gui_mgr = nullptr,
               ScreenshotManager *screenshot_mgr = nullptr,
               const std::vector<std::string> &cli_args = {});
+  
+  // Minimal interpreter for pure script execution (no IO/hotkeys)
+  explicit Interpreter(const std::vector<std::string> &cli_args = {});
+  
   ~Interpreter() = default;
 
   HavelResult Execute(const std::string &sourceCode);

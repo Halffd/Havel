@@ -30,6 +30,8 @@ int HavelLauncher::run(int argc, char *argv[]) {
       return runGuiOnly(cfg, argc, argv);
     case Mode::SCRIPT:
       return runScript(cfg);
+    case Mode::SCRIPT_ONLY:
+      return runScriptOnly(cfg);
     case Mode::REPL:
       return runRepl(cfg);
     case Mode::SCRIPT_AND_REPL:
@@ -70,6 +72,13 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.mode = Mode::REPL;
     } else if (arg == "--gui") {
       cfg.mode = Mode::GUI_ONLY;
+    } else if (arg == "--run" || arg == "run") {
+      // Pure script execution without IO/hotkeys
+      cfg.mode = Mode::SCRIPT_ONLY;
+      // Next argument should be the script file
+      if (i + 1 < argc) {
+        cfg.scriptFile = argv[++i];
+      }
     } else if (arg == "--help" || arg == "-h") {
       showHelp();
       exit(0);
@@ -189,6 +198,56 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     return app.exec(); // Run Qt event loop
   }
 
+  return 0;
+}
+
+int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
+  // Pure script execution without IO, hotkeys, display, or GUI
+  // Useful for testing scripts that auto-exit or don't need input
+  
+  info("Running Havel script (pure mode): {}", cfg.scriptFile);
+
+  // Read script file
+  std::ifstream file(cfg.scriptFile);
+  if (!file) {
+    error("Cannot open script file: {}", cfg.scriptFile);
+    return 2;
+  }
+
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  std::string code = buffer.str();
+
+  // Create minimal interpreter without IO/hotkeys
+  havel::Interpreter interpreter;
+  
+  // Execute script
+  auto result = interpreter.Execute(code);
+
+  if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+    error("Runtime Error: {}",
+          std::get<havel::HavelRuntimeError>(result).what());
+    return 1;
+  }
+
+  // Print result if any
+  if (!std::holds_alternative<std::nullptr_t>(result)) {
+    auto* value = std::get_if<havel::HavelValue>(&result);
+    if (value) {
+      // Print value based on type
+      if (auto* s = std::get_if<std::string>(value)) {
+        std::cout << *s << std::endl;
+      } else if (auto* n = std::get_if<double>(value)) {
+        std::cout << *n << std::endl;
+      } else if (auto* n = std::get_if<int>(value)) {
+        std::cout << *n << std::endl;
+      } else if (auto* b = std::get_if<bool>(value)) {
+        std::cout << (*b ? "true" : "false") << std::endl;
+      }
+    }
+  }
+
+  info("Script executed successfully");
   return 0;
 }
 
@@ -702,6 +761,7 @@ int HavelLauncher::runCli(int argc, char *argv[]) {
 void HavelLauncher::showHelp() {
   std::cout << "Usage: havel [script.hv] [options]\n";
   std::cout << "       havel lexer script.hv\n";
+  std::cout << "       havel --run script.hv\n";
   std::cout << "Options:\n";
   std::cout << "  --startup, -s       Run at system startup\n";
   std::cout << "  --debug, -d         Enable debug logging\n";
@@ -710,9 +770,14 @@ void HavelLauncher::showHelp() {
   std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
   std::cout << "  --repl, -r          Start interactive REPL\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
+  std::cout << "  --run               Run script without IO/hotkeys (pure mode)\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no script is provided, the GUI tray application starts.\n";
+  std::cout << "\nPure mode (--run):\n";
+  std::cout << "  Executes scripts without IO, hotkeys, display, or GUI.\n";
+  std::cout << "  Useful for testing scripts that auto-exit or don't need input.\n";
+  std::cout << "  Example: havel --run scripts/test_types.hv\n";
 }
 
 } // namespace havel::init

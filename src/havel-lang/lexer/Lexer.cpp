@@ -574,10 +574,29 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle modifier-based hotkeys starting with special characters like ^ + !
     // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
-    // as Plus.
+    // as Plus. BUT: if previous token suggests expression context, treat as operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-      tokens.push_back(scanHotkey());
-      continue;
+      // Check if this looks like an expression context (previous token was value)
+      bool isExpressionContext = false;
+      if (!tokens.empty()) {
+        TokenType prevType = tokens.back().type;
+        // If previous token was a value (number, identifier, string, closing paren/bracket)
+        // then + should be an operator, not a hotkey modifier
+        if (prevType == TokenType::Number || 
+            prevType == TokenType::Identifier ||
+            prevType == TokenType::String ||
+            prevType == TokenType::CloseParen ||
+            prevType == TokenType::CloseBracket) {
+          isExpressionContext = true;
+        }
+      }
+      
+      if (isExpressionContext) {
+        // Fall through to SINGLE_CHAR_TOKENS handling
+      } else {
+        tokens.push_back(scanHotkey());
+        continue;
+      }
     }
 
     // Handle single character tokens

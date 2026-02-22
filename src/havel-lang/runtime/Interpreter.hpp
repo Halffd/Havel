@@ -185,6 +185,8 @@ struct HavelValue {
   // ============================================================================
   
   bool isNumber() const { return is<int>() || is<double>(); }
+  bool isInt() const { return is<int>(); }
+  bool isDouble() const { return is<double>(); }
   bool isString() const { return is<std::string>(); }
   bool isBool() const { return is<bool>(); }
   bool isNull() const { return is<std::nullptr_t>(); }

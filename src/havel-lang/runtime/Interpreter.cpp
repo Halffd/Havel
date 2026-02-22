@@ -589,8 +589,7 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
 
   switch (node.operator_) {
   case ast::BinaryOperator::Add:
-    if (std::holds_alternative<std::string>(left) ||
-        std::holds_alternative<std::string>(right)) {
+    if (left.isString() || right.isString()) {
       lastResult = ValueToString(left) + ValueToString(right);
     } else {
       lastResult = ValueToNumber(left) + ValueToNumber(right);
@@ -709,7 +708,7 @@ void Interpreter::visitUpdateExpression(const ast::UpdateExpression &node) {
     }
     std::string propName = propId->symbol;
 
-    if (auto *objPtr = std::get_if<HavelObject>(&objectValue)) {
+    if (auto *objPtr = objectValue.get_if<HavelObject>()) {
       if (*objPtr) {
         auto &obj = **objPtr;
         auto it = obj.find(propName);
@@ -753,10 +752,10 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     args.push_back(unwrap(argRes));
   }
 
-  if (auto *builtin = std::get_if<BuiltinFunction>(&callee)) {
+  if (auto *builtin = callee.get_if<BuiltinFunction>()) {
     lastResult = (*builtin)(args);
   } else if (auto *userFunc =
-                 std::get_if<std::shared_ptr<HavelFunction>>(&callee)) {
+                 callee.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
     if (args.size() != func->declaration->parameters.size()) {
       lastResult = HavelRuntimeError("Mismatched argument count for function " +
@@ -775,7 +774,8 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     this->environment = originalEnv;
 
     if (std::holds_alternative<ReturnValue>(bodyResult)) {
-      lastResult = std::get<ReturnValue>(bodyResult).value;
+      auto ret = std::get<ReturnValue>(bodyResult);
+      lastResult = ret.value ? *ret.value : HavelValue();
     } else {
       lastResult = nullptr; // Implicit return
     }
@@ -801,7 +801,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
   std::string propName = propId->symbol;
 
   // Objects: o.b
-  if (auto *objPtr = std::get_if<HavelObject>(&objectValue)) {
+  if (auto *objPtr = objectValue.get_if<HavelObject>()) {
     if (*objPtr) {
       auto it = (*objPtr)->find(propName);
       if (it != (*objPtr)->end()) {
@@ -814,7 +814,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
   }
 
   // Arrays: special properties like length
-  if (auto *arrPtr = std::get_if<HavelArray>(&objectValue)) {
+  if (auto *arrPtr = objectValue.get_if<HavelArray>()) {
     if (propName == "length") {
       lastResult = static_cast<double>((*arrPtr) ? (*arrPtr)->size() : 0);
       return;
@@ -842,8 +842,10 @@ void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
     this->environment = funcEnv;
     auto res = Evaluate(*node.body);
     this->environment = originalEnv;
-    if (std::holds_alternative<ReturnValue>(res))
-      return std::get<ReturnValue>(res).value;
+    if (std::holds_alternative<ReturnValue>(res)) {
+      auto ret = std::get<ReturnValue>(res);
+      return ret.value ? *ret.value : HavelValue();
+    }
     return res;
   };
   lastResult = HavelValue(lambda);
@@ -908,10 +910,10 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
     }
 
     HavelValue callee = unwrap(calleeRes);
-    if (auto *builtin = std::get_if<BuiltinFunction>(&callee)) {
+    if (auto *builtin = callee.get_if<BuiltinFunction>()) {
       currentResult = (*builtin)(args);
     } else if (auto *userFunc =
-                   std::get_if<std::shared_ptr<HavelFunction>>(&callee)) {
+                   callee.get_if<std::shared_ptr<HavelFunction>>()) {
       // This logic is duplicated from visitCallExpression, could be refactored
       auto &func = *userFunc;
       if (args.size() != func->declaration->parameters.size()) {
@@ -928,7 +930,8 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
       currentResult = Evaluate(*func->declaration->body);
       this->environment = originalEnv;
       if (std::holds_alternative<ReturnValue>(currentResult)) {
-        currentResult = std::get<ReturnValue>(currentResult).value;
+        auto ret = std::get<ReturnValue>(currentResult);
+        currentResult = ret.value ? *ret.value : HavelValue();
       }
 
     } else {
@@ -955,12 +958,12 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
       const std::string &moduleName = item.first;
       const std::string &alias = item.second;
       auto val = environment->Get(moduleName);
-      if (!val || !std::holds_alternative<HavelObject>(*val)) {
+      if (!val || !val->isObject()) {
         lastResult = HavelRuntimeError(
             "Built-in module not found or not an object: " + moduleName);
         return;
       }
-      environment->Define(alias, std::get<HavelObject>(*val));
+      environment->Define(alias, val->asObject());
     }
     lastResult = nullptr;
     return;
@@ -975,8 +978,8 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
     if (path.rfind("havel:", 0) == 0)
       moduleName = path.substr(6);
     auto moduleVal = environment->Get(moduleName);
-    if (moduleVal && std::holds_alternative<HavelObject>(*moduleVal)) {
-      exports = std::get<HavelObject>(*moduleVal);
+    if (moduleVal && moduleVal->isObject()) {
+      exports = moduleVal->asObject();
     } else if (!moduleVal) {
       // Load from file
       std::ifstream file(path);
@@ -996,12 +999,12 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
       }
 
       HavelValue exportedValue = unwrap(moduleResult);
-      if (!std::holds_alternative<HavelObject>(exportedValue)) {
+      if (!exportedValue.isObject()) {
         lastResult = HavelRuntimeError(
             "Module must return an object of exports: " + path);
         return;
       }
-      exports = std::get<HavelObject>(exportedValue);
+      exports = exportedValue.asObject();
     } else {
       lastResult =
           HavelRuntimeError("Built-in module not found: " + moduleName);
@@ -1052,12 +1055,12 @@ void Interpreter::visitUseStatement(const ast::UseStatement &node) {
     }
 
     // Check if it's an object (module)
-    if (!std::holds_alternative<HavelObject>(*moduleVal)) {
+    if (!moduleVal->isObject()) {
       lastResult = HavelRuntimeError("Not a module/object: " + moduleName);
       return;
     }
 
-    auto moduleObj = std::get<HavelObject>(*moduleVal);
+    auto moduleObj = moduleVal->asObject();
     if (!moduleObj) {
       lastResult = HavelRuntimeError("Module is null: " + moduleName);
       return;
@@ -1081,12 +1084,12 @@ void Interpreter::visitWithStatement(const ast::WithStatement &node) {
   }
 
   // Check if it's an object
-  if (!std::holds_alternative<HavelObject>(*objectVal)) {
+  if (!objectVal->isObject()) {
     lastResult = HavelRuntimeError("Not an object: " + node.objectName);
     return;
   }
 
-  auto withObject = std::get<HavelObject>(*objectVal);
+  auto withObject = objectVal->asObject();
   if (!withObject) {
     lastResult = HavelRuntimeError("Object is null: " + node.objectName);
     return;
@@ -1258,20 +1261,20 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock &node) {
       std::string strValue = ValueToString(value);
 
       // Handle different value types appropriately
-      if (std::holds_alternative<bool>(value)) {
-        config.Set(configKey, std::get<bool>(value) ? "true" : "false");
-      } else if (std::holds_alternative<int>(value)) {
-        config.Set(configKey, std::get<int>(value));
-      } else if (std::holds_alternative<double>(value)) {
-        config.Set(configKey, std::get<double>(value));
+      if (value.isBool()) {
+        config.Set(configKey, value.get<bool>() ? "true" : "false");
+      } else if (value.isInt()) {
+        config.Set(configKey, value.get<int>());
+      } else if (value.isDouble()) {
+        config.Set(configKey, value.get<double>());
       } else {
         config.Set(configKey, strValue);
       }
     }
 
     // Handle defaults object
-    if (key == "defaults" && std::holds_alternative<HavelObject>(value)) {
-      auto &defaults = std::get<HavelObject>(value);
+    if (key == "defaults" && value.isObject()) {
+      auto defaults = value.asObject();
       if (defaults)
         for (const auto &[defaultKey, defaultValue] : *defaults) {
           std::string configKey = "Havel." + defaultKey;
@@ -1323,12 +1326,12 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {
       std::string configKey = it->second;
 
       // Convert value to appropriate type
-      if (std::holds_alternative<bool>(value)) {
-        config.Set(configKey, std::get<bool>(value) ? "true" : "false");
-      } else if (std::holds_alternative<int>(value)) {
-        config.Set(configKey, std::get<int>(value));
-      } else if (std::holds_alternative<double>(value)) {
-        config.Set(configKey, std::get<double>(value));
+      if (value.isBool()) {
+        config.Set(configKey, value.get<bool>() ? "true" : "false");
+      } else if (value.isInt()) {
+        config.Set(configKey, value.get<int>());
+      } else if (value.isDouble()) {
+        config.Set(configKey, value.get<double>());
       } else {
         config.Set(configKey, ValueToString(value));
       }

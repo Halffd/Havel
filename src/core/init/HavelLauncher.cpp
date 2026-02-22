@@ -231,19 +231,16 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   }
 
   // Print result if any
-  if (!std::holds_alternative<std::nullptr_t>(result)) {
-    auto* value = std::get_if<havel::HavelValue>(&result);
-    if (value) {
-      // Print value based on type
-      if (auto* s = std::get_if<std::string>(value)) {
-        std::cout << *s << std::endl;
-      } else if (auto* n = std::get_if<double>(value)) {
-        std::cout << *n << std::endl;
-      } else if (auto* n = std::get_if<int>(value)) {
-        std::cout << *n << std::endl;
-      } else if (auto* b = std::get_if<bool>(value)) {
-        std::cout << (*b ? "true" : "false") << std::endl;
-      }
+  if (auto* value = std::get_if<havel::HavelValue>(&result)) {
+    // Print value based on type
+    if (value->holds_alternative<std::string>()) {
+      std::cout << value->get<std::string>() << std::endl;
+    } else if (value->holds_alternative<double>()) {
+      std::cout << value->get<double>() << std::endl;
+    } else if (value->holds_alternative<int>()) {
+      std::cout << value->get<int>() << std::endl;
+    } else if (value->holds_alternative<bool>()) {
+      std::cout << (value->get<bool>() ? "true" : "false") << std::endl;
     }
   }
 
@@ -371,7 +368,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
           if (std::holds_alternative<havel::HavelValue>(result)) {
             auto val = std::get<havel::HavelValue>(result);
-            if (!std::holds_alternative<std::nullptr_t>(val)) {
+            if (!val.holds_alternative<std::nullptr_t>()) {
               std::cout << "=> " << havel::Interpreter::ValueToString(val)
                         << "\n";
             }
@@ -525,7 +522,7 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
 
         if (std::holds_alternative<havel::HavelValue>(result)) {
           auto val = std::get<havel::HavelValue>(result);
-          if (!std::holds_alternative<std::nullptr_t>(val)) {
+          if (!val.holds_alternative<std::nullptr_t>()) {
             std::cout << "=> " << havel::Interpreter::ValueToString(val)
                       << "\n";
           }

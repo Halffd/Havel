@@ -46,9 +46,6 @@ public:
 // Forward declare types
 struct HavelValue;
 struct HavelFunction;
-struct ReturnValue;
-struct BreakValue;
-struct ContinueValue;
 
 // Recursive types now use shared_ptr for reference semantics
 using HavelArray = std::shared_ptr<std::vector<HavelValue>>;
@@ -74,6 +71,15 @@ struct HavelSet {
       : elements(std::move(elems)) {}
 };
 
+// Return/break/continue value wrappers (must be defined BEFORE HavelResult)
+struct ReturnValue {
+  std::shared_ptr<HavelValue> value;
+};
+
+struct BreakValue {};
+
+struct ContinueValue {};
+
 // Result type (declare BEFORE BuiltinFunction)
 using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue,
                                  BreakValue, ContinueValue>;
@@ -97,72 +103,80 @@ using HavelValueBase =
 
 /**
  * HavelValue with optional type annotation for gradual typing
- * 
+ *
  * Types are metadata only - runtime representation stays dynamic (variant-based).
  * Type checking occurs based on TypeMode:
  * - None: ignore types entirely
  * - Warn: print warnings on mismatch
  * - Strict: runtime error on mismatch
  */
-struct HavelValue : HavelValueBase {
-  using HavelValueBase::HavelValueBase;
+struct HavelValue {
+  // The actual value (variant-based)
+  HavelValueBase data;
   
   // Optional type annotation for gradual typing
-  // If nullopt → untyped/dynamic value
-  // If has value → type-checked based on TypeMode
   std::optional<std::shared_ptr<HavelType>> annotatedType;
-  
+
   // Default constructor
-  HavelValue() : HavelValueBase(nullptr) {}
-  
+  HavelValue() : data(nullptr), annotatedType(std::nullopt) {}
+
   // Copy constructor preserves type annotation
-  HavelValue(const HavelValue& other) 
-    : HavelValueBase(static_cast<const HavelValueBase&>(other)),
-      annotatedType(other.annotatedType) {}
-  
-  // Move constructor preserves type annotation  
+  HavelValue(const HavelValue& other)
+    : data(other.data), annotatedType(other.annotatedType) {}
+
+  // Move constructor preserves type annotation
   HavelValue(HavelValue&& other) noexcept
-    : HavelValueBase(static_cast<HavelValueBase&&>(other)),
-      annotatedType(std::move(other.annotatedType)) {}
-  
-  // Assignment preserves type annotation of target
+    : data(std::move(other.data)), annotatedType(std::move(other.annotatedType)) {}
+
+  // Assignment preserves type annotation
   HavelValue& operator=(const HavelValue& other) {
-    HavelValueBase::operator=(static_cast<const HavelValueBase&>(other));
+    data = other.data;
     annotatedType = other.annotatedType;
     return *this;
   }
-  
-  // Construct from base variant (no type annotation)
-  HavelValue(HavelValueBase&& base) : HavelValueBase(std::move(base)) {}
-  HavelValue(const HavelValueBase& base) : HavelValueBase(base) {}
-  
+
+  // Construct from base variant
+  HavelValue(HavelValueBase&& base) : data(std::move(base)), annotatedType(std::nullopt) {}
+  HavelValue(const HavelValueBase& base) : data(base), annotatedType(std::nullopt) {}
+
   // Convenience constructors with optional type
   HavelValue(std::nullptr_t, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(nullptr), annotatedType(type) {}
+    : data(nullptr), annotatedType(type) {}
   HavelValue(bool b, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(b), annotatedType(type) {}
+    : data(b), annotatedType(type) {}
   HavelValue(int i, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(i), annotatedType(type) {}
+    : data(i), annotatedType(type) {}
   HavelValue(double d, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(d), annotatedType(type) {}
+    : data(d), annotatedType(type) {}
   HavelValue(const std::string& s, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(s), annotatedType(type) {}
+    : data(s), annotatedType(type) {}
   HavelValue(HavelArray arr, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(std::move(arr)), annotatedType(type) {}
+    : data(std::move(arr)), annotatedType(type) {}
   HavelValue(HavelObject obj, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : HavelValueBase(std::move(obj)), annotatedType(type) {}
+    : data(std::move(obj)), annotatedType(type) {}
+  HavelValue(HavelSet set, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : data(std::move(set)), annotatedType(type) {}
+  HavelValue(std::shared_ptr<HavelFunction> func, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : data(std::move(func)), annotatedType(type) {}
+  HavelValue(BuiltinFunction func, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : data(std::move(func)), annotatedType(type) {}
+
+  // Accessors for variant operations
+  template<typename T>
+  bool holds_alternative() const { return std::holds_alternative<T>(data); }
+  
+  template<typename T>
+  const T* get_if() const { return std::get_if<T>(&data); }
+  
+  template<typename T>
+  T* get_if() { return std::get_if<T>(&data); }
+  
+  template<typename T>
+  const T& get() const { return std::get<T>(data); }
+  
+  template<typename T>
+  T& get() { return std::get<T>(data); }
 };
-
-// Return value wrapper
-struct ReturnValue {
-  HavelValue value;
-};
-
-// Break value wrapper
-struct BreakValue {};
-
-// Continue value wrapper
-struct ContinueValue {};
 
 // Cooperative async scheduler
 class AsyncScheduler {

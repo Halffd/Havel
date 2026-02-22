@@ -157,7 +157,7 @@ void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
     return;
 
   // Use EventListener's batched write if available
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     for (const auto &ev : events) {
       eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
     }
@@ -381,15 +381,9 @@ IO::IO() {
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);
 
-  // Check if we should use the new EventListener
-  useNewEventListener =
-      Configs::Get().Get<bool>("IO.UseNewEventListener", false);
-
 #ifdef __linux__
   if (display) {
     UpdateNumLockMask();
-
-    if (useNewEventListener) {
       // Use new unified EventListener
       info("Using new unified EventListener");
 
@@ -459,9 +453,6 @@ IO::IO() {
         globalEvdev = false;
         error("No input devices found for EventListener");
       }
-    } else {
-      error("EventListener disabled - no input handling available");
-    }
 
     // Debug output - show what we detected
     if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
@@ -1005,7 +996,7 @@ void IO::removeSpecialCharacters(str &keyName) {
 }
 bool IO::EmitClick(int btnCode, int action) {
   // Use EventListener's uinput for all mouse events
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     // Send events through EventListener
     switch (action) {
     case 0: // Release
@@ -1104,7 +1095,7 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
 }
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   // Use EventListener's uinput if available
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     // Apply speed and acceleration (but NO sensitivity scaling)
     if (speed <= 0)
       speed = 1;
@@ -1515,7 +1506,7 @@ void IO::Send(cstr keys) {
       }
       if (code != -1) {
         // Use EventListener's uinput if available, otherwise use old method
-        if (eventListener && useNewEventListener) {
+        if (eventListener) {
           eventListener->SendUinputEvent(EV_KEY, code, down ? 1 : 0);
         } else {
           SendUInput(code, down); // Fallback to old method
@@ -2182,7 +2173,7 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
       evdevHotkeys.insert(id);
 
     // Register with EventListener if using it
-    if (useNewEventListener && eventListener && hotkey.evdev) {
+    if (eventListener && hotkey.evdev) {
       eventListener->RegisterHotkey(id, hotkey);
     }
   }
@@ -2327,7 +2318,7 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       evdevHotkeys.insert(id);
 
     // Register with EventListener if using it
-    if (useNewEventListener && eventListener && hotkey.evdev) {
+    if (eventListener && hotkey.evdev) {
       eventListener->RegisterHotkey(id, hotkey);
     }
   }
@@ -2620,7 +2611,7 @@ int IO::ParseModifiers(str str) {
 }
 bool IO::GetKeyState(const std::string &keyName) {
   // Use EventListener if enabled
-  if (useNewEventListener && eventListener) {
+  if (eventListener) {
     int keycode = KeyMap::FromString(keyName);
     if (keycode != 0) {
       return eventListener->GetKeyState(keycode);
@@ -2648,7 +2639,7 @@ bool IO::GetKeyState(const std::string &keyName) {
 
 bool IO::GetKeyState(int keycode) {
   // Use EventListener if enabled
-  if (useNewEventListener && eventListener) {
+  if (eventListener) {
     return eventListener->GetKeyState(keycode);
   }
 
@@ -3097,7 +3088,7 @@ void IO::Remap(const std::string &key1, const std::string &key2) {
     debug("Remapped evdev keys: {} ({}) <-> {} ({})", key1, code1, key2, code2);
 
     // Also add to EventListener if enabled
-    if (useNewEventListener && eventListener) {
+    if (eventListener) {
       eventListener->AddKeyRemap(code1, code2);
       eventListener->AddKeyRemap(code2, code1);
     }
@@ -4021,7 +4012,7 @@ bool IO::handleMouseRelative(const input_event &ev) {
           ev.value, mouseSensitivity, scaledInt);
 
     // Forward the scaled event using EventListener
-    if (eventListener && useNewEventListener) {
+    if (eventListener) {
       eventListener->SendUinputEvent(scaledEvent.type, scaledEvent.code,
                                      scaledEvent.value);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
@@ -4238,7 +4229,7 @@ void IO::MouseClick(int button) {
 
 bool IO::MouseDown(int button) {
   // Use EventListener's batched uinput
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     // Single combined write: press + sync
     eventListener->SendUinputEvent(EV_KEY, button, 1);     // Press
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
@@ -4250,7 +4241,7 @@ bool IO::MouseDown(int button) {
 
 bool IO::MouseUp(int button) {
   // Use EventListener's batched uinput
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     // Single combined write: release + sync
     eventListener->SendUinputEvent(EV_KEY, button, 0);     // Release
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
@@ -4262,7 +4253,7 @@ bool IO::MouseUp(int button) {
 
 void IO::MouseWheel(int amount) {
   // Use EventListener's batched uinput
-  if (eventListener && useNewEventListener) {
+  if (eventListener) {
     int wheelValue = amount > 0 ? 1 : -1;
     eventListener->SendUinputEvent(EV_REL, REL_WHEEL, wheelValue);
     eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync

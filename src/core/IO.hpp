@@ -215,7 +215,6 @@ class IO {
 
   // New unified event listener
   std::unique_ptr<EventListener> eventListener;
-  bool useNewEventListener = false;
   std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
 
 public:
@@ -230,7 +229,6 @@ public:
 
   // Public access methods for EventListener
   EventListener *GetEventListener() { return eventListener.get(); }
-  bool IsUsingNewEventListener() const { return useNewEventListener; }
   std::vector<std::string> GetInputDevices(); // We'll implement this method
   void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
     this->hotkeyManager = hotkeyManager;

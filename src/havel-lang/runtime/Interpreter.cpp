@@ -590,7 +590,8 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   switch (node.operator_) {
   case ast::BinaryOperator::Add:
     if (left.isString() || right.isString()) {
-      lastResult = ValueToString(left) + ValueToString(right);
+      std::string result = ValueToString(left) + ValueToString(right);
+      lastResult = HavelValue(result);
     } else {
       lastResult = ValueToNumber(left) + ValueToNumber(right);
     }

@@ -30,14 +30,17 @@
   - [ ] `validateStructConstruction()` - Validate struct literal syntax
   - [ ] `validateEnumConstruction()` - Validate enum variant construction
 
-### Interpreter Integration (TODO)
-- [ ] Implement TypeChecker::checkCompatibility() method
-- [ ] Implement TypeChecker::validateStructFields() method
+### Interpreter Integration (IN PROGRESS)
+- [x] Implement TypeChecker::checkCompatibility() method (declared, implementation pending)
+- [x] Implement TypeChecker::validateStructFields() method (declared, implementation pending)
 - [ ] Update visitMemberExpression() for struct field access
 - [ ] Implement struct construction with type validation
 - [ ] Implement enum construction with variant validation
 - [ ] Add type coercion rules
 - [ ] Add error messages for type mismatches
+- [ ] Fix all Interpreter.cpp locations to use HavelValue::data member
+- [ ] Fix Engine.cpp for ReturnValue::value shared_ptr
+- [ ] Update ValueToString and other variant operations
 
 ### Testing (TODO)
 - [ ] Create test scripts for type system

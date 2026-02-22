@@ -1812,28 +1812,36 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
   // Execute try body
   auto tryResult = Evaluate(*node.tryBody);
 
-  // Execute finally block if present (always runs)
-  if (node.finallyBlock) {
-    auto finallyResult = Evaluate(*node.finallyBlock);
-    if (isError(finallyResult)) {
-      lastResult = finallyResult;
-      return;
-    }
-  }
-
   // Check if try body threw an error
   if (auto *err = std::get_if<HavelRuntimeError>(&tryResult)) {
     // If we have a catch block, execute it
     if (node.catchBody) {
-      // If catch variable is specified, create it in current scope
+      // Create new environment for catch block with catch variable
+      auto catchEnv = std::make_shared<Environment>(environment);
+      auto originalEnv = environment;
+      environment = catchEnv;
+      
+      // If catch variable is specified, create it in catch scope
       if (node.catchVariable) {
-        // Store the error value in the catch variable
-        // For now, we'll store the error message as string
+        // Store the error message as string in the catch variable
         std::string errorMsg = err->what();
         environment->Define(node.catchVariable->symbol, HavelValue(errorMsg));
       }
 
       auto catchResult = Evaluate(*node.catchBody);
+      
+      // Restore original environment
+      environment = originalEnv;
+      
+      // Execute finally block if present (always runs, even after catch)
+      if (node.finallyBlock) {
+        auto finallyResult = Evaluate(*node.finallyBlock);
+        if (isError(finallyResult)) {
+          lastResult = finallyResult;
+          return;
+        }
+      }
+      
       if (isError(catchResult)) {
         lastResult = catchResult;
         return;
@@ -1842,12 +1850,30 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
       return;
     }
 
-    // No catch handler, re-throw the original error
+    // No catch handler, execute finally if present
+    if (node.finallyBlock) {
+      auto finallyResult = Evaluate(*node.finallyBlock);
+      if (isError(finallyResult)) {
+        lastResult = finallyResult;
+        return;
+      }
+    }
+    
+    // Re-throw the original error
     lastResult = *err;
     return;
   }
 
-  // Try body succeeded, return its result
+  // Try body succeeded, execute finally if present
+  if (node.finallyBlock) {
+    auto finallyResult = Evaluate(*node.finallyBlock);
+    if (isError(finallyResult)) {
+      lastResult = finallyResult;
+      return;
+    }
+  }
+
+  // Return try body result
   lastResult = tryResult;
 }
 
@@ -1863,10 +1889,15 @@ void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
     return;
   }
 
-  // Store the thrown value as a runtime error
-  // This preserves the original value type instead of converting to string
-  lastResult =
-      HavelRuntimeError("Thrown: " + ValueToString(unwrap(valueResult)));
+  HavelValue thrownValue = unwrap(valueResult);
+  
+  // Store the thrown value - preserve the original type
+  // If it's a string, use it directly; otherwise convert to string
+  if (thrownValue.isString()) {
+    lastResult = HavelRuntimeError(thrownValue.asString());
+  } else {
+    lastResult = HavelRuntimeError(ValueToString(thrownValue));
+  }
 }
 
 // Type system - struct/enum support (stub implementations for now)

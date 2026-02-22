@@ -13,6 +13,8 @@ Havel is a declarative automation scripting language designed for hotkey managem
 - [Ergonomic Syntax Features](#ergonomic-syntax-features)
 - [Conditional Hotkeys](#conditional-hotkeys)
 - [Built-in Help](#built-in-help)
+- [Type System](#type-system-gradual-typing)
+- [CLI Usage](#cli-usage)
 - [Examples](#examples)
 
 ----
@@ -993,3 +995,140 @@ havel run hello.hv
 🏰 Built with the strength of Havel, the reliability of steel, and the precision of gears.
 
 "In automation, as in battle, preparation and reliability triumph over complexity."
+
+---
+
+## Type System (Gradual Typing)
+
+Havel supports optional type annotations for better code organization and IDE support. Types are metadata-only by default - runtime validation is optional based on TypeMode.
+
+### Type Modes
+```havel
+// Set type checking mode
+TypeChecker.setMode("none")   // Ignore types (default)
+TypeChecker.setMode("warn")   // Print warnings on mismatch
+TypeChecker.setMode("strict") // Runtime error on mismatch
+```
+
+### Struct Definitions
+```havel
+// Typed struct
+struct Vec2 {
+    x: Num
+    y: Num
+}
+
+struct Player {
+    pos: Vec2
+    health: Num
+    name: Str
+}
+
+// Untyped struct (dynamic fields)
+struct Loose {
+    x
+    y
+}
+```
+
+### Enum Definitions
+```havel
+// Simple enum
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+// Enum with payloads (sum types)
+enum Result {
+    Ok(value)
+    Err(message)
+}
+```
+
+### Type Annotations
+```havel
+// Typed variable
+let v: Vec2 = { x: 10, y: 20 }
+
+// Untyped variable (dynamic)
+let p = { pos: v, health: 100, name: "arc" }
+
+// Function with type annotations
+let add: Func(Num, Num) -> Num = fn(a, b) -> a + b
+```
+
+### Struct Construction
+```havel
+// Using struct literal
+let v1 = Vec2 { x: 10, y: 20 }
+
+// Using object literal (validated against struct type)
+let v2: Vec2 = { x: 30, y: 40 }
+
+// Field access
+print(v1.x)  // 10
+v1.y++       // v1.y is now 21
+```
+
+### Enum Construction
+```havel
+// Simple enum
+let c = Color.Red
+
+// Enum with payload
+let r = Result.Ok(42)
+let e = Result.Err("Something went wrong")
+
+// Pattern matching (future)
+match r {
+    Ok(v) => print("Success: " + v)
+    Err(e) => print("Error: " + e)
+}
+```
+
+---
+
+## CLI Usage
+
+### Running Scripts
+
+```bash
+# Full mode (with IO, hotkeys, GUI)
+havel script.hv
+
+# Pure mode (no IO/hotkeys - for testing)
+havel --run script.hv
+havel run script.hv
+
+# REPL mode
+havel --repl
+havel -r
+
+# GUI-only mode (no hotkeys)
+havel --gui
+
+# Show help
+havel --help
+havel -h
+```
+
+### Pure Mode (--run)
+
+Pure mode executes scripts without IO, hotkeys, display, or GUI. Useful for:
+
+- Testing scripts that auto-exit
+- Running algorithms (fibonacci, sorting, etc.)
+- Type system testing
+- Benchmarking
+
+```bash
+# Run a test script
+havel --run scripts/test_types.hv
+
+# Run fibonacci
+havel --run scripts/fibonacci.hv
+```
+
+---

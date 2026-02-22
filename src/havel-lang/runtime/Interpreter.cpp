@@ -29,6 +29,7 @@
 #include <filesystem>
 #include <iostream>
 #include <random>
+#include <regex>
 #include <signal.h>
 #include <sstream>
 #include <sys/resource.h>
@@ -2121,6 +2122,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeIOBuiltins();
   InitializeBrightnessBuiltins();
   InitializeMathBuiltins();
+  InitializeRegexBuiltins();
   InitializeHelpBuiltin();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();
@@ -5636,6 +5638,288 @@ void Interpreter::InitializeMathBuiltins() {
   environment->Define("math", HavelValue(mathObj));
 }
 
+void Interpreter::InitializeRegexBuiltins() {
+  auto regexObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // regex.match(string, pattern) - returns true if pattern matches anywhere in string
+  (*regexObj)["match"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("regex.match() requires string and pattern");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+
+        try {
+          std::regex re(pattern);
+          bool found = std::regex_search(str, re);
+          return HavelValue(found);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.test(string, pattern) - alias for match
+  (*regexObj)["test"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("regex.test() requires string and pattern");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+
+        try {
+          std::regex re(pattern);
+          bool found = std::regex_search(str, re);
+          return HavelValue(found);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.search(string, pattern) - returns first match object or null
+  (*regexObj)["search"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("regex.search() requires string and pattern");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+
+        try {
+          std::regex re(pattern);
+          std::smatch match;
+          if (std::regex_search(str, match, re)) {
+            auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*matchObj)["match"] = HavelValue(match.str());
+            (*matchObj)["index"] = HavelValue(static_cast<int>(match.position()));
+            (*matchObj)["input"] = HavelValue(str);
+            
+            // Add groups array
+            auto groups = std::make_shared<std::vector<HavelValue>>();
+            for (size_t i = 0; i < match.size(); ++i) {
+              groups->push_back(HavelValue(match.str(i)));
+            }
+            (*matchObj)["groups"] = HavelValue(groups);
+            
+            return HavelValue(matchObj);
+          }
+          return HavelValue(nullptr);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.findall(string, pattern) - returns array of all matches
+  (*regexObj)["findall"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("regex.findall() requires string and pattern");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+
+        try {
+          std::regex re(pattern);
+          auto matches = std::make_shared<std::vector<HavelValue>>();
+          
+          auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+          auto end = std::sregex_iterator();
+          
+          for (auto it = begin; it != end; ++it) {
+            const std::smatch& match = *it;
+            if (match.size() > 1) {
+              // If there are capture groups, return array of groups
+              auto groups = std::make_shared<std::vector<HavelValue>>();
+              for (size_t i = 1; i < match.size(); ++i) {
+                groups->push_back(HavelValue(match.str(i)));
+              }
+              matches->push_back(HavelValue(groups));
+            } else {
+              // Otherwise return the full match
+              matches->push_back(HavelValue(match.str()));
+            }
+          }
+          
+          return HavelValue(matches);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.replace(string, pattern, replacement) - replaces all occurrences
+  (*regexObj)["replace"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("regex.replace() requires string, pattern, and replacement");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+        std::string replacement = ValueToString(args[2]);
+
+        try {
+          std::regex re(pattern);
+          std::string result = std::regex_replace(str, re, replacement);
+          return HavelValue(result);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.split(string, pattern) - splits string by pattern
+  (*regexObj)["split"] = BuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("regex.split() requires string and pattern");
+
+        std::string str = ValueToString(args[0]);
+        std::string pattern = ValueToString(args[1]);
+
+        try {
+          std::regex re(pattern);
+          auto parts = std::make_shared<std::vector<HavelValue>>();
+          
+          auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+          auto end = std::sregex_iterator();
+          
+          size_t lastPos = 0;
+          for (auto it = begin; it != end; ++it) {
+            const std::smatch& match = *it;
+            if (match.position() > static_cast<std::ptrdiff_t>(lastPos)) {
+              parts->push_back(HavelValue(str.substr(lastPos, match.position() - lastPos)));
+            }
+            lastPos = match.position() + match.length();
+          }
+          if (lastPos < str.length()) {
+            parts->push_back(HavelValue(str.substr(lastPos)));
+          }
+          
+          return HavelValue(parts);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  // regex.compile(pattern) - returns a compiled regex object
+  (*regexObj)["compile"] = BuiltinFunction(
+      [ ](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("regex.compile() requires pattern");
+
+        std::string pattern = ValueToString(args[0]);
+
+        try {
+          std::regex re(pattern);
+          auto regexInstance = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          
+          // Store the pattern
+          (*regexInstance)["pattern"] = HavelValue(pattern);
+          
+          // Match method for compiled regex
+          (*regexInstance)["match"] = BuiltinFunction(
+              [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
+                if (args.empty())
+                  return HavelRuntimeError("regex.match() requires string");
+                
+                std::string str = ValueToString(args[0]);
+                bool found = std::regex_search(str, re);
+                return HavelValue(found);
+              });
+          
+          // Search method for compiled regex
+          (*regexInstance)["search"] = BuiltinFunction(
+              [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
+                if (args.empty())
+                  return HavelRuntimeError("regex.search() requires string");
+                
+                std::string str = ValueToString(args[0]);
+                std::smatch match;
+                if (std::regex_search(str, match, re)) {
+                  auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+                  (*matchObj)["match"] = HavelValue(match.str());
+                  (*matchObj)["index"] = HavelValue(static_cast<int>(match.position()));
+                  (*matchObj)["input"] = HavelValue(str);
+                  return HavelValue(matchObj);
+                }
+                return HavelValue(nullptr);
+              });
+          
+          // Findall method for compiled regex
+          (*regexInstance)["findall"] = BuiltinFunction(
+              [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
+                if (args.empty())
+                  return HavelRuntimeError("regex.findall() requires string");
+                
+                std::string str = ValueToString(args[0]);
+                auto matches = std::make_shared<std::vector<HavelValue>>();
+                
+                auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+                auto end = std::sregex_iterator();
+                
+                for (auto it = begin; it != end; ++it) {
+                  const std::smatch& match = *it;
+                  if (match.size() > 1) {
+                    auto groups = std::make_shared<std::vector<HavelValue>>();
+                    for (size_t i = 1; i < match.size(); ++i) {
+                      groups->push_back(HavelValue(match.str(i)));
+                    }
+                    matches->push_back(HavelValue(groups));
+                  } else {
+                    matches->push_back(HavelValue(match.str()));
+                  }
+                }
+                
+                return HavelValue(matches);
+              });
+          
+          // Replace method for compiled regex
+          (*regexInstance)["replace"] = BuiltinFunction(
+              [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
+                if (args.size() < 2)
+                  return HavelRuntimeError("regex.replace() requires string and replacement");
+                
+                std::string str = ValueToString(args[0]);
+                std::string replacement = ValueToString(args[1]);
+                std::string result = std::regex_replace(str, re, replacement);
+                return HavelValue(result);
+              });
+          
+          // Split method for compiled regex
+          (*regexInstance)["split"] = BuiltinFunction(
+              [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
+                if (args.empty())
+                  return HavelRuntimeError("regex.split() requires string");
+                
+                std::string str = ValueToString(args[0]);
+                auto parts = std::make_shared<std::vector<HavelValue>>();
+                
+                auto begin = std::sregex_iterator(str.begin(), str.end(), re);
+                auto end = std::sregex_iterator();
+                
+                size_t lastPos = 0;
+                for (auto it = begin; it != end; ++it) {
+                  const std::smatch& match = *it;
+                  if (match.position() > static_cast<std::ptrdiff_t>(lastPos)) {
+                    parts->push_back(HavelValue(str.substr(lastPos, match.position() - lastPos)));
+                  }
+                  lastPos = match.position() + match.length();
+                }
+                if (lastPos < str.length()) {
+                  parts->push_back(HavelValue(str.substr(lastPos)));
+                }
+                
+                return HavelValue(parts);
+              });
+          
+          return HavelValue(regexInstance);
+        } catch (const std::regex_error &e) {
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+        }
+      });
+
+  environment->Define("regex", HavelValue(regexObj));
+}
+
 void Interpreter::InitializeBrightnessBuiltins() {
   // Brightness get
   environment->Define(
@@ -6970,77 +7254,77 @@ void Interpreter::InitializeGUIBuiltins() {
   // === MAPMANAGER CORE MODULE ===
   // MapManager for programmatic profile/mapping management
   static std::unique_ptr<MapManager> coreMapManager;
-  
+
   environment->Define(
       "mapmanager.init",
-      BuiltinFunction([this, &coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
-        if (!coreMapManager && io) {
+        if (!coreMapManager) {
           coreMapManager = std::make_unique<MapManager>(&io);
         }
         return HavelValue(coreMapManager != nullptr);
       }));
-  
+
   environment->Define(
       "mapmanager.addProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized. Call mapmanager.init() first");
         if (args.size() < 2)
           return HavelRuntimeError("mapmanager.addProfile() requires (id, name)");
-        
+
         std::string id = ValueToString(args[0]);
         std::string name = ValueToString(args[1]);
         std::string desc = args.size() > 2 ? ValueToString(args[2]) : "";
-        
+
         Profile profile;
         profile.id = id;
         profile.name = name;
         profile.description = desc;
-        
+
         coreMapManager->AddProfile(profile);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.removeProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
           return HavelRuntimeError("mapmanager.removeProfile() requires profileId");
-        
+
         std::string id = ValueToString(args[0]);
         coreMapManager->RemoveProfile(id);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.setActiveProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
           return HavelRuntimeError("mapmanager.setActiveProfile() requires profileId");
-        
+
         std::string id = ValueToString(args[0]);
         coreMapManager->SetActiveProfile(id);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.getActiveProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
-        
+
         return HavelValue(coreMapManager->GetActiveProfileId());
       }));
-  
+
   environment->Define(
       "mapmanager.getProfileIds",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         auto arr = std::make_shared<std::vector<HavelValue>>();
         if (coreMapManager) {
@@ -7051,19 +7335,19 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   environment->Define(
       "mapmanager.addMapping",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 3)
           return HavelRuntimeError("mapmanager.addMapping() requires (profileId, sourceKey, targetKey)");
-        
+
         std::string profileId = ValueToString(args[0]);
         std::string sourceKey = ValueToString(args[1]);
         std::string targetKey = ValueToString(args[2]);
-        
+
         Mapping mapping;
         mapping.id = sourceKey + "_to_" + targetKey;
         mapping.name = sourceKey + " -> " + targetKey;
@@ -7071,88 +7355,88 @@ void Interpreter::InitializeGUIBuiltins() {
         mapping.targetKeys.push_back(targetKey);
         mapping.type = MappingType::KeyToKey;
         mapping.actionType = ActionType::Press;
-        
+
         coreMapManager->AddMapping(profileId, mapping);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.removeMapping",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 2)
           return HavelRuntimeError("mapmanager.removeMapping() requires (profileId, mappingId)");
-        
+
         std::string profileId = ValueToString(args[0]);
         std::string mappingId = ValueToString(args[1]);
         coreMapManager->RemoveMapping(profileId, mappingId);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.enableProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 2)
           return HavelRuntimeError("mapmanager.enableProfile() requires (profileId, enable)");
-        
+
         std::string profileId = ValueToString(args[0]);
         bool enable = ValueToBool(args[1]);
         coreMapManager->EnableProfile(profileId, enable);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.nextProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         if (coreMapManager) {
           coreMapManager->NextProfile();
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "mapmanager.previousProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         if (coreMapManager) {
           coreMapManager->PreviousProfile();
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "mapmanager.saveProfiles",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
           return HavelRuntimeError("mapmanager.saveProfiles() requires filepath");
-        
+
         std::string path = ValueToString(args[0]);
         coreMapManager->SaveProfiles(path);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.loadProfiles",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
           return HavelRuntimeError("mapmanager.loadProfiles() requires filepath");
-        
+
         std::string path = ValueToString(args[0]);
         coreMapManager->LoadProfiles(path);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.clearAllMappings",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         if (coreMapManager) {
           coreMapManager->ClearAllMappings();

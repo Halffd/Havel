@@ -433,6 +433,7 @@ private:
   void InitializeIOBuiltins();
   void InitializeBrightnessBuiltins();
   void InitializeMathBuiltins();
+  void InitializeRegexBuiltins();
   void InitializeDebugBuiltins();
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();

@@ -124,7 +124,7 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
         } else
           return "unprintable";
       },
-      value.data);  // Use .data member for std::visit
+      value.data); // Use .data member for std::visit
 }
 
 std::string Interpreter::FormatValue(const HavelValue &value,
@@ -203,7 +203,7 @@ std::string Interpreter::FormatValue(const HavelValue &value,
 }
 
 bool Interpreter::ExecResultToBool(const HavelResult &result) {
-  if (auto* val = std::get_if<HavelValue>(&result)) {
+  if (auto *val = std::get_if<HavelValue>(&result)) {
     return ValueToBool(*val);
   }
   // For control flow types (return, break, continue) and errors, return false
@@ -227,7 +227,7 @@ bool Interpreter::ValueToBool(const HavelValue &value) {
         else
           return true; // Functions, objects, arrays are truthy
       },
-      value.data);  // Use .data member for std::visit
+      value.data); // Use .data member for std::visit
 }
 
 double Interpreter::ValueToNumber(const HavelValue &value) {
@@ -251,7 +251,7 @@ double Interpreter::ValueToNumber(const HavelValue &value) {
         }
         return 0.0;
       },
-      value.data);  // Use .data member for std::visit
+      value.data); // Use .data member for std::visit
 }
 
 // Constructor with Dependency Injection
@@ -273,10 +273,10 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)
 Interpreter::Interpreter(const std::vector<std::string> &cli_args)
-    : io(*static_cast<IO*>(nullptr)),  // Will not be used
-      windowManager(*static_cast<WindowManager*>(nullptr)),  // Will not be used
-      hotkeyManager(nullptr), brightnessManager(nullptr),
-      audioManager(nullptr), guiManager(nullptr), screenshotManager(nullptr),
+    : io(*static_cast<IO *>(nullptr)),                       // Will not be used
+      windowManager(*static_cast<WindowManager *>(nullptr)), // Will not be used
+      hotkeyManager(nullptr), brightnessManager(nullptr), audioManager(nullptr),
+      guiManager(nullptr), screenshotManager(nullptr),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
   info("Minimal Interpreter created (pure mode - no IO/hotkeys)");
   environment = std::make_shared<Environment>();
@@ -754,8 +754,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
 
   if (auto *builtin = callee.get_if<BuiltinFunction>()) {
     lastResult = (*builtin)(args);
-  } else if (auto *userFunc =
-                 callee.get_if<std::shared_ptr<HavelFunction>>()) {
+  } else if (auto *userFunc = callee.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
     if (args.size() != func->declaration->parameters.size()) {
       lastResult = HavelRuntimeError("Mismatched argument count for function " +
@@ -1367,8 +1366,8 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
 
     // If value is an object with class/title/ignore arrays, register with
     // condition system
-    if (std::holds_alternative<HavelObject>(value)) {
-      auto &modeConfig = std::get<HavelObject>(value);
+    if (value.isObject()) {
+      auto modeConfig = value.asObject();
 
       // Store mode configuration for condition checking
       // The mode config will be checked later when evaluating conditions
@@ -1421,11 +1420,12 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression &node) {
   HavelValue indexValue = unwrap(indexResult);
 
   // Handle array indexing
-  if (auto *arrayPtr = std::get_if<HavelArray>(&objectValue)) {
+  if (objectValue.isArray()) {
+    auto arrayPtr = objectValue.get_if<HavelArray>();
     // Convert index to integer
     int index = static_cast<int>(ValueToNumber(indexValue));
 
-    if (!*arrayPtr || index < 0 ||
+    if (!arrayPtr || !*arrayPtr || index < 0 ||
         index >= static_cast<int>((*arrayPtr)->size())) {
       lastResult = HavelRuntimeError("Array index out of bounds: " +
                                      std::to_string(index));
@@ -1437,10 +1437,11 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression &node) {
   }
 
   // Handle object property access
-  if (auto *objectPtr = std::get_if<HavelObject>(&objectValue)) {
+  if (objectValue.isObject()) {
+    auto objectPtr = objectValue.get_if<HavelObject>();
     std::string key = ValueToString(indexValue);
 
-    if (*objectPtr) {
+    if (objectPtr && *objectPtr) {
       auto it = (*objectPtr)->find(key);
       if (it != (*objectPtr)->end()) {
         lastResult = it->second;
@@ -1609,16 +1610,12 @@ void Interpreter::visitSwitchStatement(const ast::SwitchStatement &node) {
 
     // Check for match (using equality)
     bool matches = false;
-    if (std::holds_alternative<double>(switchValue) &&
-        std::holds_alternative<double>(testValue)) {
-      matches = (std::get<double>(switchValue) == std::get<double>(testValue));
-    } else if (std::holds_alternative<std::string>(switchValue) &&
-               std::holds_alternative<std::string>(testValue)) {
-      matches = (std::get<std::string>(switchValue) ==
-                 std::get<std::string>(testValue));
-    } else if (std::holds_alternative<bool>(switchValue) &&
-               std::holds_alternative<bool>(testValue)) {
-      matches = (std::get<bool>(switchValue) == std::get<bool>(testValue));
+    if (switchValue.isDouble() && testValue.isDouble()) {
+      matches = (switchValue.asNumber() == testValue.asNumber());
+    } else if (switchValue.isString() && testValue.isString()) {
+      matches = (switchValue.asString() == testValue.asString());
+    } else if (switchValue.isBool() && testValue.isBool()) {
+      matches = (switchValue.asBool() == testValue.asBool());
     }
 
     if (matches) {
@@ -1755,7 +1752,7 @@ void Interpreter::visitAssignmentExpression(
     HavelValue objectValue = unwrap(objectResult);
     HavelValue indexValue = unwrap(indexResult);
 
-    if (auto *arrayPtr = std::get_if<HavelArray>(&objectValue)) {
+    if (auto *arrayPtr = objectValue.get_if<HavelArray>()) {
       int idx = static_cast<int>(ValueToNumber(indexValue));
       if (!*arrayPtr || idx < 0 ||
           idx >= static_cast<int>((*arrayPtr)->size())) {
@@ -1766,7 +1763,7 @@ void Interpreter::visitAssignmentExpression(
       HavelValue newValue = applyCompound(op, (**arrayPtr)[idx], value);
       (**arrayPtr)[idx] = newValue;
       value = newValue;
-    } else if (auto *objectPtr = std::get_if<HavelObject>(&objectValue)) {
+    } else if (auto *objectPtr = objectValue.get_if<HavelObject>()) {
       std::string key = ValueToString(indexValue);
       if (!*objectPtr) {
         *objectPtr =
@@ -1887,9 +1884,9 @@ void Interpreter::visitForStatement(const ast::ForStatement &node) {
   this->environment = loopEnv;
 
   // Handle different types of iterables
-  if (std::holds_alternative<HavelArray>(iterableValue)) {
+  if (iterableValue.is<HavelArray>()) {
     // Array iteration
-    auto array = std::get<HavelArray>(iterableValue);
+    auto array = iterableValue.get<HavelArray>();
     if (!array) {
       lastResult = HavelRuntimeError("Cannot iterate over null array");
       this->environment = originalEnv;
@@ -1918,9 +1915,9 @@ void Interpreter::visitForStatement(const ast::ForStatement &node) {
         break;
       }
     }
-  } else if (std::holds_alternative<HavelObject>(iterableValue)) {
+  } else if (iterableValue.is<HavelObject>()) {
     // Object iteration
-    auto object = std::get<HavelObject>(iterableValue);
+    auto object = iterableValue.get<HavelObject>();
     if (!object) {
       lastResult = HavelRuntimeError("Cannot iterate over null object");
       this->environment = originalEnv;
@@ -2001,8 +1998,8 @@ void Interpreter::visitOnModeStatement(const ast::OnModeStatement &node) {
   auto currentModeOpt = environment->Get("__current_mode__");
   std::string currentMode = "default";
 
-  if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
-    currentMode = std::get<std::string>(*currentModeOpt);
+  if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
+    currentMode = (*currentModeOpt).get<std::string>();
   }
 
   // Check if we're entering the specified mode
@@ -2025,11 +2022,11 @@ void Interpreter::visitOffModeStatement(const ast::OffModeStatement &node) {
   std::string previousMode = "default";
   std::string currentMode = "default";
 
-  if (prevModeOpt && std::holds_alternative<std::string>(*prevModeOpt)) {
-    previousMode = std::get<std::string>(*prevModeOpt);
+  if (prevModeOpt && (*prevModeOpt).is<std::string>()) {
+    previousMode = (*prevModeOpt).get<std::string>();
   }
-  if (currentModeOpt && std::holds_alternative<std::string>(*currentModeOpt)) {
-    currentMode = std::get<std::string>(*currentModeOpt);
+  if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
+    currentMode = (*currentModeOpt).get<std::string>();
   }
 
   // Check if we're leaving the specified mode
@@ -2080,7 +2077,7 @@ void Interpreter::InitializeStandardLibrary() {
   BuiltinFunction lexerToggle =
       [this](const std::vector<HavelValue> &args) -> HavelValue {
     if (args.size() >= 1) {
-      if (auto b = std::get_if<bool>(&args[0])) {
+      if (auto b = args[0].get_if<bool>()) {
         this->debug.lexer = *b;
       }
     }
@@ -2091,7 +2088,7 @@ void Interpreter::InitializeStandardLibrary() {
   (*debugObj)["parser"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-          if (auto b = std::get_if<bool>(&args[0])) {
+          if (auto b = args[0].get_if<bool>()) {
             this->debug.parser = *b;
           }
         }
@@ -2101,7 +2098,7 @@ void Interpreter::InitializeStandardLibrary() {
   (*debugObj)["ast"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-          if (auto b = std::get_if<bool>(&args[0])) {
+          if (auto b = args[0].get_if<bool>()) {
             this->debug.ast = *b;
           }
         }
@@ -2111,7 +2108,7 @@ void Interpreter::InitializeStandardLibrary() {
   (*debugObj)["bytecode"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-          if (auto b = std::get_if<bool>(&args[0])) {
+          if (auto b = args[0].get_if<bool>()) {
             this->debug.bytecode = *b;
           }
         }
@@ -2121,7 +2118,7 @@ void Interpreter::InitializeStandardLibrary() {
   (*debugObj)["jit"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-          if (auto b = std::get_if<bool>(&args[0])) {
+          if (auto b = args[0].get_if<bool>()) {
             this->debug.jit = *b;
           }
         }
@@ -2275,18 +2272,18 @@ void Interpreter::InitializeStandardLibrary() {
         // Handle onTap parameter (can be lambda function or string)
         if (args.size() >= 2) {
           auto tapAction = args[1];
-          if (std::holds_alternative<BuiltinFunction>(tapAction)) {
-            auto func = std::get<BuiltinFunction>(tapAction);
-            onTap = [this, func]() {
-              auto result = func({});
+          if (tapAction.is<BuiltinFunction>()) {
+            auto fn = tapAction.get<BuiltinFunction>();
+            onTap = std::function<void()>([this, fn]() {
+              auto result = fn({});
               if (isError(result)) {
                 std::cerr << "Error in tap action: "
                           << std::get<HavelRuntimeError>(result).what()
                           << std::endl;
               }
-            };
-          } else if (std::holds_alternative<std::string>(tapAction)) {
-            std::string cmd = ValueToString(tapAction);
+            });
+          } else if (tapAction.is<std::string>()) {
+            std::string cmd = tapAction.asString();
             onTap = [this, cmd]() { io.Send(cmd); };
           }
         }
@@ -2294,10 +2291,10 @@ void Interpreter::InitializeStandardLibrary() {
         // Handle tapCondition parameter (string or lambda function)
         if (args.size() >= 3) {
           auto condition = args[2];
-          if (std::holds_alternative<std::string>(condition)) {
-            tapCondition = ValueToString(condition);
-          } else if (std::holds_alternative<BuiltinFunction>(condition)) {
-            auto func = std::get<BuiltinFunction>(condition);
+          if (condition.is<std::string>()) {
+            tapCondition = condition.asString();
+          } else if (condition.is<BuiltinFunction>()) {
+            auto func = condition.get<BuiltinFunction>();
             tapCondition = [this, func]() -> bool {
               auto result = func({});
               if (isError(result)) {
@@ -2314,8 +2311,8 @@ void Interpreter::InitializeStandardLibrary() {
         // Handle onCombo parameter (lambda function)
         if (args.size() >= 4) {
           auto comboAction = args[3];
-          if (std::holds_alternative<BuiltinFunction>(comboAction)) {
-            auto func = std::get<BuiltinFunction>(comboAction);
+          if (comboAction.is<BuiltinFunction>()) {
+            auto func = comboAction.get<BuiltinFunction>();
             onCombo = [this, func]() {
               auto result = func({});
               if (isError(result)) {
@@ -2442,10 +2439,10 @@ void Interpreter::InitializeSystemBuiltins() {
         for (int i = 0; i < count; ++i) {
           std::vector<HavelValue> fnArgs = {HavelValue(static_cast<double>(i))};
           HavelResult res;
-          if (auto *builtin = std::get_if<BuiltinFunction>(&fn)) {
+          if (auto *builtin = fn.get_if<BuiltinFunction>()) {
             res = (*builtin)(fnArgs);
           } else if (auto *userFunc =
-                         std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                         fn.get_if<std::shared_ptr<HavelFunction>>()) {
             auto &func = *userFunc;
             auto funcEnv = std::make_shared<Environment>(func->closure);
             for (size_t p = 0;
@@ -2491,9 +2488,8 @@ void Interpreter::InitializeSystemBuiltins() {
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         auto currentModeOpt = environment->Get("__current_mode__");
         std::string currentMode = "default";
-        if (currentModeOpt &&
-            std::holds_alternative<std::string>(*currentModeOpt)) {
-          currentMode = std::get<std::string>(*currentModeOpt);
+        if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
+          currentMode = (*currentModeOpt).get<std::string>();
         }
         return HavelValue(currentMode);
       });
@@ -2528,13 +2524,11 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string currentMode = "default";
         std::string previousMode = "default";
 
-        if (currentModeOpt &&
-            std::holds_alternative<std::string>(*currentModeOpt)) {
-          currentMode = std::get<std::string>(*currentModeOpt);
+        if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
+          currentMode = (*currentModeOpt).get<std::string>();
         }
-        if (previousModeOpt &&
-            std::holds_alternative<std::string>(*previousModeOpt)) {
-          previousMode = std::get<std::string>(*previousModeOpt);
+        if (previousModeOpt && (*previousModeOpt).is<std::string>()) {
+          previousMode = (*previousModeOpt).get<std::string>();
         }
 
         // Swap modes
@@ -2551,9 +2545,8 @@ void Interpreter::InitializeSystemBuiltins() {
         std::string checkMode = this->ValueToString(args[0]);
 
         auto currentModeOpt = environment->Get("__current_mode__");
-        if (currentModeOpt &&
-            std::holds_alternative<std::string>(*currentModeOpt)) {
-          std::string currentMode = std::get<std::string>(*currentModeOpt);
+        if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
+          std::string currentMode = (*currentModeOpt).get<std::string>();
           return HavelValue(currentMode == checkMode);
         }
         return HavelValue(false);
@@ -2633,7 +2626,7 @@ void Interpreter::InitializeSystemBuiltins() {
               else
                 return HavelValue("unknown");
             },
-            args[0]);
+            args[0].data);
       }));
 
   // Send text/keys to the system
@@ -2723,18 +2716,18 @@ void Interpreter::InitializeSystemBuiltins() {
         // --- helper: convert value → void() ---
         auto toVoidAction =
             [this](const HavelValue &v) -> std::function<void()> {
-          if (std::holds_alternative<std::string>(v)) {
-            std::string cmd = std::get<std::string>(v);
+          if (v.is<std::string>()) {
+            std::string cmd = v.get<std::string>();
             return [cmd]() { Launcher::runShellDetached(cmd.c_str()); };
           }
 
-          if (std::holds_alternative<std::shared_ptr<HavelFunction>>(v)) {
-            auto fn = std::get<std::shared_ptr<HavelFunction>>(v);
+          if (v.is<std::shared_ptr<HavelFunction>>()) {
+            auto fn = v.get<std::shared_ptr<HavelFunction>>();
             return [this, fn]() { this->Evaluate(*fn->declaration); };
           }
 
-          if (std::holds_alternative<BuiltinFunction>(v)) {
-            auto fn = std::get<BuiltinFunction>(v);
+          if (v.is<BuiltinFunction>()) {
+            auto fn = v.get<BuiltinFunction>();
             return [fn]() { fn({}); };
           }
 
@@ -2744,24 +2737,36 @@ void Interpreter::InitializeSystemBuiltins() {
         // --- helper: convert value → bool() ---
         auto toBoolCondition = [this](const HavelValue &v)
             -> std::variant<std::string, std::function<bool()>> {
-          if (std::holds_alternative<std::string>(v)) {
-            return std::get<std::string>(v);
+          if (v.is<std::string>()) {
+            return v.asString();
           }
 
-          if (std::holds_alternative<std::shared_ptr<HavelFunction>>(v)) {
-            auto fn = std::get<std::shared_ptr<HavelFunction>>(v);
-            return [this, fn]() {
+          if (v.is<std::shared_ptr<HavelFunction>>()) {
+            auto fn = v.get<std::shared_ptr<HavelFunction>>();
+            return std::function<bool()>([this, fn]() {
               auto result = this->Evaluate(*fn->declaration);
+              if (isError(result)) {
+                std::cerr << "Error in condition: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+                return false;
+              }
               return ExecResultToBool(result);
-            };
+            });
           }
 
-          if (std::holds_alternative<BuiltinFunction>(v)) {
-            auto fn = std::get<BuiltinFunction>(v);
-            return [this, fn]() {
+          if (v.is<BuiltinFunction>()) {
+            auto fn = v.get<BuiltinFunction>();
+            return std::function<bool()>([fn]() {
               auto result = fn({});
+              if (isError(result)) {
+                std::cerr << "Error in condition: "
+                          << std::get<HavelRuntimeError>(result).what()
+                          << std::endl;
+                return false;
+              }
               return ExecResultToBool(result);
-            };
+            });
           }
 
           throw HavelRuntimeError("Invalid condition type");
@@ -2782,7 +2787,7 @@ void Interpreter::InitializeSystemBuiltins() {
           falseAction = toVoidAction(args[3]);
 
         // string condition
-        if (std::holds_alternative<std::string>(condition)) {
+        if (condition.index() == 0) {
           return HavelValue(hotkeyManager->AddContextualHotkey(
               key, std::get<std::string>(condition), trueAction, falseAction));
         }
@@ -2865,7 +2870,7 @@ void Interpreter::InitializeSystemBuiltins() {
 
         // Check if argument is a number (PID) or string (process
         // name)
-        if (std::holds_alternative<double>(args[0])) {
+        if (args[0].is<double>()) {
           pid_t pid = static_cast<pid_t>(ValueToNumber(args[0]));
           return HavelValue(havel::ProcessManager::isProcessAlive(pid));
         } else {
@@ -2980,12 +2985,12 @@ void Interpreter::InitializeSystemBuiltins() {
         auto &config = Configs::Get();
         const HavelValue &value = args[1];
 
-        if (std::holds_alternative<bool>(value)) {
-          config.Set(key, std::get<bool>(value));
-        } else if (std::holds_alternative<int>(value)) {
-          config.Set(key, std::get<int>(value));
-        } else if (std::holds_alternative<double>(value)) {
-          config.Set(key, std::get<double>(value));
+        if (value.is<bool>()) {
+          config.Set(key, value.get<bool>());
+        } else if (value.is<int>()) {
+          config.Set(key, value.get<int>());
+        } else if (value.is<double>()) {
+          config.Set(key, value.get<double>());
         } else {
           config.Set(key, ValueToString(value));
         }
@@ -3221,7 +3226,7 @@ void Interpreter::InitializeSystemBuiltins() {
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("audio.setMute() requires boolean");
-            bool muted = std::get<bool>(args[0]);
+            bool muted = args[0].get<bool>();
             return HavelValue(this->audioManager->setMute(muted));
           }));
 
@@ -3259,7 +3264,7 @@ void Interpreter::InitializeSystemBuiltins() {
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("audio.findDeviceByIndex() requires index");
-        uint32_t index = static_cast<uint32_t>(std::get<double>(args[0]));
+        uint32_t index = static_cast<uint32_t>(args[0].get<double>());
         const auto *device = this->audioManager->findDeviceByIndex(index);
         if (!device) {
           return HavelValue(nullptr);
@@ -3348,7 +3353,7 @@ void Interpreter::InitializeSystemBuiltins() {
               return HavelRuntimeError(
                   "audio.setAppVolume() requires (appName, volume)");
             std::string appName = this->ValueToString(args[0]);
-            double volume = std::get<double>(args[1]);
+            double volume = args[1].get<double>();
             return HavelValue(
                 this->audioManager->setApplicationVolume(appName, volume));
           }));
@@ -3371,7 +3376,7 @@ void Interpreter::InitializeSystemBuiltins() {
               return HavelRuntimeError(
                   "audio.increaseAppVolume() requires appName");
             std::string appName = this->ValueToString(args[0]);
-            double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
+            double amount = args.size() > 1 ? args[1].get<double>() : 0.05;
             return HavelValue(
                 this->audioManager->increaseApplicationVolume(appName, amount));
           }));
@@ -3384,7 +3389,7 @@ void Interpreter::InitializeSystemBuiltins() {
               return HavelRuntimeError(
                   "audio.decreaseAppVolume() requires appName");
             std::string appName = this->ValueToString(args[0]);
-            double amount = args.size() > 1 ? std::get<double>(args[1]) : 0.05;
+            double amount = args.size() > 1 ? args[1].get<double>() : 0.05;
             return HavelValue(
                 this->audioManager->decreaseApplicationVolume(appName, amount));
           }));
@@ -3397,7 +3402,7 @@ void Interpreter::InitializeSystemBuiltins() {
             if (args.empty())
               return HavelRuntimeError(
                   "audio.setActiveAppVolume() requires volume");
-            double volume = std::get<double>(args[0]);
+            double volume = args[0].get<double>();
             return HavelValue(
                 this->audioManager->setActiveApplicationVolume(volume));
           }));
@@ -3413,7 +3418,7 @@ void Interpreter::InitializeSystemBuiltins() {
       "audio.increaseActiveAppVolume",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+            double amount = args.empty() ? 0.05 : args[0].get<double>();
             return HavelValue(
                 this->audioManager->increaseActiveApplicationVolume(amount));
           }));
@@ -3422,7 +3427,7 @@ void Interpreter::InitializeSystemBuiltins() {
       "audio.decreaseActiveAppVolume",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            double amount = args.empty() ? 0.05 : std::get<double>(args[0]);
+            double amount = args.empty() ? 0.05 : args[0].get<double>();
             return HavelValue(
                 this->audioManager->decreaseActiveApplicationVolume(amount));
           }));
@@ -3568,7 +3573,7 @@ void Interpreter::InitializeSystemBuiltins() {
 
   (*browserMod)["reload"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        bool ignoreCache = !args.empty() && std::get<double>(args[0]) != 0;
+        bool ignoreCache = !args.empty() && args[0].get<double>() != 0;
         return HavelValue(getBrowser().reload(ignoreCache));
       }));
 
@@ -3594,7 +3599,7 @@ void Interpreter::InitializeSystemBuiltins() {
         if (args.empty())
           return HavelRuntimeError(
               "browser.setZoom() requires level (0.5-3.0)");
-        double level = std::get<double>(args[0]);
+        double level = args[0].get<double>();
         return HavelValue(getBrowser().setZoom(level));
       }));
 
@@ -3657,14 +3662,13 @@ void Interpreter::InitializeSystemBuiltins() {
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("browser.activate() requires tabId");
-        int tabId = static_cast<int>(std::get<double>(args[0]));
+        int tabId = static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().activate(tabId));
       }));
 
   (*browserMod)["close"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int tabId =
-            args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        int tabId = args.empty() ? -1 : static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().closeTab(tabId));
       }));
 
@@ -3679,7 +3683,7 @@ void Interpreter::InitializeSystemBuiltins() {
   (*browserMod)["connectFirefox"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         int port =
-            args.empty() ? 2828 : static_cast<int>(std::get<double>(args[0]));
+            args.empty() ? 2828 : static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().connectFirefox(port));
       }));
 
@@ -3687,7 +3691,7 @@ void Interpreter::InitializeSystemBuiltins() {
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("browser.setPort() requires port number");
-        int port = static_cast<int>(std::get<double>(args[0]));
+        int port = static_cast<int>(args[0].get<double>());
         getBrowser().setPort(port);
         return HavelValue(true);
       }));
@@ -3804,8 +3808,8 @@ void Interpreter::InitializeSystemBuiltins() {
         if (args.size() < 2)
           return HavelRuntimeError(
               "browser.setWindowSize() requires (width, height)");
-        int width = static_cast<int>(std::get<double>(args[0]));
-        int height = static_cast<int>(std::get<double>(args[1]));
+        int width = static_cast<int>(args[0].get<double>());
+        int height = static_cast<int>(args[1].get<double>());
         return HavelValue(getBrowser().setWindowSize(-1, width, height));
       }));
 
@@ -3814,26 +3818,29 @@ void Interpreter::InitializeSystemBuiltins() {
         if (args.size() < 2)
           return HavelRuntimeError(
               "browser.setWindowPosition() requires (x, y)");
-        int x = static_cast<int>(std::get<double>(args[0]));
-        int y = static_cast<int>(std::get<double>(args[1]));
+        int x = static_cast<int>(args[0].get<double>());
+        int y = static_cast<int>(args[1].get<double>());
         return HavelValue(getBrowser().setWindowPosition(-1, x, y));
       }));
 
   (*browserMod)["maximizeWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        int windowId =
+            args.empty() ? -1 : static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().maximizeWindow(windowId));
       }));
 
   (*browserMod)["minimizeWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        int windowId =
+            args.empty() ? -1 : static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().minimizeWindow(windowId));
       }));
 
   (*browserMod)["fullscreenWindow"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int windowId = args.empty() ? -1 : static_cast<int>(std::get<double>(args[0]));
+        int windowId =
+            args.empty() ? -1 : static_cast<int>(args[0].get<double>());
         return HavelValue(getBrowser().fullscreenWindow(windowId));
       }));
 
@@ -3975,7 +3982,7 @@ void Interpreter::InitializeSystemBuiltins() {
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("http.setTimeout() requires timeout in ms");
-        int timeout = static_cast<int>(std::get<double>(args[0]));
+        int timeout = static_cast<int>(args[0].asNumber());
         getHttp().setTimeout(timeout);
         return HavelValue(true);
       }));
@@ -4073,8 +4080,8 @@ void Interpreter::InitializeWindowBuiltins() {
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("window.move() requires (x, y)");
-            int x = static_cast<int>(std::get<double>(args[0]));
-            int y = static_cast<int>(std::get<double>(args[1]));
+            int x = static_cast<int>(args[0].asNumber());
+            int y = static_cast<int>(args[1].asNumber());
             Window activeWin(this->windowManager.GetActiveWindow());
             return HavelValue(activeWin.Move(x, y));
           }));
@@ -4085,8 +4092,8 @@ void Interpreter::InitializeWindowBuiltins() {
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("window.resize() requires (width, height)");
-        int width = static_cast<int>(std::get<double>(args[0]));
-        int height = static_cast<int>(std::get<double>(args[1]));
+        int width = static_cast<int>(args[0].asNumber());
+        int height = static_cast<int>(args[1].asNumber());
         Window activeWin(this->windowManager.GetActiveWindow());
         return HavelValue(activeWin.Resize(width, height));
       }));
@@ -4098,10 +4105,10 @@ void Interpreter::InitializeWindowBuiltins() {
             if (args.size() < 4)
               return HavelRuntimeError(
                   "window.moveResize() requires (x, y, width, height)");
-            int x = static_cast<int>(std::get<double>(args[0]));
-            int y = static_cast<int>(std::get<double>(args[1]));
-            int width = static_cast<int>(std::get<double>(args[2]));
-            int height = static_cast<int>(std::get<double>(args[3]));
+            int x = static_cast<int>(args[0].asNumber());
+            int y = static_cast<int>(args[1].asNumber());
+            int width = static_cast<int>(args[2].asNumber());
+            int height = static_cast<int>(args[3].asNumber());
             Window activeWin(this->windowManager.GetActiveWindow());
             return HavelValue(activeWin.MoveResize(x, y, width, height));
           }));
@@ -4125,7 +4132,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.alwaysOnTop",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            bool top = args.empty() ? true : std::get<bool>(args[0]);
+            bool top = args.empty() ? true : args[0].asBool();
             Window activeWin(this->windowManager.GetActiveWindow());
             activeWin.AlwaysOnTop(top);
             return HavelValue(nullptr);
@@ -4135,8 +4142,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.transparency",
       BuiltinFunction([this](
                           const std::vector<HavelValue> &args) -> HavelResult {
-        int alpha =
-            args.empty() ? 255 : static_cast<int>(std::get<double>(args[0]));
+        int alpha = args.empty() ? 255 : static_cast<int>(args[0].asNumber());
         Window activeWin(this->windowManager.GetActiveWindow());
         activeWin.Transparency(alpha);
         return HavelValue(nullptr);
@@ -4157,7 +4163,7 @@ void Interpreter::InitializeWindowBuiltins() {
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("window.snap() requires position (0-3)");
-            int position = static_cast<int>(std::get<double>(args[0]));
+            int position = static_cast<int>(args[0].asNumber());
             Window activeWin(this->windowManager.GetActiveWindow());
             activeWin.Snap(position);
             return HavelValue(nullptr);
@@ -4170,7 +4176,7 @@ void Interpreter::InitializeWindowBuiltins() {
             if (args.empty())
               return HavelRuntimeError(
                   "window.moveToMonitor() requires monitor index");
-            int monitor = static_cast<int>(std::get<double>(args[0]));
+            int monitor = static_cast<int>(args[0].asNumber());
             Window activeWin(this->windowManager.GetActiveWindow());
             return HavelValue(activeWin.MoveToMonitor(monitor));
           }));
@@ -4563,10 +4569,10 @@ void Interpreter::InitializeArrayBuiltins() {
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("map() requires (array, function)");
-        if (!std::holds_alternative<HavelArray>(args[0]))
+        if (!args[0].is<HavelArray>())
           return HavelRuntimeError("map() first arg must be array");
 
-        auto array = std::get<HavelArray>(args[0]);
+        auto array = args[0].get<HavelArray>();
         auto &fn = args[1];
 
         auto result = std::make_shared<std::vector<HavelValue>>();
@@ -4576,10 +4582,10 @@ void Interpreter::InitializeArrayBuiltins() {
             std::vector<HavelValue> fnArgs = {item};
             HavelResult res;
 
-            if (auto *builtin = std::get_if<BuiltinFunction>(&fn)) {
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
               res = (*builtin)(fnArgs);
             } else if (auto *userFunc =
-                           std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
               auto &func = *userFunc;
               if (fnArgs.size() != func->declaration->parameters.size()) {
                 return HavelRuntimeError("Function parameter count mismatch");
@@ -4597,7 +4603,8 @@ void Interpreter::InitializeArrayBuiltins() {
               this->environment = originalEnv;
 
               if (std::holds_alternative<ReturnValue>(res)) {
-                result->push_back(std::get<ReturnValue>(res).value);
+                auto ret = std::get<ReturnValue>(res);
+                result->push_back(ret.value ? *ret.value : HavelValue());
               } else if (!isError(res)) {
                 result->push_back(unwrap(res));
               } else {
@@ -4623,10 +4630,10 @@ void Interpreter::InitializeArrayBuiltins() {
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("filter() requires (array, predicate)");
-        if (!std::holds_alternative<HavelArray>(args[0]))
+        if (!args[0].isArray())
           return HavelRuntimeError("filter() first arg must be array");
 
-        auto array = std::get<HavelArray>(args[0]);
+        auto array = args[0].asArray();
         auto &fn = args[1];
 
         auto result = std::make_shared<std::vector<HavelValue>>();
@@ -4635,10 +4642,10 @@ void Interpreter::InitializeArrayBuiltins() {
             std::vector<HavelValue> fnArgs = {item};
             HavelResult res;
 
-            if (auto *builtin = std::get_if<BuiltinFunction>(&fn)) {
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
               res = (*builtin)(fnArgs);
             } else if (auto *userFunc =
-                           std::get_if<std::shared_ptr<HavelFunction>>(&fn)) {
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size(); ++i) {
@@ -4652,7 +4659,8 @@ void Interpreter::InitializeArrayBuiltins() {
               this->environment = originalEnv;
 
               if (std::holds_alternative<ReturnValue>(res)) {
-                if (ValueToBool(std::get<ReturnValue>(res).value)) {
+                auto ret = std::get<ReturnValue>(res);
+                if (ValueToBool(ret.value ? *ret.value : HavelValue())) {
                   result->push_back(item);
                 }
               } else if (!isError(res) && ValueToBool(unwrap(res))) {
@@ -4681,10 +4689,10 @@ void Interpreter::InitializeArrayBuiltins() {
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("push() requires (array, value)");
-        if (!std::holds_alternative<HavelArray>(args[0]))
+        if (!args[0].is<HavelArray>())
           return HavelRuntimeError("push() first arg must be array");
 
-        auto array = std::get<HavelArray>(args[0]);
+        auto array = args[0].get<HavelArray>();
         if (!array)
           return HavelRuntimeError("push() received null array");
         array->push_back(args[1]);
@@ -4697,10 +4705,10 @@ void Interpreter::InitializeArrayBuiltins() {
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("pop() requires array");
-        if (!std::holds_alternative<HavelArray>(args[0]))
+        if (!args[0].is<HavelArray>())
           return HavelRuntimeError("pop() arg must be array");
 
-        auto array = std::get<HavelArray>(args[0]);
+        auto array = args[0].get<HavelArray>();
         if (!array || array->empty())
           return HavelRuntimeError("Cannot pop from empty array");
 
@@ -4716,10 +4724,10 @@ void Interpreter::InitializeArrayBuiltins() {
                           const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("join() requires array");
-        if (!std::holds_alternative<HavelArray>(args[0]))
+        if (!args[0].is<HavelArray>())
           return HavelRuntimeError("join() first arg must be array");
 
-        auto array = std::get<HavelArray>(args[0]);
+        auto array = args[0].get<HavelArray>();
         std::string separator = args.size() > 1 ? ValueToString(args[1]) : ",";
 
         std::string result;
@@ -5079,8 +5087,7 @@ void Interpreter::InitializeIOBuiltins() {
             double numVal = ValueToNumber(arg);
 
             // If it holds an int or double, use as ID
-            bool isNumber = std::holds_alternative<int>(arg) ||
-                            std::holds_alternative<double>(arg);
+            bool isNumber = arg.isNumber();
 
             if (isNumber) {
               int id = static_cast<int>(numVal);
@@ -5657,11 +5664,13 @@ void Interpreter::InitializeMathBuiltins() {
 }
 
 void Interpreter::InitializeRegexBuiltins() {
-  auto regexObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  auto regexObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  // regex.match(string, pattern) - returns true if pattern matches anywhere in string
-  (*regexObj)["match"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  // regex.match(string, pattern) - returns true if pattern matches anywhere in
+  // string
+  (*regexObj)["match"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.match() requires string and pattern");
 
@@ -5673,13 +5682,14 @@ void Interpreter::InitializeRegexBuiltins() {
           bool found = std::regex_search(str, re);
           return HavelValue(found);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.test(string, pattern) - alias for match
-  (*regexObj)["test"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["test"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.test() requires string and pattern");
 
@@ -5691,15 +5701,17 @@ void Interpreter::InitializeRegexBuiltins() {
           bool found = std::regex_search(str, re);
           return HavelValue(found);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.search(string, pattern) - returns first match object or null
-  (*regexObj)["search"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["search"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("regex.search() requires string and pattern");
+          return HavelRuntimeError(
+              "regex.search() requires string and pattern");
 
         std::string str = ValueToString(args[0]);
         std::string pattern = ValueToString(args[1]);
@@ -5708,31 +5720,35 @@ void Interpreter::InitializeRegexBuiltins() {
           std::regex re(pattern);
           std::smatch match;
           if (std::regex_search(str, match, re)) {
-            auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            auto matchObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
             (*matchObj)["match"] = HavelValue(match.str());
-            (*matchObj)["index"] = HavelValue(static_cast<int>(match.position()));
+            (*matchObj)["index"] =
+                HavelValue(static_cast<int>(match.position()));
             (*matchObj)["input"] = HavelValue(str);
-            
+
             // Add groups array
             auto groups = std::make_shared<std::vector<HavelValue>>();
             for (size_t i = 0; i < match.size(); ++i) {
               groups->push_back(HavelValue(match.str(i)));
             }
             (*matchObj)["groups"] = HavelValue(groups);
-            
+
             return HavelValue(matchObj);
           }
           return HavelValue(nullptr);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.findall(string, pattern) - returns array of all matches
-  (*regexObj)["findall"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["findall"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("regex.findall() requires string and pattern");
+          return HavelRuntimeError(
+              "regex.findall() requires string and pattern");
 
         std::string str = ValueToString(args[0]);
         std::string pattern = ValueToString(args[1]);
@@ -5740,12 +5756,12 @@ void Interpreter::InitializeRegexBuiltins() {
         try {
           std::regex re(pattern);
           auto matches = std::make_shared<std::vector<HavelValue>>();
-          
+
           auto begin = std::sregex_iterator(str.begin(), str.end(), re);
           auto end = std::sregex_iterator();
-          
+
           for (auto it = begin; it != end; ++it) {
-            const std::smatch& match = *it;
+            const std::smatch &match = *it;
             if (match.size() > 1) {
               // If there are capture groups, return array of groups
               auto groups = std::make_shared<std::vector<HavelValue>>();
@@ -5758,18 +5774,20 @@ void Interpreter::InitializeRegexBuiltins() {
               matches->push_back(HavelValue(match.str()));
             }
           }
-          
+
           return HavelValue(matches);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.replace(string, pattern, replacement) - replaces all occurrences
-  (*regexObj)["replace"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["replace"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 3)
-          return HavelRuntimeError("regex.replace() requires string, pattern, and replacement");
+          return HavelRuntimeError(
+              "regex.replace() requires string, pattern, and replacement");
 
         std::string str = ValueToString(args[0]);
         std::string pattern = ValueToString(args[1]);
@@ -5780,13 +5798,14 @@ void Interpreter::InitializeRegexBuiltins() {
           std::string result = std::regex_replace(str, re, replacement);
           return HavelValue(result);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.split(string, pattern) - splits string by pattern
-  (*regexObj)["split"] = BuiltinFunction(
-      [](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["split"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.split() requires string and pattern");
 
@@ -5796,31 +5815,33 @@ void Interpreter::InitializeRegexBuiltins() {
         try {
           std::regex re(pattern);
           auto parts = std::make_shared<std::vector<HavelValue>>();
-          
+
           auto begin = std::sregex_iterator(str.begin(), str.end(), re);
           auto end = std::sregex_iterator();
-          
+
           size_t lastPos = 0;
           for (auto it = begin; it != end; ++it) {
-            const std::smatch& match = *it;
+            const std::smatch &match = *it;
             if (match.position() > static_cast<std::ptrdiff_t>(lastPos)) {
-              parts->push_back(HavelValue(str.substr(lastPos, match.position() - lastPos)));
+              parts->push_back(
+                  HavelValue(str.substr(lastPos, match.position() - lastPos)));
             }
             lastPos = match.position() + match.length();
           }
           if (lastPos < str.length()) {
             parts->push_back(HavelValue(str.substr(lastPos)));
           }
-          
+
           return HavelValue(parts);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
   // regex.compile(pattern) - returns a compiled regex object
-  (*regexObj)["compile"] = BuiltinFunction(
-      [ ](const std::vector<HavelValue> &args) -> HavelResult {
+  (*regexObj)["compile"] =
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("regex.compile() requires pattern");
 
@@ -5828,54 +5849,57 @@ void Interpreter::InitializeRegexBuiltins() {
 
         try {
           std::regex re(pattern);
-          auto regexInstance = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-          
+          auto regexInstance =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
           // Store the pattern
           (*regexInstance)["pattern"] = HavelValue(pattern);
-          
+
           // Match method for compiled regex
           (*regexInstance)["match"] = BuiltinFunction(
               [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
                   return HavelRuntimeError("regex.match() requires string");
-                
+
                 std::string str = ValueToString(args[0]);
                 bool found = std::regex_search(str, re);
                 return HavelValue(found);
               });
-          
+
           // Search method for compiled regex
           (*regexInstance)["search"] = BuiltinFunction(
               [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
                   return HavelRuntimeError("regex.search() requires string");
-                
+
                 std::string str = ValueToString(args[0]);
                 std::smatch match;
                 if (std::regex_search(str, match, re)) {
-                  auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+                  auto matchObj = std::make_shared<
+                      std::unordered_map<std::string, HavelValue>>();
                   (*matchObj)["match"] = HavelValue(match.str());
-                  (*matchObj)["index"] = HavelValue(static_cast<int>(match.position()));
+                  (*matchObj)["index"] =
+                      HavelValue(static_cast<int>(match.position()));
                   (*matchObj)["input"] = HavelValue(str);
                   return HavelValue(matchObj);
                 }
                 return HavelValue(nullptr);
               });
-          
+
           // Findall method for compiled regex
           (*regexInstance)["findall"] = BuiltinFunction(
               [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
                   return HavelRuntimeError("regex.findall() requires string");
-                
+
                 std::string str = ValueToString(args[0]);
                 auto matches = std::make_shared<std::vector<HavelValue>>();
-                
+
                 auto begin = std::sregex_iterator(str.begin(), str.end(), re);
                 auto end = std::sregex_iterator();
-                
+
                 for (auto it = begin; it != end; ++it) {
-                  const std::smatch& match = *it;
+                  const std::smatch &match = *it;
                   if (match.size() > 1) {
                     auto groups = std::make_shared<std::vector<HavelValue>>();
                     for (size_t i = 1; i < match.size(); ++i) {
@@ -5886,52 +5910,55 @@ void Interpreter::InitializeRegexBuiltins() {
                     matches->push_back(HavelValue(match.str()));
                   }
                 }
-                
+
                 return HavelValue(matches);
               });
-          
+
           // Replace method for compiled regex
           (*regexInstance)["replace"] = BuiltinFunction(
               [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.size() < 2)
-                  return HavelRuntimeError("regex.replace() requires string and replacement");
-                
+                  return HavelRuntimeError(
+                      "regex.replace() requires string and replacement");
+
                 std::string str = ValueToString(args[0]);
                 std::string replacement = ValueToString(args[1]);
                 std::string result = std::regex_replace(str, re, replacement);
                 return HavelValue(result);
               });
-          
+
           // Split method for compiled regex
           (*regexInstance)["split"] = BuiltinFunction(
               [re](const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
                   return HavelRuntimeError("regex.split() requires string");
-                
+
                 std::string str = ValueToString(args[0]);
                 auto parts = std::make_shared<std::vector<HavelValue>>();
-                
+
                 auto begin = std::sregex_iterator(str.begin(), str.end(), re);
                 auto end = std::sregex_iterator();
-                
+
                 size_t lastPos = 0;
                 for (auto it = begin; it != end; ++it) {
-                  const std::smatch& match = *it;
+                  const std::smatch &match = *it;
                   if (match.position() > static_cast<std::ptrdiff_t>(lastPos)) {
-                    parts->push_back(HavelValue(str.substr(lastPos, match.position() - lastPos)));
+                    parts->push_back(HavelValue(
+                        str.substr(lastPos, match.position() - lastPos)));
                   }
                   lastPos = match.position() + match.length();
                 }
                 if (lastPos < str.length()) {
                   parts->push_back(HavelValue(str.substr(lastPos)));
                 }
-                
+
                 return HavelValue(parts);
               });
-          
+
           return HavelValue(regexInstance);
         } catch (const std::regex_error &e) {
-          return HavelRuntimeError(std::string("Invalid regex pattern: ") + e.what());
+          return HavelRuntimeError(std::string("Invalid regex pattern: ") +
+                                   e.what());
         }
       });
 
@@ -6999,11 +7026,11 @@ void Interpreter::InitializeGUIBuiltins() {
 
         std::string title = this->ValueToString(args[0]);
 
-        if (!std::holds_alternative<HavelArray>(args[1])) {
+        if (!args[1].is<HavelArray>()) {
           return HavelRuntimeError(
               "gui.showMenu() requires an array of options");
         }
-        auto optionsVec = std::get<HavelArray>(args[1]);
+        auto optionsVec = args[1].get<HavelArray>();
         std::vector<std::string> options;
         if (optionsVec) {
           for (const auto &opt : *optionsVec) {
@@ -7144,7 +7171,7 @@ void Interpreter::InitializeGUIBuiltins() {
   // === ALTTAB MODULE ===
   // AltTab window switcher
   static std::unique_ptr<AltTabWindow> altTabWindow;
-  
+
   environment->Define(
       "altTab.show",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7155,7 +7182,7 @@ void Interpreter::InitializeGUIBuiltins() {
         altTabWindow->showAltTab();
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.hide",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7165,7 +7192,7 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.next",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7175,7 +7202,7 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.prev",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7185,7 +7212,7 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.select",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7195,7 +7222,7 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.refresh",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7205,12 +7232,13 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(nullptr);
       }));
-  
+
   environment->Define(
       "altTab.setThumbnailSize",
       BuiltinFunction([&](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("altTab.setThumbnailSize() requires (width, height)");
+          return HavelRuntimeError(
+              "altTab.setThumbnailSize() requires (width, height)");
         int width = static_cast<int>(ValueToNumber(args[0]));
         int height = static_cast<int>(ValueToNumber(args[1]));
         if (altTabWindow) {
@@ -7222,35 +7250,46 @@ void Interpreter::InitializeGUIBuiltins() {
   // Note: getWindows() is private in AltTabWindow
 
   // Create altTab module object
-  auto altTabMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("altTab.show")) (*altTabMod)["show"] = *v;
-  if (auto v = environment->Get("altTab.hide")) (*altTabMod)["hide"] = *v;
-  if (auto v = environment->Get("altTab.next")) (*altTabMod)["next"] = *v;
-  if (auto v = environment->Get("altTab.prev")) (*altTabMod)["prev"] = *v;
-  if (auto v = environment->Get("altTab.select")) (*altTabMod)["select"] = *v;
-  if (auto v = environment->Get("altTab.refresh")) (*altTabMod)["refresh"] = *v;
-  if (auto v = environment->Get("altTab.setThumbnailSize")) (*altTabMod)["setThumbnailSize"] = *v;
+  auto altTabMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("altTab.show"))
+    (*altTabMod)["show"] = *v;
+  if (auto v = environment->Get("altTab.hide"))
+    (*altTabMod)["hide"] = *v;
+  if (auto v = environment->Get("altTab.next"))
+    (*altTabMod)["next"] = *v;
+  if (auto v = environment->Get("altTab.prev"))
+    (*altTabMod)["prev"] = *v;
+  if (auto v = environment->Get("altTab.select"))
+    (*altTabMod)["select"] = *v;
+  if (auto v = environment->Get("altTab.refresh"))
+    (*altTabMod)["refresh"] = *v;
+  if (auto v = environment->Get("altTab.setThumbnailSize"))
+    (*altTabMod)["setThumbnailSize"] = *v;
   environment->Define("altTab", HavelValue(altTabMod));
 
   // === MAPMANAGER MODULE ===
   // MapManagerWindow for managing input mappings
   static std::unique_ptr<MapManagerWindow> mapManagerWindow;
-  
+
   environment->Define(
       "mapmanager.show",
-      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-        (void)args;
-        if (!mapManagerWindow) {
-          // Note: MapManagerWindow requires MapManager instance
-          // For now, create with null - full implementation needs MapManager integration
-          mapManagerWindow = std::make_unique<MapManagerWindow>(nullptr, nullptr);
-        }
-        mapManagerWindow->show();
-        mapManagerWindow->raise();
-        mapManagerWindow->activateWindow();
-        return HavelValue(nullptr);
-      }));
-  
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!mapManagerWindow) {
+              // Note: MapManagerWindow requires MapManager instance
+              // For now, create with null - full implementation needs
+              // MapManager integration
+              mapManagerWindow =
+                  std::make_unique<MapManagerWindow>(nullptr, nullptr);
+            }
+            mapManagerWindow->show();
+            mapManagerWindow->raise();
+            mapManagerWindow->activateWindow();
+            return HavelValue(nullptr);
+          }));
+
   environment->Define(
       "mapmanager.hide",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
@@ -7261,12 +7300,16 @@ void Interpreter::InitializeGUIBuiltins() {
         return HavelValue(nullptr);
       }));
 
-  // Note: MapManagerWindow methods (refresh, saveAll, loadAll, etc.) are private Qt slots
+  // Note: MapManagerWindow methods (refresh, saveAll, loadAll, etc.) are
+  // private Qt slots
 
   // Create mapmanager module object
-  auto mapManagerMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("mapmanager.show")) (*mapManagerMod)["show"] = *v;
-  if (auto v = environment->Get("mapmanager.hide")) (*mapManagerMod)["hide"] = *v;
+  auto mapManagerMod =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("mapmanager.show"))
+    (*mapManagerMod)["show"] = *v;
+  if (auto v = environment->Get("mapmanager.hide"))
+    (*mapManagerMod)["hide"] = *v;
   environment->Define("mapmanager", HavelValue(mapManagerMod));
 
   // === MAPMANAGER CORE MODULE ===
@@ -7275,21 +7318,24 @@ void Interpreter::InitializeGUIBuiltins() {
 
   environment->Define(
       "mapmanager.init",
-      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-        (void)args;
-        if (!coreMapManager) {
-          coreMapManager = std::make_unique<MapManager>(&io);
-        }
-        return HavelValue(coreMapManager != nullptr);
-      }));
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!coreMapManager) {
+              coreMapManager = std::make_unique<MapManager>(&io);
+            }
+            return HavelValue(coreMapManager != nullptr);
+          }));
 
   environment->Define(
       "mapmanager.addProfile",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
-          return HavelRuntimeError("MapManager not initialized. Call mapmanager.init() first");
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
         if (args.size() < 2)
-          return HavelRuntimeError("mapmanager.addProfile() requires (id, name)");
+          return HavelRuntimeError(
+              "mapmanager.addProfile() requires (id, name)");
 
         std::string id = ValueToString(args[0]);
         std::string name = ValueToString(args[1]);
@@ -7310,7 +7356,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.removeProfile() requires profileId");
+          return HavelRuntimeError(
+              "mapmanager.removeProfile() requires profileId");
 
         std::string id = ValueToString(args[0]);
         coreMapManager->RemoveProfile(id);
@@ -7323,7 +7370,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.setActiveProfile() requires profileId");
+          return HavelRuntimeError(
+              "mapmanager.setActiveProfile() requires profileId");
 
         std::string id = ValueToString(args[0]);
         coreMapManager->SetActiveProfile(id);
@@ -7347,7 +7395,7 @@ void Interpreter::InitializeGUIBuiltins() {
         auto arr = std::make_shared<std::vector<HavelValue>>();
         if (coreMapManager) {
           auto ids = coreMapManager->GetProfileIds();
-          for (const auto& id : ids) {
+          for (const auto &id : ids) {
             arr->push_back(HavelValue(id));
           }
         }
@@ -7360,7 +7408,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 3)
-          return HavelRuntimeError("mapmanager.addMapping() requires (profileId, sourceKey, targetKey)");
+          return HavelRuntimeError("mapmanager.addMapping() requires "
+                                   "(profileId, sourceKey, targetKey)");
 
         std::string profileId = ValueToString(args[0]);
         std::string sourceKey = ValueToString(args[1]);
@@ -7384,7 +7433,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 2)
-          return HavelRuntimeError("mapmanager.removeMapping() requires (profileId, mappingId)");
+          return HavelRuntimeError(
+              "mapmanager.removeMapping() requires (profileId, mappingId)");
 
         std::string profileId = ValueToString(args[0]);
         std::string mappingId = ValueToString(args[1]);
@@ -7398,7 +7448,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 2)
-          return HavelRuntimeError("mapmanager.enableProfile() requires (profileId, enable)");
+          return HavelRuntimeError(
+              "mapmanager.enableProfile() requires (profileId, enable)");
 
         std::string profileId = ValueToString(args[0]);
         bool enable = ValueToBool(args[1]);
@@ -7432,7 +7483,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.saveProfiles() requires filepath");
+          return HavelRuntimeError(
+              "mapmanager.saveProfiles() requires filepath");
 
         std::string path = ValueToString(args[0]);
         coreMapManager->SaveProfiles(path);
@@ -7445,7 +7497,8 @@ void Interpreter::InitializeGUIBuiltins() {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.loadProfiles() requires filepath");
+          return HavelRuntimeError(
+              "mapmanager.loadProfiles() requires filepath");
 
         std::string path = ValueToString(args[0]);
         coreMapManager->LoadProfiles(path);
@@ -7463,65 +7516,90 @@ void Interpreter::InitializeGUIBuiltins() {
       }));
 
   // Add mapmanager core functions to module
-  if (auto v = environment->Get("mapmanager.init")) (*mapManagerMod)["init"] = *v;
-  if (auto v = environment->Get("mapmanager.addProfile")) (*mapManagerMod)["addProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.removeProfile")) (*mapManagerMod)["removeProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.setActiveProfile")) (*mapManagerMod)["setActiveProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.getActiveProfile")) (*mapManagerMod)["getActiveProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.getProfileIds")) (*mapManagerMod)["getProfileIds"] = *v;
-  if (auto v = environment->Get("mapmanager.addMapping")) (*mapManagerMod)["addMapping"] = *v;
-  if (auto v = environment->Get("mapmanager.removeMapping")) (*mapManagerMod)["removeMapping"] = *v;
-  if (auto v = environment->Get("mapmanager.enableProfile")) (*mapManagerMod)["enableProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.nextProfile")) (*mapManagerMod)["nextProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.previousProfile")) (*mapManagerMod)["previousProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.saveProfiles")) (*mapManagerMod)["saveProfiles"] = *v;
-  if (auto v = environment->Get("mapmanager.loadProfiles")) (*mapManagerMod)["loadProfiles"] = *v;
-  if (auto v = environment->Get("mapmanager.clearAllMappings")) (*mapManagerMod)["clearAllMappings"] = *v;
+  if (auto v = environment->Get("mapmanager.init"))
+    (*mapManagerMod)["init"] = *v;
+  if (auto v = environment->Get("mapmanager.addProfile"))
+    (*mapManagerMod)["addProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.removeProfile"))
+    (*mapManagerMod)["removeProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.setActiveProfile"))
+    (*mapManagerMod)["setActiveProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.getActiveProfile"))
+    (*mapManagerMod)["getActiveProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.getProfileIds"))
+    (*mapManagerMod)["getProfileIds"] = *v;
+  if (auto v = environment->Get("mapmanager.addMapping"))
+    (*mapManagerMod)["addMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.removeMapping"))
+    (*mapManagerMod)["removeMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.enableProfile"))
+    (*mapManagerMod)["enableProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.nextProfile"))
+    (*mapManagerMod)["nextProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.previousProfile"))
+    (*mapManagerMod)["previousProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.saveProfiles"))
+    (*mapManagerMod)["saveProfiles"] = *v;
+  if (auto v = environment->Get("mapmanager.loadProfiles"))
+    (*mapManagerMod)["loadProfiles"] = *v;
+  if (auto v = environment->Get("mapmanager.clearAllMappings"))
+    (*mapManagerMod)["clearAllMappings"] = *v;
 
   // === Additional MapManager Methods ===
-  
+
   environment->Define(
       "mapmanager.getMapping",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
-        if (!coreMapManager)
-          return HavelRuntimeError("MapManager not initialized");
-        if (args.size() < 2)
-          return HavelRuntimeError("mapmanager.getMapping() requires (profileId, mappingId)");
-        
-        std::string profileId = ValueToString(args[0]);
-        std::string mappingId = ValueToString(args[1]);
-        
-        auto* mapping = coreMapManager->GetMapping(profileId, mappingId);
-        if (!mapping) {
-          return HavelValue(nullptr);
-        }
-        
-        auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-        (*obj)["id"] = HavelValue(mapping->id);
-        (*obj)["name"] = HavelValue(mapping->name);
-        (*obj)["enabled"] = HavelValue(mapping->enabled);
-        (*obj)["sourceKey"] = HavelValue(mapping->sourceKey);
-        (*obj)["targetKeys"] = HavelValue(mapping->targetKeys);
-        (*obj)["autofire"] = HavelValue(mapping->autofire);
-        (*obj)["turbo"] = HavelValue(mapping->turbo);
-        (*obj)["toggleMode"] = HavelValue(mapping->toggleMode);
-        return HavelValue(obj);
-      }));
-  
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (!coreMapManager)
+              return HavelRuntimeError("MapManager not initialized");
+            if (args.size() < 2)
+              return HavelRuntimeError(
+                  "mapmanager.getMapping() requires (profileId, mappingId)");
+
+            std::string profileId = ValueToString(args[0]);
+            std::string mappingId = ValueToString(args[1]);
+
+            auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+            if (!mapping) {
+              return HavelValue(nullptr);
+            }
+
+            auto obj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*obj)["id"] = HavelValue(mapping->id);
+            (*obj)["name"] = HavelValue(mapping->name);
+            (*obj)["enabled"] = HavelValue(mapping->enabled);
+            (*obj)["sourceKey"] = HavelValue(mapping->sourceKey);
+            // Convert targetKeys vector to HavelArray
+            auto targetKeysArray = std::make_shared<std::vector<HavelValue>>();
+            for (const auto& key : mapping->targetKeys) {
+              targetKeysArray->push_back(HavelValue(key));
+            }
+            (*obj)["targetKeys"] = HavelValue(targetKeysArray);
+            (*obj)["autofire"] = HavelValue(mapping->autofire);
+            (*obj)["turbo"] = HavelValue(mapping->turbo);
+            (*obj)["toggleMode"] = HavelValue(mapping->toggleMode);
+            return HavelValue(obj);
+          }));
+
   environment->Define(
       "mapmanager.getMappings",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.getMappings() requires profileId");
-        
+          return HavelRuntimeError(
+              "mapmanager.getMappings() requires profileId");
+
         std::string profileId = ValueToString(args[0]);
         auto mappings = coreMapManager->GetMappings(profileId);
-        
+
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        for (const auto* mapping : mappings) {
-          auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        for (const auto *mapping : mappings) {
+          auto obj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*obj)["id"] = HavelValue(mapping->id);
           (*obj)["name"] = HavelValue(mapping->name);
           (*obj)["enabled"] = HavelValue(mapping->enabled);
@@ -7530,25 +7608,29 @@ void Interpreter::InitializeGUIBuiltins() {
         }
         return HavelValue(arr);
       }));
-  
+
   environment->Define(
       "mapmanager.updateMapping",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.size() < 2)
-          return HavelRuntimeError("mapmanager.updateMapping() requires (profileId, mappingData)");
-        
+          return HavelRuntimeError(
+              "mapmanager.updateMapping() requires (profileId, mappingData)");
+
         std::string profileId = ValueToString(args[0]);
-        
+
         // mappingData should be an object with mapping properties
-        if (!std::holds_alternative<HavelObject>(args[1])) {
-          return HavelRuntimeError("mapmanager.updateMapping() requires mapping data object");
+        if (!args[1].isObject()) {
+          return HavelRuntimeError(
+              "mapmanager.updateMapping() requires mapping data object");
         }
-        
-        auto* data = std::get<HavelObject>(args[1]);
-        if (!data) return HavelRuntimeError("Invalid mapping data");
-        
+
+        auto data = args[1].asObject();
+        if (!data)
+          return HavelRuntimeError("Invalid mapping data");
+
         Mapping mapping;
         mapping.id = ValueToString((*data)["id"]);
         mapping.name = ValueToString((*data)["name"]);
@@ -7557,77 +7639,90 @@ void Interpreter::InitializeGUIBuiltins() {
         mapping.autofire = ValueToBool((*data)["autofire"]);
         mapping.turbo = ValueToBool((*data)["turbo"]);
         mapping.toggleMode = ValueToBool((*data)["toggleMode"]);
-        
+
         coreMapManager->UpdateMapping(profileId, mapping);
         return HavelValue(true);
       }));
-  
+
   environment->Define(
       "mapmanager.setProfileSwitchHotkey",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
-        if (!coreMapManager)
-          return HavelRuntimeError("MapManager not initialized");
-        if (args.empty())
-          return HavelRuntimeError("mapmanager.setProfileSwitchHotkey() requires hotkey");
-        
-        std::string hotkey = ValueToString(args[0]);
-        // Note: This requires IO integration for hotkey registration
-        // For now, just store the hotkey string
-        return HavelValue(nullptr);
-      }));
-  
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (!coreMapManager)
+              return HavelRuntimeError("MapManager not initialized");
+            if (args.empty())
+              return HavelRuntimeError(
+                  "mapmanager.setProfileSwitchHotkey() requires hotkey");
+
+            std::string hotkey = ValueToString(args[0]);
+            // Note: This requires IO integration for hotkey registration
+            // For now, just store the hotkey string
+            return HavelValue(nullptr);
+          }));
+
   environment->Define(
       "mapmanager.resetStats",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
-        (void)args;
-        if (coreMapManager) {
-          // Note: ResetStats is private, use clearAllMappings as workaround
-          // Or expose via friend class
-        }
-        return HavelValue(nullptr);
-      }));
-  
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (coreMapManager) {
+              // Note: ResetStats is private, use clearAllMappings as workaround
+              // Or expose via friend class
+            }
+            return HavelValue(nullptr);
+          }));
+
   environment->Define(
       "mapmanager.exportProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.exportProfile() requires profileId");
-        
+          return HavelRuntimeError(
+              "mapmanager.exportProfile() requires profileId");
+
         std::string profileId = ValueToString(args[0]);
         try {
           std::string json = coreMapManager->ExportProfileToJson(profileId);
           return HavelValue(json);
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
           return HavelRuntimeError(std::string("Export failed: ") + e.what());
         }
       }));
-  
+
   environment->Define(
       "mapmanager.importProfile",
-      BuiltinFunction([&coreMapManager](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager)
           return HavelRuntimeError("MapManager not initialized");
         if (args.empty())
-          return HavelRuntimeError("mapmanager.importProfile() requires JSON string");
-        
+          return HavelRuntimeError(
+              "mapmanager.importProfile() requires JSON string");
+
         std::string json = ValueToString(args[0]);
         try {
           coreMapManager->ImportProfileFromJson(json);
           return HavelValue(true);
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
           return HavelRuntimeError(std::string("Import failed: ") + e.what());
         }
       }));
-  
+
   // Add additional methods to module
-  if (auto v = environment->Get("mapmanager.getMapping")) (*mapManagerMod)["getMapping"] = *v;
-  if (auto v = environment->Get("mapmanager.getMappings")) (*mapManagerMod)["getMappings"] = *v;
-  if (auto v = environment->Get("mapmanager.updateMapping")) (*mapManagerMod)["updateMapping"] = *v;
-  if (auto v = environment->Get("mapmanager.setProfileSwitchHotkey")) (*mapManagerMod)["setProfileSwitchHotkey"] = *v;
-  if (auto v = environment->Get("mapmanager.exportProfile")) (*mapManagerMod)["exportProfile"] = *v;
-  if (auto v = environment->Get("mapmanager.importProfile")) (*mapManagerMod)["importProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.getMapping"))
+    (*mapManagerMod)["getMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.getMappings"))
+    (*mapManagerMod)["getMappings"] = *v;
+  if (auto v = environment->Get("mapmanager.updateMapping"))
+    (*mapManagerMod)["updateMapping"] = *v;
+  if (auto v = environment->Get("mapmanager.setProfileSwitchHotkey"))
+    (*mapManagerMod)["setProfileSwitchHotkey"] = *v;
+  if (auto v = environment->Get("mapmanager.exportProfile"))
+    (*mapManagerMod)["exportProfile"] = *v;
+  if (auto v = environment->Get("mapmanager.importProfile"))
+    (*mapManagerMod)["importProfile"] = *v;
 }
 
 void Interpreter::InitializeScreenshotBuiltins() {
@@ -7795,18 +7890,18 @@ void Interpreter::InitializeAutomationBuiltins() {
           if (app->automationManager) {
             std::string taskName = ValueToString(args[0]);
 
-            if (!std::holds_alternative<HavelArray>(args[1])) {
+            if (!args[1].is<HavelArray>()) {
               return HavelRuntimeError(
                   "Second argument must be an array of actions");
             }
 
-            auto actionsArray = std::get<HavelArray>(args[1]);
+            auto actionsArray = args[1].get<HavelArray>();
             std::vector<havel::automation::AutomationManager::TimedAction>
                 timedActions;
 
             for (const auto &action : *actionsArray) {
-              if (std::holds_alternative<HavelArray>(action)) {
-                auto actionArray = std::get<HavelArray>(action);
+              if (action.is<HavelArray>()) {
+                auto actionArray = action.get<HavelArray>();
                 if (actionArray->size() >= 2) {
                   std::string actionStr = ValueToString((*actionArray)[0]);
                   int delayMs =
@@ -8017,28 +8112,27 @@ void Interpreter::InitializeAutomationBuiltins() {
 void Interpreter::InitializeAsyncBuiltins() {
   // spawn function
   environment->Define(
-      "spawn",
-      BuiltinFunction([this](
-                          const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() != 1) {
-          return HavelRuntimeError("spawn requires 1 argument");
-        }
+      "spawn", BuiltinFunction(
+                   [this](const std::vector<HavelValue> &args) -> HavelResult {
+                     if (args.size() != 1) {
+                       return HavelRuntimeError("spawn requires 1 argument");
+                     }
 
-        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[0])) {
-          return HavelRuntimeError("spawn requires a function");
-        }
+                     if (!args[0].is<std::shared_ptr<HavelFunction>>()) {
+                       return HavelRuntimeError("spawn requires a function");
+                     }
 
-        auto func = std::get<std::shared_ptr<HavelFunction>>(args[0]);
-        std::string taskId = "task_" + std::to_string(std::rand());
+                     auto func = args[0].get<std::shared_ptr<HavelFunction>>();
+                     std::string taskId = "task_" + std::to_string(std::rand());
 
-        AsyncScheduler::getInstance().spawn(
-            [this, func]() -> HavelResult {
-              return Evaluate(*func->declaration->body);
-            },
-            taskId);
+                     AsyncScheduler::getInstance().spawn(
+                         [this, func]() -> HavelResult {
+                           return Evaluate(*func->declaration->body);
+                         },
+                         taskId);
 
-        return taskId;
-      }));
+                     return taskId;
+                   }));
 
   // await function
   environment->Define(
@@ -8049,11 +8143,11 @@ void Interpreter::InitializeAsyncBuiltins() {
               return HavelRuntimeError("await requires 1 argument");
             }
 
-            if (!std::holds_alternative<std::string>(args[0])) {
+            if (!args[0].is<std::string>()) {
               return HavelRuntimeError("await requires a task ID string");
             }
 
-            std::string taskId = std::get<std::string>(args[0]);
+            std::string taskId = args[0].asString();
             return AsyncScheduler::getInstance().await(taskId);
           }));
 
@@ -8157,12 +8251,12 @@ void Interpreter::InitializeTimerBuiltins() {
         int delayMs = static_cast<int>(ValueToNumber(args[0]));
 
         // Validate callback
-        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[1])) {
+        if (!args[1].is<std::shared_ptr<HavelFunction>>()) {
           return HavelRuntimeError(
               "setTimeout second argument must be a function");
         }
 
-        auto callback = std::get<std::shared_ptr<HavelFunction>>(args[1]);
+        auto callback = args[1].get<std::shared_ptr<HavelFunction>>();
 
         // Thread-safe timer creation and management
         int timerId;
@@ -8221,12 +8315,12 @@ void Interpreter::InitializeTimerBuiltins() {
         int intervalMs = static_cast<int>(ValueToNumber(args[0]));
 
         // Validate callback
-        if (!std::holds_alternative<std::shared_ptr<HavelFunction>>(args[1])) {
+        if (!args[1].is<std::shared_ptr<HavelFunction>>()) {
           return HavelRuntimeError(
               "setInterval second argument must be a function");
         }
 
-        auto callback = std::get<std::shared_ptr<HavelFunction>>(args[1]);
+        auto callback = args[1].get<std::shared_ptr<HavelFunction>>();
 
         // Thread-safe timer creation and management
         int timerId;

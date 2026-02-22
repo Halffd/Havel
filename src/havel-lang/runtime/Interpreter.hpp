@@ -111,7 +111,7 @@ using HavelValueBase =
  * - Strict: runtime error on mismatch
  */
 struct HavelValue {
-  // The actual value (variant-based)
+  // The actual value (variant-based) - PRIVATE, use accessors
   HavelValueBase data;
   
   // Optional type annotation for gradual typing
@@ -161,21 +161,47 @@ struct HavelValue {
   HavelValue(BuiltinFunction func, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
     : data(std::move(func)), annotatedType(type) {}
 
-  // Accessors for variant operations
-  template<typename T>
-  bool holds_alternative() const { return std::holds_alternative<T>(data); }
+  // ============================================================================
+  // VARIANT ACCESSORS - Never access .data directly outside this class
+  // ============================================================================
   
   template<typename T>
-  const T* get_if() const { return std::get_if<T>(&data); }
-  
-  template<typename T>
-  T* get_if() { return std::get_if<T>(&data); }
+  bool is() const { return std::holds_alternative<T>(data); }
   
   template<typename T>
   const T& get() const { return std::get<T>(data); }
   
   template<typename T>
   T& get() { return std::get<T>(data); }
+  
+  template<typename T>
+  const T* get_if() const { return std::get_if<T>(&data); }
+  
+  template<typename T>
+  T* get_if() { return std::get_if<T>(&data); }
+
+  // ============================================================================
+  // SEMANTIC HELPERS - Intent-based access for common operations
+  // ============================================================================
+  
+  bool isNumber() const { return is<int>() || is<double>(); }
+  bool isString() const { return is<std::string>(); }
+  bool isBool() const { return is<bool>(); }
+  bool isNull() const { return is<std::nullptr_t>(); }
+  bool isArray() const { return is<HavelArray>(); }
+  bool isObject() const { return is<HavelObject>(); }
+  bool isFunction() const { return is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>(); }
+  
+  double asNumber() const {
+    if (is<double>()) return get<double>();
+    if (is<int>()) return static_cast<double>(get<int>());
+    return 0.0;
+  }
+  
+  const std::string& asString() const { return get<std::string>(); }
+  bool asBool() const { return get<bool>(); }
+  HavelArray asArray() const { return get<HavelArray>(); }
+  HavelObject asObject() const { return get<HavelObject>(); }
 };
 
 // Cooperative async scheduler

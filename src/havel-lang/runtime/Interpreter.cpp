@@ -59,7 +59,7 @@ static HavelValue unwrap(HavelResult &result) {
     return *val;
   }
   if (auto *ret = std::get_if<ReturnValue>(&result)) {
-    return ret->value;
+    return ret->value ? *ret->value : HavelValue();
   }
   if (auto *err = std::get_if<HavelRuntimeError>(&result)) {
     throw *err;
@@ -124,7 +124,7 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
         } else
           return "unprintable";
       },
-      value);
+      value.data);  // Use .data member for std::visit
 }
 
 std::string Interpreter::FormatValue(const HavelValue &value,
@@ -167,8 +167,8 @@ std::string Interpreter::FormatValue(const HavelValue &value,
   }
 
   // Format based on value type
-  if (std::holds_alternative<double>(value)) {
-    double num = std::get<double>(value);
+  if (value.is<double>()) {
+    double num = value.get<double>();
     if (type == 'f' || precision >= 0) {
       int prec = precision >= 0 ? precision : 6;
       char buf[64];
@@ -184,8 +184,8 @@ std::string Interpreter::FormatValue(const HavelValue &value,
     } else {
       result = std::to_string(static_cast<long long>(num));
     }
-  } else if (std::holds_alternative<int>(value)) {
-    int num = std::get<int>(value);
+  } else if (value.is<int>()) {
+    int num = value.get<int>();
     if (type == 'f') {
       int prec = precision >= 0 ? precision : 6;
       char buf[64];
@@ -203,8 +203,8 @@ std::string Interpreter::FormatValue(const HavelValue &value,
 }
 
 bool Interpreter::ExecResultToBool(const HavelResult &result) {
-  if (std::holds_alternative<HavelValue>(result)) {
-    return ValueToBool(std::get<HavelValue>(result));
+  if (auto* val = std::get_if<HavelValue>(&result)) {
+    return ValueToBool(*val);
   }
   // For control flow types (return, break, continue) and errors, return false
   return false;
@@ -227,7 +227,7 @@ bool Interpreter::ValueToBool(const HavelValue &value) {
         else
           return true; // Functions, objects, arrays are truthy
       },
-      value);
+      value.data);  // Use .data member for std::visit
 }
 
 double Interpreter::ValueToNumber(const HavelValue &value) {
@@ -251,7 +251,7 @@ double Interpreter::ValueToNumber(const HavelValue &value) {
         }
         return 0.0;
       },
-      value);
+      value.data);  // Use .data member for std::visit
 }
 
 // Constructor with Dependency Injection
@@ -341,7 +341,8 @@ void Interpreter::visitProgram(const ast::Program &node) {
       return;
     }
     if (std::holds_alternative<ReturnValue>(result)) {
-      lastResult = std::get<ReturnValue>(result).value;
+      auto ret = std::get<ReturnValue>(result);
+      lastResult = ret.value ? *ret.value : HavelValue();
       return;
     }
     lastValue = unwrap(result);
@@ -373,7 +374,7 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
       return;
     }
 
-    if (auto *array = std::get_if<HavelArray>(&value)) {
+    if (auto *array = value.get_if<HavelArray>()) {
       if (*array) {
         for (size_t i = 0;
              i < arrayPattern->elements.size() && i < (*array)->size(); ++i) {
@@ -400,7 +401,7 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
       return;
     }
 
-    if (auto *object = std::get_if<HavelObject>(&value)) {
+    if (auto *object = value.get_if<HavelObject>()) {
       if (*object) {
         for (const auto &[key, pattern] : objectPattern->properties) {
           auto it = (*object)->find(key);
@@ -444,7 +445,7 @@ void Interpreter::visitReturnStatement(const ast::ReturnStatement &node) {
     }
     value = unwrap(result);
   }
-  lastResult = ReturnValue{value};
+  lastResult = ReturnValue{std::make_shared<HavelValue>(value)};
 }
 
 void Interpreter::visitIfStatement(const ast::IfStatement &node) {
@@ -505,8 +506,8 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
         contextChecks.push_back([this, condValue]() {
           // Check if the current mode matches the condition value
           auto modeVal = environment->Get("mode");
-          if (modeVal && std::holds_alternative<std::string>(*modeVal)) {
-            return std::get<std::string>(*modeVal) == condValue;
+          if (modeVal && modeVal->isString()) {
+            return modeVal->asString() == condValue;
           }
           // If mode is not set or is not a string, default to false
           return false;

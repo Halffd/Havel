@@ -232,15 +232,13 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
 
   // Print result if any
   if (auto* value = std::get_if<havel::HavelValue>(&result)) {
-    // Print value based on type
-    if (value->holds_alternative<std::string>()) {
-      std::cout << value->get<std::string>() << std::endl;
-    } else if (value->holds_alternative<double>()) {
-      std::cout << value->get<double>() << std::endl;
-    } else if (value->holds_alternative<int>()) {
-      std::cout << value->get<int>() << std::endl;
-    } else if (value->holds_alternative<bool>()) {
-      std::cout << (value->get<bool>() ? "true" : "false") << std::endl;
+    // Print value based on type using semantic helpers
+    if (value->isString()) {
+      std::cout << value->asString() << std::endl;
+    } else if (value->isNumber()) {
+      std::cout << value->asNumber() << std::endl;
+    } else if (value->isBool()) {
+      std::cout << (value->asBool() ? "true" : "false") << std::endl;
     }
   }
 
@@ -368,7 +366,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
           if (std::holds_alternative<havel::HavelValue>(result)) {
             auto val = std::get<havel::HavelValue>(result);
-            if (!val.holds_alternative<std::nullptr_t>()) {
+            if (!val.isNull()) {
               std::cout << "=> " << havel::Interpreter::ValueToString(val)
                         << "\n";
             }
@@ -522,7 +520,7 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
 
         if (std::holds_alternative<havel::HavelValue>(result)) {
           auto val = std::get<havel::HavelValue>(result);
-          if (!val.holds_alternative<std::nullptr_t>()) {
+          if (!val.isNull()) {
             std::cout << "=> " << havel::Interpreter::ValueToString(val)
                       << "\n";
           }

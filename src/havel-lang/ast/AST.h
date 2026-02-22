@@ -8,6 +8,14 @@
 namespace havel::ast {
 // Forward declaration for ASTVisitor
 class ASTVisitor;
+
+// Forward declarations for type system
+struct TypeAnnotation;
+struct TypeDefinition;
+struct StructFieldDef;
+struct EnumVariantDef;
+struct StructDefinition;
+struct EnumDefinition;
 enum class NodeType {
   // Program structure
   Program,
@@ -141,6 +149,136 @@ struct Expression : public ASTNode {
 struct Statement : public ASTNode {
   // Statements don't return values
 };
+
+// ============================================================================
+// TYPE SYSTEM DEFINITIONS (must come before LetDeclaration which uses them)
+// ============================================================================
+
+// Type Definition base class
+struct TypeDefinition : public ASTNode {
+  std::string toString() const override { return "TypeDefinition{}"; }
+  void accept([[maybe_unused]] ASTVisitor &visitor) const override {}
+};
+
+// Simple type reference (e.g., Int, String, MyCustomType)
+struct TypeReference : public TypeDefinition {
+  std::string name;
+
+  TypeReference(const std::string &typeName) : name(typeName) {
+    kind = NodeType::TypeAnnotation;
+  }
+
+  std::string toString() const override {
+    return "TypeReference{" + name + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Type Annotation (e.g., : List(Int))
+struct TypeAnnotation : public ASTNode {
+  std::unique_ptr<TypeDefinition> type;
+
+  TypeAnnotation(std::unique_ptr<TypeDefinition> t) : type(std::move(t)) {
+    kind = NodeType::TypeAnnotation;
+  }
+
+  std::string toString() const override {
+    return "TypeAnnotation{" + (type ? type->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct field with optional type annotation
+struct StructFieldDef : public ASTNode {
+  std::string name;
+  std::optional<std::unique_ptr<TypeDefinition>> type;
+
+  StructFieldDef(const std::string& fieldName, std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt)
+    : name(fieldName), type(std::move(fieldType)) {
+    kind = NodeType::StructFieldDef;
+  }
+
+  std::string toString() const override {
+    std::string result = name;
+    if (type) {
+      result += ": " + (*type)->toString();
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct definition
+struct StructDefinition : public TypeDefinition {
+  std::vector<StructFieldDef> fields;
+
+  StructDefinition(std::vector<StructFieldDef> fieldList = {})
+    : fields(std::move(fieldList)) {
+    kind = NodeType::StructDefinition;
+  }
+
+  std::string toString() const override {
+    std::string result = "Struct{";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += fields[i].toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Enum variant with optional payload
+struct EnumVariantDef : public ASTNode {
+  std::string name;
+  std::optional<std::unique_ptr<TypeDefinition>> payloadType;
+
+  EnumVariantDef(const std::string& variantName, std::optional<std::unique_ptr<TypeDefinition>> payload = std::nullopt)
+    : name(variantName), payloadType(std::move(payload)) {
+    kind = NodeType::EnumVariantDef;
+  }
+
+  std::string toString() const override {
+    std::string result = name;
+    if (payloadType) {
+      result += "(" + (*payloadType)->toString() + ")";
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Enum definition
+struct EnumDefinition : public TypeDefinition {
+  std::vector<EnumVariantDef> variants;
+
+  EnumDefinition(std::vector<EnumVariantDef> variantList = {})
+    : variants(std::move(variantList)) {
+    kind = NodeType::EnumDefinition;
+  }
+
+  std::string toString() const override {
+    std::string result = "Enum{";
+    for (size_t i = 0; i < variants.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += variants[i].toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// ============================================================================
+// STATEMENT DEFINITIONS
+// ============================================================================
 enum class BinaryOperator {
   Add,
   Sub,
@@ -886,27 +1024,6 @@ struct ThrowStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Type Definition base class
-struct TypeDefinition : public ASTNode {
-  std::string toString() const override { return "TypeDefinition{}"; }
-  void accept([[maybe_unused]] ASTVisitor &visitor) const override {}
-};
-
-// Simple type reference (e.g., Int, String, MyCustomType)
-struct TypeReference : public TypeDefinition {
-  std::string name;
-
-  TypeReference(const std::string &typeName) : name(typeName) {
-    kind = NodeType::TypeAnnotation; // or create a new NodeType::TypeReference
-  }
-
-  std::string toString() const override {
-    return "TypeReference{" + name + "}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
 // Union type (e.g., Result = Ok(a) | Error(String))
 struct UnionType : public TypeDefinition {
   std::vector<std::unique_ptr<TypeDefinition>> variants;
@@ -976,112 +1093,6 @@ struct TypeDeclaration : public Statement {
 };
 
 /**
- * Struct field with optional type annotation
- * Example: x: Num  or  x (untyped)
- */
-struct StructFieldDef : public ASTNode {
-  std::string name;
-  std::optional<std::unique_ptr<TypeDefinition>> type;  // Optional - if nullopt, untyped
-  
-  StructFieldDef(const std::string& fieldName, std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt)
-    : name(fieldName), type(std::move(fieldType)) {
-    kind = NodeType::StructFieldDef;
-  }
-  
-  std::string toString() const override {
-    std::string result = name;
-    if (type) {
-      result += ": " + (*type)->toString();
-    }
-    return result;
-  }
-  
-  void accept(ASTVisitor &visitor) const override;
-};
-
-/**
- * Struct definition
- * Example:
- * struct Vec2 {
- *     x: Num
- *     y: Num
- * }
- */
-struct StructDefinition : public TypeDefinition {
-  std::vector<StructFieldDef> fields;
-  
-  StructDefinition(std::vector<StructFieldDef> fieldList = {})
-    : fields(std::move(fieldList)) {
-    kind = NodeType::StructDefinition;
-  }
-  
-  std::string toString() const override {
-    std::string result = "Struct{";
-    for (size_t i = 0; i < fields.size(); ++i) {
-      if (i > 0) result += ", ";
-      result += fields[i].toString();
-    }
-    result += "}";
-    return result;
-  }
-  
-  void accept(ASTVisitor &visitor) const override;
-};
-
-/**
- * Enum variant with optional payload
- * Example: Ok(value)  or  Err(message)  or  Red (no payload)
- */
-struct EnumVariantDef : public ASTNode {
-  std::string name;
-  std::optional<std::unique_ptr<TypeDefinition>> payloadType;  // Optional payload
-  
-  EnumVariantDef(const std::string& variantName, std::optional<std::unique_ptr<TypeDefinition>> payload = std::nullopt)
-    : name(variantName), payloadType(std::move(payload)) {
-    kind = NodeType::EnumVariantDef;
-  }
-  
-  std::string toString() const override {
-    std::string result = name;
-    if (payloadType) {
-      result += "(" + (*payloadType)->toString() + ")";
-    }
-    return result;
-  }
-  
-  void accept(ASTVisitor &visitor) const override;
-};
-
-/**
- * Enum definition
- * Example (simple):
- * enum Color { Red, Green, Blue }
- * 
- * Example (with payloads):
- * enum Result { Ok(value), Err(message) }
- */
-struct EnumDefinition : public TypeDefinition {
-  std::vector<EnumVariantDef> variants;
-  
-  EnumDefinition(std::vector<EnumVariantDef> variantList = {})
-    : variants(std::move(variantList)) {
-    kind = NodeType::EnumDefinition;
-  }
-  
-  std::string toString() const override {
-    std::string result = "Enum{";
-    for (size_t i = 0; i < variants.size(); ++i) {
-      if (i > 0) result += ", ";
-      result += variants[i].toString();
-    }
-    result += "}";
-    return result;
-  }
-  
-  void accept(ASTVisitor &visitor) const override;
-};
-
-/**
  * Struct declaration statement
  * Example: struct Vec2 { x: Num, y: Num }
  */
@@ -1121,20 +1132,6 @@ struct EnumDeclaration : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Type Annotation (e.g., : List(Int))
-struct TypeAnnotation : public ASTNode {
-  std::unique_ptr<TypeDefinition> type;
-
-  TypeAnnotation(std::unique_ptr<TypeDefinition> t) : type(std::move(t)) {
-    kind = NodeType::TypeAnnotation;
-  }
-
-  std::string toString() const override {
-    return "TypeAnnotation{" + (type ? type->toString() : "nullptr") + "}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
 struct UnaryExpression : public Expression {
   enum class UnaryOperator {
     Not,   // !expr, not expr
@@ -1263,8 +1260,8 @@ struct ModesBlock : public Statement {
 // Update Expression (i++, --i)
 struct UpdateExpression : public Expression {
   std::unique_ptr<Expression> argument;
-  bool isPrefix;
   enum class Operator { Increment, Decrement } operator_;
+  bool isPrefix;
 
   UpdateExpression(std::unique_ptr<Expression> arg, Operator op, bool prefix)
       : argument(std::move(arg)), operator_(op), isPrefix(prefix) {

@@ -939,6 +939,120 @@ bool BrowserModule::disableExtension(const std::string &extensionId) {
 // minimizeWindow() - REMOVED
 // fullscreenWindow() - REMOVED
 
+// === Window Control (with windowId parameter) ===
+
+bool BrowserModule::setWindowSize(int windowId, int width, int height) {
+  if (!connected)
+    return false;
+
+  int targetId = (windowId < 0) ? currentTabId : windowId;
+  if (targetId < 0)
+    return false;
+
+  std::string response = sendCdpCommand(
+      "Browser.setWindowBounds",
+      "{\"windowId\":" + std::to_string(targetId) +
+          ",\"bounds\":{\"width\":" + std::to_string(width) +
+          ",\"height\":" + std::to_string(height) + "}}");
+
+  if (!response.empty()) {
+    info("BrowserModule: Set window {} size to {}x{}", targetId, width, height);
+    return true;
+  }
+
+  error("BrowserModule: Failed to set window size");
+  return false;
+}
+
+bool BrowserModule::setWindowPosition(int windowId, int x, int y) {
+  if (!connected)
+    return false;
+
+  int targetId = (windowId < 0) ? currentTabId : windowId;
+  if (targetId < 0)
+    return false;
+
+  std::string response = sendCdpCommand(
+      "Browser.setWindowBounds",
+      "{\"windowId\":" + std::to_string(targetId) +
+          ",\"bounds\":{\"left\":" + std::to_string(x) +
+          ",\"top\":" + std::to_string(y) + "}}");
+
+  if (!response.empty()) {
+    info("BrowserModule: Set window {} position to ({}, {})", targetId, x, y);
+    return true;
+  }
+
+  error("BrowserModule: Failed to set window position");
+  return false;
+}
+
+bool BrowserModule::maximizeWindow(int windowId) {
+  if (!connected)
+    return false;
+
+  int targetId = (windowId < 0) ? currentTabId : windowId;
+  if (targetId < 0)
+    return false;
+
+  std::string response = sendCdpCommand(
+      "Browser.setWindowBounds",
+      "{\"windowId\":" + std::to_string(targetId) +
+          ",\"bounds\":{\"windowState\":\"maximized\"}}");
+
+  if (!response.empty()) {
+    info("BrowserModule: Maximized window {}", targetId);
+    return true;
+  }
+
+  error("BrowserModule: Failed to maximize window");
+  return false;
+}
+
+bool BrowserModule::minimizeWindow(int windowId) {
+  if (!connected)
+    return false;
+
+  int targetId = (windowId < 0) ? currentTabId : windowId;
+  if (targetId < 0)
+    return false;
+
+  std::string response = sendCdpCommand(
+      "Browser.setWindowBounds",
+      "{\"windowId\":" + std::to_string(targetId) +
+          ",\"bounds\":{\"windowState\":\"minimized\"}}");
+
+  if (!response.empty()) {
+    info("BrowserModule: Minimized window {}", targetId);
+    return true;
+  }
+
+  error("BrowserModule: Failed to minimize window");
+  return false;
+}
+
+bool BrowserModule::fullscreenWindow(int windowId) {
+  if (!connected)
+    return false;
+
+  int targetId = (windowId < 0) ? currentTabId : windowId;
+  if (targetId < 0)
+    return false;
+
+  std::string response = sendCdpCommand(
+      "Browser.setWindowBounds",
+      "{\"windowId\":" + std::to_string(targetId) +
+          ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
+
+  if (!response.empty()) {
+    info("BrowserModule: Fullscreened window {}", targetId);
+    return true;
+  }
+
+  error("BrowserModule: Failed to fullscreen window");
+  return false;
+}
+
 // === Browser Detection Helpers ===
 
 std::string BrowserModule::findBrowserPath(BrowserType type) {

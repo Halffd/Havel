@@ -271,6 +271,20 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
   InitializeStandardLibrary();
 }
 
+// Minimal interpreter for pure script execution (no IO/hotkeys/display)
+Interpreter::Interpreter(const std::vector<std::string> &cli_args)
+    : io(*static_cast<IO*>(nullptr)),  // Will not be used
+      windowManager(*static_cast<WindowManager*>(nullptr)),  // Will not be used
+      hotkeyManager(nullptr), brightnessManager(nullptr),
+      audioManager(nullptr), guiManager(nullptr), screenshotManager(nullptr),
+      lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
+  info("Minimal Interpreter created (pure mode - no IO/hotkeys)");
+  environment = std::make_shared<Environment>();
+  environment->Define("constructor_called", HavelValue(true));
+  environment->Define("__pure_mode__", HavelValue(true));
+  InitializeStandardLibrary();
+}
+
 HavelResult Interpreter::Execute(const std::string &sourceCode) {
   std::lock_guard<std::mutex> lock(interpreterMutex);
   try {

@@ -100,6 +100,19 @@ private:
 
     std::string m_title;
     wID m_id {0};
+
+    bool operator==(const Window& other) const noexcept {
+        return m_id == other.m_id;
+    }
 };
 
 } // namespace havel
+
+namespace std {
+template<>
+struct hash<havel::Window> {
+    size_t operator()(const havel::Window& w) const noexcept {
+        return std::hash<::wID>{}(w.ID());
+    }
+};
+}

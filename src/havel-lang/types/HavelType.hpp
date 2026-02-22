@@ -54,9 +54,13 @@ public:
     virtual ~HavelType() = default;
 
     Kind getKind() const { return kind_; }
-    
+
     virtual std::string toString() const = 0;
-    virtual bool isCompatible(const HavelType& other) const;
+    virtual bool isCompatible(const HavelType& other) const {
+        // Base implementation: types are compatible if they have the same kind
+        // or if one is Any type
+        return kind_ == Kind::Any || other.kind_ == Kind::Any || kind_ == other.kind_;
+    }
 
     // Type factory methods
     static std::shared_ptr<HavelType> any();

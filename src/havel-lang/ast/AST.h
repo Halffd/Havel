@@ -1611,6 +1611,14 @@ public:
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
+
+  // Type system - struct/enum support
+  virtual void visitStructFieldDef(const StructFieldDef &node) = 0;
+  virtual void visitStructDefinition(const StructDefinition &node) = 0;
+  virtual void visitStructDeclaration(const StructDeclaration &node) = 0;
+  virtual void visitEnumVariantDef(const EnumVariantDef &node) = 0;
+  virtual void visitEnumDefinition(const EnumDefinition &node) = 0;
+  virtual void visitEnumDeclaration(const EnumDeclaration &node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -1835,5 +1843,30 @@ inline void ConditionalHotkey::accept(ASTVisitor &visitor) const {
 
 inline void WhenBlock::accept(ASTVisitor &visitor) const {
   visitor.visitWhenBlock(*this);
+}
+
+// Type system - struct/enum accept methods
+inline void StructFieldDef::accept(ASTVisitor &visitor) const {
+  visitor.visitStructFieldDef(*this);
+}
+
+inline void StructDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitStructDefinition(*this);
+}
+
+inline void StructDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitStructDeclaration(*this);
+}
+
+inline void EnumVariantDef::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumVariantDef(*this);
+}
+
+inline void EnumDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumDefinition(*this);
+}
+
+inline void EnumDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitEnumDeclaration(*this);
 }
 } // namespace havel::ast

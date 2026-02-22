@@ -1,0 +1,80 @@
+// Comprehensive test for Havel type system and features
+
+print("=== Havel Type System Tests ===\n")
+
+// Test 1: Struct definition and registration
+print("1. Struct Definition:")
+struct Vec2 {
+    x
+    y
+}
+struct Point3D {
+    x
+    y
+    z
+}
+print("   ✓ Vec2 and Point3D structs defined\n")
+
+// Test 2: Enum definition
+print("2. Enum Definition:")
+enum Color {
+    Red
+    Green
+    Blue
+}
+enum Status {
+    Ok(value)
+    Err(message)
+}
+print("   ✓ Color and Status enums defined\n")
+
+// Test 3: Objects and arrays
+print("3. Objects and Arrays:")
+let myObject = { name: "test", value: 42, active: true }
+print("   Object: " + myObject.name + " = " + myObject.value)
+
+let myArray = [1, 2, 3, 4, 5]
+print("   Array length: " + myArray.length)
+print("   Array[2]: " + myArray[2])
+
+let nestedObj = { 
+    user: { name: "Alice", age: 30 },
+    scores: [95, 87, 92]
+}
+print("   Nested: " + nestedObj.user.name + " scored " + nestedObj.scores[0])
+print("")
+
+// Test 4: Error handling
+print("4. Error Handling:")
+try {
+    result = 10 / 0
+    print("   Division result: " + result)
+} catch (e) {
+    print("   Caught error: " + e)
+}
+
+try {
+    undefinedVar
+} catch (e) {
+    print("   Caught undefined variable error\n")
+}
+
+// Test 5: Type checking with objects
+print("5. Type Operations:")
+let testObj = { x: 10, y: 20 }
+print("   Object keys accessible: x=" + testObj.x + ", y=" + testObj.y)
+
+// Test 6: Array operations
+print("\n6. Array Operations:")
+let nums = [1, 2, 3, 4, 5]
+print("   Original: " + nums.length + " elements")
+
+// Map test
+let doubled = map(nums, fn(n) -> n * 2)
+print("   Doubled: " + doubled[0] + ", " + doubled[1] + ", " + doubled[2])
+
+// Filter test
+let evens = filter(nums, fn(n) -> n % 2 == 0)
+print("   Evens: " + evens.length + " elements")
+
+print("\n=== All Tests Completed ===")

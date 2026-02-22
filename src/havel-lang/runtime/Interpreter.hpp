@@ -493,8 +493,8 @@ public:
 
 private:
   std::shared_ptr<Environment> environment;
-  IO &io;
-  WindowManager &windowManager;
+  IO *io;
+  WindowManager *windowManager;
   HotkeyManager *hotkeyManager;
   BrightnessManager *brightnessManager;
   AudioManager *audioManager;

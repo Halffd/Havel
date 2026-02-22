@@ -261,7 +261,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
                          AudioManager *audio_mgr, GUIManager *gui_mgr,
                          ScreenshotManager *screenshot_mgr,
                          const std::vector<std::string> &cli_args)
-    : io(io_system), windowManager(window_mgr), hotkeyManager(hotkey_mgr),
+    : io(&io_system), windowManager(&window_mgr), hotkeyManager(hotkey_mgr),
       brightnessManager(brightness_mgr), audioManager(audio_mgr),
       guiManager(gui_mgr), screenshotManager(screenshot_mgr),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
@@ -273,8 +273,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)
 Interpreter::Interpreter(const std::vector<std::string> &cli_args)
-    : io(*static_cast<IO *>(nullptr)),                       // Will not be used
-      windowManager(*static_cast<WindowManager *>(nullptr)), // Will not be used
+    : io(nullptr), windowManager(nullptr),
       hotkeyManager(nullptr), brightnessManager(nullptr), audioManager(nullptr),
       guiManager(nullptr), screenshotManager(nullptr),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
@@ -514,17 +513,17 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
         });
       } else if (condType == "title") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeTitle = this->windowManager.GetActiveWindowTitle();
+          std::string activeTitle = this->windowManager->GetActiveWindowTitle();
           return activeTitle.find(condValue) != std::string::npos;
         });
       } else if (condType == "class") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeClass = this->windowManager.GetActiveWindowClass();
+          std::string activeClass = this->windowManager->GetActiveWindowClass();
           return activeClass.find(condValue) != std::string::npos;
         });
       } else if (condType == "process") {
         contextChecks.push_back([this, condValue]() {
-          pID pid = this->windowManager.GetActiveWindowPID();
+          pID pid = this->windowManager->GetActiveWindowPID();
           std::string processName = WindowManager::getProcessName(pid);
           return processName.find(condValue) != std::string::npos;
         });
@@ -561,7 +560,7 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     }
 
     std::string hotkey = hotkeyLiteral->combination;
-    io.Hotkey(hotkey, actionHandler);
+    io->Hotkey(hotkey, actionHandler);
   }
 
   // Return null after registering the hotkey
@@ -990,7 +989,8 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
                          std::istreambuf_iterator<char>());
 
       // Execute module in a new environment
-      Interpreter moduleInterpreter(io, windowManager);
+      // Note: For now, modules use the same IO/windowManager as parent
+      Interpreter moduleInterpreter(*io, *windowManager);
       auto moduleResult = moduleInterpreter.Execute(source);
       if (isError(moduleResult)) {
         lastResult = moduleResult;
@@ -2232,35 +2232,35 @@ void Interpreter::InitializeStandardLibrary() {
 
   // Create io module at the end after all io functions are defined
   auto ioMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("io.mouseMove"))
+  if (auto v = environment->Get("io->mouseMove"))
     (*ioMod)["mouseMove"] = *v;
-  if (auto v = environment->Get("io.mouseMoveTo"))
+  if (auto v = environment->Get("io->mouseMoveTo"))
     (*ioMod)["mouseMoveTo"] = *v;
-  if (auto v = environment->Get("io.mouseClick"))
+  if (auto v = environment->Get("io->mouseClick"))
     (*ioMod)["mouseClick"] = *v;
-  if (auto v = environment->Get("io.mouseDown"))
+  if (auto v = environment->Get("io->mouseDown"))
     (*ioMod)["mouseDown"] = *v;
-  if (auto v = environment->Get("io.mouseUp"))
+  if (auto v = environment->Get("io->mouseUp"))
     (*ioMod)["mouseUp"] = *v;
-  if (auto v = environment->Get("io.mouseWheel"))
+  if (auto v = environment->Get("io->mouseWheel"))
     (*ioMod)["mouseWheel"] = *v;
-  if (auto v = environment->Get("io.getKeyState"))
+  if (auto v = environment->Get("io->getKeyState"))
     (*ioMod)["getKeyState"] = *v;
-  if (auto v = environment->Get("io.isShiftPressed"))
+  if (auto v = environment->Get("io->isShiftPressed"))
     (*ioMod)["isShiftPressed"] = *v;
-  if (auto v = environment->Get("io.isCtrlPressed"))
+  if (auto v = environment->Get("io->isCtrlPressed"))
     (*ioMod)["isCtrlPressed"] = *v;
-  if (auto v = environment->Get("io.isAltPressed"))
+  if (auto v = environment->Get("io->isAltPressed"))
     (*ioMod)["isAltPressed"] = *v;
-  if (auto v = environment->Get("io.isWinPressed"))
+  if (auto v = environment->Get("io->isWinPressed"))
     (*ioMod)["isWinPressed"] = *v;
-  if (auto v = environment->Get("io.scroll"))
+  if (auto v = environment->Get("io->scroll"))
     (*ioMod)["scroll"] = *v;
-  if (auto v = environment->Get("io.getMouseSensitivity"))
+  if (auto v = environment->Get("io->getMouseSensitivity"))
     (*ioMod)["getMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.setMouseSensitivity"))
+  if (auto v = environment->Get("io->setMouseSensitivity"))
     (*ioMod)["setMouseSensitivity"] = *v;
-  if (auto v = environment->Get("io.emergencyReleaseAllKeys"))
+  if (auto v = environment->Get("io->emergencyReleaseAllKeys"))
     (*ioMod)["emergencyReleaseAllKeys"] = *v;
 
   if (auto v = environment->Get("io.map"))
@@ -2329,7 +2329,7 @@ void Interpreter::InitializeStandardLibrary() {
             });
           } else if (tapAction.is<std::string>()) {
             std::string cmd = tapAction.asString();
-            onTap = [this, cmd]() { io.Send(cmd); };
+            onTap = [this, cmd]() { io->Send(cmd); };
           }
         }
 
@@ -2411,7 +2411,7 @@ void Interpreter::InitializeSystemBuiltins() {
                     if (args.empty())
                       return HavelRuntimeError("send() requires keys string");
                     std::string keys = ValueToString(args[0]);
-                    io.Send(keys.c_str());
+                    io->Send(keys.c_str());
                     return HavelValue(nullptr);
                   }));
 
@@ -2681,7 +2681,7 @@ void Interpreter::InitializeSystemBuiltins() {
                     if (args.empty())
                       return HavelRuntimeError("send() requires text");
                     std::string text = this->ValueToString(args[0]);
-                    this->io.Send(text.c_str());
+                    this->io->Send(text.c_str());
                     return HavelValue(nullptr);
                   }));
 
@@ -3098,9 +3098,9 @@ void Interpreter::InitializeSystemBuiltins() {
         info("Quit requested - performing hard exit");
 
         // Stop EventListener FIRST to prevent use-after-free in KeyMap access
-        if (io.GetEventListener()) {
+        if (io->GetEventListener()) {
           info("Stopping EventListener before exit...");
-          io.GetEventListener()->Stop();
+          io->GetEventListener()->Stop();
           info("EventListener stopped");
         }
 
@@ -3157,41 +3157,41 @@ void Interpreter::InitializeSystemBuiltins() {
   // === IO METHODS ===
   // Key state methods
   environment->Define(
-      "io.getKeyState",
+      "io->getKeyState",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
-              return HavelRuntimeError("io.getKeyState() requires key name");
+              return HavelRuntimeError("io->getKeyState() requires key name");
             std::string key = this->ValueToString(args[0]);
-            return HavelValue(this->io.GetKeyState(key));
+            return HavelValue(this->io->GetKeyState(key));
           }));
 
   environment->Define(
-      "io.isShiftPressed",
+      "io->isShiftPressed",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->io.IsShiftPressed());
+            return HavelValue(this->io->IsShiftPressed());
           }));
 
   environment->Define(
-      "io.isCtrlPressed",
+      "io->isCtrlPressed",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->io.IsCtrlPressed());
+            return HavelValue(this->io->IsCtrlPressed());
           }));
 
   environment->Define(
-      "io.isAltPressed",
+      "io->isAltPressed",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->io.IsAltPressed());
+            return HavelValue(this->io->IsAltPressed());
           }));
 
   environment->Define(
-      "io.isWinPressed",
+      "io->isWinPressed",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->io.IsWinPressed());
+            return HavelValue(this->io->IsWinPressed());
           }));
 
   // === AUDIO MANAGER METHODS ===
@@ -4040,7 +4040,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.getTitle",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->windowManager.GetActiveWindowTitle());
+            return HavelValue(this->windowManager->GetActiveWindowTitle());
           }));
 
   environment->Define(
@@ -4049,14 +4049,14 @@ void Interpreter::InitializeWindowBuiltins() {
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
             return HavelValue(
-                static_cast<double>(this->windowManager.GetActiveWindowPID()));
+                static_cast<double>(this->windowManager->GetActiveWindowPID()));
           }));
 
   environment->Define(
       "window.maximize",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window activeWin = Window(this->windowManager.GetActiveWindow());
+            Window activeWin = Window(this->windowManager->GetActiveWindow());
             activeWin.Max();
             return HavelValue(nullptr);
           }));
@@ -4065,7 +4065,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.minimize",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window activeWin = Window(this->windowManager.GetActiveWindow());
+            Window activeWin = Window(this->windowManager->GetActiveWindow());
             activeWin.Min();
             return HavelValue(nullptr);
           }));
@@ -4074,7 +4074,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.next",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            this->windowManager.AltTab();
+            this->windowManager->AltTab();
             return HavelValue(nullptr);
           }));
 
@@ -4082,7 +4082,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.previous",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            this->windowManager.AltTab();
+            this->windowManager->AltTab();
             return HavelValue(nullptr);
           }));
 
@@ -4090,7 +4090,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.close",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window w(this->windowManager.GetActiveWindow());
+            Window w(this->windowManager->GetActiveWindow());
             w.Close();
             return HavelValue(nullptr);
           }));
@@ -4099,7 +4099,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.center",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            this->windowManager.Center(this->windowManager.GetActiveWindow());
+            this->windowManager->Center(this->windowManager->GetActiveWindow());
             return HavelValue(nullptr);
           }));
 
@@ -4127,7 +4127,7 @@ void Interpreter::InitializeWindowBuiltins() {
               return HavelRuntimeError("window.move() requires (x, y)");
             int x = static_cast<int>(args[0].asNumber());
             int y = static_cast<int>(args[1].asNumber());
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             return HavelValue(activeWin.Move(x, y));
           }));
 
@@ -4139,7 +4139,7 @@ void Interpreter::InitializeWindowBuiltins() {
           return HavelRuntimeError("window.resize() requires (width, height)");
         int width = static_cast<int>(args[0].asNumber());
         int height = static_cast<int>(args[1].asNumber());
-        Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager->GetActiveWindow());
         return HavelValue(activeWin.Resize(width, height));
       }));
 
@@ -4154,21 +4154,21 @@ void Interpreter::InitializeWindowBuiltins() {
             int y = static_cast<int>(args[1].asNumber());
             int width = static_cast<int>(args[2].asNumber());
             int height = static_cast<int>(args[3].asNumber());
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             return HavelValue(activeWin.MoveResize(x, y, width, height));
           }));
 
   // Note: Hide/Show not implemented yet in Window class
   // environment->Define("window.hide", BuiltinFunction([this](const
   // std::vector<HavelValue>& args) -> HavelResult {
-  //     Window activeWin(this->windowManager.GetActiveWindow());
+  //     Window activeWin(this->windowManager->GetActiveWindow());
   //     activeWin.Hide();
   //     return HavelValue(nullptr);
   // }));
   //
   // environment->Define("window.show", BuiltinFunction([this](const
   // std::vector<HavelValue>& args) -> HavelResult {
-  //     Window activeWin(this->windowManager.GetActiveWindow());
+  //     Window activeWin(this->windowManager->GetActiveWindow());
   //     activeWin.Show();
   //     return HavelValue(nullptr);
   // }));
@@ -4178,7 +4178,7 @@ void Interpreter::InitializeWindowBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             bool top = args.empty() ? true : args[0].asBool();
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             activeWin.AlwaysOnTop(top);
             return HavelValue(nullptr);
           }));
@@ -4188,7 +4188,7 @@ void Interpreter::InitializeWindowBuiltins() {
       BuiltinFunction([this](
                           const std::vector<HavelValue> &args) -> HavelResult {
         int alpha = args.empty() ? 255 : static_cast<int>(args[0].asNumber());
-        Window activeWin(this->windowManager.GetActiveWindow());
+        Window activeWin(this->windowManager->GetActiveWindow());
         activeWin.Transparency(alpha);
         return HavelValue(nullptr);
       }));
@@ -4197,7 +4197,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.toggleFullscreen",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             activeWin.ToggleFullscreen();
             return HavelValue(nullptr);
           }));
@@ -4209,7 +4209,7 @@ void Interpreter::InitializeWindowBuiltins() {
             if (args.empty())
               return HavelRuntimeError("window.snap() requires position (0-3)");
             int position = static_cast<int>(args[0].asNumber());
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             activeWin.Snap(position);
             return HavelValue(nullptr);
           }));
@@ -4222,7 +4222,7 @@ void Interpreter::InitializeWindowBuiltins() {
               return HavelRuntimeError(
                   "window.moveToMonitor() requires monitor index");
             int monitor = static_cast<int>(args[0].asNumber());
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             return HavelValue(activeWin.MoveToMonitor(monitor));
           }));
 
@@ -4234,7 +4234,7 @@ void Interpreter::InitializeWindowBuiltins() {
               return HavelRuntimeError(
                   "window.moveToCorner() requires corner name");
             std::string corner = this->ValueToString(args[0]);
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             return HavelValue(activeWin.MoveToCorner(corner));
           }));
 
@@ -4242,7 +4242,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.getClass",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(this->windowManager.GetActiveWindowClass());
+            return HavelValue(this->windowManager->GetActiveWindowClass());
           }));
 
   environment->Define(
@@ -4250,7 +4250,7 @@ void Interpreter::InitializeWindowBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty()) {
-              Window activeWin(this->windowManager.GetActiveWindow());
+              Window activeWin(this->windowManager->GetActiveWindow());
               return HavelValue(activeWin.Exists());
             }
             std::string title = this->ValueToString(args[0]);
@@ -4262,7 +4262,7 @@ void Interpreter::InitializeWindowBuiltins() {
       "window.isActive",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
-            Window activeWin(this->windowManager.GetActiveWindow());
+            Window activeWin(this->windowManager->GetActiveWindow());
             return HavelValue(activeWin.Active());
           }));
 
@@ -4820,7 +4820,7 @@ void Interpreter::InitializeIOBuiltins() {
               return HavelRuntimeError("io.map() requires (from, to)");
             std::string from = ValueToString(args[0]);
             std::string to = ValueToString(args[1]);
-            this->io.Map(from, to);
+            this->io->Map(from, to);
             return HavelValue(nullptr);
           }));
 
@@ -4833,7 +4833,7 @@ void Interpreter::InitializeIOBuiltins() {
               return HavelRuntimeError("io.remap() requires (key1, key2)");
             std::string key1 = ValueToString(args[0]);
             std::string key2 = ValueToString(args[1]);
-            this->io.Remap(key1, key2);
+            this->io->Remap(key1, key2);
             return HavelValue(nullptr);
           }));
 
@@ -4859,7 +4859,7 @@ void Interpreter::InitializeIOBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
-            return HavelValue(this->io.Suspend());
+            return HavelValue(this->io->Suspend());
           }));
 
   // IO resume - only resumes if currently suspended
@@ -4868,8 +4868,8 @@ void Interpreter::InitializeIOBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
-            if (this->io.isSuspended) {
-              return HavelValue(this->io.Suspend());
+            if (this->io->isSuspended) {
+              return HavelValue(this->io->Suspend());
             }
             return HavelValue(true);
           }));
@@ -4943,7 +4943,7 @@ void Interpreter::InitializeIOBuiltins() {
         int dx = static_cast<int>(ValueToNumber(args[0]));
         int dy = static_cast<int>(ValueToNumber(args[1]));
 
-        if (!io.MouseMove(dx, dy))
+        if (!io->MouseMove(dx, dy))
           return HavelRuntimeError("MouseMove failed");
 
         return HavelValue(true);
@@ -4960,7 +4960,7 @@ void Interpreter::InitializeIOBuiltins() {
         int x = static_cast<int>(ValueToNumber(args[0]));
         int y = static_cast<int>(ValueToNumber(args[1]));
 
-        if (!io.MouseMoveTo(x, y))
+        if (!io->MouseMoveTo(x, y))
           return HavelRuntimeError("MouseMoveTo failed");
 
         return HavelValue(true);
@@ -4974,7 +4974,7 @@ void Interpreter::InitializeIOBuiltins() {
         int button =
             args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
-        if (!io.MouseDown(button))
+        if (!io->MouseDown(button))
           return HavelRuntimeError("MouseDown failed");
 
         return HavelValue(true);
@@ -4988,7 +4988,7 @@ void Interpreter::InitializeIOBuiltins() {
         int button =
             args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
-        if (!io.MouseUp(button))
+        if (!io->MouseUp(button))
           return HavelRuntimeError("MouseUp failed");
 
         return HavelValue(true);
@@ -5033,10 +5033,10 @@ void Interpreter::InitializeIOBuiltins() {
         bool ok = true;
 
         if (doDown)
-          ok &= io.MouseDown(button);
+          ok &= io->MouseDown(button);
 
         if (doUp)
-          ok &= io.MouseUp(button);
+          ok &= io->MouseUp(button);
 
         if (!ok)
           return HavelRuntimeError("MouseClick failed");
@@ -5056,7 +5056,7 @@ void Interpreter::InitializeIOBuiltins() {
         double dy = ValueToNumber(args[0]);
         double dx = args.size() >= 2 ? ValueToNumber(args[1]) : 0.0;
 
-        if (!io.Scroll(dy, dx))
+        if (!io->Scroll(dy, dx))
           return HavelRuntimeError("Scroll failed");
 
         return HavelValue(true);
@@ -5065,24 +5065,24 @@ void Interpreter::InitializeIOBuiltins() {
   (*mouseObj)["getSensitivity"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
-        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+        return HavelValue(static_cast<double>(this->io->mouseSensitivity));
       });
 
   (*mouseObj)["setSensitivity"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
-          return HavelRuntimeError("io.setMouseSensitivity() requires value");
-        this->io.mouseSensitivity = ValueToNumber(args[0]);
-        return HavelValue(static_cast<double>(this->io.mouseSensitivity));
+          return HavelRuntimeError("io->setMouseSensitivity() requires value");
+        this->io->mouseSensitivity = ValueToNumber(args[0]);
+        return HavelValue(static_cast<double>(this->io->mouseSensitivity));
       });
   environment->Define("mouse", mouseObj);
   environment->Define("click", (*mouseObj)["click"]);
   environment->Define(
-      "io.emergencyReleaseAllKeys",
+      "io->emergencyReleaseAllKeys",
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
-            this->io.EmergencyReleaseAllKeys();
+            this->io->EmergencyReleaseAllKeys();
             return HavelValue(nullptr);
           }));
 
@@ -5094,7 +5094,7 @@ void Interpreter::InitializeIOBuiltins() {
         if (args.empty())
           return HavelRuntimeError("io.enableHotkey() requires hotkey name");
         std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.EnableHotkey(hotkey));
+        return HavelValue(this->io->EnableHotkey(hotkey));
       }));
 
   environment->Define(
@@ -5104,7 +5104,7 @@ void Interpreter::InitializeIOBuiltins() {
         if (args.empty())
           return HavelRuntimeError("io.disableHotkey() requires hotkey name");
         std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.DisableHotkey(hotkey));
+        return HavelValue(this->io->DisableHotkey(hotkey));
       }));
 
   environment->Define(
@@ -5114,7 +5114,7 @@ void Interpreter::InitializeIOBuiltins() {
         if (args.empty())
           return HavelRuntimeError("io.toggleHotkey() requires hotkey name");
         std::string hotkey = ValueToString(args[0]);
-        return HavelValue(this->io.ToggleHotkey(hotkey));
+        return HavelValue(this->io->ToggleHotkey(hotkey));
       }));
 
   environment->Define(
@@ -5136,10 +5136,10 @@ void Interpreter::InitializeIOBuiltins() {
 
             if (isNumber) {
               int id = static_cast<int>(numVal);
-              return HavelValue(this->io.RemoveHotkey(id));
+              return HavelValue(this->io->RemoveHotkey(id));
             } else {
               std::string name = ValueToString(args[0]);
-              return HavelValue(this->io.RemoveHotkey(name));
+              return HavelValue(this->io->RemoveHotkey(name));
             }
           }));
 
@@ -6305,8 +6305,9 @@ KeyTap *Interpreter::createKeyTap(
     std::variant<std::string, std::function<bool()>> tapCondition,
     std::variant<std::string, std::function<bool()>> comboCondition,
     std::function<void()> onCombo, bool grabDown, bool grabUp) {
+  if (!io) return nullptr;
   auto keyTap =
-      std::make_unique<KeyTap>(io, *hotkeyManager, keyName, onTap, tapCondition,
+      std::make_unique<KeyTap>(*io, *hotkeyManager, keyName, onTap, tapCondition,
                                comboCondition, onCombo, grabDown, grabUp);
 
   KeyTap *rawPtr = keyTap.get();
@@ -7366,8 +7367,8 @@ void Interpreter::InitializeGUIBuiltins() {
       BuiltinFunction(
           [this](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
-            if (!coreMapManager) {
-              coreMapManager = std::make_unique<MapManager>(&io);
+            if (!coreMapManager && io) {
+              coreMapManager = std::make_unique<MapManager>(io);
             }
             return HavelValue(coreMapManager != nullptr);
           }));

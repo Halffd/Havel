@@ -1,5 +1,54 @@
 # Havel TODO
 
+## Type System Implementation (In Progress)
+
+### Foundation (Completed ✅)
+- [x] HavelType base class with Kind enum
+- [x] HavelStructType with field definitions
+- [x] HavelEnumType with variant definitions
+- [x] TypeRegistry singleton for type storage
+- [x] TypeChecker with TypeMode (None, Warn, Strict)
+- [x] HavelValue with optional annotatedType field
+- [x] Parser support for struct/enum definitions
+- [x] Parser support for type annotations
+- [x] CLI `--run` mode for pure script execution
+
+### Semantic Analysis (TODO)
+- [ ] Create `SemanticAnalyzer` class for type checking pre-pass
+  - [ ] `registerStructTypes()` - Register all struct definitions in TypeRegistry
+  - [ ] `registerEnumTypes()` - Register all enum definitions in TypeRegistry
+  - [ ] `validateTypeAnnotations()` - Validate type references exist
+  - [ ] `inferTypes()` - Type inference for untyped variables
+  - [ ] `checkFunctionSignatures()` - Validate function parameter/return types
+  - [ ] `buildSymbolTable()` - Build symbol table with type information
+
+### Syntax Analysis Enhancements (TODO)
+- [ ] Create `SyntaxValidator` class for syntax-level checks
+  - [ ] `validateStructSyntax()` - Validate struct field syntax
+  - [ ] `validateEnumSyntax()` - Validate enum variant syntax
+  - [ ] `validateTypeAnnotationSyntax()` - Validate type annotation syntax
+  - [ ] `validateStructConstruction()` - Validate struct literal syntax
+  - [ ] `validateEnumConstruction()` - Validate enum variant construction
+
+### Interpreter Integration (TODO)
+- [ ] Implement TypeChecker::checkCompatibility() method
+- [ ] Implement TypeChecker::validateStructFields() method
+- [ ] Update visitMemberExpression() for struct field access
+- [ ] Implement struct construction with type validation
+- [ ] Implement enum construction with variant validation
+- [ ] Add type coercion rules
+- [ ] Add error messages for type mismatches
+
+### Testing (TODO)
+- [ ] Create test scripts for type system
+  - [ ] test_types.hv - Basic type tests
+  - [ ] test_structs.hv - Struct definition and usage
+  - [ ] test_enums.hv - Enum definition and pattern matching
+  - [ ] test_type_errors.hv - Type error detection
+- [ ] Run tests with `havel --run scripts/test_*.hv`
+
+---
+
 ## Missing Features
 
 ### Core Features

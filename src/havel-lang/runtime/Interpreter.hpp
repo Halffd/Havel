@@ -5,6 +5,7 @@
 #include "core/io/KeyTap.hpp"
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
+#include "types/HavelType.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "window/Window.hpp"
@@ -94,8 +95,62 @@ using HavelValueBase =
                  HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
                  std::shared_ptr<Channel>, BuiltinFunction>;
 
+/**
+ * HavelValue with optional type annotation for gradual typing
+ * 
+ * Types are metadata only - runtime representation stays dynamic (variant-based).
+ * Type checking occurs based on TypeMode:
+ * - None: ignore types entirely
+ * - Warn: print warnings on mismatch
+ * - Strict: runtime error on mismatch
+ */
 struct HavelValue : HavelValueBase {
   using HavelValueBase::HavelValueBase;
+  
+  // Optional type annotation for gradual typing
+  // If nullopt → untyped/dynamic value
+  // If has value → type-checked based on TypeMode
+  std::optional<std::shared_ptr<HavelType>> annotatedType;
+  
+  // Default constructor
+  HavelValue() : HavelValueBase(nullptr) {}
+  
+  // Copy constructor preserves type annotation
+  HavelValue(const HavelValue& other) 
+    : HavelValueBase(static_cast<const HavelValueBase&>(other)),
+      annotatedType(other.annotatedType) {}
+  
+  // Move constructor preserves type annotation  
+  HavelValue(HavelValue&& other) noexcept
+    : HavelValueBase(static_cast<HavelValueBase&&>(other)),
+      annotatedType(std::move(other.annotatedType)) {}
+  
+  // Assignment preserves type annotation of target
+  HavelValue& operator=(const HavelValue& other) {
+    HavelValueBase::operator=(static_cast<const HavelValueBase&>(other));
+    annotatedType = other.annotatedType;
+    return *this;
+  }
+  
+  // Construct from base variant (no type annotation)
+  HavelValue(HavelValueBase&& base) : HavelValueBase(std::move(base)) {}
+  HavelValue(const HavelValueBase& base) : HavelValueBase(base) {}
+  
+  // Convenience constructors with optional type
+  HavelValue(std::nullptr_t, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(nullptr), annotatedType(type) {}
+  HavelValue(bool b, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(b), annotatedType(type) {}
+  HavelValue(int i, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(i), annotatedType(type) {}
+  HavelValue(double d, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(d), annotatedType(type) {}
+  HavelValue(const std::string& s, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(s), annotatedType(type) {}
+  HavelValue(HavelArray arr, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(std::move(arr)), annotatedType(type) {}
+  HavelValue(HavelObject obj, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+    : HavelValueBase(std::move(obj)), annotatedType(type) {}
 };
 
 // Return value wrapper

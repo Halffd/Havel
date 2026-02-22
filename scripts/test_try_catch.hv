@@ -1,0 +1,67 @@
+// Test try/catch/finally
+print("=== Testing try/catch/finally ===\n")
+
+// Test 1: Basic try/catch with parentheses
+print("Test 1: Basic try/catch")
+try {
+    print("  In try block")
+    throw "Test error"
+} catch (e) {
+    print("  Caught: " + e)
+}
+
+// Test 2: try/finally
+print("\nTest 2: try/finally")
+try {
+    print("  In try with finally")
+} finally {
+    print("  Finally block executed")
+}
+
+// Test 3: try/catch/finally
+print("\nTest 3: try/catch/finally")
+try {
+    print("  In full try")
+    throw "Another error"
+} catch (err) {
+    print("  Caught error: " + err)
+} finally {
+    print("  Final finally")
+}
+
+// Test 4: Nested try/catch
+print("\nTest 4: Nested try/catch")
+try {
+    try {
+        throw "Inner error"
+    } catch (inner) {
+        print("  Inner caught: " + inner)
+        throw "Outer error"
+    }
+} catch (outer) {
+    print("  Outer caught: " + outer)
+}
+
+// Test 5: throw with different types
+print("\nTest 5: throw with different types")
+try {
+    throw 42
+} catch (e) {
+    print("  Caught number: " + e)
+}
+
+try {
+    throw { msg: "object error" }
+} catch (e) {
+    print("  Caught object: " + e)
+}
+
+// Test 6: finally always runs even after return-like behavior
+print("\nTest 6: finally always runs")
+try {
+    print("  In try")
+} finally {
+    print("  This finally always runs")
+}
+
+print("\n=== All error handling tests passed ===")

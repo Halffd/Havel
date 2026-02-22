@@ -606,8 +606,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
   if (at().type == havel::TokenType::Catch) {
     advance(); // consume 'catch'
 
-    // Parse catch variable (optional)
-    if (at().type == havel::TokenType::Identifier) {
+    // Support both syntaxes: catch e { and catch (e) {
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      if (at().type == havel::TokenType::Identifier) {
+        catchVariable = std::make_unique<havel::ast::Identifier>(advance().value);
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after catch variable");
+      }
+      advance(); // consume ')'
+    } else if (at().type == havel::TokenType::Identifier) {
+      // Old syntax without parentheses
       catchVariable = std::make_unique<havel::ast::Identifier>(advance().value);
     }
 

@@ -997,22 +997,29 @@ void IO::removeSpecialCharacters(str &keyName) {
 bool IO::EmitClick(int btnCode, int action) {
   // Use EventListener's uinput for all mouse events
   if (eventListener) {
+    // Map integer button codes to proper mouse button codes
+    int mouseBtnCode = btnCode;
+    if (btnCode >= 1 && btnCode <= 9) {
+      // Map 1-9 to BTN_LEFT through BTN_9
+      mouseBtnCode = BTN_LEFT + (btnCode - 1);
+    }
+    
     // Send events through EventListener
     switch (action) {
     case 0: // Release
-      eventListener->SendUinputEvent(EV_KEY, btnCode, 0);
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       return true;
 
     case 1: // Hold
-      eventListener->SendUinputEvent(EV_KEY, btnCode, 1);
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       return true;
 
     case 2: // Click (FAST)
-      eventListener->SendUinputEvent(EV_KEY, btnCode, 1);
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-      eventListener->SendUinputEvent(EV_KEY, btnCode, 0);
+      eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       return true;
 
@@ -1051,25 +1058,23 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
       currentY = pos.second;
     }
 
-    // Animate to target with steps (capped to prevent excessive time)
+    // Clamp target coordinates to screen bounds
+    targetX = std::clamp(targetX, 0, screenWidth);
+    targetY = std::clamp(targetY, 0, screenHeight);
+
+    // Calculate distance and steps for animation
     int distance = std::abs(targetX - currentX) + std::abs(targetY - currentY);
-    int steps = std::min(100, std::max(10, distance / speed));
+    
+    // Use faster default speed (5) and cap steps to prevent long animations
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
 
     for (int i = 0; i <= steps; i++) {
       double progress = static_cast<double>(i) / steps;
 
-      // Ease in-out curve
-      double easedProgress;
-      if (progress < 0.5) {
-        easedProgress = 2 * progress * progress;
-      } else {
-        easedProgress = -1 + (4 - 2 * progress) * progress;
-      }
-
-      int currentTargetX =
-          currentX + static_cast<int>((targetX - currentX) * easedProgress);
-      int currentTargetY =
-          currentY + static_cast<int>((targetY - currentY) * easedProgress);
+      // Linear interpolation (faster than easing)
+      int currentTargetX = currentX + static_cast<int>((targetX - currentX) * progress);
+      int currentTargetY = currentY + static_cast<int>((targetY - currentY) * progress);
 
       // Send absolute position events
       eventListener->SendUinputEvent(EV_ABS, ABS_X,
@@ -1080,10 +1085,8 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
       // Sync
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
 
-      // Sleep based on acceleration
-      double currentSpeed =
-          speed * (1.0 + (accel - 1.0) * std::min(progress * 2.0, 1.0));
-      int sleepMs = std::max(1, static_cast<int>(20 / currentSpeed));
+      // Minimal sleep for responsiveness (5ms per step max)
+      int sleepMs = std::max(1, 5 / std::max(1, speed));
       std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     }
 

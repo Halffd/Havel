@@ -1,5 +1,6 @@
 #include "KeyTap.hpp"
 #include "core/HotkeyManager.hpp"
+#include "utils/Logger.hpp"
 #include <iostream>
 
 namespace havel {
@@ -9,6 +10,10 @@ KeyTap::~KeyTap() {
 }
 
 void KeyTap::setup() {
+    using havel::debug;
+    
+    debug("KeyTap::setup() called for key: '{}'", keyName);
+    
     std::string downPrefix = "@|";
     if(!grabDown) {
         downPrefix += "~";
@@ -19,6 +24,8 @@ void KeyTap::setup() {
     }
     std::string keyDown = downPrefix + keyName;
     std::string keyUp = upPrefix + keyName + ":up";
+
+    debug("KeyTap: Registering keyDown='{}', keyUp='{}'", keyDown, keyUp);
 
     // Register callback for any key press event
     hotkeyManager.RegisterAnyKeyPressCallback([this](const std::string& key) {
@@ -31,6 +38,7 @@ void KeyTap::setup() {
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
+        debug("KeyTap: Registering keyDown with function condition");
         hotkeyManager.AddHotkey(keyDown, [this, func]() {
             if (func && func()) {
                 keyHeld = true;
@@ -40,17 +48,20 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
+            debug("KeyTap: Registering keyDown with string condition: '{}'", condStr);
             hotkeyManager.AddContextualHotkey(keyDown, condStr, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         } else {
+            debug("KeyTap: Registering keyDown without condition");
             hotkeyManager.AddHotkey(keyDown, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         }
     } else {
+        debug("KeyTap: Registering keyDown (no condition variant)");
         hotkeyManager.AddHotkey(keyDown, [this]() {
             keyHeld = true;
             combo = false;
@@ -59,6 +70,7 @@ void KeyTap::setup() {
 
     // Combo behavior (press) - if different condition
     if (onCombo) {
+        debug("KeyTap: Registering combo handler");
         if (std::holds_alternative<std::function<bool()>>(comboCondition)) {
             // Using function-based condition for combo
             auto func = std::get<std::function<bool()>>(comboCondition);
@@ -89,6 +101,7 @@ void KeyTap::setup() {
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
+        debug("KeyTap: Registering keyUp with function condition");
         hotkeyManager.AddHotkey(keyUp, [this, func]() {
             if (keyHeld && !combo && func && func()) {
                 onTap();   // clean tap
@@ -98,6 +111,7 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
+            debug("KeyTap: Registering keyUp with string condition: '{}'", condStr);
             hotkeyManager.AddContextualHotkey(keyUp, condStr, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
@@ -105,6 +119,7 @@ void KeyTap::setup() {
                 keyHeld = false;
             });
         } else {
+            debug("KeyTap: Registering keyUp without condition");
             hotkeyManager.AddHotkey(keyUp, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
@@ -113,6 +128,7 @@ void KeyTap::setup() {
             });
         }
     } else {
+        debug("KeyTap: Registering keyUp (no condition variant)");
         hotkeyManager.AddHotkey(keyUp, [this]() {
             if (keyHeld && !combo) {
                 onTap();   // clean tap
@@ -120,6 +136,8 @@ void KeyTap::setup() {
             keyHeld = false;
         });
     }
+    
+    debug("KeyTap::setup() complete for '{}'", keyName);
 }
 
 }

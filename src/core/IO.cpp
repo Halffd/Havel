@@ -2274,7 +2274,9 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
 
       hotkey.type = HotkeyType::Combo;
       for (const auto &part : parts) {
-        auto subHotkey = AddMouseHotkey(part, std::function<void()>{}, 0);
+        // Use AddHotkey() instead of AddMouseHotkey() to properly handle
+        // keyboard keys in combos (e.g., "RShift & WheelDown")
+        auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
         hotkey.comboSequence.push_back(subHotkey);
       }
       hotkey.success = !hotkey.comboSequence.empty();

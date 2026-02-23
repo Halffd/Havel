@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(wayland-compositor CXX)
+project(wayland-compositor C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ find_package(PkgConfig REQUIRED)
 # Find Wayland and wlroots
 pkg_check_modules(WAYLAND_SERVER REQUIRED wayland-server)
 pkg_check_modules(WAYLAND_PROTOCOLS REQUIRED wayland-protocols)
-pkg_check_modules(WLROOTS REQUIRED wlroots-0.19)
+pkg_check_modules(WLROOTS REQUIRED wlroots-0.20)
 pkg_check_modules(XKB REQUIRED xkbcommon)
 pkg_check_modules(PIXMAN REQUIRED pixman-1)
 
@@ -47,7 +47,8 @@ set(PROTOCOL_SOURCES
 
 # Add executable
 add_executable(${PROJECT_NAME} 
-    compositor.cpp
+    server.cpp
+    wlr_bridge.c
     ${PROTOCOL_SOURCES}
 )
 
@@ -87,6 +88,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     ${WLROOTS_CFLAGS_OTHER}
     ${XKB_CFLAGS_OTHER}
     ${PIXMAN_CFLAGS_OTHER}
+    -std=gnu++17
     -Wall
     -Wextra
     -Wno-unused-parameter

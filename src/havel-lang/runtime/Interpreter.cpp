@@ -2347,6 +2347,7 @@ void Interpreter::InitializeStandardLibrary() {
         }
 
         std::string keyName = ValueToString(args[0]);
+        havel::debug("createKeyTap builtin called with keyName: '{}'", keyName);
 
         // Optional parameters with defaults
         std::function<void()> onTap = []() { /* Default empty tap action */ };
@@ -2413,7 +2414,10 @@ void Interpreter::InitializeStandardLibrary() {
 
         auto keyTap = createKeyTap(keyName, onTap, tapCondition, comboCondition,
                                    onCombo, grabDown, grabUp);
-        return HavelValue(keyName + " KeyTap created");
+        if (!keyTap) {
+          return HavelRuntimeError("Failed to create KeyTap for: " + keyName);
+        }
+        return HavelValue(keyName + " KeyTap created successfully");
       })));
 }
 
@@ -6347,7 +6351,17 @@ KeyTap *Interpreter::createKeyTap(
     std::variant<std::string, std::function<bool()>> tapCondition,
     std::variant<std::string, std::function<bool()>> comboCondition,
     std::function<void()> onCombo, bool grabDown, bool grabUp) {
-  if (!io) return nullptr;
+  if (!io) {
+    havel::error("createKeyTap: IO is not available");
+    return nullptr;
+  }
+  if (!hotkeyManager) {
+    havel::error("createKeyTap: HotkeyManager is not available");
+    return nullptr;
+  }
+  
+  havel::debug("createKeyTap: keyName='{}', grabDown={}, grabUp={}", keyName, grabDown, grabUp);
+  
   auto keyTap =
       std::make_unique<KeyTap>(*io, *hotkeyManager, keyName, onTap, tapCondition,
                                comboCondition, onCombo, grabDown, grabUp);
@@ -6356,6 +6370,8 @@ KeyTap *Interpreter::createKeyTap(
 
   keyTaps.push_back(std::move(keyTap));
   rawPtr->setup();
+  
+  havel::debug("createKeyTap: KeyTap created and setup complete for '{}'", keyName);
 
   return rawPtr;
 }

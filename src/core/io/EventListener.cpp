@@ -87,6 +87,10 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
 
   this->grabDevices = grabDevices;
 
+  // Set up signal handling BEFORE spawning the event thread
+  // This prevents race condition where SIGINT arrives before signalfd is ready
+  SetupSignalHandling();
+
   // Create eventfd for shutdown signaling
   shutdownFd = eventfd(0, EFD_NONBLOCK);
   if (shutdownFd < 0) {
@@ -447,8 +451,8 @@ int EventListener::GetCurrentModifiersMask() const {
 void EventListener::EventLoop() {
   info("EventListener: Starting event loop");
 
-  // Setup signal handling
-  SetupSignalHandling();
+  // Signal handling is now set up in Start() before the thread spawns
+  // No need to call SetupSignalHandling() here
 
   while (running.load() && !shutdown.load()) {
     fd_set readfds;

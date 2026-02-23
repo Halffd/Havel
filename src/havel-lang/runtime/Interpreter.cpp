@@ -827,20 +827,29 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
 void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
   // Capture current environment (closure)
   auto closureEnv = this->environment;
+  
+  // Store parameter names (strings are copyable)
+  std::vector<std::string> paramNames;
+  for (const auto& param : node.parameters) {
+    paramNames.push_back(param->symbol);
+  }
+  
+  // Store raw pointer to body - AST lives for entire script execution
+  const ast::Statement* bodyPtr = node.body.get();
+  
   // Build a callable that binds args to parameter names and evaluates body
   BuiltinFunction lambda =
-      [this, closureEnv,
-       &node](const std::vector<HavelValue> &args) -> HavelResult {
-    if (args.size() != node.parameters.size()) {
+      [this, closureEnv, paramNames, bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
+    if (args.size() != paramNames.size()) {
       return HavelRuntimeError("Mismatched argument count for lambda");
     }
     auto funcEnv = std::make_shared<Environment>(closureEnv);
     for (size_t i = 0; i < args.size(); ++i) {
-      funcEnv->Define(node.parameters[i]->symbol, args[i]);
+      funcEnv->Define(paramNames[i], args[i]);
     }
     auto originalEnv = this->environment;
     this->environment = funcEnv;
-    auto res = Evaluate(*node.body);
+    auto res = Evaluate(*bodyPtr);
     this->environment = originalEnv;
     if (std::holds_alternative<ReturnValue>(res)) {
       auto ret = std::get<ReturnValue>(res);

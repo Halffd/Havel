@@ -786,6 +786,13 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
   // for infinite)
   if (comboTimeWindow > 0) {
     auto wheelTime = (wheelDirection > 0) ? lastWheelUpTime : lastWheelDownTime;
+    
+    // Skip if wheelTime is zero-initialized (not yet set)
+    if (wheelTime.time_since_epoch().count() == 0) {
+      debug("❌ Wheel combo '{}' failed: wheel time not initialized", hotkey.alias);
+      return false;
+    }
+    
     auto wheelAge =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - wheelTime)
             .count();
@@ -1295,6 +1302,13 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
 void EventListener::QueueMouseMovementHotkey(int virtualKey) {
   // Check rate limiting to avoid flooding the queue
   auto now = std::chrono::steady_clock::now();
+  
+  // Skip if lastMovementHotkeyTime is zero-initialized (not yet set)
+  if (lastMovementHotkeyTime.time_since_epoch().count() == 0) {
+    lastMovementHotkeyTime = now;
+    return;
+  }
+  
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                      now - lastMovementHotkeyTime)
                      .count();

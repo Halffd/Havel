@@ -469,6 +469,18 @@ bool AudioManager::playNotificationSound() {
 
 void AudioManager::cleanup() {
     #ifdef HAVE_PIPEWIRE
+    // Destroy all PipeWire node proxies to prevent memory leaks
+    {
+        std::lock_guard<std::mutex> lock(pw_mutex);
+        for (auto& [id, node] : pw_nodes) {
+            if (node.proxy) {
+                pw_proxy_destroy(node.proxy);
+                node.proxy = nullptr;
+            }
+        }
+        pw_nodes.clear();
+    }
+
     if (m_pw_loop) {
         pw_thread_loop_stop(m_pw_loop);
     }

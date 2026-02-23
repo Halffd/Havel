@@ -303,10 +303,9 @@ private:
   bool ArePhysicalKeysPressed(const std::vector<int> &requiredKeys) const;
 
   // Wheel event tracking for wheel combos
-  std::chrono::steady_clock::time_point lastWheelUpTime{
-      std::chrono::steady_clock::time_point::min()};
-  std::chrono::steady_clock::time_point lastWheelDownTime{
-      std::chrono::steady_clock::time_point::min()};
+  // Use zero-initialized time_point to avoid overflow when calculating durations
+  std::chrono::steady_clock::time_point lastWheelUpTime{};
+  std::chrono::steady_clock::time_point lastWheelDownTime{};
 
   // Mouse gesture tracking
   MouseGesture currentMouseGesture;
@@ -320,8 +319,8 @@ private:
   std::chrono::steady_clock::time_point gestureLastTime;
 
   // Mouse movement hotkey queuing
-  std::chrono::steady_clock::time_point lastMovementHotkeyTime{
-      std::chrono::steady_clock::time_point::min()};
+  // Use zero-initialized time_point to avoid overflow when calculating durations
+  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
   mutable std::shared_mutex movementHotkeyMutex;
   std::queue<int> queuedMovementHotkeys;
   std::atomic<bool> movementHotkeyProcessing{false};

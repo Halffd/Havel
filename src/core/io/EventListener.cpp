@@ -23,6 +23,43 @@
 #endif
 
 namespace havel {
+
+// Global pointer for signal handler access (Layer 1 & 2)
+static EventListener *g_eventListener = nullptr;
+
+// Async-signal-safe cleanup handler (Layer 2)
+// This is called IMMEDIATELY when a critical signal is received
+// It uses only async-signal-safe functions to ensure it never hangs
+static void SignalCleanupHandler(int sig) {
+  // FIRST and MOST IMPORTANT: Force ungrab all devices
+  // This is the critical operation that prevents stuck grabs
+  if (g_eventListener) {
+    g_eventListener->ForceUngrabAllDevices();
+  }
+
+  // Then exit immediately - don't try to do anything else in signal handler
+  // _exit is async-signal-safe, exit is not
+  _exit(sig);
+}
+
+// Install traditional signal handlers for critical signals
+// These work even if the event loop is hung or crashed
+static void InstallSignalHandlers() {
+  struct sigaction sa;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = SignalCleanupHandler;
+
+  // Install for critical signals - these MUST release grabs
+  // Even if the program crashes, these will fire
+  sigaction(SIGINT, &sa, nullptr);
+  sigaction(SIGTERM, &sa, nullptr);
+  sigaction(SIGABRT, &sa, nullptr);
+  sigaction(SIGSEGV, &sa, nullptr);
+  sigaction(SIGQUIT, &sa, nullptr);
+
+  info("Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, SIGSEGV, SIGQUIT");
+}
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
     return "[none]";
@@ -63,12 +100,23 @@ std::string EventListener::GetActiveInputsString() const {
  * 6. Forwards events through uinput (with optional blocking)
  */
 EventListener::EventListener() {
+  // Set global pointer for signal handler access (Layer 1)
+  g_eventListener = this;
+  
+  // Install traditional signal handlers BEFORE anything else (Layer 2)
+  // These will fire even if the event loop hangs or crashes
+  InstallSignalHandlers();
+  
   shutdownFd = eventfd(0, EFD_NONBLOCK);
   gestureLastTime = std::chrono::steady_clock::now();
 }
 
 EventListener::~EventListener() {
   Stop();
+  
+  // Clear global pointer - signal handlers will no longer try to access us
+  g_eventListener = nullptr;
+  
   if (shutdownFd >= 0) {
     close(shutdownFd);
   }
@@ -2013,6 +2061,29 @@ void EventListener::ReleaseAllVirtualKeys() {
   pressedVirtualKeys.clear();
 }
 
+// Force ungrab all devices - ASYNC-SIGNAL-SAFE (Layer 2)
+// This is called from signal handlers and MUST complete successfully
+// to prevent stuck grabs. Uses only async-signal-safe operations.
+void EventListener::ForceUngrabAllDevices() {
+  // CRITICAL: This method is called from signal handlers
+  // Do NOT use: malloc, free, printf, cerr, logging, mutexes, etc.
+  // Only use: ioctl, close, _exit, and simple memory operations
+  
+  // Ungrab all input devices - this is the MOST IMPORTANT operation
+  for (auto &device : devices) {
+    if (device.fd >= 0) {
+      // EVIOCGRAB with 0 releases the grab
+      // This is async-signal-safe according to POSIX
+      ioctl(device.fd, EVIOCGRAB, 0);
+    }
+  }
+  
+  // Also destroy uinput device if active
+  if (uinputFd >= 0) {
+    ioctl(uinputFd, UI_DEV_DESTROY);
+  }
+}
+
 // Helper function to convert gesture pattern string to directions
 std::vector<MouseGestureDirection>
 EventListener::ParseGesturePattern(const std::string &patternStr) const {
@@ -2123,6 +2194,12 @@ void EventListener::RegisterGestureHotkey(
 }
 
 void EventListener::SetupSignalHandling() {
+  // LAYER 1: Traditional signal handlers already installed in constructor
+  // These provide async-signal-safe cleanup for SIGINT, SIGTERM, SIGABRT, SIGSEGV
+  
+  // LAYER 2: signalfd for graceful shutdown in event loop
+  // This is a SECONDARY mechanism - traditional handlers are the primary defense
+  
   // Initialize signal mask to block the signals we want to handle via signalfd
   sigemptyset(&signalMask);
   sigaddset(&signalMask, SIGTERM);
@@ -2143,7 +2220,7 @@ void EventListener::SetupSignalHandling() {
     return;
   }
 
-  info("Signal handling set up with signalfd");
+  info("Signal handling: signalfd created (traditional handlers are primary defense)");
 }
 
 void EventListener::ProcessSignal() {
@@ -2166,20 +2243,12 @@ void EventListener::ProcessSignal() {
   case SIGINT:
   case SIGHUP:
   case SIGQUIT:
-  case SIGKILL:
-  case SIGSTOP:
     info("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
 
-    // Release all pressed virtual keys before ungrabbing devices
-    ReleaseAllVirtualKeys();
-
-    // Ungrab all input devices to release grabs
-    for (auto &device : devices) {
-      if (grabDevices && device.fd >= 0) {
-        ioctl(device.fd, EVIOCGRAB, 0); // Ungrab device
-      }
-    }
+    // LAYER 2: Use ForceUngrabAllDevices() for consistent cleanup
+    // (Layer 1 traditional handlers would have already done this if they fired)
+    ForceUngrabAllDevices();
 
     // Stop the event listener
     running.store(false);

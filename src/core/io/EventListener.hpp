@@ -178,6 +178,10 @@ public:
   // Release all pressed virtual keys (for clean shutdown)
   void ReleaseAllVirtualKeys();
 
+  // Force ungrab all devices - async-signal-safe for signal handlers
+  // This is the CRITICAL method that prevents stuck grabs
+  void ForceUngrabAllDevices();
+
   // Signal handling methods
   void SetupSignalHandling();
   void HandleSignal(int sig);

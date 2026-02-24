@@ -264,7 +264,8 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
     : io(&io_system), windowManager(&window_mgr), hotkeyManager(hotkey_mgr),
       brightnessManager(brightness_mgr), audioManager(audio_mgr),
       guiManager(gui_mgr), screenshotManager(screenshot_mgr),
-      lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
+      lastResult(HavelValue(nullptr)), cliArgs(cli_args),
+      m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
@@ -276,7 +277,8 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
     : io(nullptr), windowManager(nullptr),
       hotkeyManager(nullptr), brightnessManager(nullptr), audioManager(nullptr),
       guiManager(nullptr), screenshotManager(nullptr),
-      lastResult(HavelValue(nullptr)), cliArgs(cli_args) {
+      lastResult(HavelValue(nullptr)), cliArgs(cli_args),
+      m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   info("Minimal Interpreter created (pure mode - no IO/hotkeys)");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
@@ -5020,7 +5022,7 @@ void Interpreter::InitializeIOBuiltins() {
         int button =
             args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
-        if (!io->MouseDown(button))
+        if (!io->Click(button, MouseAction::Hold))
           return HavelRuntimeError("MouseDown failed");
 
         return HavelValue(true);
@@ -5034,7 +5036,7 @@ void Interpreter::InitializeIOBuiltins() {
         int button =
             args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
 
-        if (!io->MouseUp(button))
+        if (!io->Click(button, MouseAction::Release))
           return HavelRuntimeError("MouseUp failed");
 
         return HavelValue(true);
@@ -5050,40 +5052,34 @@ void Interpreter::InitializeIOBuiltins() {
   //
   (*mouseObj)["click"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int button = 1;
+        int button = 2;
         bool doDown = true;
         bool doUp = true;
 
         if (!args.empty()) {
-          std::string buttonStr = toLower(ValueToString(args[0]));
-          if (buttonStr == "left") {
-            button = 1;
-          } else if (buttonStr == "right") {
-            button = 2;
-          } else if (buttonStr == "middle") {
-            button = 3;
-          } else {
-            button = static_cast<int>(ValueToNumber(args[0]));
-          }
+          button = io->GetMouseButtonCode(ValueToString(args[0]));
         }
 
         if (args.size() >= 2) {
-          bool down = ValueToNumber(args[1]) != 0;
-          if (down) {
+          MouseAction action = io->GetMouseAction(ValueToString(args[1]));
+          if (action == MouseAction::Hold) {
             doUp = false; // press only
-          } else {
+          } else if (action == MouseAction::Release) {
             doDown = false; // release only
           }
         }
 
         bool ok = true;
 
-        if (doDown)
-          ok &= io->MouseDown(button);
+        if(doUp && doDown){
+          ok = io->Click(button, MouseAction::Click);
+        } else {
+          if (doDown)
+            ok &= io->Click(button, MouseAction::Hold);
 
-        if (doUp)
-          ok &= io->MouseUp(button);
-
+          if (doUp)
+            ok &= io->Click(button, MouseAction::Release);
+        }
         if (!ok)
           return HavelRuntimeError("MouseClick failed");
 
@@ -9031,8 +9027,12 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
   if (hotkeyManager) {
     // Create a lambda that captures the condition expression and
     // re-evaluates it
-    auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
-      auto result = Evaluate(*condExpr);
+    // Capture shared_from_this() to ensure Interpreter stays alive during execution
+    auto self = shared_from_this();
+    auto destroyedFlag = m_destroyed;
+    auto conditionFunc = [self, destroyedFlag, condExpr = node.condition.get()]() -> bool {
+      if (destroyedFlag->load()) return false;  // Interpreter destroyed, skip evaluation
+      auto result = self->Evaluate(*condExpr);
       if (isError(result)) {
         // Log error but return false to prevent the hotkey from
         // triggering std::cerr << "Conditional hotkey condition
@@ -9041,13 +9041,14 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
         //           std::endl;
         return false;
       }
-      return ValueToBool(unwrap(result));
+      return Interpreter::ValueToBool(unwrap(result));
     };
 
     // Create the action callback
-    auto actionFunc = [this, action = node.binding->action.get()]() {
+    auto actionFunc = [self, destroyedFlag, action = node.binding->action.get()]() {
+      if (destroyedFlag->load()) return;  // Interpreter destroyed, skip action
       if (action) {
-        auto result = Evaluate(*action);
+        auto result = self->Evaluate(*action);
         if (isError(result)) {
           std::cerr << "Conditional hotkey action evaluation failed: "
                     << std::get<HavelRuntimeError>(result).what() << std::endl;
@@ -9084,6 +9085,7 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
 void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
   // For each statement in the when block, wrap it with the shared
   // condition
+  auto self = shared_from_this();
   for (const auto &stmt : node.statements) {
     // Check if it's a hotkey binding
     if (auto *hotkeyBinding =
@@ -9104,20 +9106,24 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
 
       if (hotkeyManager) {
         // Create a lambda that captures the shared condition
-        auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
-          auto result = Evaluate(*condExpr);
+        // Capture shared_from_this() to ensure Interpreter stays alive during execution
+        auto destroyedFlag = m_destroyed;
+        auto conditionFunc = [self, destroyedFlag, condExpr = node.condition.get()]() -> bool {
+          if (destroyedFlag->load()) return false;  // Interpreter destroyed
+          auto result = self->Evaluate(*condExpr);
           if (isError(result)) {
             // Log error but return false to prevent the hotkey from
             // triggering
             return false;
           }
-          return ValueToBool(unwrap(result));
+          return Interpreter::ValueToBool(unwrap(result));
         };
 
         // Create the action callback
-        auto actionFunc = [this, action = hotkeyBinding->action.get()]() {
+        auto actionFunc = [self, destroyedFlag, action = hotkeyBinding->action.get()]() {
+          if (destroyedFlag->load()) return;  // Interpreter destroyed
           if (action) {
-            auto result = Evaluate(*action);
+            auto result = self->Evaluate(*action);
             if (isError(result)) {
               std::cerr << "When block hotkey action failed: "
                         << std::get<HavelRuntimeError>(result).what()
@@ -9152,18 +9158,21 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
 
         // Create a combined condition that requires both outer and
         // inner conditions
+        // Capture shared_from_this() to ensure Interpreter stays alive during execution
+        auto destroyedFlag = m_destroyed;
         auto combinedConditionFunc =
-            [this, outerCond = node.condition.get(),
+            [self, destroyedFlag, outerCond = node.condition.get(),
              innerCond = conditionalHotkey->condition.get()]() -> bool {
+          if (destroyedFlag->load()) return false;  // Interpreter destroyed
           // Evaluate outer condition
-          auto outerResult = Evaluate(*outerCond);
-          if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+          auto outerResult = self->Evaluate(*outerCond);
+          if (isError(outerResult) || !Interpreter::ValueToBool(unwrap(outerResult))) {
             return false;
           }
 
           // Evaluate inner condition
-          auto innerResult = Evaluate(*innerCond);
-          if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+          auto innerResult = self->Evaluate(*innerCond);
+          if (isError(innerResult) || !Interpreter::ValueToBool(unwrap(innerResult))) {
             return false;
           }
 
@@ -9172,9 +9181,10 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
 
         // Create the action callback from the inner binding
         auto actionFunc =
-            [this, action = conditionalHotkey->binding->action.get()]() {
+            [self, destroyedFlag, action = conditionalHotkey->binding->action.get()]() {
+              if (destroyedFlag->load()) return;  // Interpreter destroyed
               if (action) {
-                auto result = Evaluate(*action);
+                auto result = self->Evaluate(*action);
                 if (isError(result)) {
                   std::cerr << "Nested conditional hotkey action failed: "
                             << std::get<HavelRuntimeError>(result).what()
@@ -9194,18 +9204,20 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
       if (hotkeyManager) {
         // Create a combined condition that requires both the outer and
         // inner conditions
+        auto destroyedFlag = m_destroyed;
         auto combinedConditionFunc =
-            [this, outerCond = node.condition.get(),
+            [self, destroyedFlag, outerCond = node.condition.get(),
              innerCond = whenBlock->condition.get()]() -> bool {
+          if (destroyedFlag->load()) return false;  // Interpreter destroyed
           // Evaluate outer condition
-          auto outerResult = Evaluate(*outerCond);
-          if (isError(outerResult) || !ValueToBool(unwrap(outerResult))) {
+          auto outerResult = self->Evaluate(*outerCond);
+          if (isError(outerResult) || !Interpreter::ValueToBool(unwrap(outerResult))) {
             return false;
           }
 
           // Evaluate inner condition
-          auto innerResult = Evaluate(*innerCond);
-          if (isError(innerResult) || !ValueToBool(unwrap(innerResult))) {
+          auto innerResult = self->Evaluate(*innerCond);
+          if (isError(innerResult) || !Interpreter::ValueToBool(unwrap(innerResult))) {
             return false;
           }
 
@@ -9237,9 +9249,9 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
 
             // Use the same action
             auto innerActionFunc =
-                [this, action = innerHotkeyBinding->action.get()]() {
+                [self, action = innerHotkeyBinding->action.get()]() {
                   if (action) {
-                    auto result = Evaluate(*action);
+                    auto result = self->Evaluate(*action);
                     if (isError(result)) {
                       std::cerr << "Nested when block hotkey action failed: "
                                 << std::get<HavelRuntimeError>(result).what()

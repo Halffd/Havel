@@ -240,7 +240,7 @@ bool EventListener::SetupUinput() {
   ioctl(uinputFd, UI_SET_EVBIT, EV_KEY);
   ioctl(uinputFd, UI_SET_EVBIT, EV_SYN);
   ioctl(uinputFd, UI_SET_EVBIT, EV_REL);
-  // ioctl(uinputFd, UI_SET_EVBIT, EV_ABS);
+  ioctl(uinputFd, UI_SET_EVBIT, EV_ABS);
 
   // Enable all keys
   for (int i = 0; i < KEY_MAX; i++) {

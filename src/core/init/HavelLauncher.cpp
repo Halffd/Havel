@@ -274,6 +274,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
     error("Interpreter is not available");
     return 1;
   }
+  info("Script file: {}", cfg.scriptFile);
   if(!cfg.scriptFile.empty() && std::filesystem::exists(cfg.scriptFile)) {
     // Read script file
     std::ifstream file(cfg.scriptFile);

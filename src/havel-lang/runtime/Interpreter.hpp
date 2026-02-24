@@ -392,7 +392,7 @@ private:
 };
 
 // Main Interpreter class implementing the visitor pattern
-class Interpreter : public ast::ASTVisitor {
+class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<Interpreter> {
 public:
   // Full interpreter with IO and all managers
   Interpreter(IO &io_system, WindowManager &window_mgr,
@@ -404,8 +404,8 @@ public:
   
   // Minimal interpreter for pure script execution (no IO/hotkeys)
   explicit Interpreter(const std::vector<std::string> &cli_args = {});
-  
-  ~Interpreter() = default;
+
+  ~Interpreter() { if (m_destroyed) m_destroyed->store(true); }
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);
@@ -520,6 +520,10 @@ private:
   // Keep parsed programs alive for function declarations captured by closures
   std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
 
+  // Shared atomic flag to prevent use-after-free in conditional hotkey lambdas
+  // Using shared_ptr ensures the flag outlives the Interpreter and can be safely checked by lambdas
+  std::shared_ptr<std::atomic<bool>> m_destroyed;
+
   int nextTimerId = 1;
   std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
   std::mutex timersMutex; // Thread safety for timer operations
@@ -557,6 +561,9 @@ private:
   void InitializeAsyncBuiltins();
   void InitializePhysicsBuiltins();
   void InitializeHelpBuiltin();
+
+  // Get shared pointer to destroyed flag for safe lambda capture
+  std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
 };
 
 } // namespace havel

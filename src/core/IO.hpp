@@ -319,12 +319,6 @@ public:
   // Enhanced mouse movement with custom sensitivity
   bool MouseMoveSensitive(int dx, int dy, int baseSpeed = 5,
                           float accel = 1.5f);
-
-  void MouseClick(int button);
-  bool MouseDown(int button);
-  bool MouseUp(int button);
-  void MouseWheel(int amount);
-
   // State methods
   bool GetKeyState(const std::string &keyName);
   bool GetKeyState(int keycode); // For raw keycodes
@@ -395,38 +389,65 @@ public:
   // Public method for emergency cleanup (signals)
   void UngrabAll();
 
-  template <typename T, typename S> bool Click(T button, S action) {
-    int btnCode;
-
-    if constexpr (std::is_same_v<T, int>) {
-      btnCode = button;
-    } else if constexpr (std::is_same_v<T, std::string>) {
-      if (button == "left")
-        btnCode = BTN_LEFT;
-      else if (button == "right")
-        btnCode = BTN_RIGHT;
-      else if (button == "middle")
-        btnCode = BTN_MIDDLE;
-      else if (button == "side1")
-        btnCode = BTN_SIDE;
-      else if (button == "side2")
-        btnCode = BTN_EXTRA;
-      else if (button == "side3")
-        btnCode = BTN_FORWARD;
-      else if (button == "side4")
-        btnCode = BTN_BACK;
-      else if (button == "back")
-        btnCode = BTN_BACK;
-      else {
-        std::cerr << "Unknown button string: " << button << "\n";
-        return false;
-      }
-    } else if constexpr (std::is_enum_v<T>) {
-      btnCode = static_cast<int>(button);
-    } else {
-      static_assert(always_false<T>, "Unsupported type for button");
+  int GetMouseButtonCode(const HavelValue& arg) {
+    if (arg.isString()) {
+        std::string s = toLower(arg.asString());
+        if (s == "right") return BTN_RIGHT;
+        if (s == "middle") return BTN_MIDDLE;
+        if (s == "side1" || s == "xbutton1") return BTN_SIDE;   // or BTN_FORWARD? Check your enum
+        if (s == "side2" || s == "xbutton2") return BTN_EXTRA;
+        if (s == "side3" || s == "forward") return BTN_FORWARD;
+        if (s == "side4" || s == "back") return BTN_BACK;
+        if (s == "left") return BTN_LEFT;
+        try {
+          if(std::stoi(s) > 0) {
+            return GetMouseButtonCode(std::stoi(s));
+          }
+        } catch (...) {
+          // not a number, continue
+        }
+        return BTN_LEFT; // fallback
     }
-
+    // numeric argument: treat 1=left, 2=right, 3=middle, etc.
+    int idx = static_cast<int>(ValueToNumber(arg));
+    switch (idx) {
+        case 1: return BTN_LEFT;
+        case 2: return BTN_RIGHT;
+        case 3: return BTN_MIDDLE;
+        case 4: return BTN_SIDE;    // adjust if your mapping differs
+        case 5: return BTN_EXTRA;
+        case 6: return BTN_FORWARD;
+        case 7: return BTN_BACK;
+        default: return BTN_LEFT;    // fallback
+    }
+  }
+  MouseAction GetMouseAction(const HavelValue& action) {
+    if (action.isString()) {
+        std::string s = toLower(action.asString());
+        if (s == "press" || s == "hold") return MouseAction::Press;
+        if (s == "release") return MouseAction::Release;
+        if (s == "click") return MouseAction::Click;\
+        try {
+          if(std::stoi(s) > 0) {
+            return GetMouseAction(std::stoi(s));
+          }
+        } catch (...) {
+          // not a number, continue
+        }
+        return MouseAction::Click; // fallback
+    }
+    // numeric argument: treat 1=press, 2=release, 3=click
+    int idx = static_cast<int>(ValueToNumber(action));
+    switch (idx) {
+        case 0: return MouseAction::Hold;
+        case 1: return MouseAction::Release;
+        case 2: return MouseAction::Click;
+        default: return MouseAction::Click; // fallback
+    }
+  }
+  template <typename T, typename S> bool Click(T button, S action) {
+    int btnCode = GetMouseButtonCode(button);
+    MouseAction mouseAction = GetMouseAction(action);
     if constexpr (std::is_same_v<S, int>) {
       return EmitClick(btnCode, S(action));
     } else if constexpr (std::is_enum_v<S>) {
@@ -440,7 +461,7 @@ public:
   bool MouseClick(T btnCode, int dx, int dy, int speed, float accel) {
     if (!MouseMove(dx, dy, speed, accel))
       return false;
-    return EmitClick(static_cast<int>(btnCode), 2);
+    return EmitClick(static_cast<int>(btnCode), MouseAction::Click);
   }
   bool Scroll(double dy, double dx = 0);
 

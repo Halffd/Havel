@@ -4232,39 +4232,4 @@ void IO::MouseClick(int button) {
   MouseUp(button);
 }
 
-bool IO::MouseDown(int button) {
-  // Use EventListener's batched uinput
-  if (eventListener) {
-    // Single combined write: press + sync
-    eventListener->SendUinputEvent(EV_KEY, button, 1);     // Press
-    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else {
-    error("MouseDown: EventListener not available");
-  }
-  return true;
-}
-
-bool IO::MouseUp(int button) {
-  // Use EventListener's batched uinput
-  if (eventListener) {
-    // Single combined write: release + sync
-    eventListener->SendUinputEvent(EV_KEY, button, 0);     // Release
-    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else {
-    error("MouseUp: EventListener not available");
-  }
-  return true;
-}
-
-void IO::MouseWheel(int amount) {
-  // Use EventListener's batched uinput
-  if (eventListener) {
-    int wheelValue = amount > 0 ? 1 : -1;
-    eventListener->SendUinputEvent(EV_REL, REL_WHEEL, wheelValue);
-    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0); // Sync
-  } else {
-    error("MouseWheel: EventListener not available");
-  }
-}
-
 } // namespace havel

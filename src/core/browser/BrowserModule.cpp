@@ -147,6 +147,23 @@ std::string BrowserModule::sendCdpCommandToTab(int tabId,
 }
 
 std::string BrowserModule::getWebSocketUrl(int tabId) {
+  // Refresh cache if it's empty or stale (older than 5 seconds)
+  auto now = std::chrono::steady_clock::now();
+  if (cachedTabs.empty() || 
+      std::chrono::duration_cast<std::chrono::seconds>(now - lastTabListUpdate).count() > 5) {
+    listTabs();
+  }
+  
+  // First check if we have a cached WebSocket URL for this tab
+  for (const auto& tab : cachedTabs) {
+    // Match by numeric ID or string ID
+    if ((tab.id == tabId || (tabId != 0 && tab.idStr == std::to_string(tabId))) 
+        && !tab.webSocketUrl.empty()) {
+      return tab.webSocketUrl;
+    }
+  }
+  
+  // If not found in cache, fetch fresh data
   std::string response = httpGet(browserUrl + "/json/list");
   if (response.empty()) {
     response = httpGet(browserUrl + "/json");
@@ -267,7 +284,7 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
     return tabs;
 
   // Simple JSON parsing for tab info
-  // Format: [{"id":"...","title":"...","url":"...","type":"page",...}]
+  // Format: [{"id":"...","title":"...","url":"...","type":"page","webSocketDebuggerUrl":"ws://...",...}]
   size_t pos = 0;
   while ((pos = response.find('{', pos)) != std::string::npos) {
     size_t end = response.find('}', pos);
@@ -278,7 +295,7 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
 
     BrowserTab tab;
 
-    // Extract id
+    // Extract id (both numeric and string)
     size_t idPos = tabJson.find("\"id\"");
     if (idPos != std::string::npos) {
       size_t colonPos = tabJson.find(':', idPos);
@@ -286,8 +303,9 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
       if (start != std::string::npos) {
         size_t quoteEnd = tabJson.find('"', start + 1);
         if (quoteEnd != std::string::npos) {
+          tab.idStr = tabJson.substr(start + 1, quoteEnd - start - 1);
           try {
-            tab.id = std::stoi(tabJson.substr(start + 1, quoteEnd - start - 1));
+            tab.id = std::stoi(tab.idStr);
           } catch (...) {
             tab.id = 0;
           }
@@ -334,6 +352,19 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
       }
     }
 
+    // Extract webSocketDebuggerUrl
+    size_t wsPos = tabJson.find("\"webSocketDebuggerUrl\"");
+    if (wsPos != std::string::npos) {
+      size_t colonPos = tabJson.find(':', wsPos);
+      size_t start = tabJson.find('"', colonPos + 1);
+      if (start != std::string::npos) {
+        size_t quoteEnd = tabJson.find('"', start + 1);
+        if (quoteEnd != std::string::npos) {
+          tab.webSocketUrl = tabJson.substr(start + 1, quoteEnd - start - 1);
+        }
+      }
+    }
+
     if (tab.id >= 0) {
       tabs.push_back(tab);
     }
@@ -343,6 +374,21 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
 
   cachedTabs = tabs;
   lastTabListUpdate = std::chrono::steady_clock::now();
+
+  // If tabs have id=0 (string ID parsing failed), assign index-based IDs
+  bool allZero = true;
+  for (const auto& tab : tabs) {
+    if (tab.id != 0) {
+      allZero = false;
+      break;
+    }
+  }
+  if (allZero && !tabs.empty()) {
+    for (size_t i = 0; i < tabs.size(); i++) {
+      tabs[i].id = static_cast<int>(i);
+    }
+    cachedTabs = tabs;
+  }
 
   return tabs;
 }

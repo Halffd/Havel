@@ -2,6 +2,7 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "havel-lang/runtime/Interpreter.hpp"
 #include "include/x11_includes.h"
 #include "io/EventListener.hpp"
 #include "io/HotkeyExecutor.hpp"
@@ -994,7 +995,7 @@ void IO::removeSpecialCharacters(str &keyName) {
                                }),
                 keyName.end());
 }
-bool IO::EmitClick(int btnCode, int action) {
+bool IO::EmitClick(int btnCode, MouseAction action) {
   // Use EventListener's uinput for all mouse events
   if (eventListener) {
     // Map integer button codes to proper mouse button codes
@@ -1003,20 +1004,20 @@ bool IO::EmitClick(int btnCode, int action) {
       // Map 1-9 to BTN_LEFT through BTN_9
       mouseBtnCode = BTN_LEFT + (btnCode - 1);
     }
-    
+
     // Send events through EventListener
     switch (action) {
-    case 0: // Release
+    case MouseAction::Release:
       eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       return true;
 
-    case 1: // Hold
+    case MouseAction::Hold:
       eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       return true;
 
-    case 2: // Click (FAST)
+    case MouseAction::Click: // Click (FAST)
       eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 1);
       eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
       eventListener->SendUinputEvent(EV_KEY, mouseBtnCode, 0);
@@ -1024,7 +1025,7 @@ bool IO::EmitClick(int btnCode, int action) {
       return true;
 
     default:
-      error("Invalid mouse action: {}", action);
+      error("Invalid mouse action: {}", static_cast<int>(action));
       return false;
     }
   }
@@ -4226,10 +4227,87 @@ void IO::executeComboAction(const std::string &action) {
   warn("No handler found for combo action: {}", action);
 }
 // OPTIMIZED: Mouse button click methods with event batching
-void IO::MouseClick(int button) {
-  MouseDown(button);
-  std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Small delay
-  MouseUp(button);
+// (removed - now inline in header)
+
+// Mouse button code conversion implementations
+int IO::GetMouseButtonCode(const HavelValue& arg) {
+  if (arg.isString()) {
+      std::string s = toLower(arg.asString());
+      if (s == "right") return BTN_RIGHT;
+      if (s == "middle") return BTN_MIDDLE;
+      if (s == "side1" || s == "xbutton1") return BTN_SIDE;
+      if (s == "side2" || s == "xbutton2") return BTN_EXTRA;
+      if (s == "side3" || s == "forward") return BTN_FORWARD;
+      if (s == "side4" || s == "back") return BTN_BACK;
+      if (s == "left") return BTN_LEFT;
+      try {
+        if(std::stoi(s) > 0) {
+          return GetMouseButtonCode(std::stoi(s));
+        }
+      } catch (...) {
+        // not a number, continue
+      }
+      return BTN_LEFT; // fallback
+  }
+  // numeric argument: treat 1=left, 2=right, 3=middle, etc.
+  int idx = static_cast<int>(Interpreter::ValueToNumber(arg));
+  switch (idx) {
+      case 1: return BTN_LEFT;
+      case 2: return BTN_RIGHT;
+      case 3: return BTN_MIDDLE;
+      case 4: return BTN_SIDE;
+      case 5: return BTN_EXTRA;
+      case 6: return BTN_FORWARD;
+      case 7: return BTN_BACK;
+      default: return BTN_LEFT;
+  }
+}
+
+int IO::GetMouseButtonCode(int idx) {
+  switch (idx) {
+      case 1: return BTN_LEFT;
+      case 2: return BTN_RIGHT;
+      case 3: return BTN_MIDDLE;
+      case 4: return BTN_SIDE;
+      case 5: return BTN_EXTRA;
+      case 6: return BTN_FORWARD;
+      case 7: return BTN_BACK;
+      default: return BTN_LEFT;
+  }
+}
+
+MouseAction IO::GetMouseAction(const HavelValue& action) {
+  if (action.isString()) {
+      std::string s = toLower(action.asString());
+      if (s == "press" || s == "hold") return MouseAction::Hold;
+      if (s == "release") return MouseAction::Release;
+      if (s == "click") return MouseAction::Click;
+      try {
+        if(std::stoi(s) > 0) {
+          return GetMouseAction(std::stoi(s));
+        }
+      } catch (...) {
+        // not a number, continue
+      }
+      return MouseAction::Click; // fallback
+  }
+  // numeric argument: treat 0=hold, 1=release, 2=click
+  int idx = static_cast<int>(Interpreter::ValueToNumber(action));
+  switch (idx) {
+      case 0: return MouseAction::Hold;
+      case 1: return MouseAction::Release;
+      case 2: return MouseAction::Click;
+      default: return MouseAction::Click;
+  }
+}
+
+MouseAction IO::GetMouseAction(int idx) {
+  switch (idx) {
+      case 0: return MouseAction::Hold;
+      case 1: return MouseAction::Release;
+      case 2: return MouseAction::Click;
+      default: return MouseAction::Click;
+  }
 }
 
 } // namespace havel

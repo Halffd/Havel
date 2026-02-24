@@ -33,6 +33,7 @@ namespace havel {
 
 // Forward declarations
 class EventListener; // Add forward declaration for EventListener
+struct HavelValue;   // Forward declaration for HavelValue
 class HotkeyManager;
 
 enum class MouseButton {
@@ -335,10 +336,17 @@ public:
 
   // Convenience overloads for MouseButton enum
   void MouseClick(MouseButton button) { Click(button, MouseAction::Click); }
+  void MouseClick(int button) { Click(button, MouseAction::Click); }
   bool MouseDown(MouseButton button) {
     return Click(button, MouseAction::Hold);
   }
+  bool MouseDown(int button) {
+    return Click(button, MouseAction::Hold);
+  }
   bool MouseUp(MouseButton button) {
+    return Click(button, MouseAction::Release);
+  }
+  bool MouseUp(int button) {
     return Click(button, MouseAction::Release);
   }
 
@@ -389,69 +397,21 @@ public:
   // Public method for emergency cleanup (signals)
   void UngrabAll();
 
-  int GetMouseButtonCode(const HavelValue& arg) {
-    if (arg.isString()) {
-        std::string s = toLower(arg.asString());
-        if (s == "right") return BTN_RIGHT;
-        if (s == "middle") return BTN_MIDDLE;
-        if (s == "side1" || s == "xbutton1") return BTN_SIDE;   // or BTN_FORWARD? Check your enum
-        if (s == "side2" || s == "xbutton2") return BTN_EXTRA;
-        if (s == "side3" || s == "forward") return BTN_FORWARD;
-        if (s == "side4" || s == "back") return BTN_BACK;
-        if (s == "left") return BTN_LEFT;
-        try {
-          if(std::stoi(s) > 0) {
-            return GetMouseButtonCode(std::stoi(s));
-          }
-        } catch (...) {
-          // not a number, continue
-        }
-        return BTN_LEFT; // fallback
-    }
-    // numeric argument: treat 1=left, 2=right, 3=middle, etc.
-    int idx = static_cast<int>(ValueToNumber(arg));
-    switch (idx) {
-        case 1: return BTN_LEFT;
-        case 2: return BTN_RIGHT;
-        case 3: return BTN_MIDDLE;
-        case 4: return BTN_SIDE;    // adjust if your mapping differs
-        case 5: return BTN_EXTRA;
-        case 6: return BTN_FORWARD;
-        case 7: return BTN_BACK;
-        default: return BTN_LEFT;    // fallback
-    }
-  }
-  MouseAction GetMouseAction(const HavelValue& action) {
-    if (action.isString()) {
-        std::string s = toLower(action.asString());
-        if (s == "press" || s == "hold") return MouseAction::Press;
-        if (s == "release") return MouseAction::Release;
-        if (s == "click") return MouseAction::Click;\
-        try {
-          if(std::stoi(s) > 0) {
-            return GetMouseAction(std::stoi(s));
-          }
-        } catch (...) {
-          // not a number, continue
-        }
-        return MouseAction::Click; // fallback
-    }
-    // numeric argument: treat 1=press, 2=release, 3=click
-    int idx = static_cast<int>(ValueToNumber(action));
-    switch (idx) {
-        case 0: return MouseAction::Hold;
-        case 1: return MouseAction::Release;
-        case 2: return MouseAction::Click;
-        default: return MouseAction::Click; // fallback
-    }
-  }
+  // Mouse button code conversion - multiple overloads for different types
+  int GetMouseButtonCode(const HavelValue& arg);
+  int GetMouseButtonCode(MouseButton btn) { return static_cast<int>(btn); }
+  int GetMouseButtonCode(int idx);
+  
+  MouseAction GetMouseAction(const HavelValue& action);
+  MouseAction GetMouseAction(MouseAction action) { return action; }
+  MouseAction GetMouseAction(int idx);
   template <typename T, typename S> bool Click(T button, S action) {
     int btnCode = GetMouseButtonCode(button);
     MouseAction mouseAction = GetMouseAction(action);
     if constexpr (std::is_same_v<S, int>) {
-      return EmitClick(btnCode, S(action));
+      return EmitClick(btnCode, GetMouseAction(S(action)));
     } else if constexpr (std::is_enum_v<S>) {
-      return EmitClick(btnCode, static_cast<int>(action));
+      return EmitClick(btnCode, mouseAction);
     } else {
       static_assert(always_false<S>, "Unsupported type for action");
     }
@@ -509,7 +469,7 @@ private:
   bool ModifierMatch(unsigned int expected, unsigned int actual);
 
 public:
-  bool EmitClick(int btnCode, int action);
+  bool EmitClick(int btnCode, MouseAction action);
 
   bool SetupUinputDevice();
   // X11 hotkey monitoring removed - use EventListener instead

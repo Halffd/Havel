@@ -5019,8 +5019,7 @@ void Interpreter::InitializeIOBuiltins() {
   //
   (*mouseObj)["down"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int button =
-            args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
+        int button = args.empty() ? io->GetMouseButtonCode("left") : static_cast<int>(ValueToNumber(args[0]));
 
         if (!io->Click(button, MouseAction::Hold))
           return HavelRuntimeError("MouseDown failed");
@@ -5033,8 +5032,7 @@ void Interpreter::InitializeIOBuiltins() {
   //
   (*mouseObj)["up"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int button =
-            args.empty() ? 1 : static_cast<int>(ValueToNumber(args[0]));
+        int button = args.empty() ? io->GetMouseButtonCode("left") : static_cast<int>(ValueToNumber(args[0]));
 
         if (!io->Click(button, MouseAction::Release))
           return HavelRuntimeError("MouseUp failed");
@@ -5052,7 +5050,7 @@ void Interpreter::InitializeIOBuiltins() {
   //
   (*mouseObj)["click"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        int button = 2;
+        int button = io->GetMouseButtonCode("left");
         bool doDown = true;
         bool doUp = true;
 

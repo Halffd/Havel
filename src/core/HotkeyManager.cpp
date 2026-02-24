@@ -2059,9 +2059,16 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     return;
   }
 
+  std::vector<int> toGrab;
+  std::vector<int> toUngrab;
+
+  // Hold hotkeyMutex for accessing activeConditionalHotkeys
+  // Use unique_lock so we can release it before IO operations
+  std::unique_lock<std::mutex> lock(hotkeyMutex);
+
   // Step 1: Merge pending hotkeys into active buffer with ID deduplication
   {
-    std::lock_guard<std::mutex> lock(pendingHotkeysMutex);
+    std::lock_guard<std::mutex> pendingLock(pendingHotkeysMutex);
     for (auto &newCh : pendingConditionalHotkeys) {
       // Check if this ID already exists in active buffer
       auto it = std::find_if(
@@ -2078,9 +2085,6 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     }
     pendingConditionalHotkeys.clear();
   }
-
-  std::vector<int> toGrab;
-  std::vector<int> toUngrab;
 
   // Step 2: Evaluate all active conditional hotkeys
   for (auto &ch : activeConditionalHotkeys) {
@@ -2103,10 +2107,13 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
       toUngrab.push_back(ch.id);
     }
 
-    // Update internal state immediately (we own this vector)
+    // Update internal state
     ch.currentlyGrabbed = shouldGrab;
     ch.lastConditionResult = shouldGrab;
   }
+
+  // Release lock before applying grab/ungrab to avoid potential deadlocks
+  lock.unlock();
 
   // Step 3: Apply grab/ungrab (no locks held)
   for (int id : toUngrab) {

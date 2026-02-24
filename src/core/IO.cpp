@@ -1033,70 +1033,6 @@ bool IO::EmitClick(int btnCode, MouseAction action) {
   error("EmitClick: EventListener not available");
   return false;
 }
-bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
-  if (eventListener) {
-    // Get screen dimensions for absolute coordinates
-    auto monitors = DisplayManager::GetMonitors();
-    if (monitors.empty())
-      return false;
-
-    // Assume primary monitor for coordinate system
-    int screenWidth = monitors[0].width;
-    int screenHeight = monitors[0].height;
-
-    // Get current position
-    int currentX = 0, currentY = 0;
-    if (!WindowManagerDetector::IsX11()) {
-      // On Wayland, get from EventListener
-      if (eventListener) {
-        auto [x, y] = eventListener->GetMousePosition();
-        currentX = (x * screenWidth) / 65535;
-        currentY = (y * screenHeight) / 65535;
-      }
-    } else {
-      auto pos = GetMousePositionX11();
-      currentX = pos.first;
-      currentY = pos.second;
-    }
-
-    // Clamp target coordinates to screen bounds
-    targetX = std::clamp(targetX, 0, screenWidth);
-    targetY = std::clamp(targetY, 0, screenHeight);
-
-    // Calculate distance and steps for animation
-    int distance = std::abs(targetX - currentX) + std::abs(targetY - currentY);
-    
-    // Use faster default speed (5) and cap steps to prevent long animations
-    if (speed <= 0) speed = 5;
-    int steps = std::min(30, std::max(5, distance / (speed * 10)));
-
-    for (int i = 0; i <= steps; i++) {
-      double progress = static_cast<double>(i) / steps;
-
-      // Linear interpolation (faster than easing)
-      int currentTargetX = currentX + static_cast<int>((targetX - currentX) * progress);
-      int currentTargetY = currentY + static_cast<int>((targetY - currentY) * progress);
-
-      // Send absolute position events
-      eventListener->SendUinputEvent(EV_ABS, ABS_X,
-                                     (currentTargetX * 65535) / screenWidth);
-      eventListener->SendUinputEvent(EV_ABS, ABS_Y,
-                                     (currentTargetY * 65535) / screenHeight);
-
-      // Sync
-      eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-
-      // Minimal sleep for responsiveness (5ms per step max)
-      int sleepMs = std::max(1, 5 / std::max(1, speed));
-      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-    }
-
-    return true;
-  }
-
-  error("MouseMoveTo: EventListener not available");
-  return false;
-}
 bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   // Use EventListener's uinput if available
   if (eventListener) {
@@ -1135,6 +1071,59 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
 
   error("MouseMove: EventListener not available");
   return false;
+}
+bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
+    if (!eventListener) {
+        error("MouseMoveTo: EventListener not available");
+        return false;
+    }
+
+    // Get current position
+    int currentX = 0, currentY = 0;
+    if (WindowManagerDetector::IsX11()) {
+        auto pos = GetMousePositionX11();
+        currentX = pos.first;
+        currentY = pos.second;
+    } else {
+        auto [x, y] = eventListener->GetMousePosition();
+        // Get screen dimensions if needed, but for relative movement we don't need them
+        currentX = x;
+        currentY = y;
+    }
+
+    // Calculate distance and steps
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
+    
+    if (distance < 5) {
+        // Already close enough, just jump
+        return MouseMove(dx, dy, speed, accel);
+    }
+    
+    if (speed <= 0) speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+
+    for (int i = 0; i <= steps; i++) {
+        double progress = static_cast<double>(i) / steps;
+        
+        // Calculate how much to move in this step
+        int stepDx = static_cast<int>((dx * progress) - (dx * (progress - 1.0/steps)));
+        int stepDy = static_cast<int>((dy * progress) - (dy * (progress - 1.0/steps)));
+
+        // Send RELATIVE movement for this step
+        if (stepDx != 0 || stepDy != 0) {
+            eventListener->SendUinputEvent(EV_REL, REL_X, stepDx);
+            eventListener->SendUinputEvent(EV_REL, REL_Y, stepDy);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        }
+
+        // Minimal sleep
+        int sleepMs = std::max(1, 5 / std::max(1, speed));
+        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    return true;
 }
 // Set mouse sensitivity (0.1 - 10.0)
 void IO::SetMouseSensitivity(double sensitivity) {

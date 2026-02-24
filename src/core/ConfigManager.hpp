@@ -32,20 +32,18 @@ namespace havel {
 // Path handling helper functions
 namespace ConfigPaths {
 // Config base directory
-static std::string CONFIG_DIR =
-    QStandardPaths::writableLocation(QStandardPaths::ConfigLocation)
-        .toStdString() +
-    "/havel/"; // qt .local
+static std::string CONFIG_DIR; // qt .local
 
 // Config file paths
-static const std::string MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
+static std::string MAIN_CONFIG; // havel.cfg
 
 static std::string INPUT_CONFIG;
 static std::string HOTKEYS_DIR;
 
-inline void SetConfigPath(const std::string &path) {
+inline void SetConfigPath(const std::string &path, const std::string &basename = "havel.cfg") {
   CONFIG_DIR = path;
-  INPUT_CONFIG = CONFIG_DIR + "input.cfg";
+  MAIN_CONFIG = CONFIG_DIR + basename;
+  INPUT_CONFIG = CONFIG_DIR + basename.substr(0, basename.find('.')) + "_input.cfg";
   HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
 }
 inline std::string GetConfigPath() { return CONFIG_DIR; }
@@ -69,7 +67,7 @@ inline void EnsureConfigDir() {
       fs::create_directories(HOTKEYS_DIR);
     }
   } catch (const fs::filesystem_error &e) {
-    std::cerr << "Failed to create config directories: " << e.what() << "\n";
+    error("Failed to create config directories: " + std::string(e.what()) + "\nDirectory: " + CONFIG_DIR + " " + HOTKEYS_DIR + " Config: " + MAIN_CONFIG);
   }
 }
 } // namespace ConfigPaths
@@ -166,9 +164,10 @@ public:
     }
   }
   std::string getPath() { return path; }
-  void SetPath(const std::string &newPath) {
-    ConfigPaths::SetConfigPath(newPath);
-    Reload();
+  static void SetPath(const std::string &newPath) {
+    std::string dir = std::filesystem::path(newPath).parent_path();
+    std::string basename = std::filesystem::path(newPath).filename();
+    ConfigPaths::SetConfigPath(dir, basename);
   }
   void Load(const std::string &filename = "havel.cfg") {
     path = ConfigPaths::GetConfigPath(filename);

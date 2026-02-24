@@ -11,11 +11,13 @@ enum class BrowserType { Unknown, Chrome, Chromium, Firefox, Edge, Brave };
 
 // Browser tab/window information
 struct BrowserTab {
-  int id;
+  int id;  // Numeric ID (may be 0 if parsing fails)
+  std::string idStr;  // String ID from CDP (more reliable)
   std::string title;
   std::string url;
   std::string type; // "page", "background_page", "service_worker", etc.
   std::string windowId;
+  std::string webSocketUrl; // WebSocket debugger URL for this tab
 };
 
 // Browser window information

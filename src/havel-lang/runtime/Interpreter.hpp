@@ -32,6 +32,7 @@ class BrightnessManager;
 class AudioManager;
 class GUIManager;
 class ScreenshotManager;
+class ClipboardManager;
 
 // Forward declarations
 class Environment;

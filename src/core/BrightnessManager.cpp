@@ -1,4 +1,5 @@
 #include "BrightnessManager.hpp"
+#include "../process/Launcher.hpp"
 #include "../utils/Logger.hpp"
 #include "ConfigManager.hpp"
 #include "window/WindowManagerDetector.hpp"
@@ -47,10 +48,68 @@ struct WaylandOutput {
 // Wayland globals for output tracking
 static std::vector<WaylandOutput> wayland_outputs;
 static std::mutex wayland_mutex;
-
 #endif
 
 namespace havel {
+
+// Helper function to use gammastep/redshift as fallback for Wayland
+// Format: gammastep -P -l lat:lon -t day:night -o -b day:brightness
+static bool setGammastep(int temperature, double brightness = -1.0) {
+  // Build gammastep command with proper parameters
+  // -P: persist mode (keep running)
+  // -l 0:0: default location (equator, generic)
+  // -t temp:temp: same temperature for day/night
+  // -o: one-shot mode (set and exit)
+  // -b bright:bright: same brightness for day/night (if specified)
+  std::string cmd = "gammastep -P -l 0:0 -t " + std::to_string(temperature) + 
+                    ":" + std::to_string(temperature) + " -o";
+  
+  if (brightness > 0.0) {
+    cmd += " -b " + std::to_string(brightness) + ":" + std::to_string(brightness);
+  }
+  
+  cmd += " 2>&1";
+  
+  // Try gammastep first
+  auto result = Launcher::runShell(cmd);
+  if (result.success) {
+    if (brightness > 0.0) {
+      info("Applied temperature {}K and brightness {} via gammastep", temperature, brightness);
+    } else {
+      info("Applied temperature {}K via gammastep", temperature);
+    }
+    return true;
+  }
+
+  // Fallback to redshift (temperature only)
+  result = Launcher::runShell("redshift -O " + std::to_string(temperature) + " 2>&1");
+  if (result.success) {
+    info("Applied temperature {}K via redshift", temperature);
+    return true;
+  }
+
+  error("Failed to apply temperature via gammastep or redshift");
+  return false;
+}
+
+static bool resetGammastep() {
+  // Try gammastep first (-x disables gammastep)
+  auto result = Launcher::runShell("gammastep -x 2>&1");
+  if (result.success) {
+    info("Reset temperature via gammastep");
+    return true;
+  }
+
+  // Fallback to redshift
+  result = Launcher::runShell("redshift -x 2>&1");
+  if (result.success) {
+    info("Reset temperature via redshift");
+    return true;
+  }
+
+  error("Failed to reset temperature via gammastep or redshift");
+  return false;
+}
 
 // === CONSTRUCTOR/DESTRUCTOR ===
 BrightnessManager::BrightnessManager() {
@@ -825,7 +884,18 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
 // === KELVIN TEMPERATURE METHODS ===
 bool BrightnessManager::setTemperature(int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
-  
+
+  // For Wayland, use gammastep directly with current brightness
+  if (displayMethod == "wayland") {
+    if (setGammastep(kelvin, brightness[primaryMonitor])) {
+      for(const auto& monitor : getConnectedMonitors()){
+        temperature[monitor] = kelvin;
+      }
+      return true;
+    }
+    // If gammastep fails, fall through to applyAllSettings
+  }
+
   bool success = true;
   for(const auto& monitor : getConnectedMonitors()){
       temperature[monitor] = kelvin;
@@ -836,6 +906,16 @@ bool BrightnessManager::setTemperature(int kelvin) {
 
 bool BrightnessManager::setTemperature(const std::string &monitor, int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
+  
+  // For Wayland, use gammastep directly with current brightness
+  if (displayMethod == "wayland") {
+    if (setGammastep(kelvin, brightness[monitor])) {
+      temperature[monitor] = kelvin;
+      return true;
+    }
+    // If gammastep fails, fall through to setGammaRGB
+  }
+  
   RGBColor rgb = kelvinToRGB(kelvin);
 
   // setGammaRGB will call applyAllSettings
@@ -865,6 +945,15 @@ bool BrightnessManager::setBrightnessAndRGB(const std::string &monitor,
 
 bool BrightnessManager::setBrightnessAndTemperature(double brightness,
                                                     int kelvin) {
+  // For Wayland, use gammastep directly with both parameters
+  if (displayMethod == "wayland") {
+    if (setGammastep(kelvin, brightness)) {
+      temperature[primaryMonitor] = kelvin;
+      this->brightness[primaryMonitor] = brightness;
+      return true;
+    }
+  }
+  
   auto rgb = kelvinToRGB(kelvin);
   temperature[primaryMonitor] = kelvin;
   return setBrightnessAndRGB(brightness, rgb.red, rgb.green, rgb.blue);
@@ -873,6 +962,15 @@ bool BrightnessManager::setBrightnessAndTemperature(double brightness,
 bool BrightnessManager::setBrightnessAndTemperature(const std::string &monitor,
                                                     double brightness,
                                                     int kelvin) {
+  // For Wayland, use gammastep directly with both parameters
+  if (displayMethod == "wayland") {
+    if (setGammastep(kelvin, brightness)) {
+      temperature[monitor] = kelvin;
+      this->brightness[monitor] = brightness;
+      return true;
+    }
+  }
+  
   auto rgb = kelvinToRGB(kelvin);
   temperature[monitor] = kelvin;
   return setBrightnessAndRGB(monitor, brightness, rgb.red, rgb.green, rgb.blue);
@@ -891,11 +989,17 @@ bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
                                     double green, double blue) {
   if (displayMethod == "wayland") {
 #ifdef __WAYLAND__
-    return setGammaWaylandRGB(monitor, red, green, blue);
-#else
-    error("Wayland support not compiled in!");
-    return false;
+    if (setGammaWaylandRGB(monitor, red, green, blue)) {
+      return true;
+    }
+    // Fallback to gammastep/redshift if Wayland gamma control fails
+    info("Wayland gamma control failed, trying gammastep/redshift fallback");
 #endif
+    // Use gammastep/redshift as fallback for Wayland
+    // Calculate temperature from RGB values
+    RGBColor rgb = {red, green, blue};
+    int temperature = rgbToKelvin(rgb);
+    return setGammastep(temperature, brightness[monitor]);
   } else {
     return setGammaXrandrRGB(monitor, red, green, blue);
   }
@@ -1324,6 +1428,21 @@ void BrightnessManager::enableDayNightMode(const DayNightSettings &settings) {
 }
 
 void BrightnessManager::disableDayNightMode() {
+  // Apply day settings when disabling (or default values)
+  int dayTemp = 6500;  // Default day temperature
+  double dayBright = 1.0;  // Default day brightness
+  
+  {
+    std::lock_guard<std::mutex> lock(settingsMutex);
+    dayTemp = dayNightSettings.dayTemperature;
+    dayBright = dayNightSettings.dayBrightness;
+  }
+  
+  // For Wayland, use gammastep to apply day settings
+  if (displayMethod == "wayland") {
+    setGammastep(dayTemp, dayBright);
+  }
+  
   {
     std::lock_guard<std::mutex> lock(settingsMutex);
     dayNightSettings.autoAdjust = false;

@@ -74,7 +74,7 @@ void HotkeyManager::reevaluateConditionalHotkeys(IO &io) {
     // For function-based conditions, use the function directly
     if (ch.usesFunctionCondition) {
       if (ch.conditionFunc) {
-        shouldGrab = ch.conditionFunc();
+        shouldGrab = (*ch.conditionFunc);
       }
     } else {
       // For mode-based conditions
@@ -1968,7 +1968,7 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   if (hotkey.usesFunctionCondition) {
     // Use the function-based condition
     if (hotkey.conditionFunc) {
-      conditionMet = hotkey.conditionFunc();
+      conditionMet = (*hotkey.conditionFunc);
     } else {
       conditionMet = false; // Default to false if no function
     }
@@ -2065,7 +2065,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
   // Structure to hold copied condition functions for safe evaluation
   struct ConditionEval {
     int id;
-    std::function<bool()> conditionFunc;  // Copy the function while holding lock
+    std::shared_ptr<std::function<bool()>> conditionFunc;  // Shared pointer for thread safety
     bool currentlyGrabbed;
     bool usesFunctionCondition;
   };
@@ -2123,7 +2123,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
   for (auto &eval : conditionsToEval) {
     bool shouldGrab = false;
     if (eval.conditionFunc) {
-      shouldGrab = eval.conditionFunc();  // Call copied function
+      shouldGrab = (*eval.conditionFunc);  // Call copied function
     }
 
     // Determine if we need to grab/ungrab
@@ -2198,10 +2198,10 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   auto action = [this, condition, trueAction, falseAction]() {
     if (evaluateCondition(condition)) {
       if (trueAction)
-        trueAction();
+        (*trueAction);
     } else {
       if (falseAction)
-        falseAction();
+        (*falseAction);
     }
   };
 
@@ -2212,8 +2212,8 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.condition = condition;
   ch.conditionFunc =
       nullptr; // No function condition for string-based condition
-  ch.trueAction = trueAction;
-  ch.falseAction = falseAction;
+  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
+  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
   ch.currentlyGrabbed = true; // Will be set after evaluation
   ch.usesFunctionCondition = false;
 
@@ -2245,10 +2245,10 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   auto action = [condition, trueAction, falseAction]() {
     if (condition()) {
       if (trueAction)
-        trueAction();
+        (*trueAction);
     } else {
       if (falseAction)
-        falseAction();
+        (*falseAction);
     }
   };
 
@@ -2257,9 +2257,9 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ch.id = id;
   ch.key = key;
   ch.condition = "";            // No string condition, using function
-  ch.conditionFunc = condition; // Store the condition function
-  ch.trueAction = trueAction;
-  ch.falseAction = falseAction;
+  ch.conditionFunc = std::make_shared<std::function<bool()>>(condition); // Store the condition function
+  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
+  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
   ch.currentlyGrabbed = true;     // Start in ungrabbed state
   ch.usesFunctionCondition = true; // Mark as function-based condition
 

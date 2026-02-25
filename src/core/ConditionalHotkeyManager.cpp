@@ -38,9 +38,9 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
   auto action = [this, condition, trueAction, falseAction]() {
     if (EvaluateCondition(condition)) {
-      if (trueAction) trueAction();
+      if (trueAction) (*trueAction);
     } else {
-      if (falseAction) falseAction();
+      if (falseAction) (*falseAction);
     }
   };
 
@@ -49,8 +49,8 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   ch.key = key;
   ch.condition = condition;
   ch.conditionFunc = nullptr;
-  ch.trueAction = trueAction;
-  ch.falseAction = falseAction;
+  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
+  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = false;
   ch.monitoringEnabled = true;
@@ -84,9 +84,9 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
   auto action = [condition, trueAction, falseAction]() {
     if (condition()) {
-      if (trueAction) trueAction();
+      if (trueAction) (*trueAction);
     } else {
-      if (falseAction) falseAction();
+      if (falseAction) (*falseAction);
     }
   };
 
@@ -94,9 +94,9 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   ch.id = id;
   ch.key = key;
   ch.condition = "";
-  ch.conditionFunc = condition;
-  ch.trueAction = trueAction;
-  ch.falseAction = falseAction;
+  ch.conditionFunc = std::make_shared<std::function<bool()>>(condition);
+  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
+  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
   ch.currentlyGrabbed = true;
   ch.usesFunctionCondition = true;
   ch.monitoringEnabled = true;
@@ -192,7 +192,7 @@ void ConditionalHotkeyManager::ReevaluateConditionalHotkeys() {
     
     if (ch.usesFunctionCondition) {
       if (ch.conditionFunc) {
-        shouldGrab = ch.conditionFunc();
+        shouldGrab = (*ch.conditionFunc);
       }
     } else {
       // For mode-based conditions
@@ -310,7 +310,7 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
 
   if (hotkey.usesFunctionCondition) {
     if (hotkey.conditionFunc) {
-      conditionMet = hotkey.conditionFunc();
+      conditionMet = (*hotkey.conditionFunc);
     } else {
       conditionMet = false;
     }

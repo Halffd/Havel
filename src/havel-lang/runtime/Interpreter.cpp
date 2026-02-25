@@ -3885,6 +3885,12 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(getBrowser().getActiveTabTitle());
       }));
 
+  (*browserMod)["getActiveTabInfo"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getActiveTabInfo());
+      }));
+
   (*browserMod)["setActiveTab"] = HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())

@@ -102,6 +102,7 @@ public:
   void setCurrentTabId(int tabId) { currentTabId = tabId; }
   BrowserTab getActiveTab() const;
   std::string getActiveTabTitle() const;
+  std::string getActiveTabInfo() const;  // Returns formatted info about active tab
 
   // === Window Management ===
   std::vector<BrowserWindow> listWindows();
@@ -145,7 +146,8 @@ private:
   std::string sendCdpCommandToTab(int tabId, const std::string &method,
                                   const std::string &params = "{}");
   std::string getWebSocketUrl(int tabId);
-  
+  int findFocusedTab();
+
   // WebSocket-based CDP command sender
   std::string sendCdpCommandWebSocket(const std::string& wsUrl, 
                                        const std::string& method,

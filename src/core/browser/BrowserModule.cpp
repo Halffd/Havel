@@ -56,7 +56,18 @@ bool BrowserModule::connect(const std::string &url) {
     // Parse and cache tabs immediately
     // Chrome returns string IDs, so we use index-based IDs (0, 1, 2, ...)
     listTabs();  // Cache the tabs
-    currentTabId = 0;  // Use first tab by default
+    
+    // Try to find the focused/active tab
+    int focusedTabId = findFocusedTab();
+    if (focusedTabId >= 0) {
+      currentTabId = focusedTabId;
+      info("BrowserModule: Using focused tab {} - {}", 
+           currentTabId, cachedTabs[currentTabId].title);
+    } else {
+      currentTabId = 0;  // Fallback to first tab
+      info("BrowserModule: No focused tab found, using first tab: {}", 
+           cachedTabs.empty() ? "N/A" : cachedTabs[0].title);
+    }
 
     return true;
   }
@@ -401,6 +412,34 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
   return tabs;
 }
 
+int BrowserModule::findFocusedTab() {
+  // Try to find which tab has focus by checking document.hasFocus()
+  // Chrome typically returns tabs in order of recent activity
+  for (size_t i = 0; i < cachedTabs.size() && i < 5; i++) {  // Check first 5 tabs
+    if (!cachedTabs[i].webSocketUrl.empty()) {
+      std::string response = sendCdpCommandWebSocket(
+          cachedTabs[i].webSocketUrl,
+          "Runtime.evaluate",
+          "{\"expression\":\"document.hasFocus()\",\"returnByValue\":true}");
+      
+      if (!response.empty() && response.find("\"value\":true") != std::string::npos) {
+        return static_cast<int>(i);
+      }
+    }
+  }
+  
+  // Fallback: return tab with "chrome://" or most common title patterns
+  // as it's likely the active one
+  for (size_t i = 0; i < cachedTabs.size(); i++) {
+    if (cachedTabs[i].url.find("chrome://newtab") != std::string::npos ||
+        cachedTabs[i].url.find("chrome://chrome") != std::string::npos) {
+      return static_cast<int>(i);
+    }
+  }
+  
+  return -1;  // No focused tab found
+}
+
 BrowserTab BrowserModule::getActiveTab() const {
   if (currentTabId >= 0 && currentTabId < static_cast<int>(cachedTabs.size())) {
     return cachedTabs[currentTabId];
@@ -411,6 +450,15 @@ BrowserTab BrowserModule::getActiveTab() const {
 std::string BrowserModule::getActiveTabTitle() const {
   BrowserTab tab = getActiveTab();
   return tab.title.empty() ? "Unknown" : tab.title;
+}
+
+std::string BrowserModule::getActiveTabInfo() const {
+  BrowserTab tab = getActiveTab();
+  if (tab.title.empty()) {
+    return "No active tab selected";
+  }
+  return "Tab " + std::to_string(currentTabId) + ": " + 
+         tab.title + " - " + tab.url;
 }
 
 bool BrowserModule::activate(int tabId) {

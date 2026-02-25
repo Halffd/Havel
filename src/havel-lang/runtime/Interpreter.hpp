@@ -12,11 +12,14 @@
 #include "window/WindowManager.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -529,6 +532,20 @@ private:
   // Using shared_ptr ensures the flag outlives the Interpreter and can be safely checked by lambdas
   std::shared_ptr<std::atomic<bool>> m_destroyed;
 
+  // Script auto-reload support
+  std::string scriptPath;  // Path to current script file
+  std::atomic<bool> reloadEnabled{false};  // Auto-reload enabled state
+  std::atomic<bool> isFirstRun{true};  // Track if this is first run vs reload
+  std::filesystem::file_time_type lastModifiedTime;  // Last known file modification time
+  std::thread reloadWatcherThread;  // File watcher thread
+  std::atomic<bool> reloadWatcherRunning{false};  // Watcher thread control
+  std::mutex reloadMutex;  // Protect reload state
+  
+  // on reload/on start handlers
+  std::function<void()> onReloadHandler;
+  std::function<void()> onStartHandler;
+  std::unordered_map<std::string, bool> runOnceExecuted;  // Track runOnce execution
+
   int nextTimerId = 1;
   std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
   std::mutex timersMutex; // Thread safety for timer operations
@@ -569,6 +586,22 @@ private:
 
   // Get shared pointer to destroyed flag for safe lambda capture
   std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
+  
+  // Script auto-reload control
+  void enableReload();
+  void disableReload();
+  void toggleReload();
+  bool isReloadEnabled() const { return reloadEnabled.load(); }
+  void setScriptPath(const std::string& path) { scriptPath = path; }
+  std::string getScriptPath() const { return scriptPath; }
+  void startReloadWatcher();
+  void stopReloadWatcher();
+  void triggerReload();
+  void executeOnStart();
+  void executeOnReload();
+  bool hasRunOnce(const std::string& id);
+  void markRunOnce(const std::string& id);
+  void clearRunOnce(const std::string& id);
 };
 
 } // namespace havel

@@ -2147,21 +2147,14 @@ void Interpreter::visitOnReloadStatement(const ast::OnReloadStatement &node) {
 }
 
 void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
-  // Store the body as the on start handler
-  onStartHandler = [this, body = node.body.get()]() {
-    auto originalEnv = environment;
-    environment = std::make_shared<Environment>(originalEnv);
-    Evaluate(*body);
-    environment = originalEnv;
-  };
-  
-  // Execute immediately if this is the first run
+  // Execute immediately ONLY on first run, NOT on reload
   if (isFirstRun.load()) {
     auto originalEnv = environment;
     environment = std::make_shared<Environment>(originalEnv);
     Evaluate(*node.body);
     environment = originalEnv;
   }
+  // Don't store as handler - on start should NOT run on reload
   lastResult = nullptr;
 }
 
@@ -2228,36 +2221,42 @@ void Interpreter::InitializeStandardLibrary() {
         return HavelValue(this->isReloadEnabled());
       }));
   
-  // runOnce function - execute code only on first run, not on reload
+  // runOnce function - execute shell command only once, not on reload
   environment->Define("runOnce", HavelValue(BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
-          return HavelRuntimeError("runOnce requires an id and a function");
+          return HavelRuntimeError("runOnce requires an id and a command string");
         }
-        
+
         std::string id;
         if (args[0].is<std::string>()) {
           id = args[0].get<std::string>();
         } else {
           return HavelRuntimeError("runOnce: first argument must be a string id");
         }
-        
+
         // Check if already executed
         if (this->hasRunOnce(id)) {
-          return HavelValue(nullptr);
+          return HavelValue(true);  // Already executed, return success
         }
-        
-        // Mark as executed
+
+        // Mark as executed BEFORE running (prevents re-entry)
         this->markRunOnce(id);
-        
-        // If there's a function argument, execute it
-        if (args.size() >= 2 && args[1].is<BuiltinFunction>()) {
-          auto func = args[1].get<BuiltinFunction>();
-          std::vector<HavelValue> emptyArgs;
-          return func(emptyArgs);
+
+        // If there's a command string argument, execute it with Launcher::run
+        if (args.size() >= 2 && args[1].is<std::string>()) {
+          std::string cmd = args[1].get<std::string>();
+          auto result = Launcher::run(cmd);
+          if (result.success) {
+            info("runOnce('{}'): Command executed successfully", id);
+            return HavelValue(true);
+          } else {
+            error("runOnce('{}'): Command failed: {}", id, result.error);
+            return HavelValue(false);
+          }
         }
-        
-        return HavelValue(nullptr);
+
+        return HavelValue(true);
       })));
 
   environment->Define("app", HavelValue(appObj));

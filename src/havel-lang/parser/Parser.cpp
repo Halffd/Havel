@@ -2424,15 +2424,25 @@ Parser::parseKeyValueBlock() {
       failAt(at(), "Expected identifier or string as key");
     }
 
-    // Expect colon
-    if (at().type != havel::TokenType::Colon) {
-      failAt(at(), "Expected ':' after key");
+    // Expect '=' or ':' (support both for compatibility)
+    if (at().type != havel::TokenType::Assign && at().type != havel::TokenType::Colon) {
+      failAt(at(), "Expected '=' or ':' after key");
     }
-    advance(); // consume ':'
+    advance(); // consume '=' or ':'
 
-    // Parse value
-    auto value = parseExpression();
-    pairs.push_back({key, std::move(value)});
+    // Check if value is a nested block
+    if (at().type == havel::TokenType::OpenBrace) {
+      // Nested block - parse recursively and wrap in an ObjectLiteral
+      auto nestedPairs = parseKeyValueBlock();
+      
+      // Create an object literal to hold nested pairs
+      auto nestedObj = std::make_unique<havel::ast::ObjectLiteral>(std::move(nestedPairs));
+      pairs.push_back({key, std::move(nestedObj)});
+    } else {
+      // Parse value expression
+      auto value = parseExpression();
+      pairs.push_back({key, std::move(value)});
+    }
 
     // Handle comma or newline as separator
     if (at().type == havel::TokenType::Comma ||

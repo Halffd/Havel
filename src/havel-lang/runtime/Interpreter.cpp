@@ -3867,6 +3867,33 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(getBrowser().closeAll());
       }));
 
+  (*browserMod)["getActiveTab"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        BrowserTab tab = getBrowser().getActiveTab();
+        auto tabObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*tabObj)["id"] = HavelValue(tab.id);
+        (*tabObj)["title"] = HavelValue(tab.title);
+        (*tabObj)["url"] = HavelValue(tab.url);
+        (*tabObj)["type"] = HavelValue(tab.type);
+        return HavelValue(tabObj);
+      }));
+
+  (*browserMod)["getActiveTabTitle"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        return HavelValue(getBrowser().getActiveTabTitle());
+      }));
+
+  (*browserMod)["setActiveTab"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("browser.setActiveTab() requires tab index");
+        int tabId = static_cast<int>(ValueToNumber(args[0]));
+        getBrowser().setCurrentTabId(tabId);
+        return HavelValue(true);
+      }));
+
   // === New Browser Functions ===
 
   (*browserMod)["connectFirefox"] = HavelValue(BuiltinFunction(

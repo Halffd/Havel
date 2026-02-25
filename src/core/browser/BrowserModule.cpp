@@ -137,48 +137,49 @@ std::string BrowserModule::sendCdpCommandToTab(int tabId,
   return sendCdpCommandWebSocket(wsUrl, method, params);
 }
 
-std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl, 
+std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl,
                                                     const std::string& method,
                                                     const std::string& params) {
   // Generate unique message ID
   static std::atomic<int> nextId{1};
   int msgId = nextId++;
-  
+
   // Build JSON-RPC message
-  std::string message = "{\"id\":" + std::to_string(msgId) + 
-                        ",\"method\":\"" + method + 
+  std::string message = "{\"id\":" + std::to_string(msgId) +
+                        ",\"method\":\"" + method +
                         "\",\"params\":" + params + "}";
-  
+
   debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
-  
-  // Try using websocat command-line tool first
-  std::string cmd = "echo '" + message + "' | timeout 5 websocat '" + wsUrl + "' 2>/dev/null";
+
+  // Try using websocat command-line tool first with timeout
+  // Use -t for timeout and -n for no try-reconnect
+  std::string cmd = "echo '" + message + "' | timeout 3 websocat -n1 -t 3 '" + wsUrl + "' 2>/dev/null";
   auto result = Launcher::runShell(cmd);
-  
+
   if (result.success && !result.stdout.empty() && result.stdout.find("error") == std::string::npos) {
     debug("CDP WebSocket: Received: {}", result.stdout);
     return result.stdout;
   }
-  
+
   // Fallback: try wscat if available
-  cmd = "echo '" + message + "' | timeout 5 wscat -c '" + wsUrl + "' 2>/dev/null | head -1";
+  cmd = "echo '" + message + "' | timeout 3 wscat -c '" + wsUrl + "' -w 1 2>/dev/null | head -1";
   result = Launcher::runShell(cmd);
-  
+
   if (result.success && !result.stdout.empty()) {
     debug("CDP WebSocket (wscat): Received: {}", result.stdout);
     return result.stdout;
   }
-  
+
   // Last resort: use curl with WebSocket upgrade headers (experimental)
-  cmd = "curl -s --http2 -N -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' -H 'Content-Type: application/json' -d '" + message + "' '" + wsUrl + "' 2>/dev/null | head -1";
+  cmd = "curl -s --max-time 3 --http2 -N -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' -H 'Content-Type: application/json' -d '" + message + "' '" + wsUrl + "' 2>/dev/null | head -1";
   result = Launcher::runShell(cmd);
-  
+
   if (result.success && !result.stdout.empty()) {
     debug("CDP WebSocket (curl): Received: {}", result.stdout);
     return result.stdout;
   }
-  
-  error("BrowserModule: WebSocket CDP failed - websocat/wscat not available");
+
+  error("BrowserModule: WebSocket CDP failed - websocat/wscat not available or timed out");
   return "";
 }
 
@@ -400,6 +401,18 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
   return tabs;
 }
 
+BrowserTab BrowserModule::getActiveTab() const {
+  if (currentTabId >= 0 && currentTabId < static_cast<int>(cachedTabs.size())) {
+    return cachedTabs[currentTabId];
+  }
+  return BrowserTab{};
+}
+
+std::string BrowserModule::getActiveTabTitle() const {
+  BrowserTab tab = getActiveTab();
+  return tab.title.empty() ? "Unknown" : tab.title;
+}
+
 bool BrowserModule::activate(int tabId) {
   if (!connected)
     return false;
@@ -454,23 +467,30 @@ bool BrowserModule::closeAll() {
 // === Element Interaction ===
 
 bool BrowserModule::click(const std::string &selector) {
-  if (!connected || currentTabId < 0)
+  if (!connected)
     return false;
 
-  // Use Runtime.evaluate to click element
+  // Use Runtime.evaluate to click element with better error handling
   std::string js = "(function() { "
+                   "try { "
                    "const el = document.querySelector('" +
                    selector +
                    "'); "
-                   "if (el) { el.click(); return true; } "
-                   "return false; "
+                   "if (el) { "
+                   "el.click(); "
+                   "return {success: true}; "
+                   "} "
+                   "return {success: false, error: 'Element not found'}; "
+                   "} catch(e) { "
+                   "return {success: false, error: e.message}; "
+                   "} "
                    "})()";
 
   std::string response =
       sendCdpCommand("Runtime.evaluate",
                      "{\"expression\":\"" + js + "\",\"returnByValue\":true}");
 
-  return !response.empty() && response.find("true") != std::string::npos;
+  return !response.empty() && response.find("\"success\":true") != std::string::npos;
 }
 
 bool BrowserModule::type(const std::string &selector, const std::string &text) {
@@ -633,19 +653,42 @@ std::string BrowserModule::eval(const std::string &js) {
       escapedJs += c;
   }
 
+  // Use JSON.stringify to get a proper string representation
+  std::string fullJs = "JSON.stringify(" + escapedJs + ")";
+  
   std::string response =
-      sendCdpCommand("Runtime.evaluate", "{\"expression\":\"" + escapedJs +
+      sendCdpCommand("Runtime.evaluate", "{\"expression\":\"" + fullJs +
                                              "\",\"returnByValue\":true}");
 
-  // Extract result value
+  // Parse JSON response properly
   if (!response.empty()) {
-    size_t pos = response.find("\"value\"");
-    if (pos != std::string::npos) {
-      size_t start = response.find('"', pos + 9);
-      if (start != std::string::npos) {
-        size_t end = response.find('"', start + 1);
-        if (end != std::string::npos) {
-          return response.substr(start + 1, end - start - 1);
+    try {
+      auto jsonResponse = json::parse(response);
+      if (jsonResponse.contains("result") && 
+          jsonResponse["result"].contains("result") &&
+          jsonResponse["result"]["result"].contains("value")) {
+        std::string resultValue = jsonResponse["result"]["result"]["value"].get<std::string>();
+        // The result is already JSON-stringified, so parse it
+        auto parsedResult = json::parse(resultValue);
+        if (parsedResult.is_string()) {
+          return parsedResult.get<std::string>();
+        } else if (parsedResult.is_object()) {
+          // For objects, return a summary
+          return "[object Object]";
+        } else {
+          return parsedResult.dump();
+        }
+      }
+    } catch (...) {
+      // JSON parsing failed, try simple extraction
+      size_t pos = response.find("\"value\"");
+      if (pos != std::string::npos) {
+        size_t start = response.find('"', pos + 9);
+        if (start != std::string::npos) {
+          size_t end = response.find('"', start + 1);
+          if (end != std::string::npos) {
+            return response.substr(start + 1, end - start - 1);
+          }
         }
       }
     }

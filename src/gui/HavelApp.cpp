@@ -280,7 +280,8 @@ void HavelApp::initializeComponents(bool isStartup) {
     interpreter = std::make_shared<Interpreter>(
         *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
         audioManager.get(), guiManager.get(),
-        AutomationSuite::Instance()->getScreenshotManager());
+        AutomationSuite::Instance()->getScreenshotManager(),
+        clipboardManager.get());
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
     interpreter = nullptr;

@@ -403,6 +403,7 @@ public:
               BrightnessManager *brightness_mgr = nullptr,
               AudioManager *audio_mgr = nullptr, GUIManager *gui_mgr = nullptr,
               ScreenshotManager *screenshot_mgr = nullptr,
+              ClipboardManager *clipboard_mgr = nullptr,
               const std::vector<std::string> &cli_args = {});
   
   // Minimal interpreter for pure script execution (no IO/hotkeys)
@@ -528,6 +529,7 @@ private:
   AudioManager *audioManager;
   GUIManager *guiManager;
   ScreenshotManager *screenshotManager;
+  ClipboardManager *clipboardManager;
   HavelResult lastResult;
   std::mutex interpreterMutex; // Protect interpreter state
 

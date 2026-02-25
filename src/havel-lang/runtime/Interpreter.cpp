@@ -4549,9 +4549,12 @@ void Interpreter::InitializeClipboardBuiltins() {
             if (args.empty())
               return HavelRuntimeError("clipboardmanager.copy() requires text");
             std::string text = ValueToString(args[0]);
-            QMetaObject::invokeMethod(clipboardMgr, [clipboardMgr, text]() {
-              clipboardMgr->addToHistoryPublic(QString::fromStdString(text));
-            }, Qt::QueuedConnection);
+            if (clipboardMgr) {
+              auto* mgr = clipboardMgr;  // Copy pointer for inner lambda
+              QMetaObject::invokeMethod(mgr, [mgr, text]() {
+                mgr->addToHistoryPublic(QString::fromStdString(text));
+              }, Qt::QueuedConnection);
+            }
             return HavelValue(nullptr);
           }));
 
@@ -4565,7 +4568,10 @@ void Interpreter::InitializeClipboardBuiltins() {
       // Enable/disable auto hotkeys
       (*clipMgrObj)["enableHotkeys"] = HavelValue(BuiltinFunction(
           [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            clipboardMgr->initializeHotkeys();
+            (void)args;
+            if (clipboardMgr) {
+              clipboardMgr->initializeHotkeys();
+            }
             return HavelValue(nullptr);
           }));
 

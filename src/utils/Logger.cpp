@@ -6,8 +6,13 @@
 #include <chrono>
 #include <sstream>
 #include <algorithm>
+#include <atomic>
 
 namespace havel {
+
+// Flag to track if Logger is being destroyed
+// This prevents use-after-free when other static objects log during destruction
+static std::atomic<bool> g_loggerDestroying{false};
 
 struct Logger::Impl {
     std::ofstream logFile;
@@ -29,6 +34,8 @@ Logger::Logger()
 }
 
 Logger::~Logger() {
+    // Set flag before destroying to prevent use-after-free
+    g_loggerDestroying.store(true);
     if (pImpl->logFile.is_open()) {
         pImpl->logFile.close();
     }
@@ -78,6 +85,9 @@ void Logger::error(const std::string& message)   { log(LOG_ERROR, message); }
 void Logger::fatal(const std::string& message)   { log(LOG_FATAL, message); }
 
 void Logger::log(Level level, const std::string& message) {
+    // Skip logging if Logger is being destroyed (prevents use-after-free)
+    if (g_loggerDestroying.load()) return;
+    
     if (level < currentLevel) return;
 
     std::lock_guard<std::mutex> lock(mutex);

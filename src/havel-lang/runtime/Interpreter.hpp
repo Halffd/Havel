@@ -458,6 +458,10 @@ public:
   void visitObjectPattern(const ast::ObjectPattern &node) override;
   void visitTryExpression(const ast::TryExpression &node) override;
   void visitThrowStatement(const ast::ThrowStatement &node) override;
+  void visitOnModeStatement(const ast::OnModeStatement &node) override;
+  void visitOffModeStatement(const ast::OffModeStatement &node) override;
+  void visitOnReloadStatement(const ast::OnReloadStatement &node) override;
+  void visitOnStartStatement(const ast::OnStartStatement &node) override;
 
   // Type system - struct/enum support
   void visitStructFieldDef(const ast::StructFieldDef &node) override;
@@ -473,8 +477,6 @@ public:
   void visitLoopStatement(const ast::LoopStatement &node) override;
   void visitBreakStatement(const ast::BreakStatement &node) override;
   void visitContinueStatement(const ast::ContinueStatement &node) override;
-  void visitOnModeStatement(const ast::OnModeStatement &node) override;
-  void visitOffModeStatement(const ast::OffModeStatement &node) override;
   void visitConditionalHotkey(const ast::ConditionalHotkey &node) override;
   void visitWhenBlock(const ast::WhenBlock &node) override;
 
@@ -498,6 +500,17 @@ public:
 
   // Helper method for format() builtin
   std::string FormatValue(const HavelValue &value, const std::string &formatSpec);
+
+  // Script auto-reload control (public API)
+  void enableReload();
+  void disableReload();
+  void toggleReload();
+  bool isReloadEnabled() const { return reloadEnabled.load(); }
+  void setScriptPath(const std::string& path) { scriptPath = path; }
+  std::string getScriptPath() const { return scriptPath; }
+  void startReloadWatcher();
+  void stopReloadWatcher();
+  void triggerReload();
 
 private:
   std::shared_ptr<Environment> environment;
@@ -587,16 +600,7 @@ private:
   // Get shared pointer to destroyed flag for safe lambda capture
   std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
   
-  // Script auto-reload control
-  void enableReload();
-  void disableReload();
-  void toggleReload();
-  bool isReloadEnabled() const { return reloadEnabled.load(); }
-  void setScriptPath(const std::string& path) { scriptPath = path; }
-  std::string getScriptPath() const { return scriptPath; }
-  void startReloadWatcher();
-  void stopReloadWatcher();
-  void triggerReload();
+  // Reload helper methods (private)
   void executeOnStart();
   void executeOnReload();
   bool hasRunOnce(const std::string& id);

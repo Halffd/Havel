@@ -99,6 +99,9 @@ public:
   bool closeTab(int tabId);  // Renamed from close() to avoid conflicts
   bool closeAll();
   int getCurrentTabId() const { return currentTabId; }
+  void setCurrentTabId(int tabId) { currentTabId = tabId; }
+  BrowserTab getActiveTab() const;
+  std::string getActiveTabTitle() const;
 
   // === Window Management ===
   std::vector<BrowserWindow> listWindows();

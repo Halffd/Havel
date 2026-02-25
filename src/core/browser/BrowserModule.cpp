@@ -5,8 +5,11 @@
 #include <fstream>
 #include <regex>
 #include <sstream>
+#include <nlohmann/json.hpp>
 
 namespace havel {
+
+using json = nlohmann::json;
 
 // Static callback for curl
 static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
@@ -50,16 +53,10 @@ bool BrowserModule::connect(const std::string &url) {
     connected = true;
     info("BrowserModule: Connected to browser at {}", browserUrl);
 
-    // Parse and cache tabs
-    // Simple JSON parsing - find first tab
-    size_t idPos = response.find("\"id\"");
-    if (idPos != std::string::npos) {
-      size_t colonPos = response.find(':', idPos);
-      size_t numStart = response.find_first_of("0123456789", colonPos);
-      if (numStart != std::string::npos) {
-        currentTabId = std::stoi(response.substr(numStart));
-      }
-    }
+    // Parse and cache tabs immediately
+    // Chrome returns string IDs, so we use index-based IDs (0, 1, 2, ...)
+    listTabs();  // Cache the tabs
+    currentTabId = 0;  // Use first tab by default
 
     return true;
   }
@@ -119,10 +116,11 @@ std::string BrowserModule::httpPost(const std::string &url,
 
 std::string BrowserModule::sendCdpCommand(const std::string &method,
                                           const std::string &params) {
-  if (!connected || currentTabId < 0) {
-    error("BrowserModule: Not connected or no active tab");
+  if (!connected) {
+    error("BrowserModule: Not connected");
     return "";
   }
+  // Use currentTabId (0 means first tab)
   return sendCdpCommandToTab(currentTabId, method, params);
 }
 
@@ -135,61 +133,114 @@ std::string BrowserModule::sendCdpCommandToTab(int tabId,
     return "";
   }
 
-  // For simple CDP commands, we use the HTTP endpoint
-  // Note: Full CDP requires WebSocket, but many commands work via HTTP
-  std::string httpUrl = browserUrl + "/json/command";
+  // Use WebSocket-based CDP command
+  return sendCdpCommandWebSocket(wsUrl, method, params);
+}
 
-  std::ostringstream body;
-  body << "{\"id\":1,\"method\":\"" << method << "\",\"params\":" << params
-       << ",\"sessionId\":\"" << tabId << "\"}";
-
-  return httpPost(httpUrl, body.str());
+std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl, 
+                                                    const std::string& method,
+                                                    const std::string& params) {
+  // Generate unique message ID
+  static std::atomic<int> nextId{1};
+  int msgId = nextId++;
+  
+  // Build JSON-RPC message
+  std::string message = "{\"id\":" + std::to_string(msgId) + 
+                        ",\"method\":\"" + method + 
+                        "\",\"params\":" + params + "}";
+  
+  debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
+  
+  // Try using websocat command-line tool first
+  std::string cmd = "echo '" + message + "' | timeout 5 websocat '" + wsUrl + "' 2>/dev/null";
+  auto result = Launcher::runShell(cmd);
+  
+  if (result.success && !result.stdout.empty() && result.stdout.find("error") == std::string::npos) {
+    debug("CDP WebSocket: Received: {}", result.stdout);
+    return result.stdout;
+  }
+  
+  // Fallback: try wscat if available
+  cmd = "echo '" + message + "' | timeout 5 wscat -c '" + wsUrl + "' 2>/dev/null | head -1";
+  result = Launcher::runShell(cmd);
+  
+  if (result.success && !result.stdout.empty()) {
+    debug("CDP WebSocket (wscat): Received: {}", result.stdout);
+    return result.stdout;
+  }
+  
+  // Last resort: use curl with WebSocket upgrade headers (experimental)
+  cmd = "curl -s --http2 -N -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' -H 'Content-Type: application/json' -d '" + message + "' '" + wsUrl + "' 2>/dev/null | head -1";
+  result = Launcher::runShell(cmd);
+  
+  if (result.success && !result.stdout.empty()) {
+    debug("CDP WebSocket (curl): Received: {}", result.stdout);
+    return result.stdout;
+  }
+  
+  error("BrowserModule: WebSocket CDP failed - websocat/wscat not available");
+  return "";
 }
 
 std::string BrowserModule::getWebSocketUrl(int tabId) {
   // Refresh cache if it's empty or stale (older than 5 seconds)
   auto now = std::chrono::steady_clock::now();
-  if (cachedTabs.empty() || 
+  if (cachedTabs.empty() ||
       std::chrono::duration_cast<std::chrono::seconds>(now - lastTabListUpdate).count() > 5) {
     listTabs();
   }
-  
+
+  // For tabId 0, return the first tab's WebSocket URL
+  if (tabId == 0 && !cachedTabs.empty() && !cachedTabs[0].webSocketUrl.empty()) {
+    return cachedTabs[0].webSocketUrl;
+  }
+
   // First check if we have a cached WebSocket URL for this tab
   for (const auto& tab : cachedTabs) {
     // Match by numeric ID or string ID
-    if ((tab.id == tabId || (tabId != 0 && tab.idStr == std::to_string(tabId))) 
+    if ((tab.id == tabId || (tabId != 0 && tab.idStr == std::to_string(tabId)))
         && !tab.webSocketUrl.empty()) {
       return tab.webSocketUrl;
     }
   }
-  
+
   // If not found in cache, fetch fresh data
   std::string response = httpGet(browserUrl + "/json/list");
   if (response.empty()) {
     response = httpGet(browserUrl + "/json");
   }
 
+  // Parse WebSocket URL from response using nlohmann/json
+  try {
+    auto tabsJson = json::parse(response);
+    for (const auto& tabJson : tabsJson) {
+      std::string wsUrl;
+      if (tabJson.contains("webSocketDebuggerUrl")) {
+        wsUrl = tabJson["webSocketDebuggerUrl"].get<std::string>();
+      } else if (tabJson.contains("id")) {
+        std::string id = tabJson["id"].get<std::string>();
+        wsUrl = "ws://localhost:9222/devtools/page/" + id;
+      }
+      if (!wsUrl.empty()) {
+        return wsUrl;
+      }
+    }
+  } catch (...) {
+    // Fall back to regex parsing
+  }
+
   // Parse WebSocket URL from response
   // Format: "webSocketDebuggerUrl":"ws://localhost:9222/devtools/page/..."
   std::regex wsRegex("\"webSocketDebuggerUrl\":\"([^\"]+)\"");
-  std::regex idRegex("\"id\":\"?([^\"]+)\"?");
 
   std::string wsUrl;
   auto wsBegin =
       std::sregex_iterator(response.begin(), response.end(), wsRegex);
   auto wsEnd = std::sregex_iterator();
 
-  for (auto it = wsBegin; it != wsEnd; ++it) {
-    wsUrl = (*it)[1].str();
-    // Check if this is our tab
-    if (wsUrl.find(std::to_string(tabId)) != std::string::npos) {
-      return wsUrl;
-    }
-  }
-
-  // Return first WebSocket URL if no match
+  // Return first WebSocket URL
   if (wsBegin != wsEnd) {
-    return wsBegin->str();
+    return (*wsBegin)[1].str();
   }
 
   return "";
@@ -283,93 +334,49 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
   if (response.empty())
     return tabs;
 
-  // Simple JSON parsing for tab info
-  // Format: [{"id":"...","title":"...","url":"...","type":"page","webSocketDebuggerUrl":"ws://...",...}]
-  size_t pos = 0;
-  while ((pos = response.find('{', pos)) != std::string::npos) {
-    size_t end = response.find('}', pos);
-    if (end == std::string::npos)
-      break;
-
-    std::string tabJson = response.substr(pos, end - pos + 1);
-
-    BrowserTab tab;
-
-    // Extract id (both numeric and string)
-    size_t idPos = tabJson.find("\"id\"");
-    if (idPos != std::string::npos) {
-      size_t colonPos = tabJson.find(':', idPos);
-      size_t start = tabJson.find('"', colonPos);
-      if (start != std::string::npos) {
-        size_t quoteEnd = tabJson.find('"', start + 1);
-        if (quoteEnd != std::string::npos) {
-          tab.idStr = tabJson.substr(start + 1, quoteEnd - start - 1);
-          try {
-            tab.id = std::stoi(tab.idStr);
-          } catch (...) {
-            tab.id = 0;
-          }
-        }
+  // Parse JSON response using nlohmann/json
+  try {
+    auto tabsJson = json::parse(response);
+    
+    for (const auto& tabJson : tabsJson) {
+      BrowserTab tab;
+      
+      // Extract id (string)
+      if (tabJson.contains("id") && tabJson["id"].is_string()) {
+        tab.idStr = tabJson["id"].get<std::string>();
+        tab.id = 0;  // Chrome uses string IDs, not numeric
+      }
+      
+      // Extract title
+      if (tabJson.contains("title") && tabJson["title"].is_string()) {
+        tab.title = tabJson["title"].get<std::string>();
+      }
+      
+      // Extract url
+      if (tabJson.contains("url") && tabJson["url"].is_string()) {
+        tab.url = tabJson["url"].get<std::string>();
+      }
+      
+      // Extract type
+      if (tabJson.contains("type") && tabJson["type"].is_string()) {
+        tab.type = tabJson["type"].get<std::string>();
+      }
+      
+      // Extract webSocketDebuggerUrl (or construct from ID if not present)
+      if (tabJson.contains("webSocketDebuggerUrl") && tabJson["webSocketDebuggerUrl"].is_string()) {
+        tab.webSocketUrl = tabJson["webSocketDebuggerUrl"].get<std::string>();
+      } else if (!tab.idStr.empty()) {
+        // Construct WebSocket URL from tab ID
+        tab.webSocketUrl = "ws://localhost:9222/devtools/page/" + tab.idStr;
+      }
+      
+      if (!tab.idStr.empty()) {
+        tabs.push_back(tab);
       }
     }
-
-    // Extract title
-    size_t titlePos = tabJson.find("\"title\"");
-    if (titlePos != std::string::npos) {
-      size_t colonPos = tabJson.find(':', titlePos);
-      size_t start = tabJson.find('"', colonPos + 1);
-      if (start != std::string::npos) {
-        size_t quoteEnd = tabJson.find('"', start + 1);
-        if (quoteEnd != std::string::npos) {
-          tab.title = tabJson.substr(start + 1, quoteEnd - start - 1);
-        }
-      }
-    }
-
-    // Extract url
-    size_t urlPos = tabJson.find("\"url\"");
-    if (urlPos != std::string::npos) {
-      size_t colonPos = tabJson.find(':', urlPos);
-      size_t start = tabJson.find('"', colonPos + 1);
-      if (start != std::string::npos) {
-        size_t quoteEnd = tabJson.find('"', start + 1);
-        if (quoteEnd != std::string::npos) {
-          tab.url = tabJson.substr(start + 1, quoteEnd - start - 1);
-        }
-      }
-    }
-
-    // Extract type
-    size_t typePos = tabJson.find("\"type\"");
-    if (typePos != std::string::npos) {
-      size_t colonPos = tabJson.find(':', typePos);
-      size_t start = tabJson.find('"', colonPos + 1);
-      if (start != std::string::npos) {
-        size_t quoteEnd = tabJson.find('"', start + 1);
-        if (quoteEnd != std::string::npos) {
-          tab.type = tabJson.substr(start + 1, quoteEnd - start - 1);
-        }
-      }
-    }
-
-    // Extract webSocketDebuggerUrl
-    size_t wsPos = tabJson.find("\"webSocketDebuggerUrl\"");
-    if (wsPos != std::string::npos) {
-      size_t colonPos = tabJson.find(':', wsPos);
-      size_t start = tabJson.find('"', colonPos + 1);
-      if (start != std::string::npos) {
-        size_t quoteEnd = tabJson.find('"', start + 1);
-        if (quoteEnd != std::string::npos) {
-          tab.webSocketUrl = tabJson.substr(start + 1, quoteEnd - start - 1);
-        }
-      }
-    }
-
-    if (tab.id >= 0) {
-      tabs.push_back(tab);
-    }
-
-    pos = end + 1;
+  } catch (const json::exception& e) {
+    error("BrowserModule: Failed to parse tab list JSON: {}", e.what());
+    return tabs;
   }
 
   cachedTabs = tabs;
@@ -606,7 +613,7 @@ bool BrowserModule::resetZoom() { return setZoom(1.0); }
 // === JavaScript Execution ===
 
 std::string BrowserModule::eval(const std::string &js) {
-  if (!connected || currentTabId < 0)
+  if (!connected)
     return "";
 
   // Escape quotes in JS
@@ -720,7 +727,7 @@ BrowserWindow BrowserModule::getWindowInfo() {
 // === Utility ===
 
 std::string BrowserModule::getCurrentUrl() {
-  if (!connected || currentTabId < 0)
+  if (!connected)
     return "";
 
   std::string js = "window.location.href";
@@ -728,7 +735,7 @@ std::string BrowserModule::getCurrentUrl() {
 }
 
 std::string BrowserModule::getTitle() {
-  if (!connected || currentTabId < 0)
+  if (!connected)
     return "";
 
   std::string js = "document.title";

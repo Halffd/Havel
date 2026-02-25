@@ -54,7 +54,8 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {'?', TokenType::Question},    {'|', TokenType::Pipe},
     {'+', TokenType::Plus},        {'-', TokenType::Minus},
     {'*', TokenType::Multiply},    {'/', TokenType::Divide},
-    {'%', TokenType::Modulo},      {'\n', TokenType::NewLine}};
+    {'%', TokenType::Modulo},      {'\n', TokenType::NewLine},
+    {'!', TokenType::Not}};
 
 Lexer::Lexer(const std::string &sourceCode, bool debug_lexer)
     : source(sourceCode), debug_lexer(debug_lexer) {}

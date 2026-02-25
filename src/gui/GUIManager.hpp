@@ -199,7 +199,7 @@ private:
   void ensureQApplication();
 
   // Thread-safe notification implementation
-  void showNotificationImpl(const QString &title, const QString &message,
+  Q_INVOKABLE void showNotificationImpl(const QString &title, const QString &message,
                             const QString &icon, int durationMs);
 };
 

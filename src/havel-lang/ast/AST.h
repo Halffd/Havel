@@ -59,6 +59,8 @@ enum class NodeType {
   ContinueStatement,    // continue
   OnModeStatement,      // on mode gaming { ... }
   OffModeStatement,     // off mode gaming { ... }
+  OnReloadStatement,    // on reload { ... }
+  OnStartStatement,     // on start { ... }
   WhenModeExpression,   // when mode gaming
   // Conditional hotkeys
   ConditionalHotkey,  // hotkey "Ctrl+A" if mode == foo then ...
@@ -963,6 +965,38 @@ struct OffModeStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On Reload Statement (on reload { ... })
+struct OnReloadStatement : public Statement {
+  std::unique_ptr<Statement> body;
+
+  OnReloadStatement(std::unique_ptr<Statement> bd)
+      : body(std::move(bd)) {
+    kind = NodeType::OnReloadStatement;
+  }
+
+  std::string toString() const override {
+    return "OnReloadStatement{body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Start Statement (on start { ... })
+struct OnStartStatement : public Statement {
+  std::unique_ptr<Statement> body;
+
+  OnStartStatement(std::unique_ptr<Statement> bd)
+      : body(std::move(bd)) {
+    kind = NodeType::OnStartStatement;
+  }
+
+  std::string toString() const override {
+    return "OnStartStatement{body: " + (body ? body->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Function Declaration
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
@@ -1609,6 +1643,8 @@ public:
   virtual void visitContinueStatement(const ContinueStatement &node) = 0;
   virtual void visitOnModeStatement(const OnModeStatement &node) = 0;
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
+  virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;
+  virtual void visitOnStartStatement(const OnStartStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
 
@@ -1775,6 +1811,14 @@ inline void OnModeStatement::accept(ASTVisitor &visitor) const {
 
 inline void OffModeStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOffModeStatement(*this);
+}
+
+inline void OnReloadStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnReloadStatement(*this);
+}
+
+inline void OnStartStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnStartStatement(*this);
 }
 
 inline void TypeDeclaration::accept(ASTVisitor &visitor) const {

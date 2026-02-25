@@ -66,8 +66,11 @@ private:
   std::unique_ptr<ast::Statement> parseSwitchStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();
+  std::unique_ptr<ast::Statement> parseOnStatement();
   std::unique_ptr<ast::Statement> parseOnModeStatement();
   std::unique_ptr<ast::Statement> parseOffModeStatement();
+  std::unique_ptr<ast::Statement> parseOnReloadStatement();
+  std::unique_ptr<ast::Statement> parseOnStartStatement();
   std::unique_ptr<ast::Statement> parseFunctionDeclaration();
   std::unique_ptr<ast::Statement> parseReturnStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();

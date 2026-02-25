@@ -337,13 +337,167 @@ mouse.wheel(-3)        // Scroll down
 | `import` | Module import | `import module from "path"` |
 | `use` | Module flattening | `use io, media` |
 | `with` | Contextual scoping | `with io { ... }` |
-| `config` | Configuration block | `config { ... }` |
+| `config` | Configuration block | `config { debug = true }` |
 | `devices` | Device configuration | `devices { ... }` |
 | `modes` | Mode configuration | `modes { ... }` |
 | `try` | Exception handling | `try { ... } catch { ... } finally { ... }` |
 | `catch` | Exception handler | `catch error { ... }` |
 | `finally` | Cleanup block | `finally { ... }` |
 | `throw` | Raise exception | `throw value` |
+| `on start` | Execute on script start | `on start { init() }` |
+| `on reload` | Execute on script reload | `on reload { reloadConfig() }` |
+| `runOnce` | Run command once only | `runOnce("id", "command")` |
+
+## Script Auto-Reload
+
+Havel supports automatic script reloading when the script file changes, perfect for development and dynamic configuration.
+
+### Enabling Auto-Reload
+
+```havel
+// Enable auto-reload for current script
+app.enableReload()
+
+// Disable auto-reload
+app.disableReload()
+
+// Toggle auto-reload state
+app.toggleReload()
+
+// Check if auto-reload is enabled
+if app.reload {
+    print("Auto-reload is enabled")
+}
+```
+
+### Lifecycle Hooks
+
+#### on start Block
+Executes **only once** when the script first loads. Does NOT execute on reload.
+
+```havel
+on start {
+    print("Script initialized")
+    // Initialize database connections
+    // Load configuration files
+    // Setup one-time resources
+}
+```
+
+#### on reload Block
+Executes **only** when the script reloads due to file changes.
+
+```havel
+on reload {
+    print("Script reloaded")
+    // Reload configuration
+    // Refresh cached data
+    // Reinitialize dynamic resources
+}
+```
+
+### runOnce Function
+Execute a shell command only once, never again on reloads.
+
+```havel
+// Run command once with unique ID
+runOnce("setup-db", "sqlite3 /tmp/app.db 'CREATE TABLE IF NOT EXISTS users'")
+
+// This won't run again even after reload
+runOnce("init-config", "cp /etc/app/config.default /etc/app/config")
+
+// Multiple runOnce calls with different IDs
+runOnce("log-start", "echo 'App started' >> /var/log/app.log")
+runOnce("check-deps", "which ffmpeg || echo 'FFmpeg not found'")
+```
+
+**Key Features:**
+- `runOnce(id, command)` - Command executes only once per unique ID
+- Uses `Launcher::runShell()` for command execution
+- Returns `true` on success, `false` on failure
+- State persists across reloads
+
+### Complete Example
+
+```havel
+// Lifecycle hooks
+on start {
+    print("=== Application Starting ===")
+    runOnce("init", "mkdir -p /tmp/myapp")
+    runOnce("setup", "touch /tmp/myapp/initialized")
+}
+
+on reload {
+    print("=== Configuration Reloaded ===")
+    // Reload settings without restarting
+    loadConfig()
+}
+
+// Enable auto-reload
+app.enableReload()
+print("Auto-reload enabled for: " + app.getScriptPath())
+
+// Your main script logic
+hotkey "F1" => {
+    print("Hotkey pressed")
+}
+```
+
+### Configuration Block Enhancements
+
+Config blocks now support both `=` and `:` as separators, and nested blocks for hierarchical configuration:
+
+```havel
+// Using = separator (recommended)
+config {
+    debug = true
+    logKeys = true
+    timeout = 5000
+    
+    // Nested blocks create hierarchical keys
+    window {
+        monitoring = true
+        printWindows = false
+        opacity = 0.9
+    }
+    
+    hotkeys {
+        enableGlobal = true
+        prefix = "ctrl+alt"
+    }
+}
+
+// Using : separator (legacy support)
+config {
+    debug: true
+    window: {
+        monitoring: true
+    }
+}
+
+// Mixed separators (allowed but not recommended)
+config {
+    debug = true
+    window: {
+        monitoring = true
+    }
+}
+```
+
+**Config Key Hierarchy:**
+- `Havel.debug = true`
+- `Havel.logKeys = true`
+- `Havel.window.monitoring = true`
+- `Havel.window.printWindows = false`
+- `Havel.hotkeys.enableGlobal = true`
+
+**Accessing Config Values:**
+```havel
+// Config values are stored with Havel. prefix
+use config
+debugMode = config.get("Havel.debug")
+windowMonitoring = config.get("Havel.window.monitoring")
+```
 
 ## Standard Library Modules
 

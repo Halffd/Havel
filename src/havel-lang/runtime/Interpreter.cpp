@@ -2243,10 +2243,10 @@ void Interpreter::InitializeStandardLibrary() {
         // Mark as executed BEFORE running (prevents re-entry)
         this->markRunOnce(id);
 
-        // If there's a command string argument, execute it with Launcher::run
+        // If there's a command string argument, execute it with Launcher::runShell
         if (args.size() >= 2 && args[1].is<std::string>()) {
           std::string cmd = args[1].get<std::string>();
-          auto result = Launcher::run(cmd);
+          auto result = Launcher::runShell(cmd);
           if (result.success) {
             info("runOnce('{}'): Command executed successfully", id);
             return HavelValue(true);

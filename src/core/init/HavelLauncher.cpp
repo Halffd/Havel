@@ -229,6 +229,9 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   // Create minimal interpreter without IO/hotkeys
   havel::Interpreter interpreter;
   
+  // Set script path for auto-reload support
+  interpreter.setScriptPath(cfg.scriptFile);
+
   // Execute script
   auto result = interpreter.Execute(code);
 

@@ -309,7 +309,15 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
       }
     }
 
+    // Mark as not first run after initial execution
+    bool wasFirstRun = isFirstRun.load();
     auto result = Evaluate(*programPtr);
+    
+    // After first successful execution, mark as not first run
+    if (wasFirstRun) {
+      isFirstRun.store(false);
+    }
+    
     return result;
   } catch (const havel::LexError &e) {
     return HavelRuntimeError("Lex error at line " + std::to_string(e.line) +
@@ -2127,6 +2135,36 @@ void Interpreter::visitOffModeStatement(const ast::OffModeStatement &node) {
   }
 }
 
+void Interpreter::visitOnReloadStatement(const ast::OnReloadStatement &node) {
+  // Store the body as the on reload handler
+  onReloadHandler = [this, body = node.body.get()]() {
+    auto originalEnv = environment;
+    environment = std::make_shared<Environment>(originalEnv);
+    Evaluate(*body);
+    environment = originalEnv;
+  };
+  lastResult = nullptr;
+}
+
+void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
+  // Store the body as the on start handler
+  onStartHandler = [this, body = node.body.get()]() {
+    auto originalEnv = environment;
+    environment = std::make_shared<Environment>(originalEnv);
+    Evaluate(*body);
+    environment = originalEnv;
+  };
+  
+  // Execute immediately if this is the first run
+  if (isFirstRun.load()) {
+    auto originalEnv = environment;
+    environment = std::make_shared<Environment>(originalEnv);
+    Evaluate(*node.body);
+    environment = originalEnv;
+  }
+  lastResult = nullptr;
+}
+
 // Stubs for unimplemented visit methods
 void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration &node) {
   lastResult = HavelRuntimeError("Type declarations not implemented.");
@@ -2156,6 +2194,71 @@ void Interpreter::InitializeStandardLibrary() {
 
   auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
   (*appObj)["args"] = HavelValue(argsArray);
+  
+  // Script auto-reload control
+  (*appObj)["enableReload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        this->enableReload();
+        return HavelValue(true);
+      }));
+  
+  (*appObj)["disableReload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        this->disableReload();
+        return HavelValue(false);
+      }));
+  
+  (*appObj)["toggleReload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        this->toggleReload();
+        return HavelValue(this->isReloadEnabled());
+      }));
+  
+  (*appObj)["reload"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() >= 1) {
+          if (auto b = args[0].get_if<bool>()) {
+            if (*b) {
+              this->enableReload();
+            } else {
+              this->disableReload();
+            }
+          }
+        }
+        return HavelValue(this->isReloadEnabled());
+      }));
+  
+  // runOnce function - execute code only on first run, not on reload
+  environment->Define("runOnce", HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("runOnce requires an id and a function");
+        }
+        
+        std::string id;
+        if (args[0].is<std::string>()) {
+          id = args[0].get<std::string>();
+        } else {
+          return HavelRuntimeError("runOnce: first argument must be a string id");
+        }
+        
+        // Check if already executed
+        if (this->hasRunOnce(id)) {
+          return HavelValue(nullptr);
+        }
+        
+        // Mark as executed
+        this->markRunOnce(id);
+        
+        // If there's a function argument, execute it
+        if (args.size() >= 2 && args[1].is<BuiltinFunction>()) {
+          auto func = args[1].get<BuiltinFunction>();
+          std::vector<HavelValue> emptyArgs;
+          return func(emptyArgs);
+        }
+        
+        return HavelValue(nullptr);
+      })));
 
   environment->Define("app", HavelValue(appObj));
 
@@ -9277,6 +9380,128 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
   }
 
   lastResult = nullptr;
+}
+
+// ============================================================================
+// Script Auto-Reload Implementation
+// ============================================================================
+
+void Interpreter::enableReload() {
+  reloadEnabled.store(true);
+  if (scriptPath.empty()) {
+    warn("Cannot enable auto-reload: no script path set");
+    return;
+  }
+  startReloadWatcher();
+  info("Auto-reload enabled for script: {}", scriptPath);
+}
+
+void Interpreter::disableReload() {
+  reloadEnabled.store(false);
+  stopReloadWatcher();
+  info("Auto-reload disabled");
+}
+
+void Interpreter::toggleReload() {
+  if (reloadEnabled.load()) {
+    disableReload();
+  } else {
+    enableReload();
+  }
+}
+
+void Interpreter::startReloadWatcher() {
+  if (reloadWatcherRunning.load() || scriptPath.empty()) {
+    return;
+  }
+  
+  reloadWatcherRunning.store(true);
+  reloadWatcherThread = std::thread([this]() {
+    namespace fs = std::filesystem;
+    
+    // Get initial modification time
+    try {
+      if (fs::exists(scriptPath)) {
+        lastModifiedTime = fs::last_write_time(scriptPath);
+      }
+    } catch (...) {
+      // File doesn't exist yet or can't be accessed
+    }
+    
+    while (reloadWatcherRunning.load() && reloadEnabled.load()) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      
+      try {
+        if (fs::exists(scriptPath)) {
+          auto currentTime = fs::last_write_time(scriptPath);
+          if (currentTime > lastModifiedTime) {
+            lastModifiedTime = currentTime;
+            info("Script file changed, triggering reload...");
+            triggerReload();
+          }
+        }
+      } catch (...) {
+        // File access error, continue watching
+      }
+    }
+  });
+}
+
+void Interpreter::stopReloadWatcher() {
+  reloadWatcherRunning.store(false);
+  if (reloadWatcherThread.joinable()) {
+    reloadWatcherThread.join();
+  }
+}
+
+void Interpreter::triggerReload() {
+  std::lock_guard<std::mutex> lock(reloadMutex);
+  
+  if (!reloadEnabled.load() || scriptPath.empty()) {
+    return;
+  }
+  
+  // Execute on reload handler
+  executeOnReload();
+  
+  // Re-execute the script
+  try {
+    std::ifstream file(scriptPath);
+    if (file) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      std::string code = buffer.str();
+      Execute(code);
+      info("Script reloaded successfully");
+    }
+  } catch (const std::exception& e) {
+    error("Failed to reload script: {}", e.what());
+  }
+}
+
+void Interpreter::executeOnStart() {
+  if (onStartHandler) {
+    onStartHandler();
+  }
+}
+
+void Interpreter::executeOnReload() {
+  if (onReloadHandler) {
+    onReloadHandler();
+  }
+}
+
+bool Interpreter::hasRunOnce(const std::string& id) {
+  auto it = runOnceExecuted.find(id);
+  return it != runOnceExecuted.end() && it->second;
+}
+
+void Interpreter::markRunOnce(const std::string& id) {
+  runOnceExecuted[id] = true;
+}
+
+void Interpreter::clearRunOnce(const std::string& id) {
+  runOnceExecuted.erase(id);
 }
 
 } // namespace havel

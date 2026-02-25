@@ -4491,87 +4491,92 @@ void Interpreter::InitializeClipboardBuiltins() {
     if (clipboardMgr) {
       auto clipMgrObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
+      // Store pointer for use in nested lambdas
+      auto* mgr = clipboardMgr;
+
       // Show/hide clipboard manager window
       (*clipMgrObj)["show"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            QMetaObject::invokeMethod(clipboardMgr, "showAndFocus", Qt::QueuedConnection);
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            QMetaObject::invokeMethod(mgr, "showAndFocus", Qt::QueuedConnection);
             return HavelValue(nullptr);
           }));
 
       (*clipMgrObj)["hide"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            clipboardMgr->hide();
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            mgr->hide();
             return HavelValue(nullptr);
           }));
 
       (*clipMgrObj)["toggle"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            QMetaObject::invokeMethod(clipboardMgr, "toggleVisibility", Qt::QueuedConnection);
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            QMetaObject::invokeMethod(mgr, "toggleVisibility", Qt::QueuedConnection);
             return HavelValue(nullptr);
           }));
 
       // Clipboard history operations
       (*clipMgrObj)["history"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            // Return clipboard history as array
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
             auto historyArray = std::make_shared<std::vector<HavelValue>>();
-            int count = clipboardMgr->getHistoryCount();
+            int count = mgr->getHistoryCount();
             for (int i = 0; i < count; i++) {
-              QString item = clipboardMgr->getHistoryItem(i);
+              QString item = mgr->getHistoryItem(i);
               historyArray->push_back(HavelValue(item.toStdString()));
             }
             return HavelValue(historyArray);
           }));
 
       (*clipMgrObj)["count"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            return HavelValue(clipboardMgr->getHistoryCount());
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            return HavelValue(mgr->getHistoryCount());
           }));
 
       (*clipMgrObj)["getItem"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("clipboardmanager.getItem() requires index");
             int index = static_cast<int>(ValueToNumber(args[0]));
-            QString item = clipboardMgr->getHistoryItem(index);
+            QString item = mgr->getHistoryItem(index);
             return HavelValue(item.toStdString());
           }));
 
       (*clipMgrObj)["clear"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
-            QMetaObject::invokeMethod(clipboardMgr, "clearHistoryPublic", Qt::QueuedConnection);
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            QMetaObject::invokeMethod(mgr, "clearHistoryPublic", Qt::QueuedConnection);
             return HavelValue(nullptr);
           }));
 
       // Copy text to clipboard history
       (*clipMgrObj)["copy"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("clipboardmanager.copy() requires text");
             std::string text = ValueToString(args[0]);
-            if (clipboardMgr) {
-              auto* mgr = clipboardMgr;  // Copy pointer for inner lambda
-              QMetaObject::invokeMethod(mgr, [mgr, text]() {
-                mgr->addToHistoryPublic(QString::fromStdString(text));
-              }, Qt::QueuedConnection);
-            }
+            QMetaObject::invokeMethod(mgr, [mgr, text]() {
+              mgr->addToHistoryPublic(QString::fromStdString(text));
+            }, Qt::QueuedConnection);
             return HavelValue(nullptr);
           }));
 
       // Paste from clipboard (current clipboard content)
       (*clipMgrObj)["paste"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            (void)mgr;  // Mark as used
             QClipboard *clipboard = QGuiApplication::clipboard();
             return HavelValue(clipboard->text().toStdString());
           }));
 
       // Enable/disable auto hotkeys
       (*clipMgrObj)["enableHotkeys"] = HavelValue(BuiltinFunction(
-          [clipboardMgr](const std::vector<HavelValue> &args) -> HavelResult {
+          [mgr](const std::vector<HavelValue> &args) -> HavelResult {
             (void)args;
-            if (clipboardMgr) {
-              clipboardMgr->initializeHotkeys();
-            }
+            mgr->initializeHotkeys();
             return HavelValue(nullptr);
           }));
 

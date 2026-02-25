@@ -405,7 +405,12 @@ public:
   // Minimal interpreter for pure script execution (no IO/hotkeys)
   explicit Interpreter(const std::vector<std::string> &cli_args = {});
 
-  ~Interpreter() { if (m_destroyed) m_destroyed->store(true); }
+  ~Interpreter() { 
+    if (m_destroyed) m_destroyed->store(true);
+    // Explicitly clear environment and lastResult to ensure proper cleanup
+    environment.reset();
+    lastResult = HavelValue(nullptr);  // Clear any held references
+  }
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);

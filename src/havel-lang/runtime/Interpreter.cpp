@@ -3743,9 +3743,11 @@ void Interpreter::InitializeSystemBuiltins() {
           auto obj =
               std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*obj)["id"] = HavelValue(static_cast<double>(tab.id));
+          (*obj)["idStr"] = HavelValue(tab.idStr);
           (*obj)["title"] = HavelValue(tab.title);
           (*obj)["url"] = HavelValue(tab.url);
           (*obj)["type"] = HavelValue(tab.type);
+          (*obj)["webSocketUrl"] = HavelValue(tab.webSocketUrl);
           arr->push_back(HavelValue(obj));
         }
         return HavelValue(arr);

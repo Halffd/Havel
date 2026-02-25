@@ -3,6 +3,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include <optional>
 
 namespace havel {
 
@@ -141,6 +142,11 @@ private:
   std::string sendCdpCommandToTab(int tabId, const std::string &method,
                                   const std::string &params = "{}");
   std::string getWebSocketUrl(int tabId);
+  
+  // WebSocket-based CDP command sender
+  std::string sendCdpCommandWebSocket(const std::string& wsUrl, 
+                                       const std::string& method,
+                                       const std::string& params = "{}");
 
   // Marionette helper methods (Firefox)
   std::string sendMarionetteCommand(const std::string &command,

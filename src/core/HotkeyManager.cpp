@@ -2062,6 +2062,16 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
   std::vector<int> toGrab;
   std::vector<int> toUngrab;
 
+  // Structure to hold copied condition functions for safe evaluation
+  struct ConditionEval {
+    int id;
+    std::function<bool()> conditionFunc;  // Copy the function while holding lock
+    bool currentlyGrabbed;
+    bool usesFunctionCondition;
+  };
+  
+  std::vector<ConditionEval> conditionsToEval;
+
   // Hold hotkeyMutex for accessing activeConditionalHotkeys
   // Use unique_lock so we can release it before IO operations
   std::unique_lock<std::mutex> lock(hotkeyMutex);
@@ -2086,36 +2096,60 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     pendingConditionalHotkeys.clear();
   }
 
-  // Step 2: Evaluate all active conditional hotkeys
+  // Step 2: Copy condition functions for safe evaluation (still holding lock)
+  conditionsToEval.reserve(activeConditionalHotkeys.size());
   for (auto &ch : activeConditionalHotkeys) {
-    // Evaluate condition
-    bool shouldGrab = false;
-
-    if (ch.usesFunctionCondition) {
-      if (ch.conditionFunc) {
-        shouldGrab = ch.conditionFunc();
-      }
+    ConditionEval eval;
+    eval.id = ch.id;
+    eval.currentlyGrabbed = ch.currentlyGrabbed;
+    eval.usesFunctionCondition = ch.usesFunctionCondition;
+    
+    // Copy the function while holding the lock to avoid race conditions
+    if (ch.usesFunctionCondition && ch.conditionFunc) {
+      eval.conditionFunc = ch.conditionFunc;  // Safe copy under lock
     } else {
-      // For string-based conditions
-      shouldGrab = evaluateCondition(ch.condition);
+      // For string-based conditions, create a lambda that captures the string
+      std::string cond = ch.condition;
+      eval.conditionFunc = [this, cond]() { return evaluateCondition(cond); };
+    }
+    
+    conditionsToEval.push_back(std::move(eval));
+  }
+
+  // Release lock before evaluating conditions (they may take time)
+  lock.unlock();
+
+  // Step 3: Evaluate all conditions (no locks held, using copied functions)
+  for (auto &eval : conditionsToEval) {
+    bool shouldGrab = false;
+    if (eval.conditionFunc) {
+      shouldGrab = eval.conditionFunc();  // Call copied function
     }
 
     // Determine if we need to grab/ungrab
-    if (shouldGrab && !ch.currentlyGrabbed) {
-      toGrab.push_back(ch.id);
-    } else if (!shouldGrab && ch.currentlyGrabbed) {
-      toUngrab.push_back(ch.id);
+    if (shouldGrab && !eval.currentlyGrabbed) {
+      toGrab.push_back(eval.id);
+    } else if (!shouldGrab && eval.currentlyGrabbed) {
+      toUngrab.push_back(eval.id);
     }
-
-    // Update internal state
-    ch.currentlyGrabbed = shouldGrab;
-    ch.lastConditionResult = shouldGrab;
   }
 
+  // Step 4: Re-acquire lock to update state
+  lock.lock();
+  for (auto &eval : conditionsToEval) {
+    for (auto &ch : activeConditionalHotkeys) {
+      if (ch.id == eval.id) {
+        ch.currentlyGrabbed = (std::find(toGrab.begin(), toGrab.end(), eval.id) != toGrab.end());
+        ch.lastConditionResult = ch.currentlyGrabbed;
+        break;
+      }
+    }
+  }
+  
   // Release lock before applying grab/ungrab to avoid potential deadlocks
   lock.unlock();
 
-  // Step 3: Apply grab/ungrab (no locks held)
+  // Step 5: Apply grab/ungrab (no locks held)
   for (int id : toUngrab) {
     io.UngrabHotkey(id);
   }

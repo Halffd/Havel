@@ -176,8 +176,8 @@ public:
     // Constants
     static constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.02;
     static constexpr int DEFAULT_TEMP_AMOUNT = 200;
-    static constexpr int MIN_TEMPERATURE = 0;
-    static constexpr int MAX_TEMPERATURE = 25000;
+    static constexpr int MIN_TEMPERATURE = 1000;  // Minimum practical color temperature
+    static constexpr int MAX_TEMPERATURE = 25000; // Maximum color temperature
     
     private:
     Display* x11_display;

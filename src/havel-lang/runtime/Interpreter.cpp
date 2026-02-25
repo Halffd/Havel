@@ -1272,11 +1272,11 @@ void Interpreter::processConfigPairs(
     const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
     Configs& config,
     const std::string& prefix) {
-  
+
   for (const auto &[key, valueExpr] : pairs) {
     // Skip "file" key (already processed)
     if (key == "file") continue;
-    
+
     // Check if value is a nested ObjectLiteral (nested config block)
     if (auto* objLit = dynamic_cast<const ast::ObjectLiteral*>(valueExpr.get())) {
       // Recursively process nested block with updated prefix
@@ -1303,30 +1303,7 @@ void Interpreter::processConfigPairs(
         config.Set(configKey, strValue);
       }
     }
-
-    // Handle defaults object
-    if (key == "defaults" && value.isObject()) {
-      auto defaults = value.asObject();
-      if (defaults)
-        for (const auto &[defaultKey, defaultValue] : *defaults) {
-          std::string configKey = "Havel." + defaultKey;
-          std::string strValue = ValueToString(defaultValue);
-
-          // Only set if not already set
-          if (config.Get<std::string>(configKey, "").empty()) {
-            config.Set(configKey, strValue);
-          }
-        }
-    }
   }
-
-  // Save config to file
-  config.Save();
-
-  // Store the config block as a special variable for script access
-  environment->Define("config", HavelValue(configObject));
-
-  lastResult = nullptr; // Config blocks don't return a value
 }
 
 void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {

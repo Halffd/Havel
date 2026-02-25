@@ -2025,4 +2025,29 @@ void ClipboardManager::onItemChanged(QListWidgetItem* item) {
     saveHistory();
 }
 
+// === Public Methods for Language Binding ===
+
+void ClipboardManager::addToHistoryPublic(const QString& text) {
+    addToHistory(text);
+}
+
+void ClipboardManager::clearHistoryPublic() {
+    onClearAll();
+}
+
+QString ClipboardManager::getHistoryItem(int index) const {
+    if (index < 0 || index >= historyItems.size()) {
+        return QString();
+    }
+    const ClipboardItem& item = historyItems.at(index);
+    if (item.type == ContentType::Text || item.type == ContentType::Markdown) {
+        return item.data.toString();
+    }
+    return item.displayText;
+}
+
+int ClipboardManager::getHistoryCount() const {
+    return historyItems.size();
+}
+
 } // namespace havel

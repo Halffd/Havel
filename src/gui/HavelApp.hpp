@@ -66,8 +66,10 @@ public:
   bool gui = true;
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
+  ClipboardManager* getClipboardManager() { return clipboardManager.get(); }
 #else
   Interpreter *getInterpreter() { return nullptr; }
+  ClipboardManager* getClipboardManager() { return nullptr; }
 #endif
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;

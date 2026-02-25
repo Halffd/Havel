@@ -265,8 +265,10 @@ void HavelApp::initializeComponents(bool isStartup) {
         throw std::runtime_error("Failed to create ClipboardManager instance");
       }
 
-      // Initialize hotkeys
-      clipboardManager->initializeHotkeys();
+      // Initialize hotkeys only if enabled in config (default: disabled for language control)
+      if (Configs::Get().Get("ClipboardManager.AutoHotkeys", false)) {
+        clipboardManager->initializeHotkeys();
+      }
     } catch (const std::exception &e) {
       std::string errorMsg =
           std::string("Failed to initialize ClipboardManager: ") + e.what();

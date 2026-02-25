@@ -71,6 +71,12 @@ public:
     // Helper function for truncating text
     QString truncateText(const QString &text, int maxLength);
 
+    // Exposed for language binding
+    void addToHistoryPublic(const QString& text);
+    void clearHistoryPublic();
+    QString getHistoryItem(int index) const;
+    int getHistoryCount() const;
+
 signals:
     void pasteRequested(int index);
 

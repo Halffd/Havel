@@ -22,9 +22,9 @@ struct ConditionalHotkey {
   int id;
   std::string key;
   std::string condition; // String condition (for legacy)
-  std::function<bool()> conditionFunc; // Function condition (for new functionality)
-  std::function<void()> trueAction;
-  std::function<void()> falseAction;
+  std::shared_ptr<std::function<bool()>> conditionFunc; // Function condition (shared for thread safety)
+  std::shared_ptr<std::function<void()>> trueAction;  // Shared for thread safety
+  std::shared_ptr<std::function<void()>> falseAction; // Shared for thread safety
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
   bool usesFunctionCondition = false; // Flag to indicate which condition type to use

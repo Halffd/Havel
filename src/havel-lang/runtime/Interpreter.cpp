@@ -1261,26 +1261,38 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock &node) {
     }
   }
 
-  // Process all config key-value pairs
-  for (const auto &[key, valueExpr] : node.pairs) {
-    auto result = Evaluate(*valueExpr);
-    if (isError(result)) {
-      lastResult = result;
-      return;
-    }
+  // Process all config key-value pairs (including nested blocks)
+  processConfigPairs(node.pairs, config, "");
 
-    HavelValue value = unwrap(result);
-    (*configObject)[key] = value;
+  lastResult = nullptr;
+}
 
-    // Write to actual Configs if not "file" or "defaults"
-    if (key != "file" && key != "defaults") {
-      // Use "Havel." prefix for config keys from the language
-      std::string configKey = "Havel." + key;
+// Helper to process config pairs recursively
+void Interpreter::processConfigPairs(
+    const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
+    Configs& config,
+    const std::string& prefix) {
+  
+  for (const auto &[key, valueExpr] : pairs) {
+    // Skip "file" key (already processed)
+    if (key == "file") continue;
+    
+    // Check if value is a nested ObjectLiteral (nested config block)
+    if (auto* objLit = dynamic_cast<const ast::ObjectLiteral*>(valueExpr.get())) {
+      // Recursively process nested block with updated prefix
+      processConfigPairs(objLit->pairs, config, prefix + key + ".");
+    } else {
+      // Regular value - evaluate and store
+      auto result = Evaluate(*valueExpr);
+      if (isError(result)) {
+        lastResult = result;
+        return;
+      }
 
-      // Convert HavelValue to string for Configs
+      HavelValue value = unwrap(result);
+      std::string configKey = "Havel." + prefix + key;
       std::string strValue = ValueToString(value);
 
-      // Handle different value types appropriately
       if (value.isBool()) {
         config.Set(configKey, value.get<bool>() ? "true" : "false");
       } else if (value.isInt()) {

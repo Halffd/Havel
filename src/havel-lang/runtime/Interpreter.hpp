@@ -448,6 +448,13 @@ public:
   void visitArrayLiteral(const ast::ArrayLiteral &node) override;
   void visitObjectLiteral(const ast::ObjectLiteral &node) override;
   void visitConfigBlock(const ast::ConfigBlock &node) override;
+  
+  // Helper method for nested config processing
+  void processConfigPairs(
+      const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
+      Configs& config,
+      const std::string& prefix);
+  
   void visitDevicesBlock(const ast::DevicesBlock &node) override;
   void visitModesBlock(const ast::ModesBlock &node) override;
   void visitIndexExpression(const ast::IndexExpression &node) override;

@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <memory>
+#include <unordered_map>
 
 namespace havel {
 

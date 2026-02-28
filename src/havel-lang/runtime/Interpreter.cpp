@@ -2699,6 +2699,12 @@ void Interpreter::InitializeSystemBuiltins() {
 
         // Set new current mode
         environment->Define("__current_mode__", HavelValue(newMode));
+        
+        // Trigger conditional hotkey update
+        if (hotkeyManager) {
+          hotkeyManager->updateAllConditionalHotkeys();
+        }
+        
         return HavelValue(nullptr);
       });
 
@@ -2876,6 +2882,17 @@ void Interpreter::InitializeSystemBuiltins() {
             return HavelValue(nullptr);
           }));
 
+  environment->Define(
+      "hotkey.updateConditional",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+            hotkeyManager->updateAllConditionalHotkeys();
+            return HavelValue(nullptr);
+          }));
+
   auto hotkeyObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
   if (auto v = environment->Get("hotkey.toggleOverlay"))
@@ -2886,6 +2903,8 @@ void Interpreter::InitializeSystemBuiltins() {
     (*hotkeyObj)["printActiveWindowInfo"] = *v;
   if (auto v = environment->Get("hotkey.toggleWindowFocusTracking"))
     (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
+  if (auto v = environment->Get("hotkey.updateConditional"))
+    (*hotkeyObj)["updateConditional"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
 
   environment->Define(
@@ -4490,6 +4509,22 @@ void Interpreter::InitializeWindowBuiltins() {
     (*win)["isActive"] = *v;
   if (auto v = environment->Get("window.setTransparency"))
     (*win)["setTransparency"] = *v;
+  
+  // Add property-style accessors (no parentheses needed)
+  (*win)["title"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        Window activeWin(this->windowManager->GetActiveWindow());
+        return HavelValue(activeWin.Title());
+      });
+  
+  (*win)["active"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        (void)args;
+        Window activeWin(this->windowManager->GetActiveWindow());
+        return HavelValue(activeWin.Active());
+      });
+  
   environment->Define("window", HavelValue(win));
 }
 

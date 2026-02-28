@@ -788,7 +788,11 @@ void ClipboardManager::setupUI() {
     historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     historyList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    historyList->setSelectionMode(QAbstractItemView::SingleSelection);
+    historyList->setSelectionMode(QAbstractItemView::ExtendedSelection);  // Multi-select
+    historyList->setDragEnabled(true);
+    historyList->setAcceptDrops(true);
+    historyList->setDropIndicatorShown(true);
+    historyList->setDefaultDropAction(Qt::MoveAction);
     historyList->setTextElideMode(Qt::ElideRight);
     historyList->setSpacing(2);  // Reduced spacing
     historyList->setFrameShape(QFrame::NoFrame);
@@ -809,14 +813,24 @@ void ClipboardManager::setupUI() {
         "    margin: 1px 1px; "    // Reduced margin
         "    border-radius: 4px; "
         "    min-height: %6px;"
+        "    transition: all 0.15s ease;"  // Smooth transitions
         "}"
         "QListWidget::item:selected { "
-        "    background: %7; "
+        "    background: qlineargradient(x1: 0, y1: 0, x2: 1, y2: 0,"
+        "                               stop: 0 %7, stop: 1 %11);"
+        "    color: white;"
         "    border: 1px solid %8;"
+        "    font-weight: bold;"
         "}"
         "QListWidget::item:hover { "
         "    background: %9; "
         "    border: 1px solid %10;"
+        "    padding-left: 16px;"  // Slight shift on hover
+        "    margin: 1px 0px;"  // Compensate for padding change
+        "}"
+        "QListWidget::item:selected:!active { "
+        "    background: %12;"
+        "    border: 1px dashed %8;"
         "}"
     ).arg(
         Colors::SURFACE,        // Background
@@ -825,10 +839,12 @@ void ClipboardManager::setupUI() {
         Colors::SURFACE_LIGHT,  // Item background
         Colors::TEXT_PRIMARY,   // Text color
         QString::number(ITEM_HEIGHT + 8),  // Increased item height
-        Colors::PRIMARY,        // Selected background
+        Colors::PRIMARY,        // Selected background start
         Colors::PRIMARY_LIGHT,  // Selected border
         Colors::SURFACE_LIGHTER, // Hover background
-        Colors::BORDER          // Hover border
+        Colors::BORDER,         // Hover border
+        Colors::PRIMARY_LIGHT,  // Gradient end
+        Colors::SURFACE         // Inactive selection
     ));
 
     // Connect signals
@@ -839,7 +855,6 @@ void ClipboardManager::setupUI() {
     historyList->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     historyList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     historyList->setSelectionBehavior(QAbstractItemView::SelectRows);
-    historyList->setSelectionMode(QAbstractItemView::SingleSelection);
     historyList->setSpacing(2);  // Reduced spacing
     historyList->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     historyList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -891,9 +906,13 @@ void ClipboardManager::setupShortcuts() {
     escapeShortcut = new QShortcut(QKeySequence::Cancel, this);
     connect(escapeShortcut, &QShortcut::activated, this, &QWidget::close);
 
-    // Enter/Return to copy
+    // Enter/Return to copy (supports multi-select)
     auto* enterShortcut = new QShortcut(QKeySequence::InsertParagraphSeparator, this);
-    connect(enterShortcut, &QShortcut::activated, this, &ClipboardManager::copySelectedItem);
+    connect(enterShortcut, &QShortcut::activated, this, &ClipboardManager::copySelectedItems);
+    
+    // Also handle keypad enter
+    auto* enterKeypadShortcut = new QShortcut(QKeySequence(Qt::Key_Enter), this);
+    connect(enterKeypadShortcut, &QShortcut::activated, this, &ClipboardManager::copySelectedItems);
 
     // Ctrl+F to focus search
     auto* searchShortcut = new QShortcut(QKeySequence::Find, this);
@@ -1519,6 +1538,15 @@ QString ClipboardManager::truncateText(const QString &text, int maxLength) {
 }
 
 void ClipboardManager::onItemSelectionChanged() {
+    // Check for multi-selection first
+    int selectedCount = historyList->selectedItems().size();
+    if (selectedCount > 1) {
+        statusBar()->showMessage(QString("%1 items selected (Enter to copy all)").arg(selectedCount));
+        previewPane->clear();
+        previewPane->setPlainText(QString("Multiple items selected:\n%1 items").arg(selectedCount));
+        return;
+    }
+    
     QListWidgetItem* current = historyList->currentItem();
     if (!current) {
         statusBar()->showMessage("No item selected");
@@ -1613,7 +1641,7 @@ void ClipboardManager::removeSelectedItem() {
     if (!item) return;
 
     QVariant itemData = item->data(Qt::UserRole);
-    
+
     if (itemData.canConvert<ClipboardItem>()) {
         // Remove from enhanced history
         ClipboardItem clipboardItem = itemData.value<ClipboardItem>();
@@ -1628,11 +1656,9 @@ void ClipboardManager::removeSelectedItem() {
         QString text = itemData.toString();
         fullHistory.removeAll(text);
     }
-    
-    int currentRow = historyList->row(item);
-    delete historyList->takeItem(currentRow);
-    
-    statusBar()->showMessage("Item removed");
+
+    // Use animated delete
+    animateItemDelete(item);
 }
 
 void ClipboardManager::copySelectedItem() {
@@ -1701,6 +1727,79 @@ void ClipboardManager::copySelectedItem() {
     }
 }
 
+void ClipboardManager::copySelectedItems() {
+    auto selectedItems = historyList->selectedItems();
+    if (selectedItems.isEmpty()) return;
+    
+    // If only one item, handle it normally
+    if (selectedItems.size() == 1) {
+        copySelectedItem();
+        return;
+    }
+    
+    // For multiple items, combine them intelligently
+    QString combined;
+    QList<QUrl> allUrls;
+    bool hasMixedContent = false;
+    int imageCount = 0;
+    
+    for (auto* item : selectedItems) {
+        QVariant itemData = item->data(Qt::UserRole);
+        
+        if (itemData.canConvert<ClipboardItem>()) {
+            const auto& clipItem = itemData.value<ClipboardItem>();
+            
+            switch (clipItem.type) {
+                case ContentType::Text:
+                case ContentType::Markdown:
+                case ContentType::Html:
+                    combined += clipItem.data.toString() + "\n";
+                    break;
+                    
+                case ContentType::FileList:
+                    allUrls.append(clipItem.data.value<QList<QUrl>>());
+                    break;
+                    
+                case ContentType::Image:
+                    imageCount++;
+                    hasMixedContent = (imageCount > 1 || !combined.isEmpty() || !allUrls.isEmpty());
+                    break;
+                    
+                default:
+                    break;
+            }
+        } else {
+            combined += itemData.toString() + "\n";
+        }
+    }
+    
+    if (!clipboard) {
+        clipboard = QApplication::clipboard();
+        if (!clipboard) return;
+    }
+    
+    ClipboardSettingGuard guard(this);
+    
+    // Decide what to copy based on content
+    if (!allUrls.isEmpty() && !hasMixedContent) {
+        // Only files - copy as URLs
+        QMimeData* mimeData = new QMimeData();
+        mimeData->setUrls(allUrls);
+        clipboard->setMimeData(mimeData);
+        statusBar()->showMessage(QString("Copied %1 files").arg(allUrls.size()), 2000);
+    } else if (!combined.isEmpty() && !hasMixedContent) {
+        // Only text - copy combined
+        clipboard->setText(combined.trimmed());
+        statusBar()->showMessage(QString("Copied %1 items").arg(selectedItems.size()), 2000);
+    } else if (imageCount == 1 && selectedItems.size() == 1) {
+        // Single image
+        copySelectedItem();
+    } else {
+        // Mixed content - show warning
+        statusBar()->showMessage("Can't copy mixed content types together", 3000);
+    }
+}
+
 void ClipboardManager::onClearAll() {
     // Remove all history files
     for (int i = 0; i < historyItems.size(); ++i) {
@@ -1724,52 +1823,125 @@ void ClipboardManager::onClearAll() {
     qInfo() << "Cleared all clipboard history";
 }
 
+void ClipboardManager::showWithFade() {
+    if (isVisible()) return;
+    
+    // Set initial opacity to 0
+    setWindowOpacity(0.0);
+    
+    // multimonitor support
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    if (!screen) {
+        screen = QGuiApplication::primaryScreen();
+    }
+
+    if (!screen) return;
+
+    QPoint cursorPos = QCursor::pos();
+    QRect screenGeometry = screen->availableGeometry();
+
+    // Calculate position to ensure window stays on screen
+    int x = cursorPos.x();
+    int y = cursorPos.y();
+
+    if (x + width() > screenGeometry.right()) {
+        x = screenGeometry.right() - width();
+    }
+    if (y + height() > screenGeometry.bottom()) {
+        y = screenGeometry.bottom() - height();
+    }
+
+    x = std::max(x, screenGeometry.left());
+    y = std::max(y, screenGeometry.top());
+
+    setGeometry(x, y, width(), height());
+    show();
+    raise();
+    activateWindow();
+    
+    // Animate to full opacity
+    QPropertyAnimation* fadeIn = new QPropertyAnimation(this, "windowOpacity");
+    fadeIn->setDuration(150);
+    fadeIn->setStartValue(0.0);
+    fadeIn->setEndValue(1.0);
+    fadeIn->setEasingCurve(QEasingCurve::OutCubic);
+    fadeIn->start(QAbstractAnimation::DeleteWhenStopped);
+    
+    if (searchBox) {
+        searchBox->setFocus();
+        searchBox->selectAll();
+    }
+    if (historyList && lastRow >= 0 && lastRow < historyList->count()) {
+        historyList->setCurrentRow(lastRow);
+    }
+}
+
+void ClipboardManager::hideWithFade() {
+    if (!isVisible()) return;
+    
+    // Animate to zero opacity
+    QPropertyAnimation* fadeOut = new QPropertyAnimation(this, "windowOpacity");
+    fadeOut->setDuration(100);
+    fadeOut->setStartValue(1.0);
+    fadeOut->setEndValue(0.0);
+    fadeOut->setEasingCurve(QEasingCurve::InCubic);
+    
+    connect(fadeOut, &QPropertyAnimation::finished, this, [this]() {
+        QMainWindow::hide();
+        setWindowOpacity(1.0);  // Reset for next time
+    });
+    
+    fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
+}
+
+void ClipboardManager::animateItemDelete(QListWidgetItem* item) {
+    if (!item) return;
+    
+    QWidget* widget = historyList->itemWidget(item);
+    if (widget) {
+        QGraphicsOpacityEffect* effect = new QGraphicsOpacityEffect(widget);
+        widget->setGraphicsEffect(effect);
+        
+        QPropertyAnimation* fadeOut = new QPropertyAnimation(effect, "opacity");
+        fadeOut->setDuration(150);
+        fadeOut->setStartValue(1.0);
+        fadeOut->setEndValue(0.0);
+        
+        connect(fadeOut, &QPropertyAnimation::finished, this, [this, item, widget]() {
+            // Actually delete the item after animation
+            int row = historyList->row(item);
+            delete historyList->takeItem(row);
+            delete widget;
+            // Remove from internal history
+            if (row >= 0 && row < historyItems.size()) {
+                removeHistoryFiles(row);
+                historyItems.removeAt(row);
+                updateHistoryOrder();
+            }
+            statusBar()->showMessage("Item deleted", 1500);
+        });
+        
+        fadeOut->start(QAbstractAnimation::DeleteWhenStopped);
+    } else {
+        // Fallback if no widget - delete immediately
+        int row = historyList->row(item);
+        delete historyList->takeItem(row);
+        if (row >= 0 && row < historyItems.size()) {
+            removeHistoryFiles(row);
+            historyItems.removeAt(row);
+            updateHistoryOrder();
+        }
+    }
+}
+
 void ClipboardManager::showAndFocus() {
     if (isVisible()) {
         if (historyList) {
             lastRow = historyList->currentRow();
         }
-        QMainWindow::close();
+        hideWithFade();
     } else {
-        // multimonitor support
-        QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
-        if (!screen) {
-            screen = QGuiApplication::primaryScreen();
-        }
-
-        if (!screen) return; // No screen available
-
-        QPoint cursorPos = QCursor::pos();
-        QRect screenGeometry = screen->availableGeometry();
-        
-        // Calculate position to ensure window stays on screen
-        int x = cursorPos.x();
-        int y = cursorPos.y();
-        
-        // Adjust position if window would extend beyond screen bounds
-        if (x + width() > screenGeometry.right()) {
-            x = screenGeometry.right() - width();
-        }
-        if (y + height() > screenGeometry.bottom()) {
-            y = screenGeometry.bottom() - height();
-        }
-        
-        // Ensure window doesn't go above/left of screen
-        x = std::max(x, screenGeometry.left());
-        y = std::max(y, screenGeometry.top());
-
-        setGeometry(x, y, width(), height());
-        show();
-        raise();
-        activateWindow();
-        
-        if (searchBox) {
-            searchBox->setFocus();
-            searchBox->selectAll();
-        }
-        if (historyList && lastRow >= 0 && lastRow < historyList->count()) {
-            historyList->setCurrentRow(lastRow);
-        }
+        showWithFade();
     }
 }
 

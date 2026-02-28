@@ -20,6 +20,10 @@
 #include <QUrl>
 #include <QJsonArray>
 #include <QDir>
+#include <QPropertyAnimation>
+#include <QParallelAnimationGroup>
+#include <QGraphicsOpacityEffect>
+#include <QEasingCurve>
 #include "core/IO.hpp"
 
 namespace havel {
@@ -103,7 +107,13 @@ private slots:
     void onTrayIconActivated(QSystemTrayIcon::ActivationReason reason);
     void showContextMenu(const QPoint &pos);
     void copySelectedItem();
+    void copySelectedItems();  // Multi-item copy
     void removeSelectedItem();
+    
+    // Animation methods
+    void showWithFade();
+    void hideWithFade();
+    void animateItemDelete(QListWidgetItem* item);
 
 private:
     // RAII helper to manage the m_isSettingClipboard flag

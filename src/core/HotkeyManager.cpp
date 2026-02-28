@@ -74,7 +74,7 @@ void HotkeyManager::reevaluateConditionalHotkeys(IO &io) {
     // For function-based conditions, use the function directly
     if (ch.usesFunctionCondition) {
       if (ch.conditionFunc) {
-        shouldGrab = (*ch.conditionFunc);
+        shouldGrab = ((*ch.conditionFunc)());
       }
     } else {
       // For mode-based conditions
@@ -196,6 +196,8 @@ void HotkeyManager::printHotkeys() const {
 
   info("=== Hotkey Status Report #" + std::to_string(counter) + " ===");
 
+  std::lock_guard<std::mutex> lock(IO::hotkeysMutex);
+  
   if (IO::hotkeys.empty()) {
     info("No hotkeys registered");
     return;
@@ -1968,7 +1970,7 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   if (hotkey.usesFunctionCondition) {
     // Use the function-based condition
     if (hotkey.conditionFunc) {
-      conditionMet = (*hotkey.conditionFunc);
+      conditionMet = ((*hotkey.conditionFunc)());
     } else {
       conditionMet = false; // Default to false if no function
     }
@@ -2110,7 +2112,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
     } else {
       // For string-based conditions, create a lambda that captures the string
       std::string cond = ch.condition;
-      eval.conditionFunc = [this, cond]() { return evaluateCondition(cond); };
+      eval.conditionFunc = std::make_shared<std::function<bool()>>([this, cond]() { return evaluateCondition(cond); });
     }
     
     conditionsToEval.push_back(std::move(eval));
@@ -2123,7 +2125,7 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
   for (auto &eval : conditionsToEval) {
     bool shouldGrab = false;
     if (eval.conditionFunc) {
-      shouldGrab = (*eval.conditionFunc);  // Call copied function
+      shouldGrab = ((*eval.conditionFunc)());  // Call copied function
     }
 
     // Determine if we need to grab/ungrab
@@ -2198,10 +2200,10 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   auto action = [this, condition, trueAction, falseAction]() {
     if (evaluateCondition(condition)) {
       if (trueAction)
-        (*trueAction);
+        trueAction();
     } else {
       if (falseAction)
-        (*falseAction);
+        falseAction();
     }
   };
 
@@ -2245,10 +2247,10 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   auto action = [condition, trueAction, falseAction]() {
     if (condition()) {
       if (trueAction)
-        (*trueAction);
+        trueAction();
     } else {
       if (falseAction)
-        (*falseAction);
+        falseAction();
     }
   };
 

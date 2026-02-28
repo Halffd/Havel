@@ -220,6 +220,7 @@ class IO {
 
 public:
   static std::unordered_map<int, HotKey> hotkeys;
+  static std::mutex hotkeysMutex;  // Mutex to protect hotkeys map
   bool isSuspended = false;
   static bool globalEvdev;
   std::vector<HotKey> failedHotkeys;

@@ -38,9 +38,9 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
   auto action = [this, condition, trueAction, falseAction]() {
     if (EvaluateCondition(condition)) {
-      if (trueAction) (*trueAction);
+      if (trueAction) trueAction();
     } else {
-      if (falseAction) (*falseAction);
+      if (falseAction) falseAction();
     }
   };
 
@@ -84,9 +84,9 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
 
   auto action = [condition, trueAction, falseAction]() {
     if (condition()) {
-      if (trueAction) (*trueAction);
+      if (trueAction) trueAction();
     } else {
-      if (falseAction) (*falseAction);
+      if (falseAction) falseAction();
     }
   };
 
@@ -192,7 +192,7 @@ void ConditionalHotkeyManager::ReevaluateConditionalHotkeys() {
     
     if (ch.usesFunctionCondition) {
       if (ch.conditionFunc) {
-        shouldGrab = (*ch.conditionFunc);
+        shouldGrab = ((*ch.conditionFunc)());
       }
     } else {
       // For mode-based conditions
@@ -310,7 +310,7 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
 
   if (hotkey.usesFunctionCondition) {
     if (hotkey.conditionFunc) {
-      conditionMet = (*hotkey.conditionFunc);
+      conditionMet = ((*hotkey.conditionFunc)());
     } else {
       conditionMet = false;
     }

@@ -43,6 +43,7 @@ namespace havel {
 HHOOK IO::keyboardHook = NULL;
 #endif
 std::unordered_map<int, HotKey> IO::hotkeys;
+std::mutex IO::hotkeysMutex;
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
 bool IO::globalEvdev = true;
@@ -1104,12 +1105,18 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     if (speed <= 0) speed = 5;
     int steps = std::min(30, std::max(5, distance / (speed * 10)));
 
-    for (int i = 0; i <= steps; i++) {
-        double progress = static_cast<double>(i) / steps;
-        
-        // Calculate how much to move in this step
-        int stepDx = static_cast<int>((dx * progress) - (dx * (progress - 1.0/steps)));
-        int stepDy = static_cast<int>((dy * progress) - (dy * (progress - 1.0/steps)));
+    int movedX = 0;
+    int movedY = 0;
+
+    for (int i = 0; i < steps; ++i) {
+        int remainingX = dx - movedX;
+        int remainingY = dy - movedY;
+
+        int stepDx = remainingX / (steps - i);
+        int stepDy = remainingY / (steps - i);
+
+        movedX += stepDx;
+        movedY += stepDy;
 
         // Send RELATIVE movement for this step
         if (stepDx != 0 || stepDy != 0) {

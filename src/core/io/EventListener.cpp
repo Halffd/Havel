@@ -374,6 +374,7 @@ void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
 
 void EventListener::UnregisterHotkey(int id) {
   std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
+  std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
 
   // Remove from hotkeys map
   auto it = IO::hotkeys.find(id);
@@ -463,6 +464,7 @@ bool EventListener::StartX11Monitor(Display *display) {
   // Register all current hotkeys with X11 monitor
   {
     std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
+    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
     for (const auto &[id, hotkey] : IO::hotkeys) {
       if (!hotkey.evdev) { // Only X11 hotkeys
         x11Monitor->RegisterHotkey(id, hotkey);
@@ -688,6 +690,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       // CHECK ALL COMBOS THAT MIGHT INCLUDE THIS KEY
       // Loop through ALL hotkeys to find combos (more reliable than indexed
       // lookup)
+      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
       for (auto &[hotkeyId, hotkey] : IO::hotkeys) {
         if (!hotkey.enabled || hotkey.type != HotkeyType::Combo) {
           continue;
@@ -970,6 +973,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
       std::unique_lock<std::shared_mutex> stateLock(stateMutex);
 
+      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
       for (auto &[id, hotkey] : IO::hotkeys) {
         if (!hotkey.enabled)
           continue;
@@ -1040,6 +1044,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = IO::hotkeys.find(hotkeyId);
 
+      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
       if (it != IO::hotkeys.end() && it->second.enabled) {
         auto callback = it->second.callback; // Copy just the callback
         lock.unlock();                       // Release before executing
@@ -1171,6 +1176,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           if (!hotkey.enabled)
             continue;
           if (hotkey.type == HotkeyType::Combo) {
+        std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
             // Check if this combo involves a wheel
             bool hasWheel =
                 std::any_of(hotkey.comboSequence.begin(),
@@ -1245,6 +1251,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           if (it != IO::hotkeys.end() && it->second.enabled) {
             hotkeyCopy = it->second; // Copy just for execution
             found = true;
+          std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
           }
         }
 
@@ -1308,6 +1315,7 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
 
       // Only match keyboard and mouse movement hotkeys with our virtual
       // movement keys
+    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
       if (hotkey.type != HotkeyType::Keyboard &&
           hotkey.type != HotkeyType::MouseMove)
         continue;
@@ -1346,6 +1354,7 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
       lock.unlock();
 
       // Execute callback in a separate thread to avoid blocking input
+    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
       std::thread([callback]() { callback(); }).detach();
     }
   }
@@ -1539,6 +1548,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         try {
           if (EvaluateCombo(hotkey)) {
             // Combo matched, collect for execution outside locks
+    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
             matchedHotkeyIds.push_back(id);
             if (hotkey.grab) {
               shouldBlock = true;
@@ -1697,6 +1707,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     }
   }
 
+      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
   return shouldBlock;
 }
 

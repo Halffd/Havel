@@ -362,8 +362,8 @@ target_precompile_headers(havel PRIVATE
     <thread>
 )
 
-target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-target_link_options(havel PRIVATE -fsanitize=address,undefined)
+# DISABLED: target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+# DISABLED: target_link_options(havel PRIVATE -fsanitize=address,undefined)
 # Include directories
 target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -385,7 +385,7 @@ target_include_directories(havel PRIVATE
 )
 
 # Link libraries
-target_link_libraries(havel PRIVATE 
+target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
     spdlog::spdlog
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>

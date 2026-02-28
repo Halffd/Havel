@@ -162,35 +162,31 @@ std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl,
 
   debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
 
-  // Try using websocat command-line tool first with timeout
-  // Use -t for timeout and -n for no try-reconnect
-  std::string cmd = "echo '" + message + "' | timeout 3 websocat -n1 -t 3 '" + wsUrl + "' 2>/dev/null";
-  auto result = Launcher::runShell(cmd);
+  // Write message to temp file to avoid shell injection
+  std::string tempFile = "/tmp/cdp_msg_" + std::to_string(msgId) + ".json";
+  {
+    std::ofstream file(tempFile);
+    if (!file) {
+      error("BrowserModule: Failed to create temp file");
+      return "";
+    }
+    file << message;
+  }
 
-  if (result.success && !result.stdout.empty() && result.stdout.find("error") == std::string::npos) {
+  // Use websocat with --one-message for proper request/response
+  // Read from file to avoid shell injection issues
+  std::string cmd = "websocat --one-message '" + wsUrl + "' < '" + tempFile + "' 2>/dev/null";
+  auto result = Launcher::runShell(cmd);
+  
+  // Clean up temp file
+  std::remove(tempFile.c_str());
+
+  if (result.success && !result.stdout.empty()) {
     debug("CDP WebSocket: Received: {}", result.stdout);
     return result.stdout;
   }
 
-  // Fallback: try wscat if available
-  cmd = "echo '" + message + "' | timeout 3 wscat -c '" + wsUrl + "' -w 1 2>/dev/null | head -1";
-  result = Launcher::runShell(cmd);
-
-  if (result.success && !result.stdout.empty()) {
-    debug("CDP WebSocket (wscat): Received: {}", result.stdout);
-    return result.stdout;
-  }
-
-  // Last resort: use curl with WebSocket upgrade headers (experimental)
-  cmd = "curl -s --max-time 3 --http2 -N -H 'Upgrade: websocket' -H 'Connection: Upgrade' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Version: 13' -H 'Content-Type: application/json' -d '" + message + "' '" + wsUrl + "' 2>/dev/null | head -1";
-  result = Launcher::runShell(cmd);
-
-  if (result.success && !result.stdout.empty()) {
-    debug("CDP WebSocket (curl): Received: {}", result.stdout);
-    return result.stdout;
-  }
-
-  error("BrowserModule: WebSocket CDP failed - websocat/wscat not available or timed out");
+  error("BrowserModule: WebSocket CDP failed");
   return "";
 }
 
@@ -202,15 +198,15 @@ std::string BrowserModule::getWebSocketUrl(int tabId) {
     listTabs();
   }
 
-  // For tabId 0, return the first tab's WebSocket URL
-  if (tabId == 0 && !cachedTabs.empty() && !cachedTabs[0].webSocketUrl.empty()) {
+  // For tabId 0 or -1 (default), return the first tab's WebSocket URL
+  if ((tabId == 0 || tabId == -1) && !cachedTabs.empty() && !cachedTabs[0].webSocketUrl.empty()) {
     return cachedTabs[0].webSocketUrl;
   }
 
   // First check if we have a cached WebSocket URL for this tab
   for (const auto& tab : cachedTabs) {
     // Match by numeric ID or string ID
-    if ((tab.id == tabId || (tabId != 0 && tab.idStr == std::to_string(tabId)))
+    if ((tab.id == tabId || (tabId != 0 && tabId != -1 && tab.idStr == std::to_string(tabId)))
         && !tab.webSocketUrl.empty()) {
       return tab.webSocketUrl;
     }

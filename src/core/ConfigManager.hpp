@@ -31,14 +31,19 @@
 namespace havel {
 // Path handling helper functions
 namespace ConfigPaths {
-// Config base directory
-static std::string CONFIG_DIR; // qt .local
+// Config base directory - simple initialization
+static std::string CONFIG_DIR = []() -> std::string {
+  const char* home = std::getenv("HOME");
+  if (home) {
+    return std::string(home) + "/.config/havel/";
+  }
+  return "/tmp/havel/";  // Fallback
+}();
 
 // Config file paths
-static std::string MAIN_CONFIG; // havel.cfg
-
-static std::string INPUT_CONFIG;
-static std::string HOTKEYS_DIR;
+static std::string MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
+static std::string INPUT_CONFIG = CONFIG_DIR + "input.cfg";
+static std::string HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
 
 inline void SetConfigPath(const std::string &path, const std::string &basename = "havel.cfg") {
   CONFIG_DIR = path;
@@ -60,6 +65,14 @@ inline std::string GetConfigPath(const std::string &filename) {
 inline void EnsureConfigDir() {
   namespace fs = std::filesystem;
   try {
+    // Validate CONFIG_DIR before attempting to create
+    if (CONFIG_DIR.empty()) {
+      error("Config directory path is empty, using fallback");
+      CONFIG_DIR = "./havel/";
+      MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
+      HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
+    }
+    
     if (!fs::exists(CONFIG_DIR)) {
       fs::create_directories(CONFIG_DIR);
     }

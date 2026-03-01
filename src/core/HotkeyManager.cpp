@@ -3575,18 +3575,22 @@ void HotkeyManager::UpdateLoop() {
       error("Unknown exception in UpdateLoop");
     }
 
-    // Sleep for the remaining time in the update interval (only if not
-    // paused)
-    if (!updateLoopPaused.load()) {
-      auto endTime = std::chrono::steady_clock::now();
-      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-          endTime - startTime);
+    // Always sleep to prevent 100% CPU usage
+    // If loop took longer than interval, still sleep briefly
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+        endTime - startTime);
 
+    if (!updateLoopPaused.load()) {
       if (elapsed < updateInterval) {
+        // Sleep remaining time
         std::unique_lock<std::mutex> lock(updateLoopMutex);
         updateLoopCv.wait_for(lock, updateInterval - elapsed, [this] {
           return !updateLoopRunning || updateLoopPaused.load();
         });
+      } else {
+        // Loop took too long, still yield to prevent 100% CPU
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }
   }

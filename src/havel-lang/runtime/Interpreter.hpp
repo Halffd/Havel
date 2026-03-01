@@ -343,16 +343,28 @@ public:
   Atomic(T initial) : value(initial) {}
 
   T get() const {
+    // Spin with backoff and yield to avoid 100% CPU
+    int attempt = 0;
     while (lock.exchange(true)) {
-    } // Spin wait
+      if (++attempt > 10) {
+        std::this_thread::yield();  // Yield to other threads
+        attempt = 0;
+      }
+    }
     T result = value;
     lock.store(false);
     return result;
   }
 
   void set(T newValue) {
+    // Spin with backoff and yield to avoid 100% CPU
+    int attempt = 0;
     while (lock.exchange(true)) {
-    } // Spin wait
+      if (++attempt > 10) {
+        std::this_thread::yield();  // Yield to other threads
+        attempt = 0;
+      }
+    }
     value = newValue;
     lock.store(false);
   }

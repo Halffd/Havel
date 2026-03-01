@@ -1529,8 +1529,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
     // Right-associative: a = b = c means a = (b = c)
     auto value = parseAssignmentExpression();
 
-    return std::make_unique<havel::ast::AssignmentExpression>(
+    auto assign = std::make_unique<havel::ast::AssignmentExpression>(
         std::move(left), std::move(value), opTok.value);
+    assign->line = opTok.line;
+    assign->column = opTok.column;
+    return assign;
   }
 
   return left;
@@ -2090,9 +2093,7 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
 std::unique_ptr<havel::ast::Expression>
 Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
 
-  auto member = std::make_unique<havel::ast::MemberExpression>();
-  member->object = std::move(object);
-
+  auto dotTok = at();  // Save token location before consuming
   advance(); // consume '.'
 
   if (at().type != havel::TokenType::Identifier) {
@@ -2100,7 +2101,12 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
   }
 
   auto property = advance();
+  
+  auto member = std::make_unique<havel::ast::MemberExpression>();
+  member->object = std::move(object);
   member->property = std::make_unique<havel::ast::Identifier>(property.value);
+  member->line = dotTok.line;
+  member->column = dotTok.column;
 
   return std::move(member);
 }

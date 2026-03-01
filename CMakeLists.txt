@@ -273,6 +273,11 @@ file(GLOB_RECURSE GUI_SOURCES "src/gui/*.cpp")
 set(HAVEL_LANG_SOURCES "")
 if(ENABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
+    # Exclude LSP sources (they have their own target)
+    list(REMOVE_ITEM HAVEL_LANG_SOURCES 
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
+    )
 endif()
 
 # Test sources (conditional)

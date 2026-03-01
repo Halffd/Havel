@@ -269,8 +269,12 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   auto result = interpreter.Execute(code);
 
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    error("Runtime Error: {}",
-          std::get<havel::HavelRuntimeError>(result).what());
+    const auto& err = std::get<havel::HavelRuntimeError>(result);
+    if (err.hasLocation && err.line > 0) {
+      error("Runtime Error at line {}: {}", err.line, err.what());
+    } else {
+      error("Runtime Error: {}", err.what());
+    }
     return 1;
   }
 

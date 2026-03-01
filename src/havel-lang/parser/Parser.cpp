@@ -1882,13 +1882,18 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       advance(); // consume identifier
       advance(); // consume '=>'
       std::vector<std::unique_ptr<havel::ast::Identifier>> params;
-      params.push_back(std::make_unique<havel::ast::Identifier>(identTk.value));
+      auto param = std::make_unique<havel::ast::Identifier>(identTk.value);
+      param->line = identTk.line;
+      param->column = identTk.column;
+      params.push_back(std::move(param));
       return parseLambdaFromParams(std::move(params));
     }
     // Otherwise it's a normal identifier expression
     identTk = advance();
     std::unique_ptr<havel::ast::Expression> expr =
         std::make_unique<havel::ast::Identifier>(identTk.value);
+    expr->line = identTk.line;
+    expr->column = identTk.column;
 
     // Handle postfix operations in a loop to support chaining: arr[0].prop()
     // etc. This is moved to a separate function to handle all expression types

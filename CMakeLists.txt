@@ -367,6 +367,9 @@ set_target_properties(havel-lsp PROPERTIES
     CXX_EXTENSIONS OFF
 )
 
+target_compile_options(havel-lsp PRIVATE -fno-lto)
+target_link_options(havel-lsp PRIVATE -fno-lto)
+
 target_include_directories(havel-lsp PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include

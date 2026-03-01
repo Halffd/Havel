@@ -5179,6 +5179,39 @@ void Interpreter::InitializeTextBuiltins() {
             return HavelValue(
                 text.substr(text.size() - static_cast<size_t>(count)));
           }));
+
+  // String startsWith
+  environment->Define(
+      "startsWith",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2)
+              return HavelRuntimeError("startsWith() requires (text, prefix)");
+            std::string text = this->ValueToString(args[0]);
+            std::string prefix = this->ValueToString(args[1]);
+            return HavelValue(text.size() >= prefix.size() &&
+                             text.compare(0, prefix.size(), prefix) == 0);
+          }));
+
+  // String endsWith
+  environment->Define(
+      "endsWith",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.size() < 2)
+              return HavelRuntimeError("endsWith() requires (text, suffix)");
+            std::string text = this->ValueToString(args[0]);
+            std::string suffix = this->ValueToString(args[1]);
+            return HavelValue(text.size() >= suffix.size() &&
+                             text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0);
+          }));
+
+  // String split (already defined, but let's make sure it's here for completeness)
+  // Already defined in InitializeArrayBuiltins()
+
+  // String trim (already defined above)
+
+  // String lower/upper (already defined above)
 }
 
 void Interpreter::InitializeFileBuiltins() {
@@ -5665,14 +5698,23 @@ void Interpreter::InitializeArrayBuiltins() {
         return HavelValue(true);
       }));
 
-  // Array includes
+  // Array/String includes
   environment->Define(
       "includes",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("includes() requires (array, value)");
+          return HavelRuntimeError("includes() requires (array/string, value)");
+        
+        // Handle string includes
+        if (args[0].is<std::string>()) {
+          std::string text = ValueToString(args[0]);
+          std::string search = ValueToString(args[1]);
+          return HavelValue(text.find(search) != std::string::npos);
+        }
+        
+        // Handle array includes
         if (!args[0].is<HavelArray>())
-          return HavelRuntimeError("includes() first arg must be array");
+          return HavelRuntimeError("includes() first arg must be array or string");
 
         auto array = args[0].get<HavelArray>();
         auto &value = args[1];
@@ -5687,14 +5729,24 @@ void Interpreter::InitializeArrayBuiltins() {
         return HavelValue(false);
       }));
 
-  // Array indexOf
+  // Array/String indexOf
   environment->Define(
       "indexOf",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("indexOf() requires (array, value)");
+          return HavelRuntimeError("indexOf() requires (array/string, value)");
+        
+        // Handle string indexOf
+        if (args[0].is<std::string>()) {
+          std::string text = ValueToString(args[0]);
+          std::string search = ValueToString(args[1]);
+          size_t pos = text.find(search);
+          return HavelValue(pos != std::string::npos ? static_cast<double>(pos) : -1.0);
+        }
+        
+        // Handle array indexOf
         if (!args[0].is<HavelArray>())
-          return HavelRuntimeError("indexOf() first arg must be array");
+          return HavelRuntimeError("indexOf() first arg must be array or string");
 
         auto array = args[0].get<HavelArray>();
         auto &value = args[1];
@@ -5753,14 +5805,34 @@ void Interpreter::InitializeArrayBuiltins() {
         return removed;
       }));
 
-  // Array slice
+  // Array/String slice
   environment->Define(
       "slice",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
-          return HavelRuntimeError("slice() requires (array, start)");
+          return HavelRuntimeError("slice() requires (array/string, start)");
+        
+        // Handle string slice
+        if (args[0].is<std::string>()) {
+          std::string text = ValueToString(args[0]);
+          int start = static_cast<int>(ValueToNumber(args[1]));
+          int end = args.size() > 2 ? static_cast<int>(ValueToNumber(args[2])) : -1;
+
+          int size = static_cast<int>(text.size());
+          if (start < 0) start = size + start;
+          if (end < 0) end = size + end;
+          if (end == -1) end = size;
+          if (start < 0) start = 0;
+          if (end > size) end = size;
+          if (start > end) start = end;
+
+          return HavelValue(text.substr(static_cast<size_t>(start),
+                                        static_cast<size_t>(end - start)));
+        }
+        
+        // Handle array slice
         if (!args[0].is<HavelArray>())
-          return HavelRuntimeError("slice() first arg must be array");
+          return HavelRuntimeError("slice() first arg must be array or string");
 
         auto array = args[0].get<HavelArray>();
         int start = static_cast<int>(ValueToNumber(args[1]));
@@ -5810,6 +5882,329 @@ void Interpreter::InitializeArrayBuiltins() {
           }
         }
         return HavelValue(result);
+      }));
+
+  // Object keys
+  environment->Define(
+      "keys",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("keys() requires object");
+        if (!args[0].is<HavelObject>())
+          return HavelRuntimeError("keys() first arg must be object");
+
+        auto obj = args[0].get<HavelObject>();
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        if (obj) {
+          for (const auto &pair : *obj) {
+            result->push_back(HavelValue(pair.first));
+          }
+        }
+        return HavelValue(result);
+      }));
+
+  // Object values
+  environment->Define(
+      "values",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("values() requires object");
+        if (!args[0].is<HavelObject>())
+          return HavelRuntimeError("values() first arg must be object");
+
+        auto obj = args[0].get<HavelObject>();
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        if (obj) {
+          for (const auto &pair : *obj) {
+            result->push_back(pair.second);
+          }
+        }
+        return HavelValue(result);
+      }));
+
+  // Object entries
+  environment->Define(
+      "entries",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("entries() requires object");
+        if (!args[0].is<HavelObject>())
+          return HavelRuntimeError("entries() first arg must be object");
+
+        auto obj = args[0].get<HavelObject>();
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        if (obj) {
+          for (const auto &pair : *obj) {
+            auto entryObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*entryObj)["key"] = HavelValue(pair.first);
+            (*entryObj)["value"] = pair.second;
+            result->push_back(HavelValue(entryObj));
+          }
+        }
+        return HavelValue(result);
+      }));
+
+  // Object/Set has
+  environment->Define(
+      "has",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("has() requires (object/set, key/value)");
+        
+        // Handle object has
+        if (args[0].is<HavelObject>()) {
+          auto obj = args[0].get<HavelObject>();
+          std::string key = ValueToString(args[1]);
+
+          if (obj) {
+            return HavelValue(obj->find(key) != obj->end());
+          }
+          return HavelValue(false);
+        }
+        
+        // Handle set has
+        if (args[0].is<HavelSet>()) {
+          auto set = args[0].get<HavelSet>();
+          auto &value = args[1];
+
+          if (!set.elements)
+            return HavelValue(false);
+
+          for (const auto &elem : *set.elements) {
+            if (ValueToString(elem) == ValueToString(value)) {
+              return HavelValue(true);
+            }
+          }
+          return HavelValue(false);
+        }
+        
+        return HavelRuntimeError("has() first arg must be object or set");
+      }));
+
+  // Object remove
+  environment->Define(
+      "remove",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("remove() requires (object, key)");
+        if (!args[0].is<HavelObject>())
+          return HavelRuntimeError("remove() first arg must be object");
+
+        auto obj = args[0].get<HavelObject>();
+        std::string key = ValueToString(args[1]);
+
+        if (!obj)
+          return HavelRuntimeError("remove() received null object");
+        
+        auto it = obj->find(key);
+        if (it != obj->end()) {
+          HavelValue removed = it->second;
+          obj->erase(it);
+          return removed;
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Object merge
+  environment->Define(
+      "merge",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("merge() requires (object, other)");
+        if (!args[0].is<HavelObject>())
+          return HavelRuntimeError("merge() first arg must be object");
+        if (!args[1].is<HavelObject>())
+          return HavelRuntimeError("merge() second arg must be object");
+
+        auto obj = args[0].get<HavelObject>();
+        auto other = args[1].get<HavelObject>();
+
+        if (!obj)
+          return HavelRuntimeError("merge() received null object");
+        
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>(*obj);
+        if (other) {
+          result->insert(other->begin(), other->end());
+        }
+        return HavelValue(result);
+      }));
+
+  // Set add
+  environment->Define(
+      "add",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("add() requires (set, value)");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("add() first arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        auto &value = args[1];
+
+        if (!set.elements)
+          return HavelRuntimeError("add() received null set");
+
+        // Check if already exists
+        for (const auto &elem : *set.elements) {
+          if (ValueToString(elem) == ValueToString(value)) {
+            return HavelValue(set);  // Already exists, return set
+          }
+        }
+        set.elements->push_back(value);
+        return HavelValue(set);
+      }));
+
+  // Set remove
+  environment->Define(
+      "remove",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("remove() requires (set, value)");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("remove() first arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        auto &value = args[1];
+
+        if (!set.elements)
+          return HavelRuntimeError("remove() received null set");
+
+        for (auto it = set.elements->begin(); it != set.elements->end(); ++it) {
+          if (ValueToString(*it) == ValueToString(value)) {
+            set.elements->erase(it);
+            return HavelValue(set);
+          }
+        }
+        return HavelValue(set);  // Not found, return set unchanged
+      }));
+
+  // Set size
+  environment->Define(
+      "size",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("size() requires set");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("size() first arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        if (!set.elements)
+          return HavelValue(0.0);
+        return HavelValue(static_cast<double>(set.elements->size()));
+      }));
+
+  // Set toArray
+  environment->Define(
+      "toArray",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("toArray() requires set");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("toArray() first arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        if (!set.elements)
+          return HavelValue(std::make_shared<std::vector<HavelValue>>());
+        return HavelValue(set.elements);
+      }));
+
+  // Set union
+  environment->Define(
+      "union",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("union() requires (set, other)");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("union() first arg must be set");
+        if (!args[1].is<HavelSet>())
+          return HavelRuntimeError("union() second arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        auto other = args[1].get<HavelSet>();
+
+        if (!set.elements)
+          return HavelRuntimeError("union() received null set");
+
+        auto result = std::make_shared<std::vector<HavelValue>>(*set.elements);
+        if (other.elements) {
+          for (const auto &elem : *other.elements) {
+            bool exists = false;
+            for (const auto &existing : *result) {
+              if (ValueToString(existing) == ValueToString(elem)) {
+                exists = true;
+                break;
+              }
+            }
+            if (!exists) {
+              result->push_back(elem);
+            }
+          }
+        }
+        return HavelValue(HavelSet(result));
+      }));
+
+  // Set intersection
+  environment->Define(
+      "intersection",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("intersection() requires (set, other)");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("intersection() first arg must be set");
+        if (!args[1].is<HavelSet>())
+          return HavelRuntimeError("intersection() second arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        auto other = args[1].get<HavelSet>();
+
+        if (!set.elements || !other.elements)
+          return HavelValue(HavelSet(std::make_shared<std::vector<HavelValue>>()));
+
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        for (const auto &elem : *set.elements) {
+          for (const auto &otherElem : *other.elements) {
+            if (ValueToString(elem) == ValueToString(otherElem)) {
+              result->push_back(elem);
+              break;
+            }
+          }
+        }
+        return HavelValue(HavelSet(result));
+      }));
+
+  // Set difference
+  environment->Define(
+      "difference",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("difference() requires (set, other)");
+        if (!args[0].is<HavelSet>())
+          return HavelRuntimeError("difference() first arg must be set");
+        if (!args[1].is<HavelSet>())
+          return HavelRuntimeError("difference() second arg must be set");
+
+        auto set = args[0].get<HavelSet>();
+        auto other = args[1].get<HavelSet>();
+
+        if (!set.elements)
+          return HavelValue(HavelSet(std::make_shared<std::vector<HavelValue>>()));
+
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        for (const auto &elem : *set.elements) {
+          bool found = false;
+          if (other.elements) {
+            for (const auto &otherElem : *other.elements) {
+              if (ValueToString(elem) == ValueToString(otherElem)) {
+                found = true;
+                break;
+              }
+            }
+          }
+          if (!found) {
+            result->push_back(elem);
+          }
+        }
+        return HavelValue(HavelSet(result));
       }));
 }
 

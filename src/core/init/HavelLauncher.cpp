@@ -330,8 +330,12 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
     auto result = interpreter->Execute(code);
     if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-      error("Runtime Error in startup script: {}",
-            std::get<havel::HavelRuntimeError>(result).what());
+      const auto& err = std::get<havel::HavelRuntimeError>(result);
+      if (err.hasLocation && err.line > 0) {
+        error("Runtime Error at line {} in startup script: {}", err.line, err.what());
+      } else {
+        error("Runtime Error in startup script: {}", err.what());
+      }
     }
   }
   std::cout << "Havel Language REPL v1.0\n";
@@ -442,9 +446,12 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
                         << "\n";
             }
           } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-            std::cerr << "Error: "
-                      << std::get<havel::HavelRuntimeError>(result).what()
-                      << "\n";
+            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            if (err.hasLocation && err.line > 0) {
+              std::cerr << "Error at line " << err.line << ": " << err.what() << "\n";
+            } else {
+              std::cerr << "Error: " << err.what() << "\n";
+            }
           }
         } else {
           std::cerr << "Error: Interpreter is not available\n";
@@ -496,8 +503,12 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
   // Execute the script first
   auto result = interpreter->Execute(code);
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    error("Script runtime error: {}",
-          std::get<havel::HavelRuntimeError>(result).what());
+    const auto& err = std::get<havel::HavelRuntimeError>(result);
+    if (err.hasLocation && err.line > 0) {
+      error("Script runtime error at line {}: {}", err.line, err.what());
+    } else {
+      error("Script runtime error: {}", err.what());
+    }
     return 1;
   }
 
@@ -596,9 +607,12 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
                       << "\n";
           }
         } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-          std::cerr << "Error: "
-                    << std::get<havel::HavelRuntimeError>(result).what()
-                    << "\n";
+          const auto& err = std::get<havel::HavelRuntimeError>(result);
+          if (err.hasLocation && err.line > 0) {
+            std::cerr << "Error at line " << err.line << ": " << err.what() << "\n";
+          } else {
+            std::cerr << "Error: " << err.what() << "\n";
+          }
         }
       } catch (const std::exception &e) {
         std::cerr << "Error: " << e.what() << "\n";

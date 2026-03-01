@@ -594,15 +594,16 @@ std::vector<Token> Lexer::tokenize() {
     // as Plus. EXCEPTION: + after expression context should be Plus operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
       // Special case for + and ! : check context to distinguish operator from hotkey
+      // Note: CloseBrace is NOT in expression context - after } we're at statement level
       if ((c == '+' || c == '!') && !tokens.empty()) {
         TokenType prevType = tokens.back().type;
         // If previous token suggests expression context, treat as operator
+        // Exclude CloseBrace - after } we're at statement level (could be hotkey)
         if (prevType == TokenType::Number ||
             prevType == TokenType::Identifier ||
             prevType == TokenType::String ||
             prevType == TokenType::CloseParen ||
             prevType == TokenType::CloseBracket ||
-            prevType == TokenType::CloseBrace ||
             prevType == TokenType::Not ||
             prevType == TokenType::Or ||
             prevType == TokenType::And ||

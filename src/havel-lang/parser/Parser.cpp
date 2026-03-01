@@ -1345,26 +1345,11 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
       continue;
     }
 
-    try {
-      auto stmt = parseStatement();
-      if (stmt) {
-        block->body.push_back(std::move(stmt));
-      }
-    } catch (const std::exception &e) {
-      if (havel::debugging::debug_parser) {
-        havel::error("Parse error in block: {} at position {}", e.what(), position);
-      }
-
-      // Synchronize to recover from the error
-      synchronize();
-      if (notEOF() == false) {
-        break; // Can't synchronize, so break out of the block
-      }
-
-      // Still need to check if we hit the closing brace after error recovery
-      if (at().type == havel::TokenType::CloseBrace) {
-        break; // We've reached the end of the block
-      }
+    // Fail fast on unexpected tokens in block context
+    // Don't try to recover - this is a hard error
+    auto stmt = parseStatement();
+    if (stmt) {
+      block->body.push_back(std::move(stmt));
     }
   }
 
@@ -2072,9 +2057,12 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
 std::unique_ptr<havel::ast::Expression>
 Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
 
-  auto call = std::make_unique<havel::ast::CallExpression>(std::move(callee));
-
+  auto openParen = at();  // Save '(' token location
   advance(); // consume '('
+
+  auto call = std::make_unique<havel::ast::CallExpression>(std::move(callee));
+  call->line = openParen.line;
+  call->column = openParen.column;
 
   // Parse arguments
   while (notEOF() && at().type != havel::TokenType::CloseParen) {

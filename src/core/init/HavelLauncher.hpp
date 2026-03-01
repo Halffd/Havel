@@ -27,6 +27,7 @@ private:
     bool debugParser = false;
     bool debugAst = false;
     bool debugLexer = false;
+    bool stopOnError = false;  // Stop on first error/warning
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

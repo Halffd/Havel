@@ -427,6 +427,13 @@ public:
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);
+  
+  // Debug control methods
+  void setStopOnError(bool stop);
+  bool getStopOnError() const { return stopOnError; }
+  void setShowAST(bool show);
+  bool getShowAST() const { return showASTOnParse; }
+  std::string getInterpreterState() const;
 
   // ASTVisitor interface
   void visitProgram(const ast::Program &node) override;
@@ -552,6 +559,10 @@ private:
     bool bytecode = false;
     bool jit = false;
   } debug;
+  
+  // Debug control flags
+  bool stopOnError = false;  // Stop execution on first error/warning
+  bool showASTOnParse = false;  // Show AST after parsing
 
   // KeyTap instances for advanced hotkey functionality
   std::vector<std::unique_ptr<KeyTap>> keyTaps;
@@ -607,6 +618,7 @@ private:
   void InitializeMathBuiltins();
   void InitializeRegexBuiltins();
   void InitializeDebugBuiltins();
+  
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();
   void InitializeFileManagerBuiltins();

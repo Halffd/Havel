@@ -923,7 +923,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
   }
   advance(); // consume "in"
 
+  // Disable brace call sugar to prevent for loop body { from being consumed
+  bool prevAllow = allowBraceCallSugar;
+  allowBraceCallSugar = false;
   auto iterable = parseExpression();
+  allowBraceCallSugar = prevAllow;
 
   // Skip newlines before opening brace
   while (at().type == havel::TokenType::NewLine) {

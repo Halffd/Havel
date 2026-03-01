@@ -1576,11 +1576,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
   auto left = parseLogicalAnd();
 
   while (at().type == havel::TokenType::Or) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseLogicalAnd();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;
@@ -1590,11 +1594,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
   auto left = parseEquality();
 
   while (at().type == havel::TokenType::And) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseEquality();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;
@@ -1605,11 +1613,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
 
   while (at().type == havel::TokenType::Equals ||
          at().type == havel::TokenType::NotEquals) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseComparison();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;
@@ -1622,11 +1634,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
          at().type == havel::TokenType::Greater ||
          at().type == havel::TokenType::LessEquals ||
          at().type == havel::TokenType::GreaterEquals) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseRange();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;
@@ -1650,11 +1666,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAdditive() {
 
   while (at().type == havel::TokenType::Plus ||
          at().type == havel::TokenType::Minus) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseMultiplicative();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;
@@ -1666,11 +1686,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
   while (at().type == havel::TokenType::Multiply ||
          at().type == havel::TokenType::Divide ||
          at().type == havel::TokenType::Modulo) {
+    auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
     auto right = parseUnary();
-    left = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
   }
 
   return left;

@@ -606,11 +606,6 @@ private:
 
   HavelResult Evaluate(const ast::ASTNode &node);
 
-  // Error formatting helper - formats error with source code context
-  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
-  void printError(const HavelResult& error, const std::string& sourceCode);
-  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
-
   // KeyTap constructor for advanced hotkey functionality
   KeyTap* createKeyTap(
       const std::string &keyName, std::function<void()> onTap,
@@ -631,6 +626,12 @@ private:
   void InitializeMathBuiltins();
   void InitializeRegexBuiltins();
   void InitializeDebugBuiltins();
+  
+public:
+  // Error formatting helpers - public for use by HavelLauncher
+  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
+  void printError(const HavelResult& error, const std::string& sourceCode);
+  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
   
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();

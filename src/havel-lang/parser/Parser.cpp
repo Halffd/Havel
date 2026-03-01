@@ -2116,11 +2116,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
 
   case havel::TokenType::OpenBrace: {
     // Could be object literal {key: value} or block expression {stmt; expr}
-    // Look ahead to determine which
-    auto nextTok = at(1);
+    // Look ahead to determine which, skipping newlines
+    size_t savePos = position;
+    size_t lookahead = 1;
+    // Skip newlines to find first significant token
+    while (at(lookahead).type == havel::TokenType::NewLine) {
+      lookahead++;
+    }
+    auto nextTok = at(lookahead);
     bool isObject = (nextTok.type == havel::TokenType::Identifier ||
                      nextTok.type == havel::TokenType::String) &&
-                    at(2).type == havel::TokenType::Colon;
+                    at(lookahead + 1).type == havel::TokenType::Colon;
 
     if (isObject) {
       auto obj = parseObjectLiteral();
@@ -2154,9 +2160,22 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
 
   // Parse arguments
   while (notEOF() && at().type != havel::TokenType::CloseParen) {
+    // Skip newlines before argument
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    if (at().type == havel::TokenType::CloseParen) {
+      break;
+    }
+    
     auto arg = parseExpression();
     call->args.push_back(std::move(arg));
 
+    // Skip newlines after argument
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
     if (at().type == havel::TokenType::Comma) {
       advance(); // consume ','
     } else if (at().type != havel::TokenType::CloseParen) {
@@ -2606,12 +2625,14 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       }
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
-    } else if (at().type == havel::TokenType::String ||
+    } else if ((at().type == havel::TokenType::String ||
                at().type == havel::TokenType::Number ||
                at().type == havel::TokenType::Identifier ||
-               at().type == havel::TokenType::InterpolatedString) {
+               at().type == havel::TokenType::InterpolatedString) &&
+               allowBraceCallSugar) {
       // Implicit call: expression followed by a literal (e.g., variable
       // "Hello")
+      // Only allowed when brace call sugar is enabled
       auto arg = parsePrimaryExpression();
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
       args.push_back(std::move(arg));

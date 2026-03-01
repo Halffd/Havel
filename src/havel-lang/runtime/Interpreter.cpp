@@ -5428,6 +5428,389 @@ void Interpreter::InitializeArrayBuiltins() {
 
         return HavelValue(result);
       }));
+
+  // Array reduce
+  environment->Define(
+      "reduce",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("reduce() requires (array, function, initial)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("reduce() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &fn = args[1];
+        HavelValue accumulator = args[2];
+
+        if (array) {
+          for (const auto &item : *array) {
+            std::vector<HavelValue> fnArgs = {accumulator, item};
+            HavelResult res;
+
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
+              res = (*builtin)(fnArgs);
+            } else if (auto *userFunc =
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
+              auto &func = *userFunc;
+              auto funcEnv = std::make_shared<Environment>(func->closure);
+              for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+              }
+
+              auto originalEnv = this->environment;
+              this->environment = funcEnv;
+              res = Evaluate(*func->declaration->body);
+              this->environment = originalEnv;
+
+              if (std::holds_alternative<ReturnValue>(res)) {
+                auto ret = std::get<ReturnValue>(res);
+                res = ret.value ? *ret.value : HavelValue();
+              }
+            } else {
+              return HavelRuntimeError("reduce() requires callable function");
+            }
+
+            if (isError(res)) return res;
+            accumulator = unwrap(res);
+          }
+        }
+        return accumulator;
+      }));
+
+  // Array forEach
+  environment->Define(
+      "forEach",
+      BuiltinFunction([this](
+                           const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("forEach() requires (array, function)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("forEach() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &fn = args[1];
+
+        if (array) {
+          for (const auto &item : *array) {
+            std::vector<HavelValue> fnArgs = {item};
+
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
+              (*builtin)(fnArgs);
+            } else if (auto *userFunc =
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
+              auto &func = *userFunc;
+              auto funcEnv = std::make_shared<Environment>(func->closure);
+              for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+              }
+
+              auto originalEnv = this->environment;
+              this->environment = funcEnv;
+              Evaluate(*func->declaration->body);
+              this->environment = originalEnv;
+            }
+          }
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Array find
+  environment->Define(
+      "find",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("find() requires (array, predicate)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("find() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &fn = args[1];
+
+        if (array) {
+          for (const auto &item : *array) {
+            std::vector<HavelValue> fnArgs = {item};
+            HavelResult res;
+
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
+              res = (*builtin)(fnArgs);
+            } else if (auto *userFunc =
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
+              auto &func = *userFunc;
+              auto funcEnv = std::make_shared<Environment>(func->closure);
+              for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+              }
+
+              auto originalEnv = this->environment;
+              this->environment = funcEnv;
+              res = Evaluate(*func->declaration->body);
+              this->environment = originalEnv;
+
+              if (std::holds_alternative<ReturnValue>(res)) {
+                auto ret = std::get<ReturnValue>(res);
+                res = ret.value ? *ret.value : HavelValue();
+              }
+            } else {
+              return HavelRuntimeError("find() requires callable function");
+            }
+
+            if (isError(res)) return res;
+            if (ValueToBool(unwrap(res))) {
+              return item;
+            }
+          }
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // Array some
+  environment->Define(
+      "some",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("some() requires (array, predicate)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("some() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &fn = args[1];
+
+        if (array) {
+          for (const auto &item : *array) {
+            std::vector<HavelValue> fnArgs = {item};
+            HavelResult res;
+
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
+              res = (*builtin)(fnArgs);
+            } else if (auto *userFunc =
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
+              auto &func = *userFunc;
+              auto funcEnv = std::make_shared<Environment>(func->closure);
+              for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+              }
+
+              auto originalEnv = this->environment;
+              this->environment = funcEnv;
+              res = Evaluate(*func->declaration->body);
+              this->environment = originalEnv;
+
+              if (std::holds_alternative<ReturnValue>(res)) {
+                auto ret = std::get<ReturnValue>(res);
+                res = ret.value ? *ret.value : HavelValue();
+              }
+            } else {
+              return HavelRuntimeError("some() requires callable function");
+            }
+
+            if (isError(res)) return res;
+            if (ValueToBool(unwrap(res))) {
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      }));
+
+  // Array every
+  environment->Define(
+      "every",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("every() requires (array, predicate)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("every() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &fn = args[1];
+
+        if (array) {
+          for (const auto &item : *array) {
+            std::vector<HavelValue> fnArgs = {item};
+            HavelResult res;
+
+            if (auto *builtin = fn.get_if<BuiltinFunction>()) {
+              res = (*builtin)(fnArgs);
+            } else if (auto *userFunc =
+                           fn.get_if<std::shared_ptr<HavelFunction>>()) {
+              auto &func = *userFunc;
+              auto funcEnv = std::make_shared<Environment>(func->closure);
+              for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
+                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+              }
+
+              auto originalEnv = this->environment;
+              this->environment = funcEnv;
+              res = Evaluate(*func->declaration->body);
+              this->environment = originalEnv;
+
+              if (std::holds_alternative<ReturnValue>(res)) {
+                auto ret = std::get<ReturnValue>(res);
+                res = ret.value ? *ret.value : HavelValue();
+              }
+            } else {
+              return HavelRuntimeError("every() requires callable function");
+            }
+
+            if (isError(res)) return res;
+            if (!ValueToBool(unwrap(res))) {
+              return HavelValue(false);
+            }
+          }
+        }
+        return HavelValue(true);
+      }));
+
+  // Array includes
+  environment->Define(
+      "includes",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("includes() requires (array, value)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("includes() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &value = args[1];
+
+        if (array) {
+          for (const auto &item : *array) {
+            if (ValueToString(item) == ValueToString(value)) {
+              return HavelValue(true);
+            }
+          }
+        }
+        return HavelValue(false);
+      }));
+
+  // Array indexOf
+  environment->Define(
+      "indexOf",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("indexOf() requires (array, value)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("indexOf() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto &value = args[1];
+
+        if (array) {
+          for (size_t i = 0; i < array->size(); ++i) {
+            if (ValueToString((*array)[i]) == ValueToString(value)) {
+              return HavelValue(static_cast<double>(i));
+            }
+          }
+        }
+        return HavelValue(-1.0);
+      }));
+
+  // Array insert
+  environment->Define(
+      "insert",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("insert() requires (array, index, value)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("insert() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        int index = static_cast<int>(ValueToNumber(args[1]));
+        auto &value = args[2];
+
+        if (!array)
+          return HavelRuntimeError("insert() received null array");
+        if (index < 0 || index > static_cast<int>(array->size()))
+          return HavelRuntimeError("insert() index out of bounds");
+
+        array->insert(array->begin() + index, value);
+        return HavelValue(array);
+      }));
+
+  // Array removeAt
+  environment->Define(
+      "removeAt",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("removeAt() requires (array, index)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("removeAt() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        int index = static_cast<int>(ValueToNumber(args[1]));
+
+        if (!array)
+          return HavelRuntimeError("removeAt() received null array");
+        if (index < 0 || index >= static_cast<int>(array->size()))
+          return HavelRuntimeError("removeAt() index out of bounds");
+
+        HavelValue removed = (*array)[index];
+        array->erase(array->begin() + index);
+        return removed;
+      }));
+
+  // Array slice
+  environment->Define(
+      "slice",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("slice() requires (array, start)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("slice() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        int start = static_cast<int>(ValueToNumber(args[1]));
+        int end = args.size() > 2 ? static_cast<int>(ValueToNumber(args[2])) : -1;
+
+        if (!array)
+          return HavelRuntimeError("slice() received null array");
+
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        int size = static_cast<int>(array->size());
+        if (start < 0) start = size + start;
+        if (end < 0) end = size + end;
+        if (end == -1) end = size;
+        if (start < 0) start = 0;
+        if (end > size) end = size;
+
+        for (int i = start; i < end && i < size; ++i) {
+          result->push_back((*array)[i]);
+        }
+        return HavelValue(result);
+      }));
+
+  // Array concat
+  environment->Define(
+      "concat",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("concat() requires array");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("concat() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        auto result = std::make_shared<std::vector<HavelValue>>();
+
+        if (array) {
+          result->insert(result->end(), array->begin(), array->end());
+        }
+
+        for (size_t i = 1; i < args.size(); ++i) {
+          if (args[i].is<HavelArray>()) {
+            auto other = args[i].get<HavelArray>();
+            if (other) {
+              result->insert(result->end(), other->begin(), other->end());
+            }
+          } else {
+            result->push_back(args[i]);
+          }
+        }
+        return HavelValue(result);
+      }));
 }
 
 void Interpreter::InitializeIOBuiltins() {

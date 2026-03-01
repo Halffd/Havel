@@ -2041,49 +2041,59 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   }
 
   case havel::TokenType::OpenParen: {
+    // Save position to enable backtracking for lambda detection
+    size_t savePos = position;
     advance(); // consume '('
 
-    // Detect empty or parameter list for arrow lambda: (a, b) => ... or () =>
-    // ...
+    // Check for lambda: () => or (params) =>
     std::vector<std::unique_ptr<havel::ast::Identifier>> params;
-    bool isParamList = false;
+    bool mightBeLambda = false;
+    
     if (at().type == havel::TokenType::CloseParen) {
-      // ()
-      isParamList = true;
+      // Empty parens () - might be lambda () =>
+      mightBeLambda = true;
     } else if (at().type == havel::TokenType::Identifier) {
-      isParamList = true;
-      while (notEOF() && at().type == havel::TokenType::Identifier) {
-        params.push_back(
-            std::make_unique<havel::ast::Identifier>(advance().value));
+      // Might be (a) => or (a, b) => lambda
+      // Try to parse as comma-separated identifiers
+      bool validParamList = true;
+      while (at().type == havel::TokenType::Identifier) {
+        params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
         if (at().type == havel::TokenType::Comma) {
           advance();
-          // After consuming comma, expect another identifier
-          if (at().type == havel::TokenType::Identifier) {
-            continue; // Continue the loop to process next parameter
-          } else {
-            failAt(at(), "Expected identifier after ',' in parameter list");
+          if (at().type != havel::TokenType::Identifier) {
+            validParamList = false;
+            break;
           }
+        } else if (at().type == havel::TokenType::CloseParen) {
+          break;
         } else {
+          // Saw identifier but not followed by , or ) - not a valid param list
+          validParamList = false;
           break;
         }
       }
+      
+      if (validParamList && at().type == havel::TokenType::CloseParen) {
+        mightBeLambda = true;
+      }
     }
-    if (at().type != havel::TokenType::CloseParen) {
-      // Consume unexpected token to prevent infinite loops
-      auto errTok = at();
-      advance();
-      failAt(errTok, "Expected ')' after parameter list");
+    
+    if (mightBeLambda) {
+      // We have () or (params), consume ) and check for =>
+      advance(); // consume ')'
+      if (at().type == havel::TokenType::Arrow) {
+        advance(); // consume '=>'
+        return parseLambdaFromParams(std::move(params));
+      }
+      // Has ) but no =>, so it's a grouped expression
+      // Restore position and re-parse as grouped expression
+      position = savePos;
     }
-    advance(); // consume ')'
-    if (isParamList && at().type == havel::TokenType::Arrow) {
-      advance(); // consume '=>'
-      return parseLambdaFromParams(std::move(params));
-    }
-
-    // Not a lambda, treat as grouped expression
+    
+    // Parse as grouped expression (either not a lambda, or lambda check failed)
+    advance(); // consume '('
     auto expr = parseExpression();
     if (at().type != havel::TokenType::CloseParen) {
-      // Consume unexpected token to prevent infinite loops
       auto errTok = at();
       advance();
       failAt(errTok, "Expected ')'");

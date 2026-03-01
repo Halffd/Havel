@@ -258,31 +258,6 @@ bool EventListener::SetupUinput() {
   ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL);
   ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL);
 
-  // Enable absolute axes for pixel-perfect positioning
-  ioctl(uinputFd, UI_SET_ABSBIT, ABS_X);
-  ioctl(uinputFd, UI_SET_ABSBIT, ABS_Y);
-
-  // Setup absolute axis ranges (will be set dynamically based on screen resolution)
-  struct uinput_abs_setup abs_setup_x = {};
-  abs_setup_x.code = ABS_X;
-  abs_setup_x.absinfo.minimum = 0;
-  abs_setup_x.absinfo.maximum = 3840;  // Default 4K width, will be updated
-  abs_setup_x.absinfo.resolution = 0;
-  abs_setup_x.absinfo.value = 0;
-  abs_setup_x.absinfo.flat = 0;
-  abs_setup_x.absinfo.fuzz = 0;
-  ioctl(uinputFd, UI_ABS_SETUP, &abs_setup_x);
-
-  struct uinput_abs_setup abs_setup_y = {};
-  abs_setup_y.code = ABS_Y;
-  abs_setup_y.absinfo.minimum = 0;
-  abs_setup_y.absinfo.maximum = 2160;  // Default 4K height, will be updated
-  abs_setup_y.absinfo.resolution = 0;
-  abs_setup_y.absinfo.value = 0;
-  abs_setup_y.absinfo.flat = 0;
-  abs_setup_y.absinfo.fuzz = 0;
-  ioctl(uinputFd, UI_ABS_SETUP, &abs_setup_y);
-
   // Setup device
   struct uinput_setup usetup = {};
   strcpy(usetup.name, "Havel Virtual Input");
@@ -307,43 +282,6 @@ bool EventListener::SetupUinput() {
 
   info("Uinput device created successfully");
   return true;
-}
-
-void EventListener::UpdateAbsoluteAxisRanges(int maxWidth, int maxHeight) {
-  if (uinputFd < 0) {
-    error("Cannot update absolute ranges: uinput not initialized");
-    return;
-  }
-
-  // Update X axis range
-  struct uinput_abs_setup abs_setup_x = {};
-  abs_setup_x.code = ABS_X;
-  abs_setup_x.absinfo.minimum = 0;
-  abs_setup_x.absinfo.maximum = maxWidth;
-  abs_setup_x.absinfo.resolution = 0;
-  abs_setup_x.absinfo.value = 0;
-  abs_setup_x.absinfo.flat = 0;
-  abs_setup_x.absinfo.fuzz = 0;
-  
-  if (ioctl(uinputFd, UI_ABS_SETUP, &abs_setup_x) < 0) {
-    error("Failed to update ABS_X range: {}", strerror(errno));
-  }
-
-  // Update Y axis range
-  struct uinput_abs_setup abs_setup_y = {};
-  abs_setup_y.code = ABS_Y;
-  abs_setup_y.absinfo.minimum = 0;
-  abs_setup_y.absinfo.maximum = maxHeight;
-  abs_setup_y.absinfo.resolution = 0;
-  abs_setup_y.absinfo.value = 0;
-  abs_setup_y.absinfo.flat = 0;
-  abs_setup_y.absinfo.fuzz = 0;
-  
-  if (ioctl(uinputFd, UI_ABS_SETUP, &abs_setup_y) < 0) {
-    error("Failed to update ABS_Y range: {}", strerror(errno));
-  }
-
-  info("Updated absolute axis ranges: {}x{}", maxWidth, maxHeight);
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
@@ -846,7 +784,6 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
     auto result = hotkeyExecutor->submit([callback = callback_copy,
                                           hotkeyAlias = alias_copy, this]() {
       try {
-        info("Executing hotkey callback via HotkeyExecutor: {}", hotkeyAlias);
         callback();
       } catch (const std::exception &e) {
         error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());

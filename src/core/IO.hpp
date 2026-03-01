@@ -280,6 +280,8 @@ public:
   // Mouse methods
   bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
   bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
+  bool ClickAt(int x, int y, int button = 1, int speed = 1, float accel = 1.0f);
+  std::pair<int, int> GetMousePosition();
 
   // XInput2 hardware mouse control
   bool InitializeXInput2();

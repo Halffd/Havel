@@ -1097,45 +1097,77 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
         return false;
     }
 
-    // Get screen dimensions and update absolute axis ranges
-    auto monitors = DisplayManager::GetMonitors();
-    if (monitors.empty()) {
-        error("MouseMoveTo: No monitors detected");
-        return false;
-    }
-
-    // Find the total screen bounds (for multi-monitor setups)
-    int totalWidth = 0, totalHeight = 0;
-    for (const auto& monitor : monitors) {
-        totalWidth = std::max(totalWidth, monitor.x + monitor.width);
-        totalHeight = std::max(totalHeight, monitor.y + monitor.height);
-    }
-
-    // Update absolute axis ranges to match screen dimensions
-    eventListener->UpdateAbsoluteAxisRanges(totalWidth, totalHeight);
-
-    // Get current position
-    int currentX = 0, currentY = 0;
+    // For X11, use XTestFakeMotionEvent for pixel-perfect positioning
     if (WindowManagerDetector::IsX11()) {
-        auto pos = GetMousePositionX11();
-        currentX = pos.first;
-        currentY = pos.second;
-    } else {
-        auto [x, y] = eventListener->GetMousePosition();
-        currentX = x;
-        currentY = y;
+        Display* display = DisplayManager::GetDisplay();
+        if (!display) {
+            error("MouseMoveTo: No X11 display available");
+            return false;
+        }
+
+        // Get current position for smooth animation
+        auto currentPos = GetMousePositionX11();
+        int currentX = currentPos.first;
+        int currentY = currentPos.second;
+
+        // Calculate distance
+        int dx = targetX - currentX;
+        int dy = targetY - currentY;
+        int distance = std::abs(dx) + std::abs(dy);
+        
+        if (distance < 3) {
+            // Already close enough, just jump directly
+            XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY, CurrentTime);
+            XFlush(display);
+            return true;
+        }
+        
+        // Calculate steps for smooth movement
+        if (speed <= 0) speed = 5;
+        int steps = std::min(30, std::max(5, distance / (speed * 10)));
+
+        // Smooth animation using XTest
+        for (int i = 0; i <= steps; ++i) {
+            double progress = static_cast<double>(i) / steps;
+            
+            // Calculate intermediate position
+            int stepX = currentX + static_cast<int>(dx * progress);
+            int stepY = currentY + static_cast<int>(dy * progress);
+
+            // Use XTest for exact positioning
+            XTestFakeMotionEvent(display, DefaultScreen(display), stepX, stepY, CurrentTime);
+            XFlush(display);
+
+            // Minimal sleep for smooth movement
+            int sleepMs = std::max(1, 5 / std::max(1, speed));
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+        }
+
+        // Ensure final position is exact
+        XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY, CurrentTime);
+        XFlush(display);
+        
+        return true;
     }
 
-    // Calculate distance
+    // For Wayland, fall back to REL with feedback loop
+    int currentX = 0, currentY = 0;
+    auto [x, y] = eventListener->GetMousePosition();
+    currentX = x;
+    currentY = y;
+
+    // Calculate distance and steps
     int dx = targetX - currentX;
     int dy = targetY - currentY;
     int distance = std::abs(dx) + std::abs(dy);
     
-    if (distance < 5) {
-        // Already close enough, use absolute positioning directly
-        eventListener->SendUinputEvent(EV_ABS, ABS_X, targetX);
-        eventListener->SendUinputEvent(EV_ABS, ABS_Y, targetY);
-        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    if (distance < 3) {
+        // Already close enough, just send final delta
+        if (dx != 0 || dy != 0) {
+            eventListener->SendUinputEvent(EV_REL, REL_X, dx);
+            eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        }
         return true;
     }
     
@@ -1143,31 +1175,102 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
     if (speed <= 0) speed = 5;
     int steps = std::min(30, std::max(5, distance / (speed * 10)));
 
-    // Use absolute positioning for each step
-    for (int i = 0; i <= steps; ++i) {
-        double progress = static_cast<double>(i) / steps;
-        
-        // Calculate intermediate position
-        int stepX = currentX + static_cast<int>(dx * progress);
-        int stepY = currentY + static_cast<int>(dy * progress);
+    // Use deterministic step distribution
+    int movedX = 0;
+    int movedY = 0;
 
-        // Send absolute position
-        eventListener->SendUinputEvent(EV_ABS, ABS_X, stepX);
-        eventListener->SendUinputEvent(EV_ABS, ABS_Y, stepY);
-        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    for (int i = 0; i < steps; ++i) {
+        int remainingX = dx - movedX;
+        int remainingY = dy - movedY;
+
+        int stepDx = remainingX / (steps - i);
+        int stepDy = remainingY / (steps - i);
+
+        movedX += stepDx;
+        movedY += stepDy;
+
+        // Send RELATIVE movement
+        if (stepDx != 0 || stepDy != 0) {
+            eventListener->SendUinputEvent(EV_REL, REL_X, stepDx);
+            eventListener->SendUinputEvent(EV_REL, REL_Y, stepDy);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        }
 
         // Minimal sleep for smooth movement
         int sleepMs = std::max(1, 5 / std::max(1, speed));
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     }
 
-    // Ensure final position is exactly the target (no rounding errors)
-    eventListener->SendUinputEvent(EV_ABS, ABS_X, targetX);
-    eventListener->SendUinputEvent(EV_ABS, ABS_Y, targetY);
-    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    // Corrective feedback loop - ensure exact positioning
+    const int maxAttempts = 5;
+    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
+        // Get current position after movement
+        auto [actualX, actualY] = eventListener->GetMousePosition();
+
+        // Calculate remaining distance
+        int remainingDx = targetX - actualX;
+        int remainingDy = targetY - actualY;
+        
+        // Check if we're close enough (within 1 pixel)
+        if (std::abs(remainingDx) <= 1 && std::abs(remainingDy) <= 1) {
+            // Send final correction if needed
+            if (remainingDx != 0 || remainingDy != 0) {
+                eventListener->SendUinputEvent(EV_REL, REL_X, remainingDx);
+                eventListener->SendUinputEvent(EV_REL, REL_Y, remainingDy);
+                eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            }
+            return true;
+        }
+
+        // Send correction for remaining distance
+        if (remainingDx != 0 || remainingDy != 0) {
+            eventListener->SendUinputEvent(EV_REL, REL_X, remainingDx);
+            eventListener->SendUinputEvent(EV_REL, REL_Y, remainingDy);
+            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+            
+            // Small delay for system to process
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+    }
+
+    // If we still didn't reach target after max attempts, try one final jump
+    auto [finalX, finalY] = eventListener->GetMousePosition();
+    int finalDx = targetX - finalX;
+    int finalDy = targetY - finalY;
+    if (finalDx != 0 || finalDy != 0) {
+        eventListener->SendUinputEvent(EV_REL, REL_X, finalDx);
+        eventListener->SendUinputEvent(EV_REL, REL_Y, finalDy);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+    }
 
     return true;
 }
+
+bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
+    // Move to target position first
+    if (!MouseMoveTo(x, y, speed, accel)) {
+        error("ClickAt: Failed to move to target position ({}, {})", x, y);
+        return false;
+    }
+
+    // Small delay to ensure movement completes
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+    // Perform click
+    return Click(button, MouseAction::Click);
+}
+
+std::pair<int, int> IO::GetMousePosition() {
+    if (WindowManagerDetector::IsX11()) {
+        return GetMousePositionX11();
+    } else if (eventListener) {
+        return eventListener->GetMousePosition();
+    } else {
+        error("GetMousePosition: No method available to get mouse position");
+        return {0, 0};
+    }
+}
+
 // Set mouse sensitivity (0.1 - 10.0)
 void IO::SetMouseSensitivity(double sensitivity) {
   std::lock_guard<std::mutex> lock(mouseMutex);

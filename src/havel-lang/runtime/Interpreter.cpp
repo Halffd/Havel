@@ -5539,20 +5539,70 @@ void Interpreter::InitializeIOBuiltins() {
       });
 
   //
-  // mouse.moveTo(x, y)
+  // mouse.moveTo(x, y, speed, accel)
   //
   (*mouseObj)["moveTo"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() != 2)
-          return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
+        if (args.size() < 2 || args.size() > 4)
+          return HavelRuntimeError("mouse.moveTo(x, y, [speed], [accel]) requires 2-4 arguments");
 
         int x = static_cast<int>(ValueToNumber(args[0]));
         int y = static_cast<int>(ValueToNumber(args[1]));
+        int speed = 1;
+        float accel = 1.0f;
 
-        if (!io->MouseMoveTo(x, y))
+        if (args.size() >= 3)
+          speed = static_cast<int>(ValueToNumber(args[2]));
+        if (args.size() >= 4)
+          accel = static_cast<float>(ValueToNumber(args[3]));
+
+        if (!io->MouseMoveTo(x, y, speed, accel))
           return HavelRuntimeError("MouseMoveTo failed");
 
         return HavelValue(true);
+      });
+
+  //
+  // mouse.clickAt(x, y, button, speed, accel)
+  //
+  (*mouseObj)["clickAt"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2 || args.size() > 5)
+          return HavelRuntimeError("mouse.clickAt(x, y, [button], [speed], [accel]) requires 2-5 arguments");
+
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+        int button = 1;
+        int speed = 1;
+        float accel = 1.0f;
+
+        if (args.size() >= 3)
+          button = static_cast<int>(ValueToNumber(args[2]));
+        if (args.size() >= 4)
+          speed = static_cast<int>(ValueToNumber(args[3]));
+        if (args.size() >= 5)
+          accel = static_cast<float>(ValueToNumber(args[4]));
+
+        if (!io->ClickAt(x, y, button, speed, accel))
+          return HavelRuntimeError("ClickAt failed");
+
+        return HavelValue(true);
+      });
+
+  //
+  // mouse.getPos()
+  //
+  (*mouseObj)["getPos"] = BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() != 0)
+          return HavelRuntimeError("mouse.getPos() requires no arguments");
+
+        auto pos = io->GetMousePosition();
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*result)["x"] = HavelValue(static_cast<double>(pos.first));
+        (*result)["y"] = HavelValue(static_cast<double>(pos.second));
+        
+        return HavelValue(result);
       });
 
   //

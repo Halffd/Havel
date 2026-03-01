@@ -27,7 +27,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <functional>
 #include <iostream>
 #include <random>
 #include <regex>
@@ -5885,7 +5884,52 @@ void Interpreter::InitializeArrayBuiltins() {
         return HavelValue(result);
       }));
 
-  // Array sort (quicksort)
+  // Array sorted (non-mutating, returns new sorted array)
+  environment->Define(
+      "sorted",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("sorted() requires array");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("sorted() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        if (!array || array->empty())
+          return HavelValue(array);
+
+        // Check for homogeneous types
+        bool allNumbers = true;
+        bool allStrings = true;
+        for (const auto &item : *array) {
+          if (!item.isNumber()) allNumbers = false;
+          if (!item.isString()) allStrings = false;
+        }
+        
+        if (!allNumbers && !allStrings) {
+          return HavelRuntimeError("sorted() requires homogeneous array (all numbers or all strings)");
+        }
+
+        // Copy array for sorting
+        auto result = std::make_shared<std::vector<HavelValue>>(*array);
+
+        // Use std::sort with appropriate comparator
+        if (allNumbers) {
+          std::sort(result->begin(), result->end(),
+            [](const HavelValue &a, const HavelValue &b) {
+              return a.asNumber() < b.asNumber();
+            });
+        } else {
+          std::sort(result->begin(), result->end(),
+            [](const HavelValue &a, const HavelValue &b) {
+              return a.asString() < b.asString();
+            });
+        }
+
+        return HavelValue(result);
+      }));
+
+  // Array sort (mutating, sorts in place)
   environment->Define(
       "sort",
       BuiltinFunction([this](
@@ -5899,44 +5943,56 @@ void Interpreter::InitializeArrayBuiltins() {
         if (!array || array->empty())
           return HavelValue(array);
 
-        // Copy array for sorting
-        auto result = std::make_shared<std::vector<HavelValue>>(*array);
+        // Check for homogeneous types
+        bool allNumbers = true;
+        bool allStrings = true;
+        for (const auto &item : *array) {
+          if (!item.isNumber()) allNumbers = false;
+          if (!item.isString()) allStrings = false;
+        }
+        
+        if (!allNumbers && !allStrings) {
+          return HavelRuntimeError("sort() requires homogeneous array (all numbers or all strings)");
+        }
 
-        // Quicksort implementation
-        std::function<void(int, int)> quicksort = [&](int low, int high) {
-          if (low < high) {
-            // Partition
-            auto pivot = (*result)[high];
-            int i = low - 1;
-            
-            for (int j = low; j < high; ++j) {
-              // Compare values
-              bool lessOrEqual = false;
-              if ((*result)[j].isNumber() && pivot.isNumber()) {
-                lessOrEqual = (*result)[j].asNumber() <= pivot.asNumber();
-              } else if ((*result)[j].isString() && pivot.isString()) {
-                lessOrEqual = (*result)[j].asString() <= pivot.asString();
-              } else {
-                // Fallback to string comparison
-                lessOrEqual = ValueToString((*result)[j]) <= ValueToString(pivot);
-              }
-              
-              if (lessOrEqual) {
-                ++i;
-                std::swap((*result)[i], (*result)[j]);
-              }
-            }
-            std::swap((*result)[i + 1], (*result)[high]);
-            int pi = i + 1;
+        // Use std::sort with appropriate comparator
+        if (allNumbers) {
+          std::sort(array->begin(), array->end(),
+            [](const HavelValue &a, const HavelValue &b) {
+              return a.asNumber() < b.asNumber();
+            });
+        } else {
+          std::sort(array->begin(), array->end(),
+            [](const HavelValue &a, const HavelValue &b) {
+              return a.asString() < b.asString();
+            });
+        }
 
-            // Recursively sort partitions
-            quicksort(low, pi - 1);
-            quicksort(pi + 1, high);
-          }
-        };
+        return HavelValue(array);
+      }));
 
-        quicksort(0, static_cast<int>(result->size()) - 1);
-        return HavelValue(result);
+  // Array swap (mutating, swaps elements at two indices)
+  environment->Define(
+      "swap",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3)
+          return HavelRuntimeError("swap() requires (array, index1, index2)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("swap() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        int i = static_cast<int>(ValueToNumber(args[1]));
+        int j = static_cast<int>(ValueToNumber(args[2]));
+
+        if (!array)
+          return HavelRuntimeError("swap() received null array");
+        
+        int size = static_cast<int>(array->size());
+        if (i < 0 || i >= size || j < 0 || j >= size)
+          return HavelRuntimeError("swap() index out of bounds");
+
+        std::swap((*array)[i], (*array)[j]);
+        return HavelValue(array);
       }));
 
   // Object keys

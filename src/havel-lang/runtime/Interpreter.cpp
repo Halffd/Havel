@@ -829,7 +829,7 @@ void Interpreter::visitUpdateExpression(const ast::UpdateExpression &node) {
   if (auto *id = dynamic_cast<const ast::Identifier *>(node.argument.get())) {
     auto currentValOpt = environment->Get(id->symbol);
     if (!currentValOpt) {
-      lastResult = HavelRuntimeError("Undefined variable: " + id->symbol);
+      lastResult = HavelRuntimeError("Undefined variable: " + id->symbol, node.line, node.column);
       return;
     }
 
@@ -1345,7 +1345,7 @@ void Interpreter::visitIdentifier(const ast::Identifier &node) {
   if (auto val = environment->Get(node.symbol)) {
     lastResult = *val;
   } else {
-    lastResult = HavelRuntimeError("Undefined variable: " + node.symbol);
+    lastResult = HavelRuntimeError("Undefined variable: " + node.symbol, node.line, node.column);
   }
 }
 
@@ -1879,13 +1879,13 @@ void Interpreter::visitAssignmentExpression(
     auto current = environment->Get(identifier->symbol);
     if (!current.has_value()) {
       lastResult =
-          HavelRuntimeError("Undefined variable: " + identifier->symbol);
+          HavelRuntimeError("Undefined variable: " + identifier->symbol, identifier->line, identifier->column);
       return;
     }
     HavelValue newValue = applyCompound(op, *current, value);
     if (!environment->Assign(identifier->symbol, newValue)) {
       lastResult =
-          HavelRuntimeError("Undefined variable: " + identifier->symbol);
+          HavelRuntimeError("Undefined variable: " + identifier->symbol, identifier->line, identifier->column);
       return;
     }
     value = newValue;

@@ -406,17 +406,9 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
-    // Handle # comments (hash-style) OR set literals #{} OR modifier hotkeys
-    // starting with '#'
+    // Handle # as hotkey modifier or set literal ONLY
+    // Comments MUST use // or /* */ - # is NEVER a comment
     if (c == '#') {
-      // If the next char is whitespace, treat as a comment (e.g. "# comment")
-      if (peek() == ' ' || peek() == '\t') {
-        while (!isAtEnd() && peek() != '\n') {
-          advance();
-        }
-        continue;
-      }
-
       // If the next char is '{', treat as set literal start
       if (peek() == '{') {
         tokens.push_back(makeToken("#", TokenType::Hash));
@@ -426,7 +418,7 @@ std::vector<Token> Lexer::tokenize() {
         continue;
       }
 
-      // Otherwise, allow '#' to start a modifier hotkey (e.g. "#f1", "#!Esc")
+      // Otherwise, '#' starts a modifier hotkey (e.g. "#f1", "#!Esc")
       tokens.push_back(scanHotkey());
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;

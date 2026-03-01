@@ -2554,7 +2554,8 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
     if (at().type == havel::TokenType::OpenParen) {
       expr = parseCallExpression(std::move(expr));
       // Trailing block as last argument: func(...){ ... }
-      if (at().type == havel::TokenType::OpenBrace) {
+      // Only allow this if brace call sugar is enabled
+      if (at().type == havel::TokenType::OpenBrace && allowBraceCallSugar) {
         // Decide if this is object-literal or block lambda by lookahead
         size_t savePos = position;
         auto next = at(1);

@@ -759,14 +759,14 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     break;
   case ast::BinaryOperator::Div:
     if (ValueToNumber(right) == 0.0) {
-      lastResult = HavelRuntimeError("Division by zero");
+      lastResult = HavelRuntimeError("Division by zero", node.line, node.column);
       return;
     }
     lastResult = ValueToNumber(left) / ValueToNumber(right);
     break;
   case ast::BinaryOperator::Mod:
     if (ValueToNumber(right) == 0.0) {
-      lastResult = HavelRuntimeError("Modulo by zero");
+      lastResult = HavelRuntimeError("Modulo by zero", node.line, node.column);
       return;
     }
     lastResult = static_cast<int>(ValueToNumber(left)) %
@@ -936,7 +936,8 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     }
   } else {
     lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
-                                   ValueToString(callee));
+                                   ValueToString(callee),
+                                   node.line, node.column);
   }
 }
 

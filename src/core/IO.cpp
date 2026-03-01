@@ -19,6 +19,7 @@
 #include <qapplication.h>
 #include <qtmetamacros.h>
 #include <sys/eventfd.h>
+#include <sys/resource.h>
 #include <sys/select.h>
 #include <unistd.h>
 
@@ -376,9 +377,26 @@ IO::IO() {
   // Initialize KeyMap
   KeyMap::Initialize();
 
+  // Read process priority and thread count from config
+  int processPriority = Configs::Get().Get<int>("Advanced.ProcessPriority", 0);  // -20 (highest) to 19 (lowest)
+  int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads", 4);  // Number of worker threads
+  
+  // Set process priority (nice value)
+  if (processPriority != 0) {
+    processPriority = std::clamp(processPriority, -20, 19);
+    if (setpriority(PRIO_PROCESS, 0, processPriority) == 0) {
+      info("Process priority set to nice {}", processPriority);
+    } else {
+      warning("Failed to set process priority to {}: {}", processPriority, strerror(errno));
+    }
+  }
+  
+  // Clamp worker threads to reasonable range
+  workerThreads = std::clamp(workerThreads, 1, 32);
+
   // Initialize HotkeyExecutor for thread-safe hotkey execution
-  hotkeyExecutor = std::make_unique<HotkeyExecutor>(4, 256);
-  info("HotkeyExecutor initialized with 4 worker threads");
+  hotkeyExecutor = std::make_unique<HotkeyExecutor>(workerThreads, 256);
+  info("HotkeyExecutor initialized with {} worker threads", workerThreads);
 
   InitKeyMap();
   mouseSensitivity = Configs::Get().Get<double>("Mouse.Sensitivity", 1.0);

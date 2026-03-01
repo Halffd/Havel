@@ -190,11 +190,38 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     error("Interpreter is not available");
     return 1;
   }
+  
   auto result = interpreter->Execute(code);
-
+  
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    error("Runtime Error: {}",
-          std::get<havel::HavelRuntimeError>(result).what());
+    const auto& err = std::get<havel::HavelRuntimeError>(result);
+    
+    // Print detailed error information
+    havel::error("╔═══════════════════════════════════════════════════════════╗");
+    havel::error("║         RUNTIME ERROR IN STARTUP SCRIPT                   ║");
+    havel::error("╚═══════════════════════════════════════════════════════════╝");
+    havel::error("");
+    havel::error("  Error: {}", err.what());
+    
+    // Try to extract line number from error message if present
+    std::string errorMsg = err.what();
+    size_t linePos = errorMsg.find("line");
+    if (linePos != std::string::npos) {
+      size_t numStart = errorMsg.find_first_of("0123456789", linePos);
+      if (numStart != std::string::npos) {
+        size_t numEnd = errorMsg.find_first_not_of("0123456789", numStart);
+        if (numEnd != std::string::npos) {
+          size_t lineNum = std::stoull(errorMsg.substr(numStart, numEnd - numStart));
+          havel::error("");
+          havel::error("  See line {} in {}", lineNum, cfg.scriptFile);
+        }
+      }
+    }
+    
+    havel::error("");
+    havel::error("  Script file: {}", cfg.scriptFile);
+    havel::error("");
+    
     return 1;
   }
 

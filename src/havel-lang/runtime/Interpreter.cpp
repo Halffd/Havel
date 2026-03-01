@@ -349,14 +349,59 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     if (err.hasLocation) {
       printError(err, sourceCode);
     } else {
+      // Try to find the error location by parsing the error message
       havel::error("Runtime error: {}", e.what());
+      // Print source code with line numbers for context
+      printSourceWithContext(sourceCode, 0);
     }
     return err;
   } catch (const std::exception &e) {
     auto err = HavelRuntimeError(std::string(e.what()));
     havel::error("Runtime error: {}", e.what());
+    printSourceWithContext(sourceCode, 0);
     return err;
   }
+}
+
+void Interpreter::printSourceWithContext(const std::string& sourceCode, size_t errorLine) {
+  std::istringstream iss(sourceCode);
+  std::string line;
+  std::vector<std::string> lines;
+  
+  while (std::getline(iss, line)) {
+    lines.push_back(line);
+  }
+  
+  if (lines.empty()) return;
+  
+  // Calculate line number width
+  size_t lineNumWidth = std::to_string(lines.size()).length();
+  
+  // Show context around error line (or all lines if no specific line)
+  size_t startLine = (errorLine > 2 && errorLine <= lines.size()) ? errorLine - 2 : 0;
+  size_t endLine = (errorLine > 0 && errorLine < lines.size()) ? errorLine + 2 : lines.size();
+  
+  havel::info("");
+  havel::info("  ╭─ Source Code Context");
+  for (size_t i = startLine; i < endLine && i < lines.size(); i++) {
+    size_t displayLine = i + 1;
+    std::string marker = (displayLine == errorLine) ? " >> " : "    ";
+    std::string lineIndicator = (displayLine == errorLine) ? "│" : "│";
+    
+    havel::info("  {}{} {} │ {}", 
+                marker, 
+                lineIndicator,
+                displayLine,
+                lines[i]);
+    
+    if (displayLine == errorLine) {
+      havel::info("  │   {} │ {}", 
+                  std::string(lineNumWidth, ' '),
+                  std::string(lines[i].length(), '^'));
+    }
+  }
+  havel::info("  ╰─");
+  havel::info("");
 }
 
 std::string Interpreter::formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode) {

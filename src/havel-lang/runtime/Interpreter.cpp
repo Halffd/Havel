@@ -299,6 +299,25 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     parser_debug.ast = debug.ast;
     parser::Parser parser(parser_debug);
     auto program = parser.produceAST(sourceCode);
+    
+    // Check for lexer/parser errors
+    if (parser.hasErrors()) {
+      // Print all errors with source context
+      std::cerr << "\n  ╭─ Compilation Errors (" << parser.getErrors().size() << " errors found)\n";
+      std::cerr << "  │\n";
+      for (const auto& err : parser.getErrors()) {
+        std::string sev = (err.severity == ErrorSeverity::Warning) ? "WARNING" : "ERROR";
+        std::cerr << "  │ [" << sev << " line " << err.line << ":" << err.column << "] " << err.message << "\n";
+        if (!err.sourceLine.empty()) {
+          std::cerr << "  │   " << err.sourceLine << "\n";
+          std::cerr << "  │   " << std::string(err.column - 1, ' ') << "↑\n";
+        }
+        std::cerr << "  │\n";
+      }
+      std::cerr << "  ╰─ Compilation failed\n\n";
+      return HavelRuntimeError("Compilation failed with " + std::to_string(parser.getErrors().size()) + " errors");
+    }
+    
     auto *programPtr = program.get();
     // Keep the AST alive to avoid dangling pointers captured in
     // functions/closures
@@ -323,14 +342,6 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     }
 
     return result;
-  } catch (const havel::LexError &e) {
-    auto error = HavelRuntimeError("Lex error: " + std::string(e.what()), e.line, e.column);
-    printError(error, sourceCode);
-    return error;
-  } catch (const havel::parser::ParseError &e) {
-    auto error = HavelRuntimeError("Parse error: " + std::string(e.what()), e.line, e.column);
-    printError(error, sourceCode);
-    return error;
   } catch (const HavelRuntimeError &e) {
     auto& err = const_cast<HavelRuntimeError&>(e);
     if (err.hasLocation) {

@@ -104,9 +104,9 @@ Parser::produceAST(const std::string &sourceCode) {
 
   // Parse all statements until EOF
   while (notEOF()) {
-    // Skip ONLY semicolons as statement separators
-    // Newlines are handled by expression parsing as hard barriers
-    if (at().type == havel::TokenType::Semicolon) {
+    // Skip empty lines or statement separators
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
       advance();
       continue;
     }
@@ -119,9 +119,6 @@ Parser::produceAST(const std::string &sourceCode) {
     auto stmt = parseStatement();
     if (stmt) {
       program->body.push_back(std::move(stmt));
-    } else {
-      // parseStatement returned null (hit EOF), break out
-      break;
     }
   }
 
@@ -2542,15 +2539,6 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
   // This handles chaining for all expression types (variables, function calls,
   // arrays, etc.)
   while (true) {
-    // NEWLINE and SEMICOLON are hard barriers - they end expression parsing
-    // This prevents "expr1 expr2" from being parsed as expr1(expr2)
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon ||
-        at().type == havel::TokenType::EOF_TOKEN ||
-        at().type == havel::TokenType::CloseBrace) {
-      break;
-    }
-  
     if (at().type == havel::TokenType::OpenParen) {
       expr = parseCallExpression(std::move(expr));
       // Trailing block as last argument: func(...){ ... }
@@ -2602,6 +2590,17 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
             std::move(noParams), std::move(block));
         args.push_back(std::move(lambda));
       }
+      expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
+                                                          std::move(args));
+    } else if (at().type == havel::TokenType::String ||
+               at().type == havel::TokenType::Number ||
+               at().type == havel::TokenType::Identifier ||
+               at().type == havel::TokenType::InterpolatedString) {
+      // Implicit call: expression followed by a literal (e.g., variable
+      // "Hello")
+      auto arg = parsePrimaryExpression();
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      args.push_back(std::move(arg));
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
     } else {

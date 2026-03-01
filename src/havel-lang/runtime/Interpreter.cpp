@@ -9502,27 +9502,34 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
     auto destroyedFlag = m_destroyed;
     auto conditionFunc = [self, destroyedFlag, condExpr = node.condition.get()]() -> bool {
       if (destroyedFlag->load()) return false;  // Interpreter destroyed, skip evaluation
-      auto result = self->Evaluate(*condExpr);
-      if (isError(result)) {
-        // Log error but return false to prevent the hotkey from
-        // triggering std::cerr << "Conditional hotkey condition
-        // evaluation failed: "
-        //           << std::get<HavelRuntimeError>(result).what() <<
-        //           std::endl;
+      try {
+        auto result = self->Evaluate(*condExpr);
+        if (isError(result)) {
+          // Log error but return false to prevent the hotkey from triggering
+          return false;
+        }
+        return Interpreter::ValueToBool(unwrap(result));
+      } catch (const std::exception& e) {
+        // Catch any exceptions to prevent them escaping into Qt event loop
+        std::cerr << "Conditional hotkey condition evaluation failed: " << e.what() << std::endl;
         return false;
       }
-      return Interpreter::ValueToBool(unwrap(result));
     };
 
     // Create the action callback
     auto actionFunc = [self, destroyedFlag, action = node.binding->action.get()]() {
       if (destroyedFlag->load()) return;  // Interpreter destroyed, skip action
-      if (action) {
-        auto result = self->Evaluate(*action);
-        if (isError(result)) {
-          std::cerr << "Conditional hotkey action evaluation failed: "
-                    << std::get<HavelRuntimeError>(result).what() << std::endl;
+      try {
+        if (action) {
+          auto result = self->Evaluate(*action);
+          if (isError(result)) {
+            std::cerr << "Conditional hotkey action evaluation failed: "
+                      << std::get<HavelRuntimeError>(result).what() << std::endl;
+          }
         }
+      } catch (const std::exception& e) {
+        // Catch any exceptions to prevent them escaping into Qt event loop
+        std::cerr << "Conditional hotkey action threw exception: " << e.what() << std::endl;
       }
     };
 

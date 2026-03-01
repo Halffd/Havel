@@ -1970,7 +1970,13 @@ void HotkeyManager::updateConditionalHotkey(ConditionalHotkey &hotkey) {
   if (hotkey.usesFunctionCondition) {
     // Use the function-based condition
     if (hotkey.conditionFunc) {
-      conditionMet = ((*hotkey.conditionFunc)());
+      try {
+        conditionMet = ((*hotkey.conditionFunc)());
+      } catch (const std::exception& e) {
+        // Catch exceptions to prevent escaping into Qt event loop
+        error("Conditional hotkey '{}' condition threw: {}", hotkey.key, e.what());
+        conditionMet = false;
+      }
     } else {
       conditionMet = false; // Default to false if no function
     }
@@ -2125,7 +2131,13 @@ void HotkeyManager::batchUpdateConditionalHotkeys() {
   for (auto &eval : conditionsToEval) {
     bool shouldGrab = false;
     if (eval.conditionFunc) {
-      shouldGrab = ((*eval.conditionFunc)());  // Call copied function
+      try {
+        shouldGrab = ((*eval.conditionFunc)());  // Call copied function
+      } catch (const std::exception& e) {
+        // Catch exceptions to prevent escaping
+        error("Batch condition evaluation for hotkey {} threw: {}", eval.id, e.what());
+        shouldGrab = false;
+      }
     }
 
     // Determine if we need to grab/ungrab

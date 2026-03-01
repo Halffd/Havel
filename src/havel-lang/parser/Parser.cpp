@@ -1649,12 +1649,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
   auto left = parseRange();
 
   // Comparison operators: < > <= >=
-  // NOTE: We do NOT allow chaining (e.g., "a < b < c" is invalid)
-  // This matches C/Java semantics, not Python semantics
-  if (at().type == havel::TokenType::Less ||
-      at().type == havel::TokenType::Greater ||
-      at().type == havel::TokenType::LessEquals ||
-      at().type == havel::TokenType::GreaterEquals) {
+  // Left-associative: a < b < c parses as ((a < b) < c)
+  // Note: Python-style chaining (a < b && b < c) is NOT supported.
+  // For Python semantics, use explicit: (a < b) && (b < c)
+  while (at().type == havel::TokenType::Less ||
+         at().type == havel::TokenType::Greater ||
+         at().type == havel::TokenType::LessEquals ||
+         at().type == havel::TokenType::GreaterEquals) {
     auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
@@ -1664,14 +1665,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
     bin->line = opTok.line;
     bin->column = opTok.column;
     left = std::move(bin);
-    
-    // Check for attempted chaining - this is a semantic error
-    if (at().type == havel::TokenType::Less ||
-        at().type == havel::TokenType::Greater ||
-        at().type == havel::TokenType::LessEquals ||
-        at().type == havel::TokenType::GreaterEquals) {
-      failAt(at(), "Comparison operators cannot be chained. Use logical operators: (a < b) && (b < c)");
-    }
   }
 
   return left;
@@ -1681,22 +1674,24 @@ std::unique_ptr<havel::ast::Expression> Parser::parseRange() {
   auto left = parseAdditive();
 
   // Range operator: ..
-  // NOTE: We do NOT allow chaining (e.g., "a .. b .. c" is invalid)
-  // Ranges should be explicit: (a .. b) .. c or a .. (b .. c)
+  // Supports: start .. end  OR  start .. end .. step
   if (at().type == havel::TokenType::DotDot) {
     auto opTok = at();  // Save operator token location
     advance(); // consume '..'
     auto right = parseAdditive();
-    auto range = std::make_unique<havel::ast::RangeExpression>(std::move(left),
-                                                         std::move(right));
-    range->line = opTok.line;
-    range->column = opTok.column;
     
-    // Check for attempted chaining
+    // Check for optional step value
+    std::unique_ptr<havel::ast::Expression> step;
     if (at().type == havel::TokenType::DotDot) {
-      failAt(at(), "Range operators cannot be chained. Use parentheses: (a .. b) .. c");
+      advance(); // consume second '..'
+      step = parseAdditive();
     }
     
+    auto range = std::make_unique<havel::ast::RangeExpression>(
+        std::move(left), std::move(right), std::move(step));
+    range->line = opTok.line;
+    range->column = opTok.column;
+
     return range;
   }
 

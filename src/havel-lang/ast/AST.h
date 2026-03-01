@@ -1409,19 +1409,25 @@ struct TernaryExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Range Expression (0..10)
+// Range Expression (0..10 or 0..10..2 for step)
 struct RangeExpression : public Expression {
   std::unique_ptr<Expression> start;
   std::unique_ptr<Expression> end;
+  std::unique_ptr<Expression> step;  // Optional step value
 
-  RangeExpression(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e)
-      : start(std::move(s)), end(std::move(e)) {
+  RangeExpression(std::unique_ptr<Expression> s, std::unique_ptr<Expression> e,
+                  std::unique_ptr<Expression> stepVal = nullptr)
+      : start(std::move(s)), end(std::move(e)), step(std::move(stepVal)) {
     kind = NodeType::RangeExpression;
   }
 
   std::string toString() const override {
-    return "RangeExpression{" + (start ? start->toString() : "nullptr") + ".." +
-           (end ? end->toString() : "nullptr") + "}";
+    std::string result = (start ? start->toString() : "nullptr") + ".." +
+                         (end ? end->toString() : "nullptr");
+    if (step) {
+      result += ".." + step->toString();
+    }
+    return "RangeExpression{" + result + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

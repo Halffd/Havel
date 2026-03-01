@@ -1097,6 +1097,23 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
         return false;
     }
 
+    // Get screen dimensions and update absolute axis ranges
+    auto monitors = DisplayManager::GetMonitors();
+    if (monitors.empty()) {
+        error("MouseMoveTo: No monitors detected");
+        return false;
+    }
+
+    // Find the total screen bounds (for multi-monitor setups)
+    int totalWidth = 0, totalHeight = 0;
+    for (const auto& monitor : monitors) {
+        totalWidth = std::max(totalWidth, monitor.x + monitor.width);
+        totalHeight = std::max(totalHeight, monitor.y + monitor.height);
+    }
+
+    // Update absolute axis ranges to match screen dimensions
+    eventListener->UpdateAbsoluteAxisRanges(totalWidth, totalHeight);
+
     // Get current position
     int currentX = 0, currentY = 0;
     if (WindowManagerDetector::IsX11()) {
@@ -1105,48 +1122,49 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
         currentY = pos.second;
     } else {
         auto [x, y] = eventListener->GetMousePosition();
-        // Get screen dimensions if needed, but for relative movement we don't need them
         currentX = x;
         currentY = y;
     }
 
-    // Calculate distance and steps
+    // Calculate distance
     int dx = targetX - currentX;
     int dy = targetY - currentY;
     int distance = std::abs(dx) + std::abs(dy);
     
     if (distance < 5) {
-        // Already close enough, just jump
-        return MouseMove(dx, dy, speed, accel);
+        // Already close enough, use absolute positioning directly
+        eventListener->SendUinputEvent(EV_ABS, ABS_X, targetX);
+        eventListener->SendUinputEvent(EV_ABS, ABS_Y, targetY);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
+        return true;
     }
     
+    // Calculate steps for smooth movement
     if (speed <= 0) speed = 5;
     int steps = std::min(30, std::max(5, distance / (speed * 10)));
 
-    int movedX = 0;
-    int movedY = 0;
+    // Use absolute positioning for each step
+    for (int i = 0; i <= steps; ++i) {
+        double progress = static_cast<double>(i) / steps;
+        
+        // Calculate intermediate position
+        int stepX = currentX + static_cast<int>(dx * progress);
+        int stepY = currentY + static_cast<int>(dy * progress);
 
-    for (int i = 0; i < steps; ++i) {
-        int remainingX = dx - movedX;
-        int remainingY = dy - movedY;
+        // Send absolute position
+        eventListener->SendUinputEvent(EV_ABS, ABS_X, stepX);
+        eventListener->SendUinputEvent(EV_ABS, ABS_Y, stepY);
+        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
 
-        int stepDx = remainingX / (steps - i);
-        int stepDy = remainingY / (steps - i);
-
-        movedX += stepDx;
-        movedY += stepDy;
-
-        // Send RELATIVE movement for this step
-        if (stepDx != 0 || stepDy != 0) {
-            eventListener->SendUinputEvent(EV_REL, REL_X, stepDx);
-            eventListener->SendUinputEvent(EV_REL, REL_Y, stepDy);
-            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-        }
-
-        // Minimal sleep
+        // Minimal sleep for smooth movement
         int sleepMs = std::max(1, 5 / std::max(1, speed));
         std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
     }
+
+    // Ensure final position is exactly the target (no rounding errors)
+    eventListener->SendUinputEvent(EV_ABS, ABS_X, targetX);
+    eventListener->SendUinputEvent(EV_ABS, ABS_Y, targetY);
+    eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
 
     return true;
 }

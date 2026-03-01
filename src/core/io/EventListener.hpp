@@ -106,6 +106,9 @@ public:
   // Send event through uinput
   void SendUinputEvent(int type, int code, int value);
 
+  // Update absolute axis ranges for screen resolution
+  void UpdateAbsoluteAxisRanges(int maxWidth, int maxHeight);
+
   // Set blocking mode for specific keys
   void SetBlockInput(bool block);
 

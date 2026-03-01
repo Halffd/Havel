@@ -260,8 +260,9 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
 
   // Set script path for auto-reload support
   interpreter.setScriptPath(cfg.scriptFile);
-  
+
   // Configure debug flags
+  interpreter.setDebugParser(cfg.debugParser);
   interpreter.setStopOnError(cfg.stopOnError);
   interpreter.setShowAST(cfg.debugAst);
 

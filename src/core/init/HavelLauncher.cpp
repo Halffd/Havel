@@ -68,6 +68,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-lexer" || arg == "-dl") {
       debugging::debug_lexer = true;
       cfg.debugLexer = true;
+    } else if (arg == "--error" || arg == "-e") {
+      // Stop on first error/warning
+      cfg.stopOnError = true;
     } else if (arg == "--repl" || arg == "-r") {
       repl = true;
     } else if (arg == "--gui") {
@@ -228,9 +231,13 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
 
   // Create minimal interpreter without IO/hotkeys
   havel::Interpreter interpreter;
-  
+
   // Set script path for auto-reload support
   interpreter.setScriptPath(cfg.scriptFile);
+  
+  // Configure debug flags
+  interpreter.setStopOnError(cfg.stopOnError);
+  interpreter.setShowAST(cfg.debugAst);
 
   // Execute script
   auto result = interpreter.Execute(code);
@@ -796,6 +803,7 @@ void HavelLauncher::showHelp() {
   std::cout << "  --debug-parser, -dp Enable parser debugging\n";
   std::cout << "  --debug-ast, -da    Enable AST debugging\n";
   std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
+  std::cout << "  --error, -e         Stop on first error/warning\n";
   std::cout << "  --repl, -r          Start interactive REPL\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout << "  --run               Run script without IO/hotkeys (pure mode)\n";

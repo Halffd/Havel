@@ -299,36 +299,38 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     parser_debug.ast = debug.ast;
     parser::Parser parser(parser_debug);
     auto program = parser.produceAST(sourceCode);
-    
+
     // Check for lexer/parser errors
     if (parser.hasErrors()) {
       // Print all errors with source context
-      std::cerr << "\n  ╭─ Compilation Errors (" << parser.getErrors().size() << " errors found)\n";
-      std::cerr << "  │\n";
+      std::ostringstream oss;
+      oss << "\n  ╭─ Compilation Errors (" << parser.getErrors().size() << " errors found)\n";
+      oss << "  │\n";
       for (const auto& err : parser.getErrors()) {
         std::string sev = (err.severity == ErrorSeverity::Warning) ? "WARNING" : "ERROR";
-        std::cerr << "  │ [" << sev << " line " << err.line << ":" << err.column << "] " << err.message << "\n";
+        oss << "  │ [" << sev << " line " << err.line << ":" << err.column << "] " << err.message << "\n";
         if (!err.sourceLine.empty()) {
-          std::cerr << "  │   " << err.sourceLine << "\n";
-          std::cerr << "  │   " << std::string(err.column - 1, ' ') << "↑\n";
+          oss << "  │   " << err.sourceLine << "\n";
+          oss << "  │   " << std::string(err.column - 1, ' ') << "↑\n";
         }
-        std::cerr << "  │\n";
+        oss << "  │\n";
       }
-      std::cerr << "  ╰─ Compilation failed\n\n";
+      oss << "  ╰─ Compilation failed\n";
+      havel::error(oss.str());
       return HavelRuntimeError("Compilation failed with " + std::to_string(parser.getErrors().size()) + " errors");
     }
-    
+
     auto *programPtr = program.get();
     // Keep the AST alive to avoid dangling pointers captured in
     // functions/closures
     loadedPrograms.push_back(std::move(program));
 
-    if (debug.ast) {
-      std::cout << "AST: Parsed program:" << std::endl;
+    if (debug.ast || showASTOnParse) {
+      havel::info("AST: Parsed program:");
       if (programPtr) {
         parser.printAST(*programPtr);
       } else {
-        std::cout << "AST: (null program)" << std::endl;
+        havel::info("AST: (null program)");
       }
     }
 
@@ -2401,6 +2403,33 @@ void Interpreter::InitializeStandardLibrary() {
           }
         }
         return HavelValue(nullptr);
+      }));
+
+  // New debug control functions
+  (*debugObj)["showAST"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelValue {
+        if (args.size() >= 1) {
+          if (auto b = args[0].get_if<bool>()) {
+            this->showASTOnParse = *b;
+          }
+        }
+        return HavelValue(this->showASTOnParse);
+      }));
+
+  (*debugObj)["stopOnError"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelValue {
+        if (args.size() >= 1) {
+          if (auto b = args[0].get_if<bool>()) {
+            this->stopOnError = *b;
+          }
+        }
+        return HavelValue(this->stopOnError);
+      }));
+
+  (*debugObj)["interpreterState"] = HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelValue {
+        (void)args;
+        return HavelValue(getInterpreterState());
       }));
 
   environment->Define("debug", HavelValue(debugObj));
@@ -9766,6 +9795,35 @@ void Interpreter::markRunOnce(const std::string& id) {
 
 void Interpreter::clearRunOnce(const std::string& id) {
   runOnceExecuted.erase(id);
+}
+
+// Debug control methods
+void Interpreter::setStopOnError(bool stop) {
+  stopOnError = stop;
+  havel::info("Debug: stopOnError = {}", stop ? "true" : "false");
+}
+
+void Interpreter::setShowAST(bool show) {
+  showASTOnParse = show;
+  havel::info("Debug: showASTOnParse = {}", show ? "true" : "false");
+}
+
+std::string Interpreter::getInterpreterState() const {
+  std::ostringstream oss;
+  oss << "Interpreter State:\n";
+  oss << "  Debug flags:\n";
+  oss << "    lexer: " << (debug.lexer ? "true" : "false") << "\n";
+  oss << "    parser: " << (debug.parser ? "true" : "false") << "\n";
+  oss << "    ast: " << (debug.ast ? "true" : "false") << "\n";
+  oss << "    bytecode: " << (debug.bytecode ? "true" : "false") << "\n";
+  oss << "    jit: " << (debug.jit ? "true" : "false") << "\n";
+  oss << "  Control flags:\n";
+  oss << "    stopOnError: " << (stopOnError ? "true" : "false") << "\n";
+  oss << "    showASTOnParse: " << (showASTOnParse ? "true" : "false") << "\n";
+  oss << "  Runtime:\n";
+  oss << "    reloadEnabled: " << (reloadEnabled ? "true" : "false") << "\n";
+  oss << "    timers: " << timers.size() << "\n";
+  return oss.str();
 }
 
 } // namespace havel

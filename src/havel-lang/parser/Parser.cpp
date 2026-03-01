@@ -1,5 +1,5 @@
 #include "Parser.h"
-#include <iostream>
+#include "../utils/Logger.hpp"
 #include <sstream>
 
 namespace havel::parser {
@@ -96,8 +96,7 @@ Parser::produceAST(const std::string &sourceCode) {
   position = 0;
 
   if (debug.parser) {
-    std::cout << "PARSE: Starting to parse program with " << tokens.size()
-              << " tokens" << std::endl;
+    havel::debug("PARSE: Starting to parse program with {} tokens", tokens.size());
   }
 
   // Create program AST node
@@ -113,8 +112,7 @@ Parser::produceAST(const std::string &sourceCode) {
     }
 
     if (debug.parser) {
-      std::cout << "PARSE: Parsing statement at token " << at().toString()
-                << std::endl;
+      havel::debug("PARSE: Parsing statement at token {}", at().toString());
     }
 
     try {
@@ -124,13 +122,12 @@ Parser::produceAST(const std::string &sourceCode) {
       }
     } catch (const std::exception &e) {
       if (havel::debugging::debug_parser) {
-        std::cerr << "Parse error: " << e.what() << " at position " << position
-                  << std::endl;
+        havel::error("Parse error: {} at position {}", e.what(), position);
       }
 
       // Synchronize to recover from the error
       synchronize();
-      
+
       // If we've reached EOF, break out
       if (notEOF() == false) {
         break;
@@ -1310,8 +1307,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
       }
     } catch (const std::exception &e) {
       if (havel::debugging::debug_parser) {
-        std::cerr << "Parse error in when block: " << e.what()
-                  << " at position " << position << std::endl;
+        havel::error("Parse error in when block: {} at position {}", e.what(), position);
       }
 
       // Synchronize to recover from the error
@@ -1356,8 +1352,7 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
       }
     } catch (const std::exception &e) {
       if (havel::debugging::debug_parser) {
-        std::cerr << "Parse error in block: " << e.what() << " at position "
-                  << position << std::endl;
+        havel::error("Parse error in block: {} at position {}", e.what(), position);
       }
 
       // Synchronize to recover from the error
@@ -2531,7 +2526,7 @@ Parser::parseKeyValueBlock() {
 
 void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
   std::string padding(indent * 2, ' ');
-  std::cout << padding << node.toString() << std::endl;
+  havel::info("{}{}", padding, node.toString());
 
   // Print children based on node type
   if (node.kind == havel::ast::NodeType::Program) {
@@ -2547,7 +2542,7 @@ void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
   } else if (node.kind == havel::ast::NodeType::HotkeyBinding) {
     const auto &binding = static_cast<const havel::ast::HotkeyBinding &>(node);
     for (size_t i = 0; i < binding.hotkeys.size(); ++i) {
-      std::cout << std::string(indent * 2, ' ') << "Hotkey[" << i << "]: ";
+      havel::info("{}Hotkey[{}]: ", padding, i);
       printAST(*binding.hotkeys[i], indent + 1);
     }
     printAST(*binding.action, indent + 1);

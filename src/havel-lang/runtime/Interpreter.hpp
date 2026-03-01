@@ -44,7 +44,15 @@ struct Program;
 // Error Handling
 class HavelRuntimeError : public std::runtime_error {
 public:
-  using std::runtime_error::runtime_error;
+  size_t line = 0;
+  size_t column = 0;
+  bool hasLocation = false;
+  
+  HavelRuntimeError(const std::string& msg) 
+    : std::runtime_error(msg) {}
+  
+  HavelRuntimeError(const std::string& msg, size_t line, size_t column)
+    : std::runtime_error(msg), line(line), column(column), hasLocation(true) {}
 };
 
 // Forward declare types
@@ -574,6 +582,10 @@ private:
   std::mutex timersMutex; // Thread safety for timer operations
 
   HavelResult Evaluate(const ast::ASTNode &node);
+
+  // Error formatting helper - formats error with source code context
+  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
+  void printError(const HavelResult& error, const std::string& sourceCode);
 
   // KeyTap constructor for advanced hotkey functionality
   KeyTap* createKeyTap(

@@ -32,6 +32,7 @@
 #include <regex>
 #include <signal.h>
 #include <sstream>
+#include <iomanip>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <thread>
@@ -315,23 +316,106 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     // Mark as not first run after initial execution
     bool wasFirstRun = isFirstRun.load();
     auto result = Evaluate(*programPtr);
-    
+
     // After first successful execution, mark as not first run
     if (wasFirstRun) {
       isFirstRun.store(false);
     }
-    
+
     return result;
   } catch (const havel::LexError &e) {
-    return HavelRuntimeError("Lex error at line " + std::to_string(e.line) +
-                             ", column " + std::to_string(e.column) + ": " +
-                             e.what());
+    auto error = HavelRuntimeError("Lex error: " + std::string(e.what()), e.line, e.column);
+    printError(error, sourceCode);
+    return error;
   } catch (const havel::parser::ParseError &e) {
-    return HavelRuntimeError("Parse error at line " + std::to_string(e.line) +
-                             ", column " + std::to_string(e.column) + ": " +
-                             e.what());
+    auto error = HavelRuntimeError("Parse error: " + std::string(e.what()), e.line, e.column);
+    printError(error, sourceCode);
+    return error;
+  } catch (const HavelRuntimeError &e) {
+    auto& err = const_cast<HavelRuntimeError&>(e);
+    if (err.hasLocation) {
+      printError(err, sourceCode);
+    } else {
+      havel::error("Runtime error: {}", e.what());
+    }
+    return err;
   } catch (const std::exception &e) {
-    return HavelRuntimeError(std::string("Parse error: ") + e.what());
+    auto err = HavelRuntimeError(std::string(e.what()));
+    havel::error("Runtime error: {}", e.what());
+    return err;
+  }
+}
+
+std::string Interpreter::formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode) {
+  std::ostringstream oss;
+  
+  // Split source into lines
+  std::istringstream iss(sourceCode);
+  std::string currentLine;
+  std::vector<std::string> lines;
+  
+  while (std::getline(iss, currentLine)) {
+    lines.push_back(currentLine);
+  }
+  
+  // Handle edge cases
+  if (line == 0 || line > lines.size()) {
+    oss << "Error at unknown location: " << message;
+    return oss.str();
+  }
+  
+  size_t lineIndex = line - 1; // Convert to 0-based index
+  const std::string& errorLine = lines[lineIndex];
+  
+  // Calculate display line number (handle large line numbers)
+  size_t startLine = line > 2 ? line - 2 : 0;
+  size_t endLine = std::min(line + 1, lines.size());
+  
+  // Calculate width for line numbers
+  size_t lineNumWidth = std::to_string(endLine).length();
+  
+  oss << "\n";
+  oss << "  ╭─ Error: " << message << "\n";
+  oss << "  │\n";
+  
+  // Print context lines
+  for (size_t i = startLine; i < endLine; i++) {
+    size_t displayLineNum = i + 1;
+    oss << "  │ " << std::setw(lineNumWidth) << displayLineNum << " │ ";
+    
+    // Show the line content (truncate if too long)
+    std::string lineContent = errorLine;
+    if (lineContent.length() > 100) {
+      lineContent = lineContent.substr(0, 100) + "...";
+    }
+    oss << lineContent << "\n";
+    
+    // Add arrow pointer for error line
+    if (i == lineIndex) {
+      oss << "  │ " << std::string(lineNumWidth, ' ') << "   │ ";
+      if (column > 0 && column <= errorLine.length()) {
+        oss << std::string(column - 1, ' ') << "↑";
+      } else {
+        oss << "↑";
+      }
+      oss << "\n";
+    }
+  }
+  
+  oss << "  │\n";
+  oss << "  ╰─ at line " << line << ", column " << column << "\n";
+  
+  return oss.str();
+}
+
+void Interpreter::printError(const HavelResult& error, const std::string& sourceCode) {
+  if (auto* err = std::get_if<HavelRuntimeError>(&error)) {
+    if (err->hasLocation && err->line > 0) {
+      std::string formatted = formatErrorWithLocation(err->what(), err->line, err->column, sourceCode);
+      std::cerr << formatted << std::endl;
+    } else {
+      havel::error("Runtime error: {}", err->what());
+    }
   }
 }
 
@@ -1147,7 +1231,7 @@ void Interpreter::visitWithStatement(const ast::WithStatement &node) {
 }
 
 void Interpreter::visitStringLiteral(const ast::StringLiteral &node) {
-  lastResult = node.value;
+  lastResult = HavelValue(node.value);
 }
 
 void Interpreter::visitInterpolatedStringExpression(
@@ -1169,7 +1253,7 @@ void Interpreter::visitInterpolatedStringExpression(
     }
   }
 
-  lastResult = result;
+  lastResult = HavelValue(result);
 }
 
 void Interpreter::visitNumberLiteral(const ast::NumberLiteral &node) {
@@ -8503,7 +8587,7 @@ void Interpreter::InitializeAsyncBuiltins() {
                          },
                          taskId);
 
-                     return taskId;
+                     return HavelValue(taskId);
                    }));
 
   // await function

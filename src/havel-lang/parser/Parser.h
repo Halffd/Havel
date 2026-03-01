@@ -130,6 +130,8 @@ private:
   parseIndexExpression(std::unique_ptr<ast::Expression> object);
   std::unique_ptr<ast::Expression> parseArrayLiteral();
   std::unique_ptr<ast::Expression> parseObjectLiteral();
+  std::unique_ptr<ast::Expression> parseBlockExpression();
+  std::unique_ptr<ast::Expression> parseIfExpression();
   std::unique_ptr<ast::Expression> parseArrayPattern();
   std::unique_ptr<ast::Expression> parseObjectPattern();
   std::unique_ptr<ast::Statement> parseTryStatement();

@@ -451,10 +451,12 @@ public:
   void visitProgram(const ast::Program &node) override;
   void visitLetDeclaration(const ast::LetDeclaration &node) override;
   void visitIfStatement(const ast::IfStatement &node) override;
+  void visitIfExpression(const ast::IfExpression &node) override;
   void visitFunctionDeclaration(const ast::FunctionDeclaration &node) override;
   void visitReturnStatement(const ast::ReturnStatement &node) override;
   void visitHotkeyBinding(const ast::HotkeyBinding &node) override;
   void visitBlockStatement(const ast::BlockStatement &node) override;
+  void visitBlockExpression(const ast::BlockExpression &node) override;
   void visitExpressionStatement(const ast::ExpressionStatement &node) override;
   void visitPipelineExpression(const ast::PipelineExpression &node) override;
   void visitBinaryExpression(const ast::BinaryExpression &node) override;

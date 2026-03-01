@@ -71,6 +71,35 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitBlockExpression(const BlockExpression &node) override {
+    out << getIndent() << "BlockExpression {" << std::endl;
+    indentLevel++;
+    for (const auto &stmt : node.body) {
+      if (stmt) {
+        stmt->accept(*this);
+      } else {
+        out << getIndent() << "nullptr_statement_in_block" << std::endl;
+      }
+    }
+    if (node.value) {
+      printChildNode("value: ", node.value);
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitIfExpression(const IfExpression &node) override {
+    out << getIndent() << "IfExpression {" << std::endl;
+    indentLevel++;
+    printChildNode("condition: ", node.condition);
+    printChildNode("thenBranch: ", node.thenBranch);
+    if (node.elseBranch) {
+      printChildNode("elseBranch: ", node.elseBranch);
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitExpressionStatement(const ExpressionStatement &node) override {
     out << getIndent() << "ExpressionStatement {" << std::endl;
     indentLevel++;

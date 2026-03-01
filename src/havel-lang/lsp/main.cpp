@@ -11,25 +11,20 @@ void signalHandler(int signum) {
 int main(int argc, char* argv[]) {
   (void)argc;
   (void)argv;
-  
+
   // Set up signal handlers
   std::signal(SIGINT, signalHandler);
   std::signal(SIGTERM, signalHandler);
-  
-  // Initialize logger (stderr for LSP, don't interfere with stdio)
-  havel::Logger::getInstance().initialize(false, 3, false);
-  havel::Logger::getInstance().setLogLevel(havel::Logger::LOG_INFO);
-  
-  havel::info("LSP: Havel Language Server starting");
-  
+
+  std::cerr << "LSP: Starting..." << std::endl;
+
   try {
     havel::lsp::LanguageServer server;
     server.run();
   } catch (const std::exception& e) {
-    havel::error("LSP: Fatal error: {}", e.what());
+    std::cerr << "LSP: Fatal error: " << e.what() << std::endl;
     return 1;
   }
-  
-  havel::info("LSP: Server shutdown complete");
+
   return 0;
 }

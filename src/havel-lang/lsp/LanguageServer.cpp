@@ -74,32 +74,54 @@ LanguageServer::LanguageServer() = default;
 LanguageServer::~LanguageServer() = default;
 
 void LanguageServer::run() {
-  std::string line;
-  std::string content;
+  std::string buffer;
   int contentLength = -1;
+  bool readingHeaders = true;
   
-  while (std::getline(std::cin, line)) {
-    // Remove \r if present (Windows line endings)
-    if (!line.empty() && line.back() == '\r') {
-      line.pop_back();
+  char c;
+  while (std::cin.get(c)) {
+    buffer += c;
+    
+    // Check for end of headers (\r\n\r\n)
+    if (readingHeaders && buffer.size() >= 4) {
+      size_t headerEnd = buffer.find("\r\n\r\n");
+      if (headerEnd != std::string::npos) {
+        // Parse headers
+        std::string headers = buffer.substr(0, headerEnd);
+        size_t lenPos = headers.find("Content-Length:");
+        if (lenPos != std::string::npos) {
+          size_t numStart = headers.find_first_of("0123456789", lenPos);
+          if (numStart != std::string::npos) {
+            size_t numEnd = headers.find_first_not_of("0123456789", numStart);
+            std::string numStr;
+            if (numEnd == std::string::npos) {
+              numStr = headers.substr(numStart);
+            } else {
+              numStr = headers.substr(numStart, numEnd - numStart);
+            }
+            contentLength = std::stoi(numStr);
+          }
+        }
+        readingHeaders = false;
+        buffer = buffer.substr(headerEnd + 4);
+      }
     }
     
-    // Empty line marks end of headers
-    if (line.empty()) {
-      if (contentLength > 0 && static_cast<int>(content.size()) >= contentLength) {
-        try {
-          auto json = json::parse(content.substr(0, contentLength));
-          handleMessage(json);
-        } catch (const std::exception& e) {
-          havel::error("Failed to parse JSON: {}", e.what());
-        }
-        content.clear();
+    // Check if we have complete message
+    if (!readingHeaders && contentLength > 0 && static_cast<int>(buffer.size()) >= contentLength) {
+      try {
+        std::string jsonStr = buffer.substr(0, contentLength);
+        auto json = json::parse(jsonStr);
+        handleMessage(json);
+        
+        buffer = buffer.substr(contentLength);
         contentLength = -1;
+        readingHeaders = true;
+      } catch (const std::exception& e) {
+        buffer.clear();
+        contentLength = -1;
+        readingHeaders = true;
       }
-    } else if (line.find("Content-Length:") == 0) {
-      contentLength = std::stoi(line.substr(15));
-    } else {
-      content += line + "\n";
     }
   }
 }

@@ -45,4 +45,6 @@ generated
 scripts/user
 src/wm/
 havel-wm
-havel.cfg
+havel.cfgvscode-extension/node_modules/
+vscode-extension/out/
+*.vsix

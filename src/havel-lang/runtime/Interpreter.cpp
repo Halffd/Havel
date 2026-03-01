@@ -639,6 +639,53 @@ void Interpreter::visitBlockStatement(const ast::BlockStatement &node) {
   lastResult = blockResult;
 }
 
+void Interpreter::visitBlockExpression(const ast::BlockExpression &node) {
+  auto blockEnv = std::make_shared<Environment>(this->environment);
+  auto originalEnv = this->environment;
+  this->environment = blockEnv;
+
+  // Execute statements
+  for (const auto &stmt : node.body) {
+    auto result = Evaluate(*stmt);
+    if (isError(result) ||
+        std::holds_alternative<ReturnValue>(result) ||
+        std::holds_alternative<BreakValue>(result) ||
+        std::holds_alternative<ContinueValue>(result)) {
+      this->environment = originalEnv;
+      lastResult = result;
+      return;
+    }
+  }
+
+  // Evaluate final expression (the value of the block)
+  if (node.value) {
+    auto valueResult = Evaluate(*node.value);
+    lastResult = valueResult;
+  } else {
+    lastResult = HavelValue(nullptr);
+  }
+
+  this->environment = originalEnv;
+}
+
+void Interpreter::visitIfExpression(const ast::IfExpression &node) {
+  auto conditionResult = Evaluate(*node.condition);
+  if (isError(conditionResult)) {
+    lastResult = conditionResult;
+    return;
+  }
+
+  bool conditionMet = Interpreter::ValueToBool(unwrap(conditionResult));
+
+  if (conditionMet) {
+    lastResult = Evaluate(*node.thenBranch);
+  } else if (node.elseBranch) {
+    lastResult = Evaluate(*node.elseBranch);
+  } else {
+    lastResult = HavelValue(nullptr);  // No else branch, return null
+  }
+}
+
 void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
   if (node.hotkeys.empty()) {
     lastResult = HavelRuntimeError("Hotkey binding has no hotkeys");

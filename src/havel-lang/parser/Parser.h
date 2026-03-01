@@ -19,6 +19,14 @@ public:
   size_t column;
 };
 
+// Error recovery mode
+enum class RecoveryMode {
+  None,           // Throw immediately (old behavior)
+  PanicSemicolon, // Panic to next semicolon
+  PanicBrace,     // Panic to next closing brace
+  PanicStatement  // Panic to next statement boundary
+};
+
 // Debug options for parser and lexer
 struct DebugOptions {
   bool lexer = false;
@@ -38,6 +46,17 @@ private:
 
   // Debug options
   DebugOptions debug;
+  
+  // Error handling
+  std::vector<CompilerError> errors;
+  RecoveryMode recoveryMode = RecoveryMode::None;
+  
+  void reportError(const std::string& message);
+  void reportErrorAt(const Token& token, const std::string& message);
+  void synchronize();  // Panic mode recovery
+  void synchronizeTo(TokenType type);  // Recover to specific token
+  bool atStatementStart();
+  bool isAtEndOfBlock();
 
   [[noreturn]] void fail(const std::string &message);
   [[noreturn]] void failAt(const Token &token, const std::string &message);
@@ -126,11 +145,6 @@ private:
   combineConditions(std::unique_ptr<ast::Expression> left,
                     std::unique_ptr<ast::Expression> right);
 
-  // Error recovery methods
-  bool synchronize();
-  bool atStatementStart();
-  bool isAtEndOfBlock();
-
 public:
   explicit Parser(const DebugOptions &debug_opts = {}) : debug(debug_opts) {}
 
@@ -140,6 +154,10 @@ public:
   std::unique_ptr<ast::Program> produceASTStrict(const std::string &sourceCode);
 
   void printAST(const ast::ASTNode &node, int indent = 0) const;
+  
+  // Error access
+  const std::vector<CompilerError>& getErrors() const { return errors; }
+  bool hasErrors() const { return !errors.empty(); }
 };
 
 } // namespace havel::parser

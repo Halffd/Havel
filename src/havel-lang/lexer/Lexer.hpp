@@ -4,8 +4,28 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 namespace havel {
+
+// Error severity levels
+enum class ErrorSeverity {
+  Error,
+  Warning,
+  Info
+};
+
+// Compiler error with location and severity
+struct CompilerError {
+  ErrorSeverity severity;
+  size_t line;
+  size_t column;
+  std::string message;
+  std::string sourceLine;  // The source line where error occurred
+  
+  CompilerError(ErrorSeverity sev, size_t l, size_t c, const std::string& msg)
+    : severity(sev), line(l), column(c), message(msg) {}
+};
 
 class LexError : public std::runtime_error {
 public:
@@ -124,7 +144,11 @@ public:
   Lexer(const std::string &sourceCode, bool debug_lexer = false);
   std::vector<Token> tokenize();
   void printTokens(const std::vector<Token> &tokens) const;
-
+  
+  // Error handling
+  const std::vector<CompilerError>& getErrors() const { return errors; }
+  bool hasErrors() const { return !errors.empty(); }
+  
   static const std::unordered_map<std::string, TokenType> KEYWORDS;
 
 private:
@@ -132,6 +156,8 @@ private:
   size_t position = 0;
   size_t line = 1;
   size_t column = 1;
+  
+  std::vector<CompilerError> errors;  // Collected errors
 
   bool debug_lexer = false;
 
@@ -157,6 +183,11 @@ private:
   Token scanString();
   Token scanIdentifier();
   Token scanHotkey();
+  
+  // Error reporting
+  void reportError(const std::string& message);
+  void reportWarning(const std::string& message);
+  std::string getSourceLine(size_t lineNum) const;
 };
 
 } // namespace havel

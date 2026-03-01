@@ -1,7 +1,60 @@
 #include "Parser.h"
 #include <iostream>
+#include <sstream>
 
 namespace havel::parser {
+
+void Parser::reportError(const std::string& message) {
+  CompilerError err(ErrorSeverity::Error, at().line, at().column, message);
+  errors.push_back(err);
+}
+
+void Parser::reportErrorAt(const Token& token, const std::string& message) {
+  CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
+  errors.push_back(err);
+}
+
+void Parser::synchronize() {
+  // Panic mode recovery - skip tokens until we find a statement boundary
+  advance(); // Skip the current token that caused the error
+
+  while (notEOF()) {
+    havel::TokenType type = at().type;
+
+    // Statement boundaries
+    if (type == havel::TokenType::Semicolon || type == havel::TokenType::NewLine) {
+      advance();
+      return;
+    }
+
+    // Statement starters
+    if (type == havel::TokenType::Let || type == havel::TokenType::Fn ||
+        type == havel::TokenType::If || type == havel::TokenType::While ||
+        type == havel::TokenType::For || type == havel::TokenType::Return ||
+        type == havel::TokenType::Break || type == havel::TokenType::Continue ||
+        type == havel::TokenType::Config || type == havel::TokenType::Devices ||
+        type == havel::TokenType::Modes) {
+      return;
+    }
+
+    // Block boundaries
+    if (type == havel::TokenType::CloseBrace) {
+      return;
+    }
+
+    advance();
+  }
+}
+
+void Parser::synchronizeTo(havel::TokenType type) {
+  // Skip tokens until we find the specified type
+  while (notEOF() && at().type != type) {
+    advance();
+  }
+  if (notEOF()) {
+    advance(); // Consume the target token
+  }
+}
 
 [[noreturn]] void Parser::fail(const std::string &message) {
   failAt(at(), message);
@@ -34,6 +87,12 @@ Parser::produceAST(const std::string &sourceCode) {
   // Tokenize source code
   havel::Lexer lexer(sourceCode, debug.lexer);
   tokens = lexer.tokenize();
+  
+  // Collect lexer errors
+  for (const auto& err : lexer.getErrors()) {
+    errors.push_back(err);
+  }
+  
   position = 0;
 
   if (debug.parser) {
@@ -70,8 +129,10 @@ Parser::produceAST(const std::string &sourceCode) {
       }
 
       // Synchronize to recover from the error
-      if (!synchronize()) {
-        // If we can't synchronize (reached EOF), break out
+      synchronize();
+      
+      // If we've reached EOF, break out
+      if (notEOF() == false) {
         break;
       }
     }
@@ -1254,7 +1315,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
       }
 
       // Synchronize to recover from the error
-      if (!synchronize()) {
+      synchronize();
+      if (notEOF() == false) {
         break; // Can't synchronize, so break out of the block
       }
     }
@@ -1299,7 +1361,8 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
       }
 
       // Synchronize to recover from the error
-      if (!synchronize()) {
+      synchronize();
+      if (notEOF() == false) {
         break; // Can't synchronize, so break out of the block
       }
 
@@ -2511,26 +2574,6 @@ void Parser::printAST(const havel::ast::ASTNode &node, int indent) const {
       printAST(*arg, indent + 1);
     }
   }
-}
-// Error recovery implementation
-bool Parser::synchronize() {
-  advance(); // Skip the problematic token
-
-  // Skip tokens until we find one that looks like the start of a statement
-  while (notEOF()) {
-    if (at().type == havel::TokenType::NewLine) {
-      advance();
-      return true; // Found statement boundary
-    }
-
-    if (atStatementStart()) {
-      return true; // Found a statement start token
-    }
-
-    advance(); // Keep skipping tokens
-  }
-
-  return false; // Reached EOF
 }
 
 bool Parser::atStatementStart() {

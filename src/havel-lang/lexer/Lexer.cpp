@@ -1,5 +1,6 @@
 #include "Lexer.hpp"
 #include <iostream>
+#include <sstream>
 
 namespace havel {
 
@@ -59,6 +60,26 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
 
 Lexer::Lexer(const std::string &sourceCode, bool debug_lexer)
     : source(sourceCode), debug_lexer(debug_lexer) {}
+
+std::string Lexer::getSourceLine(size_t lineNum) const {
+  std::istringstream iss(source);
+  std::string currentLine;
+  for (size_t i = 1; i < lineNum && std::getline(iss, currentLine); i++) {}
+  std::getline(iss, currentLine);
+  return currentLine;
+}
+
+void Lexer::reportError(const std::string& message) {
+  CompilerError err(ErrorSeverity::Error, line, column, message);
+  err.sourceLine = getSourceLine(line);
+  errors.push_back(err);
+}
+
+void Lexer::reportWarning(const std::string& message) {
+  CompilerError err(ErrorSeverity::Warning, line, column, message);
+  err.sourceLine = getSourceLine(line);
+  errors.push_back(err);
+}
 
 char Lexer::peek(size_t offset) const {
   size_t pos = position + offset;
@@ -253,7 +274,10 @@ Token Lexer::scanString() {
   }
 
   if (isAtEnd()) {
-    throw havel::LexError(line, column, "Unterminated string");
+    reportError("Unterminated string");
+    // Create error token and try to recover
+    std::string value = raw.substr(1);  // Skip opening quote
+    return makeToken(value, TokenType::String, raw);
   }
 
   // Consume closing quote

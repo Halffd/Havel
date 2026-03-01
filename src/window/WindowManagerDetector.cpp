@@ -182,7 +182,7 @@ bool WindowManagerDetector::IsWayland() noexcept {
       return true;
     }
     // Also check for running Wayland compositors as fallback
-    if (CheckProcess("Hyprland") || CheckProcess("sway") || 
+    if (CheckProcess("Hyprland") || CheckProcess("sway") ||
         CheckProcess("wayfire") || CheckProcess("river") ||
         CheckProcess("weston") || CheckProcess("kwin_wayland")) {
       return true;
@@ -191,6 +191,11 @@ bool WindowManagerDetector::IsWayland() noexcept {
     const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
     if (waylandDisplay && std::string(waylandDisplay).find("wayland") != std::string::npos) {
       return true;
+    }
+    // If XDG_SESSION_TYPE is tty, we might still be on Wayland (nested compositor or login issue)
+    // Check for common Wayland environment variables
+    if (waylandDisplay && std::string(waylandDisplay).length() > 0) {
+      return true;  // Any WAYLAND_DISPLAY set indicates Wayland
     }
     return false;
   } catch (...) {
@@ -206,14 +211,18 @@ bool WindowManagerDetector::IsX11() noexcept {
       if (type == "x11") return true;
       if (type == "wayland") return false;
       if (type == "tty") {
-        // Running on tty - check for Wayland compositor
-        return !IsWayland();
+        // Running on tty - explicitly check for Wayland first
+        if (IsWayland()) return false;
+        // If not Wayland, assume X11 (most common case)
+        return true;
       }
     }
-    // Default: check for Wayland first, then assume X11
-    return !IsWayland();
+    // For unknown session types, check Wayland first
+    if (IsWayland()) return false;
+    // Default to X11 as fallback (most common)
+    return true;
   } catch (...) {
-    return !IsWayland();
+    return true;  // Default to X11 on error
   }
 }
 

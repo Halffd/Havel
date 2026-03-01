@@ -609,6 +609,7 @@ private:
   // Error formatting helper - formats error with source code context
   std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
   void printError(const HavelResult& error, const std::string& sourceCode);
+  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
 
   // KeyTap constructor for advanced hotkey functionality
   KeyTap* createKeyTap(

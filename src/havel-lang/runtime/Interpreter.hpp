@@ -633,6 +633,9 @@ public:
   void printError(const HavelResult& error, const std::string& sourceCode);
   void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
   
+  // Debug options setter - public for use by HavelLauncher
+  void setDebugParser(bool enable) { debug.parser = enable; }
+
   void InitializeAudioBuiltins();
   void InitializeMediaBuiltins();
   void InitializeFileManagerBuiltins();

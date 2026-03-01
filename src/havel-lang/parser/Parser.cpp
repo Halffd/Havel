@@ -104,9 +104,9 @@ Parser::produceAST(const std::string &sourceCode) {
 
   // Parse all statements until EOF
   while (notEOF()) {
-    // Skip empty lines or statement separators
-    if (at().type == havel::TokenType::NewLine ||
-        at().type == havel::TokenType::Semicolon) {
+    // Skip ONLY semicolons as statement separators
+    // Newlines are handled by expression parsing as hard barriers
+    if (at().type == havel::TokenType::Semicolon) {
       advance();
       continue;
     }
@@ -115,23 +115,13 @@ Parser::produceAST(const std::string &sourceCode) {
       havel::debug("PARSE: Parsing statement at token {}", at().toString());
     }
 
-    try {
-      auto stmt = parseStatement();
-      if (stmt) {
-        program->body.push_back(std::move(stmt));
-      }
-    } catch (const std::exception &e) {
-      if (havel::debugging::debug_parser) {
-        havel::error("Parse error: {} at position {}", e.what(), position);
-      }
-
-      // Synchronize to recover from the error
-      synchronize();
-
-      // If we've reached EOF, break out
-      if (notEOF() == false) {
-        break;
-      }
+    // Fail fast on errors - no recovery at top level
+    auto stmt = parseStatement();
+    if (stmt) {
+      program->body.push_back(std::move(stmt));
+    } else {
+      // parseStatement returned null (hit EOF), break out
+      break;
     }
   }
 
@@ -172,6 +162,17 @@ Parser::produceASTStrict(const std::string &sourceCode) {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
+  // Skip leading newlines within statement context
+  // This allows multiple newlines between statements
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // If we hit EOF after skipping newlines, return null
+  if (at().type == havel::TokenType::EOF_TOKEN) {
+    return nullptr;
+  }
+  
   switch (at().type) {
   case havel::TokenType::Hotkey: {
     // Parse hotkey with potential prefix conditions (when/if before =>)
@@ -409,6 +410,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   default: {
     auto expr = parseExpression();
+
+    // Require statement terminator: semicolon or newline
+    // This prevents "expr1 expr2" from being parsed as expr1(expr2)
+    havel::debug("DEBUG: After parseExpression, token is: {}", at().toString());
+    if (at().type != havel::TokenType::Semicolon &&
+        at().type != havel::TokenType::NewLine &&
+        at().type != havel::TokenType::EOF_TOKEN &&
+        at().type != havel::TokenType::CloseBrace) {
+      havel::debug("DEBUG: Failing at token: {}", at().toString());
+      failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");
+    }
+
+    // Consume optional semicolon
+    if (at().type == havel::TokenType::Semicolon) {
+      advance();
+    }
+
     return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
   }
   }
@@ -1630,10 +1648,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
 std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
   auto left = parseRange();
 
-  while (at().type == havel::TokenType::Less ||
-         at().type == havel::TokenType::Greater ||
-         at().type == havel::TokenType::LessEquals ||
-         at().type == havel::TokenType::GreaterEquals) {
+  // Comparison operators: < > <= >=
+  // NOTE: We do NOT allow chaining (e.g., "a < b < c" is invalid)
+  // This matches C/Java semantics, not Python semantics
+  if (at().type == havel::TokenType::Less ||
+      at().type == havel::TokenType::Greater ||
+      at().type == havel::TokenType::LessEquals ||
+      at().type == havel::TokenType::GreaterEquals) {
     auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
@@ -1643,6 +1664,14 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
     bin->line = opTok.line;
     bin->column = opTok.column;
     left = std::move(bin);
+    
+    // Check for attempted chaining - this is a semantic error
+    if (at().type == havel::TokenType::Less ||
+        at().type == havel::TokenType::Greater ||
+        at().type == havel::TokenType::LessEquals ||
+        at().type == havel::TokenType::GreaterEquals) {
+      failAt(at(), "Comparison operators cannot be chained. Use logical operators: (a < b) && (b < c)");
+    }
   }
 
   return left;
@@ -1651,11 +1680,24 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
 std::unique_ptr<havel::ast::Expression> Parser::parseRange() {
   auto left = parseAdditive();
 
+  // Range operator: ..
+  // NOTE: We do NOT allow chaining (e.g., "a .. b .. c" is invalid)
+  // Ranges should be explicit: (a .. b) .. c or a .. (b .. c)
   if (at().type == havel::TokenType::DotDot) {
+    auto opTok = at();  // Save operator token location
     advance(); // consume '..'
     auto right = parseAdditive();
-    return std::make_unique<havel::ast::RangeExpression>(std::move(left),
+    auto range = std::make_unique<havel::ast::RangeExpression>(std::move(left),
                                                          std::move(right));
+    range->line = opTok.line;
+    range->column = opTok.column;
+    
+    // Check for attempted chaining
+    if (at().type == havel::TokenType::DotDot) {
+      failAt(at(), "Range operators cannot be chained. Use parentheses: (a .. b) .. c");
+    }
+    
+    return range;
   }
 
   return left;
@@ -2379,6 +2421,15 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
   // This handles chaining for all expression types (variables, function calls,
   // arrays, etc.)
   while (true) {
+    // NEWLINE and SEMICOLON are hard barriers - they end expression parsing
+    // This prevents "expr1 expr2" from being parsed as expr1(expr2)
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon ||
+        at().type == havel::TokenType::EOF_TOKEN ||
+        at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+  
     if (at().type == havel::TokenType::OpenParen) {
       expr = parseCallExpression(std::move(expr));
       // Trailing block as last argument: func(...){ ... }
@@ -2429,17 +2480,6 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
             std::move(noParams), std::move(block));
         args.push_back(std::move(lambda));
       }
-      expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
-                                                          std::move(args));
-    } else if (at().type == havel::TokenType::String ||
-               at().type == havel::TokenType::Number ||
-               at().type == havel::TokenType::Identifier ||
-               at().type == havel::TokenType::InterpolatedString) {
-      // Implicit call: expression followed by a literal (e.g., variable
-      // "Hello")
-      auto arg = parsePrimaryExpression();
-      std::vector<std::unique_ptr<havel::ast::Expression>> args;
-      args.push_back(std::move(arg));
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
     } else {

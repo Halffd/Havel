@@ -1433,7 +1433,7 @@ void WindowManager::UpdatePreviousActiveWindow() {
           previousActiveWindow != currentActive) {
         wID oldWindow = previousActiveWindow;
         previousActiveWindow = currentActive;
-        info("Updated previous active window to: {} Title: {} Class: {}",
+        debug("Updated previous active window to: {} Title: {} Class: {}",
              previousActiveWindow, GetActiveWindowTitle(),
              GetActiveWindowClass());
       }
@@ -1622,7 +1622,7 @@ void WindowManager::InitializeCompositorBridge() {
     compositorBridge = std::make_unique<CompositorBridge>();
     if (compositorBridge->IsAvailable()) {
       compositorBridge->Start();
-      info("Compositor bridge initialized and started");
+      debug("Compositor bridge initialized and started");
     } else {
       compositorBridge.reset();
       debug("Compositor bridge not available on this Wayland compositor");

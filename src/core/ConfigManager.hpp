@@ -337,7 +337,7 @@ public:
     }
 
     // Automatically save the config when a setting is changed
-    if (!path.empty()) {
+    if (!path.empty() && oldValue != settings[key]) {
       Save();
     }
   }

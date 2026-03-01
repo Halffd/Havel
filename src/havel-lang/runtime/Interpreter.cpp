@@ -1938,8 +1938,37 @@ void Interpreter::visitAssignmentExpression(
       lastResult = HavelRuntimeError("Cannot index non-array/non-object value");
       return;
     }
+  } else if (auto *member = dynamic_cast<const ast::MemberExpression *>(
+                 node.target.get())) {
+    // Member expression assignment (obj.prop = value)
+    auto objectResult = Evaluate(*member->object);
+    if (isError(objectResult)) {
+      lastResult = objectResult;
+      return;
+    }
+    HavelValue objectValue = unwrap(objectResult);
+    
+    // Get property name
+    std::string propName;
+    if (auto *propId = dynamic_cast<const ast::Identifier *>(member->property.get())) {
+      propName = propId->symbol;
+    } else {
+      lastResult = HavelRuntimeError("Invalid property name", node.line, node.column);
+      return;
+    }
+    
+    // Check if object supports property assignment
+    if (auto *objectPtr = objectValue.get_if<HavelObject>()) {
+      if (!*objectPtr) {
+        *objectPtr = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+      }
+      (**objectPtr)[propName] = value;
+    } else {
+      lastResult = HavelRuntimeError("Cannot set property on non-object value", node.line, node.column);
+      return;
+    }
   } else {
-    lastResult = HavelRuntimeError("Invalid assignment target");
+    lastResult = HavelRuntimeError("Invalid assignment target", node.line, node.column);
     return;
   }
 

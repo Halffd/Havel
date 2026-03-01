@@ -1830,11 +1830,32 @@ void Interpreter::visitRangeExpression(const ast::RangeExpression &node) {
 
   int start = static_cast<int>(ValueToNumber(unwrap(startResult)));
   int end = static_cast<int>(ValueToNumber(unwrap(endResult)));
+  
+  // Handle optional step value
+  int step = 1;
+  if (node.step) {
+    auto stepResult = Evaluate(*node.step);
+    if (isError(stepResult)) {
+      lastResult = stepResult;
+      return;
+    }
+    step = static_cast<int>(ValueToNumber(unwrap(stepResult)));
+    if (step == 0) {
+      lastResult = HavelRuntimeError("Range step cannot be zero", node.line, node.column);
+      return;
+    }
+  }
 
-  // Create an array from start to end (inclusive)
+  // Create an array from start to end (inclusive) with step
   auto rangeArray = std::make_shared<std::vector<HavelValue>>();
-  for (int i = start; i <= end; ++i) {
-    rangeArray->push_back(HavelValue(i));
+  if (step > 0) {
+    for (int i = start; i <= end; i += step) {
+      rangeArray->push_back(HavelValue(i));
+    }
+  } else {
+    for (int i = start; i >= end; i += step) {
+      rangeArray->push_back(HavelValue(i));
+    }
   }
 
   lastResult = rangeArray;

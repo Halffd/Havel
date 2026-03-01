@@ -119,7 +119,7 @@ bool Lexer::isSkippable(char c) const {
 bool Lexer::isHotkeyChar(char c) const {
   return isAlphaNumeric(c) || c == '+' || c == '-' || c == '^' || c == '!' ||
          c == '#' || c == '@' || c == '|' || c == '*' || c == '&' || c == ':' ||
-         c == '~' || c == '$' || c == '=' || c == '.' || c == ',';
+         c == '~' || c == '$' || c == '=' || c == '.' || c == ',' || c == '/';
 }
 
 Token Lexer::makeToken(const std::string &value, TokenType type,
@@ -599,6 +599,7 @@ std::vector<Token> Lexer::tokenize() {
         TokenType prevType = tokens.back().type;
         // If previous token suggests expression context, treat as operator
         // Exclude CloseBrace - after } we're at statement level (could be hotkey)
+        // Include statement starters that are followed by expressions (if, while, for, etc.)
         if (prevType == TokenType::Number ||
             prevType == TokenType::Identifier ||
             prevType == TokenType::String ||
@@ -607,7 +608,10 @@ std::vector<Token> Lexer::tokenize() {
             prevType == TokenType::Not ||
             prevType == TokenType::Or ||
             prevType == TokenType::And ||
-            prevType == TokenType::Assign) {
+            prevType == TokenType::Assign ||
+            prevType == TokenType::If ||
+            prevType == TokenType::While ||
+            prevType == TokenType::For) {
           // Fall through to SINGLE_CHAR_TOKENS to get Plus or Not
         } else {
           tokens.push_back(scanHotkey());

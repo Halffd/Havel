@@ -203,19 +203,18 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     havel::error("");
     havel::error("  Error: {}", err.what());
     
-    // Try to extract line number from error message if present
-    std::string errorMsg = err.what();
-    size_t linePos = errorMsg.find("line");
-    if (linePos != std::string::npos) {
-      size_t numStart = errorMsg.find_first_of("0123456789", linePos);
-      if (numStart != std::string::npos) {
-        size_t numEnd = errorMsg.find_first_not_of("0123456789", numStart);
-        if (numEnd != std::string::npos) {
-          size_t lineNum = std::stoull(errorMsg.substr(numStart, numEnd - numStart));
-          havel::error("");
-          havel::error("  See line {} in {}", lineNum, cfg.scriptFile);
-        }
-      }
+    // Use structured location data if available
+    if (err.hasLocation && err.line > 0) {
+      havel::error("");
+      havel::error("  At line {}, column {}", err.line, err.column);
+      
+      // Print source code context
+      interpreter->printSourceWithContext(code, err.line);
+    } else {
+      // No location info - print full source context
+      havel::error("");
+      havel::error("  (No location information available)");
+      interpreter->printSourceWithContext(code, 0);
     }
     
     havel::error("");

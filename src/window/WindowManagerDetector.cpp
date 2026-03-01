@@ -1,6 +1,7 @@
 #include "WindowManagerDetector.hpp"
 #include <array>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -177,26 +178,25 @@ std::string WindowManagerDetector::GetWMName() noexcept {
 
 bool WindowManagerDetector::IsWayland() noexcept {
   try {
-    const char *sessionType = std::getenv("XDG_SESSION_TYPE");
-    if (sessionType && std::string(sessionType) == "wayland") {
-      return true;
+    // Primary check: WAYLAND_DISPLAY environment variable
+    const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
+    if (waylandDisplay && std::strlen(waylandDisplay) > 0) {
+      return true;  // Any WAYLAND_DISPLAY set indicates Wayland session
     }
-    // Also check for running Wayland compositors as fallback
+    
+    // Secondary: Check for running Wayland compositors
     if (CheckProcess("Hyprland") || CheckProcess("sway") ||
         CheckProcess("wayfire") || CheckProcess("river") ||
         CheckProcess("weston") || CheckProcess("kwin_wayland")) {
       return true;
     }
-    // Check WAYLAND_DISPLAY environment variable
-    const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
-    if (waylandDisplay && std::string(waylandDisplay).find("wayland") != std::string::npos) {
+    
+    // Tertiary: XDG_SESSION_TYPE (only reliable with display managers)
+    const char *sessionType = std::getenv("XDG_SESSION_TYPE");
+    if (sessionType && std::string(sessionType) == "wayland") {
       return true;
     }
-    // If XDG_SESSION_TYPE is tty, we might still be on Wayland (nested compositor or login issue)
-    // Check for common Wayland environment variables
-    if (waylandDisplay && std::string(waylandDisplay).length() > 0) {
-      return true;  // Any WAYLAND_DISPLAY set indicates Wayland
-    }
+    
     return false;
   } catch (...) {
     return false;
@@ -205,24 +205,31 @@ bool WindowManagerDetector::IsWayland() noexcept {
 
 bool WindowManagerDetector::IsX11() noexcept {
   try {
+    // Check for Wayland first - if present, we're NOT on pure X11
+    const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
+    if (waylandDisplay && std::strlen(waylandDisplay) > 0) {
+      return false;  // Wayland session (may have Xwayland, but not native X11)
+    }
+    
+    // Check for X11 DISPLAY
+    const char *display = std::getenv("DISPLAY");
+    if (display && std::strlen(display) > 0) {
+      return true;  // X11 session (including startx)
+    }
+    
+    // Fallback: XDG_SESSION_TYPE (unreliable with startx)
     const char *sessionType = std::getenv("XDG_SESSION_TYPE");
     if (sessionType) {
       std::string type(sessionType);
       if (type == "x11") return true;
       if (type == "wayland") return false;
-      if (type == "tty") {
-        // Running on tty - explicitly check for Wayland first
-        if (IsWayland()) return false;
-        // If not Wayland, assume X11 (most common case)
-        return true;
-      }
     }
-    // For unknown session types, check Wayland first
-    if (IsWayland()) return false;
-    // Default to X11 as fallback (most common)
-    return true;
+    
+    // Unknown: default to non-X11 (safer than assuming X11)
+    return false;
   } catch (...) {
-    return true;  // Default to X11 on error
+    // On error, default to non-X11 (safer)
+    return false;
   }
 }
 

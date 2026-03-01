@@ -41,6 +41,33 @@ bool DocumentStore::hasDocument(const std::string& uri) const {
   return documents.find(uri) != documents.end();
 }
 
+void DocumentStore::setSymbols(const std::string& uri, const std::vector<SymbolInfo>& symbols) {
+  std::lock_guard<std::mutex> lock(mutex);
+  symbolTables[uri] = symbols;
+}
+
+std::vector<SymbolInfo> DocumentStore::getSymbols(const std::string& uri) const {
+  std::lock_guard<std::mutex> lock(mutex);
+  auto it = symbolTables.find(uri);
+  if (it != symbolTables.end()) {
+    return it->second;
+  }
+  return {};
+}
+
+SymbolInfo* DocumentStore::findSymbol(const std::string& uri, const std::string& name) {
+  std::lock_guard<std::mutex> lock(mutex);
+  auto it = symbolTables.find(uri);
+  if (it != symbolTables.end()) {
+    for (auto& sym : it->second) {
+      if (sym.name == name) {
+        return &sym;
+      }
+    }
+  }
+  return nullptr;
+}
+
 // ============ LanguageServer ============
 
 LanguageServer::LanguageServer() = default;
@@ -100,6 +127,12 @@ void LanguageServer::handleMessage(const json& message) {
       handleDidChange(params);
     } else if (method == "textDocument/didClose") {
       handleDidClose(params);
+    } else if (method == "textDocument/hover") {
+      sendMessage(makeResponse(id, handleHover(params)));
+    } else if (method == "textDocument/definition") {
+      sendMessage(makeResponse(id, handleDefinition(params)));
+    } else if (method == "textDocument/documentSymbol") {
+      sendMessage(makeResponse(id, handleDocumentSymbol(params)));
     } else {
       havel::debug("LSP: Unhandled method: {}", method);
     }
@@ -174,6 +207,10 @@ void LanguageServer::handleDidClose(const json& params) {
 
 void LanguageServer::analyzeDocument(const std::string& uri, const std::string& text) {
   auto diagnostics = getDiagnostics(text);
+  
+  // Extract symbols for hover/definition/symbol support
+  auto symbols = extractSymbols(text);
+  documentStore.setSymbols(uri, symbols);
   
   json diagArray = json::array();
   for (const auto& diag : diagnostics) {
@@ -253,6 +290,153 @@ std::vector<Diagnostic> LanguageServer::getDiagnostics(const std::string& text) 
   return diagnostics;
 }
 
+std::vector<SymbolInfo> LanguageServer::extractSymbols(const std::string& text) {
+  std::vector<SymbolInfo> symbols;
+  
+  try {
+    // Tokenize and look for function/variable definitions
+    Lexer lexer(text, false);
+    auto tokens = lexer.tokenize();
+    
+    std::string currentKeyword;
+    for (size_t i = 0; i < tokens.size(); i++) {
+      const auto& token = tokens[i];
+      
+      // Track keywords
+      if (token.type == TokenType::Fn) {
+        currentKeyword = "fn";
+      } else if (token.type == TokenType::Let) {
+        currentKeyword = "let";
+      } else if (token.type == TokenType::Struct) {
+        currentKeyword = "struct";
+      } else if (token.type == TokenType::Enum) {
+        currentKeyword = "enum";
+      }
+      
+      // Look for identifier after keyword
+      if (!currentKeyword.empty() && token.type == TokenType::Identifier) {
+        SymbolInfo sym;
+        sym.name = token.value;
+        sym.range.start = toLSPPosition(token.line - 1, token.column - 1);
+        sym.range.end = toLSPPosition(token.line - 1, token.column - 1 + token.value.length());
+        
+        if (currentKeyword == "fn") {
+          sym.kind = "function";
+          sym.detail = "Function";
+        } else if (currentKeyword == "let") {
+          sym.kind = "variable";
+          sym.detail = "Variable";
+        } else if (currentKeyword == "struct") {
+          sym.kind = "struct";
+          sym.detail = "Struct";
+        } else if (currentKeyword == "enum") {
+          sym.kind = "enum";
+          sym.detail = "Enum";
+        }
+        
+        symbols.push_back(sym);
+        currentKeyword.clear();
+      }
+      
+      // Reset keyword on semicolon or newline
+      if (token.type == TokenType::Semicolon || token.type == TokenType::NewLine) {
+        currentKeyword.clear();
+      }
+    }
+  } catch (...) {
+    // Ignore extraction errors
+  }
+  
+  return symbols;
+}
+
+SymbolInfo* LanguageServer::findSymbolAt(const std::string& uri, Position position) {
+  auto symbols = documentStore.getSymbols(uri);
+  for (auto& sym : symbols) {
+    if (position.line >= sym.range.start.line && 
+        position.line <= sym.range.end.line &&
+        position.character >= sym.range.start.character &&
+        position.character <= sym.range.end.character) {
+      return &sym;
+    }
+  }
+  return nullptr;
+}
+
+json LanguageServer::handleHover(const json& params) {
+  std::string uri = params["textDocument"]["uri"];
+  auto position = params["position"];
+  
+  Position pos;
+  pos.line = position["line"];
+  pos.character = position["character"];
+  
+  auto* sym = findSymbolAt(uri, pos);
+  if (sym) {
+    return {
+      {"contents", {
+        {"kind", "markdown"},
+        {"value", "```havel\n" + sym->detail + " " + sym->name + "\n```"}
+      }},
+      {"range", {
+        {"start", {{"line", sym->range.start.line}, {"character", sym->range.start.character}}},
+        {"end", {{"line", sym->range.end.line}, {"character", sym->range.end.character}}}
+      }}
+    };
+  }
+  
+  return json();  // No hover info
+}
+
+json LanguageServer::handleDefinition(const json& params) {
+  std::string uri = params["textDocument"]["uri"];
+  auto position = params["position"];
+  
+  Position pos;
+  pos.line = position["line"];
+  pos.character = position["character"];
+  
+  auto* sym = findSymbolAt(uri, pos);
+  if (sym) {
+    return {
+      {"uri", uri},
+      {"range", {
+        {"start", {{"line", sym->range.start.line}, {"character", sym->range.start.character}}},
+        {"end", {{"line", sym->range.end.line}, {"character", sym->range.end.character}}}
+      }}
+    };
+  }
+  
+  return json();  // No definition found
+}
+
+json LanguageServer::handleDocumentSymbol(const json& params) {
+  std::string uri = params["textDocument"]["uri"];
+  auto symbols = documentStore.getSymbols(uri);
+  
+  json result = json::array();
+  for (const auto& sym : symbols) {
+    result.push_back({
+      {"name", sym.name},
+      {"kind", sym.kind == "function" ? 12 : 
+                sym.kind == "variable" ? 13 :
+                sym.kind == "struct" ? 23 :
+                sym.kind == "enum" ? 10 : 1},
+      {"range", {
+        {"start", {{"line", sym.range.start.line}, {"character", sym.range.start.character}}},
+        {"end", {{"line", sym.range.end.line}, {"character", sym.range.end.character}}}
+      }},
+      {"selectionRange", {
+        {"start", {{"line", sym.range.start.line}, {"character", sym.range.start.character}}},
+        {"end", {{"line", sym.range.end.line}, {"character", sym.range.end.character}}}
+      }},
+      {"detail", sym.detail}
+    });
+  }
+  
+  return result;
+}
+
 Position LanguageServer::toLSPPosition(size_t line, size_t column) {
   Position pos;
   pos.line = static_cast<int>(line);
@@ -274,6 +458,16 @@ json LanguageServer::getServerCapabilities() {
       {"documentSelector", {{"language", "havel"}}},
       {"interFileDependencies", false},
       {"workspaceDiagnostics", false}
+    }},
+    {"hoverProvider", {
+      {"workDoneProgress", false}
+    }},
+    {"definitionProvider", {
+      {"workDoneProgress", false}
+    }},
+    {"documentSymbolProvider", {
+      {"workDoneProgress", false},
+      {"label", "Havel Symbols"}
     }}
   };
 }

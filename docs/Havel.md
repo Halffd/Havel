@@ -15,6 +15,7 @@ Havel is a declarative automation scripting language designed for hotkey managem
 - [Built-in Help](#built-in-help)
 - [Type System](#type-system-gradual-typing)
 - [CLI Usage](#cli-usage)
+- [Language Server (LSP)](#language-server-protocol-lsp)
 - [Examples](#examples)
 
 ----
@@ -1268,6 +1269,24 @@ havel --help
 havel -h
 ```
 
+### Command Line Options
+
+| Option | Description |
+|--------|-------------|
+| `--run`, `-r` | Run script in pure mode (no IO/hotkeys) |
+| `--repl` | Start interactive REPL |
+| `--gui` | GUI-only mode (no hotkeys) |
+| `--error`, `-e` | Stop on first error/warning |
+| `--help`, `-h` | Show help |
+
+### Error Reporting
+
+Runtime errors now include line and column information:
+
+```
+2026-03-01 05:12:51.032 [ERROR] Runtime Error at line 4: Undefined variable: undefinedVar
+```
+
 ### Pure Mode (--run)
 
 Pure mode executes scripts without IO, hotkeys, display, or GUI. Useful for:
@@ -1283,6 +1302,166 @@ havel --run scripts/test_types.hv
 
 # Run fibonacci
 havel --run scripts/fibonacci.hv
+
+# Stop on first error
+havel --run --error script.hv
 ```
+
+---
+
+## Language Server Protocol (LSP)
+
+Havel includes a full-featured language server for IDE integration.
+
+### Starting the LSP Server
+
+```bash
+# Start LSP server
+havel-lsp
+```
+
+### VSCode Extension
+
+A VSCode extension is available in the `vscode-extension` directory:
+
+```bash
+cd vscode-extension
+npm install
+npm run compile
+
+# In VSCode: Extensions → ⋯ → Install from VSIX
+# Select: vscode-extension/havel-language-0.1.0.vsix
+```
+
+#### Features
+
+- ✅ **Syntax Highlighting** - Full Havel grammar support
+- ✅ **Diagnostics** - Real-time error reporting with line/column
+- ✅ **Hover** - Type information on hover
+- ✅ **Go to Definition** - F12 navigation
+- ✅ **Document Symbols** - Outline view (Ctrl+Shift+O)
+- ✅ **Bracket Matching** - Auto-close brackets
+- ✅ **Comment Toggling** - Ctrl+/ for line comments
+
+#### Configuration
+
+In VSCode settings (`settings.json`):
+
+```json
+{
+  "havel.languageServer.path": "/path/to/havel-lsp",
+  "havel.languageServer.trace": "off"
+}
+```
+
+### Grammar Rules
+
+#### Comments
+
+Comments use `//` for line comments and `/* */` for block comments:
+
+```havel
+// This is a line comment
+print("Hello")  // Inline comment
+
+/* This is a
+   block comment */
+```
+
+**Important:** `#` is **NOT** a comment character. It is used for:
+- Hotkey modifiers: `#f1`, `#!Esc`, `#^c`
+- Set literals: `#{1, 2, 3}`
+
+#### Member Expression Assignment
+
+Assign to object properties using dot notation:
+
+```havel
+let obj = {}
+obj.name = "test"
+obj.value = 42
+
+print(obj.name)  // "test"
+print(obj.value) // 42
+```
+
+#### Debug Module
+
+The `debug` module provides runtime introspection:
+
+```havel
+// Show AST after parsing
+debug.showAST(true)
+
+// Stop execution on first error
+debug.stopOnError(true)
+
+// Get interpreter state
+print(debug.interpreterState())
+```
+
+### Configuration Options
+
+#### Process Priority
+
+Control process priority and thread count in config:
+
+```ini
+[Advanced]
+# Process priority: -20 (highest) to 19 (lowest)
+# Default: 0 (normal priority)
+ProcessPriority=0
+
+# Number of worker threads for hotkey execution
+# Range: 1 to 32
+# Default: 4
+WorkerThreads=4
+```
+
+#### Clipboard Manager
+
+Multi-select and animation features:
+
+```havel
+// Multi-select support (in GUI)
+// Hold Ctrl to select multiple items
+// Press Enter to copy all selected items
+
+// Animations
+// Window fade-in/fade-out on show/hide
+// Item fade animation on delete
+```
+
+### Window Manager Detection
+
+The window manager detector now uses EWMH properties for reliable detection:
+
+```havel
+// Get active window title
+let title = window.getTitle()
+
+// Get active window class
+let className = window.getClass()
+```
+
+Detection works correctly with:
+- ✅ X11 sessions (including `startx`)
+- ✅ Wayland compositors
+- ✅ Display managers (gdm, sddm, lightdm)
+
+### Exception Containment
+
+All interpreter exceptions are now contained to prevent crashes:
+
+```havel
+// Conditional hotkeys with errors won't crash
+mode == "gaming" => {
+    // If undefinedVar is undefined, error is logged
+    // but application continues running
+    print(undefinedVar)
+}
+```
+
+Errors are logged to stderr instead of crashing the Qt event loop.
 
 ---

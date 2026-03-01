@@ -1,12 +1,14 @@
 #pragma once
 
-#include "havel-lang/lexer/Lexer.hpp"
-#include "havel-lang/parser/Parser.h"
+#include "lexer/Lexer.hpp"
+#include "parser/Parser.h"
+#include "ast/AST.h"
 #include "utils/Logger.hpp"
 #include <nlohmann/json.hpp>
 #include <string>
 #include <unordered_map>
 #include <mutex>
+#include <vector>
 
 namespace havel::lsp {
 
@@ -37,7 +39,15 @@ struct TextDocumentItem {
   std::string text;
 };
 
-// Document store
+// Symbol information
+struct SymbolInfo {
+  std::string name;
+  std::string kind;  // "function", "variable", "struct", etc.
+  Range range;
+  std::string detail;
+};
+
+// Document store with symbol table
 class DocumentStore {
 public:
   void open(const TextDocumentItem& doc);
@@ -45,9 +55,15 @@ public:
   void close(const std::string& uri);
   std::string getText(const std::string& uri) const;
   bool hasDocument(const std::string& uri) const;
+  
+  // Symbol table
+  void setSymbols(const std::string& uri, const std::vector<SymbolInfo>& symbols);
+  std::vector<SymbolInfo> getSymbols(const std::string& uri) const;
+  SymbolInfo* findSymbol(const std::string& uri, const std::string& name);
 
 private:
   std::unordered_map<std::string, TextDocumentItem> documents;
+  std::unordered_map<std::string, std::vector<SymbolInfo>> symbolTables;
   mutable std::mutex mutex;
 };
 
@@ -75,9 +91,16 @@ private:
   void handleDidChange(const json& params);
   void handleDidClose(const json& params);
   
+  // Feature handlers
+  json handleHover(const json& params);
+  json handleDefinition(const json& params);
+  json handleDocumentSymbol(const json& params);
+
   // Analysis
   void analyzeDocument(const std::string& uri, const std::string& text);
   std::vector<Diagnostic> getDiagnostics(const std::string& text);
+  std::vector<SymbolInfo> extractSymbols(const std::string& text);
+  SymbolInfo* findSymbolAt(const std::string& uri, Position position);
   
   // JSON-RPC helpers
   void sendMessage(const json& message);

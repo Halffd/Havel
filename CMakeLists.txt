@@ -351,8 +351,8 @@ add_executable(havel
 
 # LSP-specific sources (just lexer and parser, no Qt dependencies)
 set(LSP_SOURCES
-    src/lsp/main.cpp
-    src/lsp/LanguageServer.cpp
+    src/havel-lang/lsp/main.cpp
+    src/havel-lang/lsp/LanguageServer.cpp
     src/havel-lang/ast/AST.cpp
     src/havel-lang/lexer/Lexer.cpp
     src/havel-lang/parser/Parser.cpp

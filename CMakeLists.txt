@@ -67,6 +67,7 @@ find_package(PkgConfig REQUIRED)
 find_package(X11 REQUIRED)
 find_package(Threads REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 # Optional: GNU Readline for REPL line-editing/history
 find_library(READLINE_LIB readline)
@@ -337,11 +338,44 @@ set(COMMON_LIBS
 # ==============================================================================
 # MAIN EXECUTABLE
 # ==============================================================================
-add_executable(havel 
+add_executable(havel
     src/main.cpp
     ${CORE_SOURCES}
     ${GUI_SOURCES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
+)
+
+# ==============================================================================
+# LANGUAGE SERVER PROTOCOL SERVER
+# ==============================================================================
+
+# LSP-specific sources (just lexer and parser, no Qt dependencies)
+set(LSP_SOURCES
+    src/lsp/main.cpp
+    src/lsp/LanguageServer.cpp
+    src/havel-lang/ast/AST.cpp
+    src/havel-lang/lexer/Lexer.cpp
+    src/havel-lang/parser/Parser.cpp
+    src/utils/Logger.cpp
+)
+
+add_executable(havel-lsp ${LSP_SOURCES})
+
+set_target_properties(havel-lsp PROPERTIES
+    CXX_STANDARD 23
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
+target_include_directories(havel-lsp PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/havel-lang
+)
+
+target_link_libraries(havel-lsp PRIVATE
+    spdlog::spdlog
+    nlohmann_json::nlohmann_json
 )
 
 # Set target properties

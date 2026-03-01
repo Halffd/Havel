@@ -1,0 +1,71 @@
+{
+  "name": "havel-language",
+  "displayName": "Havel Language Support",
+  "description": "Language support for Havel scripting language (.hv files)",
+  "version": "0.1.0",
+  "publisher": "havel-wm",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:havel"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "havel",
+        "aliases": ["Havel", "havel"],
+        "extensions": [".hv", ".havel"],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/havel-icon.png",
+          "dark": "./icons/havel-icon.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "havel",
+        "scopeName": "source.havel",
+        "path": "./syntaxes/havel.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Havel Language",
+      "properties": {
+        "havel.languageServer.path": {
+          "type": "string",
+          "default": "havel-lsp",
+          "description": "Path to the Havel language server executable"
+        },
+        "havel.languageServer.trace": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the language server"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^8.1.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "@types/node": "^18.0.0",
+    "typescript": "^5.0.0",
+    "eslint": "^8.0.0"
+  }
+}

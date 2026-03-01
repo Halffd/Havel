@@ -1,0 +1,133 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Havel",
+    "scopeName": "source.havel",
+    "fileTypes": ["hv", "havel"],
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#numbers" },
+        { "include": "#keywords" },
+        { "include": "#operators" },
+        { "include": "#functions" },
+        { "include": "#variables" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.havel",
+                    "match": "//.*$"
+                },
+                {
+                    "name": "comment.block.havel",
+                    "begin": "/\\*",
+                    "end": "\\*/"
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.havel",
+            "begin": "\"",
+            "end": "\"",
+            "patterns": [
+                {
+                    "name": "constant.character.escape.havel",
+                    "match": "\\\\."
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.float.havel",
+                    "match": "\\b\\d+\\.\\d+([eE][+-]?\\d+)?\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.havel",
+                    "match": "\\b\\d+\\b"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.havel",
+                    "match": "\\b(if|else|while|for|in|loop|break|continue|match|case|default|return|ret)\\b"
+                },
+                {
+                    "name": "keyword.declaration.havel",
+                    "match": "\\b(fn|let|struct|enum|on|off|when|mode|config|devices|modes)\\b"
+                },
+                {
+                    "name": "keyword.exception.havel",
+                    "match": "\\b(try|catch|finally|throw)\\b"
+                },
+                {
+                    "name": "keyword.import.havel",
+                    "match": "\\b(import|from|as|use|with)\\b"
+                },
+                {
+                    "name": "keyword.operator.havel",
+                    "match": "\\b(async|await|yield)\\b"
+                },
+                {
+                    "name": "constant.language.havel",
+                    "match": "\\b(true|false|null)\\b"
+                },
+                {
+                    "name": "entity.name.type.havel",
+                    "match": "\\b(String|Int|Float|Bool|Array|Object|Function)\\b"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.arithmetic.havel",
+                    "match": "(\\+|-|\\*|/|%|\\*\\*|//)"
+                },
+                {
+                    "name": "keyword.operator.comparison.havel",
+                    "match": "(==|!=|<|>|<=|>=)"
+                },
+                {
+                    "name": "keyword.operator.logical.havel",
+                    "match": "(&&|\\|\\||!)"
+                },
+                {
+                    "name": "keyword.operator.assignment.havel",
+                    "match": "(=|\\+=|-=|\\*=|/=|%=)"
+                },
+                {
+                    "name": "keyword.operator.arrow.havel",
+                    "match": "=>"
+                },
+                {
+                    "name": "keyword.operator.pipe.havel",
+                    "match": "\\|"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.havel",
+                    "match": "(?<=fn\\s+)\\w+"
+                },
+                {
+                    "name": "variable.function.call.havel",
+                    "match": "\\b(\\w+)(?=\\s*\\()"
+                }
+            ]
+        },
+        "variables": {
+            "patterns": [
+                {
+                    "name": "variable.other.havel",
+                    "match": "\\b[a-zA-Z_]\\w*\\b"
+                }
+            ]
+        }
+    }
+}

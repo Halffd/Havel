@@ -4807,7 +4807,67 @@ void Interpreter::InitializeWindowBuiltins() {
     (*win)["isActive"] = *v;
   if (auto v = environment->Get("window.setTransparency"))
     (*win)["setTransparency"] = *v;
-  
+
+  // Monitor methods
+  environment->Define(
+      "window.getMonitors",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            auto monitors = havel::DisplayManager::GetMonitors();
+            auto result = std::make_shared<std::vector<HavelValue>>();
+            
+            for (const auto &mon : monitors) {
+              auto monObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+              (*monObj)["name"] = HavelValue(mon.name);
+              (*monObj)["x"] = HavelValue(static_cast<double>(mon.x));
+              (*monObj)["y"] = HavelValue(static_cast<double>(mon.y));
+              (*monObj)["width"] = HavelValue(static_cast<double>(mon.width));
+              (*monObj)["height"] = HavelValue(static_cast<double>(mon.height));
+              (*monObj)["isPrimary"] = HavelValue(mon.isPrimary);
+              result->push_back(HavelValue(monObj));
+            }
+            
+            return HavelValue(result);
+          }));
+
+  environment->Define(
+      "window.getMonitorArea",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            auto monitors = havel::DisplayManager::GetMonitors();
+            
+            if (monitors.empty()) {
+              return HavelValue(nullptr);
+            }
+            
+            // Calculate total area of all monitors
+            int minX = monitors[0].x, minY = monitors[0].y;
+            int maxX = monitors[0].x + monitors[0].width;
+            int maxY = monitors[0].y + monitors[0].height;
+            
+            for (const auto &mon : monitors) {
+              minX = std::min(minX, mon.x);
+              minY = std::min(minY, mon.y);
+              maxX = std::max(maxX, mon.x + mon.width);
+              maxY = std::max(maxY, mon.y + mon.height);
+            }
+            
+            auto areaObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*areaObj)["x"] = HavelValue(static_cast<double>(minX));
+            (*areaObj)["y"] = HavelValue(static_cast<double>(minY));
+            (*areaObj)["width"] = HavelValue(static_cast<double>(maxX - minX));
+            (*areaObj)["height"] = HavelValue(static_cast<double>(maxY - minY));
+            
+            return HavelValue(areaObj);
+          }));
+
+  if (auto v = environment->Get("window.getMonitors"))
+    (*win)["getMonitors"] = *v;
+  if (auto v = environment->Get("window.getMonitorArea"))
+    (*win)["getMonitorArea"] = *v;
+
   // Add property-style accessors (no parentheses needed)
   (*win)["title"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
@@ -5885,6 +5945,7 @@ void Interpreter::InitializeArrayBuiltins() {
       }));
 
   // Array sorted (non-mutating, returns new sorted array)
+  // Usage: sorted(array) or sorted(array, comparator)
   environment->Define(
       "sorted",
       BuiltinFunction([this](
@@ -5898,20 +5959,59 @@ void Interpreter::InitializeArrayBuiltins() {
         if (!array || array->empty())
           return HavelValue(array);
 
-        // Check for homogeneous types
+        // Copy array for sorting
+        auto result = std::make_shared<std::vector<HavelValue>>(*array);
+
+        // Check for custom comparator
+        if (args.size() >= 2 && (args[1].is<BuiltinFunction>() || 
+            args[1].is<std::shared_ptr<HavelFunction>>())) {
+          auto comparator = args[1];
+          
+          std::sort(result->begin(), result->end(),
+            [this, &comparator](const HavelValue &a, const HavelValue &b) {
+              std::vector<HavelValue> callArgs = {a, b};
+              HavelResult cmpResult;
+              
+              if (auto *builtin = comparator.get_if<BuiltinFunction>()) {
+                cmpResult = (*builtin)(callArgs);
+              } else if (auto *userFunc = comparator.get_if<std::shared_ptr<HavelFunction>>()) {
+                auto &func = **userFunc;
+                auto funcEnv = std::make_shared<Environment>(func.closure);
+                for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
+                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
+                }
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                cmpResult = Evaluate(*func.declaration->body);
+                this->environment = originalEnv;
+                
+                if (std::holds_alternative<ReturnValue>(cmpResult)) {
+                  auto ret = std::get<ReturnValue>(cmpResult);
+                  cmpResult = ret.value ? *ret.value : HavelValue();
+                }
+              } else {
+                return false;
+              }
+              
+              if (isError(cmpResult)) return false;
+              double cmpNum = ValueToNumber(unwrap(cmpResult));
+              return cmpNum < 0;
+            });
+          
+          return HavelValue(result);
+        }
+
+        // Default sorting - check for homogeneous types
         bool allNumbers = true;
         bool allStrings = true;
-        for (const auto &item : *array) {
+        for (const auto &item : *result) {
           if (!item.isNumber()) allNumbers = false;
           if (!item.isString()) allStrings = false;
         }
-        
-        if (!allNumbers && !allStrings) {
-          return HavelRuntimeError("sorted() requires homogeneous array (all numbers or all strings)");
-        }
 
-        // Copy array for sorting
-        auto result = std::make_shared<std::vector<HavelValue>>(*array);
+        if (!allNumbers && !allStrings) {
+          return HavelRuntimeError("sorted() requires homogeneous array or comparator function");
+        }
 
         // Use std::sort with appropriate comparator
         if (allNumbers) {
@@ -5930,6 +6030,7 @@ void Interpreter::InitializeArrayBuiltins() {
       }));
 
   // Array sort (mutating, sorts in place)
+  // Usage: sort(array) or sort(array, comparator)
   environment->Define(
       "sort",
       BuiltinFunction([this](
@@ -5943,16 +6044,55 @@ void Interpreter::InitializeArrayBuiltins() {
         if (!array || array->empty())
           return HavelValue(array);
 
-        // Check for homogeneous types
+        // Check for custom comparator
+        if (args.size() >= 2 && (args[1].is<BuiltinFunction>() || 
+            args[1].is<std::shared_ptr<HavelFunction>>())) {
+          auto comparator = args[1];
+          
+          std::sort(array->begin(), array->end(),
+            [this, &comparator](const HavelValue &a, const HavelValue &b) {
+              std::vector<HavelValue> callArgs = {a, b};
+              HavelResult cmpResult;
+              
+              if (auto *builtin = comparator.get_if<BuiltinFunction>()) {
+                cmpResult = (*builtin)(callArgs);
+              } else if (auto *userFunc = comparator.get_if<std::shared_ptr<HavelFunction>>()) {
+                auto &func = **userFunc;
+                auto funcEnv = std::make_shared<Environment>(func.closure);
+                for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
+                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
+                }
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                cmpResult = Evaluate(*func.declaration->body);
+                this->environment = originalEnv;
+                
+                if (std::holds_alternative<ReturnValue>(cmpResult)) {
+                  auto ret = std::get<ReturnValue>(cmpResult);
+                  cmpResult = ret.value ? *ret.value : HavelValue();
+                }
+              } else {
+                return false;
+              }
+              
+              if (isError(cmpResult)) return false;
+              double cmpNum = ValueToNumber(unwrap(cmpResult));
+              return cmpNum < 0;
+            });
+          
+          return HavelValue(array);
+        }
+
+        // Default sorting - check for homogeneous types
         bool allNumbers = true;
         bool allStrings = true;
         for (const auto &item : *array) {
           if (!item.isNumber()) allNumbers = false;
           if (!item.isString()) allStrings = false;
         }
-        
+
         if (!allNumbers && !allStrings) {
-          return HavelRuntimeError("sort() requires homogeneous array (all numbers or all strings)");
+          return HavelRuntimeError("sort() requires homogeneous array or comparator function");
         }
 
         // Use std::sort with appropriate comparator
@@ -5992,6 +6132,88 @@ void Interpreter::InitializeArrayBuiltins() {
           return HavelRuntimeError("swap() index out of bounds");
 
         std::swap((*array)[i], (*array)[j]);
+        return HavelValue(array);
+      }));
+
+  // Array sortByKey (sort array of objects by key)
+  // Usage: sortByKey(array, key) or sortByKey(array, key, comparator)
+  environment->Define(
+      "sortByKey",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("sortByKey() requires (array, key)");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("sortByKey() first arg must be array");
+        
+        auto array = args[0].get<HavelArray>();
+        std::string key = ValueToString(args[1]);
+        
+        if (!array)
+          return HavelRuntimeError("sortByKey() received null array");
+
+        // Check for custom comparator
+        bool hasComparator = args.size() >= 3 && (args[2].is<BuiltinFunction>() || 
+            args[2].is<std::shared_ptr<HavelFunction>>());
+
+        std::sort(array->begin(), array->end(),
+          [this, &key, &args, hasComparator](const HavelValue &a, const HavelValue &b) {
+            auto getKeyValue = [this, &key](const HavelValue &obj) -> HavelValue {
+              if (auto *objMap = obj.get_if<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+                if (*objMap) {
+                  auto it = (*objMap)->find(key);
+                  if (it != (*objMap)->end()) {
+                    return it->second;
+                  }
+                }
+              }
+              return HavelValue(nullptr);
+            };
+            
+            HavelValue valA = getKeyValue(a);
+            HavelValue valB = getKeyValue(b);
+            
+            if (hasComparator) {
+              auto &comparator = args[2];
+              std::vector<HavelValue> callArgs = {valA, valB};
+              HavelResult cmpResult;
+              
+              if (auto *builtin = comparator.get_if<BuiltinFunction>()) {
+                cmpResult = (*builtin)(callArgs);
+              } else if (auto *userFunc = comparator.get_if<std::shared_ptr<HavelFunction>>()) {
+                auto &func = **userFunc;
+                auto funcEnv = std::make_shared<Environment>(func.closure);
+                for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
+                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
+                }
+                auto originalEnv = this->environment;
+                this->environment = funcEnv;
+                cmpResult = Evaluate(*func.declaration->body);
+                this->environment = originalEnv;
+                
+                if (std::holds_alternative<ReturnValue>(cmpResult)) {
+                  auto ret = std::get<ReturnValue>(cmpResult);
+                  cmpResult = ret.value ? *ret.value : HavelValue();
+                }
+              } else {
+                return false;
+              }
+              
+              if (isError(cmpResult)) return false;
+              double cmpNum = ValueToNumber(unwrap(cmpResult));
+              return cmpNum < 0;
+            } else {
+              // Default comparison
+              if (valA.isNumber() && valB.isNumber()) {
+                return valA.asNumber() < valB.asNumber();
+              } else if (valA.isString() && valB.isString()) {
+                return valA.asString() < valB.asString();
+              } else {
+                return ValueToString(valA) < ValueToString(valB);
+              }
+            }
+          });
+
         return HavelValue(array);
       }));
 

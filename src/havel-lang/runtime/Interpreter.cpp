@@ -27,6 +27,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <random>
 #include <regex>
@@ -5881,6 +5882,60 @@ void Interpreter::InitializeArrayBuiltins() {
             result->push_back(args[i]);
           }
         }
+        return HavelValue(result);
+      }));
+
+  // Array sort (quicksort)
+  environment->Define(
+      "sort",
+      BuiltinFunction([this](
+                          const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("sort() requires array");
+        if (!args[0].is<HavelArray>())
+          return HavelRuntimeError("sort() first arg must be array");
+
+        auto array = args[0].get<HavelArray>();
+        if (!array || array->empty())
+          return HavelValue(array);
+
+        // Copy array for sorting
+        auto result = std::make_shared<std::vector<HavelValue>>(*array);
+
+        // Quicksort implementation
+        std::function<void(int, int)> quicksort = [&](int low, int high) {
+          if (low < high) {
+            // Partition
+            auto pivot = (*result)[high];
+            int i = low - 1;
+            
+            for (int j = low; j < high; ++j) {
+              // Compare values
+              bool lessOrEqual = false;
+              if ((*result)[j].isNumber() && pivot.isNumber()) {
+                lessOrEqual = (*result)[j].asNumber() <= pivot.asNumber();
+              } else if ((*result)[j].isString() && pivot.isString()) {
+                lessOrEqual = (*result)[j].asString() <= pivot.asString();
+              } else {
+                // Fallback to string comparison
+                lessOrEqual = ValueToString((*result)[j]) <= ValueToString(pivot);
+              }
+              
+              if (lessOrEqual) {
+                ++i;
+                std::swap((*result)[i], (*result)[j]);
+              }
+            }
+            std::swap((*result)[i + 1], (*result)[high]);
+            int pi = i + 1;
+
+            // Recursively sort partitions
+            quicksort(low, pi - 1);
+            quicksort(pi + 1, high);
+          }
+        };
+
+        quicksort(0, static_cast<int>(result->size()) - 1);
         return HavelValue(result);
       }));
 

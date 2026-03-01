@@ -44,7 +44,9 @@ enum class NodeType {
   PatternLiteral,       // Some(x), [head|tail], {x, y}
   GuardExpression,      // | x when x > 0 -> "positive"
   BlockStatement,       // { ... }
+  BlockExpression,      // { stmt; stmt; expr } - last expr is value
   IfStatement,          // if condition { ... } else { ... }
+  IfExpression,         // if condition { expr } else { expr } - returns value
   TernaryExpression,    // condition ? trueValue : falseValue
   RangeExpression,      // 0..10
   AssignmentExpression, // identifier = value
@@ -457,6 +459,29 @@ struct BlockStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Block Expression ({ stmt; stmt; expr }) - last expression is value
+struct BlockExpression : public Expression {
+  std::vector<std::unique_ptr<Statement>> body;
+  std::unique_ptr<Expression> value;  // Last expression becomes the value
+
+  BlockExpression() { kind = NodeType::BlockExpression; }
+
+  std::string toString() const override {
+    std::string result = "BlockExpr{";
+    for (size_t i = 0; i < body.size(); i++) {
+      if (i > 0) result += "; ";
+      result += body[i]->toString();
+    }
+    if (value) {
+      if (!body.empty()) result += "; ";
+      result += value->toString();
+    }
+    return result + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Hotkey Binding (Havel-specific)
 struct HotkeyBinding : public Statement {
   std::vector<std::unique_ptr<Expression>> hotkeys;
@@ -751,6 +776,33 @@ struct IfStatement : public Statement {
     }
     str += "}";
     return str;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// If Expression - returns a value
+struct IfExpression : public Expression {
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<Expression> thenBranch;   // BlockExpression or single expression
+  std::unique_ptr<Expression> elseBranch;   // Optional
+
+  IfExpression(std::unique_ptr<Expression> cond,
+               std::unique_ptr<Expression> thenB,
+               std::unique_ptr<Expression> elseB = nullptr)
+      : condition(std::move(cond)), thenBranch(std::move(thenB)),
+        elseBranch(std::move(elseB)) {
+    kind = NodeType::IfExpression;
+  }
+
+  std::string toString() const override {
+    std::string str = "IfExpr{if " +
+        (condition ? condition->toString() : "nullptr") +
+        " then " + (thenBranch ? thenBranch->toString() : "nullptr");
+    if (elseBranch) {
+      str += " else " + elseBranch->toString();
+    }
+    return str + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1604,10 +1656,12 @@ public:
   virtual void visitHotkeyLiteral(const HotkeyLiteral &node) = 0;
 
   virtual void visitBlockStatement(const BlockStatement &node) = 0;
+  virtual void visitBlockExpression(const BlockExpression &node) = 0;
 
   virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
 
   virtual void visitIfStatement(const IfStatement &node) = 0;
+  virtual void visitIfExpression(const IfExpression &node) = 0;
 
   virtual void visitLetDeclaration(const LetDeclaration &node) = 0;
 
@@ -1677,6 +1731,10 @@ inline void BlockStatement::accept(ASTVisitor &visitor) const {
   visitor.visitBlockStatement(*this);
 }
 
+inline void BlockExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitBlockExpression(*this);
+}
+
 inline void HotkeyBinding::accept(ASTVisitor &visitor) const {
   visitor.visitHotkeyBinding(*this);
 }
@@ -1727,6 +1785,10 @@ inline void LetDeclaration::accept(ASTVisitor &visitor) const {
 
 inline void IfStatement::accept(ASTVisitor &visitor) const {
   visitor.visitIfStatement(*this);
+}
+
+inline void IfExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitIfExpression(*this);
 }
 
 inline void ReturnStatement::accept(ASTVisitor &visitor) const {

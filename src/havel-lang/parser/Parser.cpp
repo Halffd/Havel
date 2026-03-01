@@ -2104,9 +2104,25 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   }
 
   case havel::TokenType::OpenBrace: {
-    // Object literal - also needs postfix operation support
-    auto obj = parseObjectLiteral();
-    return parsePostfixExpression(std::move(obj));
+    // Could be object literal {key: value} or block expression {stmt; expr}
+    // Look ahead to determine which
+    auto nextTok = at(1);
+    bool isObject = (nextTok.type == havel::TokenType::Identifier ||
+                     nextTok.type == havel::TokenType::String) &&
+                    at(2).type == havel::TokenType::Colon;
+
+    if (isObject) {
+      auto obj = parseObjectLiteral();
+      return parsePostfixExpression(std::move(obj));
+    } else {
+      // Block expression: { stmt; stmt; expr }
+      return parseBlockExpression();
+    }
+  }
+
+  case havel::TokenType::If: {
+    // If expression: if condition { expr } else { expr }
+    return parseIfExpression();
   }
 
   default:
@@ -2271,6 +2287,116 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
   advance(); // consume '}'
 
   return std::make_unique<havel::ast::ObjectLiteral>(std::move(pairs));
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseBlockExpression() {
+  auto blockExpr = std::make_unique<havel::ast::BlockExpression>();
+  blockExpr->line = at().line;
+  blockExpr->column = at().column;
+
+  advance(); // consume '{'
+
+  // Parse statements until we hit an expression (last one becomes value)
+  // or closing brace
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    // Skip newlines and semicolons
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    // Check if this is the final expression (no statement starter)
+    // Statement starters: let, fn, if, while, for, return, etc.
+    bool isStatementStarter =
+        at().type == havel::TokenType::Let ||
+        at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::If ||
+        at().type == havel::TokenType::While ||
+        at().type == havel::TokenType::For ||
+        at().type == havel::TokenType::Loop ||
+        at().type == havel::TokenType::Return ||
+        at().type == havel::TokenType::Break ||
+        at().type == havel::TokenType::Continue ||
+        at().type == havel::TokenType::Switch ||
+        at().type == havel::TokenType::Try ||
+        at().type == havel::TokenType::Throw;
+
+    if (isStatementStarter) {
+      auto stmt = parseStatement();
+      if (stmt) {
+        blockExpr->body.push_back(std::move(stmt));
+      }
+    } else {
+      // This is the final expression
+      auto expr = parseExpression();
+      blockExpr->value = std::move(expr);
+      break;
+    }
+  }
+
+  // Skip trailing newlines/semicolons before closing brace
+  while (at().type == havel::TokenType::NewLine ||
+         at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::EOF_TOKEN) {
+      failAt(at(), "Unexpected end of file in block expression");
+    }
+    failAt(at(), "Expected '}' to close block expression");
+  }
+  advance(); // consume '}'
+
+  return blockExpr;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
+  advance(); // consume 'if'
+
+  // Disable brace call sugar to prevent { from being parsed as part of condition
+  bool prevAllow = allowBraceCallSugar;
+  allowBraceCallSugar = false;
+  auto condition = parseExpression();
+
+  // Expect then branch (block or expression)
+  std::unique_ptr<havel::ast::Expression> thenBranch;
+  if (at().type == havel::TokenType::OpenBrace) {
+    thenBranch = parseBlockExpression();
+  } else {
+    thenBranch = parseExpression();
+  }
+
+  // Optional else branch
+  std::unique_ptr<havel::ast::Expression> elseBranch;
+  // Skip newlines before checking for else
+  while (at().type == havel::TokenType::NewLine ||
+         at().type == havel::TokenType::Semicolon) {
+    advance();
+  }
+  if (at().type == havel::TokenType::Else) {
+    advance(); // consume 'else'
+    if (at().type == havel::TokenType::OpenBrace) {
+      elseBranch = parseBlockExpression();
+    } else if (at().type == havel::TokenType::If) {
+      // else if chain
+      elseBranch = parseIfExpression();
+    } else {
+      elseBranch = parseExpression();
+    }
+  }
+
+  // Save location before moving
+  size_t line = condition->line;
+  size_t column = condition->column;
+
+  auto ifExpr = std::make_unique<havel::ast::IfExpression>(
+      std::move(condition), std::move(thenBranch), std::move(elseBranch));
+  ifExpr->line = line;
+  ifExpr->column = column;
+
+  return ifExpr;
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseArrayPattern() {

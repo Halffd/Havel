@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <filesystem>
 #include <iostream>
 #include <random>
@@ -2898,14 +2899,190 @@ void Interpreter::InitializeSystemBuiltins() {
                      return HavelValue(nullptr);
                    }));
 
+  // Helper function to parse duration string (e.g., "30s", "1h30m20s", "3:10:25.250")
+  auto parseDuration = [](const std::string &durationStr) -> long long {
+    long long totalMs = 0;
+    
+    // Try HH:MM:SS.mmm format first
+    std::regex timeRegex(R"((\d+):(\d+):(\d+)(?:\.(\d+))?)");
+    std::smatch timeMatch;
+    if (std::regex_match(durationStr, timeMatch, timeRegex)) {
+      long long hours = std::stoll(timeMatch[1].str());
+      long long minutes = std::stoll(timeMatch[2].str());
+      long long seconds = std::stoll(timeMatch[3].str());
+      long long millis = 0;
+      if (timeMatch[4].matched) {
+        std::string msStr = timeMatch[4].str();
+        while (msStr.length() < 3) msStr += "0";
+        millis = std::stoll(msStr.substr(0, 3));
+      }
+      return ((hours * 3600 + minutes * 60 + seconds) * 1000) + millis;
+    }
+    
+    // Try HH:MM format
+    std::regex shortTimeRegex(R"((\d+):(\d+))");
+    std::smatch shortMatch;
+    if (std::regex_match(durationStr, shortMatch, shortTimeRegex)) {
+      long long hours = std::stoll(shortMatch[1].str());
+      long long minutes = std::stoll(shortMatch[2].str());
+      return (hours * 3600 + minutes * 60) * 1000;
+    }
+    
+    // Try unit-based format (e.g., "1h30m20s", "30s", "5m")
+    std::regex unitRegex(R"((\d+)(ms|s|m|h|d|w))", std::regex::icase);
+    auto begin = std::sregex_iterator(durationStr.begin(), durationStr.end(), unitRegex);
+    auto end = std::sregex_iterator();
+    
+    for (auto it = begin; it != end; ++it) {
+      long long value = std::stoll((*it)[1].str());
+      std::string unit = (*it)[2].str();
+      
+      // Convert to lowercase for comparison
+      std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+      
+      if (unit == "ms") {
+        totalMs += value;
+      } else if (unit == "s") {
+        totalMs += value * 1000;
+      } else if (unit == "m" || unit == "min") {
+        totalMs += value * 60 * 1000;
+      } else if (unit == "h") {
+        totalMs += value * 3600 * 1000;
+      } else if (unit == "d") {
+        totalMs += value * 24 * 3600 * 1000;
+      } else if (unit == "w") {
+        totalMs += value * 7 * 24 * 3600 * 1000;
+      }
+    }
+    
+    // If no units found, assume milliseconds
+    if (totalMs == 0) {
+      try {
+        totalMs = std::stoll(durationStr);
+      } catch (...) {
+        // Return 0 if parsing fails
+      }
+    }
+    
+    return totalMs;
+  };
+
+  // Helper function to parse time string and calculate milliseconds until that time
+  auto parseTimeUntil = [parseDuration](const std::string &timeStr) -> long long {
+    auto now = std::chrono::system_clock::now();
+    auto nowTime = std::chrono::system_clock::to_time_t(now);
+    std::tm localNow;
+    localtime_r(&nowTime, &localNow);
+    
+    // Try "HH:MM" or "HH:MM:SS" format
+    std::regex timeRegex(R"((\d{1,2}):(\d{2})(?::(\d{2}))?)");
+    std::smatch timeMatch;
+    if (std::regex_match(timeStr, timeMatch, timeRegex)) {
+      int targetHour = std::stoi(timeMatch[1].str());
+      int targetMinute = std::stoi(timeMatch[2].str());
+      int targetSecond = timeMatch[3].matched ? std::stoi(timeMatch[3].str()) : 0;
+      
+      std::tm targetTime = localNow;
+      targetTime.tm_hour = targetHour;
+      targetTime.tm_min = targetMinute;
+      targetTime.tm_sec = targetSecond;
+      
+      auto targetTimestamp = std::chrono::system_clock::from_time_t(mktime(&targetTime));
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(targetTimestamp - now);
+      
+      // If target time has passed today, add 24 hours
+      if (duration.count() < 0) {
+        duration += std::chrono::hours(24);
+      }
+      
+      return duration.count();
+    }
+    
+    // Try day name format: "thursday 8:00", "monday 14:30"
+    std::regex dayTimeRegex(R"((\w+)\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)");
+    std::smatch dayMatch;
+    if (std::regex_match(timeStr, dayMatch, dayTimeRegex)) {
+      std::string dayName = dayMatch[1].str();
+      int targetHour = std::stoi(dayMatch[2].str());
+      int targetMinute = std::stoi(dayMatch[3].str());
+      int targetSecond = dayMatch[4].matched ? std::stoi(dayMatch[4].str()) : 0;
+      
+      // Convert day name to day of week (0=Sunday, 1=Monday, etc.)
+      std::transform(dayName.begin(), dayName.end(), dayName.begin(), ::tolower);
+      int targetDay = -1;
+      if (dayName == "sunday" || dayName == "sun") targetDay = 0;
+      else if (dayName == "monday" || dayName == "mon") targetDay = 1;
+      else if (dayName == "tuesday" || dayName == "tue") targetDay = 2;
+      else if (dayName == "wednesday" || dayName == "wed") targetDay = 3;
+      else if (dayName == "thursday" || dayName == "thu") targetDay = 4;
+      else if (dayName == "friday" || dayName == "fri") targetDay = 5;
+      else if (dayName == "saturday" || dayName == "sat") targetDay = 6;
+      
+      if (targetDay >= 0) {
+        std::tm targetTime = localNow;
+        targetTime.tm_hour = targetHour;
+        targetTime.tm_min = targetMinute;
+        targetTime.tm_sec = targetSecond;
+        targetTime.tm_mday += (targetDay - localNow.tm_wday + 7) % 7;
+        
+        // If today and time has passed, or future day, adjust
+        if (targetDay == localNow.tm_wday) {
+          auto targetTimestamp = std::chrono::system_clock::from_time_t(mktime(&targetTime));
+          auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(targetTimestamp - now);
+          if (duration.count() < 0) {
+            targetTime.tm_mday += 7;
+          }
+        }
+        
+        auto targetTimestamp = std::chrono::system_clock::from_time_t(mktime(&targetTime));
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(targetTimestamp - now);
+        return duration.count();
+      }
+    }
+    
+    // Fall back to duration parsing
+    return parseDuration(timeStr);
+  };
+
   // Core verb functions - global for fast typing
+  // sleep(ms) or sleep("30s") or sleep("1h30m") or sleep("3:10:25")
   environment->Define(
       "sleep",
       BuiltinFunction(
-          [this](const std::vector<HavelValue> &args) -> HavelResult {
+          [this, parseDuration](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
-              return HavelRuntimeError("sleep() requires milliseconds");
-            int ms = static_cast<int>(ValueToNumber(args[0]));
+              return HavelRuntimeError("sleep() requires duration");
+            
+            long long ms = 0;
+            if (args[0].isString()) {
+              ms = parseDuration(args[0].asString());
+            } else {
+              ms = static_cast<long long>(ValueToNumber(args[0]));
+            }
+            
+            if (ms < 0) {
+              return HavelRuntimeError("sleep() duration must be non-negative");
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            return HavelValue(nullptr);
+          }));
+
+  // sleepUntil("HH:MM") or sleepUntil("thursday 8:00")
+  environment->Define(
+      "sleepUntil",
+      BuiltinFunction(
+          [this, parseTimeUntil](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.empty())
+              return HavelRuntimeError("sleepUntil() requires time string");
+            
+            std::string timeStr = args[0].isString() ? args[0].asString() : ValueToString(args[0]);
+            long long ms = parseTimeUntil(timeStr);
+            
+            if (ms < 0) {
+              return HavelRuntimeError("sleepUntil(): invalid time format");
+            }
+            
             std::this_thread::sleep_for(std::chrono::milliseconds(ms));
             return HavelValue(nullptr);
           }));

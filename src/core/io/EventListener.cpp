@@ -1,9 +1,10 @@
 #include "EventListener.hpp"
-#include "../IO.hpp"
-#include "../core/MouseGestureTypes.hpp" // Include mouse gesture types
-#include "../io/HotkeyExecutor.hpp"
-#include "../utils/Logger.hpp"
 #include "KeyMap.hpp"
+#include "HotkeyExecutor.hpp"
+#include "core/IO.hpp"
+#include "core/MouseGestureTypes.hpp"
+#include "core/ConfigManager.hpp"
+#include "utils/Logger.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -58,7 +59,7 @@ static void InstallSignalHandlers() {
   sigaction(SIGSEGV, &sa, nullptr);
   sigaction(SIGQUIT, &sa, nullptr);
 
-  info("Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, SIGSEGV, SIGQUIT");
+  debug("Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, SIGSEGV, SIGQUIT");
 }
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
@@ -129,7 +130,7 @@ EventListener::~EventListener() {
 bool EventListener::Start(const std::vector<std::string> &devicePaths,
                           bool grabDevices) {
   if (running.load()) {
-    info("EventListener already running");
+    warn("EventListener already running");
     return false;
   }
 
@@ -166,7 +167,7 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
         close(fd);
         continue;
       }
-      info("Successfully grabbed device: {} ({})", name, path);
+      debug("Successfully grabbed device: {} ({})", name, path);
     }
 
     DeviceInfo device;
@@ -175,7 +176,7 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
     device.name = name;
     devices.push_back(device);
 
-    info("Opened input device: {} ({})", name, path);
+    debug("Opened input device: {} ({})", name, path);
   }
 
   if (devices.empty()) {
@@ -280,7 +281,7 @@ bool EventListener::SetupUinput() {
     return false;
   }
 
-  info("Uinput device created successfully");
+  debug("Uinput device created successfully");
   return true;
 }
 
@@ -499,8 +500,6 @@ int EventListener::GetCurrentModifiersMask() const {
   return mask;
 }
 void EventListener::EventLoop() {
-  info("EventListener: Starting event loop");
-
   // Signal handling is now set up in Start() before the thread spawns
   // No need to call SetupSignalHandling() here
 
@@ -577,7 +576,7 @@ void EventListener::EventLoop() {
     }
   }
 
-  info("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
+  debug("EventListener: Waiting for {} callbacks", pendingCallbacks.load());
 
   auto shutdownStart = std::chrono::steady_clock::now();
   const auto maxShutdownTime = std::chrono::seconds(5);
@@ -594,7 +593,7 @@ void EventListener::EventLoop() {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 
-  info("EventListener: Stopped");
+  debug("EventListener: Stopped");
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   // Notify that input was received (for watchdog)
@@ -1030,8 +1029,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         }
 
         // Hotkey matched!
-        info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias,
+        if (Conf().GetVerboseKeyLogging()) {
+          info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias,
              ev.code, down);
+        }
         matchedHotkeyIds.push_back(id); // Just store ID
         if (hotkey.grab)
           shouldBlock = true;
@@ -1187,7 +1188,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             // For other combos that don't require wheel, they won't be
             // evaluated anyway due to the gate in EvaluateCombo
             if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
-              info("Wheel combo: '{}'", hotkey.alias);
+              if (Conf().GetVerboseKeyLogging()) {
+                  info("Wheel combo: '{}'", hotkey.alias);
+              }
               wheelHotkeyIds.push_back(id); // Store ID
               if (hotkey.grab)
                 wheelHotkeyShouldBlock = true;
@@ -1195,8 +1198,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
               // This shouldn't happen, but just in case - evaluate normally if
               // it has the flag
               if (EvaluateCombo(hotkey)) {
-                info("Non-wheel combo with requiresWheel flag: '{}'",
-                     hotkey.alias);
+                if (Conf().GetVerboseKeyLogging()) {
+                  info("Non-wheel combo with requiresWheel flag: '{}'",
+                       hotkey.alias);
+                }
                 wheelHotkeyIds.push_back(id); // Store ID
                 if (hotkey.grab)
                   wheelHotkeyShouldBlock = true;
@@ -1226,7 +1231,9 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           }
 
           // Hotkey matched!
-          info("Wheel hotkey: '{}' dir={}", hotkey.alias, wheelDirection);
+          if (Conf().GetVerboseKeyLogging()) {
+            info("Wheel hotkey: '{}' dir={}", hotkey.alias, wheelDirection);
+          }
           wheelHotkeyIds.push_back(id); // Store ID
 
           if (hotkey.grab)
@@ -2056,7 +2063,7 @@ void EventListener::ReleaseAllVirtualKeys() {
   if (pressedVirtualKeys.empty())
     return;
 
-  info("Releasing {} pressed virtual keys", pressedVirtualKeys.size());
+  debug("Releasing {} pressed virtual keys", pressedVirtualKeys.size());
 
   // Copy the set to avoid use-after-free if SendUinputEvent modifies it
   std::unordered_set<int> keysToRelease = pressedVirtualKeys;
@@ -2230,7 +2237,7 @@ void EventListener::SetupSignalHandling() {
     return;
   }
 
-  info("Signal handling: signalfd created (traditional handlers are primary defense)");
+  debug("Signal handling: signalfd created (traditional handlers are primary defense)");
 }
 
 void EventListener::ProcessSignal() {
@@ -2245,7 +2252,7 @@ void EventListener::ProcessSignal() {
   }
 
   int sig = si.ssi_signo;
-  info("EventListener received signal: {}", sig);
+  debug("EventListener received signal: {}", sig);
 
   // Handle emergency cleanup immediately in the same thread
   switch (sig) {
@@ -2253,7 +2260,7 @@ void EventListener::ProcessSignal() {
   case SIGINT:
   case SIGHUP:
   case SIGQUIT:
-    info("Emergency shutdown: Ungrabbing all devices immediately in "
+    debug("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
 
     // LAYER 2: Use ForceUngrabAllDevices() for consistent cleanup
@@ -2270,12 +2277,12 @@ void EventListener::ProcessSignal() {
       write(shutdownFd, &val, sizeof(val));
     }
 
-    info("Emergency shutdown complete in EventListener thread");
+    debug("Emergency shutdown complete in EventListener thread");
     std::exit(sig);
     break;
   default:
     // Other signals, just log
-    info("Received unhandled signal: {}", sig);
+    debug("Received unhandled signal: {}", sig);
     break;
   }
 }

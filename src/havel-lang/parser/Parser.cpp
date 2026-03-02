@@ -2093,9 +2093,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       // Restore position and re-parse as grouped expression
       position = savePos;
     }
-    
-    // Parse as grouped expression (either not a lambda, or lambda check failed)
-    advance(); // consume '('
+
+    // Parse as grouped expression
+    // If mightBeLambda was true, position was restored, so we need to consume '('
+    // If mightBeLambda was false, '(' was already consumed at the start
+    if (mightBeLambda) {
+      advance(); // consume '(' since position was restored
+    }
+    // else: '(' already consumed, don't consume again
+
     auto expr = parseExpression();
     if (at().type != havel::TokenType::CloseParen) {
       auto errTok = at();

@@ -112,6 +112,7 @@ enum class TokenType {
   OpenBracket,  // [
   CloseBracket, // ]
   DotDot,       // ..
+  Spread,       // ... for spread operator
   Hash,         // # for set literals
   Try,          // try
   Catch,        // catch

@@ -582,6 +582,15 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle ... (spread operator) - must check before ..
+    // Note: c is already consumed by advance(), so peek() is at position+1
+    if (c == '.' && peek() == '.' && peek(1) == '.') {
+      advance(); // consume second '.'
+      advance(); // consume third '.'
+      tokens.push_back(makeToken("...", TokenType::Spread));
+      continue;
+    }
+
     // Handle .. (range operator)
     if (c == '.' && peek() == '.') {
       advance(); // consume second '.'

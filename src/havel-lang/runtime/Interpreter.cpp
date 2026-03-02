@@ -954,7 +954,24 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       lastResult = argRes;
       return;
     }
-    args.push_back(unwrap(argRes));
+    
+    // Check if this is a spread expression
+    if (dynamic_cast<const ast::SpreadExpression *>(arg.get())) {
+      auto value = unwrap(argRes);
+      // Spread arrays - flatten elements into args
+      if (auto *arrPtr = value.get_if<HavelArray>()) {
+        if (*arrPtr) {
+          for (const auto &item : **arrPtr) {
+            args.push_back(item);
+          }
+        }
+      } else {
+        // Non-array spread - add as single arg
+        args.push_back(value);
+      }
+    } else {
+      args.push_back(unwrap(argRes));
+    }
   }
 
   if (auto *builtin = callee.get_if<BuiltinFunction>()) {
@@ -1439,10 +1456,43 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
       lastResult = result;
       return;
     }
-    array->push_back(unwrap(result));
+    
+    // Check if this is a spread expression
+    if (dynamic_cast<const ast::SpreadExpression *>(element.get())) {
+      auto value = unwrap(result);
+      // Spread arrays - flatten one level
+      if (auto *arrPtr = value.get_if<HavelArray>()) {
+        if (*arrPtr) {
+          for (const auto &item : **arrPtr) {
+            array->push_back(item);
+          }
+        }
+      }
+      // Spread objects in array context - just add the object
+      else if (auto *objPtr = value.get_if<HavelObject>()) {
+        array->push_back(value);
+      }
+      else {
+        // Non-array, non-object spread - add as-is
+        array->push_back(value);
+      }
+    } else {
+      array->push_back(unwrap(result));
+    }
   }
 
   lastResult = HavelValue(array);
+}
+
+void Interpreter::visitSpreadExpression(const ast::SpreadExpression &node) {
+  // Spread expressions are handled by their container (array/object literal)
+  // This is just a fallback - should not normally be reached
+  auto result = Evaluate(*node.target);
+  if (isError(result)) {
+    lastResult = result;
+    return;
+  }
+  lastResult = unwrap(result);
 }
 
 void Interpreter::visitObjectLiteral(const ast::ObjectLiteral &node) {
@@ -1454,7 +1504,21 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral &node) {
       lastResult = result;
       return;
     }
-    (*object)[key] = unwrap(result);
+    
+    // Check if this is a spread expression (marked with "__spread__" key)
+    if (key == "__spread__") {
+      auto value = unwrap(result);
+      // Spread objects - merge properties
+      if (auto *objPtr = value.get_if<HavelObject>()) {
+        if (*objPtr) {
+          for (const auto &[k, v] : **objPtr) {
+            (*object)[k] = v;  // Later keys override earlier ones
+          }
+        }
+      }
+    } else {
+      (*object)[key] = unwrap(result);
+    }
   }
 
   lastResult = HavelValue(object);

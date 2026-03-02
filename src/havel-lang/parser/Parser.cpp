@@ -2167,15 +2167,23 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
     if (at().type == havel::TokenType::CloseParen) {
       break;
     }
-    
-    auto arg = parseExpression();
+
+    // Check for spread operator
+    std::unique_ptr<havel::ast::Expression> arg;
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      auto target = parseExpression();
+      arg = std::make_unique<havel::ast::SpreadExpression>(std::move(target));
+    } else {
+      arg = parseExpression();
+    }
     call->args.push_back(std::move(arg));
 
     // Skip newlines after argument
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    
+
     if (at().type == havel::TokenType::Comma) {
       advance(); // consume ','
     } else if (at().type != havel::TokenType::CloseParen) {
@@ -2239,7 +2247,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
       break;
     }
 
-    auto element = parseExpression();
+    // Check for spread operator
+    std::unique_ptr<havel::ast::Expression> element;
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      auto target = parseExpression();
+      element = std::make_unique<havel::ast::SpreadExpression>(std::move(target));
+    } else {
+      element = parseExpression();
+    }
     elements.push_back(std::move(element));
 
     if (at().type == havel::TokenType::Comma) {
@@ -2278,6 +2294,23 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
       break;
     }
 
+    // Check for spread operator
+    if (at().type == havel::TokenType::Spread) {
+      advance(); // consume '...'
+      // For object spread, we use a special key "__spread__" to mark it
+      auto target = parseExpression();
+      auto spreadExpr = std::make_unique<havel::ast::SpreadExpression>(std::move(target));
+      pairs.push_back({"__spread__", std::move(spreadExpr)});
+      
+      // Allow comma, newline, or semicolon as separators
+      if (at().type == havel::TokenType::Comma ||
+          at().type == havel::TokenType::NewLine ||
+          at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      continue;
+    }
+
     // Parse key - can be identifier or string
     std::string key;
     if (at().type == havel::TokenType::Identifier) {
@@ -2285,7 +2318,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
     } else if (at().type == havel::TokenType::String) {
       key = advance().value;
     } else {
-      failAt(at(), "Expected identifier or string as object key");
+      failAt(at(), "Expected identifier, string, or spread for object literal");
     }
 
     // Expect colon

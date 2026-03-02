@@ -2242,7 +2242,12 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
 
   // Parse array elements
   while (notEOF() && at().type != havel::TokenType::CloseBracket) {
-    // Handle trailing comma
+    // Skip newlines before element
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
+    // Handle trailing comma or closing bracket
     if (at().type == havel::TokenType::CloseBracket) {
       break;
     }
@@ -2257,6 +2262,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayLiteral() {
       element = parseExpression();
     }
     elements.push_back(std::move(element));
+
+    // Skip newlines before checking for comma or closing bracket
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
 
     if (at().type == havel::TokenType::Comma) {
       advance(); // consume ','

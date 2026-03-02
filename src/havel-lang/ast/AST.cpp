@@ -164,6 +164,18 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 
+  void visitSpreadExpression(const SpreadExpression &node) override {
+    out << getIndent() << "SpreadExpression {..." << std::endl;
+    indentLevel++;
+    if (node.target) {
+      node.target->accept(*this);
+    } else {
+      out << getIndent() << "nullptr_target" << std::endl;
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
   void visitStringLiteral(const StringLiteral &node) override {
     // Use the toString method for literals as it's already well-formatted for
     // them

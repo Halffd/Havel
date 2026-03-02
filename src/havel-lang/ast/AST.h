@@ -71,6 +71,7 @@ enum class NodeType {
   ListExpression,   // [1, 2, 3]
   ArrayLiteral,     // [1, 2, 3] - actual implementation
   ObjectLiteral,    // {name: "John", age: 30} - actual implementation
+  SpreadExpression, // ...array, ...object
   ConfigBlock,      // config { ... }
   DevicesBlock,     // devices { ... }
   ModesBlock,       // modes { ... }
@@ -1278,6 +1279,22 @@ struct ObjectLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Spread Expression (...array or ...object)
+struct SpreadExpression : public Expression {
+  std::unique_ptr<Expression> target;
+
+  SpreadExpression(std::unique_ptr<Expression> t)
+      : target(std::move(t)) {
+    kind = NodeType::SpreadExpression;
+  }
+
+  std::string toString() const override {
+    return "SpreadExpr{..." + (target ? target->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Set Expression (#{1, 2, 3})
 struct SetExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> elements;
@@ -1688,6 +1705,7 @@ public:
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
+  virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
@@ -1817,6 +1835,10 @@ inline void ArrayLiteral::accept(ASTVisitor &visitor) const {
 
 inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitObjectLiteral(*this);
+}
+
+inline void SpreadExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitSpreadExpression(*this);
 }
 
 inline void SetExpression::accept(ASTVisitor &visitor) const {

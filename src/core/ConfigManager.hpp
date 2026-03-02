@@ -721,5 +721,5 @@ extern havel::Configs &g_Configs;
 
 namespace havel {
 // Inline function to access the global config instance
-inline Configs &GlobalConfig() { return Configs::Get(); }
+inline Configs &Conf() { return Configs::Get(); }
 } // namespace havel

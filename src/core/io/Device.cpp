@@ -388,10 +388,9 @@ std::vector<Device> Device::getAllDevices() {
 
 std::vector<DeviceInfo> Device::findKeyboards() {
     std::vector<Device> allDevices = getAllDevices();
-    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> keyboards;
 
-    for (const auto& device : mergedDevices) {
+    for (const auto& device : allDevices) {
         if (device.type == DeviceType::Keyboard) {
             keyboards.push_back(device.toDeviceInfo());
         }
@@ -408,10 +407,9 @@ std::vector<DeviceInfo> Device::findKeyboards() {
 
 std::vector<DeviceInfo> Device::findMice() {
     std::vector<Device> allDevices = getAllDevices();
-    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> mice;
 
-    for (const auto& device : mergedDevices) {
+    for (const auto& device : allDevices) {
         if (device.type == DeviceType::Mouse) {
             mice.push_back(device.toDeviceInfo());
         }
@@ -427,10 +425,9 @@ std::vector<DeviceInfo> Device::findMice() {
 
 std::vector<DeviceInfo> Device::findGamepads() {
     std::vector<Device> allDevices = getAllDevices();
-    std::vector<Device> mergedDevices = mergeDevicesByVendorProduct(allDevices);
     std::vector<DeviceInfo> gamepads;
 
-    for (const auto& device : mergedDevices) {
+    for (const auto& device : allDevices) {
         if (device.type == DeviceType::Gamepad || device.type == DeviceType::Joystick) {
             gamepads.push_back(device.toDeviceInfo());
         }

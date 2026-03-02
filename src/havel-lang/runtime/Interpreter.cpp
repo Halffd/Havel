@@ -744,6 +744,8 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     }
 
     if (action) {
+      // Lock interpreter mutex to protect environment and lastResult
+      std::lock_guard<std::mutex> lock(this->interpreterMutex);
       auto result = this->Evaluate(*action);
       if (isError(result)) {
         std::cerr << "Runtime error in hotkey: " << getErrorMessage(result)
@@ -10782,6 +10784,8 @@ void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
       if (destroyedFlag->load()) return;  // Interpreter destroyed, skip action
       try {
         if (action) {
+          // Lock interpreter mutex to protect environment and lastResult
+          std::lock_guard<std::mutex> lock(self->interpreterMutex);
           auto result = self->Evaluate(*action);
           if (isError(result)) {
             std::cerr << "Conditional hotkey action evaluation failed: "
@@ -10861,6 +10865,8 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
         auto actionFunc = [self, destroyedFlag, action = hotkeyBinding->action.get()]() {
           if (destroyedFlag->load()) return;  // Interpreter destroyed
           if (action) {
+            // Lock interpreter mutex to protect environment and lastResult
+            std::lock_guard<std::mutex> lock(self->interpreterMutex);
             auto result = self->Evaluate(*action);
             if (isError(result)) {
               std::cerr << "When block hotkey action failed: "
@@ -10922,6 +10928,8 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
             [self, destroyedFlag, action = conditionalHotkey->binding->action.get()]() {
               if (destroyedFlag->load()) return;  // Interpreter destroyed
               if (action) {
+                // Lock interpreter mutex to protect environment and lastResult
+                std::lock_guard<std::mutex> lock(self->interpreterMutex);
                 auto result = self->Evaluate(*action);
                 if (isError(result)) {
                   std::cerr << "Nested conditional hotkey action failed: "
@@ -10989,6 +10997,8 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
             auto innerActionFunc =
                 [self, action = innerHotkeyBinding->action.get()]() {
                   if (action) {
+                    // Lock interpreter mutex to protect environment and lastResult
+                    std::lock_guard<std::mutex> lock(self->interpreterMutex);
                     auto result = self->Evaluate(*action);
                     if (isError(result)) {
                       std::cerr << "Nested when block hotkey action failed: "

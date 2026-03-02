@@ -2257,11 +2257,23 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         std::vector<std::string> parts;
         size_t start = 0;
         while (ampPos != std::string::npos) {
-          parts.push_back(parsed.keyPart.substr(start, ampPos - start));
+          std::string part = parsed.keyPart.substr(start, ampPos - start);
+          // Trim whitespace
+          size_t first = part.find_first_not_of(" \t");
+          size_t last = part.find_last_not_of(" \t");
+          if (first != std::string::npos) {
+            parts.push_back(part.substr(first, last - first + 1));
+          }
           start = ampPos + 1;
           ampPos = parsed.keyPart.find('&', start);
         }
-        parts.push_back(parsed.keyPart.substr(start));
+        std::string lastPart = parsed.keyPart.substr(start);
+        // Trim whitespace from last part
+        size_t first = lastPart.find_first_not_of(" \t");
+        size_t last = lastPart.find_last_not_of(" \t");
+        if (first != std::string::npos) {
+          parts.push_back(lastPart.substr(first, last - first + 1));
+        }
 
         hotkey.type = HotkeyType::Combo;
         for (const auto &part : parts) {
@@ -2402,11 +2414,23 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       std::vector<std::string> parts;
       size_t start = 0;
       while (ampPos != std::string::npos) {
-        parts.push_back(parsed.keyPart.substr(start, ampPos - start));
+        std::string part = parsed.keyPart.substr(start, ampPos - start);
+        // Trim whitespace
+        size_t first = part.find_first_not_of(" \t");
+        size_t last = part.find_last_not_of(" \t");
+        if (first != std::string::npos) {
+          parts.push_back(part.substr(first, last - first + 1));
+        }
         start = ampPos + 1;
         ampPos = parsed.keyPart.find('&', start);
       }
-      parts.push_back(parsed.keyPart.substr(start));
+      std::string lastPart = parsed.keyPart.substr(start);
+      // Trim whitespace from last part
+      size_t first = lastPart.find_first_not_of(" \t");
+      size_t last = lastPart.find_last_not_of(" \t");
+      if (first != std::string::npos) {
+        parts.push_back(lastPart.substr(first, last - first + 1));
+      }
 
       hotkey.type = HotkeyType::Combo;
       for (const auto &part : parts) {

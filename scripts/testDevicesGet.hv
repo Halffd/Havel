@@ -1,0 +1,7 @@
+
+^+!a => {
+  let dev = audio.getDevices()
+  for device in dev {
+    print("Device: " + device.name + " (" + device.description + ") Vol: " + (device.volume * 100))
+  }
+}

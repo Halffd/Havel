@@ -405,6 +405,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto expr = parseExpression();
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
+  case havel::TokenType::Colon:
+    return parseSleepStatement();
+  case havel::TokenType::Greater:
+    return parseInputStatement();
   default: {
     auto expr = parseExpression();
 
@@ -499,6 +503,138 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
   }
 
   return std::make_unique<havel::ast::ReturnStatement>(std::move(value));
+}
+
+// Parse sleep statement: :1500 or :1h30m or :3:10:25
+std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
+  advance(); // consume ':'
+  
+  // Parse duration - can be number, string, or time format
+  std::string duration;
+  if (at().type == havel::TokenType::Number || at().type == havel::TokenType::String) {
+    duration = advance().value;
+  } else {
+    // Try to parse as identifier (for unquoted strings like :1h30m)
+    // For now, just consume tokens until newline/semicolon
+    while (at().type != havel::TokenType::NewLine &&
+           at().type != havel::TokenType::Semicolon &&
+           at().type != havel::TokenType::EOF_TOKEN &&
+           at().type != havel::TokenType::CloseBrace) {
+      duration += at().value;
+      advance();
+    }
+  }
+  
+  return std::make_unique<havel::ast::SleepStatement>(duration);
+}
+
+// Parse input statement: > "text" or > {Enter} or > lmb or > m(100, 200)
+std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
+  advance(); // consume '>'
+  
+  std::vector<havel::ast::InputCommand> commands;
+  
+  // Parse sequence of input commands until newline or end of block
+  while (at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+    
+    havel::ast::InputCommand cmd;
+    
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+    
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+    
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
+      if (at().type == havel::TokenType::Identifier) {
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+    
+    // Check for identifier: lmb, rmb, m, r, w
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+      
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w") {
+        advance(); // consume identifier
+
+        // Parse function call: m(x, y)
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+
+          // Parse x argument - just capture the token value for now
+          if (at().type != havel::TokenType::CloseParen) {
+            cmd.xExprStr = at().value;
+            advance();
+          }
+
+          // Parse optional y argument
+          if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+            if (at().type != havel::TokenType::CloseParen) {
+              cmd.yExprStr = at().value;
+              advance();
+            }
+          }
+
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+
+          if (ident == "m") {
+            cmd.type = havel::ast::InputCommand::MouseMove;
+          } else if (ident == "r") {
+            cmd.type = havel::ast::InputCommand::MouseRelative;
+          } else if (ident == "w") {
+            cmd.type = havel::ast::InputCommand::MouseWheel;
+          }
+          commands.push_back(cmd);
+        }
+        continue;
+      }
+    }
+    
+    // Skip unknown token
+    advance();
+  }
+  
+  return std::make_unique<havel::ast::InputStatement>(commands);
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
@@ -1778,7 +1914,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
                                                          std::move(operand));
   }
 
-  return parsePrimaryExpression();
+  return parsePostfixExpression(parsePrimaryExpression());
 }
 havel::TokenType Parser::getBinaryOperatorToken(ast::BinaryOperator op) {
   switch (op) {
@@ -2123,15 +2259,21 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   case havel::TokenType::OpenBrace: {
     // Could be object literal {key: value} or block expression {stmt; expr}
     // Look ahead to determine which, skipping newlines
+    // Note: We haven't consumed '{' yet, so lookahead starts at next token
     size_t savePos = position;
-    size_t lookahead = 1;
+    size_t lookahead = 1;  // Skip the '{' token
     // Skip newlines to find first significant token
     while (at(lookahead).type == havel::TokenType::NewLine) {
       lookahead++;
     }
     auto nextTok = at(lookahead);
+    // Object keys can be identifiers, strings, or keywords (like 'config')
     bool isObject = (nextTok.type == havel::TokenType::Identifier ||
-                     nextTok.type == havel::TokenType::String) &&
+                     nextTok.type == havel::TokenType::String ||
+                     nextTok.type == havel::TokenType::Config ||
+                     nextTok.type == havel::TokenType::Devices ||
+                     nextTok.type == havel::TokenType::Modes ||
+                     nextTok.type == havel::TokenType::Mode) &&
                     at(lookahead + 1).type == havel::TokenType::Colon;
 
     if (isObject) {
@@ -2210,12 +2352,17 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
   auto dotTok = at();  // Save token location before consuming
   advance(); // consume '.'
 
-  if (at().type != havel::TokenType::Identifier) {
+  // Property names can be identifiers or certain keywords (like 'config')
+  if (at().type != havel::TokenType::Identifier &&
+      at().type != havel::TokenType::Config &&
+      at().type != havel::TokenType::Devices &&
+      at().type != havel::TokenType::Modes &&
+      at().type != havel::TokenType::Mode) {
     failAt(at(), "Expected property name after '.'");
   }
 
   auto property = advance();
-  
+
   auto member = std::make_unique<havel::ast::MemberExpression>();
   member->object = std::move(object);
   member->property = std::make_unique<havel::ast::Identifier>(property.value);
@@ -2327,9 +2474,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
       continue;
     }
 
-    // Parse key - can be identifier or string
+    // Parse key - can be identifier, string, or certain keywords
     std::string key;
-    if (at().type == havel::TokenType::Identifier) {
+    if (at().type == havel::TokenType::Identifier ||
+        at().type == havel::TokenType::Config ||
+        at().type == havel::TokenType::Devices ||
+        at().type == havel::TokenType::Modes ||
+        at().type == havel::TokenType::Mode) {
       key = advance().value;
     } else if (at().type == havel::TokenType::String) {
       key = advance().value;

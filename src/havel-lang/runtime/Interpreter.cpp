@@ -777,6 +777,144 @@ void Interpreter::visitExpressionStatement(
   lastResult = Evaluate(*node.expression);
 }
 
+void Interpreter::visitSleepStatement(const ast::SleepStatement &node) {
+  // Parse duration using the same logic as sleep() builtin
+  long long ms = 0;
+  
+  // Try to parse as number first
+  try {
+    ms = std::stoll(node.duration);
+  } catch (...) {
+    // Use the duration string parser
+    ms = 0;
+    
+    // Try HH:MM:SS.mmm format
+    std::regex timeRegex(R"((\d+):(\d+):(\d+)(?:\.(\d+))?)");
+    std::smatch timeMatch;
+    if (std::regex_match(node.duration, timeMatch, timeRegex)) {
+      long long hours = std::stoll(timeMatch[1].str());
+      long long minutes = std::stoll(timeMatch[2].str());
+      long long seconds = std::stoll(timeMatch[3].str());
+      long long millis = 0;
+      if (timeMatch[4].matched) {
+        std::string msStr = timeMatch[4].str();
+        while (msStr.length() < 3) msStr += "0";
+        millis = std::stoll(msStr.substr(0, 3));
+      }
+      ms = ((hours * 3600 + minutes * 60 + seconds) * 1000) + millis;
+    } else {
+      // Try unit-based format
+      std::regex unitRegex(R"((\d+)(ms|s|m|h|d|w))", std::regex::icase);
+      auto begin = std::sregex_iterator(node.duration.begin(), node.duration.end(), unitRegex);
+      auto end = std::sregex_iterator();
+      
+      for (auto it = begin; it != end; ++it) {
+        long long value = std::stoll((*it)[1].str());
+        std::string unit = (*it)[2].str();
+        std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+        
+        if (unit == "ms") ms += value;
+        else if (unit == "s") ms += value * 1000;
+        else if (unit == "m" || unit == "min") ms += value * 60 * 1000;
+        else if (unit == "h") ms += value * 3600 * 1000;
+        else if (unit == "d") ms += value * 24 * 3600 * 1000;
+        else if (unit == "w") ms += value * 7 * 24 * 3600 * 1000;
+      }
+    }
+  }
+  
+  if (ms > 0) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  }
+  lastResult = HavelValue(nullptr);
+}
+
+void Interpreter::visitInputStatement(const ast::InputStatement &node) {
+  for (const auto &cmd : node.commands) {
+    switch (cmd.type) {
+      case ast::InputCommand::SendText:
+        io->Send(cmd.text.c_str());
+        break;
+        
+      case ast::InputCommand::SendKey:
+        io->Send(("{ " + cmd.key + " }").c_str());
+        break;
+        
+      case ast::InputCommand::MouseClick:
+        if (cmd.text == "left") {
+          io->MouseClick(1);
+        } else if (cmd.text == "right") {
+          io->MouseClick(2);
+        }
+        break;
+
+      case ast::InputCommand::MouseMove: {
+        double x = 0, y = 0;
+        if (!cmd.xExprStr.empty()) {
+          try { x = std::stod(cmd.xExprStr); } catch (...) {}
+        }
+        if (!cmd.yExprStr.empty()) {
+          try { y = std::stod(cmd.yExprStr); } catch (...) {}
+        }
+        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y));
+        break;
+      }
+
+      case ast::InputCommand::MouseRelative: {
+        double x = 0, y = 0;
+        if (!cmd.xExprStr.empty()) {
+          try { x = std::stod(cmd.xExprStr); } catch (...) {}
+        }
+        if (!cmd.yExprStr.empty()) {
+          try { y = std::stod(cmd.yExprStr); } catch (...) {}
+        }
+        io->MouseMove(static_cast<int>(x), static_cast<int>(y));
+        break;
+      }
+
+      case ast::InputCommand::MouseWheel: {
+        double x = 0, y = 0;
+        if (!cmd.xExprStr.empty()) {
+          try { x = std::stod(cmd.xExprStr); } catch (...) {}
+        }
+        if (!cmd.yExprStr.empty()) {
+          try { y = std::stod(cmd.yExprStr); } catch (...) {}
+        }
+        // Use Send for wheel - simulate with key events
+        io->Send("{WheelUp}");
+        break;
+      }
+        
+      case ast::InputCommand::Sleep: {
+        long long ms = 0;
+        try {
+          ms = std::stoll(cmd.duration);
+        } catch (...) {
+          // Use duration parser (simplified)
+          ms = 0;
+          std::regex unitRegex(R"((\d+)(ms|s|m|h))", std::regex::icase);
+          auto begin = std::sregex_iterator(cmd.duration.begin(), cmd.duration.end(), unitRegex);
+          auto end = std::sregex_iterator();
+          for (auto it = begin; it != end; ++it) {
+            long long value = std::stoll((*it)[1].str());
+            std::string unit = (*it)[2].str();
+            std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+            if (unit == "ms") ms += value;
+            else if (unit == "s") ms += value * 1000;
+            else if (unit == "m" || unit == "min") ms += value * 60 * 1000;
+            else if (unit == "h") ms += value * 3600 * 1000;
+          }
+        }
+        if (ms > 0) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        }
+        break;
+      }
+    }
+  }
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   auto leftRes = Evaluate(*node.left);
   if (isError(leftRes)) {

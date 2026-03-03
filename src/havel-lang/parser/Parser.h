@@ -93,6 +93,8 @@ private:
   std::unique_ptr<ast::Statement> parseOnStartStatement();
   std::unique_ptr<ast::Statement> parseFunctionDeclaration();
   std::unique_ptr<ast::Statement> parseReturnStatement();
+  std::unique_ptr<ast::Statement> parseSleepStatement();
+  std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
   std::unique_ptr<ast::BlockStatement> parseBlockStatement();
   std::unique_ptr<ast::Statement> parseWhenBlock();

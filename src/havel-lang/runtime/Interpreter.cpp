@@ -3363,6 +3363,11 @@ void Interpreter::InitializeSystemBuiltins() {
   // Get current mode
   (*modeObj)["get"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
+        // Try HotkeyManager first for authoritative mode
+        if (hotkeyManager) {
+          return HavelValue(hotkeyManager->getMode());
+        }
+        // Fallback to environment variable
         auto currentModeOpt = environment->Get("__current_mode__");
         std::string currentMode = "default";
         if (currentModeOpt && (*currentModeOpt).is<std::string>()) {
@@ -3387,14 +3392,16 @@ void Interpreter::InitializeSystemBuiltins() {
                               HavelValue(std::string("default")));
         }
 
-        // Set new current mode
+        // Set new current mode in environment
         environment->Define("__current_mode__", HavelValue(newMode));
-        
-        // Trigger conditional hotkey update
+
+        // Sync with HotkeyManager
         if (hotkeyManager) {
+          hotkeyManager->setMode(newMode);
+          // Trigger conditional hotkey update
           hotkeyManager->updateAllConditionalHotkeys();
         }
-        
+
         return HavelValue(nullptr);
       });
 
@@ -3414,9 +3421,17 @@ void Interpreter::InitializeSystemBuiltins() {
           previousMode = (*previousModeOpt).get<std::string>();
         }
 
-        // Swap modes
+        // Swap modes in environment
         environment->Define("__previous_mode__", HavelValue(currentMode));
         environment->Define("__current_mode__", HavelValue(previousMode));
+        
+        // Sync with HotkeyManager
+        if (hotkeyManager) {
+          hotkeyManager->setMode(previousMode);
+          // Trigger conditional hotkey update
+          hotkeyManager->updateAllConditionalHotkeys();
+        }
+        
         return HavelValue(nullptr);
       });
 
@@ -3603,7 +3618,7 @@ void Interpreter::InitializeSystemBuiltins() {
             (void)args;
             if (!hotkeyManager)
               return HavelRuntimeError("HotkeyManager not available");
-            
+
             auto list = hotkeyManager->getHotkeyList();
             auto resultArray = std::make_shared<std::vector<HavelValue>>();
             for (const auto& hk : list) {
@@ -3614,6 +3629,53 @@ void Interpreter::InitializeSystemBuiltins() {
               resultArray->push_back(HavelValue(hkObj));
             }
             return HavelValue(resultArray);
+          }));
+
+  // hotkey.getConditional() - Get all conditional hotkeys
+  environment->Define(
+      "hotkey.getConditional",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+
+            auto list = hotkeyManager->getConditionalHotkeyList();
+            auto resultArray = std::make_shared<std::vector<HavelValue>>();
+            for (const auto& ch : list) {
+              auto chObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+              (*chObj)["key"] = HavelValue(ch.key);
+              (*chObj)["condition"] = HavelValue(ch.condition);
+              (*chObj)["enabled"] = HavelValue(ch.enabled);
+              (*chObj)["active"] = HavelValue(ch.active);
+              resultArray->push_back(HavelValue(chObj));
+            }
+            return HavelValue(resultArray);
+          }));
+
+  // hotkey.monitor() - Enable/disable conditional hotkey monitoring
+  environment->Define(
+      "hotkey.monitor",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+            
+            bool enable = args.empty() || (args[0].isBool() && args[0].asBool());
+            hotkeyManager->setConditionalHotkeysEnabled(enable);
+            return HavelValue(enable);
+          }));
+
+  // hotkey.isMonitoring() - Check if conditional hotkey monitoring is enabled
+  environment->Define(
+      "hotkey.isMonitoring",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+            
+            return HavelValue(hotkeyManager->getConditionalHotkeysEnabled());
           }));
 
   auto hotkeyObj =
@@ -3632,6 +3694,12 @@ void Interpreter::InitializeSystemBuiltins() {
     (*hotkeyObj)["clearAll"] = *v;
   if (auto v = environment->Get("hotkey.list"))
     (*hotkeyObj)["list"] = *v;
+  if (auto v = environment->Get("hotkey.getConditional"))
+    (*hotkeyObj)["getConditional"] = *v;
+  if (auto v = environment->Get("hotkey.monitor"))
+    (*hotkeyObj)["monitor"] = *v;
+  if (auto v = environment->Get("hotkey.isMonitoring"))
+    (*hotkeyObj)["isMonitoring"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
 
   environment->Define(

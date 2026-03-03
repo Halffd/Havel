@@ -55,6 +55,7 @@ namespace havel {
 std::string HotkeyManager::currentMode = "default";
 std::mutex HotkeyManager::modeMutex;
 std::mutex HotkeyManager::conditionCacheMutex;
+std::vector<ConditionalHotkey> HotkeyManager::conditionalHotkeys;
 
 std::string HotkeyManager::getMode() const {
   std::lock_guard<std::mutex> lock(modeMutex);
@@ -1941,6 +1942,32 @@ void HotkeyManager::forceUpdateAllConditionalHotkeys() {
 
   // Process all conditional hotkeys using batch update
   batchUpdateConditionalHotkeys();
+}
+
+std::vector<HotkeyManager::ConditionalHotkeyInfo> HotkeyManager::getConditionalHotkeyList() {
+  std::vector<ConditionalHotkeyInfo> list;
+  std::lock_guard<std::mutex> lock(hotkeyMutex);
+  
+  for (const auto& ch : conditionalHotkeys) {
+    ConditionalHotkeyInfo info;
+    info.id = ch.id;
+    info.key = ch.key;
+    info.condition = ch.condition;
+    info.enabled = ch.monitoringEnabled;
+    info.active = ch.currentlyGrabbed;
+    list.push_back(info);
+  }
+  
+  return list;
+}
+
+void HotkeyManager::setConditionalHotkeysEnabled(bool enabled) {
+  conditionalHotkeysEnabled = enabled;
+  
+  // Update all conditional hotkeys to reflect the new state
+  updateAllConditionalHotkeys();
+  
+  info("Conditional hotkey monitoring " + std::string(enabled ? "enabled" : "disabled"));
 }
 
 void HotkeyManager::onActiveWindowChanged(wID newWindow) {

@@ -101,6 +101,19 @@ public:
 
   void forceUpdateAllConditionalHotkeys();
 
+  // Conditional hotkey management
+  struct ConditionalHotkeyInfo {
+    int id;
+    std::string key;
+    std::string condition;
+    bool enabled;
+    bool active;
+  };
+  
+  std::vector<ConditionalHotkeyInfo> getConditionalHotkeyList();
+  void setConditionalHotkeysEnabled(bool enabled);
+  bool getConditionalHotkeysEnabled() const { return conditionalHotkeysEnabled; }
+
   void onActiveWindowChanged(wID newWindow);
 
   void LoadHotkeyConfigurations();

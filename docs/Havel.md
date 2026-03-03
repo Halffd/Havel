@@ -17,6 +17,7 @@ Havel is a declarative automation scripting language designed for hotkey managem
 - [CLI Usage](#cli-usage)
 - [Language Server (LSP)](#language-server-protocol-lsp)
 - [Examples](#examples)
+- [New Features](#new-features-latest)
 
 ----
 
@@ -48,7 +49,8 @@ mouseMove(100, 200)
 
 **Available Globals:**
 - `print()` - Output text
-- `sleep(ms)` - Delay execution
+- `sleep(ms|duration)` - Delay execution (accepts milliseconds or duration strings like "30s", "1h30m")
+- `sleepUntil(time)` - Sleep until specific time (e.g., "13:10", "thursday 8:00")
 - `send(keys)` - Send keystrokes
 - `play()` - Media control
 - `exit()` - Exit application
@@ -628,6 +630,46 @@ hypot(3, 4)                // Hypotenuse: 5.0
 hypot(1, 2, 2)             // Multi-dimensional hypotenuse
 ```
 
+#### Array Methods
+
+Arrays provide built-in methods for transformation and manipulation:
+
+```havel
+let arr = [3, 1, 4, 1, 5]
+
+// Sorting
+arr.sort()                        // Sort in place: [1, 1, 3, 4, 5]
+arr.sort((a, b) => b - a)         // Custom comparator: descending
+let sorted = sorted(arr)          // Non-mutating sort
+let rev = sorted(arr, (a,b)=>b-a) // Non-mutating with comparator
+
+// Object array sorting
+let people = [{name: "Bob", age: 30}, {name: "Alice", age: 25}]
+people.sortByKey("age")           // Sort by key ascending
+people.sortByKey("name", (a,b) => b > a)  // Custom comparator
+
+// Transform
+arr.map(x => x * 2)               // [2, 2, 6, 8, 10]
+arr.filter(x => x > 2)            // [3, 4, 5]
+arr.reduce((acc, x) => acc + x, 0)  // Sum: 14
+
+// Query
+arr.find(x => x > 3)              // First match: 4
+arr.some(x => x > 10)             // Any match: false
+arr.every(x => x > 0)             // All match: true
+arr.includes(3)                   // Contains: true
+arr.indexOf(4)                    // Index: 3
+
+// Structural
+arr.push(6)                       // Add to end
+arr.pop()                         // Remove from end
+arr.insert(0, 0)                  // Insert at index
+arr.removeAt(0)                   // Remove at index
+arr.slice(1, 3)                   // Subarray: [1, 4]
+arr.concat([6, 7])                // Concatenate
+arr.swap(0, 1)                    // Swap elements
+```
+
 #### Function and Module Overriding
 
 Havel allows overriding both built-in functions and module functions to provide custom implementations:
@@ -859,14 +901,16 @@ Window Management Module
 window.active        // Get active window
 window.list          // List all windows
 window.focus(name)   // Focus specific window
-window.min()    // Minimize window
-window.max()    // Maximize window
+window.min()         // Minimize window
+window.max()         // Maximize window
+window.getMonitors() // Get array of monitor info objects
+window.getMonitorArea() // Get combined area of all monitors
 
 System Integration Module
 system.run(cmd)      // Execute system command
 system.notify(msg)   // Show notification
 system.beep()        // System beep
-system.sleep(ms)     // Delay execution
+system.sleep(ms|duration)  // Delay execution (e.g., 1000, "30s", "1h30m")
 
 Process Management Module
 process.find(name)           // Find processes by name
@@ -1150,6 +1194,251 @@ havel run hello.hv
 🏰 Built with the strength of Havel, the reliability of steel, and the precision of gears.
 
 "In automation, as in battle, preparation and reliability triumph over complexity."
+
+---
+
+## New Features (Latest)
+
+### Spread Operator (`...`)
+
+The spread operator expands arrays and objects inline, similar to JavaScript.
+
+#### Array Spread
+```havel
+// Expand array elements
+let a = [1, 2, 3]
+let b = [0, ...a, 4]  // [0, 1, 2, 3, 4]
+
+// Combine multiple arrays
+let x = [1, 2]
+let y = [3, 4]
+let z = [...x, ...y]  // [1, 2, 3, 4]
+
+// Flatten one level
+let nested = [[1, 2], [3, 4]]
+let flat = [...nested]  // [1, 2, 3, 4]
+```
+
+#### Object Spread
+```havel
+// Merge objects (later keys override earlier)
+let obj1 = {a: 1, b: 2}
+let obj2 = {c: 3, ...obj1}  // {a: 1, b: 2, c: 3}
+
+// Override properties
+let defaults = {volume: 50, muted: false}
+let settings = {...defaults, volume: 80}  // {volume: 80, muted: false}
+```
+
+#### Function Call Spread
+```havel
+fn add3(x, y, z) {
+    return x + y + z
+}
+
+let args = [1, 2, 3]
+print(add3(...args))  // 6
+
+// Mouse movement with spread
+let coords = [100, 200]
+mouse.moveTo(...coords)  // mouse.moveTo(100, 200)
+```
+
+### Enhanced `sleep()` Function
+
+The `sleep()` function now accepts duration strings with units:
+
+```havel
+// Original numeric (milliseconds)
+sleep(1000)  // 1 second
+
+// Unit-based durations
+sleep("30s")      // 30 seconds
+sleep("5m")       // 5 minutes
+sleep("1h")       // 1 hour
+sleep("2d")       // 2 days
+sleep("1w")       // 1 week
+sleep("500ms")    // 500 milliseconds
+
+// Combined units
+sleep("1h30m")    // 1 hour 30 minutes
+sleep("1m30s500ms")  // 1 minute 30.5 seconds
+
+// Time format (HH:MM:SS.mmm)
+sleep("0:0:30")      // 30 seconds
+sleep("1:30:00")     // 1 hour 30 minutes
+sleep("0:0:30.500")  // 30.5 seconds
+```
+
+### New `sleepUntil()` Function
+
+Sleep until a specific time:
+
+```havel
+// Sleep until specific time today/tomorrow
+sleepUntil("13:10")      // Sleep until 1:10 PM
+sleepUntil("23:59:59")   // Sleep until 11:59:59 PM
+
+// Sleep until specific day and time
+sleepUntil("thursday 8:00")   // Sleep until Thursday 8 AM
+sleepUntil("monday 14:30")    // Sleep until Monday 2:30 PM
+sleepUntil("friday 17:00")    // Sleep until Friday 5 PM
+
+// Day name abbreviations
+sleepUntil("mon 9:00")   // Monday
+sleepUntil("tue 9:00")   // Tuesday
+sleepUntil("wed 9:00")   // Wednesday
+sleepUntil("thu 9:00")   // Thursday
+sleepUntil("fri 9:00")   // Friday
+sleepUntil("sat 9:00")   // Saturday
+sleepUntil("sun 9:00")   // Sunday
+```
+
+### Input Shortcuts (Implicit Input Statements)
+
+Inside hotkey blocks, you can use implicit input commands without the `>` prefix:
+
+```havel
+// Traditional explicit syntax
+^!t => {
+    > "Hello World"
+    > {Enter}
+    > lmb
+    > m(100, 200)
+}
+
+// Also works with explicit > prefix
+^!t => {
+    > "Hello World" :500 > {Enter}
+    > lmb :250 > rmb
+    > m(500, 200) lmb :2000 > r(0, 50)
+}
+```
+
+**Available Commands:**
+- `"text"` - Send text string
+- `{Key}` - Send key (e.g., `{Enter}`, `{Esc}`)
+- `lmb`, `rmb` - Mouse clicks
+- `m(x, y)` - Move mouse to absolute position
+- `r(x, y)` - Move mouse relative to current position
+- `w(x, y)` - Scroll wheel
+- `:500` - Sleep for 500ms
+
+**Example: Complex Input Sequence**
+```havel
+^!t => {
+    > "test@example.com" :250 > {Tab} "password123" :500 > {Enter}
+    > m(100, 200) lmb :100 > r(50, 0)
+}
+```
+
+### Sort with Custom Comparator
+
+The `sort()` and `sorted()` functions now accept custom comparators:
+
+```havel
+// Default sort (ascending)
+let a = [3, 1, 2]
+a.sort()  // [1, 2, 3]
+
+// Custom comparator (descending)
+let a = [3, 1, 2]
+a.sort((x, y) => y - x)  // [3, 2, 1]
+
+// Sort strings by length
+let names = ["alice", "bob", "charlie"]
+names.sort((a, b) => a.length - b.length)
+
+// Non-mutating version
+let a = [3, 1, 2]
+let b = sorted(a)  // a unchanged, b = [1, 2, 3]
+let c = sorted(a, (x, y) => y - x)  // [3, 2, 1]
+```
+
+### Object Sorting with `sortByKey()`
+
+Sort arrays of objects by a specific key:
+
+```havel
+let arr = [
+    {name: "Bob", age: 30},
+    {name: "Alice", age: 25},
+    {name: "Charlie", age: 35}
+]
+
+// Sort by age (ascending)
+arr.sortByKey("age")
+// => [{age: 25, name: Alice}, {age: 30, name: Bob}, {age: 35, name: Charlie}]
+
+// Sort by name (descending)
+arr.sortByKey("name", (a, b) => b > a)
+
+// With custom comparator
+arr.sortByKey("age", (a, b) => b - a)  // Descending by age
+```
+
+### Monitor Methods
+
+Get information about connected monitors:
+
+```havel
+// Get all monitors
+let monitors = window.getMonitors()
+for mon in monitors {
+    print("Monitor: " + mon.name)
+    print("  Position: (" + mon.x + ", " + mon.y + ")")
+    print("  Size: " + mon.width + "x" + mon.height)
+    print("  Primary: " + mon.isPrimary)
+}
+
+// Get combined area of all monitors
+let area = window.getMonitorArea()
+print("Total desktop area: " + area.width + "x" + area.height)
+print("Bounding box: (" + area.x + ", " + area.y + ")")
+```
+
+**Monitor Object Properties:**
+- `name` - Monitor name (e.g., "HDMI-0", "DVI-D-0")
+- `x`, `y` - Position in virtual desktop
+- `width`, `height` - Resolution
+- `isPrimary` - true if primary monitor
+
+**Example: Multi-Monitor Setup**
+```havel
+// Two monitors: 1366x768 at (0, 312) + 1920x1080 at (1366, 0)
+let monitors = window.getMonitors()
+// => [
+//   {name: "DVI-D-0", x: 0, y: 312, width: 1366, height: 768, isPrimary: false},
+//   {name: "HDMI-0", x: 1366, y: 0, width: 1920, height: 1080, isPrimary: true}
+// ]
+
+let area = window.getMonitorArea()
+// => {x: 0, y: 0, width: 3286, height: 1080}
+```
+
+### Combo Hotkey Improvements
+
+Combo hotkeys now correctly distinguish between left and right modifiers:
+
+```havel
+// Right Shift + Wheel Up/Down
+@RShift & WheelUp => zoom(1)
+@RShift & WheelDown => zoom(0)
+
+// Left Shift + Wheel (different action)
+@LShift & WheelUp => scrollUp()
+@LShift & WheelDown => scrollDown()
+
+// Mouse button combos
+@LButton & RButton => toggleFeature()
+@RButton & WheelUp => nextItem()
+```
+
+**Key Points:**
+- `@RShift` requires Right Shift specifically (not Left Shift)
+- `@LShift` requires Left Shift specifically
+- Same for `@LCtrl`, `@RCtrl`, `@LAlt`, `@RAlt`
+- Wheel events work correctly in combos
 
 ---
 

@@ -1778,6 +1778,38 @@ bool HotkeyManager::RemoveHotkey(const std::string &hotkeyStr) {
   return true;
 }
 
+void HotkeyManager::clearAllHotkeys() {
+  info("Clearing all hotkeys...");
+  std::lock_guard<std::mutex> lock(IO::hotkeysMutex);
+  
+  // Ungrab all hotkeys
+  for (auto& [id, hotkey] : IO::hotkeys) {
+    if (hotkey.id > 0) {
+      io.UngrabHotkey(hotkey.id);
+    }
+  }
+  
+  // Clear hotkeys map
+  IO::hotkeys.clear();
+  
+  info("All hotkeys cleared");
+}
+
+std::vector<HotkeyManager::HotkeyInfo> HotkeyManager::getHotkeyList() {
+  std::vector<HotkeyInfo> list;
+  std::lock_guard<std::mutex> lock(IO::hotkeysMutex);
+  
+  for (const auto& [id, hotkey] : IO::hotkeys) {
+    HotkeyInfo info;
+    info.id = hotkey.id;
+    info.alias = hotkey.alias;
+    info.enabled = hotkey.enabled;
+    list.push_back(info);
+  }
+  
+  return list;
+}
+
 void HotkeyManager::LoadHotkeyConfigurations() {
   info("Loading hotkey configurations...");
 }

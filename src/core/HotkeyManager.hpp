@@ -156,6 +156,17 @@ public:
   bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
 
   bool RemoveHotkey(const std::string &hotkeyStr);
+  void clearAllHotkeys();
+  
+  // Hotkey info for listing
+  struct HotkeyInfo {
+    int id;
+    std::string alias;
+    bool enabled;
+  };
+  
+  std::vector<HotkeyInfo> getHotkeyList();
+  
   // Contextual hotkey support
   int AddContextualHotkey(const std::string &key, const std::string &condition,
                           std::function<void()> trueAction,

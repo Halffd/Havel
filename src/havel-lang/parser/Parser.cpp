@@ -2188,13 +2188,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     // Check for lambda: () => or (params) =>
     std::vector<std::unique_ptr<havel::ast::Identifier>> params;
     bool mightBeLambda = false;
-    
+
     if (at().type == havel::TokenType::CloseParen) {
       // Empty parens () - might be lambda () =>
       mightBeLambda = true;
     } else if (at().type == havel::TokenType::Identifier) {
       // Might be (a) => or (a, b) => lambda
       // Try to parse as comma-separated identifiers
+      // Save position before attempting to parse params so we can restore if it fails
+      size_t paramSavePos = position;
       bool validParamList = true;
       while (at().type == havel::TokenType::Identifier) {
         params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
@@ -2212,12 +2214,16 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
           break;
         }
       }
-      
+
       if (validParamList && at().type == havel::TokenType::CloseParen) {
         mightBeLambda = true;
+      } else {
+        // Not a valid parameter list, restore position to re-parse as expression
+        position = paramSavePos;
+        params.clear();
       }
     }
-    
+
     if (mightBeLambda) {
       // We have () or (params), consume ) and check for =>
       advance(); // consume ')'

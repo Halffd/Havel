@@ -2280,7 +2280,7 @@ void EventListener::ProcessSignal() {
     }
 
     debug("Emergency shutdown complete in EventListener thread");
-    std::exit(sig);
+    _exit(sig);
     break;
   default:
     // Other signals, just log

@@ -89,8 +89,8 @@ struct HotKey {
   // Whether this combo requires a wheel event to trigger
   bool requiresWheel = false;
   // Specific physical keys required by this combo (for precise modifier
-  // matching)
-  std::vector<int> requiredPhysicalKeys;
+  // matching) - mutable because it's populated during combo evaluation
+  mutable std::vector<int> requiredPhysicalKeys;
 
   // For mouse gestures
   MouseGesture gestureConfig;

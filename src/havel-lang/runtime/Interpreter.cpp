@@ -4,6 +4,7 @@
 #include "core/automation/AutomationManager.hpp"
 #include "core/browser/BrowserModule.hpp"
 #include "core/io/EventListener.hpp"
+#include "core/io/KeyMap.hpp"
 #include "core/io/KeyTap.hpp"
 #include "core/io/MapManager.hpp"
 #include "core/net/HttpModule.hpp"
@@ -284,6 +285,9 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
       clipboardManager(nullptr),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
+  // Initialize KeyMap for key name lookups (even in pure mode)
+  KeyMap::Initialize();
+  
   info("Minimal Interpreter created (pure mode - no IO/hotkeys)");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
@@ -766,7 +770,12 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     }
 
     std::string hotkey = hotkeyLiteral->combination;
-    io->Hotkey(hotkey, actionHandler);
+    if (io) {
+      io->Hotkey(hotkey, actionHandler);
+    } else {
+      // In pure mode, hotkeys cannot be registered
+      std::cerr << "Warning: Hotkey '" << hotkey << "' registered but IO not available (pure mode)\n";
+    }
   }
 
   // Return null after registering the hotkey

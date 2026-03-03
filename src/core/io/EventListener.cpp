@@ -1885,9 +1885,11 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
 
     // Check specific physical keys are pressed (for precise modifier matching)
     // Skip this check for pure modifier+wheel combos to avoid conflicts with
-    // modifier handling
+    // modifier handling - BUT NOT if we have specific physical key requirements
+    // (e.g., @RShift requires Right Shift specifically)
     bool isPureModifierWheelCombo =
-        hotkey.requiresWheel && requiredKeys.empty() && requiredModifiers != 0;
+        hotkey.requiresWheel && requiredKeys.empty() && requiredModifiers != 0 &&
+        hotkey.requiredPhysicalKeys.empty();
 
     if (!isPureModifierWheelCombo && !hotkey.requiredPhysicalKeys.empty()) {
       if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {

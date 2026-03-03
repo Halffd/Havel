@@ -44,6 +44,9 @@ private:
   // `if/while/when` to ensure the `{` starts the statement body.
   bool allowBraceCallSugar = true;
 
+  // Track if we're inside a hotkey block where bare expressions are input commands
+  bool inInputContext = false;
+
   // Debug options
   DebugOptions debug;
   
@@ -95,8 +98,9 @@ private:
   std::unique_ptr<ast::Statement> parseReturnStatement();
   std::unique_ptr<ast::Statement> parseSleepStatement();
   std::unique_ptr<ast::Statement> parseInputStatement();
+  std::unique_ptr<ast::Statement> parseImplicitInputStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
-  std::unique_ptr<ast::BlockStatement> parseBlockStatement();
+  std::unique_ptr<ast::BlockStatement> parseBlockStatement(bool inputContext = false);
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();
   std::unique_ptr<ast::Statement> parseUseStatement();

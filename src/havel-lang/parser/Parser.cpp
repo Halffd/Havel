@@ -410,6 +410,24 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {
+    // In input context (hotkey blocks), bare expressions may be input commands
+    if (inInputContext) {
+      // Check if this looks like an input command:
+      // - String: "text"
+      // - Identifier: lmb, rmb, m, r, w
+      // - Number: :500 sleep
+      // - OpenBrace: {Key}
+      if (at().type == havel::TokenType::String ||
+          at().type == havel::TokenType::Number ||
+          at().type == havel::TokenType::OpenBrace ||
+          (at().type == havel::TokenType::Identifier && 
+           (at().value == "lmb" || at().value == "rmb" ||
+            at().value == "m" || at().value == "r" || at().value == "w"))) {
+        // Parse as implicit input statement
+        return parseImplicitInputStatement();
+      }
+    }
+    
     auto expr = parseExpression();
 
     // Require statement terminator: semicolon or newline
@@ -617,6 +635,114 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
             advance(); // consume ')'
           }
 
+          if (ident == "m") {
+            cmd.type = havel::ast::InputCommand::MouseMove;
+          } else if (ident == "r") {
+            cmd.type = havel::ast::InputCommand::MouseRelative;
+          } else if (ident == "w") {
+            cmd.type = havel::ast::InputCommand::MouseWheel;
+          }
+          commands.push_back(cmd);
+        }
+        continue;
+      }
+    }
+    
+    // Skip unknown token
+    advance();
+  }
+  
+  return std::make_unique<havel::ast::InputStatement>(commands);
+}
+
+// Parse implicit input statement in hotkey blocks
+// Handles: "text", {Key}, lmb, rmb, m(x,y), r(x,y), w(x,y), :500
+std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
+  std::vector<havel::ast::InputCommand> commands;
+  
+  while (notEOF() && 
+         at().type != havel::TokenType::NewLine &&
+         at().type != havel::TokenType::Semicolon &&
+         at().type != havel::TokenType::EOF_TOKEN &&
+         at().type != havel::TokenType::CloseBrace) {
+    
+    havel::ast::InputCommand cmd;
+    
+    // Check for sleep inline: :500
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      cmd.type = havel::ast::InputCommand::Sleep;
+      if (at().type == havel::TokenType::Number) {
+        cmd.duration = advance().value;
+      }
+      commands.push_back(cmd);
+      continue;
+    }
+    
+    // Check for string: "text"
+    if (at().type == havel::TokenType::String) {
+      cmd.type = havel::ast::InputCommand::SendText;
+      cmd.text = advance().value;
+      commands.push_back(cmd);
+      continue;
+    }
+    
+    // Check for key: {Enter}
+    if (at().type == havel::TokenType::OpenBrace) {
+      advance(); // consume '{'
+      if (at().type == havel::TokenType::Identifier) {
+        cmd.type = havel::ast::InputCommand::SendKey;
+        cmd.key = advance().value;
+        commands.push_back(cmd);
+      }
+      if (at().type == havel::TokenType::CloseBrace) {
+        advance(); // consume '}'
+      }
+      continue;
+    }
+    
+    // Check for identifier: lmb, rmb, m, r, w
+    if (at().type == havel::TokenType::Identifier) {
+      std::string ident = at().value;
+      
+      if (ident == "lmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "left";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "rmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "right";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w") {
+        advance(); // consume identifier
+        
+        // Parse function call: m(x, y)
+        if (at().type == havel::TokenType::OpenParen) {
+          advance(); // consume '('
+          
+          // Parse x argument
+          if (at().type != havel::TokenType::CloseParen) {
+            cmd.xExprStr = at().value;
+            advance();
+          }
+          
+          // Parse optional y argument
+          if (at().type == havel::TokenType::Comma) {
+            advance(); // consume ','
+            if (at().type != havel::TokenType::CloseParen) {
+              cmd.yExprStr = at().value;
+              advance();
+            }
+          }
+          
+          if (at().type == havel::TokenType::CloseParen) {
+            advance(); // consume ')'
+          }
+          
           if (ident == "m") {
             cmd.type = havel::ast::InputCommand::MouseMove;
           } else if (ident == "r") {
@@ -1393,8 +1519,8 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
 
   // Parse the action - could be an expression or a block statement
   if (at().type == havel::TokenType::OpenBrace) {
-    // It's a block statement - parse it directly as a statement
-    binding->action = parseBlockStatement();
+    // It's a block statement - parse it with input context enabled
+    binding->action = parseBlockStatement(true);
   } else {
     // It's an expression - wrap it in an ExpressionStatement
     auto expr = parseExpression();
@@ -1482,7 +1608,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
                                                  std::move(statements));
 }
 
-std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
+std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(bool inputContext) {
   auto block = std::make_unique<havel::ast::BlockStatement>();
 
   // Consume opening brace
@@ -1490,6 +1616,10 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
     failAt(at(), "Expected '{'");
   }
   advance();
+
+  // Save and set input context
+  bool savedInputContext = inInputContext;
+  inInputContext = inputContext;
 
   // Parse statements until closing brace
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
@@ -1507,6 +1637,9 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement() {
       block->body.push_back(std::move(stmt));
     }
   }
+
+  // Restore input context
+  inInputContext = savedInputContext;
 
   // Consume closing brace - it might not be there if error recovery happened
   if (at().type != havel::TokenType::CloseBrace) {

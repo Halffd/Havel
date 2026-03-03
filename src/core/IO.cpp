@@ -2277,8 +2277,23 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
 
         hotkey.type = HotkeyType::Combo;
         for (const auto &part : parts) {
-          auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
+          // Preserve the @evdev flag for combo parts
+          // If the original hotkey had @, the parts should too
+          std::string partWithPrefix = parsed.isEvdev ? "@" + part : part;
+          auto subHotkey = AddHotkey(partWithPrefix, std::function<void()>{}, 0);
           hotkey.comboSequence.push_back(subHotkey);
+
+          // Track specific physical keys for precise modifier matching
+          // This ensures @RShift requires Right Shift specifically
+          if (subHotkey.type == HotkeyType::Keyboard) {
+            int keyCode = static_cast<int>(subHotkey.key);
+            if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL ||
+                keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT ||
+                keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT ||
+                keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+              hotkey.requiredPhysicalKeys.push_back(keyCode);
+            }
+          }
         }
         hotkey.success = !hotkey.comboSequence.empty();
       } else {
@@ -2436,8 +2451,22 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       for (const auto &part : parts) {
         // Use AddHotkey() instead of AddMouseHotkey() to properly handle
         // keyboard keys in combos (e.g., "RShift & WheelDown")
-        auto subHotkey = AddHotkey(part, std::function<void()>{}, 0);
+        // Preserve the @evdev flag for combo parts
+        std::string partWithPrefix = parsed.isEvdev ? "@" + part : part;
+        auto subHotkey = AddHotkey(partWithPrefix, std::function<void()>{}, 0);
         hotkey.comboSequence.push_back(subHotkey);
+
+        // Track specific physical keys for precise modifier matching
+        // This ensures @RShift requires Right Shift specifically
+        if (subHotkey.type == HotkeyType::Keyboard) {
+          int keyCode = static_cast<int>(subHotkey.key);
+          if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL ||
+              keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT ||
+              keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT ||
+              keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+            hotkey.requiredPhysicalKeys.push_back(keyCode);
+          }
+        }
       }
       hotkey.success = !hotkey.comboSequence.empty();
     } else {

@@ -34,6 +34,8 @@ enum class NodeType {
   MemberExpression,      // record.field
   LambdaExpression,      // fn(x) -> x * 2, |x| x + 1
   ApplicationExpression, // Curried function application
+  InputStatement,        // > "text" or > {Enter} or > lmb
+  SleepStatement,        // :1500 or :1h30m
 
   // Async/await expressions
   AsyncExpression, // async { ... }
@@ -721,6 +723,56 @@ struct ExpressionStatement : public Statement {
            (expression ? expression->toString() : "nullptr") + "}";
   }
 
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Input Statement - shortcut for input actions: > "text" or > {Enter} or > lmb
+struct InputCommand {
+  enum CommandType {
+    SendText,      // > "text"
+    SendKey,       // > {Enter}
+    MouseClick,    // > lmb, > rmb
+    MouseMove,     // > m(x, y)
+    MouseRelative, // > r(x, y)
+    MouseWheel,    // > w(x, y)
+    Sleep          // > :500
+  };
+  
+  CommandType type;
+  std::string text;           // For SendText
+  std::string key;            // For SendKey
+  std::string xExprStr;       // For MouseMove, MouseRelative, MouseWheel (simplified)
+  std::string yExprStr;       // For MouseMove, MouseRelative, MouseWheel (simplified)
+  std::string duration;       // For Sleep
+  
+  InputCommand() : type(SendText) {}
+};
+
+struct InputStatement : public Statement {
+  std::vector<InputCommand> commands;
+  
+  InputStatement() { kind = NodeType::InputStatement; }
+  InputStatement(std::vector<InputCommand> cmds) 
+      : commands(std::move(cmds)) { kind = NodeType::InputStatement; }
+  
+  std::string toString() const override {
+    return "InputStatement{" + std::to_string(commands.size()) + " commands}";
+  }
+  
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Sleep Statement - shortcut: :1500 or :1h30m
+struct SleepStatement : public Statement {
+  std::string duration;  // Duration string like "1500", "1h30m", "3:10:25"
+  
+  SleepStatement() { kind = NodeType::SleepStatement; }
+  SleepStatement(const std::string &dur) : duration(dur) { kind = NodeType::SleepStatement; }
+  
+  std::string toString() const override {
+    return "SleepStatement{duration: " + duration + "}";
+  }
+  
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -1676,6 +1728,8 @@ public:
   virtual void visitBlockExpression(const BlockExpression &node) = 0;
 
   virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
+  virtual void visitInputStatement(const InputStatement &node) = 0;
+  virtual void visitSleepStatement(const SleepStatement &node) = 0;
 
   virtual void visitIfStatement(const IfStatement &node) = 0;
   virtual void visitIfExpression(const IfExpression &node) = 0;
@@ -1795,6 +1849,14 @@ inline void HotkeyLiteral::accept(ASTVisitor &visitor) const {
 
 inline void ExpressionStatement::accept(ASTVisitor &visitor) const {
   visitor.visitExpressionStatement(*this);
+}
+
+inline void InputStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitInputStatement(*this);
+}
+
+inline void SleepStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitSleepStatement(*this);
 }
 
 inline void LetDeclaration::accept(ASTVisitor &visitor) const {

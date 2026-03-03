@@ -2296,6 +2296,12 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
           }
         }
         hotkey.success = !hotkey.comboSequence.empty();
+        // Mark this combo as requiring a wheel event if any part is a wheel
+        hotkey.requiresWheel = std::any_of(hotkey.comboSequence.begin(),
+                                    hotkey.comboSequence.end(),
+                                    [](const HotKey& k) {
+                                      return k.type == HotkeyType::MouseWheel;
+                                    });
       } else {
         // Regular keyboard hotkey
         KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
@@ -2469,6 +2475,12 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
         }
       }
       hotkey.success = !hotkey.comboSequence.empty();
+      // Mark this combo as requiring a wheel event if any part is a wheel
+      hotkey.requiresWheel = std::any_of(hotkey.comboSequence.begin(),
+                                  hotkey.comboSequence.end(),
+                                  [](const HotKey& k) {
+                                    return k.type == HotkeyType::MouseWheel;
+                                  });
     } else {
       // Not a mouse button/wheel, not a combo - try to parse as keyboard key
       KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);

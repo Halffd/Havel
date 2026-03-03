@@ -1,4 +1,5 @@
 #include "AutomationSuite.hpp"
+#include "core/automation/PixelAutomation.hpp"
 #include <QApplication>
 #include <QMenu>
 #include <QIcon>
@@ -28,11 +29,12 @@ AutomationSuite* AutomationSuite::Instance(IO* io) {
     return s_instance;
 }
 
-AutomationSuite::AutomationSuite(IO* io, QObject *parent) 
+AutomationSuite::AutomationSuite(IO* io, QObject *parent)
     : QObject(parent), io(io) {
     clipboardMgr = new ClipboardManager(io);
     screenshotMgr = new ScreenshotManager();
     brightnessMgr = new BrightnessPanel();
+    pixelAutomation = std::make_unique<PixelAutomation>();
 
     trayIcon = new QSystemTrayIcon(this);
     trayIcon->setIcon(QIcon::fromTheme("applications-utilities"));

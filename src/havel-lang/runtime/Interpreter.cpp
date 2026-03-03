@@ -3583,6 +3583,39 @@ void Interpreter::InitializeSystemBuiltins() {
             return HavelValue(nullptr);
           }));
 
+  // hotkey.clearAll() - Clear all registered hotkeys
+  environment->Define(
+      "hotkey.clearAll",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+            hotkeyManager->clearAllHotkeys();
+            return HavelValue(nullptr);
+          }));
+
+  // hotkey.list() - List all registered hotkeys
+  environment->Define(
+      "hotkey.list",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            if (!hotkeyManager)
+              return HavelRuntimeError("HotkeyManager not available");
+            
+            auto list = hotkeyManager->getHotkeyList();
+            auto resultArray = std::make_shared<std::vector<HavelValue>>();
+            for (const auto& hk : list) {
+              auto hkObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+              (*hkObj)["alias"] = HavelValue(hk.alias);
+              (*hkObj)["id"] = HavelValue(static_cast<double>(hk.id));
+              (*hkObj)["enabled"] = HavelValue(hk.enabled);
+              resultArray->push_back(HavelValue(hkObj));
+            }
+            return HavelValue(resultArray);
+          }));
+
   auto hotkeyObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
   if (auto v = environment->Get("hotkey.toggleOverlay"))
@@ -3595,6 +3628,10 @@ void Interpreter::InitializeSystemBuiltins() {
     (*hotkeyObj)["toggleWindowFocusTracking"] = *v;
   if (auto v = environment->Get("hotkey.updateConditional"))
     (*hotkeyObj)["updateConditional"] = *v;
+  if (auto v = environment->Get("hotkey.clearAll"))
+    (*hotkeyObj)["clearAll"] = *v;
+  if (auto v = environment->Get("hotkey.list"))
+    (*hotkeyObj)["list"] = *v;
   environment->Define("hotkey", HavelValue(hotkeyObj));
 
   environment->Define(
@@ -5267,14 +5304,69 @@ void Interpreter::InitializeWindowBuiltins() {
         Window activeWin(this->windowManager->GetActiveWindow());
         return HavelValue(activeWin.Title());
       });
-  
+
   (*win)["active"] = BuiltinFunction(
       [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         Window activeWin(this->windowManager->GetActiveWindow());
         return HavelValue(activeWin.Active());
       });
-  
+
+  // window.getActiveWindow() - returns window object with properties
+  environment->Define(
+      "window.getActiveWindow",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            wID winId = this->windowManager->GetActiveWindow();
+            if (winId == 0) {
+              return HavelValue(nullptr);
+            }
+            Window win("", winId);
+            Rect pos = win.Pos();
+            auto winObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*winObj)["id"] = HavelValue(static_cast<double>(winId));
+            (*winObj)["title"] = HavelValue(win.Title());
+            (*winObj)["x"] = HavelValue(static_cast<double>(pos.x));
+            (*winObj)["y"] = HavelValue(static_cast<double>(pos.y));
+            (*winObj)["w"] = HavelValue(static_cast<double>(pos.w));
+            (*winObj)["h"] = HavelValue(static_cast<double>(pos.h));
+            (*winObj)["active"] = HavelValue(win.Active());
+            return HavelValue(winObj);
+          }));
+
+  // window.pos() - returns {x, y} position of active window
+  environment->Define(
+      "window.pos",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            Window activeWin(this->windowManager->GetActiveWindow());
+            Rect pos = activeWin.Pos();
+            auto posObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*posObj)["x"] = HavelValue(static_cast<double>(pos.x));
+            (*posObj)["y"] = HavelValue(static_cast<double>(pos.y));
+            return HavelValue(posObj);
+          }));
+
+  // window.moveToNextMonitor() - move active window to next monitor
+  environment->Define(
+      "window.moveToNextMonitor",
+      BuiltinFunction(
+          [this](const std::vector<HavelValue> &args) -> HavelResult {
+            (void)args;
+            this->windowManager->MoveWindowToNextMonitor();
+            return HavelValue(nullptr);
+          }));
+
+  // Add to window module object
+  if (auto v = environment->Get("window.getActiveWindow"))
+    (*win)["getActiveWindow"] = *v;
+  if (auto v = environment->Get("window.pos"))
+    (*win)["pos"] = *v;
+  if (auto v = environment->Get("window.moveToNextMonitor"))
+    (*win)["moveToNextMonitor"] = *v;
+
   environment->Define("window", HavelValue(win));
 }
 
@@ -11816,10 +11908,16 @@ void Interpreter::triggerReload() {
   if (!reloadEnabled.load() || scriptPath.empty()) {
     return;
   }
-  
+
+  // Clear all hotkeys before reload
+  if (hotkeyManager) {
+    info("Clearing hotkeys before reload...");
+    hotkeyManager->clearAllHotkeys();
+  }
+
   // Execute on reload handler
   executeOnReload();
-  
+
   // Re-execute the script
   try {
     std::ifstream file(scriptPath);

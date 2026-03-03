@@ -117,7 +117,9 @@ void HavelApp::initializeComponents(bool isStartup) {
   interpreter = std::make_shared<Interpreter>(
       *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
       audioManager.get(), guiManager.get(),
-      AutomationSuite::Instance()->getScreenshotManager());
+      AutomationSuite::Instance()->getScreenshotManager(),
+      AutomationSuite::Instance()->getClipboardManager(),
+      AutomationSuite::Instance()->getPixelAutomation());
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
@@ -281,7 +283,8 @@ void HavelApp::initializeComponents(bool isStartup) {
         *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
         audioManager.get(), guiManager.get(),
         AutomationSuite::Instance()->getScreenshotManager(),
-        clipboardManager.get());
+        clipboardManager.get(),
+        AutomationSuite::Instance()->getPixelAutomation());
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
     interpreter = nullptr;

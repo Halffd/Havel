@@ -264,11 +264,12 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
                          AudioManager *audio_mgr, GUIManager *gui_mgr,
                          ScreenshotManager *screenshot_mgr,
                          ClipboardManager *clipboard_mgr,
+                         PixelAutomation *pixel_automation,
                          const std::vector<std::string> &cli_args)
     : io(&io_system), windowManager(&window_mgr), hotkeyManager(hotkey_mgr),
       brightnessManager(brightness_mgr), audioManager(audio_mgr),
       guiManager(gui_mgr), screenshotManager(screenshot_mgr),
-      clipboardManager(clipboard_mgr),
+      clipboardManager(clipboard_mgr), pixelAutomation(pixel_automation),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   info("Interpreter constructor called");
@@ -282,7 +283,7 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
     : io(nullptr), windowManager(nullptr),
       hotkeyManager(nullptr), brightnessManager(nullptr), audioManager(nullptr),
       guiManager(nullptr), screenshotManager(nullptr),
-      clipboardManager(nullptr),
+      clipboardManager(nullptr), pixelAutomation(nullptr),
       lastResult(HavelValue(nullptr)), cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   // Initialize KeyMap for key name lookups (even in pure mode)
@@ -2840,6 +2841,7 @@ void Interpreter::InitializeStandardLibrary() {
   InitializeLauncherBuiltins();
   InitializeGUIBuiltins();
   InitializeScreenshotBuiltins();
+  InitializePixelBuiltins();
   InitializeTimerBuiltins();
   InitializeAutomationBuiltins();
   InitializeAsyncBuiltins();
@@ -9991,6 +9993,327 @@ void Interpreter::InitializeScreenshotBuiltins() {
   if (auto v = environment->Get("screenshot.monitor"))
     (*screenshotMod)["monitor"] = *v;
   environment->Define("screenshot", HavelValue(screenshotMod));
+}
+
+void Interpreter::InitializePixelBuiltins() {
+  // pixel.get(x, y) - Get pixel color
+  environment->Define(
+      "pixel.get",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2) {
+          return HavelRuntimeError("pixel.get() requires (x, y)");
+        }
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+        
+        if (pixelAutomation) {
+          Color c = pixelAutomation->getPixel(x, y);
+          auto colorObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*colorObj)["r"] = HavelValue(static_cast<double>(c.r));
+          (*colorObj)["g"] = HavelValue(static_cast<double>(c.g));
+          (*colorObj)["b"] = HavelValue(static_cast<double>(c.b));
+          (*colorObj)["a"] = HavelValue(static_cast<double>(c.a));
+          (*colorObj)["hex"] = HavelValue(c.toHex());
+          return HavelValue(colorObj);
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // pixel.match(x, y, color, tolerance) - Check if pixel matches color
+  environment->Define(
+      "pixel.match",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3) {
+          return HavelRuntimeError("pixel.match() requires (x, y, color)");
+        }
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+        std::string color = args[2].isString() ? args[2].asString() : ValueToString(args[2]);
+        int tolerance = args.size() > 3 ? static_cast<int>(ValueToNumber(args[3])) : 0;
+        
+        if (pixelAutomation) {
+          return HavelValue(pixelAutomation->pixelMatch(x, y, color, tolerance));
+        }
+        return HavelValue(false);
+      }));
+
+  // pixel.wait(x, y, color, tolerance, timeout) - Wait for pixel color
+  environment->Define(
+      "pixel.wait",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 3) {
+          return HavelRuntimeError("pixel.wait() requires (x, y, color)");
+        }
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+        std::string color = args[2].isString() ? args[2].asString() : ValueToString(args[2]);
+        int tolerance = args.size() > 3 ? static_cast<int>(ValueToNumber(args[3])) : 0;
+        int timeout = args.size() > 4 ? static_cast<int>(ValueToNumber(args[4])) : 5000;
+        
+        if (pixelAutomation) {
+          return HavelValue(pixelAutomation->waitPixel(x, y, color, tolerance, timeout));
+        }
+        return HavelValue(false);
+      }));
+
+  // image.find(path, region, threshold) - Find image on screen
+  environment->Define(
+      "image.find",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("image.find() requires imagePath");
+        }
+        std::string imagePath = args[0].asString();
+        
+        ScreenRegion region;
+        if (args.size() > 1 && args[1].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[1].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        float threshold = args.size() > 2 ? static_cast<float>(ValueToNumber(args[2])) : 0.9f;
+        
+        if (pixelAutomation) {
+          ImageMatch match = pixelAutomation->findImage(imagePath, region, threshold);
+          if (match.found) {
+            auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*matchObj)["found"] = HavelValue(true);
+            (*matchObj)["x"] = HavelValue(static_cast<double>(match.x));
+            (*matchObj)["y"] = HavelValue(static_cast<double>(match.y));
+            (*matchObj)["w"] = HavelValue(static_cast<double>(match.w));
+            (*matchObj)["h"] = HavelValue(static_cast<double>(match.h));
+            (*matchObj)["confidence"] = HavelValue(match.confidence);
+            (*matchObj)["centerX"] = HavelValue(static_cast<double>(match.centerX()));
+            (*matchObj)["centerY"] = HavelValue(static_cast<double>(match.centerY()));
+            return HavelValue(matchObj);
+          }
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // image.wait(path, region, timeout, threshold) - Wait for image
+  environment->Define(
+      "image.wait",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("image.wait() requires imagePath");
+        }
+        std::string imagePath = args[0].asString();
+        
+        ScreenRegion region;
+        int timeout = 5000;
+        float threshold = 0.9f;
+        
+        if (args.size() > 1 && args[1].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[1].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        if (args.size() > 2) timeout = static_cast<int>(ValueToNumber(args[2]));
+        if (args.size() > 3) threshold = static_cast<float>(ValueToNumber(args[3]));
+        
+        if (pixelAutomation) {
+          ImageMatch match = pixelAutomation->waitImage(imagePath, region, timeout, threshold);
+          if (match.found) {
+            auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*matchObj)["found"] = HavelValue(true);
+            (*matchObj)["x"] = HavelValue(static_cast<double>(match.x));
+            (*matchObj)["y"] = HavelValue(static_cast<double>(match.y));
+            (*matchObj)["w"] = HavelValue(static_cast<double>(match.w));
+            (*matchObj)["h"] = HavelValue(static_cast<double>(match.h));
+            (*matchObj)["confidence"] = HavelValue(match.confidence);
+            return HavelValue(matchObj);
+          }
+        }
+        return HavelValue(nullptr);
+      }));
+
+  // image.exists(path, region, threshold) - Check if image exists
+  environment->Define(
+      "image.exists",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("image.exists() requires imagePath");
+        }
+        std::string imagePath = args[0].asString();
+        
+        ScreenRegion region;
+        float threshold = 0.9f;
+        
+        if (args.size() > 1 && args[1].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[1].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        if (args.size() > 2) threshold = static_cast<float>(ValueToNumber(args[2]));
+        
+        if (pixelAutomation) {
+          return HavelValue(pixelAutomation->existsImage(imagePath, region, threshold));
+        }
+        return HavelValue(false);
+      }));
+
+  // image.count(path, region, threshold) - Count image occurrences
+  environment->Define(
+      "image.count",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("image.count() requires imagePath");
+        }
+        std::string imagePath = args[0].asString();
+        
+        ScreenRegion region;
+        float threshold = 0.9f;
+        
+        if (args.size() > 1 && args[1].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[1].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        if (args.size() > 2) threshold = static_cast<float>(ValueToNumber(args[2]));
+        
+        if (pixelAutomation) {
+          return HavelValue(static_cast<double>(pixelAutomation->countImage(imagePath, region, threshold)));
+        }
+        return HavelValue(0.0);
+      }));
+
+  // image.findAll(path, region, threshold) - Find all occurrences
+  environment->Define(
+      "image.findAll",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("image.findAll() requires imagePath");
+        }
+        std::string imagePath = args[0].asString();
+        
+        ScreenRegion region;
+        float threshold = 0.9f;
+        
+        if (args.size() > 1 && args[1].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[1].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        if (args.size() > 2) threshold = static_cast<float>(ValueToNumber(args[2]));
+        
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+        
+        if (pixelAutomation) {
+          auto matches = pixelAutomation->findAllImage(imagePath, region, threshold);
+          for (const auto& match : matches) {
+            auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*matchObj)["found"] = HavelValue(true);
+            (*matchObj)["x"] = HavelValue(static_cast<double>(match.x));
+            (*matchObj)["y"] = HavelValue(static_cast<double>(match.y));
+            (*matchObj)["w"] = HavelValue(static_cast<double>(match.w));
+            (*matchObj)["h"] = HavelValue(static_cast<double>(match.h));
+            (*matchObj)["confidence"] = HavelValue(match.confidence);
+            resultArray->push_back(HavelValue(matchObj));
+          }
+        }
+        
+        return HavelValue(resultArray);
+      }));
+
+  // ocr.read(region, language, whitelist) - Read text from screen
+  environment->Define(
+      "ocr.read",
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+        ScreenRegion region;
+        std::string language = "eng";
+        std::string whitelist;
+        
+        if (!args.empty() && args[0].is<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
+          auto regionMap = args[0].get<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>();
+          if (regionMap) {
+            int rx = 0, ry = 0, rw = 0, rh = 0;
+            if (regionMap->count("x")) rx = static_cast<int>(ValueToNumber((*regionMap)["x"]));
+            if (regionMap->count("y")) ry = static_cast<int>(ValueToNumber((*regionMap)["y"]));
+            if (regionMap->count("w")) rw = static_cast<int>(ValueToNumber((*regionMap)["w"]));
+            if (regionMap->count("h")) rh = static_cast<int>(ValueToNumber((*regionMap)["h"]));
+            region = ScreenRegion(rx, ry, rw, rh);
+          }
+        }
+        
+        if (args.size() > 1) language = args[1].asString();
+        if (args.size() > 2) whitelist = args[2].asString();
+        
+        if (pixelAutomation) {
+          return HavelValue(pixelAutomation->readText(region, language, whitelist));
+        }
+        return HavelValue("");
+      }));
+
+  // pixel.region(x, y, w, h) - Create region object
+  environment->Define(
+      "pixel.region",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 4) {
+          return HavelRuntimeError("pixel.region() requires (x, y, w, h)");
+        }
+        auto regionObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*regionObj)["x"] = args[0];
+        (*regionObj)["y"] = args[1];
+        (*regionObj)["w"] = args[2];
+        (*regionObj)["h"] = args[3];
+        return HavelValue(regionObj);
+      }));
+
+  // Create module objects
+  auto pixelMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("pixel.get")) (*pixelMod)["get"] = *v;
+  if (auto v = environment->Get("pixel.match")) (*pixelMod)["match"] = *v;
+  if (auto v = environment->Get("pixel.wait")) (*pixelMod)["wait"] = *v;
+  if (auto v = environment->Get("pixel.region")) (*pixelMod)["region"] = *v;
+  environment->Define("pixel", HavelValue(pixelMod));
+
+  auto imageMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("image.find")) (*imageMod)["find"] = *v;
+  if (auto v = environment->Get("image.wait")) (*imageMod)["wait"] = *v;
+  if (auto v = environment->Get("image.exists")) (*imageMod)["exists"] = *v;
+  if (auto v = environment->Get("image.count")) (*imageMod)["count"] = *v;
+  if (auto v = environment->Get("image.findAll")) (*imageMod)["findAll"] = *v;
+  environment->Define("image", HavelValue(imageMod));
+
+  auto ocrMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("ocr.read")) (*ocrMod)["read"] = *v;
+  environment->Define("ocr", HavelValue(ocrMod));
 }
 
 void Interpreter::InitializeAutomationBuiltins() {

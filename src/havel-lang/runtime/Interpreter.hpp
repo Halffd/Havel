@@ -33,6 +33,7 @@ class AudioManager;
 class GUIManager;
 class ScreenshotManager;
 class ClipboardManager;
+class PixelAutomation;
 
 // Forward declarations
 class Environment;
@@ -425,6 +426,7 @@ public:
               AudioManager *audio_mgr = nullptr, GUIManager *gui_mgr = nullptr,
               ScreenshotManager *screenshot_mgr = nullptr,
               ClipboardManager *clipboard_mgr = nullptr,
+              PixelAutomation *pixel_automation = nullptr,
               const std::vector<std::string> &cli_args = {});
   
   // Minimal interpreter for pure script execution (no IO/hotkeys)
@@ -563,6 +565,7 @@ private:
   GUIManager *guiManager;
   ScreenshotManager *screenshotManager;
   ClipboardManager *clipboardManager;
+  PixelAutomation *pixelAutomation;
   HavelResult lastResult;
   std::mutex interpreterMutex; // Protect interpreter state
 
@@ -647,6 +650,7 @@ public:
   void InitializeLauncherBuiltins();
   void InitializeGUIBuiltins();
   void InitializeScreenshotBuiltins();
+  void InitializePixelBuiltins();
   void InitializeTimerBuiltins();
   void InitializeAutomationBuiltins();
   void InitializeAsyncBuiltins();

@@ -912,6 +912,20 @@ system.notify(msg)   // Show notification
 system.beep()        // System beep
 system.sleep(ms|duration)  // Delay execution (e.g., 1000, "30s", "1h30m")
 
+Pixel and Image Automation Module
+pixel.get(x, y)              // Get pixel color (returns {r,g,b,a,hex})
+pixel.match(x, y, color, tol)  // Check if pixel matches color
+pixel.wait(x, y, color, tol, timeout)  // Wait for pixel color
+pixel.region(x, y, w, h)     // Create region object
+
+image.find(path, region, threshold)    // Find image on screen
+image.wait(path, region, timeout, threshold)  // Wait for image
+image.exists(path, region, threshold)  // Check if image exists
+image.count(path, region, threshold)   // Count image occurrences
+image.findAll(path, region, threshold) // Find all matches
+
+ocr.read(region, language, whitelist)  // Read text from screen
+
 Process Management Module
 process.find(name)           // Find processes by name
 process.exists(pid|name)     // Check if process exists
@@ -1439,6 +1453,116 @@ Combo hotkeys now correctly distinguish between left and right modifiers:
 - `@LShift` requires Left Shift specifically
 - Same for `@LCtrl`, `@RCtrl`, `@LAlt`, `@RAlt`
 - Wheel events work correctly in combos
+
+### Pixel and Image Automation
+
+Powerful screen automation primitives for game bots, UI automation, and visual conditionals.
+
+#### Pixel Operations
+
+```havel
+// Get pixel color at position
+let c = pixel.get(500, 300)
+print(c.r, c.g, c.b)  // RGB values (0-255)
+print(c.hex)          // Hex string: "#FF0000"
+
+// Check if pixel matches color (with tolerance)
+if pixel.match(500, 300, "#ff0000", 10) {
+    print("Pixel is red (±10 tolerance)")
+}
+
+// Wait for pixel color (with timeout)
+if pixel.wait(500, 300, "#00ff00", 10, 3000) {
+    print("Green pixel appeared within 3 seconds")
+}
+```
+
+#### Image Search
+
+```havel
+// Find image on screen
+let btn = image.find("ok.png")
+if btn {
+    print("Found at: " + btn.x + ", " + btn.y)
+    print("Size: " + btn.w + "x" + btn.h)
+    print("Confidence: " + btn.confidence)
+    
+    // Click on the found image
+    > m(btn.centerX, btn.centerY) lmb
+}
+
+// Find with region (performance optimization)
+let region = pixel.region(0, 0, 800, 600)
+let btn = image.find("ok.png", region)
+
+// Wait for image to appear
+let btn = image.wait("loading.png", pixel.region(0,0,1920,1080), 5000)
+if btn {
+    print("Loading complete!")
+}
+
+// Check if image exists
+if image.exists("enemy.png") {
+    print("Enemy detected!")
+}
+
+// Count occurrences
+let count = image.count("coin.png")
+print("Found " + count + " coins")
+
+// Find all occurrences
+let matches = image.findAll("star.png")
+for match in matches {
+    print("Star at: " + match.x + ", " + match.y)
+}
+```
+
+#### OCR (Optical Character Recognition)
+
+```havel
+// Read text from screen region
+let text = ocr.read(pixel.region(100, 200, 400, 300))
+print("Recognized: " + text)
+
+// With language and character whitelist
+let text = ocr.read(
+    pixel.region(100, 200, 400, 300),
+    "eng",      // Language
+    "0123456789"  // Only digits
+)
+```
+
+#### Screenshot Cache (Performance)
+
+For loops that check pixels/images repeatedly, use screenshot caching:
+
+```havel
+// Enable caching (100ms expiry)
+pixel.setCacheEnabled(true, 100)
+
+// Manual capture
+pixel.captureScreen()
+
+// Now multiple operations use the same screenshot
+while condition {
+    if image.exists("enemy.png") {
+        // ...
+    }
+    if pixel.match(100, 100, "#ff0000") {
+        // ...
+    }
+    sleep(50)
+}
+
+// Clear cache when done
+pixel.clearCache()
+```
+
+**Performance Tips:**
+- Always use region-based search when possible
+- Enable caching for tight loops
+- Use `exists()` instead of `find()` when you only need a boolean
+- Adjust image match threshold (0.0-1.0) for speed vs accuracy
 
 ---
 

@@ -3,6 +3,7 @@
 #include "gui/ClipboardManager.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "gui/BrightnessPanel.hpp"
+#include "core/automation/PixelAutomation.hpp"
 #include <QObject>
 #include <QSystemTrayIcon>
 #include <QMainWindow>
@@ -21,9 +22,10 @@ public:
     ClipboardManager* getClipboardManager() const { return clipboardMgr; }
     ScreenshotManager* getScreenshotManager() const { return screenshotMgr; }
     BrightnessPanel* getBrightnessManager() const { return brightnessMgr; }
-    
+    PixelAutomation* getPixelAutomation() const { return pixelAutomation.get(); }
+
     void setIO(IO* io) { this->io = io; }
-    
+
     // Show settings window
     void showSettings();
     void hideSettings();
@@ -36,9 +38,10 @@ private:
     ClipboardManager* clipboardMgr;
     ScreenshotManager* screenshotMgr;
     BrightnessPanel* brightnessMgr;
+    std::unique_ptr<PixelAutomation> pixelAutomation;
     QSystemTrayIcon* trayIcon;
     QMenu* trayMenu;
-    
+
     std::unique_ptr<SettingsWindow> settingsWindow;
     bool tray = false;
 };

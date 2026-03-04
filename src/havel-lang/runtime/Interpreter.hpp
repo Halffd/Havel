@@ -84,6 +84,16 @@ struct HavelSet {
       : elements(std::move(elems)) {}
 };
 
+// Struct instance with fields and methods
+struct HavelStructInstance {
+  std::string typeName;
+  std::shared_ptr<std::unordered_map<std::string, HavelValue>> fields;
+  std::shared_ptr<HavelStructType> structType;
+
+  HavelStructInstance(const std::string& type, std::shared_ptr<HavelStructType> st)
+      : typeName(type), fields(std::make_shared<std::unordered_map<std::string, HavelValue>>()), structType(st) {}
+};
+
 // Return/break/continue value wrappers (must be defined BEFORE HavelResult)
 struct ReturnValue {
   std::shared_ptr<HavelValue> value;
@@ -111,7 +121,7 @@ template <typename T> class Atomic;
 // Value type for interpreter
 using HavelValueBase =
     std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
-                 HavelObject, HavelSet, std::shared_ptr<HavelFunction>,
+                 HavelObject, HavelSet, HavelStructInstance, std::shared_ptr<HavelFunction>,
                  std::shared_ptr<Channel>, BuiltinFunction>;
 
 /**
@@ -205,18 +215,20 @@ struct HavelValue {
   bool isNull() const { return is<std::nullptr_t>(); }
   bool isArray() const { return is<HavelArray>(); }
   bool isObject() const { return is<HavelObject>(); }
+  bool isStructInstance() const { return is<HavelStructInstance>(); }
   bool isFunction() const { return is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>(); }
-  
+
   double asNumber() const {
     if (is<double>()) return get<double>();
     if (is<int>()) return static_cast<double>(get<int>());
     return 0.0;
   }
-  
+
   const std::string& asString() const { return get<std::string>(); }
   bool asBool() const { return get<bool>(); }
   HavelArray asArray() const { return get<HavelArray>(); }
   HavelObject asObject() const { return get<HavelObject>(); }
+  HavelStructInstance asStructInstance() const { return get<HavelStructInstance>(); }
 };
 
 // Cooperative async scheduler

@@ -1187,7 +1187,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       lastResult = argRes;
       return;
     }
-    
+
     // Check if this is a spread expression
     if (dynamic_cast<const ast::SpreadExpression *>(arg.get())) {
       auto value = unwrap(argRes);
@@ -1198,8 +1198,21 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
             args.push_back(item);
           }
         }
-      } else {
-        // Non-array spread - add as single arg
+      }
+      // Spread objects - use values sorted by key (for {x, y} style objects)
+      else if (auto *objPtr = value.get_if<HavelObject>()) {
+        if (*objPtr) {
+          // Sort keys to ensure consistent order (x before y, etc.)
+          std::vector<std::pair<std::string, HavelValue>> sortedPairs((*objPtr)->begin(), (*objPtr)->end());
+          std::sort(sortedPairs.begin(), sortedPairs.end(),
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+          for (const auto &pair : sortedPairs) {
+            args.push_back(pair.second);
+          }
+        }
+      }
+      else {
+        // Non-array/object spread - add as single arg
         args.push_back(value);
       }
     } else {
@@ -3783,12 +3796,22 @@ void Interpreter::InitializeSystemBuiltins() {
 
   environment->Define(
       "sleep",
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("sleep() requires milliseconds");
         double ms = ValueToNumber(args[0]);
         std::this_thread::sleep_for(std::chrono::milliseconds((int)ms));
-        return HavelValue(nullptr);
+        
+        // Return chainable sleep result with send() method
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*result)["send"] = BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
+          if (args.empty())
+            return HavelRuntimeError("send() requires text");
+          std::string text = this->ValueToString(args[0]);
+          this->io->Send(text.c_str());
+          return HavelValue(nullptr);
+        });
+        return HavelValue(result);
       }));
 
   environment->Define(
@@ -3821,7 +3844,7 @@ void Interpreter::InitializeSystemBuiltins() {
         }
       }));
 
-  // approx(a, b, epsilon) - fuzzy comparison for floating point
+  // approx(a, b, epsilon) - fuzzy comparison for floating point (relative tolerance)
   environment->Define(
       "approx",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
@@ -3832,7 +3855,11 @@ void Interpreter::InitializeSystemBuiltins() {
         double b = args[1].isNumber() ? args[1].asNumber() : 0.0;
         double eps = (args.size() >= 3 && args[2].isNumber()) ? args[2].asNumber() : 1e-9;
         
-        return HavelValue(std::abs(a - b) < eps);
+        // Use relative tolerance for large magnitude values
+        double diff = std::abs(a - b);
+        double maxVal = std::max({1.0, std::abs(a), std::abs(b)});
+        
+        return HavelValue(diff <= eps * maxVal);
       }));
 
   // Send text/keys to the system

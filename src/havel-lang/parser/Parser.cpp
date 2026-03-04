@@ -510,6 +510,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
   advance(); // consume "return"
   std::unique_ptr<havel::ast::Expression> value = nullptr;
 
+  // Skip newlines before checking for return value
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+
   // Return value is optional
   if (at().type != havel::TokenType::Semicolon &&
       at().type != havel::TokenType::CloseBrace &&

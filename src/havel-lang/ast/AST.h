@@ -731,20 +731,24 @@ struct InputCommand {
   enum CommandType {
     SendText,      // > "text"
     SendKey,       // > {Enter}
-    MouseClick,    // > lmb, > rmb
-    MouseMove,     // > m(x, y)
-    MouseRelative, // > r(x, y)
-    MouseWheel,    // > w(x, y)
+    MouseClick,    // > lmb, > rmb, > mmb, > side1, > side2, > btn4, > btn5
+    MouseMove,     // > m(x, y, speed, accel)
+    MouseRelative, // > r(x, y, speed, accel)
+    MouseWheel,    // > w(x, y, speed, accel)
+    MouseClickAt,  // > c(x, y, button, speed, accel)
     Sleep          // > :500
   };
-  
+
   CommandType type;
   std::string text;           // For SendText
   std::string key;            // For SendKey
-  std::string xExprStr;       // For MouseMove, MouseRelative, MouseWheel (simplified)
-  std::string yExprStr;       // For MouseMove, MouseRelative, MouseWheel (simplified)
+  std::string xExprStr;       // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string yExprStr;       // For MouseMove, MouseRelative, MouseWheel, MouseClickAt
+  std::string speedExprStr;   // Speed parameter
+  std::string accelExprStr;   // Acceleration parameter
+  std::string buttonExprStr;  // Button for MouseClickAt
   std::string duration;       // For Sleep
-  
+
   InputCommand() : type(SendText) {}
 };
 

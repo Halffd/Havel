@@ -845,40 +845,58 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
       case ast::InputCommand::SendText:
         io->Send(cmd.text.c_str());
         break;
-        
+
       case ast::InputCommand::SendKey:
         io->Send(("{ " + cmd.key + " }").c_str());
         break;
-        
+
       case ast::InputCommand::MouseClick:
-        if (cmd.text == "left") {
+        if (cmd.text == "left" || cmd.text == "lmb") {
           io->MouseClick(1);
-        } else if (cmd.text == "right") {
+        } else if (cmd.text == "right" || cmd.text == "rmb") {
           io->MouseClick(2);
+        } else if (cmd.text == "middle" || cmd.text == "mmb") {
+          io->MouseClick(3);
+        } else if (cmd.text == "side1" || cmd.text == "btn4") {
+          io->MouseClick(4);
+        } else if (cmd.text == "side2" || cmd.text == "btn5") {
+          io->MouseClick(5);
         }
         break;
 
       case ast::InputCommand::MouseMove: {
-        double x = 0, y = 0;
+        double x = 0, y = 0, speed = 1.0, accel = 1.0;
         if (!cmd.xExprStr.empty()) {
           try { x = std::stod(cmd.xExprStr); } catch (...) {}
         }
         if (!cmd.yExprStr.empty()) {
           try { y = std::stod(cmd.yExprStr); } catch (...) {}
         }
-        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y));
+        if (!cmd.speedExprStr.empty()) {
+          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
+        }
+        if (!cmd.accelExprStr.empty()) {
+          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
+        }
+        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
         break;
       }
 
       case ast::InputCommand::MouseRelative: {
-        double x = 0, y = 0;
+        double x = 0, y = 0, speed = 1.0, accel = 1.0;
         if (!cmd.xExprStr.empty()) {
           try { x = std::stod(cmd.xExprStr); } catch (...) {}
         }
         if (!cmd.yExprStr.empty()) {
           try { y = std::stod(cmd.yExprStr); } catch (...) {}
         }
-        io->MouseMove(static_cast<int>(x), static_cast<int>(y));
+        if (!cmd.speedExprStr.empty()) {
+          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
+        }
+        if (!cmd.accelExprStr.empty()) {
+          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
+        }
+        io->MouseMove(static_cast<int>(x), static_cast<int>(y), speed, accel);
         break;
       }
 
@@ -890,11 +908,44 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
         if (!cmd.yExprStr.empty()) {
           try { y = std::stod(cmd.yExprStr); } catch (...) {}
         }
-        // Use Send for wheel - simulate with key events
-        io->Send("{WheelUp}");
+        // Use IO::Scroll for wheel events (dy, dx)
+        io->Scroll(y, x);
         break;
       }
-        
+
+      case ast::InputCommand::MouseClickAt: {
+        double x = 0, y = 0, speed = 1.0, accel = 1.0;
+        int button = 1; // Default to left click
+        if (!cmd.xExprStr.empty()) {
+          try { x = std::stod(cmd.xExprStr); } catch (...) {}
+        }
+        if (!cmd.yExprStr.empty()) {
+          try { y = std::stod(cmd.yExprStr); } catch (...) {}
+        }
+        if (!cmd.speedExprStr.empty()) {
+          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
+        }
+        if (!cmd.accelExprStr.empty()) {
+          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
+        }
+        // Parse button string
+        if (!cmd.buttonExprStr.empty()) {
+          std::string btn = cmd.buttonExprStr;
+          if (btn == "left" || btn == "lmb" || btn == "1") button = 1;
+          else if (btn == "right" || btn == "rmb" || btn == "2") button = 2;
+          else if (btn == "middle" || btn == "mmb" || btn == "3") button = 3;
+          else if (btn == "side1" || btn == "btn4" || btn == "4") button = 4;
+          else if (btn == "side2" || btn == "btn5" || btn == "5") button = 5;
+          else {
+            try { button = std::stoi(btn); } catch (...) {}
+          }
+        }
+        // Move to position and click
+        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
+        io->MouseClick(button);
+        break;
+      }
+
       case ast::InputCommand::Sleep: {
         long long ms = 0;
         try {

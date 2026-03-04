@@ -656,18 +656,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
 }
 
 // Parse implicit input statement in hotkey blocks
-// Handles: "text", {Key}, lmb, rmb, m(x,y), r(x,y), w(x,y), :500
+// Handles: "text", {Key}, lmb, rmb, mmb, side1, side2, btn4, btn5, m(x,y,speed,accel), r(x,y,speed,accel), w(x,y,speed,accel), c(x,y,btn,speed,accel), :500
 std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
   std::vector<havel::ast::InputCommand> commands;
-  
-  while (notEOF() && 
+
+  while (notEOF() &&
          at().type != havel::TokenType::NewLine &&
          at().type != havel::TokenType::Semicolon &&
          at().type != havel::TokenType::EOF_TOKEN &&
          at().type != havel::TokenType::CloseBrace) {
-    
+
     havel::ast::InputCommand cmd;
-    
+
     // Check for sleep inline: :500
     if (at().type == havel::TokenType::Colon) {
       advance(); // consume ':'
@@ -678,7 +678,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
       commands.push_back(cmd);
       continue;
     }
-    
+
     // Check for string: "text"
     if (at().type == havel::TokenType::String) {
       cmd.type = havel::ast::InputCommand::SendText;
@@ -686,7 +686,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
       commands.push_back(cmd);
       continue;
     }
-    
+
     // Check for key: {Enter}
     if (at().type == havel::TokenType::OpenBrace) {
       advance(); // consume '{'
@@ -700,11 +700,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
       }
       continue;
     }
-    
-    // Check for identifier: lmb, rmb, m, r, w
+
+    // Check for identifier: lmb, rmb, mmb, side1, side2, btn4, btn5, m, r, w, c
     if (at().type == havel::TokenType::Identifier) {
       std::string ident = at().value;
-      
+
+      // Mouse button shortcuts
       if (ident == "lmb") {
         advance();
         cmd.type = havel::ast::InputCommand::MouseClick;
@@ -717,49 +718,99 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
         cmd.text = "right";
         commands.push_back(cmd);
         continue;
-      } else if (ident == "m" || ident == "r" || ident == "w") {
+      } else if (ident == "mmb") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "middle";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "side1" || ident == "btn4") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "side1";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "side2" || ident == "btn5") {
+        advance();
+        cmd.type = havel::ast::InputCommand::MouseClick;
+        cmd.text = "side2";
+        commands.push_back(cmd);
+        continue;
+      } else if (ident == "m" || ident == "r" || ident == "w" || ident == "c") {
         advance(); // consume identifier
-        
-        // Parse function call: m(x, y)
+
+        // Parse function call: m(x, y, speed, accel) or c(x, y, button, speed, accel)
         if (at().type == havel::TokenType::OpenParen) {
           advance(); // consume '('
-          
-          // Parse x argument
-          if (at().type != havel::TokenType::CloseParen) {
-            cmd.xExprStr = at().value;
-            advance();
-          }
-          
-          // Parse optional y argument
-          if (at().type == havel::TokenType::Comma) {
-            advance(); // consume ','
+
+          // Helper to parse comma-separated arguments
+          auto parseArgs = [this](std::string& x, std::string& y, std::string& speed, std::string& accel, std::string& button = *(new std::string())) {
+            // Parse x argument
             if (at().type != havel::TokenType::CloseParen) {
-              cmd.yExprStr = at().value;
+              x = at().value;
               advance();
             }
+
+            // Parse y argument
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                y = at().value;
+                advance();
+              }
+            }
+
+            // Parse speed argument
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                speed = at().value;
+                advance();
+              }
+            }
+
+            // Parse accel argument (or button for c())
+            if (at().type == havel::TokenType::Comma) {
+              advance();
+              if (at().type != havel::TokenType::CloseParen) {
+                accel = at().value;
+                advance();
+              }
+            }
+          };
+
+          if (ident == "c") {
+            // c(x, y, button, speed, accel)
+            std::string button;
+            parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr, cmd.accelExprStr, button);
+            cmd.buttonExprStr = button;
+            cmd.type = havel::ast::InputCommand::MouseClickAt;
+          } else {
+            // m(x, y, speed, accel), r(x, y, speed, accel), w(x, y, speed, accel)
+            parseArgs(cmd.xExprStr, cmd.yExprStr, cmd.speedExprStr, cmd.accelExprStr);
+            
+            if (ident == "m") {
+              cmd.type = havel::ast::InputCommand::MouseMove;
+            } else if (ident == "r") {
+              cmd.type = havel::ast::InputCommand::MouseRelative;
+            } else if (ident == "w") {
+              cmd.type = havel::ast::InputCommand::MouseWheel;
+            }
           }
-          
+
           if (at().type == havel::TokenType::CloseParen) {
             advance(); // consume ')'
-          }
-          
-          if (ident == "m") {
-            cmd.type = havel::ast::InputCommand::MouseMove;
-          } else if (ident == "r") {
-            cmd.type = havel::ast::InputCommand::MouseRelative;
-          } else if (ident == "w") {
-            cmd.type = havel::ast::InputCommand::MouseWheel;
           }
           commands.push_back(cmd);
         }
         continue;
       }
     }
-    
+
     // Skip unknown token
     advance();
   }
-  
+
   return std::make_unique<havel::ast::InputStatement>(commands);
 }
 

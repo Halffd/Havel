@@ -145,7 +145,7 @@ private:
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
   std::unique_ptr<ast::Expression>
-  parseLambdaFromParams(std::vector<std::unique_ptr<ast::Identifier>> params);
+  parseLambdaFromParams(std::vector<std::unique_ptr<ast::FunctionParameter>> params);
   std::unique_ptr<ast::Expression>
   parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
   TokenType getBinaryOperatorToken(ast::BinaryOperator op);

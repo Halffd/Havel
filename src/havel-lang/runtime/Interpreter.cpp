@@ -619,6 +619,13 @@ void Interpreter::visitFunctionDeclaration(
   func->closure = this->environment;
 }
 
+void Interpreter::visitFunctionParameter(const ast::FunctionParameter &node) {
+  // Parameters are metadata for function construction.
+  // Default values are evaluated at CALL time, not definition time.
+  // This allows: let a = 5; let f = fn(x = a) {...}; a = 10; f() => x = 10
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitReturnStatement(const ast::ReturnStatement &node) {
   HavelValue value = nullptr;
   if (node.argument) {
@@ -1232,7 +1239,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
 
     auto funcEnv = std::make_shared<Environment>(func->closure);
     for (size_t i = 0; i < args.size(); ++i) {
-      funcEnv->Define(func->declaration->parameters[i]->symbol, args[i]);
+      funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, args[i]);
     }
 
     auto originalEnv = this->environment;
@@ -1347,7 +1354,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
           methodEnv->Define("this", instance);
           // Bind parameters
           for (size_t i = 0; i < methodPtr->parameters.size() && i < args.size(); ++i) {
-            methodEnv->Define(methodPtr->parameters[i]->symbol, args[i]);
+            methodEnv->Define(methodPtr->parameters[i]->paramName->symbol, args[i]);
           }
           // Execute method body
           auto originalEnv = this->environment;
@@ -1373,26 +1380,53 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
 void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
   // Capture current environment (closure)
   auto closureEnv = this->environment;
-  
-  // Store parameter names (strings are copyable)
-  std::vector<std::string> paramNames;
+
+  // Store parameter info (names and default values)
+  struct ParamInfo {
+    std::string name;
+    const ast::Expression* defaultValue;
+  };
+  std::vector<ParamInfo> paramInfos;
   for (const auto& param : node.parameters) {
-    paramNames.push_back(param->symbol);
+    ParamInfo info;
+    info.name = param->paramName->symbol;
+    info.defaultValue = param->defaultValue ? param->defaultValue->get() : nullptr;
+    paramInfos.push_back(info);
   }
-  
+
   // Store raw pointer to body - AST lives for entire script execution
   const ast::Statement* bodyPtr = node.body.get();
-  
+
   // Build a callable that binds args to parameter names and evaluates body
   BuiltinFunction lambda =
-      [this, closureEnv, paramNames, bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
-    if (args.size() != paramNames.size()) {
-      return HavelRuntimeError("Mismatched argument count for lambda");
+      [this, closureEnv, paramInfos, bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
+    // Check argument count (allow fewer args if defaults exist)
+    if (args.size() > paramInfos.size()) {
+      return HavelRuntimeError("Too many arguments for lambda");
     }
+    
     auto funcEnv = std::make_shared<Environment>(closureEnv);
-    for (size_t i = 0; i < args.size(); ++i) {
-      funcEnv->Define(paramNames[i], args[i]);
+    
+    // Bind arguments and apply defaults
+    for (size_t i = 0; i < paramInfos.size(); ++i) {
+      HavelValue value;
+      if (i < args.size()) {
+        // Argument provided
+        value = args[i];
+      } else if (paramInfos[i].defaultValue) {
+        // Use default value (evaluated at call time in current environment)
+        auto defaultRes = this->Evaluate(*paramInfos[i].defaultValue);
+        if (isError(defaultRes)) {
+          return defaultRes;
+        }
+        value = unwrap(defaultRes);
+      } else {
+        // No default and no argument
+        return HavelRuntimeError("Missing argument for parameter '" + paramInfos[i].name + "'");
+      }
+      funcEnv->Define(paramInfos[i].name, value);
     }
+    
     auto originalEnv = this->environment;
     this->environment = funcEnv;
     auto res = Evaluate(*bodyPtr);
@@ -1478,7 +1512,7 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
       }
       auto funcEnv = std::make_shared<Environment>(func->closure);
       for (size_t i = 0; i < args.size(); ++i) {
-        funcEnv->Define(func->declaration->parameters[i]->symbol, args[i]);
+        funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, args[i]);
       }
       auto originalEnv = this->environment;
       this->environment = funcEnv;
@@ -3739,7 +3773,7 @@ void Interpreter::InitializeSystemBuiltins() {
             for (size_t p = 0;
                  p < func->declaration->parameters.size() && p < fnArgs.size();
                  ++p) {
-              funcEnv->Define(func->declaration->parameters[p]->symbol,
+              funcEnv->Define(func->declaration->parameters[p]->paramName->symbol,
                               fnArgs[p]);
             }
             auto originalEnv = this->environment;
@@ -6339,7 +6373,7 @@ void Interpreter::InitializeArrayBuiltins() {
 
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol,
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol,
                                 fnArgs[i]);
               }
 
@@ -6395,7 +6429,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol,
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol,
                                 fnArgs[i]);
               }
 
@@ -6536,7 +6570,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, fnArgs[i]);
               }
 
               auto originalEnv = this->environment;
@@ -6583,7 +6617,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, fnArgs[i]);
               }
 
               auto originalEnv = this->environment;
@@ -6621,7 +6655,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, fnArgs[i]);
               }
 
               auto originalEnv = this->environment;
@@ -6671,7 +6705,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, fnArgs[i]);
               }
 
               auto originalEnv = this->environment;
@@ -6721,7 +6755,7 @@ void Interpreter::InitializeArrayBuiltins() {
               auto &func = *userFunc;
               auto funcEnv = std::make_shared<Environment>(func->closure);
               for (size_t i = 0; i < fnArgs.size() && i < func->declaration->parameters.size(); ++i) {
-                funcEnv->Define(func->declaration->parameters[i]->symbol, fnArgs[i]);
+                funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, fnArgs[i]);
               }
 
               auto originalEnv = this->environment;
@@ -6966,7 +7000,7 @@ void Interpreter::InitializeArrayBuiltins() {
                 auto &func = **userFunc;
                 auto funcEnv = std::make_shared<Environment>(func.closure);
                 for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
-                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
+                  funcEnv->Define(func.declaration->parameters[i]->paramName->symbol, callArgs[i]);
                 }
                 auto originalEnv = this->environment;
                 this->environment = funcEnv;
@@ -7048,7 +7082,7 @@ void Interpreter::InitializeArrayBuiltins() {
                 auto &func = **userFunc;
                 auto funcEnv = std::make_shared<Environment>(func.closure);
                 for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
-                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
+                  funcEnv->Define(func.declaration->parameters[i]->paramName->symbol, callArgs[i]);
                 }
                 auto originalEnv = this->environment;
                 this->environment = funcEnv;

@@ -518,7 +518,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
   }
   advance(); // consume '('
 
-  std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+  std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
   while (notEOF() && at().type != havel::TokenType::CloseParen) {
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -530,7 +530,17 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     if (at().type != havel::TokenType::Identifier) {
       failAt(at(), "Expected identifier in parameter list");
     }
-    params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+    auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+    // Check for default value
+    std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+    if (at().type == havel::TokenType::Assign) {
+      advance(); // consume '='
+      defaultValue = parseExpression();
+    }
+
+    params.push_back(std::make_unique<havel::ast::FunctionParameter>(
+        std::move(paramName), std::move(defaultValue)));
 
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -931,10 +941,11 @@ std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::Str
       }
       advance(); // consume '('
 
-      std::vector<std::unique_ptr<ast::Identifier>> params;
+      std::vector<std::unique_ptr<ast::FunctionParameter>> params;
       while (at().type != havel::TokenType::CloseParen && notEOF()) {
         if (at().type == havel::TokenType::Identifier) {
-          params.push_back(std::make_unique<ast::Identifier>(advance().value));
+          auto paramName = std::make_unique<ast::Identifier>(advance().value);
+          params.push_back(std::make_unique<ast::FunctionParameter>(std::move(paramName)));
         }
         if (at().type == havel::TokenType::Comma) {
           advance();
@@ -2414,11 +2425,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       // single identifier parameter
       advance(); // consume identifier
       advance(); // consume '=>'
-      std::vector<std::unique_ptr<havel::ast::Identifier>> params;
-      auto param = std::make_unique<havel::ast::Identifier>(identTk.value);
-      param->line = identTk.line;
-      param->column = identTk.column;
-      params.push_back(std::move(param));
+      std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+      auto paramName = std::make_unique<havel::ast::Identifier>(identTk.value);
+      paramName->line = identTk.line;
+      paramName->column = identTk.column;
+      params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
       return parseLambdaFromParams(std::move(params));
     }
     // Otherwise it's a normal identifier expression
@@ -2482,7 +2493,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     advance(); // consume 'fn'
 
     // Parse parameter list
-    std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
 
     if (at().type != havel::TokenType::OpenParen) {
       failAt(at(), "Expected '(' after 'fn' for function expression");
@@ -2501,8 +2512,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       if (at().type != havel::TokenType::Identifier) {
         failAt(at(), "Expected identifier in function parameter list");
       }
-      params.push_back(
-          std::make_unique<havel::ast::Identifier>(advance().value));
+      auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+      // Check for default value
+      std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
+      if (at().type == havel::TokenType::Assign) {
+        advance(); // consume '='
+        defaultValue = parseExpression();
+      }
+
+      params.push_back(std::make_unique<havel::ast::FunctionParameter>(
+          std::move(paramName), std::move(defaultValue)));
 
       while (at().type == havel::TokenType::NewLine) {
         advance();
@@ -2536,7 +2556,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     advance(); // consume '('
 
     // Check for lambda: () => or (params) =>
-    std::vector<std::unique_ptr<havel::ast::Identifier>> params;
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
     bool mightBeLambda = false;
 
     if (at().type == havel::TokenType::CloseParen) {
@@ -2549,7 +2569,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       size_t paramSavePos = position;
       bool validParamList = true;
       while (at().type == havel::TokenType::Identifier) {
-        params.push_back(std::make_unique<havel::ast::Identifier>(advance().value));
+        auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+        params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
         if (at().type == havel::TokenType::Comma) {
           advance();
           if (at().type != havel::TokenType::Identifier) {
@@ -3132,7 +3153,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseLambdaFromParams(
-    std::vector<std::unique_ptr<havel::ast::Identifier>> params) {
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params) {
   // Body can be block or expression
   if (at().type == havel::TokenType::OpenBrace) {
     auto block = parseBlockStatement();
@@ -3169,7 +3190,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         position = savePos; // restore
         if (!isObject) {
           auto block = parseBlockStatement();
-          std::vector<std::unique_ptr<havel::ast::Identifier>> noParams;
+          std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
           auto lambda = std::make_unique<havel::ast::LambdaExpression>(
               std::move(noParams), std::move(block));
           // Append lambda to existing call args
@@ -3201,7 +3222,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         args.push_back(std::move(obj));
       } else {
         auto block = parseBlockStatement();
-        std::vector<std::unique_ptr<havel::ast::Identifier>> noParams;
+        std::vector<std::unique_ptr<havel::ast::FunctionParameter>> noParams;
         auto lambda = std::make_unique<havel::ast::LambdaExpression>(
             std::move(noParams), std::move(block));
         args.push_back(std::move(lambda));

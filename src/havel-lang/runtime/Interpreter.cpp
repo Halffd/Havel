@@ -839,6 +839,16 @@ void Interpreter::visitSleepStatement(const ast::SleepStatement &node) {
   lastResult = HavelValue(nullptr);
 }
 
+void Interpreter::visitRepeatStatement(const ast::RepeatStatement &node) {
+  // Execute body 'count' times
+  for (int i = 0; i < node.count; i++) {
+    if (node.body) {
+      Evaluate(*node.body);
+    }
+  }
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitInputStatement(const ast::InputStatement &node) {
   for (const auto &cmd : node.commands) {
     switch (cmd.type) {

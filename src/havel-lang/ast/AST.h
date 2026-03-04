@@ -36,6 +36,7 @@ enum class NodeType {
   ApplicationExpression, // Curried function application
   InputStatement,        // > "text" or > {Enter} or > lmb
   SleepStatement,        // :1500 or :1h30m
+  RepeatStatement,       // repeat n { body }
 
   // Async/await expressions
   AsyncExpression, // async { ... }
@@ -769,14 +770,30 @@ struct InputStatement : public Statement {
 // Sleep Statement - shortcut: :1500 or :1h30m
 struct SleepStatement : public Statement {
   std::string duration;  // Duration string like "1500", "1h30m", "3:10:25"
-  
+
   SleepStatement() { kind = NodeType::SleepStatement; }
   SleepStatement(const std::string &dur) : duration(dur) { kind = NodeType::SleepStatement; }
-  
+
   std::string toString() const override {
     return "SleepStatement{duration: " + duration + "}";
   }
-  
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Repeat Statement - repeat n { body }
+struct RepeatStatement : public Statement {
+  int count;
+  std::unique_ptr<BlockStatement> body;
+
+  RepeatStatement() : count(0) { kind = NodeType::RepeatStatement; }
+  RepeatStatement(int c, std::unique_ptr<BlockStatement> b)
+      : count(c), body(std::move(b)) { kind = NodeType::RepeatStatement; }
+
+  std::string toString() const override {
+    return "RepeatStatement{count: " + std::to_string(count) + "}";
+  }
+
   void accept(ASTVisitor &visitor) const override;
 };
 
@@ -1734,6 +1751,7 @@ public:
   virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
   virtual void visitInputStatement(const InputStatement &node) = 0;
   virtual void visitSleepStatement(const SleepStatement &node) = 0;
+  virtual void visitRepeatStatement(const RepeatStatement &node) = 0;
 
   virtual void visitIfStatement(const IfStatement &node) = 0;
   virtual void visitIfExpression(const IfExpression &node) = 0;
@@ -1861,6 +1879,10 @@ inline void InputStatement::accept(ASTVisitor &visitor) const {
 
 inline void SleepStatement::accept(ASTVisitor &visitor) const {
   visitor.visitSleepStatement(*this);
+}
+
+inline void RepeatStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitRepeatStatement(*this);
 }
 
 inline void LetDeclaration::accept(ASTVisitor &visitor) const {

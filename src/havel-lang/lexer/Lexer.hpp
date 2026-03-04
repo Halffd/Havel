@@ -63,6 +63,7 @@ enum class TokenType {
   Off,
   When,
   Mode,
+  Repeat,     // repeat
   Identifier,
   Number,
   String,

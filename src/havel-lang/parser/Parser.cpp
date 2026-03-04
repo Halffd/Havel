@@ -169,6 +169,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   // Parse based on current token
   switch (at().type) {
   case havel::TokenType::Let:
+  case havel::TokenType::Const:
     return parseLetDeclaration();
   case havel::TokenType::If:
     return parseIfStatement();
@@ -379,6 +380,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
   }
   case havel::TokenType::Let:
+  case havel::TokenType::Const:
     return parseLetDeclaration();
   case havel::TokenType::If:
     return parseIfStatement();
@@ -1605,7 +1607,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStartStatement() {
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
-  advance(); // consume "let"
+  bool isConst = false;
+  
+  // Check if this is 'const' or 'let'
+  if (at().type == havel::TokenType::Const) {
+    isConst = true;
+  }
+  advance(); // consume "let" or "const"
 
   std::unique_ptr<havel::ast::Expression> pattern;
 
@@ -1620,13 +1628,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     // Regular variable: let x = value
     pattern = std::make_unique<havel::ast::Identifier>(advance().value);
   } else {
-    failAt(at(), "Expected identifier, '[' or '{' after 'let'");
+    failAt(at(), "Expected identifier, '[' or '{' after '" + std::string(isConst ? "const" : "let") + "'");
   }
 
   if (at().type != havel::TokenType::Assign) {
     // Allow declarations without assignment, e.g., `let x;`
     if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-      return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern));
+      return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern), nullptr, std::nullopt, isConst);
     } else {
       failAt(at(), "Destructuring patterns require initialization");
     }
@@ -1636,7 +1644,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
   auto value = parseExpression();
 
   return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern),
-                                                      std::move(value));
+                                                      std::move(value),
+                                                      std::nullopt,
+                                                      isConst);
 }
 
 std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
@@ -3405,6 +3415,7 @@ bool Parser::atStatementStart() {
   // Common statement start tokens
   switch (at().type) {
   case havel::TokenType::Let:
+  case havel::TokenType::Const:
   case havel::TokenType::If:
   case havel::TokenType::While:
   case havel::TokenType::For:

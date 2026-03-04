@@ -38,6 +38,7 @@ public:
 
 enum class TokenType {
   Let,
+  Const,      // const - immutable binding
   If,
   Else,
   While,

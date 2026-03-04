@@ -396,8 +396,11 @@ public:
   Environment(std::shared_ptr<Environment> parentEnv = nullptr)
       : parent(parentEnv) {}
 
-  void Define(const std::string &name, const HavelValue &value) {
+  void Define(const std::string &name, const HavelValue &value, bool isConst = false) {
     values[name] = value;
+    if (isConst) {
+      constVars.insert(name);
+    }
   }
 
   std::optional<HavelValue> Get(const std::string &name) const {
@@ -412,6 +415,11 @@ public:
   }
 
   bool Assign(const std::string &name, const HavelValue &value) {
+    // Check if this is a const variable
+    if (constVars.find(name) != constVars.end()) {
+      return false; // Cannot assign to const
+    }
+    
     auto it = values.find(name);
     if (it != values.end()) {
       values[name] = value;
@@ -422,10 +430,15 @@ public:
     }
     return false; // Variable not found
   }
+  
+  bool IsConst(const std::string &name) const {
+    return constVars.find(name) != constVars.end();
+  }
 
 private:
   std::shared_ptr<Environment> parent;
   std::unordered_map<std::string, HavelValue> values;
+  std::unordered_set<std::string> constVars;
 };
 
 // Main Interpreter class implementing the visitor pattern

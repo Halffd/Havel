@@ -903,18 +903,20 @@ struct LetDeclaration : public Statement {
       pattern; // Can be Identifier, ArrayPattern, or ObjectPattern
   std::unique_ptr<Expression> value;
   std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation;  // Optional type annotation
-  
+  bool isConst;  // true if declared with 'const' (immutable binding)
+
   // Value can be optional if language supports `let x;`
 
   LetDeclaration(std::unique_ptr<Expression> pat,
                  std::unique_ptr<Expression> val = nullptr,
-                 std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt)
-      : pattern(std::move(pat)), value(std::move(val)), typeAnnotation(std::move(typeAnn)) {
+                 std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+                 bool constant = false)
+      : pattern(std::move(pat)), value(std::move(val)), typeAnnotation(std::move(typeAnn)), isConst(constant) {
     kind = NodeType::LetDeclaration;
   }
 
   std::string toString() const override {
-    std::string result = "LetDeclaration{pattern: " +
+    std::string result = "LetDeclaration{" + std::string(isConst ? "const" : "let") + " pattern: " +
            (pattern ? pattern->toString() : "nullptr");
     if (typeAnnotation) {
       result += ", type: " + (*typeAnnotation)->toString();

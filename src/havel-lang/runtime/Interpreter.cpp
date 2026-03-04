@@ -546,8 +546,8 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
 
   // Handle destructuring patterns
   if (auto *ident = dynamic_cast<const ast::Identifier *>(node.pattern.get())) {
-    // Simple variable declaration: let x = value
-    environment->Define(ident->symbol, value);
+    // Simple variable declaration: let x = value or const x = value
+    environment->Define(ident->symbol, value, node.isConst);
     lastResult = value; // Set result for potential chaining
   } else if (auto *arrayPattern =
                  dynamic_cast<const ast::ArrayPattern *>(node.pattern.get())) {
@@ -567,7 +567,7 @@ void Interpreter::visitLetDeclaration(const ast::LetDeclaration &node) {
 
           if (auto *ident =
                   dynamic_cast<const ast::Identifier *>(pattern.get())) {
-            environment->Define(ident->symbol, element);
+            environment->Define(ident->symbol, element, node.isConst);
           }
           // TODO: Handle nested patterns
         }
@@ -2420,6 +2420,14 @@ void Interpreter::visitAssignmentExpression(
           HavelRuntimeError("Undefined variable: " + identifier->symbol, identifier->line, identifier->column);
       return;
     }
+    
+    // Check if this is a const variable
+    if (environment->IsConst(identifier->symbol)) {
+      lastResult = HavelRuntimeError("Cannot assign to const variable: " + identifier->symbol,
+                                     identifier->line, identifier->column);
+      return;
+    }
+    
     HavelValue newValue = applyCompound(op, *current, value);
     if (!environment->Assign(identifier->symbol, newValue)) {
       lastResult =

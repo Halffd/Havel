@@ -36,6 +36,8 @@ enum class NodeType {
   ApplicationExpression, // Curried function application
   InputStatement,        // > "text" or > {Enter} or > lmb
   SleepStatement,        // :1500 or :1h30m
+  BacktickExpression,    // `command` for shell output
+  ShellCommandStatement, // $ command for shell execution
   RepeatStatement,       // repeat n { body }
 
   // Async/await expressions
@@ -842,6 +844,38 @@ struct SleepStatement : public Statement {
 
   std::string toString() const override {
     return "SleepStatement{duration: " + duration + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Backtick Expression - `command` for shell output
+struct BacktickExpression : public Expression {
+  std::string command;
+
+  BacktickExpression() { kind = NodeType::BacktickExpression; }
+  explicit BacktickExpression(const std::string &cmd) : command(cmd) {
+    kind = NodeType::BacktickExpression;
+  }
+
+  std::string toString() const override {
+    return "BacktickExpression{`" + command + "`}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Shell Command Statement - $ command for shell execution
+struct ShellCommandStatement : public Statement {
+  std::string command;
+
+  ShellCommandStatement() { kind = NodeType::ShellCommandStatement; }
+  explicit ShellCommandStatement(const std::string &cmd) : command(cmd) {
+    kind = NodeType::ShellCommandStatement;
+  }
+
+  std::string toString() const override {
+    return "ShellCommandStatement{$ " + command + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1820,6 +1854,8 @@ public:
   virtual void visitExpressionStatement(const ExpressionStatement &node) = 0;
   virtual void visitInputStatement(const InputStatement &node) = 0;
   virtual void visitSleepStatement(const SleepStatement &node) = 0;
+  virtual void visitBacktickExpression(const BacktickExpression &node) = 0;
+  virtual void visitShellCommandStatement(const ShellCommandStatement &node) = 0;
   virtual void visitRepeatStatement(const RepeatStatement &node) = 0;
 
   virtual void visitIfStatement(const IfStatement &node) = 0;
@@ -1950,6 +1986,14 @@ inline void InputStatement::accept(ASTVisitor &visitor) const {
 
 inline void SleepStatement::accept(ASTVisitor &visitor) const {
   visitor.visitSleepStatement(*this);
+}
+
+inline void BacktickExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitBacktickExpression(*this);
+}
+
+inline void ShellCommandStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitShellCommandStatement(*this);
 }
 
 inline void RepeatStatement::accept(ASTVisitor &visitor) const {

@@ -474,6 +474,8 @@ public:
   void visitBlockExpression(const ast::BlockExpression &node) override;
   void visitExpressionStatement(const ast::ExpressionStatement &node) override;
   void visitSleepStatement(const ast::SleepStatement &node) override;
+  void visitBacktickExpression(const ast::BacktickExpression &node) override;
+  void visitShellCommandStatement(const ast::ShellCommandStatement &node) override;
   void visitRepeatStatement(const ast::RepeatStatement &node) override;
   void visitInputStatement(const ast::InputStatement &node) override;
   void visitPipelineExpression(const ast::PipelineExpression &node) override;

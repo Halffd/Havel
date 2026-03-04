@@ -69,6 +69,8 @@ enum class TokenType {
   Number,
   String,
   InterpolatedString,
+  Backtick,      // `command` for shell output
+  ShellCommand,  // $ command for shell execution
   Hotkey,
   Arrow,
   BinaryOp,
@@ -184,6 +186,8 @@ private:
 
   Token scanNumber();
   Token scanString();
+  Token scanBacktick();
+  Token scanShellCommand();
   Token scanIdentifier();
   Token scanHotkey();
   

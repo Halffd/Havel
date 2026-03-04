@@ -457,6 +457,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   case havel::TokenType::Colon:
     return parseSleepStatement();
+  case havel::TokenType::ShellCommand:
+    return std::make_unique<havel::ast::ShellCommandStatement>(advance().value);
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {
@@ -2350,6 +2352,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   case havel::TokenType::String: {
     advance();
     return std::make_unique<havel::ast::StringLiteral>(tk.value);
+  }
+
+  case havel::TokenType::Backtick: {
+    advance();
+    return std::make_unique<havel::ast::BacktickExpression>(tk.value);
   }
 
   case havel::TokenType::InterpolatedString: {

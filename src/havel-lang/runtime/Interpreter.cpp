@@ -879,6 +879,38 @@ void Interpreter::visitRepeatStatement(const ast::RepeatStatement &node) {
   lastResult = HavelValue(nullptr);
 }
 
+void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
+  // Execute shell command and capture output
+  std::array<char, 128> buffer;
+  std::string result;
+  
+  // Use popen to execute command and capture stdout
+  FILE* pipe = popen(node.command.c_str(), "r");
+  if (!pipe) {
+    lastResult = HavelRuntimeError("Failed to execute command: " + node.command);
+    return;
+  }
+  
+  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
+    result += buffer.data();
+  }
+  
+  int status = pclose(pipe);
+  
+  // Remove trailing newline
+  if (!result.empty() && result.back() == '\n') {
+    result.pop_back();
+  }
+  
+  lastResult = HavelValue(result);
+}
+
+void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
+  // Execute shell command without capturing output
+  int result = std::system(node.command.c_str());
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitInputStatement(const ast::InputStatement &node) {
   for (const auto &cmd : node.commands) {
     switch (cmd.type) {
@@ -1253,6 +1285,19 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     } else {
       lastResult = nullptr; // Implicit return
     }
+  } else if (auto *objPtr = callee.get_if<HavelObject>()) {
+    // Check for __call__ method (for struct type constructors)
+    if (*objPtr) {
+      auto it = (*objPtr)->find("__call__");
+      if (it != (*objPtr)->end() && it->second.is<BuiltinFunction>()) {
+        auto callFunc = it->second.get<BuiltinFunction>();
+        lastResult = callFunc(args);
+        return;
+      }
+    }
+    lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
+                                   ValueToString(callee),
+                                   node.line, node.column);
   } else {
     lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
                                    ValueToString(callee),
@@ -2606,16 +2651,16 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
     }
   }
   TypeRegistry::getInstance().registerStructType(structType);
-  
+
   // Create a constructor function for this struct type
-  // Usage: MousePos.new() or MousePos.new(x=10, y=20)
+  // Usage: MousePos.new() or MousePos.new(x=10, y=20) or MousePos(100, 200)
   auto structTypeName = node.name;
-  
+
   // Create MousePos.new function
   auto newFunc = BuiltinFunction([this, structType](const std::vector<HavelValue> &args) -> HavelResult {
     // Create new struct instance
     HavelStructInstance instance(structType->getName(), structType);
-    
+
     // Initialize fields from arguments (positional or named)
     size_t argIdx = 0;
     for (const auto& field : structType->getFields()) {
@@ -2626,7 +2671,7 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
         instance.fields->insert({field.name, HavelValue(nullptr)});
       }
     }
-    
+
     // Call init method if it exists
     auto initMethod = structType->getMethod("init");
     if (initMethod && initMethod->body) {
@@ -2637,15 +2682,16 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
       Evaluate(*initMethod->body);
       this->environment = originalEnv;
     }
-    
+
     return HavelValue(instance);
   });
-  
-  // Create MousePos object with .new method
+
+  // Create MousePos object with .new method and __call__ for direct invocation
   auto structObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
   (*structObj)["new"] = HavelValue(newFunc);
+  (*structObj)["__call__"] = HavelValue(newFunc);  // Enable MousePos(100, 200) syntax
   environment->Define(structTypeName, HavelValue(structObj));
-  
+
   lastResult = nullptr;
 }
 

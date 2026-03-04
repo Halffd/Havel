@@ -467,6 +467,7 @@ public:
   void visitIfStatement(const ast::IfStatement &node) override;
   void visitIfExpression(const ast::IfExpression &node) override;
   void visitFunctionDeclaration(const ast::FunctionDeclaration &node) override;
+  void visitFunctionParameter(const ast::FunctionParameter &node) override;
   void visitReturnStatement(const ast::ReturnStatement &node) override;
   void visitHotkeyBinding(const ast::HotkeyBinding &node) override;
   void visitBlockStatement(const ast::BlockStatement &node) override;

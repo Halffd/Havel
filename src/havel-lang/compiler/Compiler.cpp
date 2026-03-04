@@ -586,7 +586,7 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
     for (const auto &param : funcDecl.parameters) {
       // Default to double for now (you might want type inference)
       paramTypes.push_back(llvm::Type::getDoubleTy(context));
-      info("Parameter: " + param->symbol);
+      info("Parameter: " + param->name->symbol);
     }
 
     llvm::FunctionType *funcType =
@@ -603,7 +603,7 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
     // Set parameter names
     auto paramIt = funcDecl.parameters.begin();
     for (auto &arg : function->args()) {
-      arg.setName((*paramIt)->symbol);
+      arg.setName((*paramIt)->name->symbol);
       ++paramIt;
     }
 

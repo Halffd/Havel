@@ -101,6 +101,7 @@ enum class NodeType {
   ExpressionStatement, // Most things are expressions
   LetDeclaration,      // let x = 5 (immutable)
   FunctionDeclaration, // let add = fn(a, b) -> a + b
+  FunctionParameter,   // function parameter with optional default value
 
   // Type system (if you want static typing)
   TypeDeclaration,      // type Point = {x: Float, y: Float}
@@ -222,41 +223,11 @@ struct StructFieldDef : public ASTNode {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Forward declaration for StructMethodDef (full definition comes after BlockStatement)
+// Forward declarations
+struct Identifier;
+struct BlockStatement;
+struct FunctionParameter;
 struct StructMethodDef;
-
-// Struct definition
-struct StructDefinition : public TypeDefinition {
-  std::vector<StructFieldDef> fields;
-  std::vector<std::unique_ptr<StructMethodDef>> methods;
-  bool hasConstructor;
-
-  StructDefinition(std::vector<StructFieldDef> fieldList = {},
-                   std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
-    : fields(std::move(fieldList)), methods(std::move(methodList)), hasConstructor(false) {
-    // Check if there's a constructor (only if methods are fully defined)
-    #ifdef STRUCT_METHOD_DEF_COMPLETE
-    for (const auto& method : methods) {
-      if (method && method->isConstructor) {
-        hasConstructor = true;
-        break;
-      }
-    }
-    #endif
-  }
-
-  std::string toString() const override {
-    std::string result = "Struct{";
-    for (size_t i = 0; i < fields.size(); ++i) {
-      if (i > 0) result += ", ";
-      result += fields[i].toString();
-    }
-    result += "}";
-    return result;
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
 
 // Enum variant with optional payload
 struct EnumVariantDef : public ASTNode {
@@ -478,6 +449,86 @@ struct BlockStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Function parameter with optional default value
+struct FunctionParameter : public ASTNode {
+  std::unique_ptr<Identifier> paramName;
+  std::optional<std::unique_ptr<Expression>> defaultValue;
+
+  FunctionParameter(std::unique_ptr<Identifier> n,
+                    std::optional<std::unique_ptr<Expression>> defVal = std::nullopt)
+      : paramName(std::move(n)), defaultValue(std::move(defVal)) {
+    kind = NodeType::FunctionParameter;
+  }
+
+  std::string toString() const override {
+    std::string result = paramName ? paramName->toString() : "nullptr";
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
+    }
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct method definition (including constructor)
+struct StructMethodDef : public ASTNode {
+  std::string name;  // "init" for constructor, otherwise method name
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement> body;
+  bool isConstructor;
+
+  StructMethodDef(const std::string& methodName,
+                  std::vector<std::unique_ptr<FunctionParameter>> params,
+                  std::unique_ptr<BlockStatement> b,
+                  bool isCtor = false)
+    : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor) {
+    kind = NodeType::StructMethodDef;
+  }
+
+  std::string toString() const override {
+    std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += parameters[i]->paramName->symbol;
+    }
+    result += ") {...}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct definition (defined after StructMethodDef is complete)
+struct StructDefinition : public TypeDefinition {
+  std::vector<StructFieldDef> fields;
+  std::vector<std::unique_ptr<StructMethodDef>> methods;
+  bool hasConstructor;
+
+  StructDefinition(std::vector<StructFieldDef> fieldList = {},
+                   std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
+    : fields(std::move(fieldList)), methods(std::move(methodList)), hasConstructor(false) {
+    for (const auto& method : methods) {
+      if (method && method->isConstructor) {
+        hasConstructor = true;
+        break;
+      }
+    }
+  }
+
+  std::string toString() const override {
+    std::string result = "Struct{";
+    for (size_t i = 0; i < fields.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += fields[i].toString();
+    }
+    result += "}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Block Expression ({ stmt; stmt; expr }) - last expression is value
 struct BlockExpression : public Expression {
   std::vector<std::unique_ptr<Statement>> body;
@@ -496,34 +547,6 @@ struct BlockExpression : public Expression {
       result += value->toString();
     }
     return result + "}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
-// Struct method definition (including constructor)
-struct StructMethodDef : public ASTNode {
-  std::string name;  // "init" for constructor, otherwise method name
-  std::vector<std::unique_ptr<Identifier>> parameters;
-  std::unique_ptr<BlockStatement> body;
-  bool isConstructor;
-
-  StructMethodDef(const std::string& methodName,
-                  std::vector<std::unique_ptr<Identifier>> params,
-                  std::unique_ptr<BlockStatement> b,
-                  bool isCtor = false)
-    : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor) {
-    kind = NodeType::StructMethodDef;
-  }
-
-  std::string toString() const override {
-    std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
-    for (size_t i = 0; i < parameters.size(); ++i) {
-      if (i > 0) result += ", ";
-      result += parameters[i]->symbol;
-    }
-    result += ") {...}";
-    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1174,11 +1197,11 @@ struct OnStartStatement : public Statement {
 // Function Declaration
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
-  std::vector<std::unique_ptr<Identifier>> parameters;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<BlockStatement> body;
 
   FunctionDeclaration(std::unique_ptr<Identifier> n,
-                      std::vector<std::unique_ptr<Identifier>> params,
+                      std::vector<std::unique_ptr<FunctionParameter>> params,
                       std::unique_ptr<BlockStatement> bd)
       : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)) {
     kind = NodeType::FunctionDeclaration;
@@ -1507,11 +1530,11 @@ struct UpdateExpression : public Expression {
 
 // Lambda (arrow) Function Expression (() => { ... } or x => expr)
 struct LambdaExpression : public Expression {
-  std::vector<std::unique_ptr<Identifier>> parameters;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<Statement> body; // BlockStatement or ExpressionStatement
 
   LambdaExpression() { kind = NodeType::LambdaExpression; }
-  LambdaExpression(std::vector<std::unique_ptr<Identifier>> params,
+  LambdaExpression(std::vector<std::unique_ptr<FunctionParameter>> params,
                    std::unique_ptr<Statement> bdy)
       : parameters(std::move(params)), body(std::move(bdy)) {
     kind = NodeType::LambdaExpression;
@@ -1812,6 +1835,7 @@ public:
   virtual void visitSwitchCase(const SwitchCase &node) = 0;
 
   virtual void visitFunctionDeclaration(const FunctionDeclaration &node) = 0;
+  virtual void visitFunctionParameter(const FunctionParameter &node) = 0;
 
   virtual void visitTypeDeclaration(const TypeDeclaration &node) = 0;
   virtual void visitTypeAnnotation(const TypeAnnotation &node) = 0;
@@ -1870,10 +1894,6 @@ inline void Identifier::accept(ASTVisitor &visitor) const {
 
 inline void BlockStatement::accept(ASTVisitor &visitor) const {
   visitor.visitBlockStatement(*this);
-}
-
-inline void StructMethodDef::accept(ASTVisitor &visitor) const {
-  visitor.visitStructMethodDef(*this);
 }
 
 inline void BlockExpression::accept(ASTVisitor &visitor) const {
@@ -1964,6 +1984,15 @@ inline void SwitchStatement::accept(ASTVisitor &visitor) const {
 inline void SwitchCase::accept(ASTVisitor &visitor) const {
   visitor.visitSwitchCase(*this);
 }
+
+inline void FunctionParameter::accept(ASTVisitor &visitor) const {
+  visitor.visitFunctionParameter(*this);
+}
+
+inline void StructMethodDef::accept(ASTVisitor &visitor) const {
+  visitor.visitStructMethodDef(*this);
+}
+
 inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitFunctionDeclaration(*this);
 }

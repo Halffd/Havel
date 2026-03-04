@@ -2591,8 +2591,20 @@ void Interpreter::visitForStatement(const ast::ForStatement &node) {
 }
 
 void Interpreter::visitLoopStatement(const ast::LoopStatement &node) {
-  // Infinite loop
+  // Loop with optional condition
   while (true) {
+    // Check condition if present (loop while condition {})
+    if (node.condition) {
+      auto condResult = Evaluate(*node.condition);
+      if (isError(condResult)) {
+        lastResult = condResult;
+        return;
+      }
+      if (!ExecResultToBool(condResult)) {
+        break;  // Condition is false, exit loop
+      }
+    }
+
     // Execute loop body
     auto bodyResult = Evaluate(*node.body);
 
@@ -2799,6 +2811,114 @@ void Interpreter::InitializeStandardLibrary() {
       })));
 
   environment->Define("app", HavelValue(appObj));
+
+  // Type conversion functions
+  // int(x) - convert to 64-bit integer
+  environment->Define(
+      "int",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("int() requires an argument");
+        
+        const auto& arg = args[0];
+        if (arg.isNumber()) {
+          return HavelValue(static_cast<double>(static_cast<long long>(arg.asNumber())));
+        } else if (arg.isString()) {
+          try {
+            return HavelValue(static_cast<double>(std::stoll(arg.asString())));
+          } catch (...) {
+            return HavelRuntimeError("int(): cannot convert '" + arg.asString() + "' to integer");
+          }
+        } else if (arg.isBool()) {
+          return HavelValue(arg.asBool() ? 1.0 : 0.0);
+        }
+        return HavelRuntimeError("int(): cannot convert type to integer");
+      }));
+
+  // num(x) - convert to double
+  environment->Define(
+      "num",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("num() requires an argument");
+        
+        const auto& arg = args[0];
+        if (arg.isNumber()) {
+          return HavelValue(arg.asNumber());
+        } else if (arg.isString()) {
+          try {
+            return HavelValue(std::stod(arg.asString()));
+          } catch (...) {
+            return HavelRuntimeError("num(): cannot convert '" + arg.asString() + "' to number");
+          }
+        } else if (arg.isBool()) {
+          return HavelValue(arg.asBool() ? 1.0 : 0.0);
+        }
+        return HavelRuntimeError("num(): cannot convert type to number");
+      }));
+
+  // str(x) - convert to string
+  environment->Define(
+      "str",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty())
+          return HavelRuntimeError("str() requires an argument");
+        
+        const auto& arg = args[0];
+        if (arg.isString()) {
+          return HavelValue(arg.asString());
+        } else if (arg.isNumber()) {
+          return HavelValue(std::to_string(static_cast<long long>(arg.asNumber())));
+        } else if (arg.isBool()) {
+          return HavelValue(arg.asBool() ? "true" : "false");
+        }
+        return HavelValue("");
+      }));
+
+  // list(...) - construct list from arguments or convert iterable
+  environment->Define(
+      "list",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        
+        // If single argument that's already an array, copy it
+        if (args.size() == 1 && args[0].is<HavelArray>()) {
+          auto arr = args[0].get<HavelArray>();
+          if (arr) {
+            result = std::make_shared<std::vector<HavelValue>>(*arr);
+          }
+        } else {
+          // Otherwise, use arguments as elements
+          for (const auto& arg : args) {
+            result->push_back(arg);
+          }
+        }
+        
+        return HavelValue(result);
+      }));
+
+  // tuple(...) - construct tuple (represented as fixed-size array)
+  environment->Define(
+      "tuple",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& arg : args) {
+          result->push_back(arg);
+        }
+        return HavelValue(result);
+      }));
+
+  // set(...) - construct set from arguments
+  environment->Define(
+      "set_",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        // For now, just return an array since sets need custom hash/equal
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& arg : args) {
+          result->push_back(arg);
+        }
+        return HavelValue(result);
+      }));
 
   // Debug control builtins
   auto debugObj =

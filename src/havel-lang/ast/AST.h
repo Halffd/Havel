@@ -963,16 +963,19 @@ struct ForStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Loop Statement (infinite loop)
+// Loop Statement (infinite loop or condition-driven)
 struct LoopStatement : public Statement {
   std::unique_ptr<Statement> body;
+  std::unique_ptr<Expression> condition;  // For "loop while condition {}"
 
-  LoopStatement(std::unique_ptr<Statement> bd) : body(std::move(bd)) {
+  LoopStatement(std::unique_ptr<Statement> bd, std::unique_ptr<Expression> cond = nullptr)
+      : body(std::move(bd)), condition(std::move(cond)) {
     kind = NodeType::LoopStatement;
   }
 
   std::string toString() const override {
-    return "LoopStatement{body: " + (body ? body->toString() : "nullptr") + "}";
+    std::string condStr = condition ? " while " + condition->toString() : "";
+    return "LoopStatement{" + condStr + "body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

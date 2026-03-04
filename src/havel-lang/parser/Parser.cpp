@@ -2664,12 +2664,39 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
   auto dotTok = at();  // Save token location before consuming
   advance(); // consume '.'
 
-  // Property names can be identifiers or certain keywords (like 'config')
+  // Property names can be identifiers or certain keywords
+  // Many keywords should be allowed as property names (e.g., clipboard.in, clipboard.out)
   if (at().type != havel::TokenType::Identifier &&
       at().type != havel::TokenType::Config &&
       at().type != havel::TokenType::Devices &&
       at().type != havel::TokenType::Modes &&
-      at().type != havel::TokenType::Mode) {
+      at().type != havel::TokenType::Mode &&
+      at().type != havel::TokenType::In &&
+      at().type != havel::TokenType::Out &&
+      at().type != havel::TokenType::On &&
+      at().type != havel::TokenType::Off &&
+      at().type != havel::TokenType::When &&
+      at().type != havel::TokenType::Loop &&
+      at().type != havel::TokenType::For &&
+      at().type != havel::TokenType::While &&
+      at().type != havel::TokenType::If &&
+      at().type != havel::TokenType::Else &&
+      at().type != havel::TokenType::Return &&
+      at().type != havel::TokenType::Ret &&
+      at().type != havel::TokenType::Fn &&
+      at().type != havel::TokenType::Let &&
+      at().type != havel::TokenType::Break &&
+      at().type != havel::TokenType::Continue &&
+      at().type != havel::TokenType::Switch &&
+      at().type != havel::TokenType::Case &&
+      at().type != havel::TokenType::Default &&
+      at().type != havel::TokenType::Match &&
+      at().type != havel::TokenType::Struct &&
+      at().type != havel::TokenType::Enum &&
+      at().type != havel::TokenType::Try &&
+      at().type != havel::TokenType::Catch &&
+      at().type != havel::TokenType::Finally &&
+      at().type != havel::TokenType::Throw) {
     failAt(at(), "Expected property name after '.'");
   }
 

@@ -373,6 +373,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     failAt(at(), "'finally' can only appear within a 'try' statement");
   case havel::TokenType::When:
     return parseWhenBlock();
+  case havel::TokenType::Repeat:
+    return parseRepeatStatement();
   case havel::TokenType::OpenBrace:
     return parseBlockStatement();
   case havel::TokenType::Import:
@@ -1657,6 +1659,24 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
 
   return std::make_unique<havel::ast::WhenBlock>(std::move(condition),
                                                  std::move(statements));
+}
+
+// Parse repeat statement: repeat count { body }
+std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
+  advance(); // consume 'repeat'
+
+  // Parse count - must be a number literal
+  if (at().type != havel::TokenType::Number) {
+    failAt(at(), "repeat count must be a number");
+  }
+  
+  int count = static_cast<int>(std::stod(at().value));
+  advance(); // consume number
+
+  // Parse body as block statement (parseBlockStatement consumes the '{')
+  auto body = parseBlockStatement();
+
+  return std::make_unique<ast::RepeatStatement>(count, std::move(body));
 }
 
 std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(bool inputContext) {

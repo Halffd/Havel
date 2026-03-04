@@ -36,6 +36,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"off", TokenType::Off},
     {"when", TokenType::When},
     {"mode", TokenType::Mode},
+    {"repeat", TokenType::Repeat},
     {"send", TokenType::Identifier},
     {"clipboard", TokenType::Identifier}, // Built-in module
     {"text", TokenType::Identifier},      // Built-in module

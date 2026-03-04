@@ -88,6 +88,7 @@ private:
   std::unique_ptr<ast::Statement> parseSwitchStatement();
   std::unique_ptr<ast::Statement> parseBreakStatement();
   std::unique_ptr<ast::Statement> parseContinueStatement();
+  std::unique_ptr<ast::Statement> parseRepeatStatement();
   std::unique_ptr<ast::Statement> parseOnStatement();
   std::unique_ptr<ast::Statement> parseOnModeStatement();
   std::unique_ptr<ast::Statement> parseOnModeStatementBody();

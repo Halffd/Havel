@@ -3821,6 +3821,20 @@ void Interpreter::InitializeSystemBuiltins() {
         }
       }));
 
+  // approx(a, b, epsilon) - fuzzy comparison for floating point
+  environment->Define(
+      "approx",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("approx() requires at least 2 arguments");
+        
+        double a = args[0].isNumber() ? args[0].asNumber() : 0.0;
+        double b = args[1].isNumber() ? args[1].asNumber() : 0.0;
+        double eps = (args.size() >= 3 && args[2].isNumber()) ? args[2].asNumber() : 1e-9;
+        
+        return HavelValue(std::abs(a - b) < eps);
+      }));
+
   // Send text/keys to the system
   environment->Define(
       "send", BuiltinFunction(

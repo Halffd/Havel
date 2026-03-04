@@ -1262,18 +1262,36 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
   advance(); // consume "loop"
 
-  // Skip newlines before opening brace
+  // Check for optional "while condition"
+  std::unique_ptr<havel::ast::Expression> condition;
+  
+  // Skip newlines
   while (at().type == havel::TokenType::NewLine) {
     advance();
   }
 
+  if (at().type == havel::TokenType::While) {
+    advance(); // consume "while"
+    
+    // Parse condition expression
+    bool prevAllow = allowBraceCallSugar;
+    allowBraceCallSugar = false;
+    condition = parseExpression();
+    allowBraceCallSugar = prevAllow;
+    
+    // Skip newlines before opening brace
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
   if (at().type != havel::TokenType::OpenBrace) {
-    failAt(at(), "Expected '{' after 'loop'");
+    failAt(at(), "Expected '{' after 'loop' or loop condition");
   }
 
   auto body = parseBlockStatement();
 
-  return std::make_unique<havel::ast::LoopStatement>(std::move(body));
+  return std::make_unique<havel::ast::LoopStatement>(std::move(body), std::move(condition));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {

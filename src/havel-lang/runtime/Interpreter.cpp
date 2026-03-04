@@ -6748,20 +6748,27 @@ void Interpreter::InitializeArrayBuiltins() {
           return HavelRuntimeError("sortByKey() requires (array, key)");
         if (!args[0].is<HavelArray>())
           return HavelRuntimeError("sortByKey() first arg must be array");
-        
+
         auto array = args[0].get<HavelArray>();
         std::string key = ValueToString(args[1]);
-        
+
         if (!array)
           return HavelRuntimeError("sortByKey() received null array");
 
         // Check for custom comparator
-        bool hasComparator = args.size() >= 3 && (args[2].is<BuiltinFunction>() || 
+        bool hasComparator = args.size() >= 3 && (args[2].is<BuiltinFunction>() ||
             args[2].is<std::shared_ptr<HavelFunction>>());
 
+        // Store comparator for use in sort
+        HavelValue comparator;
+        if (hasComparator) {
+          comparator = args[2];
+        }
+
         std::sort(array->begin(), array->end(),
-          [this, &key, &args, hasComparator](const HavelValue &a, const HavelValue &b) {
-            auto getKeyValue = [this, &key](const HavelValue &obj) -> HavelValue {
+          [this, key, hasComparator, comparator](const HavelValue &a, const HavelValue &b) mutable {
+            // Get value for key from object
+            auto getKeyValue = [&key](const HavelValue &obj) -> HavelValue {
               if (auto *objMap = obj.get_if<std::shared_ptr<std::unordered_map<std::string, HavelValue>>>()) {
                 if (*objMap) {
                   auto it = (*objMap)->find(key);
@@ -6772,48 +6779,31 @@ void Interpreter::InitializeArrayBuiltins() {
               }
               return HavelValue(nullptr);
             };
-            
+
             HavelValue valA = getKeyValue(a);
             HavelValue valB = getKeyValue(b);
-            
+
             if (hasComparator) {
-              auto &comparator = args[2];
+              // Use custom comparator
               std::vector<HavelValue> callArgs = {valA, valB};
               HavelResult cmpResult;
-              
+
               if (auto *builtin = comparator.get_if<BuiltinFunction>()) {
                 cmpResult = (*builtin)(callArgs);
-              } else if (auto *userFunc = comparator.get_if<std::shared_ptr<HavelFunction>>()) {
-                auto &func = **userFunc;
-                auto funcEnv = std::make_shared<Environment>(func.closure);
-                for (size_t i = 0; i < callArgs.size() && i < func.declaration->parameters.size(); ++i) {
-                  funcEnv->Define(func.declaration->parameters[i]->symbol, callArgs[i]);
-                }
-                auto originalEnv = this->environment;
-                this->environment = funcEnv;
-                cmpResult = Evaluate(*func.declaration->body);
-                this->environment = originalEnv;
-                
-                if (std::holds_alternative<ReturnValue>(cmpResult)) {
-                  auto ret = std::get<ReturnValue>(cmpResult);
-                  cmpResult = ret.value ? *ret.value : HavelValue();
-                }
-              } else {
-                return false;
+                if (isError(cmpResult)) return false;
+                double cmpNum = ValueToNumber(unwrap(cmpResult));
+                return cmpNum < 0;
               }
-              
-              if (isError(cmpResult)) return false;
-              double cmpNum = ValueToNumber(unwrap(cmpResult));
-              return cmpNum < 0;
+              // For user functions, fall through to default comparison
+            }
+            
+            // Default comparison
+            if (valA.isNumber() && valB.isNumber()) {
+              return valA.asNumber() < valB.asNumber();
+            } else if (valA.isString() && valB.isString()) {
+              return valA.asString() < valB.asString();
             } else {
-              // Default comparison
-              if (valA.isNumber() && valB.isNumber()) {
-                return valA.asNumber() < valB.asNumber();
-              } else if (valA.isString() && valB.isString()) {
-                return valA.asString() < valB.asString();
-              } else {
-                return ValueToString(valA) < ValueToString(valB);
-              }
+              return ValueToString(valA) < ValueToString(valB);
             }
           });
 

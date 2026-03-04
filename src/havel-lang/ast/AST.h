@@ -16,6 +16,8 @@ struct StructFieldDef;
 struct EnumVariantDef;
 struct StructDefinition;
 struct EnumDefinition;
+struct TraitDeclaration;
+struct ImplDeclaration;
 enum class NodeType {
   // Program structure
   Program,
@@ -116,6 +118,9 @@ enum class NodeType {
   EnumDeclaration,      // enum Color { Red, Green, Blue }
   EnumDefinition,       // enum body definition
   EnumVariantDef,       // enum variant with optional payload
+  TraitDeclaration,     // trait Drawable { fn draw() }
+  TraitMethod,          // trait method (with optional default impl)
+  ImplDeclaration,      // impl Drawable for Circle { ... }
 
   // Higher-order constructs
   PartialApplication, // add(5, _) creates fn(b) -> 5 + b
@@ -229,7 +234,9 @@ struct StructFieldDef : public ASTNode {
 struct Identifier;
 struct BlockStatement;
 struct FunctionParameter;
+struct FunctionDeclaration;
 struct StructMethodDef;
+struct TraitMethod;
 
 // Enum variant with optional payload
 struct EnumVariantDef : public ASTNode {
@@ -549,6 +556,67 @@ struct BlockExpression : public Expression {
       result += value->toString();
     }
     return result + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Trait Method - method in a trait with optional default implementation
+struct TraitMethod : public ASTNode {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<FunctionParameter>> parameters;
+  std::unique_ptr<BlockStatement> defaultBody;  // nullptr if no default implementation
+
+  TraitMethod(std::unique_ptr<Identifier> n,
+              std::vector<std::unique_ptr<FunctionParameter>> params,
+              std::unique_ptr<BlockStatement> body = nullptr)
+    : name(std::move(n)), parameters(std::move(params)), defaultBody(std::move(body)) {
+    kind = NodeType::TraitMethod;
+  }
+
+  std::string toString() const override {
+    std::string result = "TraitMethod{" + (name ? name->symbol : "?");
+    result += defaultBody ? " (with default)}" : " (abstract)}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Trait Declaration
+struct TraitDeclaration : public Statement {
+  std::unique_ptr<Identifier> name;
+  std::vector<std::unique_ptr<TraitMethod>> methods;
+
+  TraitDeclaration(std::unique_ptr<Identifier> n,
+                   std::vector<std::unique_ptr<TraitMethod>> meths)
+    : name(std::move(n)), methods(std::move(meths)) {
+    kind = NodeType::TraitDeclaration;
+  }
+
+  std::string toString() const override {
+    return "TraitDeclaration{name: " + (name ? name->symbol : "?") +
+           ", methods: " + std::to_string(methods.size()) + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Implementation Declaration (impl Trait for Type)
+struct ImplDeclaration : public Statement {
+  std::unique_ptr<Identifier> traitName;
+  std::unique_ptr<Identifier> typeName;
+  std::vector<std::unique_ptr<FunctionDeclaration>> funcs;
+
+  ImplDeclaration(std::unique_ptr<Identifier> trait,
+                  std::unique_ptr<Identifier> type,
+                  std::vector<std::unique_ptr<FunctionDeclaration>> f)
+    : traitName(std::move(trait)), typeName(std::move(type)), funcs(std::move(f)) {
+    kind = NodeType::ImplDeclaration;
+  }
+
+  std::string toString() const override {
+    return "ImplDeclaration";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1920,6 +1988,9 @@ public:
   virtual void visitEnumVariantDef(const EnumVariantDef &node) = 0;
   virtual void visitEnumDefinition(const EnumDefinition &node) = 0;
   virtual void visitEnumDeclaration(const EnumDeclaration &node) = 0;
+  virtual void visitTraitDeclaration(const TraitDeclaration &node) = 0;
+  virtual void visitTraitMethod(const TraitMethod &node) = 0;
+  virtual void visitImplDeclaration(const ImplDeclaration &node) = 0;
 };
 // Definitions of accept methods (must be after ASTVisitor declaration)
 inline void Program::accept(ASTVisitor &visitor) const {
@@ -2218,5 +2289,17 @@ inline void EnumDefinition::accept(ASTVisitor &visitor) const {
 
 inline void EnumDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitEnumDeclaration(*this);
+}
+
+inline void TraitDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitTraitDeclaration(*this);
+}
+
+inline void TraitMethod::accept(ASTVisitor &visitor) const {
+  visitor.visitTraitMethod(*this);
+}
+
+inline void ImplDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitImplDeclaration(*this);
 }
 } // namespace havel::ast

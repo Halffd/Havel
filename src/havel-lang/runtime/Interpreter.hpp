@@ -543,6 +543,9 @@ public:
   void visitEnumVariantDef(const ast::EnumVariantDef &node) override;
   void visitEnumDefinition(const ast::EnumDefinition &node) override;
   void visitEnumDeclaration(const ast::EnumDeclaration &node) override;
+  void visitTraitDeclaration(const ast::TraitDeclaration &node) override;
+  void visitTraitMethod(const ast::TraitMethod &node) override;
+  void visitImplDeclaration(const ast::ImplDeclaration &node) override;
 
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;

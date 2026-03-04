@@ -2714,6 +2714,26 @@ void Interpreter::visitEnumDeclaration(const ast::EnumDeclaration &node) {
   lastResult = nullptr;
 }
 
+void Interpreter::visitTraitDeclaration(const ast::TraitDeclaration &node) {
+  // Register trait in trait registry (stub - full implementation later)
+  // For now, just acknowledge the trait definition
+  info("Trait defined: " + node.name->symbol);
+  lastResult = nullptr;
+}
+
+void Interpreter::visitTraitMethod(const ast::TraitMethod &node) {
+  // Trait methods are handled as part of trait/impl declarations
+  lastResult = nullptr;
+}
+
+void Interpreter::visitImplDeclaration(const ast::ImplDeclaration &node) {
+  // Register impl for trait (stub - full implementation later)
+  // For now, just acknowledge the impl definition
+  info("Impl defined: " + (node.traitName ? node.traitName->symbol : "?") + 
+       " for " + (node.typeName ? node.typeName->symbol : "?"));
+  lastResult = nullptr;
+}
+
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
   // Evaluate the iterable expression
   auto iterableResult = Evaluate(*node.iterable);

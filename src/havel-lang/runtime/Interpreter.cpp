@@ -880,34 +880,23 @@ void Interpreter::visitRepeatStatement(const ast::RepeatStatement &node) {
 }
 
 void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
-  // Execute shell command and capture output
-  std::array<char, 128> buffer;
-  std::string result;
-  
-  // Use popen to execute command and capture stdout
-  FILE* pipe = popen(node.command.c_str(), "r");
-  if (!pipe) {
-    lastResult = HavelRuntimeError("Failed to execute command: " + node.command);
-    return;
-  }
-  
-  while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
-    result += buffer.data();
-  }
-  
-  int status = pclose(pipe);
-  
-  // Remove trailing newline
-  if (!result.empty() && result.back() == '\n') {
-    result.pop_back();
-  }
-  
-  lastResult = HavelValue(result);
+  // Execute shell command and capture output using Launcher
+  havel::ProcessResult result = havel::Launcher::runShell(node.command);
+
+  // Return structured ProcessResult as an object
+  auto resultObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  (*resultObj)["stdout"] = HavelValue(result.stdout);
+  (*resultObj)["stderr"] = HavelValue(result.stderr);
+  (*resultObj)["exitCode"] = HavelValue(static_cast<double>(result.exitCode));
+  (*resultObj)["success"] = HavelValue(result.success);
+  (*resultObj)["error"] = HavelValue(result.error);
+
+  lastResult = HavelValue(resultObj);
 }
 
 void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
-  // Execute shell command without capturing output
-  int result = std::system(node.command.c_str());
+  // Execute shell command synchronously (fire-and-forget but waits for completion)
+  havel::Launcher::runShell(node.command);
   lastResult = HavelValue(nullptr);
 }
 

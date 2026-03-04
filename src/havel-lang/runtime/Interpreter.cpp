@@ -2499,6 +2499,11 @@ void Interpreter::visitStructFieldDef(const ast::StructFieldDef &node) {
   lastResult = HavelRuntimeError("StructFieldDef evaluation not implemented");
 }
 
+void Interpreter::visitStructMethodDef(const ast::StructMethodDef &node) {
+  // Methods are handled when accessed on struct instances
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitStructDefinition(const ast::StructDefinition &node) {
   lastResult = HavelRuntimeError("StructDefinition evaluation not implemented");
 }

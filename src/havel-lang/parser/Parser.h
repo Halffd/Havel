@@ -116,7 +116,7 @@ private:
   std::unique_ptr<ast::Statement> parseEnumDeclaration();
   std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
   std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
-  std::vector<ast::StructFieldDef> parseStructFields();
+  std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::StructMethodDef>>> parseStructMembers();
   std::vector<ast::EnumVariantDef> parseEnumVariants();
   
   std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>

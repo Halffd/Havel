@@ -509,6 +509,7 @@ public:
 
   // Type system - struct/enum support
   void visitStructFieldDef(const ast::StructFieldDef &node) override;
+  void visitStructMethodDef(const ast::StructMethodDef &node) override;
   void visitStructDefinition(const ast::StructDefinition &node) override;
   void visitStructDeclaration(const ast::StructDeclaration &node) override;
   void visitEnumVariantDef(const ast::EnumVariantDef &node) override;

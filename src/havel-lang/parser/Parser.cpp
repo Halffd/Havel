@@ -871,67 +871,111 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
 
 std::unique_ptr<havel::ast::Statement> Parser::parseStructDeclaration() {
   advance(); // consume 'struct'
-  
+
   // Parse struct name
   if (at().type != havel::TokenType::Identifier) {
     failAt(at(), "Expected struct name after 'struct'");
   }
   std::string structName = advance().value;
-  
+
   // Parse opening brace
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after struct name");
   }
   advance(); // consume '{'
-  
-  // Parse fields
-  auto fields = parseStructFields();
-  
+
+  // Parse fields and methods
+  auto [fields, methods] = parseStructMembers();
+
   // Parse closing brace
   if (at().type != havel::TokenType::CloseBrace) {
     failAt(at(), "Expected '}' to close struct definition");
   }
   advance(); // consume '}'
-  
-  // Create struct definition
-  ast::StructDefinition def(std::move(fields));
-  
+
+  // Create struct definition with fields and methods
+  ast::StructDefinition def(std::move(fields), std::move(methods));
+
   return std::make_unique<ast::StructDeclaration>(structName, std::move(def));
 }
 
-std::vector<ast::StructFieldDef> Parser::parseStructFields() {
+// Parse struct members (fields and methods)
+std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::StructMethodDef>>> Parser::parseStructMembers() {
   std::vector<ast::StructFieldDef> fields;
-  
+  std::vector<std::unique_ptr<ast::StructMethodDef>> methods;
+
   while (at().type != havel::TokenType::CloseBrace && notEOF()) {
     // Skip newlines and comments
-    if (at().type == havel::TokenType::NewLine || 
+    if (at().type == havel::TokenType::NewLine ||
         at().type == havel::TokenType::Comment) {
       advance();
       continue;
     }
-    
+
+    // Check for method definition (fn keyword)
+    if (at().type == havel::TokenType::Fn) {
+      advance(); // consume 'fn'
+
+      // Parse method name
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected method name after 'fn'");
+      }
+      std::string methodName = advance().value;
+
+      // Check if this is a constructor (named 'init')
+      bool isConstructor = (methodName == "init");
+
+      // Parse parameters
+      if (at().type != havel::TokenType::OpenParen) {
+        failAt(at(), "Expected '(' after method name");
+      }
+      advance(); // consume '('
+
+      std::vector<std::unique_ptr<ast::Identifier>> params;
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        if (at().type == havel::TokenType::Identifier) {
+          params.push_back(std::make_unique<ast::Identifier>(advance().value));
+        }
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+        } else if (at().type != havel::TokenType::CloseParen) {
+          failAt(at(), "Expected ',' or ')' in parameter list");
+        }
+      }
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after parameters");
+      }
+      advance(); // consume ')'
+
+      // Parse body
+      auto body = parseBlockStatement();
+
+      methods.push_back(std::make_unique<ast::StructMethodDef>(methodName, std::move(params), std::move(body), isConstructor));
+      continue;
+    }
+
     // Parse field name
     if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected field name in struct");
+      failAt(at(), "Expected field name or 'fn' in struct");
     }
     std::string fieldName = advance().value;
-    
+
     // Optional type annotation
     std::optional<std::unique_ptr<ast::TypeDefinition>> fieldType;
     if (at().type == havel::TokenType::Colon) {
       advance(); // consume ':'
       fieldType = parseTypeDefinition();
     }
-    
+
     fields.emplace_back(fieldName, std::move(fieldType));
-    
+
     // Optional comma
     if (at().type == havel::TokenType::Comma) {
       advance();
     }
   }
-  
-  return fields;
+
+  return {std::move(fields), std::move(methods)};
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseEnumDeclaration() {

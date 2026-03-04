@@ -109,6 +109,7 @@ enum class NodeType {
   StructDeclaration,    // struct Vec2 { x: Num, y: Num }
   StructDefinition,     // struct body definition
   StructFieldDef,       // struct field with optional type
+  StructMethodDef,      // struct method (including constructor)
   EnumDeclaration,      // enum Color { Red, Green, Blue }
   EnumDefinition,       // enum body definition
   EnumVariantDef,       // enum variant with optional payload
@@ -221,13 +222,27 @@ struct StructFieldDef : public ASTNode {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Forward declaration for StructMethodDef (full definition comes after BlockStatement)
+struct StructMethodDef;
+
 // Struct definition
 struct StructDefinition : public TypeDefinition {
   std::vector<StructFieldDef> fields;
+  std::vector<std::unique_ptr<StructMethodDef>> methods;
+  bool hasConstructor;
 
-  StructDefinition(std::vector<StructFieldDef> fieldList = {})
-    : fields(std::move(fieldList)) {
-    kind = NodeType::StructDefinition;
+  StructDefinition(std::vector<StructFieldDef> fieldList = {},
+                   std::vector<std::unique_ptr<StructMethodDef>> methodList = {})
+    : fields(std::move(fieldList)), methods(std::move(methodList)), hasConstructor(false) {
+    // Check if there's a constructor (only if methods are fully defined)
+    #ifdef STRUCT_METHOD_DEF_COMPLETE
+    for (const auto& method : methods) {
+      if (method && method->isConstructor) {
+        hasConstructor = true;
+        break;
+      }
+    }
+    #endif
   }
 
   std::string toString() const override {
@@ -481,6 +496,34 @@ struct BlockExpression : public Expression {
       result += value->toString();
     }
     return result + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Struct method definition (including constructor)
+struct StructMethodDef : public ASTNode {
+  std::string name;  // "init" for constructor, otherwise method name
+  std::vector<std::unique_ptr<Identifier>> parameters;
+  std::unique_ptr<BlockStatement> body;
+  bool isConstructor;
+
+  StructMethodDef(const std::string& methodName,
+                  std::vector<std::unique_ptr<Identifier>> params,
+                  std::unique_ptr<BlockStatement> b,
+                  bool isCtor = false)
+    : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor) {
+    kind = NodeType::StructMethodDef;
+  }
+
+  std::string toString() const override {
+    std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
+    for (size_t i = 0; i < parameters.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += parameters[i]->symbol;
+    }
+    result += ") {...}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1809,6 +1852,7 @@ public:
 
   // Type system - struct/enum support
   virtual void visitStructFieldDef(const StructFieldDef &node) = 0;
+  virtual void visitStructMethodDef(const StructMethodDef &node) = 0;
   virtual void visitStructDefinition(const StructDefinition &node) = 0;
   virtual void visitStructDeclaration(const StructDeclaration &node) = 0;
   virtual void visitEnumVariantDef(const EnumVariantDef &node) = 0;
@@ -1826,6 +1870,10 @@ inline void Identifier::accept(ASTVisitor &visitor) const {
 
 inline void BlockStatement::accept(ASTVisitor &visitor) const {
   visitor.visitBlockStatement(*this);
+}
+
+inline void StructMethodDef::accept(ASTVisitor &visitor) const {
+  visitor.visitStructMethodDef(*this);
 }
 
 inline void BlockExpression::accept(ASTVisitor &visitor) const {

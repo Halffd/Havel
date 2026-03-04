@@ -100,16 +100,16 @@ public:
         : HavelType(Kind::Struct), name_(name) {}
 
     const std::string& getName() const { return name_; }
-    
+
     void addField(const StructField& field) {
         fields_.push_back(field);
         fieldIndex_[field.name] = fields_.size() - 1;
     }
 
     const std::vector<StructField>& getFields() const { return fields_; }
-    
+
     size_t getFieldCount() const { return fields_.size(); }
-    
+
     const StructField* getField(const std::string& name) const {
         auto it = fieldIndex_.find(name);
         if (it != fieldIndex_.end()) {
@@ -126,6 +126,23 @@ public:
         return std::nullopt;
     }
 
+    // Method support
+    void addMethod(const std::string& name, const ast::StructMethodDef* method) {
+        methods_[name] = method;
+    }
+
+    const ast::StructMethodDef* getMethod(const std::string& name) const {
+        auto it = methods_.find(name);
+        if (it != methods_.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+
+    bool hasMethod(const std::string& name) const {
+        return methods_.find(name) != methods_.end();
+    }
+
     std::string toString() const override {
         return "Struct<" + name_ + ">";
     }
@@ -134,6 +151,7 @@ private:
     std::string name_;
     std::vector<StructField> fields_;
     std::unordered_map<std::string, size_t> fieldIndex_;
+    std::unordered_map<std::string, const ast::StructMethodDef*> methods_;
 };
 
 /**

@@ -1320,6 +1320,53 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     }
   }
 
+  // Struct instances: field access and method binding
+  if (auto *structPtr = objectValue.get_if<HavelStructInstance>()) {
+    // First check fields
+    if (structPtr && structPtr->fields) {
+      auto it = structPtr->fields->find(propName);
+      if (it != structPtr->fields->end()) {
+        lastResult = it->second;
+        return;
+      }
+    }
+    // Then check methods
+    if (structPtr && structPtr->structType) {
+      auto method = structPtr->structType->getMethod(propName);
+      if (method) {
+        // Create a bound method that captures the struct instance as 'this'
+        auto instance = objectValue;
+        const ast::StructMethodDef* methodPtr = method;  // Capture raw pointer
+        lastResult = HavelValue(BuiltinFunction([this, instance, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
+          // Check argument count
+          if (args.size() != methodPtr->parameters.size()) {
+            return HavelRuntimeError("Method expects " + std::to_string(methodPtr->parameters.size()) + " args but got " + std::to_string(args.size()));
+          }
+          // Create method environment with 'this' bound
+          auto methodEnv = std::make_shared<Environment>(this->environment);
+          methodEnv->Define("this", instance);
+          // Bind parameters
+          for (size_t i = 0; i < methodPtr->parameters.size() && i < args.size(); ++i) {
+            methodEnv->Define(methodPtr->parameters[i]->symbol, args[i]);
+          }
+          // Execute method body
+          auto originalEnv = this->environment;
+          this->environment = methodEnv;
+          auto res = Evaluate(*methodPtr->body);
+          this->environment = originalEnv;
+          if (std::holds_alternative<ReturnValue>(res)) {
+            auto ret = std::get<ReturnValue>(res);
+            return ret.value ? *ret.value : HavelValue();
+          }
+          return res;
+        }));
+        return;
+      }
+    }
+    lastResult = HavelValue(nullptr);
+    return;
+  }
+
   lastResult = HavelRuntimeError("Member access not supported for this type");
 }
 
@@ -2518,7 +2565,53 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
     // For now, just store field names without type validation
     structType->addField(havelField);
   }
+  // Store methods in the struct type
+  for (const auto& method : node.definition.methods) {
+    if (method) {
+      structType->addMethod(method->name, method.get());
+    }
+  }
   TypeRegistry::getInstance().registerStructType(structType);
+  
+  // Create a constructor function for this struct type
+  // Usage: MousePos.new() or MousePos.new(x=10, y=20)
+  auto structTypeName = node.name;
+  
+  // Create MousePos.new function
+  auto newFunc = BuiltinFunction([this, structType](const std::vector<HavelValue> &args) -> HavelResult {
+    // Create new struct instance
+    HavelStructInstance instance(structType->getName(), structType);
+    
+    // Initialize fields from arguments (positional or named)
+    size_t argIdx = 0;
+    for (const auto& field : structType->getFields()) {
+      if (argIdx < args.size()) {
+        instance.fields->insert({field.name, args[argIdx]});
+        argIdx++;
+      } else {
+        instance.fields->insert({field.name, HavelValue(nullptr)});
+      }
+    }
+    
+    // Call init method if it exists
+    auto initMethod = structType->getMethod("init");
+    if (initMethod && initMethod->body) {
+      auto initEnv = std::make_shared<Environment>(this->environment);
+      initEnv->Define("this", HavelValue(instance));
+      auto originalEnv = this->environment;
+      this->environment = initEnv;
+      Evaluate(*initMethod->body);
+      this->environment = originalEnv;
+    }
+    
+    return HavelValue(instance);
+  });
+  
+  // Create MousePos object with .new method
+  auto structObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  (*structObj)["new"] = HavelValue(newFunc);
+  environment->Define(structTypeName, HavelValue(structObj));
+  
   lastResult = nullptr;
 }
 

@@ -60,6 +60,8 @@ enum class TokenType {
   Modes,
   Struct,     // struct
   Enum,       // enum
+  Trait,      // trait
+  Impl,       // impl
   On,
   Off,
   Out,      // for clipboard.out etc.

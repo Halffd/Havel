@@ -408,6 +408,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseStructDeclaration();
   case havel::TokenType::Enum:
     return parseEnumDeclaration();
+  case havel::TokenType::Trait:
+    return parseTraitDeclaration();
+  case havel::TokenType::Impl:
+    return parseImplDeclaration();
   case havel::TokenType::Return:
   case havel::TokenType::Ret:
     return parseReturnStatement();
@@ -1060,6 +1064,146 @@ std::vector<ast::EnumVariantDef> Parser::parseEnumVariants() {
   }
   
   return variants;
+}
+
+// Parse trait declaration: trait Name { fn method1(); fn method2() { default impl } }
+std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
+  advance(); // consume 'trait'
+
+  // Parse trait name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected trait name after 'trait'");
+  }
+  auto traitName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after trait name");
+  }
+  advance(); // consume '{'
+
+  // Parse trait methods
+  std::vector<std::unique_ptr<havel::ast::TraitMethod>> methods;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Comment) {
+      advance();
+      continue;
+    }
+
+    // Expect 'fn' keyword
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in trait body");
+    }
+    advance(); // consume 'fn'
+
+    // Parse method name
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected method name");
+    }
+    auto methodName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+    // Parse parameters
+    if (at().type != havel::TokenType::OpenParen) {
+      failAt(at(), "Expected '(' after method name");
+    }
+    advance(); // consume '('
+
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    while (at().type != havel::TokenType::CloseParen && notEOF()) {
+      if (at().type == havel::TokenType::Identifier) {
+        auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+        params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in parameter list");
+      }
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' after parameters");
+    }
+    advance(); // consume ')'
+
+    // Check for default implementation
+    std::unique_ptr<havel::ast::BlockStatement> defaultBody;
+    if (at().type == havel::TokenType::OpenBrace) {
+      defaultBody = parseBlockStatement();
+    }
+
+    methods.push_back(std::make_unique<havel::ast::TraitMethod>(
+        std::move(methodName), std::move(params), std::move(defaultBody)));
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close trait definition");
+  }
+  advance(); // consume '}'
+
+  return std::make_unique<havel::ast::TraitDeclaration>(
+      std::move(traitName), std::move(methods));
+}
+
+// Parse impl declaration: impl Trait for Type { fn method() { ... } }
+std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
+  advance(); // consume 'impl'
+
+  // Parse trait name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected trait name after 'impl'");
+  }
+  auto traitName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+  // Expect 'for' keyword
+  if (at().type != havel::TokenType::For) {
+    failAt(at(), "Expected 'for' after trait name in impl declaration");
+  }
+  advance(); // consume 'for'
+
+  // Parse type name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected type name after 'for'");
+  }
+  auto typeName = std::make_unique<havel::ast::Identifier>(advance().value);
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after type name in impl declaration");
+  }
+  advance(); // consume '{'
+
+  // Parse method implementations
+  std::vector<std::unique_ptr<havel::ast::FunctionDeclaration>> methods;
+
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines and comments
+    if (at().type == havel::TokenType::NewLine ||
+        at().type == havel::TokenType::Comment) {
+      advance();
+      continue;
+    }
+
+    // Parse function declaration
+    if (at().type != havel::TokenType::Fn) {
+      failAt(at(), "Expected 'fn' in impl body");
+    }
+    auto funcStmt = parseFunctionDeclaration();
+    if (auto* funcDecl = dynamic_cast<havel::ast::FunctionDeclaration*>(funcStmt.get())) {
+      methods.push_back(std::unique_ptr<havel::ast::FunctionDeclaration>(
+          static_cast<havel::ast::FunctionDeclaration*>(funcStmt.release())));
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close impl declaration");
+  }
+  advance(); // consume '}'
+
+  return std::make_unique<havel::ast::ImplDeclaration>(
+      std::move(traitName), std::move(typeName), std::move(methods));
 }
 
 std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {

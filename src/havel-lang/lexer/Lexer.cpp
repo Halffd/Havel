@@ -33,6 +33,8 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"modes", TokenType::Modes},
     {"struct", TokenType::Struct},
     {"enum", TokenType::Enum},
+    {"trait", TokenType::Trait},
+    {"impl", TokenType::Impl},
     {"on", TokenType::On},
     {"off", TokenType::Off},
     {"out", TokenType::Out},

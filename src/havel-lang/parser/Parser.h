@@ -114,6 +114,8 @@ private:
   // Type system parsers
   std::unique_ptr<ast::Statement> parseStructDeclaration();
   std::unique_ptr<ast::Statement> parseEnumDeclaration();
+  std::unique_ptr<ast::Statement> parseTraitDeclaration();
+  std::unique_ptr<ast::Statement> parseImplDeclaration();
   std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
   std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
   std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::StructMethodDef>>> parseStructMembers();

@@ -4787,16 +4787,6 @@ void Interpreter::InitializeSystemBuiltins() {
         return HavelValue(arr);
       }));
 
-  // Expose as module objects
-  auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-  if (auto v = environment->Get("clipboard.get"))
-    (*clip)["get"] = *v;
-  if (auto v = environment->Get("clipboard.set"))
-    (*clip)["set"] = *v;
-  if (auto v = environment->Get("clipboard.clear"))
-    (*clip)["clear"] = *v;
-  environment->Define("clipboard", HavelValue(clip));
-
   // Create audio module
   auto audioMod =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -5910,6 +5900,19 @@ void Interpreter::InitializeClipboardBuiltins() {
 
     environment->Define("clipboardmanager", HavelValue(clipMgrObj));
   }
+  
+  // Assemble clipboard module object (after all functions are defined)
+  auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  if (auto v = environment->Get("clipboard.get")) {
+    (*clip)["get"] = *v;
+    (*clip)["in"] = *v;   // Alias for get
+    (*clip)["out"] = *v;  // Alias for get (returns current clipboard content)
+  }
+  if (auto v = environment->Get("clipboard.set"))
+    (*clip)["set"] = *v;
+  if (auto v = environment->Get("clipboard.clear"))
+    (*clip)["clear"] = *v;
+  environment->Define("clipboard", HavelValue(clip));
 }
 
 void Interpreter::InitializeTextBuiltins() {

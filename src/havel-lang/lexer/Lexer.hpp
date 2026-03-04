@@ -61,6 +61,7 @@ enum class TokenType {
   Enum,       // enum
   On,
   Off,
+  Out,      // for clipboard.out etc.
   When,
   Mode,
   Repeat,     // repeat

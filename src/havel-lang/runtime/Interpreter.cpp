@@ -2813,7 +2813,7 @@ void Interpreter::InitializeStandardLibrary() {
   environment->Define("app", HavelValue(appObj));
 
   // Type conversion functions
-  // int(x) - convert to 64-bit integer
+  // int(x) - truncate to integer (returns double, truncates fractional part)
   environment->Define(
       "int",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
@@ -2822,7 +2822,9 @@ void Interpreter::InitializeStandardLibrary() {
         
         const auto& arg = args[0];
         if (arg.isNumber()) {
-          return HavelValue(static_cast<double>(static_cast<long long>(arg.asNumber())));
+          // Truncate fractional part, but keep as double (Havel's numeric type)
+          double val = arg.asNumber();
+          return HavelValue(val >= 0 ? std::floor(val) : std::ceil(val));
         } else if (arg.isString()) {
           try {
             return HavelValue(static_cast<double>(std::stoll(arg.asString())));
@@ -2857,7 +2859,7 @@ void Interpreter::InitializeStandardLibrary() {
         return HavelRuntimeError("num(): cannot convert type to number");
       }));
 
-  // str(x) - convert to string
+  // str(x) - convert to string (preserves decimals for floats)
   environment->Define(
       "str",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
@@ -2868,39 +2870,96 @@ void Interpreter::InitializeStandardLibrary() {
         if (arg.isString()) {
           return HavelValue(arg.asString());
         } else if (arg.isNumber()) {
-          return HavelValue(std::to_string(static_cast<long long>(arg.asNumber())));
+          double val = arg.asNumber();
+          // Check if it's a whole number
+          if (val == std::floor(val) && std::abs(val) < 1e15) {
+            return HavelValue(std::to_string(static_cast<long long>(val)));
+          } else {
+            // Convert double to string, removing trailing zeros
+            std::ostringstream oss;
+            oss.precision(15);
+            oss << val;
+            std::string s = oss.str();
+            // Remove trailing zeros after decimal point
+            if (s.find('.') != std::string::npos) {
+              size_t last = s.find_last_not_of('0');
+              if (last != std::string::npos && s[last] == '.') {
+                s = s.substr(0, last);  // Remove decimal point too if no decimals
+              } else if (last != std::string::npos) {
+                s = s.substr(0, last + 1);
+              }
+            }
+            return HavelValue(s);
+          }
         } else if (arg.isBool()) {
           return HavelValue(arg.asBool() ? "true" : "false");
         }
         return HavelValue("");
       }));
 
+  // Helper to convert iterable to array
+  auto iterableToArray = [](const HavelValue &val) -> std::shared_ptr<std::vector<HavelValue>> {
+    auto result = std::make_shared<std::vector<HavelValue>>();
+    
+    if (val.is<HavelArray>()) {
+      auto arrPtr = val.get_if<HavelArray>();
+      if (arrPtr && *arrPtr) {
+        result = std::make_shared<std::vector<HavelValue>>(**arrPtr);
+      }
+    } else if (val.is<HavelSet>()) {
+      // Convert set to array (order not guaranteed)
+      auto setPtr = val.get_if<HavelSet>();
+      if (setPtr && setPtr->elements) {
+        for (const auto& item : *(setPtr->elements)) {
+          result->push_back(item);
+        }
+      }
+    } else if (val.is<HavelObject>()) {
+      // For objects, extract values
+      auto objPtr = val.get_if<HavelObject>();
+      if (objPtr && *objPtr) {
+        for (const auto& pair : **objPtr) {
+          result->push_back(pair.second);
+        }
+      }
+    }
+    
+    return result;
+  };
+
   // list(...) - construct list from arguments or convert iterable
   environment->Define(
       "list",
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
-        auto result = std::make_shared<std::vector<HavelValue>>();
-        
-        // If single argument that's already an array, copy it
-        if (args.size() == 1 && args[0].is<HavelArray>()) {
-          auto arr = args[0].get<HavelArray>();
-          if (arr) {
-            result = std::make_shared<std::vector<HavelValue>>(*arr);
-          }
-        } else {
-          // Otherwise, use arguments as elements
-          for (const auto& arg : args) {
-            result->push_back(arg);
+      BuiltinFunction([iterableToArray](const std::vector<HavelValue> &args) -> HavelResult {
+        // If single argument that's iterable, convert it
+        if (args.size() == 1) {
+          auto result = iterableToArray(args[0]);
+          if (!result->empty()) {
+            return HavelValue(result);
           }
         }
         
+        // Otherwise, use arguments as elements
+        auto result = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& arg : args) {
+          result->push_back(arg);
+        }
         return HavelValue(result);
       }));
 
-  // tuple(...) - construct tuple (represented as fixed-size array)
+  // tuple(...) - construct tuple (alias for list, documented as immutable convention)
   environment->Define(
       "tuple",
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([iterableToArray](const std::vector<HavelValue> &args) -> HavelResult {
+        // If single argument that's iterable, convert it
+        if (args.size() == 1) {
+          auto result = iterableToArray(args[0]);
+          if (!result->empty()) {
+            return HavelValue(result);
+          }
+        }
+        
+        // Otherwise, use arguments as elements
         auto result = std::make_shared<std::vector<HavelValue>>();
         for (const auto& arg : args) {
           result->push_back(arg);
@@ -2908,16 +2967,56 @@ void Interpreter::InitializeStandardLibrary() {
         return HavelValue(result);
       }));
 
-  // set(...) - construct set from arguments
+  // set(...) - construct set from arguments or convert iterable
   environment->Define(
-      "set_",
+      "set",
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
-        // For now, just return an array since sets need custom hash/equal
-        auto result = std::make_shared<std::vector<HavelValue>>();
-        for (const auto& arg : args) {
-          result->push_back(arg);
+        auto elements = std::make_shared<std::vector<HavelValue>>();
+        
+        // If single argument that's already a set or iterable, convert it
+        if (args.size() == 1) {
+          const auto& arg = args[0];
+          if (arg.is<HavelSet>()) {
+            // Copy existing set
+            auto setPtr = arg.get_if<HavelSet>();
+            if (setPtr && setPtr->elements) {
+              return HavelValue(HavelSet(setPtr->elements));
+            }
+          } else if (arg.is<HavelArray>()) {
+            // Convert array to set (deduplicate)
+            auto arrPtr = arg.get_if<HavelArray>();
+            if (arrPtr && *arrPtr) {
+              for (const auto& item : **arrPtr) {
+                // Simple dedup: only add if not already present
+                bool found = false;
+                for (const auto& existing : *elements) {
+                  if (existing.isString() && item.isString() && existing.asString() == item.asString()) {
+                    found = true; break;
+                  } else if (existing.isNumber() && item.isNumber() && existing.asNumber() == item.asNumber()) {
+                    found = true; break;
+                  }
+                }
+                if (!found) elements->push_back(item);
+              }
+              return HavelValue(HavelSet(elements));
+            }
+          }
         }
-        return HavelValue(result);
+        
+        // Otherwise, use arguments as elements (with deduplication)
+        for (const auto& arg : args) {
+          bool found = false;
+          for (const auto& existing : *elements) {
+            if (existing.isString() && arg.isString() && existing.asString() == arg.asString()) {
+              found = true; break;
+            } else if (existing.isNumber() && arg.isNumber() && existing.asNumber() == arg.asNumber()) {
+              found = true; break;
+            }
+          }
+          if (!found) elements->push_back(arg);
+        }
+        
+        return HavelValue(HavelSet(elements));
       }));
 
   // Debug control builtins

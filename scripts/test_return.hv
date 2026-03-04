@@ -1,0 +1,8 @@
+
+let spd=44
+    fn a(){    if firstChat {
+          mouse.clickAt(1,1, 0, spd)
+          return
+        } else {
+          mouse.moveTo(5, 3,spd)
+    }}

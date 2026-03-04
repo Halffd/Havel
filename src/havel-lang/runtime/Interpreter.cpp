@@ -72,12 +72,23 @@ static HavelValue unwrap(HavelResult &result) {
 }
 
 std::string Interpreter::ValueToString(const HavelValue &value) {
-  // Helper to format numbers nicely (remove trailing zeros)
+  // Helper to format numbers nicely (remove trailing zeros, preserve precision)
   auto formatNumber = [](double d) -> std::string {
-    std::string s = std::to_string(d);
-    s.erase(s.find_last_not_of('0') + 1, std::string::npos);
-    if (s.back() == '.')
-      s.pop_back();
+    // Use ostringstream with high precision
+    std::ostringstream oss;
+    oss.precision(17);  // Max precision for double
+    oss << d;
+    std::string s = oss.str();
+    
+    // Remove trailing zeros after decimal point
+    if (s.find('.') != std::string::npos) {
+      size_t last = s.find_last_not_of('0');
+      if (last != std::string::npos && s[last] == '.') {
+        s = s.substr(0, last);  // Remove decimal point too if no decimals
+      } else if (last != std::string::npos) {
+        s = s.substr(0, last + 1);
+      }
+    }
     return s;
   };
 
@@ -123,6 +134,18 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
             }
           }
           result += "}";
+          return result;
+        } else if constexpr (std::is_same_v<T, HavelSet>) {
+          // Format set like array but with set() notation
+          std::string result = "set(";
+          if (arg.elements) {
+            for (size_t i = 0; i < arg.elements->size(); ++i) {
+              result += ValueToString((*arg.elements)[i]);
+              if (i < arg.elements->size() - 1)
+                result += ", ";
+            }
+          }
+          result += ")";
           return result;
         } else
           return "unprintable";
@@ -3780,31 +3803,22 @@ void Interpreter::InitializeSystemBuiltins() {
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("type() requires an argument");
-        return std::visit(
-            [](auto &&arg) -> HavelValue {
-              using T = std::decay_t<decltype(arg)>;
-              if constexpr (std::is_same_v<T, std::nullptr_t>)
-                return HavelValue("null");
-              else if constexpr (std::is_same_v<T, bool>)
-                return HavelValue("boolean");
-              else if constexpr (std::is_same_v<T, int> ||
-                                 std::is_same_v<T, double>)
-                return HavelValue("number");
-              else if constexpr (std::is_same_v<T, std::string>)
-                return HavelValue("string");
-              else if constexpr (std::is_same_v<T, HavelArray>)
-                return HavelValue("array");
-              else if constexpr (std::is_same_v<T, HavelObject>)
-                return HavelValue("object");
-              else if constexpr (std::is_same_v<T,
-                                                std::shared_ptr<HavelFunction>>)
-                return HavelValue("function");
-              else if constexpr (std::is_same_v<T, BuiltinFunction>)
-                return HavelValue("builtin");
-              else
-                return HavelValue("unknown");
-            },
-            args[0].data);
+
+        // Check type using variant index
+        switch (args[0].data.index()) {
+          case 0: return HavelValue(std::string("null"));       // nullptr_t
+          case 1: return HavelValue(std::string("boolean"));    // bool
+          case 2: return HavelValue(std::string("number"));     // int
+          case 3: return HavelValue(std::string("number"));     // double
+          case 4: return HavelValue(std::string("string"));     // std::string
+          case 5: return HavelValue(std::string("array"));      // HavelArray
+          case 6: return HavelValue(std::string("object"));     // HavelObject
+          case 7: return HavelValue(std::string("set"));        // HavelSet
+          case 8: return HavelValue(std::string("function"));   // shared_ptr<HavelFunction>
+          case 9: return HavelValue(std::string("channel"));    // shared_ptr<Channel>
+          case 10: return HavelValue(std::string("builtin"));   // BuiltinFunction
+          default: return HavelValue(std::string("unknown"));
+        }
       }));
 
   // Send text/keys to the system

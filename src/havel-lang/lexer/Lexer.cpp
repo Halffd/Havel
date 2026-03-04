@@ -290,6 +290,49 @@ Token Lexer::scanString() {
   return makeToken(value, type, raw);
 }
 
+Token Lexer::scanBacktick() {
+  std::string value;
+  std::string raw;
+
+  // Consume characters until closing backtick
+  while (!isAtEnd() && peek() != '`') {
+    char c = advance();
+    value += c;
+    raw += c;
+  }
+
+  // Consume closing backtick
+  if (!isAtEnd()) {
+    advance();
+  }
+
+  return makeToken(value, TokenType::Backtick, raw);
+}
+
+Token Lexer::scanShellCommand() {
+  std::string value;
+  std::string raw;
+
+  // $ already consumed, start from next character
+  // Consume until end of line
+  while (!isAtEnd()) {
+    char c = peek();
+    // Stop at newlines (end of statement)
+    if (c == '\n' || c == '\r') {
+      break;
+    }
+    value += advance();
+  }
+  raw = value;
+
+  // Trim trailing whitespace
+  while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
+    value.pop_back();
+  }
+
+  return makeToken(value, TokenType::ShellCommand, raw);
+}
+
 Token Lexer::scanIdentifier() {
   std::string identifier;
 
@@ -440,6 +483,15 @@ std::vector<Token> Lexer::tokenize() {
     // Handle strings
     if (c == '"' || c == '\'') {
       tokens.push_back(scanString());
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
+    // Handle backtick expressions: `command`
+    if (c == '`') {
+      tokens.push_back(scanBacktick());
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
       }
@@ -598,6 +650,23 @@ std::vector<Token> Lexer::tokenize() {
       advance(); // consume second '.'
       tokens.push_back(makeToken("..", TokenType::DotDot));
       continue;
+    }
+
+    // Handle shell command prefix: $ command (must be before hotkey handling)
+    if (c == '$') {
+      // Skip optional whitespace after $
+      while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+        advance();
+      }
+      // Check if it's followed by identifier or path (shell command)
+      if (!isAtEnd() && (isAlpha(peek()) || peek() == '_' || peek() == '.' || peek() == '/' || peek() == '~')) {
+        tokens.push_back(scanShellCommand());
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+      // Fall through to hotkey handling for $ as modifier
     }
 
     // Handle modifier-based hotkeys starting with special characters like ^ + !

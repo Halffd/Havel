@@ -781,13 +781,13 @@ struct SleepStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Repeat Statement - repeat n { body }
+// Repeat Statement - repeat n { body } or repeat n statement
 struct RepeatStatement : public Statement {
   int count;
-  std::unique_ptr<BlockStatement> body;
+  std::unique_ptr<Statement> body;
 
   RepeatStatement() : count(0) { kind = NodeType::RepeatStatement; }
-  RepeatStatement(int c, std::unique_ptr<BlockStatement> b)
+  RepeatStatement(int c, std::unique_ptr<Statement> b)
       : count(c), body(std::move(b)) { kind = NodeType::RepeatStatement; }
 
   std::string toString() const override {

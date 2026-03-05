@@ -86,6 +86,10 @@ public:
     Set(key, oss.str(), save);
   }
   
+  // Batch mode - use RequestSave() for multiple changes
+  void BeginBatch() { savePending = false; }  // Disable auto-save
+  void EndBatch() { RequestSave(); }  // Save all changes at once
+  
   // Convenience getters
   bool GetVerboseKeyLogging() const { return Get<bool>("Debug.VerboseKeyLogging", false); }
   bool GetVerboseWindowLogging() const { return Get<bool>("Debug.VerboseWindowLogging", false); }
@@ -145,7 +149,7 @@ public:
   // Watch callbacks
   using WatchCallback = std::function<void(const std::string &)>;
   void Watch(const std::string &key, WatchCallback callback);
-  
+
   // Template version for typed callbacks (caller converts string to type)
   template <typename T>
   void Watch(const std::string &key, std::function<void(T)> callback) {
@@ -157,6 +161,10 @@ public:
       }
     });
   }
+
+  // Debounced save - call this instead of Save(true) for batch operations
+  void RequestSave();
+  void ForceSave();  // Immediate save, cancels pending save
 
   // Debug
   void Print() const;
@@ -177,6 +185,12 @@ private:
   std::atomic<bool> watching{false};
   std::thread watchingThread;
   std::mutex watchingMutex;
+
+  // Debounced save
+  std::atomic<bool> savePending{false};
+  std::thread saveThread;
+  std::mutex saveMutex;
+  static constexpr int SAVE_DELAY_MS = 500;  // Debounce delay
 };
 
 // Template implementations (must be in header)
@@ -218,7 +232,7 @@ template <> inline std::string Configs::Convert<std::string>(const std::string &
 inline void Configs::Set(const std::string &key, const std::string &value, bool save) {
   values[key] = value;
   if (save) {
-    Save();
+    RequestSave();  // Use debounced save
   }
   // Notify watchers
   for (auto &[watchKey, callback] : watchers) {

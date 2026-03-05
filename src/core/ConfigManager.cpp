@@ -8,6 +8,9 @@
 #include <mutex>
 #include <atomic>
 #include <algorithm>
+#include <sys/inotify.h>
+#include <unistd.h>
+#include <poll.h>
 
 namespace havel {
 namespace ConfigPaths {
@@ -82,6 +85,7 @@ havel::Configs& havel::Configs::Get() {
 
 havel::Configs::~Configs() {
     StopFileWatching();
+    ForceSave();  // Ensure pending saves are completed
 }
 
 std::filesystem::file_time_type havel::Configs::GetLastModified(const std::string &filepath) const {
@@ -218,6 +222,39 @@ void havel::Configs::Save(const std::string &filename) {
     }
 }
 
+void havel::Configs::RequestSave() {
+    // Set pending flag
+    savePending = true;
+
+    // Start or reuse save thread
+    std::lock_guard<std::mutex> lock(saveMutex);
+    if (!saveThread.joinable()) {
+        saveThread = std::thread([this]() {
+            while (savePending.load()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(SAVE_DELAY_MS));
+                if (savePending.load()) {
+                    savePending = false;
+                    Save();
+                }
+            }
+        });
+    }
+}
+
+void havel::Configs::ForceSave() {
+    // Cancel pending save
+    savePending = false;
+
+    // Join save thread if running
+    std::lock_guard<std::mutex> lock(saveMutex);
+    if (saveThread.joinable()) {
+        saveThread.join();
+    }
+
+    // Save immediately
+    Save();
+}
+
 void havel::Configs::EnsureConfigFile(const std::string &filename) {
     path = ConfigPaths::GetConfigPath(filename);
     ConfigPaths::EnsureConfigDir();
@@ -275,20 +312,53 @@ void havel::Configs::StartFileWatching(const std::string &filename) {
 
     EnsureConfigFile(filename);
     watching = true;
+    
+    // Use inotify for efficient file watching
     watchingThread = std::thread([this, filename]() {
-        auto lastModified = GetLastModified(path);
+        int fd = inotify_init1(IN_NONBLOCK);
+        if (fd == -1) {
+            std::cerr << "inotify_init failed, falling back to polling\n";
+            // Fallback to polling
+            auto lastModified = GetLastModified(path);
+            while (watching.load()) {
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+                try {
+                    auto currentModified = GetLastModified(path);
+                    if (currentModified > lastModified) {
+                        lastModified = currentModified;
+                        Reload();
+                    }
+                } catch (...) {}
+            }
+            return;
+        }
+
+        int wd = inotify_add_watch(fd, path.c_str(), IN_MODIFY | IN_CLOSE_WRITE);
+        if (wd == -1) {
+            std::cerr << "inotify_add_watch failed\n";
+            close(fd);
+            return;
+        }
+
+        struct pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+
         while (watching.load()) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            try {
-                auto currentModified = GetLastModified(path);
-                if (currentModified > lastModified) {
-                    lastModified = currentModified;
+            int ret = poll(&pfd, 1, 1000);  // 1 second timeout
+            if (ret > 0 && (pfd.revents & POLLIN)) {
+                // Read events
+                char buf[4096] __attribute__((aligned(8)));
+                int len = read(fd, buf, sizeof(buf));
+                if (len > 0) {
+                    // File was modified, reload
                     Reload();
                 }
-            } catch (...) {
-                // Silently continue
             }
         }
+
+        inotify_rm_watch(fd, wd);
+        close(fd);
     });
 }
 

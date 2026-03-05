@@ -178,11 +178,18 @@ Color PixelAutomation::getPixel(int x, int y) {
     if (!primaryScreen) {
         return Color(0, 0, 0);
     }
+
+    // Capture a small region to ensure we get the pixel reliably
+    // grabWindow can have issues with single pixels on some systems
+    int captureSize = 3;
+    QPixmap pixmap = primaryScreen->grabWindow(0, x - 1, y - 1, captureSize, captureSize);
+    if (pixmap.isNull()) {
+        return Color(0, 0, 0);
+    }
     
-    QPixmap pixmap = primaryScreen->grabWindow(0, x, y, 1, 1);
     QImage image = pixmap.toImage();
-    
-    QRgb rgb = image.pixel(0, 0);
+    // Get center pixel of captured region
+    QRgb rgb = image.pixel(1, 1);
     return Color(qRed(rgb), qGreen(rgb), qBlue(rgb), qAlpha(rgb));
 }
 

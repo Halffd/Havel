@@ -3695,7 +3695,40 @@ bool IO::StartEvdevHotkeyListener(const std::string &devicePath) {
                      hotkey.alias);
               }
             }
-            if (hotkey.grab) {
+            // Don't block modifier keys that are part of incomplete combos
+            bool isModifierKey = (originalCode == KEY_LEFTALT || originalCode == KEY_RIGHTALT ||
+                                  originalCode == KEY_LEFTCTRL || originalCode == KEY_RIGHTCTRL ||
+                                  originalCode == KEY_LEFTSHIFT || originalCode == KEY_RIGHTSHIFT ||
+                                  originalCode == KEY_LEFTMETA || originalCode == KEY_RIGHTMETA);
+            
+            bool shouldBlockForCombo = hotkey.grab;
+            if (isModifierKey && down) {
+              // Check if this modifier is part of any incomplete combo
+              bool hasIncompleteCombo = false;
+              for (const auto &[cid, combo] : hotkeys) {
+                if (!combo.enabled || combo.type != HotkeyType::Combo || combo.comboSequence.empty())
+                  continue;
+                // Check if this combo includes the current modifier
+                bool includesModifier = false;
+                for (const auto &part : combo.comboSequence) {
+                  if (part.type == HotkeyType::Keyboard && 
+                      static_cast<int>(part.key) == originalCode) {
+                    includesModifier = true;
+                    break;
+                  }
+                }
+                if (includesModifier && !EvaluateCombo(combo)) {
+                  // Combo includes this modifier but isn't complete yet
+                  hasIncompleteCombo = true;
+                  break;
+                }
+              }
+              if (hasIncompleteCombo) {
+                shouldBlockForCombo = false;
+                debug("Not blocking modifier {} - part of incomplete combo", originalCode);
+              }
+            }
+            if (shouldBlockForCombo) {
               shouldBlockKey = true;
             }
           }

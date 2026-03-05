@@ -655,6 +655,7 @@ std::vector<Token> Lexer::tokenize() {
     }
 
     // Handle shell command prefix: $ command (must be before hotkey handling)
+    // But NOT if followed by => (which would make it a hotkey like $Esc =>)
     if (c == '$') {
       // Skip optional whitespace after $
       while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
@@ -662,11 +663,29 @@ std::vector<Token> Lexer::tokenize() {
       }
       // Check if it's followed by identifier or path (shell command)
       if (!isAtEnd() && (isAlpha(peek()) || peek() == '_' || peek() == '.' || peek() == '/' || peek() == '~')) {
-        tokens.push_back(scanShellCommand());
-        if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        // Look ahead to check if this is followed by => (making it a hotkey)
+        size_t savePos = position;
+        // Skip the identifier
+        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+          advance();
         }
-        continue;
+        // Skip whitespace
+        while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
+          advance();
+        }
+        // Check for =>
+        bool isHotkey = (peek() == '=' && peek(1) == '>');
+        // Restore position
+        position = savePos;
+        
+        if (!isHotkey) {
+          tokens.push_back(scanShellCommand());
+          if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          }
+          continue;
+        }
+        // If it's a hotkey, fall through to hotkey handling
       }
       // Fall through to hotkey handling for $ as modifier
     }

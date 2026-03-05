@@ -1403,6 +1403,31 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
         }));
         return;
       }
+      
+      // Check trait impls for this type
+      auto typeName = structPtr->typeName;
+      auto traitImpls = TraitRegistry::getInstance().getImplsForType(typeName);
+      for (const auto* impl : traitImpls) {
+        auto methodIt = impl->methods.find(propName);
+        if (methodIt != impl->methods.end()) {
+          // Found trait method - create bound version
+          auto instance = objectValue;
+          auto traitMethod = methodIt->second.get<BuiltinFunction>();
+          lastResult = HavelValue(BuiltinFunction([this, instance, traitMethod](const std::vector<HavelValue> &args) -> HavelResult {
+            // Create method environment with 'this' bound
+            auto methodEnv = std::make_shared<Environment>(this->environment);
+            methodEnv->Define("this", instance);
+            auto originalEnv = this->environment;
+            this->environment = methodEnv;
+            // Call the trait method with instance as first arg
+            std::vector<HavelValue> callArgs = args;
+            auto res = traitMethod(callArgs);
+            this->environment = originalEnv;
+            return res;
+          }));
+          return;
+        }
+      }
     }
     lastResult = HavelValue(nullptr);
     return;
@@ -2727,11 +2752,95 @@ void Interpreter::visitTraitMethod(const ast::TraitMethod &node) {
 }
 
 void Interpreter::visitImplDeclaration(const ast::ImplDeclaration &node) {
-  // Register impl for trait (stub - full implementation later)
-  // For now, just acknowledge the impl definition
-  info("Impl defined: " + (node.traitName ? node.traitName->symbol : "?") + 
-       " for " + (node.typeName ? node.typeName->symbol : "?"));
+  // Register impl for trait - inject methods into type
+  std::string traitName = node.traitName ? node.traitName->symbol : "";
+  std::string typeName = node.typeName ? node.typeName->symbol : "";
+  
+  // Build method map for this impl
+  std::unordered_map<std::string, HavelValue> methodMap;
+
+  for (const auto& methodDecl : node.funcs) {
+    // Capture raw pointer for lambda (AST lives for program lifetime)
+    const ast::FunctionDeclaration* methodPtr = methodDecl.get();
+    
+    // Create a bound function for this method
+    auto methodFunc = BuiltinFunction([this, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
+      // Create method environment
+      auto methodEnv = std::make_shared<Environment>(this->environment);
+
+      // Bind parameters (first arg is 'this' if method expects it)
+      size_t paramIdx = 0;
+      for (size_t i = 0; i < methodPtr->parameters.size() && paramIdx < args.size(); ++i) {
+        methodEnv->Define(methodPtr->parameters[i]->paramName->symbol, args[paramIdx]);
+        paramIdx++;
+      }
+
+      auto originalEnv = this->environment;
+      this->environment = methodEnv;
+      auto res = Evaluate(*methodPtr->body);
+      this->environment = originalEnv;
+
+      if (std::holds_alternative<ReturnValue>(res)) {
+        auto ret = std::get<ReturnValue>(res);
+        return ret.value ? *ret.value : HavelValue();
+      }
+      return res;
+    });
+
+    methodMap[methodDecl->name->symbol] = HavelValue(methodFunc);
+  }
+  
+  // Register with trait registry
+  TraitRegistry::getInstance().registerImpl(traitName, typeName, methodMap);
+  
+  info("Impl registered: " + traitName + " for " + typeName);
   lastResult = nullptr;
+}
+
+// TraitRegistry implementation
+void TraitRegistry::registerImpl(const std::string& traitName, const std::string& typeName,
+                                  std::unordered_map<std::string, HavelValue> methods) {
+  TraitImpl impl;
+  impl.traitName = traitName;
+  impl.typeName = typeName;
+  impl.methods = std::move(methods);
+  
+  typeImpls[typeName].push_back(impl);
+  implMap[typeName][traitName] = impl;
+}
+
+bool TraitRegistry::implements(const std::string& typeName, const std::string& traitName) const {
+  auto typeIt = implMap.find(typeName);
+  if (typeIt != implMap.end()) {
+    return typeIt->second.find(traitName) != typeIt->second.end();
+  }
+  return false;
+}
+
+std::vector<const TraitImpl*> TraitRegistry::getImplsForType(const std::string& typeName) const {
+  std::vector<const TraitImpl*> result;
+  auto typeIt = typeImpls.find(typeName);
+  if (typeIt != typeImpls.end()) {
+    for (const auto& impl : typeIt->second) {
+      result.push_back(&impl);
+    }
+  }
+  return result;
+}
+
+HavelValue TraitRegistry::getMethod(const std::string& typeName, const std::string& traitName,
+                                     const std::string& methodName) const {
+  auto typeIt = implMap.find(typeName);
+  if (typeIt != implMap.end()) {
+    auto traitIt = typeIt->second.find(traitName);
+    if (traitIt != typeIt->second.end()) {
+      auto methodIt = traitIt->second.methods.find(methodName);
+      if (methodIt != traitIt->second.methods.end()) {
+        return methodIt->second;
+      }
+    }
+  }
+  return HavelValue(nullptr);
 }
 
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
@@ -4037,6 +4146,28 @@ void Interpreter::InitializeSystemBuiltins() {
           case 10: return HavelValue(std::string("builtin"));   // BuiltinFunction
           default: return HavelValue(std::string("unknown"));
         }
+      }));
+
+  // implements(obj, traitName) - check if object's type implements a trait
+  environment->Define(
+      "implements",
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.size() < 2)
+          return HavelRuntimeError("implements() requires (object, traitName)");
+        
+        // Get type name from object
+        std::string typeName;
+        if (args[0].isStructInstance()) {
+          typeName = args[0].asStructInstance().typeName;
+        } else {
+          return HavelValue(false);  // Non-struct types don't implement traits
+        }
+        
+        std::string traitName = args[1].isString() ? args[1].asString() : "";
+        
+        // Check trait registry
+        bool result = TraitRegistry::getInstance().implements(typeName, traitName);
+        return HavelValue(result);
       }));
 
   // approx(a, b, epsilon) - fuzzy comparison for floating point (relative tolerance)

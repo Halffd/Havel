@@ -317,6 +317,12 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   }
   case havel::TokenType::Identifier: {
+    // Check for config section FIRST: identifier { key = value }
+    // This must come before hotkey checking to avoid parsing as function call
+    if (at(1).type == havel::TokenType::OpenBrace) {
+      return parseConfigSection();
+    }
+    
     // Check if this is a hotkey (identifier followed by =>)
     // or if it has prefix conditions like: a when mode == "gaming" => action
     if (at(1).type == havel::TokenType::When ||
@@ -487,11 +493,6 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {
-    // Check for generic config section: identifier { key = value }
-    if (at().type == havel::TokenType::Identifier && at(1).type == havel::TokenType::OpenBrace) {
-      return parseConfigSection();
-    }
-    
     // In input context (hotkey blocks), bare expressions may be input commands
     if (inInputContext) {
       // Check if this looks like an input command:
@@ -3489,14 +3490,47 @@ Parser::parseKeyValueBlock() {
       break;
     }
 
-    // Parse key - can be identifier or string
+    // Parse key - can be identifier, keyword, or string
+    // Keywords are allowed as keys (e.g., "default = HDMI-0")
     std::string key;
-    if (at().type == havel::TokenType::Identifier) {
+    if (at().type == havel::TokenType::Identifier ||
+        at().type == havel::TokenType::Default ||
+        at().type == havel::TokenType::For ||
+        at().type == havel::TokenType::While ||
+        at().type == havel::TokenType::If ||
+        at().type == havel::TokenType::Else ||
+        at().type == havel::TokenType::Match ||
+        at().type == havel::TokenType::Case ||
+        at().type == havel::TokenType::Switch ||
+        at().type == havel::TokenType::Try ||
+        at().type == havel::TokenType::Catch ||
+        at().type == havel::TokenType::Finally ||
+        at().type == havel::TokenType::Throw ||
+        at().type == havel::TokenType::Return ||
+        at().type == havel::TokenType::Ret ||
+        at().type == havel::TokenType::Break ||
+        at().type == havel::TokenType::Continue ||
+        at().type == havel::TokenType::Fn ||
+        at().type == havel::TokenType::Struct ||
+        at().type == havel::TokenType::Enum ||
+        at().type == havel::TokenType::Trait ||
+        at().type == havel::TokenType::Impl ||
+        at().type == havel::TokenType::Let ||
+        at().type == havel::TokenType::Const ||
+        at().type == havel::TokenType::In ||
+        at().type == havel::TokenType::Loop ||
+        at().type == havel::TokenType::When ||
+        at().type == havel::TokenType::Mode ||
+        at().type == havel::TokenType::On ||
+        at().type == havel::TokenType::Off ||
+        at().type == havel::TokenType::Config ||
+        at().type == havel::TokenType::Devices ||
+        at().type == havel::TokenType::Modes) {
       key = advance().value;
     } else if (at().type == havel::TokenType::String) {
       key = advance().value;
     } else {
-      failAt(at(), "Expected identifier or string as key");
+      failAt(at(), "Expected identifier, keyword, or string as key");
     }
 
     // Expect '=' or ':' (support both for compatibility)

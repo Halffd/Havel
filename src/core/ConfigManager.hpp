@@ -42,13 +42,11 @@ static std::string CONFIG_DIR = []() -> std::string {
 
 // Config file paths
 static std::string MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
-static std::string INPUT_CONFIG = CONFIG_DIR + "input.cfg";
 static std::string HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
 
 inline void SetConfigPath(const std::string &path, const std::string &basename = "havel.cfg") {
   CONFIG_DIR = path;
   MAIN_CONFIG = CONFIG_DIR + basename;
-  INPUT_CONFIG = CONFIG_DIR + basename.substr(0, basename.find('.')) + "_input.cfg";
   HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
 }
 inline std::string GetConfigPath() { return CONFIG_DIR; }
@@ -523,167 +521,6 @@ template <> inline int Configs::Convert<int>(const std::string &val) {
 template <> inline float Configs::Convert<float>(const std::string &val) {
   return std::stof(val);
 }
-
-// Now Mappings class can properly reference Configs
-class Mappings {
-public:
-  Mappings(IO &ioRef) : io(ioRef) {}
-
-  static Mappings &Get() {
-    static IO io; // Create a static IO instance
-    static Mappings instance(io);
-    return instance;
-  }
-  void SetPath(const std::string &path) {
-    ConfigPaths::SetConfigPath(path);
-    Reload();
-  }
-  void Load(const std::string &filename = "input.cfg") {
-    std::string configPath = ConfigPaths::GetConfigPath(filename);
-    std::ifstream file(configPath);
-    if (!file.is_open()) {
-      std::cerr << "Warning: Could not open input config file: " << configPath
-                << std::endl;
-      return;
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-      if (line.empty() || line[0] == '#')
-        continue;
-
-      size_t delim = line.find('=');
-      if (delim != std::string::npos) {
-        std::string key = line.substr(0, delim);
-        std::string value = line.substr(delim + 1);
-        hotkeys[key] = value;
-      }
-    }
-  }
-
-  void Save(const std::string &filename = "input.cfg") {
-    std::string configPath = ConfigPaths::GetConfigPath(filename);
-    ConfigPaths::EnsureConfigDir();
-
-    std::ofstream file(configPath);
-    if (!file.is_open()) {
-      std::cerr << "Error: Could not save input config file: " << configPath
-                << std::endl;
-      return;
-    }
-
-    for (const auto &[key, value] : hotkeys) {
-      file << key << "=" << value << "\n";
-    }
-  }
-
-  void BindHotkeys(IO &io) {
-    for (const auto &[keyCombo, command] : hotkeys) {
-      if (!command.empty()) {
-        try {
-          io.Hotkey(keyCombo, [this, command]() {
-            try {
-              ExecuteCommand(command);
-            } catch (const std::exception &e) {
-              std::cerr << "Error executing command: " << e.what() << "\n";
-            }
-          });
-        } catch (const std::exception &e) {
-          std::cerr << "Error binding hotkey " << keyCombo << ": " << e.what()
-                    << "\n";
-        }
-      }
-    }
-    needsRebind = false;
-  }
-
-  void Add(const std::string &keyCombo, const std::string &command) {
-    hotkeys[keyCombo] = command;
-    needsRebind = true;
-  }
-
-  void Remove(const std::string &keyCombo) {
-    hotkeys.erase(keyCombo);
-    needsRebind = true;
-  }
-
-  std::string GetCommand(const std::string &keyCombo) const {
-    auto it = hotkeys.find(keyCombo);
-    return (it != hotkeys.end()) ? it->second : "";
-  }
-
-  void Reload() {
-    auto oldHotkeys = hotkeys;
-    hotkeys.clear();
-    Load();
-
-    if (oldHotkeys != hotkeys) {
-      needsRebind = true;
-    }
-  }
-
-  bool CheckRebind() { return needsRebind; }
-
-private:
-  IO &io;
-  std::unordered_map<std::string, std::string> hotkeys;
-  bool needsRebind = false;
-
-  void ExecuteCommand(const std::string &command) {
-    if (command.empty())
-      return;
-
-    if (command[0] == '@') {
-      // Split command into parts
-      std::istringstream iss(command);
-      std::string token;
-      std::vector<std::string> parts;
-      while (std::getline(iss, token, ' ')) {
-        if (!token.empty()) {
-          parts.push_back(token);
-        }
-      }
-
-      if (parts.size() < 2)
-        return;
-
-      // Handle different command types
-      if (parts[0] == "@run") {
-        if (parts.size() >= 2) {
-          LaunchParams params;
-          params.method = Method::Async;
-          Launcher::run(parts[1], params);
-        }
-      } else if (parts[0] == "@send") {
-        if (parts.size() >= 2) {
-          std::string sendText = command.substr(command.find(parts[1]));
-          io.Send(sendText);
-        }
-      } else if (parts[0] == "@config") {
-        if (parts.size() >= 3) {
-          std::string var = Configs::Get().Get<std::string>(parts[1], "");
-          if (parts[2] == "toggle") {
-            bool current = Configs::Get().Get<bool>(parts[1], false);
-            Configs::Get().Set<bool>(parts[1], !current);
-          }
-        }
-      }
-    } else {
-      // Default to sending keystrokes
-      io.Send(command);
-    }
-  }
-
-  void SafeExecute(const std::string &command) noexcept {
-    try {
-      ExecuteCommand(command);
-    } catch (const std::exception &e) {
-      std::cerr << "Error executing command: " << e.what() << "\n";
-    } catch (...) {
-      std::cerr << "Unknown error executing command\n";
-    }
-  }
-};
 
 // Make these functions inline to avoid multiple definition errors
 inline void BackupConfig(const std::string &path = "havel.cfg") {

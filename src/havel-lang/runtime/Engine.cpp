@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "process/Launcher.hpp"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -237,6 +238,8 @@ bool Engine::CompileToExecutable(const std::string &inputFile,
     std::cerr << "❌ AOT compilation error: " << e.what() << std::endl;
     return false;
   }
+  
+  return false;
 }
 
 bool Engine::CompileToObject(const std::string &inputFile,

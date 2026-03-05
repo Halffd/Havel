@@ -870,8 +870,16 @@ void Interpreter::visitSleepStatement(const ast::SleepStatement &node) {
 }
 
 void Interpreter::visitRepeatStatement(const ast::RepeatStatement &node) {
+  // Evaluate count expression
+  auto countResult = Evaluate(*node.countExpr);
+  if (isError(countResult)) {
+    lastResult = countResult;
+    return;
+  }
+  int count = static_cast<int>(ValueToNumber(unwrap(countResult)));
+  
   // Execute body 'count' times
-  for (int i = 0; i < node.count; i++) {
+  for (int i = 0; i < count; i++) {
     if (node.body) {
       Evaluate(*node.body);
     }

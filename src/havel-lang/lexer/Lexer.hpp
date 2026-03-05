@@ -64,7 +64,6 @@ enum class TokenType {
   Impl,       // impl
   On,
   Off,
-  Out,      // for clipboard.out etc.
   When,
   Mode,
   Repeat,     // repeat

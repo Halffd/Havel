@@ -1966,13 +1966,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
 std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
   advance(); // consume 'repeat'
 
-  // Parse count - must be a number literal
-  if (at().type != havel::TokenType::Number) {
-    failAt(at(), "repeat count must be a number");
-  }
-
-  int count = static_cast<int>(std::stod(at().value));
-  advance(); // consume number
+  // Parse count expression - disable brace call sugar to avoid n {...} being parsed as call
+  bool prevAllowBraceCallSugar = allowBraceCallSugar;
+  allowBraceCallSugar = false;
+  auto countExpr = parseExpression();
+  allowBraceCallSugar = prevAllowBraceCallSugar;
 
   // Skip newlines before body
   while (at().type == havel::TokenType::NewLine) {
@@ -1980,7 +1978,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
   }
 
   std::unique_ptr<havel::ast::Statement> body;
-  
+
   // Block form or inline form
   if (at().type == havel::TokenType::OpenBrace) {
     body = parseBlockStatement();
@@ -1989,7 +1987,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
     body = parseInlineStatement();
   }
 
-  return std::make_unique<ast::RepeatStatement>(count, std::move(body));
+  return std::make_unique<ast::RepeatStatement>(std::move(countExpr), std::move(body));
 }
 
 std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(bool inputContext) {
@@ -2898,7 +2896,6 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
       at().type != havel::TokenType::Modes &&
       at().type != havel::TokenType::Mode &&
       at().type != havel::TokenType::In &&
-      at().type != havel::TokenType::Out &&
       at().type != havel::TokenType::On &&
       at().type != havel::TokenType::Off &&
       at().type != havel::TokenType::When &&

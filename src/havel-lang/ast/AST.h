@@ -951,15 +951,15 @@ struct ShellCommandStatement : public Statement {
 
 // Repeat Statement - repeat n { body } or repeat n statement
 struct RepeatStatement : public Statement {
-  int count;
+  std::unique_ptr<Expression> countExpr;
   std::unique_ptr<Statement> body;
 
-  RepeatStatement() : count(0) { kind = NodeType::RepeatStatement; }
-  RepeatStatement(int c, std::unique_ptr<Statement> b)
-      : count(c), body(std::move(b)) { kind = NodeType::RepeatStatement; }
+  RepeatStatement() { kind = NodeType::RepeatStatement; }
+  RepeatStatement(std::unique_ptr<Expression> c, std::unique_ptr<Statement> b)
+      : countExpr(std::move(c)), body(std::move(b)) { kind = NodeType::RepeatStatement; }
 
   std::string toString() const override {
-    return "RepeatStatement{count: " + std::to_string(count) + "}";
+    return "RepeatStatement{count: " + (countExpr ? countExpr->toString() : "?") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

@@ -82,6 +82,7 @@ enum class NodeType {
   ConfigBlock,      // config { ... }
   DevicesBlock,     // devices { ... }
   ModesBlock,       // modes { ... }
+  ConfigSection,    // any_identifier { ... }
   IndexExpression,  // arr[0] or obj["key"]
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
@@ -1608,6 +1609,24 @@ struct ModesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Generic Config Section (any_identifier { key = value })
+struct ConfigSection : public Statement {
+  std::string name;
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+
+  ConfigSection(const std::string& n,
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
+      : name(n), pairs(std::move(p)) {
+    kind = NodeType::ConfigSection;
+  }
+
+  std::string toString() const override {
+    return "ConfigSection{" + name + ", " + std::to_string(pairs.size()) + " pairs}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Update Expression (i++, --i)
 struct UpdateExpression : public Expression {
   std::unique_ptr<Expression> argument;
@@ -1962,6 +1981,7 @@ public:
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
+  virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
@@ -2140,6 +2160,10 @@ inline void DevicesBlock::accept(ASTVisitor &visitor) const {
 
 inline void ModesBlock::accept(ASTVisitor &visitor) const {
   visitor.visitModesBlock(*this);
+}
+
+inline void ConfigSection::accept(ASTVisitor &visitor) const {
+  visitor.visitConfigSection(*this);
 }
 
 inline void IndexExpression::accept(ASTVisitor &visitor) const {

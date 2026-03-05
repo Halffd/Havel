@@ -116,6 +116,71 @@ when mode gaming {
 
 All conditions are evaluated dynamically at runtime, allowing variables to change and trigger hotkeys accordingly.
 
+## New Features (Latest)
+
+### Traits
+Interface-based polymorphism without inheritance:
+```havel
+trait Drawable { fn draw() }
+impl Drawable for Circle { fn draw() { ... } }
+let c = Circle(10)
+c.draw()  // Calls impl method
+```
+
+### const
+Immutable variable bindings:
+```havel
+const x = 10
+x = 20  // Error!
+```
+
+### Enhanced repeat
+Now accepts variables and expressions:
+```havel
+let n = 3
+repeat n { print(n) }
+repeat 2 + 3 { print("expression") }
+```
+
+### Shell Commands
+```havel
+$ firefox              // Fire-and-forget
+let out = `echo hello` // Capture output
+print(out.stdout)
+```
+
+### Screenshot with Image Data
+```havel
+let r = screenshot.full()
+print(r.path)   // File path
+print(r.data)   // Base64 image data
+print(r.width)  // Dimensions
+```
+
+### Struct Methods
+```havel
+struct Point {
+  x, y
+  fn init(x, y) { this.x = x; this.y = y }
+  fn move(dx, dy) { this.x += dx; this.y += dy }
+}
+let p = Point(10, 20)  // Constructor sugar
+p.move(5, 5)
+```
+
+### Type Conversions
+```havel
+int(3.9)      // 3
+str(123)      // "123"
+list(1,2,3)   // [1, 2, 3]
+set_(1,2,2)   // [1, 2] (unique)
+```
+
+### Fuzzy Float Comparison
+```havel
+approx(0.1 + 0.2, 0.3)  // true
+```
+
 ## Examples
 
 ### Basic Hotkey

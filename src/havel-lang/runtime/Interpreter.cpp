@@ -19,8 +19,10 @@
 #include "process/Launcher.hpp"
 #include "qt.hpp"
 #include "window/WindowManagerDetector.hpp"
+#include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QImage>
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -10771,38 +10773,108 @@ void Interpreter::InitializeGUIBuiltins() {
 }
 
 void Interpreter::InitializeScreenshotBuiltins() {
+  // screenshot.full(path) - Take full screenshot, returns {path, data}
   environment->Define(
       "screenshot.full",
-      BuiltinFunction([this](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
         if (!screenshotManager) {
           return HavelRuntimeError("ScreenshotManager not available");
         }
-        QMetaObject::invokeMethod(screenshotManager, "takeScreenshot",
-                                  Qt::QueuedConnection);
-        return HavelValue(nullptr);
+        
+        // Get optional path argument
+        QString path;
+        if (!args.empty() && args[0].isString()) {
+          path = QString::fromStdString(args[0].asString());
+        }
+        
+        // Take screenshot synchronously
+        QString fullPath = screenshotManager->takeScreenshot();
+        
+        // Return object with path and base64 data
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*result)["path"] = HavelValue(fullPath.toStdString());
+        
+        // Try to load and encode image data
+        QImage img(fullPath);
+        if (!img.isNull()) {
+          QByteArray bytes;
+          QBuffer buffer(&bytes);
+          buffer.open(QIODevice::WriteOnly);
+          img.save(&buffer, "PNG");
+          (*result)["data"] = HavelValue(bytes.toBase64().toStdString());
+          (*result)["width"] = HavelValue(static_cast<double>(img.width()));
+          (*result)["height"] = HavelValue(static_cast<double>(img.height()));
+        }
+        
+        return HavelValue(result);
       }));
 
+  // screenshot.region(x, y, w, h) - Take region screenshot, returns {path, data}
   environment->Define(
       "screenshot.region",
-      BuiltinFunction([this](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
         if (!screenshotManager) {
           return HavelRuntimeError("ScreenshotManager not available");
         }
-        QMetaObject::invokeMethod(screenshotManager, "takeRegionScreenshot",
-                                  Qt::QueuedConnection);
-        return HavelValue(nullptr);
+        
+        if (args.size() < 4) {
+          return HavelRuntimeError("screenshot.region() requires (x, y, width, height)");
+        }
+        
+        int x = static_cast<int>(ValueToNumber(args[0]));
+        int y = static_cast<int>(ValueToNumber(args[1]));
+        int w = static_cast<int>(ValueToNumber(args[2]));
+        int h = static_cast<int>(ValueToNumber(args[3]));
+        
+        QRect region(x, y, w, h);
+        QString fullPath = screenshotManager->captureRegion(region);
+        
+        // Return object with path and base64 data
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*result)["path"] = HavelValue(fullPath.toStdString());
+        
+        // Try to load and encode image data
+        QImage img(fullPath);
+        if (!img.isNull()) {
+          QByteArray bytes;
+          QBuffer buffer(&bytes);
+          buffer.open(QIODevice::WriteOnly);
+          img.save(&buffer, "PNG");
+          (*result)["data"] = HavelValue(bytes.toBase64().toStdString());
+          (*result)["width"] = HavelValue(static_cast<double>(img.width()));
+          (*result)["height"] = HavelValue(static_cast<double>(img.height()));
+        }
+        
+        return HavelValue(result);
       }));
 
+  // screenshot.monitor() - Take screenshot of current monitor, returns {path, data}
   environment->Define(
       "screenshot.monitor",
       BuiltinFunction([this](const std::vector<HavelValue> &) -> HavelResult {
         if (!screenshotManager) {
           return HavelRuntimeError("ScreenshotManager not available");
         }
-        QMetaObject::invokeMethod(screenshotManager,
-                                  "takeScreenshotOfCurrentMonitor",
-                                  Qt::QueuedConnection);
-        return HavelValue(nullptr);
+        
+        QString fullPath = screenshotManager->takeScreenshotOfCurrentMonitor();
+        
+        // Return object with path and base64 data
+        auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*result)["path"] = HavelValue(fullPath.toStdString());
+        
+        // Try to load and encode image data
+        QImage img(fullPath);
+        if (!img.isNull()) {
+          QByteArray bytes;
+          QBuffer buffer(&bytes);
+          buffer.open(QIODevice::WriteOnly);
+          img.save(&buffer, "PNG");
+          (*result)["data"] = HavelValue(bytes.toBase64().toStdString());
+          (*result)["width"] = HavelValue(static_cast<double>(img.width()));
+          (*result)["height"] = HavelValue(static_cast<double>(img.height()));
+        }
+        
+        return HavelValue(result);
       }));
 
   // Module object
@@ -11906,7 +11978,34 @@ void Interpreter::InitializeHelpBuiltin() {
               help << "  - launcher    : Process launching (run, kill, "
                       "etc.)\n";
               help << "  - gui         : GUI dialogs and menus\n";
-              help << "  - debug       : Debugging utilities\n\n";
+              help << "  - screenshot  : Screenshot capture with image data\n";
+              help << "  - pixel       : Pixel-level screen operations\n";
+              help << "  - image       : Image finding and matching\n";
+              help << "  - ocr         : Optical character recognition\n";
+              help << "  - timer       : Timer and scheduling functions\n";
+              help << "  - automation  : Task automation\n";
+              help << "  - physics     : Physics calculations\n";
+              help << "  - process     : Process management\n";
+              help << "  - http        : HTTP requests\n";
+              help << "  - regex       : Regular expressions\n";
+              help << "  - media       : Media playback\n";
+              help << "  - mpvcontroller : MPV media player control\n";
+              help << "  - filemanager : Advanced file operations\n";
+              help << "  - altTab      : Window switcher\n";
+              help << "  - mapmanager  : Key mapping management\n";
+              help << "  - brightness  : Screen brightness control\n";
+              help << "  - config      : Configuration access\n";
+              help << "  - debug       : Debugging utilities\n";
+              help << "  - approx      : Fuzzy comparison for floats\n\n";
+              help << "Language features:\n";
+              help << "  - const       : Immutable variable bindings\n";
+              help << "  - trait/impl  : Interface-based polymorphism\n";
+              help << "  - repeat      : Loop with count (supports variables)\n";
+              help << "  - $ command   : Shell command execution\n";
+              help << "  - `command`   : Shell command with output capture\n";
+              help << "  - :duration   : Sleep statement (e.g., :100)\n";
+              help << "  - struct methods : Methods on struct instances\n";
+              help << "  - Type()      : Struct constructor sugar\n\n";
               help << "For detailed documentation, see Havel.md\n";
             } else {
               std::string module = ValueToString(args[0]);
@@ -12263,6 +12362,169 @@ void Interpreter::InitializeHelpBuiltin() {
                 help << "  detectSystem()                              - "
                         "Detect "
                         "system information\n";
+              } else if (module == "screenshot") {
+                help << "\n=== Screenshot Module ===\n\n";
+                help << "Functions (all return {path, data, width, height}):\n";
+                help << "  screenshot.full([path])           - Full screen screenshot\n";
+                help << "  screenshot.region(x,y,w,h)        - Region screenshot\n";
+                help << "  screenshot.monitor()              - Current monitor screenshot\n";
+                help << "\nReturns object with:\n";
+                help << "  - path: File path to saved PNG\n";
+                help << "  - data: Base64-encoded image data\n";
+                help << "  - width, height: Image dimensions\n";
+              } else if (module == "pixel") {
+                help << "\n=== Pixel Module ===\n\n";
+                help << "Functions:\n";
+                help << "  pixel.get(x, y)              - Get pixel color at position\n";
+                help << "  pixel.match(x, y, color, tol)- Check if pixel matches color\n";
+                help << "  pixel.waitFor(x, y, color, timeout) - Wait for pixel color\n";
+                help << "  pixel.setCacheEnabled(enabled, cacheTime) - Enable screenshot cache\n";
+              } else if (module == "timer") {
+                help << "\n=== Timer Module ===\n\n";
+                help << "Functions:\n";
+                help << "  timer.start(id, interval, callback) - Start repeating timer\n";
+                help << "  timer.stop(id)                      - Stop timer\n";
+                help << "  timer.once(delay, callback)         - One-shot timer\n";
+              } else if (module == "approx") {
+                help << "\n=== Approx Module ===\n\n";
+                help << "Functions:\n";
+                help << "  approx(a, b, epsilon)  - Fuzzy float comparison (relative tolerance)\n";
+                help << "\nExample:\n";
+                help << "  approx(0.1 + 0.2, 0.3)  => true\n";
+              } else if (module == "type") {
+                help << "\n=== Type Conversion ===\n\n";
+                help << "Functions:\n";
+                help << "  int(x)     - Convert to integer (truncates)\n";
+                help << "  num(x)     - Convert to double\n";
+                help << "  str(x)     - Convert to string\n";
+                help << "  list(...)  - Create list from arguments or iterable\n";
+                help << "  tuple(...) - Create tuple (fixed-size list)\n";
+                help << "  set_(...)  - Create set (unique elements)\n";
+              } else if (module == "implements") {
+                help << "\n=== Traits ===\n\n";
+                help << "Syntax:\n";
+                help << "  trait Name { fn method() }\n";
+                help << "  impl Name for Type { fn method() { ... } }\n";
+                help << "\nFunctions:\n";
+                help << "  implements(obj, traitName) - Check if type implements trait\n";
+              } else if (module == "repeat") {
+                help << "\n=== Repeat Statement ===\n\n";
+                help << "Syntax:\n";
+                help << "  repeat count { body }     - Repeat count times\n";
+                help << "  repeat count statement    - Inline form\n";
+                help << "\nCount can be literal, variable, or expression:\n";
+                help << "  repeat 5 { ... }          - Literal\n";
+                help << "  repeat n { ... }          - Variable\n";
+                help << "  repeat 2 + 3 { ... }      - Expression\n";
+              } else if (module == "shell") {
+                help << "\n=== Shell Commands ===\n\n";
+                help << "Syntax:\n";
+                help << "  $ command          - Execute shell command (fire-and-forget)\n";
+                help << "  `command`          - Execute and capture output\n";
+                help << "\nBacktick returns object:\n";
+                help << "  - stdout: Command output\n";
+                help << "  - stderr: Error output\n";
+                help << "  - exitCode: Exit code\n";
+                help << "  - success: Boolean success flag\n";
+                help << "  - error: Error message if any\n";
+              } else if (module == "sleep") {
+                help << "\n=== Sleep Statement ===\n\n";
+                help << "Syntax:\n";
+                help << "  :duration          - Sleep for duration\n";
+                help << "\nDuration formats:\n";
+                help << "  :100               - Milliseconds\n";
+                help << "  :1s                - Seconds\n";
+                help << "  :1m30s             - Minutes and seconds\n";
+                help << "  :0:0:30.500        - HH:MM:SS.mmm format\n";
+              } else if (module == "struct") {
+                help << "\n=== Structs ===\n\n";
+                help << "Syntax:\n";
+                help << "  struct Name {\n";
+                help << "    field1\n";
+                help << "    field2\n";
+                help << "    fn init(args) { this.field = args }\n";
+                help << "    fn method() { ... }\n";
+                help << "  }\n";
+                help << "\nConstruction:\n";
+                help << "  let obj = Name.new(args)  - Constructor\n";
+                help << "  let obj = Name(args)      - Sugar (same as above)\n";
+                help << "\nMethod calls:\n";
+                help << "  obj.method()              - Instance method\n";
+                help << "  obj.field                 - Field access\n";
+              } else if (module == "const") {
+                help << "\n=== Const ===\n\n";
+                help << "Syntax:\n";
+                help << "  const name = value      - Immutable binding\n";
+                help << "\nConst prevents reassignment:\n";
+                help << "  const x = 10\n";
+                help << "  x = 20    // Error!\n";
+                help << "\nNote: Object properties can still be modified:\n";
+                help << "  const obj = {a: 1}\n";
+                help << "  obj.a = 2   // OK\n";
+                help << "  obj = {}    // Error!\n";
+              } else if (module == "image") {
+                help << "\n=== Image Module ===\n\n";
+                help << "Functions:\n";
+                help << "  image.find(path, [tolerance])  - Find image on screen\n";
+                help << "  image.findAll(path)            - Find all occurrences\n";
+                help << "  image.wait(path, timeout)      - Wait for image to appear\n";
+              } else if (module == "ocr") {
+                help << "\n=== OCR Module ===\n\n";
+                help << "Functions:\n";
+                help << "  ocr.read(image, [lang])  - Extract text from image\n";
+                help << "  ocr.readRegion(x,y,w,h)  - OCR on screen region\n";
+              } else if (module == "automation") {
+                help << "\n=== Automation Module ===\n\n";
+                help << "Functions:\n";
+                help << "  automation.start(type, params)  - Start automation task\n";
+                help << "  automation.stop(type)           - Stop automation task\n";
+                help << "  automation.toggle(type)         - Toggle automation\n";
+              } else if (module == "physics") {
+                help << "\n=== Physics Module ===\n\n";
+                help << "Functions:\n";
+                help << "  physics.distance(x1,y1,x2,y2)  - Distance between points\n";
+                help << "  physics.angle(x1,y1,x2,y2)     - Angle between points\n";
+                help << "  physics.lerp(a,b,t)            - Linear interpolation\n";
+              } else if (module == "process") {
+                help << "\n=== Process Module ===\n\n";
+                help << "Functions:\n";
+                help << "  process.list()           - List running processes\n";
+                help << "  process.byName(name)     - Find process by name\n";
+                help << "  process.byPid(pid)       - Get process by PID\n";
+                help << "  process.kill(pid)        - Kill process\n";
+              } else if (module == "http") {
+                help << "\n=== HTTP Module ===\n\n";
+                help << "Functions:\n";
+                help << "  http.get(url)            - GET request\n";
+                help << "  http.post(url, data)     - POST request\n";
+                help << "  http.put(url, data)      - PUT request\n";
+                help << "  http.delete(url)         - DELETE request\n";
+              } else if (module == "regex") {
+                help << "\n=== Regex Module ===\n\n";
+                help << "Functions:\n";
+                help << "  regex.match(text, pattern)     - Match pattern\n";
+                help << "  regex.replace(text, pat, repl) - Replace matches\n";
+                help << "  regex.split(text, pattern)     - Split by pattern\n";
+              } else if (module == "altTab") {
+                help << "\n=== AltTab Module ===\n\n";
+                help << "Functions:\n";
+                help << "  altTab.show()     - Show window switcher\n";
+                help << "  altTab.next()     - Next window\n";
+                help << "  altTab.previous() - Previous window\n";
+                help << "  altTab.hide()     - Hide switcher\n";
+              } else if (module == "mapmanager") {
+                help << "\n=== MapManager Module ===\n\n";
+                help << "Functions:\n";
+                help << "  mapmanager.load(file)     - Load key mappings\n";
+                help << "  mapmanager.save(file)     - Save mappings\n";
+                help << "  mapmanager.add(key, act)  - Add mapping\n";
+                help << "  mapmanager.remove(key)    - Remove mapping\n";
+                help << "  mapmanager.list()         - List all mappings\n";
+              } else if (module == "config") {
+                help << "\n=== Config Module ===\n\n";
+                help << "Access configuration values:\n";
+                help << "  config.get(key)    - Get config value\n";
+                help << "  config.set(k, v)   - Set config value\n";
               } else {
                 help << "\nUnknown module: " << module << "\n";
                 help << "Use help() to see available modules.\n";

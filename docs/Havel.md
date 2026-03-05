@@ -1566,6 +1566,245 @@ pixel.clearCache()
 
 ---
 
+### Traits (Interface-Based Polymorphism)
+
+Traits define interfaces that types can implement without inheritance:
+
+```havel
+// Define a trait
+trait Drawable {
+  fn draw()
+}
+
+trait Area {
+  fn area()
+}
+
+// Implement trait for a struct
+struct Circle {
+  radius
+  fn init(r) {
+    this.radius = r
+  }
+}
+
+impl Drawable for Circle {
+  fn draw() {
+    print("Drawing circle with radius " + this.radius)
+  }
+}
+
+impl Area for Circle {
+  fn area() {
+    return 3.14 * this.radius * this.radius
+  }
+}
+
+// Use trait methods
+let c = Circle.new(10)
+c.draw()   // "Drawing circle with radius 10"
+print(c.area())  // 314
+
+// Check trait implementation
+implements(c, "Drawable")  // true
+implements(c, "Area")      // true
+implements(c, "Unknown")   // false
+```
+
+**Key Points:**
+- Traits define method signatures (no bodies)
+- `impl Trait for Type` provides implementations
+- Methods are injected into type's method table
+- Multiple traits per type supported
+- No inheritance hierarchy needed
+
+### const (Immutable Bindings)
+
+`const` creates immutable variable bindings:
+
+```havel
+const x = 10
+x = 20  // Error: Cannot assign to const variable
+
+// Works with objects and arrays
+const obj = {a: 1}
+obj.a = 2    // OK - modifying property
+obj = {}     // Error - rebinding const
+
+const arr = [1, 2]
+arr.push(3)  // OK - modifying array
+arr = []     // Error - rebinding const
+```
+
+**Use Cases:**
+- Configuration values
+- Constants that shouldn't change
+- Preventing accidental reassignment
+
+### repeat Statement (Enhanced)
+
+`repeat` now accepts variables and expressions:
+
+```havel
+// Literal count
+repeat 5 {
+  print("iteration")
+}
+
+// Variable count
+let n = 3
+repeat n {
+  print("repeat " + n)
+}
+
+// Expression count
+repeat 2 + 3 {
+  print("expression count")
+}
+
+// Inline form
+repeat 3 print("inline")
+```
+
+### Shell Commands
+
+Two ways to execute shell commands:
+
+```havel
+// $ command - Fire-and-forget execution
+$ firefox
+$ touch /tmp/file
+$ ~/.bin/script.sh arg1 arg2
+
+// `command` - Capture output
+let out = `echo "hello"`
+print(out.stdout)     // "hello"
+print(out.exitCode)   // 0
+print(out.success)    // true
+
+// Error handling
+let result = `ls /nonexistent`
+if !result.success {
+  print("Error: " + result.stderr)
+}
+
+// Backtick returns object:
+// - stdout: Command output
+// - stderr: Error output
+// - exitCode: Exit code
+// - success: Boolean
+// - error: Error message
+```
+
+### Screenshot Module (Enhanced)
+
+Screenshot functions now return image data:
+
+```havel
+// Full screenshot
+let result = screenshot.full()
+print(result.path)    // File path
+print(result.width)   // Image width
+print(result.height)  // Image height
+print(result.data)    // Base64-encoded PNG
+
+// Region screenshot
+let region = screenshot.region(100, 100, 200, 200)
+
+// Monitor screenshot
+let monitor = screenshot.monitor()
+
+// All functions return:
+// {path, data, width, height}
+```
+
+### Struct Methods and Type() Constructor
+
+Structs now support methods and constructor sugar:
+
+```havel
+struct MousePos {
+  x
+  y
+  
+  fn init(x, y) {
+    this.x = x
+    this.y = y
+  }
+  
+  fn moveTo(speed) {
+    mouse.moveTo(this.x, this.y, speed)
+  }
+  
+  fn distance(other) {
+    let dx = this.x - other.x
+    let dy = this.y - other.y
+    return sqrt(dx*dx + dy*dy)
+  }
+}
+
+// Constructor sugar
+let p1 = MousePos.new(100, 200)  // Traditional
+let p2 = MousePos(300, 400)      // Sugar - same result
+
+// Method calls
+p1.moveTo(10)
+p1.distance(p2)
+```
+
+### Type Conversions
+
+New type conversion functions:
+
+```havel
+// Numeric conversions
+int(3.9)      // 3 (truncates)
+num("3.14")   // 3.14
+
+// String conversion
+str(123)      // "123"
+str(3.14)     // "3.14"
+
+// Container constructors
+list(1, 2, 3)      // [1, 2, 3]
+list(existingArr)  // Copy array
+tuple(1, 2, 3)     // Fixed-size list
+set_(1, 2, 2, 3)   // [1, 2, 3] (unique)
+```
+
+### approx() - Fuzzy Float Comparison
+
+Relative tolerance for floating point comparison:
+
+```havel
+// Default tolerance (1e-9)
+approx(0.1 + 0.2, 0.3)  // true
+
+// Custom epsilon
+approx(0.1 + 0.2, 0.3, 1e-15)  // false (too strict)
+approx(0.1 + 0.2, 0.3, 1e-6)   // true (relaxed)
+
+// Uses relative tolerance:
+// |a - b| <= eps * max(1, |a|, |b|)
+```
+
+### Sleep Statement (Global)
+
+`:duration` sleep syntax now works anywhere:
+
+```havel
+// In any context
+:100
+print("after 100ms")
+
+// Duration formats
+:1s       // 1 second
+:1m30s    // 1 minute 30 seconds
+:500      // 500 milliseconds
+```
+
+---
+
 ## Type System (Gradual Typing)
 
 Havel supports optional type annotations for better code organization and IDE support. Types are metadata-only by default - runtime validation is optional based on TypeMode.

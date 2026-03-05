@@ -2108,6 +2108,138 @@ All interpreter exceptions are now contained to prevent crashes:
 ```havel
 // Conditional hotkeys with errors won't crash
 mode == "gaming" => {
+    F1 => click()  // Safe even if condition fails
+}
+```
+
+---
+
+## Complete Grammar Reference
+
+### Lexical Structure
+
+```
+program     → statement*
+statement   → block
+            | declaration
+            | expressionStmt
+            | ifStmt
+            | whileStmt
+            | forStmt
+            | loopStmt
+            | repeatStmt
+            | breakStmt
+            | continueStmt
+            | returnStmt
+            | hotkeyStmt
+            | configSection
+            | sleepStmt
+            | shellStmt
+
+declaration → letDecl | constDecl | fnDecl | structDecl | enumDecl | traitDecl | implDecl
+block       → "{" statement* "}"
+
+// Hotkeys
+hotkeyStmt  → hotkey "=>" action
+            | hotkey ("when" | "if") condition "=>" action
+            | ("when" | "if") condition "{" hotkeyStmt* "}"
+
+// Conditionals
+ifStmt      → "if" expression block ("else" block | "else" ifStmt)?
+whileStmt   → "while" expression block
+forStmt     → "for" identifier "in" expression block
+loopStmt    → "loop" ("while" expression)? block
+repeatStmt  → "repeat" expression (block | statement)
+
+// Declarations
+letDecl     → "let" pattern ("=" expression)?
+constDecl   → "const" pattern "=" expression
+fnDecl      → "fn" identifier "(" params? ")" block
+structDecl  → "struct" identifier "{" structMember* "}"
+enumDecl    → "enum" identifier "{" enumVariant* "}"
+traitDecl   → "trait" identifier "{" traitMethod* "}"
+implDecl    → "impl" identifier "for" identifier "{" fnDecl* "}"
+
+// Expressions
+expression  → assignment
+assignment  → identifier "=" assignment | logicOr
+logicOr     → logicAnd ("||" logicOr)*
+logicAnd    → equality ("&&" logicAnd)*
+equality    → comparison (("==" | "!=") equality)*
+comparison  → term (("<" | ">" | "<=" | ">=") comparison)*
+term        → factor (("+" | "-") term)*
+factor      → unary (("*" | "/") factor)*
+unary       → ("!" | "-") unary | call
+call        → primary ("(" args? ")")*
+primary     → literal | identifier | "(" expression ")"
+            | array | object | fnExpr | ifExpr | blockExpr
+
+// Literals
+literal     → "true" | "false" | "null" | NUMBER | STRING
+
+// Special Statements
+sleepStmt   → ":" duration
+shellStmt   → "$" command
+backtick    → "`" command "`"
+
+// Config Sections
+configSection → identifier "{" keyValue* "}"
+keyValue    → identifier ("=" | ":") expression
+```
+
+### Built-in Types
+
+```
+null    - Null value
+bool    - true, false
+number  - 64-bit floating point (integers auto-convert)
+string  - UTF-8 text
+array   - Dynamic array: [1, 2, 3]
+object  - Key-value map: {key: value}
+set     - Unique elements: #{1, 2, 3}
+function - First-class functions
+```
+
+### Operator Precedence (highest to lowest)
+
+```
+()          - Function call, grouping
+[]          - Array indexing
+.           - Property access
+! -         - Unary not, negate
+* /         - Multiply, divide
++ -         - Add, subtract
+< > <= >=   - Comparison
+== !=       - Equality
+&&          - Logical and
+||          - Logical or
+=           - Assignment
+```
+
+### Keywords
+
+```
+let const fn return if else while for loop repeat break continue
+struct enum trait impl true false null
+when on off mode config devices modes
+import from use with
+try catch finally throw
+match case default
+async await
+```
+
+### Standard Library Modules
+
+See `help()` in REPL for complete list:
+- `app`, `debug`, `config`, `process`, `launcher`, `timer`
+- `io`, `mouse`, `keyboard`
+- `audio`, `media`, `mpvcontroller`
+- `window`, `screenshot`, `pixel`, `image`, `ocr`
+- `browser`, `filemanager`, `http`
+- `text`, `regex`, `array`, `math`
+- `gui`, `altTab`, `mapmanager`
+- `clipboard`, `clipboardmanager`, `brightnessManager`
+- `automation`, `physics`
     // If undefinedVar is undefined, error is logged
     // but application continues running
     print(undefinedVar)

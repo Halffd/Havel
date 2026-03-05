@@ -105,37 +105,48 @@ void havel::Configs::Reload() {
         std::ifstream file(path);
         if (!file.is_open())
             throw std::runtime_error("Could not open config file: " + path);
-        std::string line;
-        std::string section;
+        
+        // Parse into temporary ConfigObject
+        ConfigObject newConfig;
+        std::string line, currentSection;
+        
         while (std::getline(file, line)) {
             if (line.empty() || line[0] == '#' || line[0] == ';')
                 continue;
             if (line[0] == '[' && line.back() == ']') {
-                section = line.substr(1, line.size() - 2);
+                currentSection = trim(line.substr(1, line.size() - 2));
                 continue;
             }
             size_t delim = line.find('=');
             if (delim != std::string::npos) {
-                std::string key = line.substr(0, delim);
-                std::string value = line.substr(delim + 1);
-                // Trim whitespace
-                while (!key.empty() && std::isspace(key.back()))
-                    key.pop_back();
-                while (!value.empty() && std::isspace(value.front()))
-                    value.erase(0, 1);
-                std::string fullKey = section + "." + key;
-                values[fullKey] = value;
-                // Notify watchers
+                std::string key = trim(line.substr(0, delim));
+                std::string value = trim(line.substr(delim + 1));
+                
+                if (!currentSection.empty()) {
+                    newConfig.set(currentSection + "." + key, value);
+                } else {
+                    newConfig.set(key, value);
+                }
+            }
+        }
+        
+        // Notify watchers of changed values
+        for (const auto &key : newConfig.keys()) {
+            std::string oldValue = config.getString(key);
+            std::string newValue = newConfig.getString(key);
+            if (oldValue != newValue) {
                 for (auto &[watchKey, callback] : watchers) {
-                    if (watchKey == fullKey || watchKey.empty()) {
+                    if (watchKey == key || watchKey.empty()) {
                         try {
-                            callback(value);
-                        } catch (...) {
-                        }
+                            callback(newValue);
+                        } catch (...) {}
                     }
                 }
             }
         }
+        
+        // Replace config
+        config = newConfig;
     } catch (const std::exception &e) {
         std::cerr << "Config reload failed: " << e.what() << std::endl;
     }
@@ -147,7 +158,6 @@ void havel::Configs::Load(const std::string &filename) {
     std::ifstream file(path);
 
     std::string line, currentSection;
-    int lineNumber = 0;
 
     if (!file.is_open()) {
         std::cerr << "Could not open config file: " << path << std::endl;
@@ -155,17 +165,12 @@ void havel::Configs::Load(const std::string &filename) {
     }
 
     while (std::getline(file, line)) {
-        lineNumber++;
-
         // Skip empty lines and comments
         if (line.empty() || line[0] == '#' || line[0] == ';')
             continue;
 
         // Trim whitespace
-        while (!line.empty() && std::isspace(line.front()))
-            line.erase(0, 1);
-        while (!line.empty() && std::isspace(line.back()))
-            line.pop_back();
+        line = trim(line);
 
         // Section header
         if (line[0] == '[' && line.back() == ']') {
@@ -176,17 +181,14 @@ void havel::Configs::Load(const std::string &filename) {
         // Key=value pair
         size_t delim = line.find('=');
         if (delim != std::string::npos) {
-            std::string key = line.substr(0, delim);
-            std::string value = line.substr(delim + 1);
+            std::string key = trim(line.substr(0, delim));
+            std::string value = trim(line.substr(delim + 1));
 
-            // Trim
-            while (!key.empty() && std::isspace(key.back()))
-                key.pop_back();
-            while (!value.empty() && std::isspace(value.front()))
-                value.erase(0, 1);
-
-            std::string fullKey = currentSection + "." + key;
-            values[fullKey] = value;
+            if (!currentSection.empty()) {
+                config.set(currentSection + "." + key, value);
+            } else {
+                config.set(key, value);
+            }
         }
     }
 }
@@ -199,24 +201,8 @@ void havel::Configs::Save(const std::string &filename) {
         if (!file.is_open())
             throw std::runtime_error("Could not save config file: " + savePath);
 
-        // Group values by section
-        std::map<std::string, std::map<std::string, std::string>> sections;
-        for (const auto &[key, value] : values) {
-            size_t delim = key.find('.');
-            if (delim != std::string::npos) {
-                sections[key.substr(0, delim)][key.substr(delim + 1)] = value;
-            } else {
-                sections["General"][key] = value;
-            }
-        }
-
-        // Write sections
-        for (const auto &[section, pairs] : sections) {
-            file << "[" << section << "]" << std::endl;
-            for (const auto &[key, value] : pairs) {
-                file << key << "=" << value << std::endl;
-            }
-        }
+        // Use ConfigObject's toString method
+        file << config.toString();
     } catch (const std::exception &e) {
         std::cerr << "Config save failed: " << e.what() << std::endl;
     }
@@ -371,21 +357,20 @@ void havel::Configs::StopFileWatching() {
     }
 }
 
+} // namespace ConfigPaths
+
 void havel::Configs::Watch(const std::string &key, WatchCallback callback) {
     watchers[key] = callback;
 }
 
 void havel::Configs::Print() const {
     std::cout << "=== Config Values ===" << std::endl;
-    for (const auto &[key, value] : values) {
+    for (const auto &[key, value] : config.values()) {
         std::cout << key << " = " << value << std::endl;
     }
     std::cout << "====================" << std::endl;
 }
 
-} // namespace ConfigPaths
-
-// Global config variable
 namespace havel {
 Configs& g_Configs = Configs::Get();
 } // namespace havel

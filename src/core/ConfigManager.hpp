@@ -9,6 +9,7 @@
  */
 #pragma once
 
+#include "ConfigObject.hpp"
 #include "types.hpp"
 #include <QStandardPaths>
 #include <algorithm>
@@ -76,14 +77,16 @@ public:
   void EnsureConfigFile(const std::string &filename = "havel.cfg");
 
   // Config access
-  template <typename T> T Get(const std::string &key, const T &defaultVal) const;
-  void Set(const std::string &key, const std::string &value, bool save = false);
+  template <typename T> T Get(const std::string &key, const T &defaultVal) const {
+    return config.get<T>(key, defaultVal);
+  }
   
+  void Set(const std::string &key, const std::string &value, bool save = false);
+
   // Convenience setters for numeric types
   template <typename T> void Set(const std::string &key, const T &value, bool save = false) {
-    std::ostringstream oss;
-    oss << value;
-    Set(key, oss.str(), save);
+    config.set<T>(key, value);
+    if (save) RequestSave();
   }
   
   // Batch mode - use RequestSave() for multiple changes
@@ -140,7 +143,7 @@ public:
   // Get all config key-value pairs
   std::vector<std::string> GetConfigs() const {
     std::vector<std::string> configs;
-    for (const auto &[key, val] : values) {
+    for (const auto &[key, val] : config.values()) {
       configs.push_back(key + "=" + val);
     }
     return configs;
@@ -178,7 +181,7 @@ private:
 
   // Members
   std::string path;
-  std::unordered_map<std::string, std::string> values;
+  ConfigObject config;  // Use ConfigObject instead of raw map
   std::map<std::string, WatchCallback> watchers;
 
   // File watching
@@ -193,44 +196,9 @@ private:
   static constexpr int SAVE_DELAY_MS = 500;  // Debounce delay
 };
 
-// Template implementations (must be in header)
-template <typename T> T Configs::Get(const std::string &key, const T &defaultVal) const {
-  auto it = values.find(key);
-  if (it != values.end()) {
-    try {
-      return Convert<T>(it->second);
-    } catch (...) {
-    }
-  }
-  return defaultVal;
-}
-
-// Explicit specializations
-template <> inline bool Configs::Convert<bool>(const std::string &val) {
-  std::string lower = val;
-  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-  return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
-}
-
-template <> inline int Configs::Convert<int>(const std::string &val) {
-  return std::stoi(val);
-}
-
-template <> inline double Configs::Convert<double>(const std::string &val) {
-  return std::stod(val);
-}
-
-template <> inline float Configs::Convert<float>(const std::string &val) {
-  return std::stof(val);
-}
-
-template <> inline std::string Configs::Convert<std::string>(const std::string &val) {
-  return val;
-}
-
 // Inline implementation for Set (needs to call Save which is in cpp)
 inline void Configs::Set(const std::string &key, const std::string &value, bool save) {
-  values[key] = value;
+  config.set(key, value);
   if (save) {
     RequestSave();  // Use debounced save
   }
@@ -274,8 +242,31 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
 
 } // namespace havel
 
-// Global config reference
-extern havel::Configs &g_Configs;
+// Global config instance
+namespace havel {
+extern Configs& g_Configs;
+} // namespace havel
 
-// Inline function to access the global config instance
-inline havel::Configs &Conf() { return havel::Configs::Get(); }
+// Helper function to access config
+inline havel::Configs& Conf() { return havel::g_Configs; }
+
+// Template specializations for Configs::Convert
+namespace havel {
+template <> inline bool Configs::Convert<bool>(const std::string &val) {
+    std::string lower = val;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
+}
+template <> inline int Configs::Convert<int>(const std::string &val) {
+    return std::stoi(val);
+}
+template <> inline double Configs::Convert<double>(const std::string &val) {
+    return std::stod(val);
+}
+template <> inline float Configs::Convert<float>(const std::string &val) {
+    return std::stof(val);
+}
+template <> inline std::string Configs::Convert<std::string>(const std::string &val) {
+    return val;
+}
+} // namespace havel

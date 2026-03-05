@@ -2181,138 +2181,55 @@ config.startFileWatching()
 
 ---
 
-## Complete Grammar Reference
+## Language Reference
 
-### Lexical Structure
+For complete grammar specification, see [GRAMMAR.md](GRAMMAR.md).
 
-```
-program     → statement*
-statement   → block
-            | declaration
-            | expressionStmt
-            | ifStmt
-            | whileStmt
-            | forStmt
-            | loopStmt
-            | repeatStmt
-            | breakStmt
-            | continueStmt
-            | returnStmt
-            | hotkeyStmt
-            | configSection
-            | sleepStmt
-            | shellStmt
+### Quick Syntax Reference
 
-declaration → letDecl | constDecl | fnDecl | structDecl | enumDecl | traitDecl | implDecl
-block       → "{" statement* "}"
-
+```havel
 // Hotkeys
-hotkeyStmt  → hotkey "=>" action
-            | hotkey ("when" | "if") condition "=>" action
-            | ("when" | "if") condition "{" hotkeyStmt* "}"
+F1 => { print("Hello") }
+^!T => { run("terminal") }
 
-// Conditionals
-ifStmt      → "if" expression block ("else" block | "else" ifStmt)?
-whileStmt   → "while" expression block
-forStmt     → "for" identifier "in" expression block
-loopStmt    → "loop" ("while" expression)? block
-repeatStmt  → "repeat" expression (block | statement)
+// Variables
+let x = 10
+const PI = 3.14
 
-// Declarations
-letDecl     → "let" pattern ("=" expression)?
-constDecl   → "const" pattern "=" expression
-fnDecl      → "fn" identifier "(" params? ")" block
-structDecl  → "struct" identifier "{" structMember* "}"
-enumDecl    → "enum" identifier "{" enumVariant* "}"
-traitDecl   → "trait" identifier "{" traitMethod* "}"
-implDecl    → "impl" identifier "for" identifier "{" fnDecl* "}"
+// Functions
+fn add(a, b) { return a + b }
 
-// Expressions
-expression  → assignment
-assignment  → identifier "=" assignment | logicOr
-logicOr     → logicAnd ("||" logicOr)*
-logicAnd    → equality ("&&" logicAnd)*
-equality    → comparison (("==" | "!=") equality)*
-comparison  → term (("<" | ">" | "<=" | ">=") comparison)*
-term        → factor (("+" | "-") term)*
-factor      → unary (("*" | "/") factor)*
-unary       → ("!" | "-") unary | call
-call        → primary ("(" args? ")")*
-primary     → literal | identifier | "(" expression ")"
-            | array | object | fnExpr | ifExpr | blockExpr
+// Structs
+struct Point { x, y }
+let p = Point(10, 20)
 
-// Literals
-literal     → "true" | "false" | "null" | NUMBER | STRING
+// Config sections
+display {
+  brightness = 0.8
+}
+print(config.display.brightness)
 
-// Special Statements
-sleepStmt   → ":" duration
-shellStmt   → "$" command
-backtick    → "`" command "`"
-
-// Config Sections
-configSection → identifier "{" keyValue* "}"
-keyValue    → identifier ("=" | ":") expression
+// Control flow
+if x > 0 { print("positive") }
+for i in 1..10 { print(i) }
+repeat 5 { print("loop") }
 ```
 
-### Built-in Types
+### Standard Library
 
-```
-null    - Null value
-bool    - true, false
-number  - 64-bit floating point (integers auto-convert)
-string  - UTF-8 text
-array   - Dynamic array: [1, 2, 3]
-object  - Key-value map: {key: value}
-set     - Unique elements: #{1, 2, 3}
-function - First-class functions
-```
+Use `help()` in REPL or see [GRAMMAR.md#standard-library](GRAMMAR.md#standard-library) for complete list.
 
-### Operator Precedence (highest to lowest)
+---
 
-```
-()          - Function call, grouping
-[]          - Array indexing
-.           - Property access
-! -         - Unary not, negate
-* /         - Multiply, divide
-+ -         - Add, subtract
-< > <= >=   - Comparison
-== !=       - Equality
-&&          - Logical and
-||          - Logical or
-=           - Assignment
-```
+## Exception Containment
 
-### Keywords
+All interpreter exceptions are contained to prevent crashes:
 
-```
-let const fn return if else while for loop repeat break continue
-struct enum trait impl true false null
-when on off mode config devices modes
-import from use with
-try catch finally throw
-match case default
-async await
-```
-
-### Standard Library Modules
-
-See `help()` in REPL for complete list:
-- `app`, `debug`, `config`, `process`, `launcher`, `timer`
-- `io`, `mouse`, `keyboard`
-- `audio`, `media`, `mpvcontroller`
-- `window`, `screenshot`, `pixel`, `image`, `ocr`
-- `browser`, `filemanager`, `http`
-- `text`, `regex`, `array`, `math`
-- `gui`, `altTab`, `mapmanager`
-- `clipboard`, `clipboardmanager`, `brightnessManager`
-- `automation`, `physics`
-    // If undefinedVar is undefined, error is logged
-    // but application continues running
-    print(undefinedVar)
+```havel
+// Conditional hotkeys with errors won't crash
+mode == "gaming" => {
+    F1 => undefinedFunction()  // Error logged, continues
 }
 ```
-
-Errors are logged to stderr instead of crashing the Qt event loop.
 
 ---

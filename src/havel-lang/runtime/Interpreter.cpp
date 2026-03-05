@@ -4740,7 +4740,7 @@ void Interpreter::InitializeSystemBuiltins() {
 
   // Add quit function to app module - hard exit to kill all threads
   (*appObj)["quit"] = BuiltinFunction(
-      [this](const std::vector<HavelValue> &args) -> HavelResult {
+    [this](const std::vector<HavelValue> &args) -> HavelResult {
         (void)args;
         info("Quit requested - performing hard exit");
 

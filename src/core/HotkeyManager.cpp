@@ -3819,30 +3819,29 @@ void HotkeyManager::applyDebugSettings() {
       Configs::Get().Get<int>("Input.FreezeTimeoutSeconds", 300);
 
   Configs::Get().Watch<bool>(
-      "Debug.VerboseKeyLogging", [this](bool oldValue, bool newValue) {
-        info("Key logging setting changed from " + std::to_string(oldValue) +
-             " to " + std::to_string(newValue));
+      "Debug.VerboseKeyLogging", [this](bool newValue) {
+        info("Key logging setting changed to " +
+             std::to_string(newValue));
         setVerboseKeyLogging(newValue);
       });
 
   Configs::Get().Watch<bool>(
-      "Debug.VerboseWindowLogging", [this](bool oldValue, bool newValue) {
-        info("Window logging setting changed from " + std::to_string(oldValue) +
-             " to " + std::to_string(newValue));
+      "Debug.VerboseWindowLogging", [this](bool newValue) {
+        info("Window logging setting changed to " +
+             std::to_string(newValue));
         setVerboseWindowLogging(newValue);
       });
 
   Configs::Get().Watch<bool>(
-      "Debug.VerboseConditionLogging", [this](bool oldValue, bool newValue) {
-        info("Condition logging setting changed from " +
-             std::to_string(oldValue) + " to " + std::to_string(newValue));
+      "Debug.VerboseConditionLogging", [this](bool newValue) {
+        info("Condition logging setting changed to " +
+             std::to_string(newValue));
         setVerboseConditionLogging(newValue);
       });
 
   // Watch for changes to the freeze timeout configuration
-  Configs::Get().Watch<int>("Input.FreezeTimeoutSeconds", [this](int oldValue,
-                                                                 int newValue) {
-    info("Input freeze timeout changed from {}s to {}s", oldValue, newValue);
+  Configs::Get().Watch<int>("Input.FreezeTimeoutSeconds", [this](int newValue) {
+    info("Input freeze timeout changed to {}s", newValue);
     inputFreezeTimeoutSeconds = newValue;
   });
 }

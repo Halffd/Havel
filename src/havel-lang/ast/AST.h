@@ -1612,16 +1612,28 @@ struct ModesBlock : public Statement {
 // Generic Config Section (any_identifier { key = value })
 struct ConfigSection : public Statement {
   std::string name;
+  std::vector<std::string> args;  // Hyprland-style args: monitor HDMI-0 { ... }
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
 
   ConfigSection(const std::string& n,
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
-      : name(n), pairs(std::move(p)) {
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {},
+      std::vector<std::string> a = {})
+      : name(n), args(std::move(a)), pairs(std::move(p)) {
     kind = NodeType::ConfigSection;
   }
 
   std::string toString() const override {
-    return "ConfigSection{" + name + ", " + std::to_string(pairs.size()) + " pairs}";
+    std::string result = "ConfigSection{" + name;
+    if (!args.empty()) {
+      result += " args=[";
+      for (size_t i = 0; i < args.size(); ++i) {
+        if (i > 0) result += ", ";
+        result += args[i];
+      }
+      result += "]";
+    }
+    result += ", " + std::to_string(pairs.size()) + " pairs}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

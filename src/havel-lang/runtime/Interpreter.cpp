@@ -518,6 +518,9 @@ HavelResult Interpreter::Evaluate(const ast::ASTNode &node) {
 }
 
 void Interpreter::visitProgram(const ast::Program &node) {
+  // Single-pass execution with expression support in config blocks
+  // Config sections are executed in order, allowing them to reference
+  // variables defined earlier in the script
   HavelValue lastValue = nullptr;
   for (const auto &stmt : node.body) {
     auto result = Evaluate(*stmt);
@@ -2104,7 +2107,7 @@ void Interpreter::visitConfigSection(const ast::ConfigSection &node) {
   auto configObject =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  // Process key-value pairs
+  // Process key-value pairs with expression evaluation
   for (const auto &[key, valueExpr] : node.pairs) {
     auto result = Evaluate(*valueExpr);
     if (isError(result)) {
@@ -2114,8 +2117,18 @@ void Interpreter::visitConfigSection(const ast::ConfigSection &node) {
     (*configObject)[key] = unwrap(result);
   }
 
-  // Store in environment under the section name
-  environment->Define(node.name, HavelValue(configObject));
+  // Store under config namespace: config.sectionName
+  auto configContainer = environment->Get("config");
+  std::shared_ptr<std::unordered_map<std::string, HavelValue>> container;
+  
+  if (configContainer && configContainer->isObject()) {
+    container = configContainer->asObject();
+  } else {
+    container = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  }
+  
+  (*container)[node.name] = HavelValue(configObject);
+  environment->Define("config", HavelValue(container));
   lastResult = HavelValue(nullptr);
 }
 

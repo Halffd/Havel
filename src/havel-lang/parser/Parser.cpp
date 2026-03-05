@@ -317,12 +317,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   }
   case havel::TokenType::Identifier: {
-    // Check for config section FIRST: identifier { key = value }
+    // Check for config section FIRST: identifier [args...] { key = value }
+    // Look ahead to find OpenBrace (skipping potential args)
     // This must come before hotkey checking to avoid parsing as function call
-    if (at(1).type == havel::TokenType::OpenBrace) {
-      return parseConfigSection();
+    int lookahead = 1;
+    while (lookahead < 10 && notEOF()) {
+      auto tok = at(lookahead);
+      if (tok.type == havel::TokenType::OpenBrace) {
+        return parseConfigSection();
+      }
+      if (tok.type != havel::TokenType::Identifier &&
+          tok.type != havel::TokenType::String &&
+          tok.type != havel::TokenType::Number) {
+        break;
+      }
+      lookahead++;
     }
-    
+
     // Check if this is a hotkey (identifier followed by =>)
     // or if it has prefix conditions like: a when mode == "gaming" => action
     if (at(1).type == havel::TokenType::When ||
@@ -3453,11 +3464,26 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
   return std::make_unique<havel::ast::ModesBlock>(parseKeyValueBlock());
 }
 
-// Parse generic config section: identifier { key = value }
+// Parse generic config section: identifier [args...] { key = value }
 std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
   std::string sectionName = at().value;
   advance(); // consume identifier
-  return std::make_unique<havel::ast::ConfigSection>(sectionName, parseKeyValueBlock());
+  
+  // Parse optional arguments (Hyprland-style: monitor HDMI-0 { ... })
+  std::vector<std::string> args;
+  while (notEOF() && at().type != havel::TokenType::OpenBrace &&
+         at().type != havel::TokenType::NewLine) {
+    if (at().type == havel::TokenType::Identifier ||
+        at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::Number) {
+      args.push_back(at().value);
+      advance();
+    } else {
+      break;
+    }
+  }
+  
+  return std::make_unique<havel::ast::ConfigSection>(sectionName, parseKeyValueBlock(), args);
 }
 
 std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>

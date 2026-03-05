@@ -10923,16 +10923,26 @@ void Interpreter::InitializeScreenshotBuiltins() {
 }
 
 void Interpreter::InitializePixelBuiltins() {
-  // pixel.get(x, y) - Get pixel color
+  // pixel.get(x, y) - Get pixel color at position (or cursor if no args)
   environment->Define(
       "pixel.get",
       BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 2) {
-          return HavelRuntimeError("pixel.get() requires (x, y)");
-        }
-        int x = static_cast<int>(ValueToNumber(args[0]));
-        int y = static_cast<int>(ValueToNumber(args[1]));
+        int x, y;
         
+        // Get cursor position if no args provided
+        if (args.size() < 2) {
+          if (io) {
+            auto pos = io->GetMousePosition();
+            x = pos.first;
+            y = pos.second;
+          } else {
+            return HavelRuntimeError("pixel.get() requires (x, y) or IO system");
+          }
+        } else {
+          x = static_cast<int>(ValueToNumber(args[0]));
+          y = static_cast<int>(ValueToNumber(args[1]));
+        }
+
         if (pixelAutomation) {
           Color c = pixelAutomation->getPixel(x, y);
           auto colorObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -10946,18 +10956,44 @@ void Interpreter::InitializePixelBuiltins() {
         return HavelValue(nullptr);
       }));
 
-  // pixel.match(x, y, color, tolerance) - Check if pixel matches color
+  // pixel.match(x, y, color, tolerance) - Check if pixel matches color (or cursor if no x,y)
   environment->Define(
       "pixel.match",
       BuiltinFunction([this](const std::vector<HavelValue> &args) -> HavelResult {
-        if (args.size() < 3) {
-          return HavelRuntimeError("pixel.match() requires (x, y, color)");
+        if (args.size() < 1) {
+          return HavelRuntimeError("pixel.match() requires (color) or (x, y, color)");
         }
-        int x = static_cast<int>(ValueToNumber(args[0]));
-        int y = static_cast<int>(ValueToNumber(args[1]));
-        std::string color = args[2].isString() ? args[2].asString() : ValueToString(args[2]);
-        int tolerance = args.size() > 3 ? static_cast<int>(ValueToNumber(args[3])) : 0;
         
+        int x, y;
+        std::string color;
+        int tolerance = 0;
+        
+        // If 1 arg: match at cursor position with color
+        // If 2 args: match at cursor position with color and tolerance
+        // If 3+ args: match at (x, y) with color (and optional tolerance)
+        if (args.size() < 3) {
+          // Use cursor position
+          if (io) {
+            auto pos = io->GetMousePosition();
+            x = pos.first;
+            y = pos.second;
+          } else {
+            return HavelRuntimeError("pixel.match() requires (x, y) when IO not available");
+          }
+          color = args[0].isString() ? args[0].asString() : ValueToString(args[0]);
+          if (args.size() >= 2) {
+            tolerance = static_cast<int>(ValueToNumber(args[1]));
+          }
+        } else {
+          // Use provided position
+          x = static_cast<int>(ValueToNumber(args[0]));
+          y = static_cast<int>(ValueToNumber(args[1]));
+          color = args[2].isString() ? args[2].asString() : ValueToString(args[2]);
+          if (args.size() > 3) {
+            tolerance = static_cast<int>(ValueToNumber(args[3]));
+          }
+        }
+
         if (pixelAutomation) {
           return HavelValue(pixelAutomation->pixelMatch(x, y, color, tolerance));
         }
@@ -12408,7 +12444,9 @@ void Interpreter::InitializeHelpBuiltin() {
               } else if (module == "pixel") {
                 help << "\n=== Pixel Module ===\n\n";
                 help << "Functions:\n";
+                help << "  pixel.get()                  - Get pixel color at cursor\n";
                 help << "  pixel.get(x, y)              - Get pixel color at position\n";
+                help << "  pixel.match(color)           - Check cursor pixel matches color\n";
                 help << "  pixel.match(x, y, color, tol)- Check if pixel matches color\n";
                 help << "  pixel.waitFor(x, y, color, timeout) - Wait for pixel color\n";
                 help << "  pixel.setCacheEnabled(enabled, cacheTime) - Enable screenshot cache\n";

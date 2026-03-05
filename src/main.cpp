@@ -3,6 +3,7 @@
 #include "core/ConfigManager.hpp"
 #include <iostream>
 #include <string>
+#include <X11/Xlib.h>
 
 int main(int argc, char* argv[]) {
     if (argc >= 2 && std::string(argv[1]) == "lexer") {

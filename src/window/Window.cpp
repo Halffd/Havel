@@ -2,6 +2,7 @@
 #include "CompositorBridge.hpp"
 #include "WindowManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "process/Launcher.hpp"
 #include "types.hpp"
 #include <X11/Xlib.h>
 #include <cerrno>

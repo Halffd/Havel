@@ -181,6 +181,26 @@ set_(1,2,2)   // [1, 2] (unique)
 approx(0.1 + 0.2, 0.3)  // true
 ```
 
+### Config Sections (Hyprland-Style)
+```havel
+let step = 2
+brightness {
+  step = num(step) / 10
+  current = 0.5
+}
+monitor "HDMI-0" {
+  brightness = 0.8
+}
+print(config.brightness.step)  // 0.2
+```
+
+### Debounced Config Saves
+```havel
+// Automatic 500ms debounce prevents write storms
+config.set("Key", "value", true)  // Single save after batch
+config.forceSave()                 // Immediate save
+```
+
 ## Examples
 
 ### Basic Hotkey

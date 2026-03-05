@@ -2114,6 +2114,73 @@ mode == "gaming" => {
 
 ---
 
+## Configuration System
+
+### Config Sections (Hyprland-Style)
+
+Declarative configuration blocks with expression support:
+
+```havel
+// Basic config section
+general {
+  log = true
+  name = "my-config"
+}
+
+// Expression evaluation
+let brightnessStep = 2
+brightness {
+  step = num(brightnessStep) / 10  // 0.2
+  current = brightnessManager.getBrightness()
+}
+
+// Hyprland-style arguments
+monitor "HDMI-0" "primary" {
+  brightness = 0.8
+  enabled = true
+}
+
+// Access via config namespace
+print(config.general.log)           // true
+print(config.brightness.step)       // 0.2
+print(config.monitor.brightness)    // 0.8
+```
+
+### Debounced Saves
+
+Config changes are automatically saved with 500ms debounce:
+
+```havel
+// Multiple changes trigger single save
+config.set("General.Key1", "value1", true)
+config.set("General.Key2", "value2", true)
+config.set("General.Key3", "value3", true)
+// Single save after 500ms, not 3 saves
+
+// Force immediate save
+config.forceSave()
+
+// Batch mode
+config.beginBatch()
+config.set("A", "1", true)
+config.set("B", "2", true)
+config.endBatch()  // Single save
+```
+
+### Hot Reload
+
+Config file changes are detected instantly using inotify (Linux):
+
+```havel
+// Start watching (automatic in most cases)
+config.startFileWatching()
+
+// Changes to havel.cfg trigger instant reload
+// No polling - zero CPU usage when idle
+```
+
+---
+
 ## Complete Grammar Reference
 
 ### Lexical Structure

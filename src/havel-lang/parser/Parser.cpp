@@ -165,9 +165,19 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInlineStatement() {
   if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::EOF_TOKEN) {
     return nullptr;
   }
+  
+  // Keywords that should NOT be parsed as statements in inline context
+  // (they belong to parent constructs like if/else/while)
+  if (at().type == havel::TokenType::Else ||
+      at().type == havel::TokenType::Catch ||
+      at().type == havel::TokenType::Finally) {
+    return nullptr;
+  }
 
   // Parse based on current token
   switch (at().type) {
+  case havel::TokenType::Colon:
+    return parseSleepStatement();
   case havel::TokenType::Let:
   case havel::TokenType::Const:
     return parseLetDeclaration();
@@ -219,6 +229,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return nullptr;
   }
   
+  // Keywords that should NOT be parsed as statements
+  // (they belong to parent constructs like if/else/while)
+  if (at().type == havel::TokenType::Else ||
+      at().type == havel::TokenType::Catch ||
+      at().type == havel::TokenType::Finally) {
+    return nullptr;
+  }
+  
   switch (at().type) {
   case havel::TokenType::Hotkey: {
     // Parse hotkey with potential prefix conditions (when/if before =>)
@@ -250,6 +268,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
                  at().type == havel::TokenType::While ||
                  at().type == havel::TokenType::For ||
                  at().type == havel::TokenType::Loop ||
+                 at().type == havel::TokenType::Repeat ||
                  at().type == havel::TokenType::Break ||
                  at().type == havel::TokenType::Continue ||
                  at().type == havel::TokenType::Return ||
@@ -1297,13 +1316,18 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
   allowBraceCallSugar = prevAllow;
 
   std::unique_ptr<havel::ast::Statement> consequence;
-  
+
   // Block form or inline form
   if (at().type == havel::TokenType::OpenBrace) {
     consequence = parseBlockStatement();
   } else {
     // Inline form - single statement (don't skip newlines)
     consequence = parseInlineStatement();
+  }
+
+  // Skip newlines before checking for else
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
   }
 
   std::unique_ptr<havel::ast::Statement> alternative = nullptr;

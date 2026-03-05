@@ -110,7 +110,8 @@ private:
   std::unique_ptr<ast::Statement> parseConfigBlock();
   std::unique_ptr<ast::Statement> parseDevicesBlock();
   std::unique_ptr<ast::Statement> parseModesBlock();
-  
+  std::unique_ptr<ast::Statement> parseConfigSection();
+
   // Type system parsers
   std::unique_ptr<ast::Statement> parseStructDeclaration();
   std::unique_ptr<ast::Statement> parseEnumDeclaration();

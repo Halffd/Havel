@@ -487,6 +487,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {
+    // Check for generic config section: identifier { key = value }
+    if (at().type == havel::TokenType::Identifier && at(1).type == havel::TokenType::OpenBrace) {
+      return parseConfigSection();
+    }
+    
     // In input context (hotkey blocks), bare expressions may be input commands
     if (inInputContext) {
       // Check if this looks like an input command:
@@ -3445,6 +3450,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
 std::unique_ptr<havel::ast::Statement> Parser::parseModesBlock() {
   advance(); // consume 'modes'
   return std::make_unique<havel::ast::ModesBlock>(parseKeyValueBlock());
+}
+
+// Parse generic config section: identifier { key = value }
+std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
+  std::string sectionName = at().value;
+  advance(); // consume identifier
+  return std::make_unique<havel::ast::ConfigSection>(sectionName, parseKeyValueBlock());
 }
 
 std::vector<std::pair<std::string, std::unique_ptr<havel::ast::Expression>>>

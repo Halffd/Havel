@@ -2099,6 +2099,26 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
   lastResult = nullptr; // Modes blocks don't return a value
 }
 
+void Interpreter::visitConfigSection(const ast::ConfigSection &node) {
+  // Create object for this config section
+  auto configObject =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  // Process key-value pairs
+  for (const auto &[key, valueExpr] : node.pairs) {
+    auto result = Evaluate(*valueExpr);
+    if (isError(result)) {
+      lastResult = result;
+      return;
+    }
+    (*configObject)[key] = unwrap(result);
+  }
+
+  // Store in environment under the section name
+  environment->Define(node.name, HavelValue(configObject));
+  lastResult = HavelValue(nullptr);
+}
+
 void Interpreter::visitIndexExpression(const ast::IndexExpression &node) {
   auto objectResult = Evaluate(*node.object);
   if (isError(objectResult)) {

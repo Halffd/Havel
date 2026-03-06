@@ -83,7 +83,7 @@ void registerProcessModule(Environment* env) {
     // ============================================================================
     // spawn(command) - Start async process
     // ============================================================================
-    (*processObj)["spawn"] = BuiltinFunction([=](const std::vector<HavelValue>& args) -> HavelResult {
+    (*processObj)["spawn"] = HavelValue(BuiltinFunction([=](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("spawn() requires a command");
         }

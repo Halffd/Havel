@@ -27,6 +27,7 @@
 #include "stdlib/FileModule.hpp"  // For registerFileModule
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
 #include "stdlib/ProcessModule.hpp"  // For registerProcessModule
+#include "../../modules/ModuleLoader.hpp"  // For loadHostModules
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -3542,6 +3543,10 @@ void Interpreter::InitializeStandardLibrary() {
         }
         return HavelValue(keyName + " KeyTap created successfully");
       })));
+  
+  // Load host modules (window, hotkey, audio, etc.)
+  // This bridges the pure language runtime with the host system
+  modules::loadHostModules(*environment, this);
 }
 
 void Interpreter::InitializeSystemBuiltins() {

@@ -10,6 +10,7 @@
 #include "utils/Util.hpp"
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
+#include "../../host/HostContext.hpp"  // For HostContext
 
 #include <atomic>
 #include <chrono>
@@ -648,6 +649,21 @@ public:
   // Get shared pointer to destroyed flag for safe lambda capture
   std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
   
+  // Get host context for module loading
+  HostContext getHostContext() const {
+    HostContext ctx;
+    ctx.io = io;
+    ctx.windowManager = windowManager;
+    ctx.hotkeyManager = hotkeyManager;
+    ctx.brightnessManager = brightnessManager;
+    ctx.audioManager = audioManager;
+    ctx.guiManager = guiManager;
+    ctx.screenshotManager = screenshotManager;
+    ctx.clipboardManager = clipboardManager;
+    ctx.pixelAutomation = pixelAutomation;
+    return ctx;
+  }
+
   // Reload helper methods (private)
   void executeOnStart();
   void executeOnReload();

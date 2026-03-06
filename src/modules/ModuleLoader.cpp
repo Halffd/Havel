@@ -11,9 +11,9 @@
 #include "screenshot/ScreenshotModule.hpp"
 #include "clipboard/ClipboardModule.hpp"
 #include "automation/PixelModule.hpp"
+#include "automation/AutomationModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
-// #include "automation/AutomationModule.hpp"
 
 namespace havel::modules {
 
@@ -43,10 +43,12 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     // Load pixel/image recognition module
     registerPixelModule(env, ctx);
     
+    // Load automation module
+    registerAutomationModule(env, ctx);
+    
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);
     // registerProcessModule(env, ctx);
-    // registerAutomationModule(env, ctx);
 }
 
 } // namespace havel::modules

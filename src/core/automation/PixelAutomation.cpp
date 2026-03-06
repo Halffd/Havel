@@ -246,7 +246,15 @@ bool PixelAutomation::pixelMatch(int x, int y, const Color& expectedColor, int t
 
 bool PixelAutomation::pixelMatch(int x, int y, const std::string& hexColor, int tolerance) {
     Color expected = Color::fromHex(hexColor);
-    return pixelMatch(x, y, expected, tolerance);
+    Color actual = getPixel(x, y);
+    
+    // Debug: log the colors being compared
+    printf("DEBUG: pixelMatch(%d,%d) expected=%s actual=%s tolerance=%d r_diff=%d g_diff=%d b_diff=%d result=%d\n",
+           x, y, expected.toHex().c_str(), actual.toHex().c_str(), tolerance,
+           std::abs(actual.r - expected.r), std::abs(actual.g - expected.g), std::abs(actual.b - expected.b),
+           actual.near(expected, tolerance));
+    
+    return actual.near(expected, tolerance);
 }
 
 bool PixelAutomation::waitPixel(int x, int y, const Color& expectedColor, 

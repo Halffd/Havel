@@ -908,8 +908,17 @@ void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
 }
 
 void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
+  // Evaluate command expression to support variables, concatenation, etc.
+  auto cmdResult = Evaluate(*node.commandExpr);
+  if (isError(cmdResult)) {
+    lastResult = cmdResult;
+    return;
+  }
+  
+  std::string command = ValueToString(unwrap(cmdResult));
+  
   // Execute shell command synchronously (fire-and-forget but waits for completion)
-  havel::Launcher::runShell(node.command);
+  havel::Launcher::runShell(command);
   lastResult = HavelValue(nullptr);
 }
 

@@ -204,7 +204,39 @@ Interpreter.hpp  (for HavelValue)
 
 This is acceptable for now. Future refactoring could move `HavelValue` to a separate `Value.hpp` that both files include.
 
-### Phase 2: Extract Value Types (BLOCKED)
+### Phase 2: Extract Standard Library Modules (IN PROGRESS 🔄)
+
+Successfully extracted math module to `stdlib/MathModule.cpp`:
+- `stdlib/MathModule.hpp` - Module declaration
+- `stdlib/MathModule.cpp` - Math function implementations (~170 lines)
+
+**Changes:**
+- Removed ~430 lines from `Interpreter.cpp`
+- Established module registration pattern: `registerMathModule(env)`
+- Created reusable pattern for future stdlib modules
+
+**Pattern established:**
+```cpp
+// stdlib/MathModule.hpp
+namespace havel::stdlib {
+  void registerMathModule(Environment* env);
+}
+
+// Interpreter.cpp
+#include "stdlib/MathModule.hpp"
+void InitializeMathBuiltins() {
+  havel::stdlib::registerMathModule(environment.get());
+}
+```
+
+**Remaining modules to extract:**
+- String functions
+- Array functions  
+- File functions
+- Regex functions
+- etc.
+
+### Phase 3: Extract Value Types (BLOCKED)
 
 As documented above, extracting `HavelValue`, `HavelResult`, and `BuiltinFunction` to a separate `Value.hpp` failed due to circular dependencies that `std::variant` cannot handle.
 

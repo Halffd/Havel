@@ -507,15 +507,49 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    // Expression forms: $! var, $! (expr), $! [array]
+    // Expression forms: $! var, $! (expr), $! [array], $! "string"
+    std::unique_ptr<havel::ast::Expression> cmdExpr;
     if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
-      return std::make_unique<havel::ast::ShellCommandStatement>(parseExpression(), captureOutput);
+      cmdExpr = parseExpression();
     } else if (at().type == havel::TokenType::Identifier) {
       // Just an identifier - parse as primary expression
-      return std::make_unique<havel::ast::ShellCommandStatement>(parsePrimaryExpression(), captureOutput);
+      cmdExpr = parsePrimaryExpression();
+    } else if (at().type == havel::TokenType::String) {
+      // String literal for shell command
+      cmdExpr = parsePrimaryExpression();
     } else {
-      failAt(at(), "Shell command requires expression: $ (cmd), $! [array], or $! var");
+      failAt(at(), "Shell command requires expression: $ (cmd), $! [array], $! var, or $! \"string\"");
     }
+    
+    auto stmt = std::make_unique<havel::ast::ShellCommandStatement>(std::move(cmdExpr), captureOutput);
+    
+    // Check for pipe chain: $! cmd1 | cmd2 | cmd3
+    while (at().type == havel::TokenType::Pipe) {
+      advance(); // consume '|'
+      // Skip whitespace after pipe
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      
+      // Parse next command in chain
+      std::unique_ptr<havel::ast::Expression> nextCmdExpr;
+      if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
+        nextCmdExpr = parseExpression();
+      } else if (at().type == havel::TokenType::Identifier) {
+        nextCmdExpr = parsePrimaryExpression();
+      } else if (at().type == havel::TokenType::String) {
+        nextCmdExpr = parsePrimaryExpression();
+      } else {
+        failAt(at(), "Pipe requires valid shell command");
+      }
+      
+      // Create next statement and link it
+      auto nextStmt = std::make_unique<havel::ast::ShellCommandStatement>(std::move(nextCmdExpr), false);
+      stmt->next = std::move(nextStmt);
+      stmt = std::move(stmt->next);
+    }
+    
+    return stmt;
   }
   case havel::TokenType::Greater:
     return parseInputStatement();

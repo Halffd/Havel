@@ -204,7 +204,7 @@ Interpreter.hpp  (for HavelValue)
 
 This is acceptable for now. Future refactoring could move `HavelValue` to a separate `Value.hpp` that both files include.
 
-### Phase 2: Extract Standard Library Modules (IN PROGRESS 🔄)
+### Phase 2: Extract Standard Library Modules (COMPLETED ✅)
 
 **Completed extractions:**
 
@@ -234,29 +234,40 @@ This is acceptable for now. Future refactoring could move `HavelValue` to a sepa
    - Mutation: `push()`, `pop()`
    - Conversion: `join()`, `split()`
 
+5. **File Module** (`stdlib/FileModule.cpp` - 80 lines)
+   - `file.read(path)` - read entire file
+   - `file.write(path, content)` - write to file
+   - `file.exists(path)` - check if file exists
+
+6. **Regex Module** (`stdlib/RegexModule.cpp` - 250 lines)
+   - `regex.match()`, `regex.test()` - test pattern match
+   - `regex.search()` - return first match object
+   - `regex.findall()` - return all matches
+   - `regex.replace()` - replace all occurrences
+   - `regex.split()` - split by pattern
+   - `regex.compile()` - return compiled regex object
+
 **Changes:**
-- Removed ~2,400 lines from `Interpreter.cpp`
+- Removed ~2,800 lines from `Interpreter.cpp`
 - Established module registration pattern: `register*Module(env)`
 - Created reusable pattern for future stdlib modules
 
 **Pattern established:**
 ```cpp
-// stdlib/ArrayModule.hpp
+// stdlib/RegexModule.hpp
 namespace havel::stdlib {
-  void registerArrayModule(Environment* env);
+  void registerRegexModule(Environment* env);
 }
 
 // Interpreter.cpp
-#include "stdlib/ArrayModule.hpp"
+#include "stdlib/RegexModule.hpp"
 void InitializeStandardLibrary() {
-  havel::stdlib::registerArrayModule(environment.get());
+  havel::stdlib::registerRegexModule(environment.get());
   // ... other module registrations
 }
 ```
 
 **Remaining modules to extract:**
-- File functions
-- Regex functions
 - IO functions
 - Brightness/Audio/Media functions
 - Window/Clipboard functions

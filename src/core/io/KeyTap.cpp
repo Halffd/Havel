@@ -10,35 +10,35 @@ KeyTap::~KeyTap() {
 }
 
 void KeyTap::setup() {
-    using havel::debug;
-    
     debug("KeyTap::setup() called for key: '{}'", keyName);
     
+    // Only register ONE key down hotkey
     std::string downPrefix = "@|";
     if(!grabDown) {
         downPrefix += "~";
     }
-    std::string upPrefix = "@|";
-    if(!grabUp) {
-        upPrefix += "~";
-    }
     std::string keyDown = downPrefix + keyName;
-    std::string keyUp = upPrefix + keyName + ":up";
-
+    std::string keyUp = downPrefix + keyName + ":up";
+    
     debug("KeyTap: Registering keyDown='{}', keyUp='{}'", keyDown, keyUp);
-
-    // Register callback for any key press event
+    
+    // Register any-key callback to detect combos
     hotkeyManager.RegisterAnyKeyPressCallback([this](const std::string& key) {
         if (keyHeld && key != keyName) {
             combo = true;
+            // If we have a combo action, trigger it immediately
+            if (onCombo && evaluateCondition(comboCondition)) {
+                onCombo();
+                // Clear states so tap doesn't also trigger
+                keyHeld = false;
+                combo = false;
+            }
         }
     });
-
-    // Key down behavior (press) - set keyHeld and reset combo
+    
+    // Key down - just set held state
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
-        // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
-        debug("KeyTap: Registering keyDown with function condition");
         hotkeyManager.AddHotkey(keyDown, [this, func]() {
             if (func && func()) {
                 keyHeld = true;
@@ -48,96 +48,62 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            debug("KeyTap: Registering keyDown with string condition: '{}'", condStr);
             hotkeyManager.AddContextualHotkey(keyDown, condStr, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         } else {
-            debug("KeyTap: Registering keyDown without condition");
             hotkeyManager.AddHotkey(keyDown, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         }
     } else {
-        debug("KeyTap: Registering keyDown (no condition variant)");
         hotkeyManager.AddHotkey(keyDown, [this]() {
             keyHeld = true;
             combo = false;
         });
     }
-
-    // Combo behavior (press) - if different condition
-    if (onCombo) {
-        debug("KeyTap: Registering combo handler");
-        if (std::holds_alternative<std::function<bool()>>(comboCondition)) {
-            // Using function-based condition for combo
-            auto func = std::get<std::function<bool()>>(comboCondition);
-            hotkeyManager.AddHotkey("@|" + keyName, [this, func]() {
-                if (func && func()) {
-                    onCombo();
-                }
-            });
-        } else if (std::holds_alternative<std::string>(comboCondition)) {
-            auto condStr = std::get<std::string>(comboCondition);
-            if (!condStr.empty()) {
-                hotkeyManager.AddContextualHotkey("@|" + keyName, condStr, [this]() {
-                    onCombo();
-                });
-            } else {
-                hotkeyManager.AddHotkey("@|" + keyName, [this]() {
-                    onCombo();
-                });
-            }
-        } else {
-            hotkeyManager.AddHotkey("@|" + keyName, [this]() {
-                onCombo();
-            });
-        }
-    }
-
-    // Key up behavior (release) - check for clean tap
+    
+    // Key up - check for tap
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
-        // Using function-based condition
         auto func = std::get<std::function<bool()>>(tapCondition);
-        debug("KeyTap: Registering keyUp with function condition");
         hotkeyManager.AddHotkey(keyUp, [this, func]() {
             if (keyHeld && !combo && func && func()) {
                 onTap();   // clean tap
             }
             keyHeld = false;
+            combo = false;
         });
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            debug("KeyTap: Registering keyUp with string condition: '{}'", condStr);
             hotkeyManager.AddContextualHotkey(keyUp, condStr, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
                 }
                 keyHeld = false;
+                combo = false;
             });
         } else {
-            debug("KeyTap: Registering keyUp without condition");
             hotkeyManager.AddHotkey(keyUp, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
                 }
                 keyHeld = false;
+                combo = false;
             });
         }
     } else {
-        debug("KeyTap: Registering keyUp (no condition variant)");
         hotkeyManager.AddHotkey(keyUp, [this]() {
             if (keyHeld && !combo) {
                 onTap();   // clean tap
             }
             keyHeld = false;
+            combo = false;
         });
     }
     
     debug("KeyTap::setup() complete for '{}'", keyName);
 }
-
 }

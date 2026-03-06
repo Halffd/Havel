@@ -12,6 +12,7 @@
 #include "clipboard/ClipboardModule.hpp"
 #include "automation/PixelModule.hpp"
 #include "automation/AutomationModule.hpp"
+#include "PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -45,6 +46,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load automation module
     registerAutomationModule(env, ctx);
+    
+    // Load physics constants module
+    registerPhysicsModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

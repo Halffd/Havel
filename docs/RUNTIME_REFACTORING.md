@@ -228,33 +228,42 @@ This is acceptable for now. Future refactoring could move `HavelValue` to a sepa
    - Modification: `replace()`
    - Substrings: `substr()`, `left()`, `right()`
 
+4. **Array Module** (`stdlib/ArrayModule.cpp` - 330 lines)
+   - Transformation: `map()`, `filter()`, `reduce()`, `forEach()`
+   - Search: `find()`, `some()`, `every()`, `includes()`, `indexOf()`
+   - Mutation: `push()`, `pop()`
+   - Conversion: `join()`, `split()`
+
 **Changes:**
-- Removed ~1,200 lines from `Interpreter.cpp`
+- Removed ~2,400 lines from `Interpreter.cpp`
 - Established module registration pattern: `register*Module(env)`
 - Created reusable pattern for future stdlib modules
 
 **Pattern established:**
 ```cpp
-// stdlib/StringModule.hpp
+// stdlib/ArrayModule.hpp
 namespace havel::stdlib {
-  void registerStringModule(Environment* env);
+  void registerArrayModule(Environment* env);
 }
 
 // Interpreter.cpp
-#include "stdlib/StringModule.hpp"
+#include "stdlib/ArrayModule.hpp"
 void InitializeStandardLibrary() {
-  havel::stdlib::registerStringModule(environment.get());
+  havel::stdlib::registerArrayModule(environment.get());
   // ... other module registrations
 }
 ```
 
 **Remaining modules to extract:**
-- Array functions
 - File functions
 - Regex functions
 - IO functions
 - Brightness/Audio/Media functions
-- etc.
+- Window/Clipboard functions
+- Screenshot/Pixel functions
+- Automation/Timer functions
+- GUI functions
+- Help function
 
 ### Phase 3: Extract Value Types (BLOCKED)
 

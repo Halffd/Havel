@@ -38,12 +38,15 @@ void registerFileModule(Environment* env) {
     return "";
   };
 
+  // Create file namespace object
+  auto fileObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
   // ============================================================================
   // File functions
   // ============================================================================
 
   // file.read(path) - read entire file content
-  env->Define("file.read", BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+  (*fileObj)["read"] = BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("file.read() requires path");
     std::string path = valueToString(args[0]);
     std::ifstream file(path);
@@ -52,10 +55,10 @@ void registerFileModule(Environment* env) {
     std::string content((std::istreambuf_iterator<char>(file)),
                         std::istreambuf_iterator<char>());
     return HavelValue(content);
-  }));
+  });
 
   // file.write(path, content) - write content to file
-  env->Define("file.write", BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+  (*fileObj)["write"] = BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("file.write() requires (path, content)");
     std::string path = valueToString(args[0]);
     std::string content = valueToString(args[1]);
@@ -65,14 +68,17 @@ void registerFileModule(Environment* env) {
 
     file << content;
     return HavelValue(true);
-  }));
+  });
 
   // file.exists(path) - check if file exists
-  env->Define("file.exists", BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+  (*fileObj)["exists"] = BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("file.exists() requires path");
     std::string path = valueToString(args[0]);
     return HavelValue(std::filesystem::exists(path));
-  }));
+  });
+
+  // Register file namespace
+  env->Define("file", HavelValue(fileObj));
 }
 
 } // namespace havel::stdlib

@@ -477,7 +477,8 @@ void ConditionalHotkeyManager::UpdateLoop() {
   while (updateLoopRunning.load()) {
     {
       std::unique_lock<std::mutex> lock(updateLoopMutex);
-      updateLoopCv.wait_for(lock, std::chrono::milliseconds(50));
+      // Check every 200ms to reduce CPU usage and prevent rapid grab/ungrab cycles
+      updateLoopCv.wait_for(lock, std::chrono::milliseconds(200));
     }
 
     if (!updateLoopRunning.load()) break;

@@ -251,8 +251,8 @@ void registerProcessModule(Environment* env) {
         });
         
         return HavelValue(procObj);
-    });
-    
+    }));
+
     // Register process namespace
     env->Define("process", HavelValue(processObj));
     

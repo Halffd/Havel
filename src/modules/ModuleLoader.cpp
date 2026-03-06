@@ -6,9 +6,9 @@
 #include "ModuleLoader.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "window/WindowModule.hpp"
+#include "brightness/BrightnessModule.hpp"
+#include "audio/AudioModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
-// #include "audio/AudioModule.hpp"
-// #include "brightness/BrightnessModule.hpp"
 // #include "screenshot/ScreenshotModule.hpp"
 // #include "clipboard/ClipboardModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -27,10 +27,14 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     // Load window management module
     registerWindowModule(env, ctx);
     
+    // Load brightness management module
+    registerBrightnessModule(env, ctx);
+    
+    // Load audio management module
+    registerAudioModule(env, ctx);
+    
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);
-    // registerAudioModule(env, ctx);
-    // registerBrightnessModule(env, ctx);
     // registerScreenshotModule(env, ctx);
     // registerClipboardModule(env, ctx);
     // registerProcessModule(env, ctx);

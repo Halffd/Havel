@@ -182,12 +182,40 @@ After refactoring:
 4. **Self-hosting**: Compiler only needs core + stdlib, not host APIs
 5. **Performance**: Future VM can optimize bytecode execution
 
-## Timeline
+## Progress
 
-- **Phase 1-2**: 1-2 days (critical path)
-- **Phase 3-4**: 2-3 days (mechanical but tedious)
-- **Phase 5**: 3-5 days (requires testing each module)
-- **Phase 6**: Future enhancement (weeks of work)
+### Phase 1: Extract Environment (COMPLETED ✅)
+
+Successfully extracted `Environment` and `TraitRegistry` classes to:
+- `runtime/Environment.hpp` - Class declarations
+- `runtime/Environment.cpp` - TraitRegistry implementation
+
+**Changes:**
+- Removed 90 lines from `Interpreter.hpp`
+- Removed 45 lines from `Interpreter.cpp`
+- Created proper separation of concerns
+
+**Dependency structure:**
+```
+Environment.hpp
+    ↓ (includes)
+Interpreter.hpp  (for HavelValue)
+```
+
+This is acceptable for now. Future refactoring could move `HavelValue` to a separate `Value.hpp` that both files include.
+
+### Phase 2: Extract Value Types (BLOCKED)
+
+As documented above, extracting `HavelValue`, `HavelResult`, and `BuiltinFunction` to a separate `Value.hpp` failed due to circular dependencies that `std::variant` cannot handle.
+
+**Options:**
+1. Use `std::shared_ptr<HavelValue>` in variant (breaks cycle, adds overhead)
+2. Keep monolithic structure (current choice)
+3. Full VM rewrite with tagged unions (major undertaking)
+
+### Phase 3-6: Pending
+
+Remaining phases depend on resolving the Value types circular dependency.
 
 ## Notes
 

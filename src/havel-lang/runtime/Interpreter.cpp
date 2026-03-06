@@ -26,6 +26,7 @@
 #include "stdlib/ArrayModule.hpp"  // For registerArrayModule
 #include "stdlib/FileModule.hpp"  // For registerFileModule
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
+#include "stdlib/ProcessModule.hpp"  // For registerProcessModule
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -3341,10 +3342,11 @@ void Interpreter::InitializeStandardLibrary() {
   havel::stdlib::registerStringModule(environment.get());
   havel::stdlib::registerFileModule(environment.get());
   havel::stdlib::registerArrayModule(environment.get());
+  havel::stdlib::registerRegexModule(environment.get());
+  havel::stdlib::registerProcessModule(environment.get());
   InitializeIOBuiltins();
   InitializeBrightnessBuiltins();
   InitializeMathBuiltins();
-  havel::stdlib::registerRegexModule(environment.get());
   InitializeHelpBuiltin();
   InitializeAudioBuiltins();
   InitializeMediaBuiltins();

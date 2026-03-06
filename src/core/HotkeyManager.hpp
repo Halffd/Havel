@@ -207,7 +207,7 @@ private:
   std::chrono::steady_clock::time_point lastConditionCheck =
       std::chrono::steady_clock::now();
   static constexpr int CONDITION_CHECK_INTERVAL_MS =
-      1; // Check every 1ms for immediate response to window changes
+      100; // Check every 100ms - balanced between responsiveness and performance
   std::atomic<std::chrono::steady_clock::time_point> lastModeSwitch =
       std::chrono::steady_clock::now();
   static constexpr int MODE_SWITCH_DEBOUNCE_MS =

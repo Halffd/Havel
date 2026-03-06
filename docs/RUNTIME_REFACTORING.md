@@ -34,6 +34,27 @@ Additionally:
 - `HavelResult` needs `BuiltinFunction`
 - `BuiltinFunction` is typedef'd in `Interpreter.hpp`
 
+**Attempted Solution (Failed):**
+
+An attempt was made to extract `HavelValue`, `HavelResult`, and `BuiltinFunction` to a new `runtime/Value.hpp`. However, this failed because:
+
+1. `std::variant` requires complete types for all alternatives
+2. `HavelValue` contains `BuiltinFuncType` which returns `HavelResult`
+3. `HavelResult` contains `HavelValue`
+4. This creates a circular dependency that `std::variant` cannot handle
+
+The original code works because everything is defined in the same header file in a specific order that satisfies the compiler. Splitting across headers breaks this delicate ordering.
+
+**Possible Solutions:**
+
+1. **Use pointers in variant**: Change `HavelResult` to use `std::shared_ptr<HavelValue>` instead of `HavelValue` directly. This breaks the circular dependency but adds heap allocation overhead.
+
+2. **Keep monolithic structure**: Accept that the value types must stay together for now.
+
+3. **Full VM rewrite**: Implement a bytecode VM where values are tagged unions (not std::variant). This is a major undertaking.
+
+For now, option 2 is chosen - keeping the monolithic structure but documenting the plan for future refactoring.
+
 ## Target Architecture
 
 ```

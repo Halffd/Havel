@@ -9,8 +9,8 @@
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
 #include "screenshot/ScreenshotModule.hpp"
+#include "clipboard/ClipboardModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
-// #include "clipboard/ClipboardModule.hpp"
 // #include "process/ProcessModule.hpp"
 // #include "automation/AutomationModule.hpp"
 
@@ -36,9 +36,11 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     // Load screenshot module
     registerScreenshotModule(env, ctx);
     
+    // Load clipboard module
+    registerClipboardModule(env, ctx);
+    
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);
-    // registerClipboardModule(env, ctx);
     // registerProcessModule(env, ctx);
     // registerAutomationModule(env, ctx);
 }

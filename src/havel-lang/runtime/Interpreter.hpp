@@ -390,94 +390,9 @@ public:
   operator T() const { return get(); }
 };
 
-// Environment class
-class Environment {
-public:
-  Environment(std::shared_ptr<Environment> parentEnv = nullptr)
-      : parent(parentEnv) {}
-
-  void Define(const std::string &name, const HavelValue &value, bool isConst = false) {
-    values[name] = value;
-    if (isConst) {
-      constVars.insert(name);
-    }
-  }
-
-  std::optional<HavelValue> Get(const std::string &name) const {
-    auto it = values.find(name);
-    if (it != values.end()) {
-      return it->second;
-    }
-    if (parent) {
-      return parent->Get(name);
-    }
-    return std::nullopt;
-  }
-
-  bool Assign(const std::string &name, const HavelValue &value) {
-    // Check if this is a const variable
-    if (constVars.find(name) != constVars.end()) {
-      return false; // Cannot assign to const
-    }
-    
-    auto it = values.find(name);
-    if (it != values.end()) {
-      values[name] = value;
-      return true;
-    }
-    if (parent) {
-      return parent->Assign(name, value);
-    }
-    return false; // Variable not found
-  }
-  
-  bool IsConst(const std::string &name) const {
-    return constVars.find(name) != constVars.end();
-  }
-
-private:
-  std::shared_ptr<Environment> parent;
-  std::unordered_map<std::string, HavelValue> values;
-  std::unordered_set<std::string> constVars;
-};
-
-// Trait registry - tracks which types implement which traits
-struct TraitImpl {
-  std::string traitName;
-  std::string typeName;
-  std::unordered_map<std::string, HavelValue> methods;  // method name -> bound function
-};
-
-class TraitRegistry {
-public:
-  static TraitRegistry& getInstance() {
-    static TraitRegistry instance;
-    return instance;
-  }
-  
-  // Register an impl block - injects methods into type's method map
-  void registerImpl(const std::string& traitName, const std::string& typeName,
-                    std::unordered_map<std::string, HavelValue> methods);
-  
-  // Check if a type implements a trait
-  bool implements(const std::string& typeName, const std::string& traitName) const;
-  
-  // Get all trait impls for a type
-  std::vector<const TraitImpl*> getImplsForType(const std::string& typeName) const;
-  
-  // Get a trait method for a type
-  HavelValue getMethod(const std::string& typeName, const std::string& traitName,
-                       const std::string& methodName) const;
-
-private:
-  TraitRegistry() = default;
-  
-  // typeName -> list of trait impls
-  std::unordered_map<std::string, std::vector<TraitImpl>> typeImpls;
-  
-  // (typeName, traitName) -> impl for quick lookup
-  std::unordered_map<std::string, std::unordered_map<std::string, TraitImpl>> implMap;
-};
+// Note: Environment.hpp includes this file, so don't include it here
+// to avoid circular dependency. Files that need both should include
+// Environment.hpp which will transitively include this file.
 
 // Main Interpreter class implementing the visitor pattern
 class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<Interpreter> {

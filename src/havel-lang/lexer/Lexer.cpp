@@ -311,10 +311,11 @@ Token Lexer::scanBacktick() {
   return makeToken(value, TokenType::Backtick, raw);
 }
 
-Token Lexer::scanShellCommand() {
+Token Lexer::scanShellCommand(bool captureOutput) {
   // $ already consumed, just return the $ as a token
   // The parser will handle the expression that follows
-  return makeToken("$", TokenType::ShellCommand, "$");
+  TokenType type = captureOutput ? TokenType::ShellCommandCapture : TokenType::ShellCommand;
+  return makeToken(captureOutput ? "$!" : "$", type, captureOutput ? "$!" : "$");
 }
 
 Token Lexer::scanIdentifier() {
@@ -639,45 +640,28 @@ std::vector<Token> Lexer::tokenize() {
     // Handle shell command prefix: $ command (must be before hotkey handling)
     // But NOT if followed by => (which would make it a hotkey like $Esc =>)
     if (c == '$') {
-      // Skip optional whitespace after $
+      // Check for capture mode: $!
+      bool captureOutput = false;
+      if (!isAtEnd() && peek() == '!') {
+        advance();  // consume '!'
+        captureOutput = true;
+      }
+      
+      // Skip optional whitespace after $ or $!
       while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
         advance();
       }
-      // Check if it's followed by identifier, path, or parenthesis (shell command/expression)
-      if (!isAtEnd() && (isAlpha(peek()) || peek() == '_' || peek() == '.' || peek() == '/' || peek() == '~' || peek() == '(')) {
-        // If it's followed by (, it's definitely a shell expression
-        if (peek() == '(') {
-          tokens.push_back(scanShellCommand());
-          if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
-          }
-          continue;
-        }
-        
-        // Look ahead to check if this is followed by => (making it a hotkey)
-        size_t savePos = position;
-        // Skip the identifier
-        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
-          advance();
-        }
-        // Skip whitespace
-        while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
-          advance();
-        }
-        // Check for =>
-        bool isHotkey = (peek() == '=' && peek(1) == '>');
-        // Restore position
-        position = savePos;
 
-        if (!isHotkey) {
-          tokens.push_back(scanShellCommand());
-          if (debug_lexer) {
-            std::cout << "LEX: " << tokens.back().toString() << std::endl;
-          }
-          continue;
+      // Check if it's followed by parenthesis, bracket, or identifier (expression mode)
+      // Syntax: $ (expr), $! [array], or $! var
+      if (!isAtEnd() && (peek() == '(' || peek() == '[' || isAlpha(peek()) || peek() == '_')) {
+        tokens.push_back(scanShellCommand(captureOutput));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }
-        // If it's a hotkey, fall through to hotkey handling
+        continue;
       }
+
       // Fall through to hotkey handling for $ as modifier
     }
 

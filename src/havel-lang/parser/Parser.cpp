@@ -500,34 +500,23 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Colon:
     return parseSleepStatement();
   case havel::TokenType::ShellCommand:
-    advance(); // consume '$'
-    // Check if this is an expression (starts with parenthesis for grouping)
-    // or a simple string command
-    if (at().type == havel::TokenType::OpenParen) {
-      // Expression mode: $ (expr)
-      return std::make_unique<havel::ast::ShellCommandStatement>(parseExpression());
-    } else {
-      // Simple string mode: $ command args
-      // Consume raw tokens until end of line, preserving string quotes
-      std::string cmd;
-      while (at().type != havel::TokenType::NewLine &&
-             at().type != havel::TokenType::Semicolon &&
-             at().type != havel::TokenType::EOF_TOKEN &&
-             at().type != havel::TokenType::CloseBrace) {
-        if (!cmd.empty()) {
-          cmd += " ";
-        }
-        // For strings, include the quotes in the command
-        if (at().type == havel::TokenType::String) {
-          cmd += "\"" + at().value + "\"";
-        } else {
-          cmd += at().value;
-        }
-        advance();
-      }
-      return std::make_unique<havel::ast::ShellCommandStatement>(
-          std::make_unique<havel::ast::StringLiteral>(cmd));
+  case havel::TokenType::ShellCommandCapture: {
+    bool captureOutput = (at().type == havel::TokenType::ShellCommandCapture);
+    advance(); // consume '$' or '$!'
+    // Skip whitespace
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
     }
+    // Expression forms: $! var, $! (expr), $! [array]
+    if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
+      return std::make_unique<havel::ast::ShellCommandStatement>(parseExpression(), captureOutput);
+    } else if (at().type == havel::TokenType::Identifier) {
+      // Just an identifier - parse as primary expression
+      return std::make_unique<havel::ast::ShellCommandStatement>(parsePrimaryExpression(), captureOutput);
+    } else {
+      failAt(at(), "Shell command requires expression: $ (cmd), $! [array], or $! var");
+    }
+  }
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {
@@ -2577,6 +2566,28 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   case havel::TokenType::Backtick: {
     advance();
     return std::make_unique<havel::ast::BacktickExpression>(tk.value);
+  }
+
+  case havel::TokenType::ShellCommand:
+  case havel::TokenType::ShellCommandCapture: {
+    // Shell command in expression context: $! ["date"] or $ (cmd) or $! var
+    bool captureOutput = (tk.type == havel::TokenType::ShellCommandCapture);
+    advance(); // consume '$' or '$!'
+    // Skip whitespace
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    // Expression forms: $! var, $! (expr), $! [array]
+    if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
+      auto cmdExpr = parseExpression();
+      return std::make_unique<havel::ast::ShellCommandExpression>(std::move(cmdExpr), captureOutput);
+    } else if (at().type == havel::TokenType::Identifier) {
+      // Just an identifier - parse as primary expression
+      auto cmdExpr = parsePrimaryExpression();
+      return std::make_unique<havel::ast::ShellCommandExpression>(std::move(cmdExpr), captureOutput);
+    } else {
+      failAt(tk, "Shell command requires expression: $ (cmd), $! [array], or $! var");
+    }
   }
 
   case havel::TokenType::InterpolatedString: {

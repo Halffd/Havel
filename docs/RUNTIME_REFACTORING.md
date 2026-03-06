@@ -206,26 +206,36 @@ This is acceptable for now. Future refactoring could move `HavelValue` to a sepa
 
 ### Phase 2: Extract Standard Library Modules (IN PROGRESS 🔄)
 
-Successfully extracted math module to `stdlib/MathModule.cpp`:
-- `stdlib/MathModule.hpp` - Module declaration
-- `stdlib/MathModule.cpp` - Math function implementations (~170 lines)
+**Completed extractions:**
+
+1. **Math Module** (`stdlib/MathModule.cpp` - 172 lines)
+   - All math functions (abs, ceil, floor, round, sin, cos, etc.)
+   - Math constants (PI, E, PHI, etc.)
+   - Random functions (random, randint, shuffle, choice)
+
+2. **Type Module** (`stdlib/TypeModule.cpp` - 250 lines)
+   - Type conversions: `int()`, `num()`, `str()`
+   - Container constructors: `list()`, `tuple()`, `set()`
+   - Type inspection: `type()`, `typeof()`
+   - Utility: `len()`
 
 **Changes:**
-- Removed ~430 lines from `Interpreter.cpp`
-- Established module registration pattern: `registerMathModule(env)`
+- Removed ~690 lines from `Interpreter.cpp`
+- Established module registration pattern: `register*Module(env)`
 - Created reusable pattern for future stdlib modules
 
 **Pattern established:**
 ```cpp
-// stdlib/MathModule.hpp
+// stdlib/TypeModule.hpp
 namespace havel::stdlib {
-  void registerMathModule(Environment* env);
+  void registerTypeModule(Environment* env);
 }
 
 // Interpreter.cpp
-#include "stdlib/MathModule.hpp"
-void InitializeMathBuiltins() {
-  havel::stdlib::registerMathModule(environment.get());
+#include "stdlib/TypeModule.hpp"
+void InitializeStandardLibrary() {
+  havel::stdlib::registerTypeModule(environment.get());
+  // ... other module registrations
 }
 ```
 
@@ -234,6 +244,7 @@ void InitializeMathBuiltins() {
 - Array functions  
 - File functions
 - Regex functions
+- IO functions
 - etc.
 
 ### Phase 3: Extract Value Types (BLOCKED)

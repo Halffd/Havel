@@ -312,27 +312,9 @@ Token Lexer::scanBacktick() {
 }
 
 Token Lexer::scanShellCommand() {
-  std::string value;
-  std::string raw;
-
-  // $ already consumed, start from next character
-  // Consume until end of line
-  while (!isAtEnd()) {
-    char c = peek();
-    // Stop at newlines (end of statement)
-    if (c == '\n' || c == '\r') {
-      break;
-    }
-    value += advance();
-  }
-  raw = value;
-
-  // Trim trailing whitespace
-  while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-    value.pop_back();
-  }
-
-  return makeToken(value, TokenType::ShellCommand, raw);
+  // $ already consumed, just return the $ as a token
+  // The parser will handle the expression that follows
+  return makeToken("$", TokenType::ShellCommand, "$");
 }
 
 Token Lexer::scanIdentifier() {
@@ -661,8 +643,17 @@ std::vector<Token> Lexer::tokenize() {
       while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
         advance();
       }
-      // Check if it's followed by identifier or path (shell command)
-      if (!isAtEnd() && (isAlpha(peek()) || peek() == '_' || peek() == '.' || peek() == '/' || peek() == '~')) {
+      // Check if it's followed by identifier, path, or parenthesis (shell command/expression)
+      if (!isAtEnd() && (isAlpha(peek()) || peek() == '_' || peek() == '.' || peek() == '/' || peek() == '~' || peek() == '(')) {
+        // If it's followed by (, it's definitely a shell expression
+        if (peek() == '(') {
+          tokens.push_back(scanShellCommand());
+          if (debug_lexer) {
+            std::cout << "LEX: " << tokens.back().toString() << std::endl;
+          }
+          continue;
+        }
+        
         // Look ahead to check if this is followed by => (making it a hotkey)
         size_t savePos = position;
         // Skip the identifier
@@ -677,7 +668,7 @@ std::vector<Token> Lexer::tokenize() {
         bool isHotkey = (peek() == '=' && peek(1) == '>');
         // Restore position
         position = savePos;
-        
+
         if (!isHotkey) {
           tokens.push_back(scanShellCommand());
           if (debug_lexer) {

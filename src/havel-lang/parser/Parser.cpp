@@ -500,7 +500,34 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::Colon:
     return parseSleepStatement();
   case havel::TokenType::ShellCommand:
-    return std::make_unique<havel::ast::ShellCommandStatement>(advance().value);
+    advance(); // consume '$'
+    // Check if this is an expression (starts with parenthesis for grouping)
+    // or a simple string command
+    if (at().type == havel::TokenType::OpenParen) {
+      // Expression mode: $ (expr)
+      return std::make_unique<havel::ast::ShellCommandStatement>(parseExpression());
+    } else {
+      // Simple string mode: $ command args
+      // Consume raw tokens until end of line, preserving string quotes
+      std::string cmd;
+      while (at().type != havel::TokenType::NewLine &&
+             at().type != havel::TokenType::Semicolon &&
+             at().type != havel::TokenType::EOF_TOKEN &&
+             at().type != havel::TokenType::CloseBrace) {
+        if (!cmd.empty()) {
+          cmd += " ";
+        }
+        // For strings, include the quotes in the command
+        if (at().type == havel::TokenType::String) {
+          cmd += "\"" + at().value + "\"";
+        } else {
+          cmd += at().value;
+        }
+        advance();
+      }
+      return std::make_unique<havel::ast::ShellCommandStatement>(
+          std::make_unique<havel::ast::StringLiteral>(cmd));
+    }
   case havel::TokenType::Greater:
     return parseInputStatement();
   default: {

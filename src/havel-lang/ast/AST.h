@@ -936,15 +936,15 @@ struct BacktickExpression : public Expression {
 
 // Shell Command Statement - $ command for shell execution
 struct ShellCommandStatement : public Statement {
-  std::string command;
+  std::unique_ptr<Expression> commandExpr;  // Expression to evaluate for command
 
   ShellCommandStatement() { kind = NodeType::ShellCommandStatement; }
-  explicit ShellCommandStatement(const std::string &cmd) : command(cmd) {
+  explicit ShellCommandStatement(std::unique_ptr<Expression> expr) : commandExpr(std::move(expr)) {
     kind = NodeType::ShellCommandStatement;
   }
 
   std::string toString() const override {
-    return "ShellCommandStatement{$ " + command + "}";
+    return "ShellCommandStatement{$ " + (commandExpr ? commandExpr->toString() : "?") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

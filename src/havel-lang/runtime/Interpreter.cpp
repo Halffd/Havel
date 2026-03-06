@@ -918,25 +918,16 @@ void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression 
   HavelValue cmdValue = unwrap(cmdResult);
   havel::ProcessResult result;
 
-  // Debug output
-  havel::debug("ShellCommandExpression: cmdValue type is array={} string={}", 
-        cmdValue.isArray(), cmdValue.isString());
-  
   // Check if command is an array (argument vector) or string
   if (cmdValue.isArray()) {
     // Array mode: ["cmd", "arg1", "arg2"] - execute without shell
     auto argsArray = cmdValue.asArray();
-    havel::debug("ShellCommandExpression: array has {} elements", argsArray ? argsArray->size() : 0);
     if (argsArray && !argsArray->empty()) {
       std::vector<std::string> args;
       for (size_t i = 0; i < argsArray->size(); ++i) {
-        std::string arg = ValueToString((*argsArray)[i]);
-        havel::debug("ShellCommandExpression: arg[{}] = '{}'", i, arg);
-        args.push_back(arg);
+        args.push_back(ValueToString((*argsArray)[i]));
       }
       result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
-      havel::debug("ShellCommandExpression: Launcher::run returned exitCode={} stdout='{}'", 
-            result.exitCode, result.stdout);
     } else {
       lastResult = HavelRuntimeError("Shell command array is empty");
       return;
@@ -944,12 +935,10 @@ void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression 
   } else {
     // String mode: execute through shell
     std::string command = ValueToString(cmdValue);
-    havel::debug("ShellCommandExpression: string command = '{}'", command);
     result = havel::Launcher::runShell(command);
   }
 
   // Return stdout (capture mode is implicit for expressions)
-  havel::debug("ShellCommandExpression: returning stdout='{}'", result.stdout);
   lastResult = HavelValue(result.stdout);
 }
 

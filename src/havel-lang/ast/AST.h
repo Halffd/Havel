@@ -960,19 +960,26 @@ struct ShellCommandExpression : public Expression {
 };
 
 // Shell Command Statement - $ command for shell execution
+// Supports pipes: $! cmd1 | cmd2 | cmd3
 struct ShellCommandStatement : public Statement {
   std::unique_ptr<Expression> commandExpr;  // Expression to evaluate (string or array)
   bool captureOutput;  // true for $! (capture stdout)
+  std::unique_ptr<ShellCommandStatement> next;  // Next command in pipe chain
 
   ShellCommandStatement() : captureOutput(false) { kind = NodeType::ShellCommandStatement; }
-  explicit ShellCommandStatement(std::unique_ptr<Expression> expr, bool capture = false) 
-    : commandExpr(std::move(expr)), captureOutput(capture) {
+  explicit ShellCommandStatement(std::unique_ptr<Expression> expr, bool capture = false)
+    : commandExpr(std::move(expr)), captureOutput(capture), next(nullptr) {
     kind = NodeType::ShellCommandStatement;
   }
 
   std::string toString() const override {
     std::string prefix = captureOutput ? "$! " : "$ ";
-    return "ShellCommandStatement{" + prefix + (commandExpr ? commandExpr->toString() : "?") + "}";
+    std::string result = "ShellCommandStatement{" + prefix + (commandExpr ? commandExpr->toString() : "?");
+    if (next) {
+      result += " | " + next->toString();
+    }
+    result += "}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

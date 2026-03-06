@@ -267,14 +267,32 @@ void InitializeStandardLibrary() {
 }
 ```
 
-**Remaining modules to extract:**
-- IO functions
-- Brightness/Audio/Media functions
-- Window/Clipboard functions
-- Screenshot/Pixel functions
-- Automation/Timer functions
-- GUI functions
-- Help function
+### Host Integration Modules (REMAINING IN Interpreter.cpp)
+
+The following modules remain in `Interpreter.cpp` because they depend on host state:
+
+- **IO** - key mapping (requires `IO* io`, `HotkeyManager*`)
+- **Clipboard** - clipboard operations (requires Qt, `ClipboardManager*`)
+- **Window** - window management (requires `WindowManager*`)
+- **Brightness** - screen brightness (requires `BrightnessManager*`)
+- **Audio** - volume control (requires `AudioManager*`)
+- **Media** - media playback (requires Qt multimedia)
+- **Screenshot** - screen capture (requires `ScreenshotManager*`)
+- **Pixel** - pixel detection (requires `PixelAutomation*`)
+- **Automation** - UI automation (requires host APIs)
+- **GUI** - dialog boxes (requires Qt)
+- **Launcher** - process launching
+- **FileManager** - file operations
+- **Timer** - timers (requires interpreter state)
+- **Help** - help system (requires interpreter state)
+
+**Rationale:** These modules are **host integration**, not pure stdlib. They:
+- Depend on manager instances and Qt
+- Require access to Interpreter's `this` pointer
+- Are inherently coupled to the runtime environment
+- Don't benefit from extraction (still need host context)
+
+See `docs/HOST_MODULES.md` for detailed analysis.
 
 ### Phase 3: Extract Value Types (BLOCKED)
 

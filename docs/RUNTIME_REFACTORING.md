@@ -219,32 +219,41 @@ This is acceptable for now. Future refactoring could move `HavelValue` to a sepa
    - Type inspection: `type()`, `typeof()`
    - Utility: `len()`
 
+3. **String Module** (`stdlib/StringModule.cpp` - 250 lines)
+   - Formatting: `format()`
+   - Case: `upper()`, `lower()`
+   - Whitespace: `trim()`
+   - Length: `length()`
+   - Search: `contains()`, `startsWith()`, `endsWith()`
+   - Modification: `replace()`
+   - Substrings: `substr()`, `left()`, `right()`
+
 **Changes:**
-- Removed ~690 lines from `Interpreter.cpp`
+- Removed ~1,200 lines from `Interpreter.cpp`
 - Established module registration pattern: `register*Module(env)`
 - Created reusable pattern for future stdlib modules
 
 **Pattern established:**
 ```cpp
-// stdlib/TypeModule.hpp
+// stdlib/StringModule.hpp
 namespace havel::stdlib {
-  void registerTypeModule(Environment* env);
+  void registerStringModule(Environment* env);
 }
 
 // Interpreter.cpp
-#include "stdlib/TypeModule.hpp"
+#include "stdlib/StringModule.hpp"
 void InitializeStandardLibrary() {
-  havel::stdlib::registerTypeModule(environment.get());
+  havel::stdlib::registerStringModule(environment.get());
   // ... other module registrations
 }
 ```
 
 **Remaining modules to extract:**
-- String functions
-- Array functions  
+- Array functions
 - File functions
 - Regex functions
 - IO functions
+- Brightness/Audio/Media functions
 - etc.
 
 ### Phase 3: Extract Value Types (BLOCKED)

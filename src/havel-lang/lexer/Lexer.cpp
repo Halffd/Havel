@@ -656,23 +656,15 @@ std::vector<Token> Lexer::tokenize() {
         advance();  // consume '!'
         captureOutput = true;
       }
-      
-      // Skip optional whitespace after $ or $!
-      while (!isAtEnd() && (peek() == ' ' || peek() == '\t')) {
-        advance();
-      }
 
-      // Check if it's followed by parenthesis, bracket, or identifier (expression mode)
-      // Syntax: $ (expr), $! [array], or $! var
-      if (!isAtEnd() && (peek() == '(' || peek() == '[' || isAlpha(peek()) || peek() == '_')) {
-        tokens.push_back(scanShellCommand(captureOutput));
-        if (debug_lexer) {
-          std::cout << "LEX: " << tokens.back().toString() << std::endl;
-        }
-        continue;
-      }
+      // Don't skip whitespace - let parser handle it
+      // Just emit the token and let parser parse the expression
 
-      // Fall through to hotkey handling for $ as modifier
+      tokens.push_back(scanShellCommand(captureOutput));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
     }
 
     // Handle modifier-based hotkeys starting with special characters like ^ + !

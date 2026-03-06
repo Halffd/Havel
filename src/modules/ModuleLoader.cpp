@@ -10,6 +10,7 @@
 #include "audio/AudioModule.hpp"
 #include "screenshot/ScreenshotModule.hpp"
 #include "clipboard/ClipboardModule.hpp"
+#include "automation/PixelModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 // #include "automation/AutomationModule.hpp"
@@ -38,6 +39,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load clipboard module
     registerClipboardModule(env, ctx);
+    
+    // Load pixel/image recognition module
+    registerPixelModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

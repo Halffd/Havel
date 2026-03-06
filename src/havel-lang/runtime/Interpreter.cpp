@@ -907,19 +907,98 @@ void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
   lastResult = HavelValue(resultObj);
 }
 
-void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
-  // Evaluate command expression to support variables, concatenation, etc.
+void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression &node) {
+  // Evaluate command expression to support variables, arrays, etc.
   auto cmdResult = Evaluate(*node.commandExpr);
   if (isError(cmdResult)) {
     lastResult = cmdResult;
     return;
   }
+
+  HavelValue cmdValue = unwrap(cmdResult);
+  havel::ProcessResult result;
+
+  // Debug output
+  havel::debug("ShellCommandExpression: cmdValue type is array={} string={}", 
+        cmdValue.isArray(), cmdValue.isString());
   
-  std::string command = ValueToString(unwrap(cmdResult));
-  
-  // Execute shell command synchronously (fire-and-forget but waits for completion)
-  havel::Launcher::runShell(command);
-  lastResult = HavelValue(nullptr);
+  // Check if command is an array (argument vector) or string
+  if (cmdValue.isArray()) {
+    // Array mode: ["cmd", "arg1", "arg2"] - execute without shell
+    auto argsArray = cmdValue.asArray();
+    havel::debug("ShellCommandExpression: array has {} elements", argsArray ? argsArray->size() : 0);
+    if (argsArray && !argsArray->empty()) {
+      std::vector<std::string> args;
+      for (size_t i = 0; i < argsArray->size(); ++i) {
+        std::string arg = ValueToString((*argsArray)[i]);
+        havel::debug("ShellCommandExpression: arg[{}] = '{}'", i, arg);
+        args.push_back(arg);
+      }
+      result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
+      havel::debug("ShellCommandExpression: Launcher::run returned exitCode={} stdout='{}'", 
+            result.exitCode, result.stdout);
+    } else {
+      lastResult = HavelRuntimeError("Shell command array is empty");
+      return;
+    }
+  } else {
+    // String mode: execute through shell
+    std::string command = ValueToString(cmdValue);
+    havel::debug("ShellCommandExpression: string command = '{}'", command);
+    result = havel::Launcher::runShell(command);
+  }
+
+  // Return stdout (capture mode is implicit for expressions)
+  havel::debug("ShellCommandExpression: returning stdout='{}'", result.stdout);
+  lastResult = HavelValue(result.stdout);
+}
+
+void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
+  // Evaluate command expression to support variables, concatenation, arrays, etc.
+  auto cmdResult = Evaluate(*node.commandExpr);
+  if (isError(cmdResult)) {
+    lastResult = cmdResult;
+    return;
+  }
+
+  HavelValue cmdValue = unwrap(cmdResult);
+  havel::ProcessResult result;
+
+  // Check if command is an array (argument vector) or string
+  if (cmdValue.isArray()) {
+    // Array mode: ["cmd", "arg1", "arg2"] - execute without shell
+    auto argsArray = cmdValue.asArray();
+    if (argsArray && !argsArray->empty()) {
+      std::vector<std::string> args;
+      for (size_t i = 0; i < argsArray->size(); ++i) {
+        args.push_back(ValueToString((*argsArray)[i]));
+      }
+      // First element is command, rest are arguments
+      result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
+    } else {
+      lastResult = HavelRuntimeError("Shell command array is empty");
+      return;
+    }
+  } else {
+    // String mode: execute through shell
+    std::string command = ValueToString(cmdValue);
+    result = havel::Launcher::runShell(command);
+  }
+
+  // Return result based on capture mode
+  if (node.captureOutput) {
+    // Return stdout as string
+    lastResult = HavelValue(result.stdout);
+  } else {
+    // Forward stdout/stderr to parent (non-capture mode)
+    if (!result.stdout.empty()) {
+      std::cout << result.stdout;
+    }
+    if (!result.stderr.empty()) {
+      std::cerr << result.stderr;
+    }
+    lastResult = HavelValue(nullptr);
+  }
 }
 
 void Interpreter::visitInputStatement(const ast::InputStatement &node) {

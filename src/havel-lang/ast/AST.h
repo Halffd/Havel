@@ -39,6 +39,7 @@ enum class NodeType {
   InputStatement,        // > "text" or > {Enter} or > lmb
   SleepStatement,        // :1500 or :1h30m
   BacktickExpression,    // `command` for shell output
+  ShellCommandExpression,  // $ or $! command in expression context
   ShellCommandStatement, // $ command for shell execution
   RepeatStatement,       // repeat n { body }
 
@@ -934,17 +935,39 @@ struct BacktickExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Shell Command Expression - $ or $! command in expression context
+struct ShellCommandExpression : public Expression {
+  std::unique_ptr<Expression> commandExpr;  // Expression to evaluate (string or array)
+  bool captureOutput;  // true for $! (capture stdout)
+
+  ShellCommandExpression() : captureOutput(false) { kind = NodeType::ShellCommandExpression; }
+  ShellCommandExpression(std::unique_ptr<Expression> expr, bool capture = false)
+    : commandExpr(std::move(expr)), captureOutput(capture) {
+    kind = NodeType::ShellCommandExpression;
+  }
+
+  std::string toString() const override {
+    std::string prefix = captureOutput ? "$! " : "$ ";
+    return "ShellCommandExpression{" + prefix + (commandExpr ? commandExpr->toString() : "?") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Shell Command Statement - $ command for shell execution
 struct ShellCommandStatement : public Statement {
-  std::unique_ptr<Expression> commandExpr;  // Expression to evaluate for command
+  std::unique_ptr<Expression> commandExpr;  // Expression to evaluate (string or array)
+  bool captureOutput;  // true for $! (capture stdout)
 
-  ShellCommandStatement() { kind = NodeType::ShellCommandStatement; }
-  explicit ShellCommandStatement(std::unique_ptr<Expression> expr) : commandExpr(std::move(expr)) {
+  ShellCommandStatement() : captureOutput(false) { kind = NodeType::ShellCommandStatement; }
+  explicit ShellCommandStatement(std::unique_ptr<Expression> expr, bool capture = false) 
+    : commandExpr(std::move(expr)), captureOutput(capture) {
     kind = NodeType::ShellCommandStatement;
   }
 
   std::string toString() const override {
-    return "ShellCommandStatement{$ " + (commandExpr ? commandExpr->toString() : "?") + "}";
+    std::string prefix = captureOutput ? "$! " : "$ ";
+    return "ShellCommandStatement{" + prefix + (commandExpr ? commandExpr->toString() : "?") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1956,6 +1979,7 @@ public:
   virtual void visitInputStatement(const InputStatement &node) = 0;
   virtual void visitSleepStatement(const SleepStatement &node) = 0;
   virtual void visitBacktickExpression(const BacktickExpression &node) = 0;
+  virtual void visitShellCommandExpression(const ShellCommandExpression &node) = 0;
   virtual void visitShellCommandStatement(const ShellCommandStatement &node) = 0;
   virtual void visitRepeatStatement(const RepeatStatement &node) = 0;
 
@@ -2095,6 +2119,10 @@ inline void SleepStatement::accept(ASTVisitor &visitor) const {
 
 inline void BacktickExpression::accept(ASTVisitor &visitor) const {
   visitor.visitBacktickExpression(*this);
+}
+
+inline void ShellCommandExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitShellCommandExpression(*this);
 }
 
 inline void ShellCommandStatement::accept(ASTVisitor &visitor) const {

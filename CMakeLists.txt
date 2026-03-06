@@ -274,11 +274,14 @@ set(HAVEL_LANG_SOURCES "")
 if(ENABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
     # Exclude LSP sources (they have their own target)
-    list(REMOVE_ITEM HAVEL_LANG_SOURCES 
+    list(REMOVE_ITEM HAVEL_LANG_SOURCES
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
     )
 endif()
+
+# Host modules (language bindings to system managers)
+file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 
 # Test sources (conditional)
 set(TEST_SOURCES "")
@@ -349,6 +352,7 @@ add_executable(havel
     ${CORE_SOURCES}
     ${GUI_SOURCES}
     $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
+    ${HOST_MODULES_SOURCES}
 )
 
 # ==============================================================================

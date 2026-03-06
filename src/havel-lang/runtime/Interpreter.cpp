@@ -1196,6 +1196,36 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   case ast::BinaryOperator::Or:
     lastResult = HavelValue(ValueToBool(left) || ValueToBool(right));
     break;
+  case ast::BinaryOperator::ConfigAppend:
+    // >> config operator
+    // value >> config.path - SET config value
+    // config.path >> variable - GET config value (not yet implemented)
+    if (right.isObject()) {
+      // value >> {config} - merge into config object
+      auto rightObj = right.asObject();
+      if (rightObj && left.isString()) {
+        // Simple case: "value" >> configObj
+        // For now, just store in a special config variable
+        environment->Define("__config_value__", left);
+        lastResult = left;
+      } else {
+        lastResult = HavelRuntimeError("Config append requires string value");
+      }
+    } else if (right.isString()) {
+      // value >> "config.key" - SET config value
+      std::string configKey = right.asString();
+      if (left.isString()) {
+        // Store in config
+        auto &config = Configs::Get();
+        config.Set(configKey, left.asString(), false);
+        lastResult = left;
+      } else {
+        lastResult = HavelRuntimeError("Config value must be a string");
+      }
+    } else {
+      lastResult = HavelRuntimeError("Config append requires string or object on right side");
+    }
+    break;
   default:
     lastResult = HavelRuntimeError("Unsupported binary operator");
   }

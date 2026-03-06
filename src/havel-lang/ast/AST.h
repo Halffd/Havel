@@ -306,7 +306,8 @@ enum class BinaryOperator {
   Less,
   Greater,
   And,
-  Or
+  Or,
+  ConfigAppend  // >> config operator
 };
 
 // Overload operator<< for BinaryOperator
@@ -352,6 +353,8 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
     return os << "&&";
   case BinaryOperator::Or:
     return os << "||";
+  case BinaryOperator::ConfigAppend:
+    return os << ">>";
   default:
     return os << "UNKNOWN_OPERATOR";
   }
@@ -416,6 +419,8 @@ struct BinaryExpression : public Expression {
       return "&&";
     case BinaryOperator::Or:
       return "||";
+    case BinaryOperator::ConfigAppend:
+      return ">>";
     }
     return "UNKNOWN_OPERATOR";
   }

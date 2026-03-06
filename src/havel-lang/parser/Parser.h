@@ -73,6 +73,7 @@ private:
   std::unique_ptr<ast::Statement> parseStatement();
   std::unique_ptr<ast::Statement> parseInlineStatement();  // For inline forms (doesn't skip newlines)
   std::unique_ptr<ast::Expression> parseExpression();
+  std::unique_ptr<ast::Expression> parseConfigAppend();
   std::unique_ptr<ast::Expression> parseAssignmentExpression();
   std::unique_ptr<ast::Expression> parsePipelineExpression();
   std::unique_ptr<ast::Expression> parseTernaryExpression();

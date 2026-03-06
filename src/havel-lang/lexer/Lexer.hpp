@@ -119,6 +119,7 @@ enum class TokenType {
   OpenBracket,  // [
   CloseBracket, // ]
   DotDot,       // ..
+  ShiftRight,   // >> (config append/get)
   Spread,       // ... for spread operator
   Hash,         // # for set literals
   Try,          // try

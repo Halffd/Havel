@@ -974,20 +974,16 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
     result = havel::Launcher::runShell(command);
   }
 
-  // Return result based on capture mode
-  if (node.captureOutput) {
-    // Return stdout as string
-    lastResult = HavelValue(result.stdout);
-  } else {
-    // Forward stdout/stderr to parent (non-capture mode)
-    if (!result.stdout.empty()) {
-      std::cout << result.stdout;
-    }
-    if (!result.stderr.empty()) {
-      std::cerr << result.stderr;
-    }
-    lastResult = HavelValue(nullptr);
+  // Return exit code (shell semantics)
+  // 0 = success, non-zero = failure
+  // Also forward stdout/stderr
+  if (!result.stdout.empty()) {
+    std::cout << result.stdout;
   }
+  if (!result.stderr.empty()) {
+    std::cerr << result.stderr;
+  }
+  lastResult = HavelValue(static_cast<double>(result.exitCode));
 }
 
 void Interpreter::visitInputStatement(const ast::InputStatement &node) {

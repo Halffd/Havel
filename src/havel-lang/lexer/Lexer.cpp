@@ -596,6 +596,16 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle >> (config append/get operator) - must check before single >
+    if (c == '>' && peek() == '>') {
+      advance(); // consume second '>'
+      tokens.push_back(makeToken(">>", TokenType::ShiftRight));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
     // Handle single < and >
     if (c == '<') {
       tokens.push_back(makeToken("<", TokenType::Less));

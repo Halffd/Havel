@@ -2224,7 +2224,26 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
-  return parseAssignmentExpression();
+  return parseConfigAppend();
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {
+  auto left = parseLogicalOr();
+
+  // Handle >> config operator
+  if (at().type == havel::TokenType::ShiftRight) {
+    auto opTok = at();
+    auto op = tokenToBinaryOperator(at().type);
+    advance();
+    auto right = parseLogicalOr();
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+                                                          std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    return bin;
+  }
+
+  return left;
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
@@ -2543,6 +2562,8 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
     return havel::ast::BinaryOperator::And;
   case TokenType::Or:
     return havel::ast::BinaryOperator::Or;
+  case TokenType::ShiftRight:
+    return havel::ast::BinaryOperator::ConfigAppend;
   default:
     fail("Invalid binary operator token: " +
          std::to_string(static_cast<int>(tokenType)));

@@ -5,8 +5,14 @@
 #include "window/WindowManager.hpp"
 #include <QScreen>
 #include <QGuiApplication>
+#include <QCursor>
 #include <thread>
 #include <chrono>
+
+#ifdef LINUX_USED
+#include <X11/Xlib.h>
+#include <X11/extensions/Xfixes.h>
+#endif
 
 namespace havel {
 
@@ -179,10 +185,50 @@ Color PixelAutomation::getPixel(int x, int y) {
         return Color(0, 0, 0);
     }
 
+    // Hide cursor during capture to avoid capturing cursor color
+    bool cursorHidden = false;
+    int cursorX = 0, cursorY = 0;
+    
+#ifdef LINUX_USED
+    Display* display = XOpenDisplay(nullptr);
+    if (display) {
+        // Get cursor position
+        Window root, child;
+        int rootX, rootY, winX, winY;
+        unsigned int mask;
+        if (XQueryPointer(display, DefaultRootWindow(display), &root, &child,
+                          &rootX, &rootY, &winX, &winY, &mask)) {
+            cursorX = rootX;
+            cursorY = rootY;
+            
+            // Hide cursor if it's near the capture area
+            if (std::abs(cursorX - x) < 10 && std::abs(cursorY - y) < 10) {
+                XFixesHideCursor(display, DefaultRootWindow(display));
+                XFlush(display);
+                cursorHidden = true;
+                // Small delay to ensure cursor is hidden
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+        }
+    }
+#endif
+
     // Capture a small region to ensure we get the pixel reliably
     // grabWindow can have issues with single pixels on some systems
     int captureSize = 3;
     QPixmap pixmap = primaryScreen->grabWindow(0, x - 1, y - 1, captureSize, captureSize);
+    
+    // Restore cursor
+#ifdef LINUX_USED
+    if (display) {
+        if (cursorHidden) {
+            XFixesShowCursor(display, DefaultRootWindow(display));
+            XFlush(display);
+        }
+        XCloseDisplay(display);
+    }
+#endif
+
     if (pixmap.isNull()) {
         return Color(0, 0, 0);
     }

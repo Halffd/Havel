@@ -318,13 +318,23 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
 
   // Redirect stdout/stderr if needed
   if (!params.detachFromParent && params.method == Method::Sync) {
+    // Close read ends of pipes in child (we only need write ends)
+    posix_spawn_file_actions_addclose(&actions, pipe_stdout[0]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stderr[0]);
+    
+    // Duplicate write ends to stdout/stderr
     posix_spawn_file_actions_adddup2(&actions, pipe_stdout[1], STDOUT_FILENO);
     posix_spawn_file_actions_adddup2(&actions, pipe_stderr[1], STDERR_FILENO);
+    
+    // Close the original write fds after dup2 (they're duplicated now)
+    posix_spawn_file_actions_addclose(&actions, pipe_stdout[1]);
+    posix_spawn_file_actions_addclose(&actions, pipe_stderr[1]);
   }
 
-  // Prepare argv
+  // Prepare argv - must include executable as argv[0]
   std::vector<char *> argv;
-  argv.reserve(args.size() + 1);
+  argv.reserve(args.size() + 2);
+  argv.push_back(const_cast<char *>(executable.c_str()));  // argv[0] = executable
   for (const auto &arg : args) {
     argv.push_back(const_cast<char *>(arg.c_str()));
   }
@@ -348,69 +358,7 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
             "posix_spawn failed: " + std::string(strerror(spawn_result))};
   }
 
-  if (pid == 0) {
-    // Child process
-    if (params.detachFromParent) {
-      // Create a new session and process group
-      if (setsid() < 0) {
-        _exit(127);
-      }
-
-      // Close all inherited file descriptors to prevent leaks
-      for (int fd = 3; fd < 256; ++fd) {
-        close(fd);
-      }
-
-      // Redirect standard I/O to /dev/null if window is hidden
-      if (params.windowState == WindowState::Hidden) {
-        int devnull = open("/dev/null", O_RDWR);
-        if (devnull >= 0) {
-          dup2(devnull, STDIN_FILENO);
-          dup2(devnull, STDOUT_FILENO);
-          dup2(devnull, STDERR_FILENO);
-          if (devnull > 2)
-            close(devnull);
-        }
-      }
-    } else {
-      // Redirect stdout and stderr to pipes if not detaching
-      if (pipe_stdout[1] != -1) {
-        close(pipe_stdout[0]); // Close read end in child
-        dup2(pipe_stdout[1], STDOUT_FILENO);
-        close(pipe_stdout[1]);
-      }
-      if (pipe_stderr[1] != -1) {
-        close(pipe_stderr[0]); // Close read end in child
-        dup2(pipe_stderr[1], STDERR_FILENO);
-        close(pipe_stderr[1]);
-      }
-    }
-
-    setupUnixEnvironment(params);
-
-    // Set priority
-    if (params.priority != Priority::Normal) {
-      setpriority(PRIO_PROCESS, 0, getUnixNiceValue(params.priority));
-    }
-
-    // Change working directory
-    if (!params.workingDir.empty()) {
-      chdir(params.workingDir.c_str());
-    }
-
-    // Build argv
-    std::vector<char *> argv;
-    argv.push_back(const_cast<char *>(executable.c_str()));
-    for (const auto &arg : args) {
-      argv.push_back(const_cast<char *>(arg.c_str()));
-    }
-    argv.push_back(nullptr);
-
-    execvp(executable.c_str(), argv.data());
-    _exit(127); // execvp failed
-  }
-
-  // Parent process
+  // Parent process continues here - posix_spawn handles fork/exec internally
   ProcessResult result;
   result.pid = pid;
   result.success = true;
@@ -520,20 +468,16 @@ ProcessResult Launcher::executeUnix(const std::string &executable,
 
         // Read all output after process completion
         char buffer[1024];
-        ssize_t stdout_bytes;
-        std::string stdout_data, stderr_data;
+        ssize_t bytes_read;
 
-        while ((stdout_bytes =
-                    read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[stdout_bytes] = '\0';
-          stdout_data += std::string(buffer, stdout_bytes);
+        while ((bytes_read = read(pipe_stdout[0], buffer, sizeof(buffer) - 1)) > 0) {
+          buffer[bytes_read] = '\0';
+          stdout_data += std::string(buffer, bytes_read);
         }
 
-        ssize_t stderr_bytes;
-        while ((stderr_bytes =
-                    read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
-          buffer[stderr_bytes] = '\0';
-          stderr_data += std::string(buffer, stderr_bytes);
+        while ((bytes_read = read(pipe_stderr[0], buffer, sizeof(buffer) - 1)) > 0) {
+          buffer[bytes_read] = '\0';
+          stderr_data += std::string(buffer, bytes_read);
         }
       }
 

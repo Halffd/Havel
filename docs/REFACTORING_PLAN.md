@@ -1,3 +1,28 @@
+## SystemModule Split Complete ✅
+
+### Before
+- SystemModule: 1,788 lines (monolithic)
+
+### After
+- **core/system/** - Domain-specific info classes
+  - CpuInfo.cpp/hpp (cores, threads, usage, frequency, name)
+  - MemoryInfo.cpp/hpp (RAM, swap)
+  - OSInfo.cpp/hpp (distro, kernel, hostname, arch, uptime)
+  - Temperature.cpp/hpp (CPU, GPU, all sensors)
+  - SystemSnapshot.hpp (unified view)
+
+- **modules/** - Script bindings
+  - SystemModule (151 lines) - system.cpu.*, system.memory.*, system.os.*, system.temperature.*
+  - ModeModule (110 lines) - mode.get/set/previous/is()
+
+### Benefits
+✅ Separation of concerns (logic vs bindings)
+✅ Easy to test individual components
+✅ Easy to extend with new sensors
+✅ No more monolithic modules
+
+---
+
 # Progress Update
 ## Latest Progress
 

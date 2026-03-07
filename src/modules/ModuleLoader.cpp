@@ -20,6 +20,7 @@
 #include "gui/GUIModule.hpp"
 #include "alttab/AltTabModule.hpp"
 #include "mapmanager/MapManagerModule.hpp"
+#include "io/IOModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -81,6 +82,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load MapManager module
     registerMapManagerModule(env, ctx);
+    
+    // Load IO module
+    registerIOModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

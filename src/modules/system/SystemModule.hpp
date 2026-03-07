@@ -1,7 +1,8 @@
 /*
  * SystemModule.hpp
  * 
- * System utilities module for Havel language.
+ * System information module for Havel language.
+ * Provides CPU, memory, OS, and temperature information.
  */
 #pragma once
 

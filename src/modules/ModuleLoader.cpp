@@ -28,6 +28,8 @@
 #include "app/AppModule.hpp"
 #include "network/HTTPModule.hpp"
 #include "runtime/RuntimeModule.hpp"
+#include "mode/ModeModule.hpp"
+#include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -109,6 +111,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load runtime utilities module (app, debug, runOnce)
     registerRuntimeModule(env, interpreter);
+    
+    // Load mode module
+    registerModeModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

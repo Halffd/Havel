@@ -1,3 +1,34 @@
+## Evaluator Framework Created ✅
+
+### Progress on Visitor Method Split
+
+Created placeholder structure for splitting visitor methods:
+
+**New Files:**
+- `havel-lang/runtime/evaluator/ExprEvaluator.hpp` - Expression evaluation interface
+- `havel-lang/runtime/evaluator/ExprEvaluator.cpp` - Expression evaluation implementation
+- `havel-lang/runtime/evaluator/StatementEvaluator.hpp` - Statement evaluation interface
+- `havel-lang/runtime/evaluator/StatementEvaluator.cpp` - Statement evaluation implementation
+
+**Current State:**
+- Evaluator classes delegate to Interpreter methods (placeholder pattern)
+- Framework ready for full extraction
+- No functionality changed - pure refactoring scaffolding
+
+**Next Steps to Complete Split:**
+1. Copy each `visit*Expression` method from Interpreter.cpp to ExprEvaluator.cpp
+2. Copy each `visit*Statement` method from Interpreter.cpp to StatementEvaluator.cpp
+3. Replace `this->` references with `interpreter->`
+4. Update Interpreter.cpp to call evaluator methods
+5. Remove duplicated code from Interpreter.cpp
+
+**Expected Result:**
+- Interpreter.cpp: ~863 lines (orchestration only)
+- ExprEvaluator.cpp: ~1,300 lines (expression evaluation)
+- StatementEvaluator.cpp: ~1,400 lines (statement evaluation)
+
+---
+
 ## All SystemModule Modules Extracted ✅
 
 ### Complete Module List (from old 1,788 line SystemModule)

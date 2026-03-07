@@ -23,6 +23,7 @@
 #include "io/IOModule.hpp"
 #include "async/AsyncModule.hpp"
 #include "system/SystemModule.hpp"
+#include "timer/TimerModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -93,6 +94,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load system module
     registerSystemModule(env, ctx);
+    
+    // Load timer module
+    registerTimerModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

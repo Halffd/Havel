@@ -118,6 +118,35 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     }));
     
     // =========================================================================
+    // Key state functions
+    // =========================================================================
+    
+    (*ioObj)["getKeyState"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("io.getKeyState() requires key name");
+        }
+        
+        std::string key = valueToString(args[0]);
+        return HavelValue(io.GetKeyState(key));
+    }));
+    
+    (*ioObj)["isShiftPressed"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io.IsShiftPressed());
+    }));
+    
+    (*ioObj)["isCtrlPressed"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io.IsCtrlPressed());
+    }));
+    
+    (*ioObj)["isAltPressed"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io.IsAltPressed());
+    }));
+    
+    (*ioObj)["isWinPressed"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io.IsWinPressed());
+    }));
+
+    // =========================================================================
     // Mouse functions
     // =========================================================================
     

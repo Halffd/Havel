@@ -15,6 +15,8 @@
 #include "launcher/LauncherModule.hpp"
 #include "media/MediaModule.hpp"
 #include "help/HelpModule.hpp"
+#include "filesystem/FileManagerModule.hpp"
+#include "system/DetectorModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -61,6 +63,12 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load help module
     registerHelpModule(env, ctx);
+    
+    // Load file manager module
+    registerFileManagerModule(env, ctx);
+    
+    // Load detector module
+    registerDetectorModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

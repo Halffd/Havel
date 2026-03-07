@@ -21,6 +21,7 @@
 #include "alttab/AltTabModule.hpp"
 #include "mapmanager/MapManagerModule.hpp"
 #include "io/IOModule.hpp"
+#include "async/AsyncModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -85,6 +86,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load IO module
     registerIOModule(env, ctx);
+    
+    // Load async module
+    registerAsyncModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

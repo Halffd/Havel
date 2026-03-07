@@ -2,23 +2,29 @@
  * StatementEvaluator.cpp
  * 
  * Statement evaluation for Havel interpreter.
- * Implementation delegates to Interpreter methods.
+ * Extracted from Interpreter.cpp as part of runtime refactoring.
  */
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
 
 namespace havel {
 
-// Note: Statement evaluation methods are currently implemented in Interpreter.cpp
-// This file serves as a placeholder for future extraction.
-// 
-// To complete the extraction:
-// 1. Copy each visit*Statement method from Interpreter.cpp to this file
-// 2. Replace 'this->' references with 'interpreter->'
-// 3. Update Interpreter.cpp to call evaluator methods instead
-
 void StatementEvaluator::visitProgram(const ast::Program& node) {
-    interpreter->visitProgram(node);
+    HavelValue lastValue = nullptr;
+    for (const auto& stmt : node.body) {
+        auto result = Evaluate(*stmt);
+        if (isError(result)) {
+            interpreter->lastResult = result;
+            return;
+        }
+        if (std::holds_alternative<ReturnValue>(result)) {
+            auto ret = std::get<ReturnValue>(result);
+            interpreter->lastResult = ret.value ? *ret.value : HavelValue();
+            return;
+        }
+        lastValue = unwrap(result);
+    }
+    interpreter->lastResult = lastValue;
 }
 
 void StatementEvaluator::visitLetDeclaration(const ast::LetDeclaration& node) {

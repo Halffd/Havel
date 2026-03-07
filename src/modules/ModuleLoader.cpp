@@ -13,6 +13,7 @@
 #include "automation/PixelModule.hpp"
 #include "automation/AutomationModule.hpp"
 #include "PhysicsModule.hpp"
+#include "LauncherModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -49,6 +50,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load physics constants module
     registerPhysicsModule(env, ctx);
+    
+    // Load launcher module
+    registerLauncherModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

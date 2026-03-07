@@ -14,6 +14,7 @@
 #include "automation/AutomationModule.hpp"
 #include "PhysicsModule.hpp"
 #include "LauncherModule.hpp"
+#include "MediaModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -53,6 +54,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load launcher module
     registerLauncherModule(env, ctx);
+    
+    // Load media module
+    registerMediaModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

@@ -1,0 +1,171 @@
+/*
+ * GUIModule.cpp
+ * 
+ * GUI dialogs module for Havel language.
+ * Host binding - connects language to GUIManager.
+ */
+#include "GUIModule.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
+#include "gui/GUIManager.hpp"
+
+namespace havel::modules {
+
+void registerGUIModule(Environment& env, HostContext& ctx) {
+    if (!ctx.isValid() || !ctx.guiManager) {
+        return;  // Skip if GUI manager not available
+    }
+    
+    auto& gm = *ctx.guiManager;
+    
+    // Create gui module object
+    auto guiObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    
+    // Helper to convert value to string
+    auto valueToString = [](const HavelValue& v) -> std::string {
+        if (v.isString()) return v.asString();
+        if (v.isNumber()) {
+            double val = v.asNumber();
+            if (val == std::floor(val) && std::abs(val) < 1e15) {
+                return std::to_string(static_cast<long long>(val));
+            } else {
+                std::ostringstream oss;
+                oss.precision(15);
+                oss << val;
+                std::string s = oss.str();
+                if (s.find('.') != std::string::npos) {
+                    size_t last = s.find_last_not_of('0');
+                    if (last != std::string::npos && s[last] == '.') {
+                        s = s.substr(0, last);
+                    } else if (last != std::string::npos) {
+                        s = s.substr(0, last + 1);
+                    }
+                }
+                return s;
+            }
+        }
+        if (v.isBool()) return v.asBool() ? "true" : "false";
+        return "";
+    };
+    
+    // =========================================================================
+    // Menu dialog
+    // =========================================================================
+    
+    (*guiObj)["showMenu"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("gui.showMenu() requires (title, options)");
+        }
+        
+        std::string title = valueToString(args[0]);
+        
+        if (!args[1].is<HavelArray>()) {
+            return HavelRuntimeError("gui.showMenu() requires an array of options");
+        }
+        
+        auto optionsVec = args[1].get<HavelArray>();
+        std::vector<std::string> options;
+        if (optionsVec) {
+            for (const auto& opt : *optionsVec) {
+                options.push_back(valueToString(opt));
+            }
+        }
+        
+        bool multiSelect = args.size() > 2 ? args[2].asBool() : false;
+        std::string selected = gm.showMenu(title, options, multiSelect);
+        return HavelValue(selected);
+    }));
+    
+    // =========================================================================
+    // Input dialog
+    // =========================================================================
+    
+    (*guiObj)["input"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("gui.input() requires title");
+        }
+        
+        std::string title = valueToString(args[0]);
+        std::string prompt = args.size() > 1 ? valueToString(args[1]) : "";
+        std::string defaultValue = args.size() > 2 ? valueToString(args[2]) : "";
+        
+        std::string input = gm.showInputDialog(title, prompt, defaultValue);
+        return HavelValue(input);
+    }));
+    
+    // =========================================================================
+    // Confirm dialog
+    // =========================================================================
+    
+    (*guiObj)["confirm"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("gui.confirm() requires (title, message)");
+        }
+        
+        std::string title = valueToString(args[0]);
+        std::string message = valueToString(args[1]);
+        
+        bool confirmed = gm.showConfirmDialog(title, message);
+        return HavelValue(confirmed);
+    }));
+    
+    // =========================================================================
+    // Notification
+    // =========================================================================
+    
+    (*guiObj)["notify"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("gui.notify() requires (title, message)");
+        }
+        
+        std::string title = valueToString(args[0]);
+        std::string message = valueToString(args[1]);
+        std::string icon = args.size() > 2 ? valueToString(args[2]) : "info";
+        
+        gm.showNotification(title, message, icon);
+        return HavelValue(nullptr);
+    }));
+    
+    // =========================================================================
+    // File dialog
+    // =========================================================================
+    
+    (*guiObj)["fileDialog"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        std::string title = args.size() > 0 ? valueToString(args[0]) : "Select File";
+        std::string dir = args.size() > 1 ? valueToString(args[1]) : "";
+        std::string filter = args.size() > 2 ? valueToString(args[2]) : "";
+        
+        std::string selected = gm.showFileDialog(title, dir, filter);
+        return HavelValue(selected);
+    }));
+    
+    // =========================================================================
+    // Directory dialog
+    // =========================================================================
+    
+    (*guiObj)["directoryDialog"] = HavelValue(BuiltinFunction([&gm, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+        std::string title = args.size() > 0 ? valueToString(args[0]) : "Select Directory";
+        std::string dir = args.size() > 1 ? valueToString(args[1]) : "";
+        
+        std::string selected = gm.showDirectoryDialog(title, dir);
+        return HavelValue(selected);
+    }));
+    
+    // =========================================================================
+    // Window transparency
+    // =========================================================================
+    
+    (*guiObj)["setTransparency"] = HavelValue(BuiltinFunction([&gm](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("window.setTransparency() requires opacity (0.0-1.0)");
+        }
+        
+        double opacity = args[0].asNumber();
+        bool success = gm.setActiveWindowTransparency(opacity);
+        return HavelValue(success);
+    }));
+    
+    // Register gui module
+    env.Define("gui", HavelValue(guiObj));
+}
+
+} // namespace havel::modules

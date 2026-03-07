@@ -22,6 +22,7 @@
 #include "mapmanager/MapManagerModule.hpp"
 #include "io/IOModule.hpp"
 #include "async/AsyncModule.hpp"
+#include "system/SystemModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -89,6 +90,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load async module
     registerAsyncModule(env, ctx);
+    
+    // Load system module
+    registerSystemModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

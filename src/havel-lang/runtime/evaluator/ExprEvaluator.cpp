@@ -2,30 +2,135 @@
  * ExprEvaluator.cpp
  * 
  * Expression evaluation for Havel interpreter.
- * Implementation delegates to Interpreter methods.
+ * Extracted from Interpreter.cpp as part of runtime refactoring.
  */
 #include "ExprEvaluator.hpp"
 #include "../Interpreter.hpp"
+#include "core/ConfigManager.hpp"
 
 namespace havel {
 
-// Note: Expression evaluation methods are currently implemented in Interpreter.cpp
-// This file serves as a placeholder for future extraction.
-// 
-// To complete the extraction:
-// 1. Copy each visit*Expression method from Interpreter.cpp to this file
-// 2. Replace 'this->' references with 'interpreter->'
-// 3. Update Interpreter.cpp to call evaluator methods instead
-
 void ExprEvaluator::visitBinaryExpression(const ast::BinaryExpression& node) {
-    interpreter->visitBinaryExpression(node);
+    auto leftRes = Evaluate(*node.left);
+    if (isError(leftRes)) {
+        interpreter->lastResult = leftRes;
+        return;
+    }
+    auto rightRes = Evaluate(*node.right);
+    if (isError(rightRes)) {
+        interpreter->lastResult = rightRes;
+        return;
+    }
+
+    HavelValue left = unwrap(leftRes);
+    HavelValue right = unwrap(rightRes);
+
+    switch (node.operator_) {
+    case ast::BinaryOperator::Add:
+        if (left.isString() || right.isString()) {
+            std::string result = ValueToString(left) + ValueToString(right);
+            interpreter->lastResult = HavelValue(result);
+        } else {
+            interpreter->lastResult = ValueToNumber(left) + ValueToNumber(right);
+        }
+        break;
+    case ast::BinaryOperator::Sub:
+        interpreter->lastResult = ValueToNumber(left) - ValueToNumber(right);
+        break;
+    case ast::BinaryOperator::Mul:
+        interpreter->lastResult = ValueToNumber(left) * ValueToNumber(right);
+        break;
+    case ast::BinaryOperator::Div:
+        if (ValueToNumber(right) == 0.0) {
+            interpreter->lastResult = HavelRuntimeError("Division by zero", node.line, node.column);
+            return;
+        }
+        interpreter->lastResult = ValueToNumber(left) / ValueToNumber(right);
+        break;
+    case ast::BinaryOperator::Mod:
+        if (ValueToNumber(right) == 0.0) {
+            interpreter->lastResult = HavelRuntimeError("Modulo by zero", node.line, node.column);
+            return;
+        }
+        interpreter->lastResult = static_cast<int>(ValueToNumber(left)) %
+                     static_cast<int>(ValueToNumber(right));
+        break;
+    case ast::BinaryOperator::Equal:
+        interpreter->lastResult = HavelValue(ValueToString(left) == ValueToString(right));
+        break;
+    case ast::BinaryOperator::NotEqual:
+        interpreter->lastResult = HavelValue(ValueToString(left) != ValueToString(right));
+        break;
+    case ast::BinaryOperator::Less:
+        interpreter->lastResult = HavelValue(ValueToNumber(left) < ValueToNumber(right));
+        break;
+    case ast::BinaryOperator::Greater:
+        interpreter->lastResult = HavelValue(ValueToNumber(left) > ValueToNumber(right));
+        break;
+    case ast::BinaryOperator::LessEqual:
+        interpreter->lastResult = HavelValue(ValueToNumber(left) <= ValueToNumber(right));
+        break;
+    case ast::BinaryOperator::GreaterEqual:
+        interpreter->lastResult = HavelValue(ValueToNumber(left) >= ValueToNumber(right));
+        break;
+    case ast::BinaryOperator::And:
+        interpreter->lastResult = HavelValue(ValueToBool(left) && ValueToBool(right));
+        break;
+    case ast::BinaryOperator::Or:
+        interpreter->lastResult = HavelValue(ValueToBool(left) || ValueToBool(right));
+        break;
+    case ast::BinaryOperator::ConfigAppend:
+        if (right.isObject()) {
+            auto rightObj = right.asObject();
+            if (rightObj && left.isString()) {
+                interpreter->environment->Define("__config_value__", left);
+                interpreter->lastResult = left;
+            } else {
+                interpreter->lastResult = HavelRuntimeError("Config append requires string value");
+            }
+        } else if (right.isString()) {
+            std::string configKey = right.asString();
+            if (left.isString()) {
+                auto& config = Configs::Get();
+                config.Set(configKey, left.asString(), false);
+                interpreter->lastResult = left;
+            } else {
+                interpreter->lastResult = HavelRuntimeError("Config value must be a string");
+            }
+        } else {
+            interpreter->lastResult = HavelRuntimeError("Config append requires string or object on right side");
+        }
+        break;
+    default:
+        interpreter->lastResult = HavelRuntimeError("Unsupported binary operator");
+    }
 }
 
 void ExprEvaluator::visitUnaryExpression(const ast::UnaryExpression& node) {
-    interpreter->visitUnaryExpression(node);
+    auto operandRes = Evaluate(*node.operand);
+    if (isError(operandRes)) {
+        interpreter->lastResult = operandRes;
+        return;
+    }
+    HavelValue operand = unwrap(operandRes);
+
+    switch (node.operator_) {
+    case ast::UnaryExpression::UnaryOperator::Not:
+        interpreter->lastResult = !ValueToBool(operand);
+        break;
+    case ast::UnaryExpression::UnaryOperator::Minus:
+        interpreter->lastResult = -ValueToNumber(operand);
+        break;
+    case ast::UnaryExpression::UnaryOperator::Plus:
+        interpreter->lastResult = ValueToNumber(operand);
+        break;
+    default:
+        interpreter->lastResult = HavelRuntimeError("Unsupported unary operator");
+    }
 }
 
 void ExprEvaluator::visitUpdateExpression(const ast::UpdateExpression& node) {
+    // Delegate to Interpreter for now
     interpreter->visitUpdateExpression(node);
 }
 
@@ -50,7 +155,7 @@ void ExprEvaluator::visitPipelineExpression(const ast::PipelineExpression& node)
 }
 
 void ExprEvaluator::visitStringLiteral(const ast::StringLiteral& node) {
-    interpreter->visitStringLiteral(node);
+    interpreter->lastResult = HavelValue(node.value);
 }
 
 void ExprEvaluator::visitInterpolatedStringExpression(const ast::InterpolatedStringExpression& node) {
@@ -58,7 +163,7 @@ void ExprEvaluator::visitInterpolatedStringExpression(const ast::InterpolatedStr
 }
 
 void ExprEvaluator::visitNumberLiteral(const ast::NumberLiteral& node) {
-    interpreter->visitNumberLiteral(node);
+    interpreter->lastResult = HavelValue(node.value);
 }
 
 void ExprEvaluator::visitHotkeyLiteral(const ast::HotkeyLiteral& node) {
@@ -114,7 +219,7 @@ void ExprEvaluator::visitIfExpression(const ast::IfExpression& node) {
 }
 
 void ExprEvaluator::visitExpressionStatement(const ast::ExpressionStatement& node) {
-    interpreter->visitExpressionStatement(node);
+    Evaluate(*node.expression);
 }
 
 void ExprEvaluator::visitBacktickExpression(const ast::BacktickExpression& node) {

@@ -17,6 +17,9 @@
 #include "help/HelpModule.hpp"
 #include "filesystem/FileManagerModule.hpp"
 #include "system/DetectorModule.hpp"
+#include "gui/GUIModule.hpp"
+#include "alttab/AltTabModule.hpp"
+#include "mapmanager/MapManagerModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
@@ -69,6 +72,15 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load detector module
     registerDetectorModule(env, ctx);
+    
+    // Load GUI module
+    registerGUIModule(env, ctx);
+    
+    // Load Alt-Tab module
+    registerAltTabModule(env, ctx);
+    
+    // Load MapManager module
+    registerMapManagerModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

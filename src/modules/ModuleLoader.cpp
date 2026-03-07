@@ -27,7 +27,7 @@
 #include "config/ConfigModule.hpp"
 #include "app/AppModule.hpp"
 #include "network/HTTPModule.hpp"
-#include "havel-lang/stdlib/PhysicsModule.hpp"
+#include "runtime/RuntimeModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -61,10 +61,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load automation module
     registerAutomationModule(env, ctx);
-    
-    // Load physics constants module
-    registerPhysicsModule(env, ctx);
-    
+
     // Load launcher module
     registerLauncherModule(env, ctx);
     
@@ -109,6 +106,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load HTTP module
     registerHTTPModule(env, ctx);
+    
+    // Load runtime utilities module (app, debug, runOnce)
+    registerRuntimeModule(env, interpreter);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

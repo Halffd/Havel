@@ -29,8 +29,9 @@
 #include "network/HTTPModule.hpp"
 #include "runtime/RuntimeModule.hpp"
 #include "mode/ModeModule.hpp"
+#include "hotkey/HotkeyModule.hpp"
+#include "browser/BrowserModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
-// #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
 namespace havel::modules {
@@ -115,8 +116,13 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     // Load mode module
     registerModeModule(env, ctx);
     
+    // Load hotkey module
+    registerHotkeyModule(env, ctx);
+    
+    // Load browser module
+    registerBrowserModule(env, ctx);
+    
     // TODO: Load remaining modules as they are extracted:
-    // registerHotkeyModule(env, ctx);
     // registerProcessModule(env, ctx);
 }
 

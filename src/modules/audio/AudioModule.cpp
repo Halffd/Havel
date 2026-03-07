@@ -71,6 +71,48 @@ void registerAudioModule(Environment& env, HostContext& ctx) {
         return HavelValue(am.isMuted());
     }));
     
+    // =========================================================================
+    // Device-specific functions
+    // =========================================================================
+    
+    (*audioObj)["getDevices"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>&) -> HavelResult {
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        const auto& devices = am.getDevices();
+        
+        for (const auto& device : devices) {
+            auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*obj)["name"] = HavelValue(device.name);
+            (*obj)["description"] = HavelValue(device.description);
+            (*obj)["isDefault"] = HavelValue(device.isDefault);
+            arr->push_back(HavelValue(obj));
+        }
+        
+        return HavelValue(arr);
+    }));
+    
+    (*audioObj)["setDeviceVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("audio.setDeviceVolume() requires (device, volume)");
+        }
+        
+        std::string device = args[0].isString() ? args[0].asString() : 
+            std::to_string(static_cast<int>(args[0].asNumber()));
+        double volume = args[1].asNumber();
+        
+        return HavelValue(am.setVolume(device, volume));
+    }));
+    
+    (*audioObj)["getDeviceVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("audio.getDeviceVolume() requires device");
+        }
+        
+        std::string device = args[0].isString() ? args[0].asString() : 
+            std::to_string(static_cast<int>(args[0].asNumber()));
+        
+        return HavelValue(am.getVolume(device));
+    }));
+    
     // Register audio module
     env.Define("audio", HavelValue(audioObj));
 }

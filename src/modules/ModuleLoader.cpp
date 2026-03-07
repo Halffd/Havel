@@ -12,9 +12,10 @@
 #include "clipboard/ClipboardModule.hpp"
 #include "automation/PixelModule.hpp"
 #include "automation/AutomationModule.hpp"
-#include "PhysicsModule.hpp"
-#include "LauncherModule.hpp"
-#include "MediaModule.hpp"
+#include "launcher/LauncherModule.hpp"
+#include "media/MediaModule.hpp"
+#include "help/HelpModule.hpp"
+#include "havel-lang/stdlib/PhysicsModule.hpp"
 // #include "hotkey/HotkeyModule.hpp"
 // #include "process/ProcessModule.hpp"
 
@@ -57,6 +58,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Load media module
     registerMediaModule(env, ctx);
+    
+    // Load help module
+    registerHelpModule(env, ctx);
     
     // TODO: Load remaining modules as they are extracted:
     // registerHotkeyModule(env, ctx);

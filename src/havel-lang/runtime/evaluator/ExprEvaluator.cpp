@@ -256,3 +256,87 @@ bool ExprEvaluator::ValueToBool(const HavelValue& value) {
 }
 
 } // namespace havel
+
+void ExprEvaluator::visitCallExpression(const ast::CallExpression& node) {
+    auto calleeRes = Evaluate(*node.callee);
+    if (isError(calleeRes)) {
+        interpreter->lastResult = calleeRes;
+        return;
+    }
+    HavelValue callee = unwrap(calleeRes);
+
+    std::vector<HavelValue> args;
+    for (const auto& arg : node.args) {
+        auto argRes = Evaluate(*arg);
+        if (isError(argRes)) {
+            interpreter->lastResult = argRes;
+            return;
+        }
+
+        if (dynamic_cast<const ast::SpreadExpression*>(arg.get())) {
+            auto value = unwrap(argRes);
+            if (auto* arrPtr = value.get_if<HavelArray>()) {
+                if (*arrPtr) {
+                    for (const auto& item : **arrPtr) {
+                        args.push_back(item);
+                    }
+                }
+            } else if (auto* objPtr = value.get_if<HavelObject>()) {
+                if (*objPtr) {
+                    std::vector<std::pair<std::string, HavelValue>> sortedPairs((*objPtr)->begin(), (*objPtr)->end());
+                    std::sort(sortedPairs.begin(), sortedPairs.end(),
+                        [](const auto& a, const auto& b) { return a.first < b.first; });
+                    for (const auto& pair : sortedPairs) {
+                        args.push_back(pair.second);
+                    }
+                }
+            } else {
+                args.push_back(value);
+            }
+        } else {
+            args.push_back(unwrap(argRes));
+        }
+    }
+
+    if (auto* builtin = callee.get_if<BuiltinFunction>()) {
+        interpreter->lastResult = (*builtin)(args);
+    } else if (auto* userFunc = callee.get_if<std::shared_ptr<HavelFunction>>()) {
+        auto& func = *userFunc;
+        if (args.size() != func->declaration->parameters.size()) {
+            interpreter->lastResult = HavelRuntimeError("Mismatched argument count for function " +
+                                 func->declaration->name->symbol);
+            return;
+        }
+
+        auto funcEnv = std::make_shared<Environment>(func->closure);
+        for (size_t i = 0; i < args.size(); ++i) {
+            funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, args[i]);
+        }
+
+        auto originalEnv = interpreter->environment;
+        interpreter->environment = funcEnv;
+        auto bodyResult = Evaluate(*func->declaration->body);
+        interpreter->environment = originalEnv;
+
+        if (std::holds_alternative<ReturnValue>(bodyResult)) {
+            auto ret = std::get<ReturnValue>(bodyResult);
+            interpreter->lastResult = ret.value ? *ret.value : HavelValue();
+        } else {
+            interpreter->lastResult = nullptr;
+        }
+    } else if (auto* objPtr = callee.get_if<HavelObject>()) {
+        if (*objPtr) {
+            auto it = (*objPtr)->find("__call__");
+            if (it != (*objPtr)->end() && it->second.is<BuiltinFunction>()) {
+                auto callFunc = it->second.get<BuiltinFunction>();
+                interpreter->lastResult = callFunc(args);
+                return;
+            }
+        }
+        interpreter->lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
+                             ValueToString(callee), node.line, node.column);
+    } else {
+        interpreter->lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
+                             ValueToString(callee), node.line, node.column);
+    }
+}

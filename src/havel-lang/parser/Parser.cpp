@@ -2281,7 +2281,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
-  auto left = parseCastExpression();
+  auto left = parseTernaryExpression();
 
   // Check for assignment operators
   if (at().type == havel::TokenType::Assign ||
@@ -2402,7 +2402,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
-  auto left = parseTernaryExpression();
+  auto left = parseAssignmentExpression();
 
   // Check for pipeline operator |
   if (at().type == havel::TokenType::Pipe) {
@@ -2411,7 +2411,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
 
     while (at().type == havel::TokenType::Pipe) {
       advance(); // consume '|'
-      auto stage = parseTernaryExpression();
+      auto stage = parseAssignmentExpression();
       pipeline->stages.push_back(std::move(stage));
     }
 
@@ -2422,7 +2422,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseTernaryExpression() {
-  auto condition = parseBinaryExpression();
+  auto condition = parseCastExpression();
 
   // Check for ternary operator ?
   if (at().type == havel::TokenType::Question) {

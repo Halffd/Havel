@@ -11,6 +11,7 @@
 #include "window/Window.hpp"
 #include "window/WindowManager.hpp"
 #include "../../host/HostContext.hpp"  // For HostContext
+#include "RuntimeServices.hpp"  // Runtime services container
 
 #include <atomic>
 #include <chrono>
@@ -561,6 +562,9 @@ private:
   PixelAutomation *pixelAutomation;
   HavelResult lastResult;
   std::mutex interpreterMutex; // Protect interpreter state
+
+  // Runtime services (long-lived, reused for all evaluations)
+  RuntimeServices services;
 
   std::vector<std::string> cliArgs;
 

@@ -7,7 +7,6 @@
 #include "ExprEvaluator.hpp"
 #include "../Interpreter.hpp"
 #include "core/ConfigManager.hpp"
-#include "modules/process/ShellExecutor.hpp"
 
 namespace havel {
 
@@ -995,8 +994,7 @@ void ExprEvaluator::visitIfExpression(const ast::IfExpression& node) {
 
 void ExprEvaluator::visitBacktickExpression(const ast::BacktickExpression& node) {
     // Execute shell command using ShellExecutor service
-    ShellExecutor executor;
-    ShellResult result = executor.executeShell(node.command);
+    ShellResult result = interpreter->services.shell.executeShell(node.command);
 
     // Return structured result as an object
     auto resultObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -1018,7 +1016,6 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
     }
 
     HavelValue cmdValue = unwrap(cmdResult);
-    ShellExecutor executor;
     ShellResult result;
 
     // Check if command is an array (argument vector) or string
@@ -1030,7 +1027,7 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
             for (size_t i = 0; i < argsArray->size(); ++i) {
                 args.push_back(ValueToString((*argsArray)[i]));
             }
-            result = executor.execute(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
+            result = interpreter->services.shell.execute(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
         } else {
             interpreter->lastResult = HavelRuntimeError("Shell command array is empty");
             return;
@@ -1038,7 +1035,7 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
     } else {
         // String mode: execute through shell
         std::string command = ValueToString(cmdValue);
-        result = executor.executeShell(command);
+        result = interpreter->services.shell.executeShell(command);
     }
 
     // Return stdout (capture mode is implicit for expressions)

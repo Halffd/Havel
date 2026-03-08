@@ -512,6 +512,7 @@ public:
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;
   void visitCastExpression(const ast::CastExpression &node) override;
+  void visitMatchExpression(const ast::MatchExpression &node) override;
   void visitForStatement(const ast::ForStatement &node) override;
   void visitLoopStatement(const ast::LoopStatement &node) override;
   void visitBreakStatement(const ast::BreakStatement &node) override;

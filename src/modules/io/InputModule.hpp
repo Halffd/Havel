@@ -6,7 +6,7 @@
  */
 #pragma once
 
-#include "../ast/AST.h"
+#include "../../havel-lang/ast/AST.h"
 #include <string>
 #include <vector>
 

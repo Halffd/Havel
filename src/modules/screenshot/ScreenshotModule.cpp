@@ -1,6 +1,6 @@
 /*
  * ScreenshotModule.cpp
- * 
+ *
  * Screenshot module for Havel language.
  * Host binding - connects language to ScreenshotManager.
  */
@@ -9,6 +9,8 @@
 #include "gui/ScreenshotManager.hpp"
 #include <QImage>
 #include <QBuffer>
+#include <QScreen>
+#include <QGuiApplication>
 
 namespace havel::modules {
 
@@ -26,7 +28,7 @@ void registerScreenshotModule(Environment& env, HostContext& ctx) {
     auto createScreenshotResult = [](const QString& fullPath) -> HavelValue {
         auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*result)["path"] = HavelValue(fullPath.toStdString());
-        
+
         // Try to load and encode image data
         QImage img(fullPath);
         if (!img.isNull()) {
@@ -38,8 +40,24 @@ void registerScreenshotModule(Environment& env, HostContext& ctx) {
             (*result)["width"] = HavelValue(static_cast<double>(img.width()));
             (*result)["height"] = HavelValue(static_cast<double>(img.height()));
         }
-        
+
         return HavelValue(result);
+    };
+
+    // Helper to get monitor info
+    auto getMonitorInfo = []() -> HavelValue {
+        auto monitors = std::make_shared<std::vector<HavelValue>>();
+        QScreen *primaryScreen = QGuiApplication::primaryScreen();
+        if (primaryScreen) {
+            auto monitorObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*monitorObj)["x"] = HavelValue(static_cast<double>(primaryScreen->geometry().x()));
+            (*monitorObj)["y"] = HavelValue(static_cast<double>(primaryScreen->geometry().y()));
+            (*monitorObj)["width"] = HavelValue(static_cast<double>(primaryScreen->geometry().width()));
+            (*monitorObj)["height"] = HavelValue(static_cast<double>(primaryScreen->geometry().height()));
+            (*monitorObj)["name"] = HavelValue(primaryScreen->name().toStdString());
+            monitors->push_back(HavelValue(monitorObj));
+        }
+        return HavelValue(monitors);
     };
     
     // =========================================================================
@@ -77,7 +95,15 @@ void registerScreenshotModule(Environment& env, HostContext& ctx) {
         QString fullPath = sm.takeScreenshotOfCurrentMonitor();
         return createScreenshotResult(fullPath);
     }));
-    
+
+    // =========================================================================
+    // Monitor information
+    // =========================================================================
+
+    (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([getMonitorInfo](const std::vector<HavelValue>&) -> HavelResult {
+        return getMonitorInfo();
+    }));
+
     // Register screenshot module
     env.Define("screenshot", HavelValue(screenshotObj));
 }

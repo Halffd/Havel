@@ -9,9 +9,6 @@
 #include <sstream>
 #include <algorithm>
 #include <set>
-#include <thread>
-#include <chrono>
-#include <iomanip>
 
 namespace havel::stdlib {
 
@@ -254,7 +251,7 @@ void registerTypeModule(Environment* env) {
     return HavelValue("unknown");
   }));
 
-  // print(...) - print values to stdout
+  // print(...) - Print values to stdout with newline
   env->Define("print", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     for (const auto& arg : args) {
       if (arg.isString()) {
@@ -273,8 +270,8 @@ void registerTypeModule(Environment* env) {
     return HavelValue(nullptr);
   }));
 
-  // println(...) - print values to stdout with newline
-  env->Define("println", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  // put(...) - Print values to stdout WITHOUT newline (raw output)
+  env->Define("put", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     for (const auto& arg : args) {
       if (arg.isString()) {
         std::cout << arg.asString();
@@ -284,54 +281,48 @@ void registerTypeModule(Environment* env) {
         std::cout << (arg.asBool() ? "true" : "false");
       } else if (arg.isNull()) {
         std::cout << "null";
+      } else {
+        std::cout << "[object]";
       }
     }
-    std::cout << std::endl;
     return HavelValue(nullptr);
   }));
 
-  // sleep(ms) - Sleep for specified milliseconds
-  env->Define("sleep", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
-    if (args.size() != 1) return HavelRuntimeError("sleep() requires 1 argument (milliseconds)");
-    long long ms = static_cast<long long>(args[0].asNumber());
-    if (ms < 0) return HavelRuntimeError("sleep() requires non-negative milliseconds");
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-    return HavelValue(nullptr);
-  }));
-
-  // range(start, end) - Generate array of numbers from start to end
-  env->Define("range", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
-    if (args.size() < 1 || args.size() > 2) {
-      return HavelRuntimeError("range() requires 1 or 2 arguments (start, end)");
+  // format(template, ...) - Format string with placeholders
+  env->Define("format", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("format() requires a template string");
+    
+    std::string template_str = args[0].asString();
+    std::ostringstream result;
+    size_t argIndex = 1;
+    
+    for (size_t i = 0; i < template_str.size(); ++i) {
+      if (template_str[i] == '{' && i + 1 < template_str.size() && template_str[i + 1] == '}') {
+        // Placeholder {}
+        if (argIndex >= args.size()) {
+          return HavelRuntimeError("format() not enough arguments for placeholders");
+        }
+        const auto& arg = args[argIndex++];
+        if (arg.isString()) result << arg.asString();
+        else if (arg.isNumber()) result << arg.asNumber();
+        else if (arg.isBool()) result << (arg.asBool() ? "true" : "false");
+        else if (arg.isNull()) result << "null";
+        else result << "[object]";
+        ++i; // Skip }
+      } else if (template_str[i] == '{' && i + 1 < template_str.size() && template_str[i + 1] == '{') {
+        // Escaped {{
+        result << '{';
+        ++i;
+      } else if (template_str[i] == '}' && i + 1 < template_str.size() && template_str[i + 1] == '}') {
+        // Escaped }}
+        result << '}';
+        ++i;
+      } else {
+        result << template_str[i];
+      }
     }
-    int start = args.size() == 2 ? static_cast<int>(args[0].asNumber()) : 0;
-    int end = args.size() == 2 ? static_cast<int>(args[1].asNumber()) : static_cast<int>(args[0].asNumber());
     
-    auto arr = std::make_shared<std::vector<HavelValue>>();
-    for (int i = start; i < end; ++i) {
-      arr->push_back(HavelValue(i));
-    }
-    return HavelValue(arr);
-  }));
-
-  // log(level, message) - Log message with level
-  env->Define("log", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
-    if (args.size() < 1) return HavelRuntimeError("log() requires at least 1 argument");
-    
-    std::string level = args.size() >= 2 ? args[0].asString() : "INFO";
-    std::string message = args.size() >= 2 ? args[1].asString() : args[0].asString();
-    
-    // Convert level to uppercase
-    std::transform(level.begin(), level.end(), level.begin(), ::toupper);
-    
-    // Format timestamp
-    auto now = std::chrono::system_clock::now();
-    auto time = std::chrono::system_clock::to_time_t(now);
-    std::ostringstream ts;
-    ts << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
-    
-    std::cerr << ts.str() << " [" << level << "] " << message << std::endl;
-    return HavelValue(nullptr);
+    return HavelValue(result.str());
   }));
 }
 

@@ -300,6 +300,13 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
     }
   }
 
+  // If batching is enabled, queue the event instead of sending immediately
+  if (uinputBatching.load(std::memory_order_relaxed)) {
+    QueueUinputEvent(type, code, value);
+    return;
+  }
+
+  // Non-batched: send immediately with single write
   struct timespec ts;
   clock_gettime(CLOCK_MONOTONIC, &ts);
 
@@ -332,6 +339,80 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
 
   debug("Forwarded uinput: type={} code={} value={} fd={}", type, code, value,
         uinputFd);
+}
+
+void EventListener::BeginUinputBatch() {
+  uinputBatchBuffer.clear();
+  uinputBatching.store(true, std::memory_order_relaxed);
+}
+
+void EventListener::QueueUinputEvent(int type, int code, int value) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  input_event ev = {};
+  ev.time.tv_sec = ts.tv_sec;
+  ev.time.tv_usec = ts.tv_nsec / 1000;
+  ev.type = static_cast<__u16>(type);
+  ev.code = static_cast<__u16>(code);
+  ev.value = value;
+
+  uinputBatchBuffer.push_back(ev);
+
+  // Auto-flush if buffer is full
+  if (uinputBatchBuffer.size() >= MAX_BATCH_SIZE) {
+    EndUinputBatch();
+  }
+}
+
+void EventListener::EndUinputBatch() {
+  if (!uinputBatching.load(std::memory_order_relaxed)) {
+    return;
+  }
+
+  uinputBatching.store(false, std::memory_order_relaxed);
+
+  if (uinputBatchBuffer.empty()) {
+    return;
+  }
+
+  if (uinputFd < 0) {
+    error("Cannot flush batch: uinput not initialized (fd={})", uinputFd);
+    uinputBatchBuffer.clear();
+    return;
+  }
+
+  // Write all events in a single syscall
+  ssize_t written = write(uinputFd, uinputBatchBuffer.data(),
+                          uinputBatchBuffer.size() * sizeof(input_event));
+
+  if (written < 0) {
+    error("Failed to write batch to uinput: {} (fd={}, events={})",
+          strerror(errno), uinputFd, uinputBatchBuffer.size());
+    uinputBatchBuffer.clear();
+    return;
+  }
+
+  // Send single SYN event to flush all queued events
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+
+  input_event syn = {};
+  syn.time.tv_sec = ts.tv_sec;
+  syn.time.tv_usec = ts.tv_nsec / 1000;
+  syn.type = EV_SYN;
+  syn.code = SYN_REPORT;
+  syn.value = 0;
+
+  ssize_t syn_written = write(uinputFd, &syn, sizeof(syn));
+  if (syn_written != sizeof(syn)) {
+    error("Failed to write SYN event after batch: {}", strerror(errno));
+  }
+
+  debug("Flushed uinput batch: {} events ({} bytes)", uinputBatchBuffer.size(),
+        written);
+
+  uinputBatchBuffer.clear();
 }
 
 void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {

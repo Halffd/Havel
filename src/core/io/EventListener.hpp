@@ -105,6 +105,11 @@ public:
 
   // Send event through uinput
   void SendUinputEvent(int type, int code, int value);
+  
+  // Batch event sending for reduced syscall overhead
+  void BeginUinputBatch();
+  void QueueUinputEvent(int type, int code, int value);
+  void EndUinputBatch();
 
   // Set blocking mode for specific keys
   void SetBlockInput(bool block);
@@ -347,6 +352,13 @@ private:
   // Hotkey execution deduplication - prevent double execution of same hotkey
   std::mutex hotkeyExecMutex;
   std::unordered_set<std::string> executingHotkeys;
+
+  // Event batching for reduced syscall overhead
+  std::vector<input_event> uinputBatchBuffer;
+  std::atomic<bool> uinputBatching{false};
+  static constexpr size_t MAX_BATCH_SIZE = 16;  // Flush after 16 events
+  static constexpr int BATCH_TIMEOUT_US = 5000; // Or after 5ms
+
 // X11 hotkey monitor (separate component)
 #ifdef __linux__
   std::unique_ptr<X11HotkeyMonitor> x11Monitor;

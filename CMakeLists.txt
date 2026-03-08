@@ -308,7 +308,16 @@ pkg_check_modules(MINIZIP minizip)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(TESSERACT REQUIRED tesseract)
 pkg_check_modules(LEPTONICA REQUIRED lept)
+
+# OpenCV with workaround for FFmpeg symbol version mismatch
+# Some systems have libavfilter/libavutil version conflicts
+# We ignore unresolved symbols in OpenCV's FFmpeg dependencies since we don't use video
 find_package(OpenCV REQUIRED)
+if(OpenCV_LIBS MATCHES "avfilter")
+    message(STATUS "OpenCV found with FFmpeg - applying linker workaround for libavutil symbols")
+    # Add workaround for av_alpha_mode_* symbols that may be missing in some FFmpeg versions
+    set(OPENCV_FFMPEG_WORKAROUND "-Wl,--unresolved-symbols=ignore-in-shared-libs")
+endif()
 
 set(COMMON_LIBS
     # System libraries
@@ -451,6 +460,7 @@ target_link_libraries(havel PRIVATE
     ${COMMON_LIBS}
     spdlog::spdlog
     $<$<BOOL:${ENABLE_LLVM}>:${LLVM_LIBS}>
+    ${OPENCV_FFMPEG_WORKAROUND}
 )
 
 # Compile definitions

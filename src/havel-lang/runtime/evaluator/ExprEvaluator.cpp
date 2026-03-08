@@ -196,12 +196,24 @@ void ExprEvaluator::visitUpdateExpression(const ast::UpdateExpression& node) {
 }
 
 void ExprEvaluator::visitMemberExpression(const ast::MemberExpression& node) {
+    // Check environment first
+    if (!interpreter->environment) {
+        interpreter->lastResult = HavelRuntimeError("Environment not available");
+        return;
+    }
+
     auto objectResult = Evaluate(*node.object);
     if (isError(objectResult)) {
         interpreter->lastResult = objectResult;
         return;
     }
     HavelValue objectValue = unwrap(objectResult);
+
+    // Check for null object
+    if (objectValue.isNull()) {
+        interpreter->lastResult = HavelRuntimeError("Cannot access member on null value");
+        return;
+    }
 
     auto *propId = dynamic_cast<const ast::Identifier *>(node.property.get());
     if (!propId) {
@@ -230,8 +242,12 @@ void ExprEvaluator::visitMemberExpression(const ast::MemberExpression& node) {
             return;
         }
         // Check for array methods (push, pop, etc.)
+        if (!interpreter->environment) {
+            interpreter->lastResult = HavelRuntimeError("Environment not available for method lookup");
+            return;
+        }
         std::optional<HavelValue> methodValOpt = interpreter->environment->Get(propName);
-        if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
+        if (methodValOpt.has_value() && methodValOpt->is<BuiltinFunction>()) {
             auto builtin = methodValOpt->get<BuiltinFunction>();
             // Create a bound function that captures the array as first argument
             auto array = objectValue;  // Capture the array value
@@ -247,8 +263,12 @@ void ExprEvaluator::visitMemberExpression(const ast::MemberExpression& node) {
 
     // Strings: methods like lower, upper, replace, etc.
     if (auto *strPtr = objectValue.get_if<std::string>()) {
+        if (!interpreter->environment) {
+            interpreter->lastResult = HavelRuntimeError("Environment not available for method lookup");
+            return;
+        }
         std::optional<HavelValue> methodValOpt = interpreter->environment->Get(propName);
-        if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
+        if (methodValOpt.has_value() && methodValOpt->is<BuiltinFunction>()) {
             auto builtin = methodValOpt->get<BuiltinFunction>();
             // Create a bound function that captures the string as first argument
             auto str = objectValue;  // Capture the string value
@@ -1090,12 +1110,24 @@ bool ExprEvaluator::ValueToBool(const HavelValue& value) {
 }
 
 void ExprEvaluator::visitCallExpression(const ast::CallExpression& node) {
+    // Check environment first
+    if (!interpreter->environment) {
+        interpreter->lastResult = HavelRuntimeError("Environment not available");
+        return;
+    }
+
     auto calleeRes = Evaluate(*node.callee);
     if (isError(calleeRes)) {
         interpreter->lastResult = calleeRes;
         return;
     }
     HavelValue callee = unwrap(calleeRes);
+
+    // Check for null callee
+    if (callee.isNull()) {
+        interpreter->lastResult = HavelRuntimeError("Attempted to call a null value", node.line, node.column);
+        return;
+    }
 
     std::vector<HavelValue> args;
     for (const auto& arg : node.args) {

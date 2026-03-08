@@ -1,9 +1,12 @@
 /*
  * ModuleLoader.cpp
- * 
+ *
  * Loads all host modules into the Havel environment.
+ * Heavy modules (screenshot, pixel, automation) use lazy loading
+ * to avoid loading PNG/zlib dependencies at startup.
  */
 #include "ModuleLoader.hpp"
+#include "LazyModuleLoader.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
@@ -32,7 +35,6 @@
 #include "hotkey/HotkeyModule.hpp"
 #include "browser/BrowserModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
-// #include "process/ProcessModule.hpp"
 
 namespace havel::modules {
 
@@ -40,90 +42,115 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     if (!interpreter) {
         return;  // Can't load modules without interpreter
     }
-    
+
     // Get HostContext from interpreter
     HostContext ctx = interpreter->getHostContext();
+
+    // =========================================================================
+    // CORE MODULES (loaded immediately - essential for basic operation)
+    // These have minimal dependencies and no heavy image processing
+    // =========================================================================
     
-    // Load window management module
+    // Window management
     registerWindowModule(env, ctx);
     
-    // Load brightness management module
+    // Brightness control
     registerBrightnessModule(env, ctx);
     
-    // Load audio management module
+    // Audio control
     registerAudioModule(env, ctx);
     
-    // Load screenshot module
-    registerScreenshotModule(env, ctx);
-    
-    // Load clipboard module
+    // Clipboard operations
     registerClipboardModule(env, ctx);
     
-    // Load pixel/image recognition module
-    registerPixelModule(env, ctx);
-    
-    // Load automation module
-    registerAutomationModule(env, ctx);
-
-    // Load launcher module
+    // Process launcher
     registerLauncherModule(env, ctx);
     
-    // Load media module
+    // Media playback control
     registerMediaModule(env, ctx);
     
-    // Load help module
+    // Help system
     registerHelpModule(env, ctx);
     
-    // Load file manager module
+    // File system operations
     registerFileManagerModule(env, ctx);
     
-    // Load detector module
+    // System information
     registerDetectorModule(env, ctx);
     
-    // Load GUI module
-    registerGUIModule(env, ctx);
-    
-    // Load Alt-Tab module
-    registerAltTabModule(env, ctx);
-    
-    // Load MapManager module
-    registerMapManagerModule(env, ctx);
-    
-    // Load IO module
+    // I/O operations (keyboard/mouse)
     registerIOModule(env, ctx);
     
-    // Load async module
-    registerAsyncModule(env, ctx);
-    
-    // Load system module
-    registerSystemModule(env, ctx);
-    
-    // Load timer module
+    // Timer functionality
     registerTimerModule(env, ctx);
     
-    // Load config module
+    // Configuration
     registerConfigModule(env, ctx);
     
-    // Load app module
+    // Application control
     registerAppModule(env, ctx);
     
-    // Load HTTP module
-    registerHTTPModule(env, ctx);
-    
-    // Load runtime utilities module (app, debug, runOnce)
-    registerRuntimeModule(env, interpreter);
-    
-    // Load mode module
+    // Mode management
     registerModeModule(env, ctx);
     
-    // Load hotkey module
+    // Hotkey management
     registerHotkeyModule(env, ctx);
     
-    // Load browser module
-    registerBrowserModule(env, ctx);
+    // Runtime utilities
+    registerRuntimeModule(env, interpreter);
     
-    // TODO: Load remaining modules as they are extracted:
-    // registerProcessModule(env, ctx);
+    // Standard library modules
+    registerPhysicsModule(&env);
+
+    // =========================================================================
+    // HEAVY MODULES (lazy-loaded - only when first accessed)
+    // These modules pull in large dependencies (PNG, zlib, OpenCV, Qt, etc.)
+    // =========================================================================
+    
+    static LazyModuleLoader lazyLoader(env, interpreter);
+    
+    // Screenshot module - loads libpng, zlib (~29% CPU when active)
+    lazyLoader.registerLazy("screenshot", registerScreenshotModule);
+    
+    // Pixel/image recognition - loads OpenCV, libpng, zlib
+    lazyLoader.registerLazy("pixel", registerPixelModule);
+    
+    // Automation module - loads image processing dependencies
+    lazyLoader.registerLazy("automation", registerAutomationModule);
+    
+    // GUI module - loads Qt widgets, image handling
+    lazyLoader.registerLazy("gui", registerGUIModule);
+    
+    // Map manager - loads image handling
+    lazyLoader.registerLazy("mapmanager", registerMapManagerModule);
+    
+    // Browser automation - loads CDP, image handling
+    lazyLoader.registerLazy("browser", registerBrowserModule);
+    
+    // HTTP module - loads network stack
+    lazyLoader.registerLazy("http", registerHTTPModule);
+    
+    // Alt-tab window switcher - loads Qt, image handling
+    lazyLoader.registerLazy("alttab", registerAltTabModule);
+    
+    // System module - loads additional system libraries
+    lazyLoader.registerLazy("system", registerSystemModule);
+    
+    // Async module - loads threading libraries
+    lazyLoader.registerLazy("async", registerAsyncModule);
+    
+    // Create lazy proxies in environment
+    // When user accesses screenshot.full(), the module loads automatically
+    env.Define("screenshot", lazyLoader.createLazyWrapper("screenshot", registerScreenshotModule));
+    env.Define("pixel", lazyLoader.createLazyWrapper("pixel", registerPixelModule));
+    env.Define("automation", lazyLoader.createLazyWrapper("automation", registerAutomationModule));
+    env.Define("gui", lazyLoader.createLazyWrapper("gui", registerGUIModule));
+    env.Define("mapmanager", lazyLoader.createLazyWrapper("mapmanager", registerMapManagerModule));
+    env.Define("browser", lazyLoader.createLazyWrapper("browser", registerBrowserModule));
+    env.Define("http", lazyLoader.createLazyWrapper("http", registerHTTPModule));
+    env.Define("alttab", lazyLoader.createLazyWrapper("alttab", registerAltTabModule));
+    env.Define("system", lazyLoader.createLazyWrapper("system", registerSystemModule));
+    env.Define("async", lazyLoader.createLazyWrapper("async", registerAsyncModule));
 }
 
 } // namespace havel::modules

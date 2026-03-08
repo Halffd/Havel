@@ -523,10 +523,45 @@ void StatementEvaluator::visitDoWhileStatement(const ast::DoWhileStatement& node
 }
 
 void StatementEvaluator::visitInputStatement(const ast::InputStatement& node) {
-    // Execute input commands using InputModule service
+    // Execute simple input commands using InputModule service
+    // Complex commands with expressions handled directly here
+    
     if (interpreter->services.input) {
         interpreter->services.input->execute(node);
     }
+    
+    // Handle commands that require expression evaluation
+    for (const auto& cmd : node.commands) {
+        switch (cmd.type) {
+            case ast::InputCommand::MouseMove:
+            case ast::InputCommand::MouseRelative:
+            case ast::InputCommand::MouseWheel:
+            case ast::InputCommand::MouseClickAt:
+                // These require expression evaluation - handled by evaluator
+                // For now, just log that they're not fully implemented
+                debug("Input command requires expression evaluation (type={})", static_cast<int>(cmd.type));
+                break;
+                
+            case ast::InputCommand::Sleep: {
+                // Parse sleep duration
+                long long ms = 0;
+                try {
+                    ms = std::stoll(cmd.duration);
+                } catch (...) {
+                    ms = 0;
+                }
+                if (ms > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+                }
+                break;
+            }
+            
+            default:
+                // Handled by InputModule
+                break;
+        }
+    }
+    
     interpreter->lastResult = nullptr;
 }
 

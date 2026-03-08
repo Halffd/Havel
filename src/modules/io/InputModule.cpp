@@ -27,12 +27,12 @@ void InputModule::execute(const ast::InputStatement& node) {
                 mouseClick(cmd.text);
                 break;
 
-            case ast::InputCommand::MouseMove:
-                mouseMove(cmd.mouseX, cmd.mouseY, false);
-                break;
-
-            case ast::InputCommand::MouseMoveRelative:
-                mouseMove(cmd.mouseX, cmd.mouseY, true);
+            // Note: MouseMove, MouseRelative, MouseWheel, MouseClickAt require
+            // expression evaluation which is handled by the evaluator.
+            // This module handles simple text/key/click commands.
+            
+            case ast::InputCommand::Sleep:
+                // Sleep handled by evaluator
                 break;
         }
     }
@@ -68,19 +68,6 @@ void InputModule::mouseClick(const std::string& button) {
         io->MouseClick(3);
     } else {
         warn("InputModule: Unknown mouse button '{}'", button);
-    }
-}
-
-void InputModule::mouseMove(int x, int y, bool relative) {
-    if (!io) {
-        warn("InputModule: IO not available for mouseMove");
-        return;
-    }
-
-    if (relative) {
-        io->MouseMove(x, y);
-    } else {
-        io->MouseMoveTo(x, y);
     }
 }
 

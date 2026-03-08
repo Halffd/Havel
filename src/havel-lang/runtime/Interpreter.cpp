@@ -3252,4 +3252,14 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
     lastResult = HavelRuntimeError("When blocks not implemented");
 }
 
+
+// Delegate implementations for visitors moved to evaluators
+void Interpreter::visitIdentifier(const ast::Identifier& node) {
+    if (auto val = environment->Get(node.symbol)) {
+        lastResult = *val;
+    } else {
+        lastResult = HavelRuntimeError("Undefined variable: " + node.symbol, node.line, node.column);
+    }
+}
+
 } // namespace havel

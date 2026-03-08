@@ -609,26 +609,6 @@ struct TraitDeclaration : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Implementation Declaration (impl Trait for Type)
-struct ImplDeclaration : public Statement {
-  std::unique_ptr<Identifier> traitName;
-  std::unique_ptr<Identifier> typeName;
-  std::vector<std::unique_ptr<FunctionDeclaration>> funcs;
-
-  ImplDeclaration(std::unique_ptr<Identifier> trait,
-                  std::unique_ptr<Identifier> type,
-                  std::vector<std::unique_ptr<FunctionDeclaration>> f)
-    : traitName(std::move(trait)), typeName(std::move(type)), funcs(std::move(f)) {
-    kind = NodeType::ImplDeclaration;
-  }
-
-  std::string toString() const override {
-    return "ImplDeclaration";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
 // Hotkey Binding (Havel-specific)
 struct HotkeyBinding : public Statement {
   std::vector<std::unique_ptr<Expression>> hotkeys;
@@ -1361,6 +1341,27 @@ struct FunctionDeclaration : public Statement {
 
   void accept(ASTVisitor &visitor) const override;
 };
+
+// Implementation Declaration (impl Trait for Type)
+struct ImplDeclaration : public Statement {
+  std::unique_ptr<Identifier> traitName;
+  std::unique_ptr<Identifier> typeName;
+  std::vector<std::unique_ptr<FunctionDeclaration>> funcs;
+
+  ImplDeclaration(std::unique_ptr<Identifier> trait,
+                  std::unique_ptr<Identifier> type,
+                  std::vector<std::unique_ptr<FunctionDeclaration>> f)
+    : traitName(std::move(trait)), typeName(std::move(type)), funcs(std::move(f)) {
+    kind = NodeType::ImplDeclaration;
+  }
+
+  std::string toString() const override {
+    return "ImplDeclaration";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 struct TryExpression : public Statement {
   std::unique_ptr<Statement> tryBody;
   std::unique_ptr<Identifier> catchVariable; // catch e -> variable name

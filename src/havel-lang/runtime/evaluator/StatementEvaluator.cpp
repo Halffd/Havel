@@ -6,8 +6,8 @@
  */
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
-#include "services/ShellExecutor.hpp"
-#include "services/InputModule.hpp"
+#include "modules/process/ShellExecutor.hpp"
+#include "modules/io/InputModule.hpp"
 #include <regex>
 #include <thread>
 

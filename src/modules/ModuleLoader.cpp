@@ -5,6 +5,13 @@
  */
 #include "ModuleLoader.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/stdlib/StringModule.hpp"
+#include "havel-lang/stdlib/ArrayModule.hpp"
+#include "havel-lang/stdlib/MathModule.hpp"
+#include "havel-lang/stdlib/TypeModule.hpp"
+#include "havel-lang/stdlib/FileModule.hpp"
+#include "havel-lang/stdlib/RegexModule.hpp"
+#include "havel-lang/stdlib/ProcessModule.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -44,10 +51,21 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     HostContext ctx = interpreter->getHostContext();
 
     // =========================================================================
+    // STANDARD LIBRARY (always loaded - core language functions)
+    // =========================================================================
+    havel::stdlib::registerStringModule(&env);
+    havel::stdlib::registerArrayModule(&env);
+    havel::stdlib::registerMathModule(&env);
+    havel::stdlib::registerTypeModule(&env);
+    havel::stdlib::registerFileModule(&env);
+    havel::stdlib::registerRegexModule(&env);
+    havel::stdlib::registerProcessModule(&env);
+
+    // =========================================================================
     // CORE MODULES (loaded immediately - essential for basic operation)
     // These have minimal dependencies and no heavy image processing
     // =========================================================================
-    
+
     // Window management
     registerWindowModule(env, ctx);
     

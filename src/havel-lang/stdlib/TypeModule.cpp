@@ -250,6 +250,42 @@ void registerTypeModule(Environment* env) {
     if (arg.isFunction()) return HavelValue("function");
     return HavelValue("unknown");
   }));
+
+  // print(...) - print values to stdout
+  env->Define("print", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    for (const auto& arg : args) {
+      if (arg.isString()) {
+        std::cout << arg.asString();
+      } else if (arg.isNumber()) {
+        std::cout << arg.asNumber();
+      } else if (arg.isBool()) {
+        std::cout << (arg.asBool() ? "true" : "false");
+      } else if (arg.isNull()) {
+        std::cout << "null";
+      } else {
+        std::cout << "[object]";
+      }
+    }
+    std::cout << std::endl;
+    return HavelValue(nullptr);
+  }));
+
+  // println(...) - print values to stdout with newline
+  env->Define("println", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    for (const auto& arg : args) {
+      if (arg.isString()) {
+        std::cout << arg.asString();
+      } else if (arg.isNumber()) {
+        std::cout << arg.asNumber();
+      } else if (arg.isBool()) {
+        std::cout << (arg.asBool() ? "true" : "false");
+      } else if (arg.isNull()) {
+        std::cout << "null";
+      }
+    }
+    std::cout << std::endl;
+    return HavelValue(nullptr);
+  }));
 }
 
 } // namespace havel::stdlib

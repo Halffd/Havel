@@ -7,6 +7,7 @@
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
 #include "services/ShellExecutor.hpp"
+#include "services/InputModule.hpp"
 #include <regex>
 #include <thread>
 
@@ -524,7 +525,10 @@ void StatementEvaluator::visitDoWhileStatement(const ast::DoWhileStatement& node
 }
 
 void StatementEvaluator::visitInputStatement(const ast::InputStatement& node) {
-    interpreter->visitInputStatement(node);
+    // Execute input commands using InputModule service
+    InputModule inputModule(interpreter->io);
+    inputModule.execute(node);
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitArrayPattern(const ast::ArrayPattern& node) {

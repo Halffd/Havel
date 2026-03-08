@@ -7,8 +7,7 @@
 #include "ExprEvaluator.hpp"
 #include "../Interpreter.hpp"
 #include "core/ConfigManager.hpp"
-#include "process/Launcher.hpp"
-#include "services/ShellExecutor.hpp"
+#include "modules/process/ShellExecutor.hpp"
 
 namespace havel {
 

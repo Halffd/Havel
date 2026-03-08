@@ -8,6 +8,7 @@
 #include "../Interpreter.hpp"
 #include "core/ConfigManager.hpp"
 #include "process/Launcher.hpp"
+#include "services/ShellExecutor.hpp"
 
 namespace havel {
 
@@ -994,10 +995,11 @@ void ExprEvaluator::visitIfExpression(const ast::IfExpression& node) {
 }
 
 void ExprEvaluator::visitBacktickExpression(const ast::BacktickExpression& node) {
-    // Execute shell command and capture output using Launcher
-    ProcessResult result = havel::Launcher::runShell(node.command);
+    // Execute shell command using ShellExecutor service
+    ShellExecutor executor;
+    ShellResult result = executor.executeShell(node.command);
 
-    // Return structured ProcessResult as an object
+    // Return structured result as an object
     auto resultObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     (*resultObj)["stdout"] = HavelValue(result.stdout);
     (*resultObj)["stderr"] = HavelValue(result.stderr);
@@ -1017,7 +1019,8 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
     }
 
     HavelValue cmdValue = unwrap(cmdResult);
-    ProcessResult result;
+    ShellExecutor executor;
+    ShellResult result;
 
     // Check if command is an array (argument vector) or string
     if (cmdValue.isArray()) {
@@ -1028,7 +1031,7 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
             for (size_t i = 0; i < argsArray->size(); ++i) {
                 args.push_back(ValueToString((*argsArray)[i]));
             }
-            result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
+            result = executor.execute(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
         } else {
             interpreter->lastResult = HavelRuntimeError("Shell command array is empty");
             return;
@@ -1036,7 +1039,7 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
     } else {
         // String mode: execute through shell
         std::string command = ValueToString(cmdValue);
-        result = havel::Launcher::runShell(command);
+        result = executor.executeShell(command);
     }
 
     // Return stdout (capture mode is implicit for expressions)

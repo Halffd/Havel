@@ -6,6 +6,7 @@
  */
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
+#include "services/ShellExecutor.hpp"
 #include <regex>
 #include <thread>
 
@@ -245,7 +246,58 @@ void StatementEvaluator::visitRepeatStatement(const ast::RepeatStatement& node) 
 }
 
 void StatementEvaluator::visitShellCommandStatement(const ast::ShellCommandStatement& node) {
-    interpreter->visitShellCommandStatement(node);
+    // Execute command chain using ShellExecutor service
+    ShellExecutor executor;
+    
+    // Build command chain from AST
+    std::vector<std::string> commands;
+    const ast::ShellCommandStatement* current = &node;
+    
+    while (current != nullptr) {
+        auto cmdResult = Evaluate(*current->commandExpr);
+        if (isError(cmdResult)) {
+            interpreter->lastResult = cmdResult;
+            return;
+        }
+
+        HavelValue cmdValue = unwrap(cmdResult);
+        
+        // Check if command is an array (argument vector) or string
+        if (cmdValue.isArray()) {
+            // Array mode: ["cmd", "arg1", "arg2"] - execute without shell
+            auto argsArray = cmdValue.asArray();
+            if (argsArray && !argsArray->empty()) {
+                std::string cmd = ValueToString((*argsArray)[0]);
+                for (size_t i = 1; i < argsArray->size(); ++i) {
+                    cmd += " " + ValueToString((*argsArray)[i]);
+                }
+                commands.push_back(cmd);
+            } else {
+                interpreter->lastResult = HavelRuntimeError("Shell command array is empty");
+                return;
+            }
+        } else {
+            // String mode: execute through shell
+            std::string command = ValueToString(cmdValue);
+            commands.push_back(command);
+        }
+        
+        // Move to next command in pipe chain
+        current = current->next.get();
+    }
+    
+    // Execute command chain
+    ShellResult result = executor.executeChain(commands);
+    
+    // Forward stdout/stderr (shell semantics)
+    if (!result.stdout.empty()) {
+        std::cout << result.stdout;
+    }
+    if (!result.stderr.empty()) {
+        std::cerr << result.stderr;
+    }
+    
+    interpreter->lastResult = HavelValue(static_cast<double>(result.exitCode));
 }
 
 void StatementEvaluator::visitForStatement(const ast::ForStatement& node) {

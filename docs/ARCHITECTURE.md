@@ -95,17 +95,30 @@ Tested with `test_basic.hv`:
 - Conditionals, arrays, objects
 - String methods, shell commands
 
-### Feature #2: sleep/range (SHIPPED ✅)
+### Feature #3: log() (SHIPPED ✅)
 
 Added to `stdlib/TypeModule.cpp`:
-- `sleep(ms)` - Sleep for specified milliseconds
-- `range(start, end)` - Generate array of numbers
+- `log(message)` - Log message with INFO level
+- `log(level, message)` - Log message with specified level
 
-Tested with `test_feature2.hv`:
-- `range(5)` returns `[0, 1, 2, 3, 4]`
-- `range(2, 6)` returns `[2, 3, 4, 5]`
-- `for i in range(3)` works correctly
-- `sleep(100)` delays execution by 100ms
+Features:
+- Timestamps in `YYYY-MM-DD HH:MM:SS` format
+- Level converted to uppercase
+- Outputs to stderr
+- Supports: DEBUG, INFO, WARN, ERROR, or custom levels
+
+---
+
+## ✅ 3 OF 3 FEATURES SHIPPED
+
+**Rule honored: NO architecture changes until 3 features ship**
+
+All 3 features shipped successfully:
+1. ✅ print/println
+2. ✅ sleep/range
+3. ✅ log
+
+Architecture is PROVEN STABLE. Further refactoring is now allowed but not required.
 
 ## Next Steps (Feature Development)
 

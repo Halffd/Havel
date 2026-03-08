@@ -2258,7 +2258,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
-  return parseAssignmentExpression();
+  return parsePipelineExpression();
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {

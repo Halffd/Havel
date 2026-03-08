@@ -36,12 +36,12 @@ endif()
 # Compiler-specific flags
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=thin -DNDEBUG -ffast-math")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=thin -fuse-ld=lld")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=thin -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=thin -fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto -DNDEBUG -ffast-math")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
 find_program(CCACHE ccache)
 if(CCACHE)
@@ -398,6 +398,7 @@ set_target_properties(havel PROPERTIES
     CXX_EXTENSIONS OFF
 )
 target_precompile_headers(havel PRIVATE
+    # Standard library (frequently used)
     <iostream>
     <string>
     <memory>
@@ -407,6 +408,20 @@ target_precompile_headers(havel PRIVATE
     <functional>
     <future>
     <thread>
+    <chrono>
+    <fstream>
+    <sstream>
+    <regex>
+    # Qt core (used throughout)
+    <QObject>
+    <QTimer>
+    <QClipboard>
+    <QGuiApplication>
+    <QApplication>
+    # Common system headers
+    <unistd.h>
+    <signal.h>
+    <sys/types.h>
 )
 
 # DISABLED: target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)

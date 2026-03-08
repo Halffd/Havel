@@ -342,6 +342,7 @@ void EventListener::SendUinputEvent(int type, int code, int value) {
 }
 
 void EventListener::BeginUinputBatch() {
+  std::lock_guard<std::mutex> lock(uinputBatchMutex);
   uinputBatchBuffer.clear();
   uinputBatching.store(true, std::memory_order_relaxed);
 }
@@ -357,10 +358,18 @@ void EventListener::QueueUinputEvent(int type, int code, int value) {
   ev.code = static_cast<__u16>(code);
   ev.value = value;
 
-  uinputBatchBuffer.push_back(ev);
+  bool shouldFlush = false;
+  {
+    std::lock_guard<std::mutex> lock(uinputBatchMutex);
+    uinputBatchBuffer.push_back(ev);
 
-  // Auto-flush if buffer is full
-  if (uinputBatchBuffer.size() >= MAX_BATCH_SIZE) {
+    // Auto-flush if buffer is full
+    if (uinputBatchBuffer.size() >= MAX_BATCH_SIZE) {
+      shouldFlush = true;
+    }
+  }
+
+  if (shouldFlush) {
     EndUinputBatch();
   }
 }
@@ -372,24 +381,27 @@ void EventListener::EndUinputBatch() {
 
   uinputBatching.store(false, std::memory_order_relaxed);
 
-  if (uinputBatchBuffer.empty()) {
-    return;
+  std::vector<input_event> batchCopy;
+  {
+    std::lock_guard<std::mutex> lock(uinputBatchMutex);
+    if (uinputBatchBuffer.empty()) {
+      return;
+    }
+    batchCopy = std::move(uinputBatchBuffer);
   }
 
   if (uinputFd < 0) {
     error("Cannot flush batch: uinput not initialized (fd={})", uinputFd);
-    uinputBatchBuffer.clear();
     return;
   }
 
   // Write all events in a single syscall
-  ssize_t written = write(uinputFd, uinputBatchBuffer.data(),
-                          uinputBatchBuffer.size() * sizeof(input_event));
+  ssize_t written = write(uinputFd, batchCopy.data(),
+                          batchCopy.size() * sizeof(input_event));
 
   if (written < 0) {
     error("Failed to write batch to uinput: {} (fd={}, events={})",
-          strerror(errno), uinputFd, uinputBatchBuffer.size());
-    uinputBatchBuffer.clear();
+          strerror(errno), uinputFd, batchCopy.size());
     return;
   }
 
@@ -409,10 +421,8 @@ void EventListener::EndUinputBatch() {
     error("Failed to write SYN event after batch: {}", strerror(errno));
   }
 
-  debug("Flushed uinput batch: {} events ({} bytes)", uinputBatchBuffer.size(),
+  debug("Flushed uinput batch: {} events ({} bytes)", batchCopy.size(),
         written);
-
-  uinputBatchBuffer.clear();
 }
 
 void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {

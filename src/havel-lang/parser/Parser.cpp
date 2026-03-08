@@ -2281,7 +2281,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
-  auto left = parsePipelineExpression();
+  auto left = parseCastExpression();
 
   // Check for assignment operators
   if (at().type == havel::TokenType::Assign ||
@@ -2299,6 +2299,26 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
     assign->line = opTok.line;
     assign->column = opTok.column;
     return assign;
+  }
+
+  return left;
+}
+
+// Parse cast expression: expr as Type
+std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
+  auto left = parsePipelineExpression();
+
+  // Check for 'as' keyword
+  if (at().type == havel::TokenType::As) {
+    advance(); // consume 'as'
+    
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected type name after 'as'");
+    }
+    
+    std::string targetType = advance().value;
+    return std::make_unique<havel::ast::CastExpression>(
+        std::move(left), targetType);
   }
 
   return left;
@@ -2705,6 +2725,16 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
 
     return std::make_unique<havel::ast::InterpolatedStringExpression>(
         std::move(segments));
+  }
+
+  case havel::TokenType::True: {
+    advance();
+    return std::make_unique<havel::ast::BooleanLiteral>(true);
+  }
+
+  case havel::TokenType::False: {
+    advance();
+    return std::make_unique<havel::ast::BooleanLiteral>(false);
   }
 
   case havel::TokenType::Mode:

@@ -896,6 +896,61 @@ void ExprEvaluator::visitAssignmentExpression(const ast::AssignmentExpression& n
     interpreter->lastResult = value; // Assignment expressions return the assigned value
 }
 
+void ExprEvaluator::visitCastExpression(const ast::CastExpression& node) {
+    // Evaluate the expression being cast
+    auto exprResult = Evaluate(*node.expr);
+    if (isError(exprResult)) {
+        interpreter->lastResult = exprResult;
+        return;
+    }
+    HavelValue value = unwrap(exprResult);
+
+    // Perform type conversion based on target type
+    std::string targetType = node.targetType;
+    
+    if (targetType == "int") {
+        if (value.isNumber()) {
+            interpreter->lastResult = HavelValue(static_cast<int>(value.asNumber()));
+        } else if (value.isString()) {
+            try {
+                int num = std::stoi(value.asString());
+                interpreter->lastResult = HavelValue(num);
+            } catch (...) {
+                interpreter->lastResult = HavelRuntimeError("Cannot convert '" + value.asString() + "' to int", node.line, node.column);
+            }
+        } else {
+            interpreter->lastResult = HavelRuntimeError("Cannot cast to int", node.line, node.column);
+        }
+    } else if (targetType == "float" || targetType == "double") {
+        if (value.isNumber()) {
+            interpreter->lastResult = HavelValue(value.asNumber());
+        } else if (value.isString()) {
+            try {
+                double num = std::stod(value.asString());
+                interpreter->lastResult = HavelValue(num);
+            } catch (...) {
+                interpreter->lastResult = HavelRuntimeError("Cannot convert '" + value.asString() + "' to float", node.line, node.column);
+            }
+        } else {
+            interpreter->lastResult = HavelRuntimeError("Cannot cast to float", node.line, node.column);
+        }
+    } else if (targetType == "string") {
+        interpreter->lastResult = HavelValue(interpreter->ValueToString(value));
+    } else if (targetType == "bool") {
+        if (value.isBool()) {
+            interpreter->lastResult = value;
+        } else if (value.isNumber()) {
+            interpreter->lastResult = HavelValue(value.asNumber() != 0);
+        } else if (value.isString()) {
+            interpreter->lastResult = HavelValue(!value.asString().empty());
+        } else {
+            interpreter->lastResult = HavelValue(false);
+        }
+    } else {
+        interpreter->lastResult = HavelRuntimeError("Unknown type '" + targetType + "' for cast", node.line, node.column);
+    }
+}
+
 void ExprEvaluator::visitTryExpression(const ast::TryExpression& node) {
     // Execute try body
     auto tryResult = Evaluate(*node.tryBody);

@@ -75,6 +75,7 @@ private:
   std::unique_ptr<ast::Expression> parseExpression();
   std::unique_ptr<ast::Expression> parseConfigAppend();
   std::unique_ptr<ast::Expression> parseAssignmentExpression();
+  std::unique_ptr<ast::Expression> parseCastExpression();
   std::unique_ptr<ast::Expression> parsePipelineExpression();
   std::unique_ptr<ast::Expression> parseTernaryExpression();
   std::unique_ptr<ast::Expression> parseBinaryExpression();

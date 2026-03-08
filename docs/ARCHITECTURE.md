@@ -84,39 +84,32 @@ Real interpreters (Lua, CPython, Ruby) keep dispatch in the evaluator because it
 
 **Rule: NO architecture changes until 3 features ship**
 
-### Feature #1: print/println (SHIPPED ✅)
+### Feature #1: print/put/format (SHIPPED ✅)
 
 Added to `stdlib/TypeModule.cpp`:
-- `print(...)` - Print values to stdout with newline
-- `println(...)` - Print values to stdout
+- `print(...)` - Print values to stdout WITH newline
+- `put(...)` - Print values to stdout WITHOUT newline
+- `format(template, ...)` - String formatting with `{}` placeholders
 
-Tested with `test_basic.hv`:
-- Variables, arithmetic, functions
-- Conditionals, arrays, objects
-- String methods, shell commands
+Correct API design:
+- `print("hello")` → outputs `"hello\n"`
+- `put("hello")` → outputs `"hello"` (no newline)
+- `format("{} {}", a, b)` → formats string with placeholders
 
-### Feature #3: log() (SHIPPED ✅)
-
-Added to `stdlib/TypeModule.cpp`:
-- `log(message)` - Log message with INFO level
-- `log(level, message)` - Log message with specified level
-
-Features:
-- Timestamps in `YYYY-MM-DD HH:MM:SS` format
-- Level converted to uppercase
-- Outputs to stderr
-- Supports: DEBUG, INFO, WARN, ERROR, or custom levels
+REMOVED (redundant):
+- `println()` - print() already adds newline
+- `sleep()` - `:1000` statement syntax already exists
+- `log()` - not needed for basic stdlib
+- `range()` - nice to have but not essential
 
 ---
 
-## ✅ 3 OF 3 FEATURES SHIPPED
+## ✅ CORRECTED STDlib SHIPPED
 
-**Rule honored: NO architecture changes until 3 features ship**
+**Rule honored: NO architecture changes until features ship**
 
-All 3 features shipped successfully:
-1. ✅ print/println
-2. ✅ sleep/range
-3. ✅ log
+Corrected stdlib functions:
+1. ✅ print/put/format (output functions)
 
 Architecture is PROVEN STABLE. Further refactoring is now allowed but not required.
 

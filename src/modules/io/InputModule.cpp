@@ -30,7 +30,13 @@ void InputModule::execute(const ast::InputStatement& node) {
             // Note: MouseMove, MouseRelative, MouseWheel, MouseClickAt require
             // expression evaluation which is handled by the evaluator.
             // This module handles simple text/key/click commands.
-            
+            case ast::InputCommand::MouseMove:
+            case ast::InputCommand::MouseRelative:
+            case ast::InputCommand::MouseWheel:
+            case ast::InputCommand::MouseClickAt:
+                // These require expression evaluation - handled by evaluator
+                break;
+
             case ast::InputCommand::Sleep:
                 // Sleep handled by evaluator
                 break;

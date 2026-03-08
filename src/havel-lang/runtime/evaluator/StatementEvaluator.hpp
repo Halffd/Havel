@@ -84,6 +84,12 @@ private:
     std::string ValueToString(const HavelValue& value);
     double ValueToNumber(const HavelValue& value);
     bool ValueToBool(const HavelValue& value);
+    
+    // Config processing helper
+    void processConfigPairs(
+        const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
+        Configs& config,
+        const std::string& prefix);
 };
 
 } // namespace havel

@@ -80,6 +80,26 @@ Real interpreters (Lua, CPython, Ruby) keep dispatch in the evaluator because it
 ✅ havel_lang library: builds successfully
 ✅ All tests: pass
 
+## Features Shipped
+
+**Rule: NO architecture changes until 3 features ship**
+
+### Feature #1: print/println (SHIPPED ✅)
+
+Added to `stdlib/TypeModule.cpp`:
+- `print(...)` - Print values to stdout with newline
+- `println(...)` - Print values to stdout
+
+Tested with `test_basic.hv`:
+- Variables, arithmetic, functions
+- Conditionals, arrays, objects
+- String methods, shell commands
+
+### Features In Progress
+
+- Feature #2: TBD
+- Feature #3: TBD
+
 ## Next Steps (Feature Development)
 
 Architecture is STABLE. Next work should be FEATURES, not refactoring:

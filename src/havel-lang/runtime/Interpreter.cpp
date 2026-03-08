@@ -1438,8 +1438,10 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     if (std::holds_alternative<ReturnValue>(bodyResult)) {
       auto ret = std::get<ReturnValue>(bodyResult);
       lastResult = ret.value ? *ret.value : HavelValue();
+    } else if (isError(bodyResult)) {
+      lastResult = bodyResult;
     } else {
-      lastResult = nullptr; // Implicit return
+      lastResult = unwrap(bodyResult); // Implicit return - use body result
     }
   } else if (auto *objPtr = callee.get_if<HavelObject>()) {
     // Check for __call__ method (for struct type constructors)
@@ -1968,6 +1970,11 @@ void Interpreter::visitInterpolatedStringExpression(
 void Interpreter::visitNumberLiteral(const ast::NumberLiteral &node) {
   lastResult = node.value;
 }
+
+void Interpreter::visitBooleanLiteral(const ast::BooleanLiteral &node) {
+  lastResult = node.value;
+}
+
 void Interpreter::visitHotkeyLiteral(const ast::HotkeyLiteral &node) {
   lastResult = HavelValue(node.combination);
 }

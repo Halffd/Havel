@@ -487,11 +487,12 @@ endif()
 if(ENABLE_TESTS AND TEST_SOURCES AND GTest_FOUND)
     foreach(test_file ${TEST_SOURCES})
         get_filename_component(test_name ${test_file} NAME_WE)
-        
-        add_executable(${test_name} 
-            ${test_file} 
+
+        add_executable(${test_name}
+            ${test_file}
             ${CORE_SOURCES}
             ${GUI_SOURCES}
+            ${HOST_MODULES_SOURCES}
             $<$<BOOL:${ENABLE_HAVEL_LANG}>:${HAVEL_LANG_SOURCES}>
         )
         

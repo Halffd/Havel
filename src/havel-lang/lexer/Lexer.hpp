@@ -124,6 +124,7 @@ enum class TokenType {
   ShiftRight,   // >> (config append/get)
   Spread,       // ... for spread operator
   Hash,         // # for set literals
+  Underscore,   // _ for default match case
   Try,          // try
   Catch,        // catch
   Finally,      // finally

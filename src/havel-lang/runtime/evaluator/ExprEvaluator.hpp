@@ -46,6 +46,7 @@ public:
     void visitRangeExpression(const ast::RangeExpression& node);
     void visitAssignmentExpression(const ast::AssignmentExpression& node);
     void visitCastExpression(const ast::CastExpression& node);
+    void visitMatchExpression(const ast::MatchExpression& node);
     void visitTryExpression(const ast::TryExpression& node);
     void visitBlockExpression(const ast::BlockExpression& node);
     void visitIfExpression(const ast::IfExpression& node);

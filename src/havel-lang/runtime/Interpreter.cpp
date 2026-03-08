@@ -2738,6 +2738,12 @@ void Interpreter::visitCastExpression(const ast::CastExpression& node) {
   eval.visitCastExpression(node);
 }
 
+void Interpreter::visitMatchExpression(const ast::MatchExpression& node) {
+  // Delegate to ExprEvaluator
+  ExprEvaluator eval(this);
+  eval.visitMatchExpression(node);
+}
+
 void Interpreter::visitObjectPattern(const ast::ObjectPattern &node) {
   // This is typically handled during assignment/let declaration
   // For now, just evaluate pattern properties (identifiers)

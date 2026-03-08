@@ -2306,7 +2306,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
 
 // Parse cast expression: expr as Type
 std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
-  auto left = parsePipelineExpression();
+  auto left = parseMatchExpression();
 
   // Check for 'as' keyword
   if (at().type == havel::TokenType::As) {
@@ -2322,6 +2322,83 @@ std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
   }
 
   return left;
+}
+
+// Parse match expression: match value { pattern => expr, _ => default }
+std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
+  if (at().type != havel::TokenType::Match) {
+    return parsePrimaryExpression();
+  }
+
+  advance(); // consume 'match'
+
+  // Parse the value to match on
+  auto value = parsePrimaryExpression();
+  auto match = std::make_unique<havel::ast::MatchExpression>(std::move(value));
+
+  // Expect opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after match value");
+  }
+  advance(); // consume '{'
+
+  // Parse cases
+  while (at().type != havel::TokenType::CloseBrace && notEOF()) {
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+
+    if (at().type == havel::TokenType::CloseBrace) {
+      break;
+    }
+
+    // Parse pattern (for now, just literals or _ for default)
+    std::unique_ptr<havel::ast::Expression> pattern;
+    bool isDefault = false;
+
+    if (at().type == havel::TokenType::Underscore) {
+      // Default case: _ => expr
+      isDefault = true;
+      advance(); // consume '_'
+    } else {
+      // Pattern is an expression (literal, identifier, etc.)
+      pattern = parseBinaryExpression();
+    }
+
+    // Expect =>
+    if (at().type != havel::TokenType::Arrow) {
+      failAt(at(), "Expected '=>' after pattern");
+    }
+    advance(); // consume '=>'
+
+    // Parse result expression
+    auto result = parseBinaryExpression();
+
+    if (isDefault) {
+      match->defaultCase = std::move(result);
+    } else {
+      match->cases.push_back(std::make_pair(std::move(pattern), std::move(result)));
+    }
+
+    // Skip optional comma
+    if (at().type == havel::TokenType::Comma) {
+      advance();
+    }
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  }
+
+  // Expect closing brace
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close match expression");
+  }
+  advance(); // consume '}'
+
+  return match;
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {

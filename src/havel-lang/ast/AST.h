@@ -1870,6 +1870,24 @@ struct CastExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Match Expression: match value { pattern => expr, ... }
+struct MatchExpression : public Expression {
+  std::unique_ptr<Expression> value;
+  std::vector<std::pair<std::unique_ptr<Expression>, std::unique_ptr<Expression>>> cases;
+  std::unique_ptr<Expression> defaultCase;  // _ => expr
+
+  MatchExpression(std::unique_ptr<Expression> v)
+      : value(std::move(v)) {
+    kind = NodeType::MatchExpression;
+  }
+
+  std::string toString() const override {
+    return "MatchExpression{" + std::to_string(cases.size()) + " cases}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Array Pattern for destructuring [a, b, c]
 struct ArrayPattern : public Expression {
   std::vector<std::unique_ptr<Expression>>
@@ -2072,6 +2090,7 @@ public:
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
   virtual void visitCastExpression(const CastExpression &node) = 0;
+  virtual void visitMatchExpression(const MatchExpression &node) = 0;
   virtual void visitArrayPattern(const ArrayPattern &node) = 0;
   virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
@@ -2274,6 +2293,10 @@ inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
 
 inline void CastExpression::accept(ASTVisitor &visitor) const {
   visitor.visitCastExpression(*this);
+}
+
+inline void MatchExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitMatchExpression(*this);
 }
 
 inline void ArrayPattern::accept(ASTVisitor &visitor) const {

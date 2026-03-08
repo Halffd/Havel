@@ -921,7 +921,7 @@ void ExprEvaluator::visitCastExpression(const ast::CastExpression& node) {
         } else {
             interpreter->lastResult = HavelRuntimeError("Cannot cast to int", node.line, node.column);
         }
-    } else if (targetType == "float" || targetType == "double") {
+    } else if (targetType == "num") {
         if (value.isNumber()) {
             interpreter->lastResult = HavelValue(value.asNumber());
         } else if (value.isString()) {
@@ -929,10 +929,10 @@ void ExprEvaluator::visitCastExpression(const ast::CastExpression& node) {
                 double num = std::stod(value.asString());
                 interpreter->lastResult = HavelValue(num);
             } catch (...) {
-                interpreter->lastResult = HavelRuntimeError("Cannot convert '" + value.asString() + "' to float", node.line, node.column);
+                interpreter->lastResult = HavelRuntimeError("Cannot convert '" + value.asString() + "' to num", node.line, node.column);
             }
         } else {
-            interpreter->lastResult = HavelRuntimeError("Cannot cast to float", node.line, node.column);
+            interpreter->lastResult = HavelRuntimeError("Cannot cast to num", node.line, node.column);
         }
     } else if (targetType == "string") {
         interpreter->lastResult = HavelValue(interpreter->ValueToString(value));
@@ -949,6 +949,45 @@ void ExprEvaluator::visitCastExpression(const ast::CastExpression& node) {
     } else {
         interpreter->lastResult = HavelRuntimeError("Unknown type '" + targetType + "' for cast", node.line, node.column);
     }
+}
+
+void ExprEvaluator::visitMatchExpression(const ast::MatchExpression& node) {
+    // Evaluate the match value
+    auto valueResult = Evaluate(*node.value);
+    if (isError(valueResult)) {
+        interpreter->lastResult = valueResult;
+        return;
+    }
+    HavelValue matchValue = unwrap(valueResult);
+    std::string matchStr = interpreter->ValueToString(matchValue);
+
+    // Try each case
+    for (const auto& [pattern, result] : node.cases) {
+        // Evaluate pattern
+        auto patternResult = Evaluate(*pattern);
+        if (isError(patternResult)) {
+            interpreter->lastResult = patternResult;
+            return;
+        }
+        HavelValue patternValue = unwrap(patternResult);
+        std::string patternStr = interpreter->ValueToString(patternValue);
+
+        // String equality check
+        if (matchStr == patternStr) {
+            // Match found - evaluate and return result
+            interpreter->lastResult = Evaluate(*result);
+            return;
+        }
+    }
+
+    // Try default case if present
+    if (node.defaultCase) {
+        interpreter->lastResult = Evaluate(*node.defaultCase);
+        return;
+    }
+
+    // No match and no default - return null
+    interpreter->lastResult = HavelValue(nullptr);
 }
 
 void ExprEvaluator::visitTryExpression(const ast::TryExpression& node) {

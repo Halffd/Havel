@@ -1047,6 +1047,14 @@ void ExprEvaluator::visitExpressionStatement(const ast::ExpressionStatement& nod
     Evaluate(*node.expression);
 }
 
+void ExprEvaluator::visitIdentifier(const ast::Identifier& node) {
+    if (auto val = interpreter->environment->Get(node.symbol)) {
+        interpreter->lastResult = *val;
+    } else {
+        interpreter->lastResult = HavelRuntimeError("Undefined variable: " + node.symbol, node.line, node.column);
+    }
+}
+
 // Helper method implementations
 HavelResult ExprEvaluator::Evaluate(const ast::ASTNode& node) {
     return interpreter->Evaluate(node);

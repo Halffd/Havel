@@ -48,6 +48,7 @@ public:
     void visitTryExpression(const ast::TryExpression& node);
     void visitBlockExpression(const ast::BlockExpression& node);
     void visitIfExpression(const ast::IfExpression& node);
+    void visitIdentifier(const ast::Identifier& node);
     void visitExpressionStatement(const ast::ExpressionStatement& node);
     void visitBacktickExpression(const ast::BacktickExpression& node);
     void visitShellCommandExpression(const ast::ShellCommandExpression& node);

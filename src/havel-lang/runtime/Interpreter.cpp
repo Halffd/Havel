@@ -1988,14 +1988,6 @@ void Interpreter::visitAwaitExpression(const ast::AwaitExpression &node) {
   }
 }
 
-void Interpreter::visitIdentifier(const ast::Identifier &node) {
-  if (auto val = environment->Get(node.symbol)) {
-    lastResult = *val;
-  } else {
-    lastResult = HavelRuntimeError("Undefined variable: " + node.symbol, node.line, node.column);
-  }
-}
-
 void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
   auto array = std::make_shared<std::vector<HavelValue>>();
 

@@ -14,6 +14,7 @@ namespace havel {
 
 // Forward declaration
 class IO;
+class Environment;
 
 /**
  * RuntimeServices - Long-lived runtime service container

@@ -7,20 +7,16 @@
 #pragma once
 
 #include <string>
-#include <vector>
-#include <unordered_map>
-#include <memory>
 
 namespace havel {
 
-// Forward declarations
+// Forward declarations - full types in cpp file
 namespace ast {
     struct ConfigBlock;
     struct ConfigSection;
     struct DevicesBlock;
     struct ModesBlock;
 }
-class Environment;
 
 /**
  * ConfigProcessor - Process configuration DSL blocks
@@ -61,12 +57,6 @@ public:
      * @param node Modes block AST node
      */
     void processModesBlock(const ast::ModesBlock& node);
-
-private:
-    // Internal helpers
-    void processKeyValue(const std::string& key, const std::string& value);
-    void processNestedBlock(const std::string& prefix, 
-                            const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs);
 };
 
 } // namespace havel

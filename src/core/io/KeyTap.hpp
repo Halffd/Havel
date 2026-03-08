@@ -18,6 +18,7 @@ private:
   std::variant<std::string, std::function<bool()>> tapCondition;
   std::variant<std::string, std::function<bool()>> comboCondition;
   HotkeyManager &hotkeyManager;
+  std::function<bool(const std::string&)> conditionEvaluator;  // Callback for string conditions
 
   // State variables
   bool keyHeld = false;
@@ -32,7 +33,13 @@ private:
       auto func = std::get<std::function<bool()>>(cond);
       return func ? func() : true;
     }
-    // For string conditions, you'd implement your string evaluation logic here
+    // For string conditions, use the condition evaluator callback
+    if (std::holds_alternative<std::string>(cond)) {
+      auto condStr = std::get<std::string>(cond);
+      if (!condStr.empty() && conditionEvaluator) {
+        return conditionEvaluator(condStr);
+      }
+    }
     return true;
   }
 
@@ -43,10 +50,11 @@ public:
          std::function<void()> tapAction, TapCond tapCond = TapCond{},
          ComboCond comboCond = ComboCond{},
          std::function<void()> comboAction = nullptr, bool grabDownFlag = true,
-         bool grabUpFlag = true)
+         bool grabUpFlag = true,
+         std::function<bool(const std::string&)> conditionEval = nullptr)
       : keyName(key), onTap(tapAction), onCombo(comboAction),
         hotkeyManager(hotkeyManagerRef), grabDown(grabDownFlag),
-        grabUp(grabUpFlag) {
+        grabUp(grabUpFlag), conditionEvaluator(conditionEval) {
 
     // Handle tap condition
     if constexpr (std::is_same_v<TapCond, std::string> ||

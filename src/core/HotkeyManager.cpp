@@ -600,7 +600,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       },
       "mode == 'gaming'",        // Combo condition
       [this]() { PlayPause(); }, // Combo action
-      false, true);
+      false, true,
+      [this](const std::string& cond) { return evaluateCondition(cond); }); // Condition evaluator
   lwin->setup();
 
   ralt = std::make_unique<KeyTap>(
@@ -617,7 +618,8 @@ void HotkeyManager::RegisterDefaultHotkeys() {
           WindowManager::MoveWindowToNextMonitor();
         }
       },
-      "", "", nullptr, false, true);
+      "", "", nullptr, false, true,
+      [this](const std::string& cond) { return evaluateCondition(cond); }); // Condition evaluator
   ralt->setup();
 
   // Browser navigation hotkeys

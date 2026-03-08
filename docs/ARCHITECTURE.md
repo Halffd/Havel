@@ -95,10 +95,17 @@ Tested with `test_basic.hv`:
 - Conditionals, arrays, objects
 - String methods, shell commands
 
-### Features In Progress
+### Feature #2: sleep/range (SHIPPED ✅)
 
-- Feature #2: TBD
-- Feature #3: TBD
+Added to `stdlib/TypeModule.cpp`:
+- `sleep(ms)` - Sleep for specified milliseconds
+- `range(start, end)` - Generate array of numbers
+
+Tested with `test_feature2.hv`:
+- `range(5)` returns `[0, 1, 2, 3, 4]`
+- `range(2, 6)` returns `[2, 3, 4, 5]`
+- `for i in range(3)` works correctly
+- `sleep(100)` delays execution by 100ms
 
 ## Next Steps (Feature Development)
 

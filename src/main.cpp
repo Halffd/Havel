@@ -11,15 +11,26 @@ int main(int argc, char* argv[]) {
         return launcher.run(argc, argv);
     }
 
-    // Initialize config
-    try {
-        auto& config = havel::Configs::Get();
-        config.EnsureConfigFile();
-        config.Load();
-        havel::info("Config path: {}", config.getPath());
-    } catch (const std::exception& e) {
-        havel::error("Critical: Failed to initialize config: {}", e.what());
-        return 1;
+    // Check if running in pure mode (--run flag)
+    bool pureMode = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--run") {
+            pureMode = true;
+            break;
+        }
+    }
+
+    // Initialize config only if not in pure mode
+    if (!pureMode) {
+        try {
+            auto& config = havel::Configs::Get();
+            config.EnsureConfigFile();
+            config.Load();
+            havel::info("Config path: {}", config.getPath());
+        } catch (const std::exception& e) {
+            havel::error("Critical: Failed to initialize config: {}", e.what());
+            return 1;
+        }
     }
 
     // X11 error handler

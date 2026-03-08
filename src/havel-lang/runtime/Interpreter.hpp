@@ -397,6 +397,10 @@ public:
 
 // Main Interpreter class implementing the visitor pattern
 class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<Interpreter> {
+  // Friend evaluators to access private members
+  friend class ExprEvaluator;
+  friend class StatementEvaluator;
+
 public:
   // Full interpreter with IO and all managers
   Interpreter(IO &io_system, WindowManager &window_mgr,

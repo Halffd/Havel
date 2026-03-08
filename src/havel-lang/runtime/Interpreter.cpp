@@ -27,7 +27,7 @@
 #include "stdlib/FileModule.hpp"  // For registerFileModule
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
 #include "stdlib/ProcessModule.hpp"  // For registerProcessModule
-#include "../../modules/ModuleLoader.hpp"  // For loadHostModules
+#include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadHostModules
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -69,7 +69,7 @@ static std::string getErrorMessage(const HavelResult &result) {
   return "Unknown error";
 }
 
-static HavelValue unwrap(HavelResult &result) {
+static HavelValue unwrap(const HavelResult &result) {
   if (auto *val = std::get_if<HavelValue>(&result)) {
     return *val;
   }
@@ -310,7 +310,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
-  loadHostModules(*environment, this);
+  havel::modules::loadHostModules(*environment, this);
 }
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)
@@ -328,7 +328,7 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
   environment->Define("__pure_mode__", HavelValue(true));
-  loadHostModules(*environment, this);
+  havel::modules::loadHostModules(*environment, this);
 }
 
 HavelResult Interpreter::Execute(const std::string &sourceCode) {
@@ -3217,3 +3217,43 @@ void Interpreter::visitTypeReference(const ast::TypeReference &node) {
   lastResult = HavelRuntimeError("Type references not implemented.");
 }
 
+
+
+// Reload and debug helper methods (stub implementations)
+void Interpreter::enableReload() {
+    reloadEnabled.store(true);
+}
+
+void Interpreter::disableReload() {
+    reloadEnabled.store(false);
+}
+
+void Interpreter::toggleReload() {
+    reloadEnabled.store(!reloadEnabled.load());
+}
+
+void Interpreter::setShowAST(bool show) {
+    showASTOnParse = show;
+}
+
+void Interpreter::setStopOnError(bool stop) {
+    stopOnError = stop;
+}
+
+std::string Interpreter::getInterpreterState() const {
+    return "Interpreter state: running";
+}
+
+
+// Missing visitor method stubs
+void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
+    (void)node;
+    lastResult = HavelRuntimeError("Conditional hotkeys not implemented");
+}
+
+void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
+    (void)node;
+    lastResult = HavelRuntimeError("When blocks not implemented");
+}
+
+} // namespace havel

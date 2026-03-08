@@ -1,6 +1,6 @@
 /*
  * TypeModule.cpp
- * 
+ *
  * Type conversion and utility functions for Havel standard library.
  * Extracted from Interpreter.cpp as part of runtime refactoring.
  */
@@ -9,6 +9,8 @@
 #include <sstream>
 #include <algorithm>
 #include <set>
+#include <thread>
+#include <chrono>
 
 namespace havel::stdlib {
 
@@ -285,6 +287,30 @@ void registerTypeModule(Environment* env) {
     }
     std::cout << std::endl;
     return HavelValue(nullptr);
+  }));
+
+  // sleep(ms) - Sleep for specified milliseconds
+  env->Define("sleep", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() != 1) return HavelRuntimeError("sleep() requires 1 argument (milliseconds)");
+    long long ms = static_cast<long long>(args[0].asNumber());
+    if (ms < 0) return HavelRuntimeError("sleep() requires non-negative milliseconds");
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+    return HavelValue(nullptr);
+  }));
+
+  // range(start, end) - Generate array of numbers from start to end
+  env->Define("range", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 1 || args.size() > 2) {
+      return HavelRuntimeError("range() requires 1 or 2 arguments (start, end)");
+    }
+    int start = args.size() == 2 ? static_cast<int>(args[0].asNumber()) : 0;
+    int end = args.size() == 2 ? static_cast<int>(args[1].asNumber()) : static_cast<int>(args[0].asNumber());
+    
+    auto arr = std::make_shared<std::vector<HavelValue>>();
+    for (int i = start; i < end; ++i) {
+      arr->push_back(HavelValue(i));
+    }
+    return HavelValue(arr);
   }));
 }
 

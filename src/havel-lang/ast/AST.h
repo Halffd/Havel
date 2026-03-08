@@ -58,6 +58,7 @@ enum class NodeType {
   TernaryExpression,    // condition ? trueValue : falseValue
   RangeExpression,      // 0..10
   AssignmentExpression, // identifier = value
+  CastExpression,       // expr as Type
   ReturnStatement,      // return value;
   WhileStatement,       // while condition { ... }
   ForStatement,         // for i in range { ... }
@@ -813,6 +814,21 @@ struct NumberLiteral : public Expression {
     std::ostringstream oss;
     oss << value;
     return "NumberLiteral{" + oss.str() + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Boolean Literal (true, false)
+struct BooleanLiteral : public Expression {
+  bool value;
+
+  BooleanLiteral(bool val) : value(val) {
+    kind = NodeType::BooleanLiteral;
+  }
+
+  std::string toString() const override {
+    return "BooleanLiteral{" + std::string(value ? "true" : "false") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -1836,6 +1852,24 @@ struct AssignmentExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Cast Expression: expr as Type
+struct CastExpression : public Expression {
+  std::unique_ptr<Expression> expr;
+  std::string targetType;  // "int", "float", "string", "bool"
+
+  CastExpression(std::unique_ptr<Expression> e, std::string type)
+      : expr(std::move(e)), targetType(std::move(type)) {
+    kind = NodeType::CastExpression;
+  }
+
+  std::string toString() const override {
+    return "CastExpression{" + (expr ? expr->toString() : "nullptr") +
+           " as " + targetType + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Array Pattern for destructuring [a, b, c]
 struct ArrayPattern : public Expression {
   std::vector<std::unique_ptr<Expression>>
@@ -1981,6 +2015,8 @@ public:
 
   virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
 
+  virtual void visitBooleanLiteral(const BooleanLiteral &node) = 0;
+
   virtual void visitIdentifier(const Identifier &node) = 0;
 
   virtual void visitHotkeyLiteral(const HotkeyLiteral &node) = 0;
@@ -2035,6 +2071,7 @@ public:
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
+  virtual void visitCastExpression(const CastExpression &node) = 0;
   virtual void visitArrayPattern(const ArrayPattern &node) = 0;
   virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
@@ -2233,6 +2270,10 @@ inline void RangeExpression::accept(ASTVisitor &visitor) const {
 
 inline void AssignmentExpression::accept(ASTVisitor &visitor) const {
   visitor.visitAssignmentExpression(*this);
+}
+
+inline void CastExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitCastExpression(*this);
 }
 
 inline void ArrayPattern::accept(ASTVisitor &visitor) const {

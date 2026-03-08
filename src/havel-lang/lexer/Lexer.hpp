@@ -101,6 +101,8 @@ enum class TokenType {
   And,
   Or,
   Not,
+  True,        // boolean literal true
+  False,       // boolean literal false
   Assign,
   PlusAssign,
   MinusAssign,

@@ -464,6 +464,7 @@ public:
   void visitInterpolatedStringExpression(
       const ast::InterpolatedStringExpression &node) override;
   void visitNumberLiteral(const ast::NumberLiteral &node) override;
+  void visitBooleanLiteral(const ast::BooleanLiteral &node) override;
   void visitIdentifier(const ast::Identifier &node) override;
   void visitHotkeyLiteral(const ast::HotkeyLiteral &node) override;
   void visitImportStatement(const ast::ImportStatement &node) override;
@@ -510,6 +511,7 @@ public:
 
   void
   visitAssignmentExpression(const ast::AssignmentExpression &node) override;
+  void visitCastExpression(const ast::CastExpression &node) override;
   void visitForStatement(const ast::ForStatement &node) override;
   void visitLoopStatement(const ast::LoopStatement &node) override;
   void visitBreakStatement(const ast::BreakStatement &node) override;

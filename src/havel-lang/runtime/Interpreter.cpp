@@ -1,4 +1,5 @@
 #include "Interpreter.hpp"
+#include "evaluator/ExprEvaluator.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/automation/AutomationManager.hpp"
@@ -2729,6 +2730,12 @@ void Interpreter::visitAssignmentExpression(
   }
 
   lastResult = value; // Assignment expressions return the assigned value
+}
+
+void Interpreter::visitCastExpression(const ast::CastExpression& node) {
+  // Delegate to ExprEvaluator
+  ExprEvaluator eval(this);
+  eval.visitCastExpression(node);
 }
 
 void Interpreter::visitObjectPattern(const ast::ObjectPattern &node) {

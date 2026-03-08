@@ -186,6 +186,10 @@ public:
     out << getIndent() << node.toString() << std::endl;
   }
 
+  void visitBooleanLiteral(const BooleanLiteral &node) override {
+    out << getIndent() << node.toString() << std::endl;
+  }
+
   void visitIdentifier(const Identifier &node) override {
     out << getIndent() << node.toString() << std::endl;
   }
@@ -552,5 +556,10 @@ public:
     out << getIndent() << "}" << std::endl;
   }
 };
+
+// BooleanLiteral accept method
+void BooleanLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitBooleanLiteral(*this);
+}
 
 } // namespace havel::ast

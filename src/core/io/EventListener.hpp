@@ -355,6 +355,7 @@ private:
 
   // Event batching for reduced syscall overhead
   std::vector<input_event> uinputBatchBuffer;
+  std::mutex uinputBatchMutex;  // Protects batch buffer
   std::atomic<bool> uinputBatching{false};
   static constexpr size_t MAX_BATCH_SIZE = 16;  // Flush after 16 events
   static constexpr int BATCH_TIMEOUT_US = 5000; // Or after 5ms

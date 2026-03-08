@@ -5,7 +5,7 @@
  * Host binding - connects language to ClipboardManager and Qt clipboard.
  */
 #include "../../host/HostContext.hpp"
-#include "../runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
 #include "gui/ClipboardManager.hpp"
 #include <QClipboard>
 #include <QGuiApplication>

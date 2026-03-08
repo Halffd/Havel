@@ -5,7 +5,7 @@
  * Host binding - connects language to AudioManager.
  */
 #include "../../host/HostContext.hpp"
-#include "../runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
 #include "media/AudioManager.hpp"
 
 namespace havel::modules {

@@ -5,7 +5,7 @@
  * Host binding - connects language to BrightnessManager.
  */
 #include "../../host/HostContext.hpp"
-#include "../runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
 #include "core/BrightnessManager.hpp"
 
 namespace havel::modules {
@@ -29,7 +29,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
     // Brightness get/set functions
     // =========================================================================
     
-    (*brightnessObj)["getBrightness"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["getBrightness"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelValue(bm.getBrightness());
         }
@@ -37,7 +37,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(bm.getBrightness(monitorIndex));
     }));
     
-    (*brightnessObj)["getTemperature"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["getTemperature"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelValue(static_cast<double>(bm.getTemperature()));
         }
@@ -45,7 +45,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(static_cast<double>(bm.getTemperature(monitorIndex)));
     }));
     
-    (*brightnessObj)["setBrightness"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["setBrightness"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("setBrightness() requires value or (monitorIndex, value)");
         }
@@ -60,7 +60,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["increaseBrightness"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["increaseBrightness"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() >= 2) {
             int monitorIndex = static_cast<int>(valueToNumber(args[0]));
             double step = valueToNumber(args[1]);
@@ -72,7 +72,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["decreaseBrightness"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["decreaseBrightness"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() >= 2) {
             int monitorIndex = static_cast<int>(valueToNumber(args[0]));
             double step = valueToNumber(args[1]);
@@ -84,7 +84,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["setTemperature"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["setTemperature"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("setTemperature() requires kelvin or (monitorIndex, kelvin)");
         }
@@ -99,7 +99,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["getShadowLift"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["getShadowLift"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelValue(bm.getShadowLift());
         }
@@ -107,7 +107,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(bm.getShadowLift(monitorIndex));
     }));
     
-    (*brightnessObj)["setShadowLift"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["setShadowLift"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("setShadowLift() requires lift or (monitorIndex, lift)");
         }
@@ -122,7 +122,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["decreaseGamma"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["decreaseGamma"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("decreaseGamma() requires amount or (monitorIndex, amount)");
         }
@@ -137,7 +137,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["increaseGamma"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["increaseGamma"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("increaseGamma() requires amount or (monitorIndex, amount)");
         }
@@ -152,7 +152,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["setGammaRGB"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["setGammaRGB"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 3) {
             return HavelRuntimeError("setGammaRGB() requires (r, g, b) or (monitorIndex, r, g, b)");
         }
@@ -171,7 +171,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["increaseTemperature"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["increaseTemperature"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("increaseTemperature() requires amount or (monitorIndex, amount)");
         }
@@ -186,7 +186,7 @@ void registerBrightnessModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
     
-    (*brightnessObj)["decreaseTemperature"] = HavelValue(BuiltinFunction([&bm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*brightnessObj)["decreaseTemperature"] = HavelValue(BuiltinFunction([&bm, &valueToNumber](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("decreaseTemperature() requires amount or (monitorIndex, amount)");
         }

@@ -6,7 +6,7 @@
  */
 #include "DetectorModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "window/DisplayManager.hpp"
+#include "core/DisplayManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 
 namespace havel::modules {
@@ -37,7 +37,7 @@ void registerDetectorModule(Environment& env, HostContext&) {
         (*result)["monitors"] = HavelValue(monitorsArray);
         
         return HavelValue(result);
-    }));
+    })));
     
     // =========================================================================
     // Monitor config detector
@@ -64,7 +64,7 @@ void registerDetectorModule(Environment& env, HostContext&) {
         (*result)["sessionType"] = HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
         
         return HavelValue(result);
-    }));
+    })));
     
     // =========================================================================
     // Window manager detector
@@ -79,7 +79,7 @@ void registerDetectorModule(Environment& env, HostContext&) {
         (*result)["sessionType"] = HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
         
         return HavelValue(result);
-    }));
+    })));
     
     // =========================================================================
     // System detector (OS, desktop environment, etc.)
@@ -109,7 +109,7 @@ void registerDetectorModule(Environment& env, HostContext&) {
         );
         
         return HavelValue(result);
-    }));
+    })));
 }
 
 } // namespace havel::modules

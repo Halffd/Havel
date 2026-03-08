@@ -1,12 +1,13 @@
 /*
  * AppModule.cpp
- * 
+ *
  * Application module for Havel language.
  * Provides application control (quit, restart, info, args).
  */
 #include "AppModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "core/io/EventListener.hpp"
 #include <QApplication>
 #include <QCoreApplication>
 

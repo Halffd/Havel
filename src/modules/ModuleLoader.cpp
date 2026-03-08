@@ -100,7 +100,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     registerRuntimeModule(env, interpreter);
     
     // Standard library modules
-    registerPhysicsModule(&env);
+    registerPhysicsModule(env, ctx);
 
     // =========================================================================
     // HEAVY MODULES (lazy-loaded - only when first accessed)

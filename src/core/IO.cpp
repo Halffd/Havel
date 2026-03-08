@@ -1686,6 +1686,12 @@ void IO::Send(cstr keys) {
   // OPTIMIZATION #2: Process pre-parsed tokens instead of rescanning
   bool shouldSleep = Configs::Get().Get<bool>("Advanced.SlowKeyDelay", false);
 
+  // OPTIMIZATION #5: Batch all uinput events for reduced syscall overhead
+  // Events are queued and flushed in a single write() call
+  if (eventListener) {
+    eventListener->BeginUinputBatch();
+  }
+
   for (const auto &token : tokens) {
     switch (token.type) {
     case KeyToken::Modifier: {
@@ -1739,12 +1745,25 @@ void IO::Send(cstr keys) {
       // OPTIMIZATION #4: Only sleep if explicitly configured (removed default
       // 100μs sleep)
       if (shouldSleep) {
+        // Flush batch before sleep to ensure key is sent
+        if (eventListener) {
+          eventListener->EndUinputBatch();
+        }
         std::this_thread::sleep_for(std::chrono::microseconds(100));
+        // Resume batching after sleep
+        if (eventListener) {
+          eventListener->BeginUinputBatch();
+        }
       }
       SendKey(token.value, false);
       break;
     }
     }
+  }
+
+  // Flush any remaining batched events
+  if (eventListener) {
+    eventListener->EndUinputBatch();
   }
 
   // Release all held modifiers (fail-safe)

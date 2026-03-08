@@ -122,4 +122,21 @@ Architecture is STABLE. Next work should be FEATURES, not refactoring:
 3. Add tests
 4. Improve documentation
 
-**NO architecture changes until 3 features ship.**
+**See `LANGUAGE_DESIGN.md` for v0.1 scope and priorities.**
+
+### v0.1 Priority Features
+
+1. **Implicit return** - Last expression returns from function
+2. **`as` casts** - `x as int` for type conversion
+3. **Simple `match`** - Basic pattern switch
+4. **`=>` lambdas** - `(x) => x + 1` syntax
+5. **Pipeline `|>`** - `value |> f |> g`
+
+### v0.2+ (Deferred)
+
+- `?` operator (requires Result error model)
+- Complex pattern matching
+- Trait system
+- Advanced type features
+
+**Rule: NO new features until v0.1 ships with core features working.**

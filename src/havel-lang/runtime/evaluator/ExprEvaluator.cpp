@@ -1063,7 +1063,8 @@ void ExprEvaluator::visitShellCommandExpression(const ast::ShellCommandExpressio
 }
 
 void ExprEvaluator::visitExpressionStatement(const ast::ExpressionStatement& node) {
-    Evaluate(*node.expression);
+    auto result = Evaluate(*node.expression);
+    interpreter->lastResult = result;
 }
 
 void ExprEvaluator::visitIdentifier(const ast::Identifier& node) {
@@ -1185,8 +1186,11 @@ void ExprEvaluator::visitCallExpression(const ast::CallExpression& node) {
         if (std::holds_alternative<ReturnValue>(bodyResult)) {
             auto ret = std::get<ReturnValue>(bodyResult);
             interpreter->lastResult = ret.value ? *ret.value : HavelValue();
+        } else if (isError(bodyResult)) {
+            interpreter->lastResult = bodyResult;
         } else {
-            interpreter->lastResult = nullptr;
+            // IMPLICIT RETURN: use the body result (last expression value)
+            interpreter->lastResult = unwrap(bodyResult);
         }
     } else if (auto* objPtr = callee.get_if<HavelObject>()) {
         if (*objPtr) {

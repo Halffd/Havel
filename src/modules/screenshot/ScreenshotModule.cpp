@@ -5,7 +5,7 @@
  * Host binding - connects language to ScreenshotManager.
  */
 #include "../../host/HostContext.hpp"
-#include "../runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include <QImage>
 #include <QBuffer>

@@ -51,7 +51,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(file.read());
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to read file: " + std::string(e.what()));
@@ -65,7 +65,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         std::string path = valueToString(args[0]);
         std::string content = valueToString(args[1]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             file.write(content);
             return HavelValue(true);
         } catch (const std::exception& e) {
@@ -80,7 +80,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         std::string path = valueToString(args[0]);
         std::string content = valueToString(args[1]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             file.append(content);
             return HavelValue(true);
         } catch (const std::exception& e) {
@@ -94,7 +94,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(file.exists());
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to check file existence: " + std::string(e.what()));
@@ -107,13 +107,13 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
-            return HavelValue(file.remove());
+            ::FileManager file(path);
+            return HavelValue(file.deleteFile());
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to delete file: " + std::string(e.what()));
         }
     }));
-    
+
     (*filemanagerObj)["copy"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("filemanager.copy() requires source and destination arguments");
@@ -121,12 +121,13 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         std::string src = valueToString(args[0]);
         std::string dst = valueToString(args[1]);
         try {
-            return HavelValue(FileManager::copy(src, dst));
+            ::FileManager file(src);
+            return HavelValue(file.copy(dst));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to copy file: " + std::string(e.what()));
         }
     }));
-    
+
     (*filemanagerObj)["move"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("filemanager.move() requires source and destination arguments");
@@ -134,7 +135,8 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         std::string src = valueToString(args[0]);
         std::string dst = valueToString(args[1]);
         try {
-            return HavelValue(FileManager::move(src, dst));
+            ::FileManager file(src);
+            return HavelValue(file.move(dst));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to move file: " + std::string(e.what()));
         }
@@ -146,7 +148,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(static_cast<double>(file.size()));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to get file size: " + std::string(e.what()));
@@ -159,7 +161,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(static_cast<double>(file.wordCount()));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to get word count: " + std::string(e.what()));
@@ -172,7 +174,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(static_cast<double>(file.lineCount()));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to get line count: " + std::string(e.what()));
@@ -185,7 +187,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(file.getChecksum());
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to get checksum: " + std::string(e.what()));
@@ -198,7 +200,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         }
         std::string path = valueToString(args[0]);
         try {
-            FileManager file(path);
+            ::FileManager file(path);
             return HavelValue(file.getMimeType());
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to get MIME type: " + std::string(e.what()));
@@ -217,7 +219,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         
         (*fileObj)["read"] = HavelValue(BuiltinFunction([path](const std::vector<HavelValue>&) -> HavelResult {
             try {
-                FileManager file(path);
+                ::FileManager file(path);
                 return HavelValue(file.read());
             } catch (const std::exception& e) {
                 return HavelRuntimeError("Failed to read file: " + std::string(e.what()));
@@ -231,7 +233,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
             std::string content = args[0].isString() ? args[0].asString() : 
                 std::to_string(static_cast<int>(args[0].asNumber()));
             try {
-                FileManager file(path);
+                ::FileManager file(path);
                 file.write(content);
                 return HavelValue(true);
             } catch (const std::exception& e) {
@@ -241,7 +243,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         
         (*fileObj)["exists"] = HavelValue(BuiltinFunction([path](const std::vector<HavelValue>&) -> HavelResult {
             try {
-                FileManager file(path);
+                ::FileManager file(path);
                 return HavelValue(file.exists());
             } catch (const std::exception& e) {
                 return HavelRuntimeError("Failed to check file existence: " + std::string(e.what()));
@@ -250,7 +252,7 @@ void registerFileManagerModule(Environment& env, HostContext&) {
         
         (*fileObj)["size"] = HavelValue(BuiltinFunction([path](const std::vector<HavelValue>&) -> HavelResult {
             try {
-                FileManager file(path);
+                ::FileManager file(path);
                 return HavelValue(static_cast<double>(file.size()));
             } catch (const std::exception& e) {
                 return HavelRuntimeError("Failed to get file size: " + std::string(e.what()));

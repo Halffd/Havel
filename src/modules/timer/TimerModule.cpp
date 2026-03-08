@@ -44,7 +44,7 @@ void registerTimerModule(Environment& env, HostContext&) {
             });
             
             // Return timer ID (use pointer address as ID)
-            return HavelValue(reinterpret_cast<double>(timer.get()));
+            return HavelValue(static_cast<double>(reinterpret_cast<uintptr_t>(timer.get())));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to create timer: " + std::string(e.what()));
         }
@@ -75,7 +75,7 @@ void registerTimerModule(Environment& env, HostContext&) {
                      callback->declaration->name->symbol);
             });
             
-            return HavelValue(reinterpret_cast<double>(timer.get()));
+            return HavelValue(static_cast<double>(reinterpret_cast<uintptr_t>(timer.get())));
         } catch (const std::exception& e) {
             return HavelRuntimeError("Failed to create interval: " + std::string(e.what()));
         }

@@ -1,21 +1,21 @@
 /*
  * HTTPModule.cpp
- * 
+ *
  * HTTP client module for Havel language.
  * Provides REST API client functionality (get, post, put, delete, download, upload).
  */
 #include "HTTPModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "core/net/HttpClient.hpp"
+#include "core/net/HttpModule.hpp"
 
 namespace havel::modules {
 
 void registerHTTPModule(Environment& env, HostContext& ctx) {
     (void)ctx;  // HTTP doesn't need host context
-    
+
     // HTTP client for REST API calls
     auto httpMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
+
     // Helper to convert value to string
     auto valueToString = [](const HavelValue& v) -> std::string {
         if (v.isString()) return v.asString();

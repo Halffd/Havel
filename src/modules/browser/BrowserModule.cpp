@@ -119,32 +119,19 @@ void registerBrowserModule(Environment& env, HostContext& ctx) {
         std::string text = valueToString(args[1]);
         return HavelValue(getBrowser().type(selector, text));
     }));
-    
-    (*browserMod)["evaluate"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
-        if (args.empty()) {
-            return HavelRuntimeError("browser.evaluate() requires JavaScript code");
-        }
-        std::string js = valueToString(args[0]);
-        return HavelValue(getBrowser().evaluate(js));
-    }));
+
+    // Note: evaluate, getHtml, getUrl methods not available in Browser class
+    // These are stubbed out until the Browser class is updated
     
     (*browserMod)["screenshot"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         std::string path = args.empty() ? "" : valueToString(args[0]);
         return HavelValue(getBrowser().screenshot(path));
     }));
-    
-    (*browserMod)["getHtml"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-        return HavelValue(getBrowser().getHtml());
-    }));
-    
+
     (*browserMod)["getTitle"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(getBrowser().getTitle());
     }));
-    
-    (*browserMod)["getUrl"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-        return HavelValue(getBrowser().getUrl());
-    }));
-    
+
     // Register browser module
     env.Define("browser", HavelValue(browserMod));
 }

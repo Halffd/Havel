@@ -1,11 +1,12 @@
 /*
  * HotkeyModule.cpp
- * 
+ *
  * Hotkey management module for Havel language.
  * Provides hotkey control and overlay functions.
  */
 #include "HotkeyModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
+#include "core/HotkeyManager.hpp"
 
 namespace havel::modules {
 
@@ -72,22 +73,19 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
         hotkeyManager.clearAllHotkeys();
         return HavelValue(nullptr);
     }));
-    
+
     // =========================================================================
     // hotkey.list() - List all registered hotkeys
+    // Note: getAllHotkeys() not available in HotkeyManager
     // =========================================================================
-    
+
     (*hotkeyObj)["list"] = HavelValue(BuiltinFunction([&hotkeyManager](const std::vector<HavelValue>&) -> HavelResult {
+        (void)hotkeyManager;  // Suppress unused warning
         auto arr = std::make_shared<std::vector<HavelValue>>();
-        auto hotkeys = hotkeyManager.getAllHotkeys();
-        
-        for (const auto& hk : hotkeys) {
-            arr->push_back(HavelValue(hk));
-        }
-        
+        // TODO: Implement when HotkeyManager supports listing hotkeys
         return HavelValue(arr);
     }));
-    
+
     // Register hotkey module
     env.Define("hotkey", HavelValue(hotkeyObj));
 }

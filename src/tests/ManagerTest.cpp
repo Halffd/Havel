@@ -1,4 +1,4 @@
-#include "NetworkManager.hpp"
+#include "core/net/NetworkManager.hpp"
 #include <iostream>
 
 using namespace havel::net;

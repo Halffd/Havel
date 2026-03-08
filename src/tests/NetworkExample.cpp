@@ -1,4 +1,4 @@
-#include "NetworkManager.hpp"
+#include "core/net/NetworkManager.hpp"
 #include <chrono>
 #include <iostream>
 #include <thread>

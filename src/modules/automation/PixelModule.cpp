@@ -5,7 +5,7 @@
  * Host binding - connects language to PixelAutomation.
  */
 #include "../../host/HostContext.hpp"
-#include "../runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Environment.hpp"
 #include "core/automation/PixelAutomation.hpp"
 
 namespace havel::modules {
@@ -52,7 +52,7 @@ void registerPixelModule(Environment& env, HostContext& ctx) {
     // Pixel functions
     // =========================================================================
     
-    (*pixelObj)["get"] = HavelValue(BuiltinFunction([&pa, io](const std::vector<HavelValue>& args) -> HavelResult {
+    (*pixelObj)["get"] = HavelValue(BuiltinFunction([&pa, io, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         int x, y;
         
         // Get cursor position if no args provided
@@ -79,7 +79,7 @@ void registerPixelModule(Environment& env, HostContext& ctx) {
         return HavelValue(colorObj);
     }));
     
-    (*pixelObj)["match"] = HavelValue(BuiltinFunction([&pa, io](const std::vector<HavelValue>& args) -> HavelResult {
+    (*pixelObj)["match"] = HavelValue(BuiltinFunction([&pa, io, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 1) {
             return HavelRuntimeError("pixel.match() requires (color) or (x, y, color)");
         }
@@ -117,7 +117,7 @@ void registerPixelModule(Environment& env, HostContext& ctx) {
         return HavelValue(pa.pixelMatch(x, y, color, tolerance));
     }));
     
-    (*pixelObj)["wait"] = HavelValue(BuiltinFunction([&pa](const std::vector<HavelValue>& args) -> HavelResult {
+    (*pixelObj)["wait"] = HavelValue(BuiltinFunction([&pa, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 3) {
             return HavelRuntimeError("pixel.wait() requires (x, y, color)");
         }

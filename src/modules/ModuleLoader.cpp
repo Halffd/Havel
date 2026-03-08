@@ -39,6 +39,7 @@
 #include "hotkey/HotkeyModule.hpp"
 #include "browser/BrowserModule.hpp"
 #include "havel-lang/stdlib/PhysicsModule.hpp"
+#include "ffi/FFIModule.hpp"
 
 namespace havel::modules {
 
@@ -152,6 +153,9 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
 
     // Async module - loads threading libraries
     registerAsyncModule(env, ctx);
+
+    // FFI module - dynamic library loading and C function calls
+    ffi::registerFFIModule(env);
 }
 
 } // namespace havel::modules

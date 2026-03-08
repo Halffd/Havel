@@ -476,35 +476,366 @@ void StatementEvaluator::visitInputStatement(const ast::InputStatement& node) {
 }
 
 void StatementEvaluator::visitArrayPattern(const ast::ArrayPattern& node) {
-    interpreter->visitArrayPattern(node);
+    // TODO: Implement array pattern matching
+    interpreter->lastResult = HavelValue(nullptr);
 }
 
 void StatementEvaluator::visitImportStatement(const ast::ImportStatement& node) {
-    interpreter->visitImportStatement(node);
+    std::string path = node.modulePath;
+    HavelObject exports;
+
+    // Special case: no path provided -> import built-in modules by name
+    if (path.empty()) {
+        for (const auto &item : node.importedItems) {
+            const std::string &moduleName = item.first;
+            const std::string &alias = item.second;
+            auto val = interpreter->environment->Get(moduleName);
+            if (!val || !val->isObject()) {
+                interpreter->lastResult = HavelRuntimeError(
+                    "Built-in module not found or not an object: " + moduleName);
+                return;
+            }
+            interpreter->environment->Define(alias, val->asObject());
+        }
+        interpreter->lastResult = nullptr;
+        return;
+    }
+
+    // Check cache first (moduleCache is static in Interpreter.cpp)
+    // For now, skip cache and always load
+    // Check for built-in modules by name (with or without 'havel:' prefix)
+    std::string moduleName = path;
+    if (path.rfind("havel:", 0) == 0)
+        moduleName = path.substr(6);
+    auto moduleVal = interpreter->environment->Get(moduleName);
+    if (moduleVal && moduleVal->isObject()) {
+        exports = moduleVal->asObject();
+    } else if (!moduleVal) {
+        // Load from file
+        std::ifstream file(path);
+        if (!file) {
+            interpreter->lastResult = HavelRuntimeError("Cannot open module file: " + path);
+            return;
+        }
+        std::string source((std::istreambuf_iterator<char>(file)),
+                           std::istreambuf_iterator<char>());
+
+        // Execute module in a new environment
+        // Note: For now, modules use the same IO/windowManager as parent
+        Interpreter moduleInterpreter(*interpreter->io, *interpreter->windowManager);
+        auto moduleResult = moduleInterpreter.Execute(source);
+        if (isError(moduleResult)) {
+            interpreter->lastResult = moduleResult;
+            return;
+        }
+
+        HavelValue exportedValue = unwrap(moduleResult);
+        if (!exportedValue.isObject()) {
+            interpreter->lastResult = HavelRuntimeError(
+                "Module must return an object of exports: " + path);
+            return;
+        }
+        exports = exportedValue.asObject();
+    } else {
+        interpreter->lastResult =
+            HavelRuntimeError("Built-in module not found: " + moduleName);
+        return;
+    }
+
+    // Wildcard import: import * from module
+    if (node.importedItems.size() == 1 && node.importedItems[0].first == "*") {
+        if (exports) {
+            for (const auto &[k, v] : *exports) {
+                interpreter->environment->Define(k, v);
+            }
+            interpreter->lastResult = nullptr;
+            return;
+        }
+    }
+
+    // Import symbols into the current environment
+    for (const auto &item : node.importedItems) {
+        const std::string &originalName = item.first;
+        const std::string &alias = item.second;
+
+        if (exports && exports->count(originalName)) {
+            interpreter->environment->Define(alias, exports->at(originalName));
+        } else {
+            interpreter->lastResult = HavelRuntimeError(
+                "Module '" + path + "' does not export symbol: " + originalName);
+            return;
+        }
+    }
+
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
-    interpreter->visitUseStatement(node);
+    // Implementation of use statement for module flattening
+    // For each module name, flatten all its functions into the current scope
+
+    for (const std::string &moduleName : node.moduleNames) {
+        // Get the module from the environment
+        auto moduleVal = interpreter->environment->Get(moduleName);
+        if (!moduleVal) {
+            interpreter->lastResult = HavelRuntimeError("Module not found: " + moduleName);
+            return;
+        }
+
+        // Check if it's an object (module)
+        if (!moduleVal->isObject()) {
+            interpreter->lastResult = HavelRuntimeError("Not a module/object: " + moduleName);
+            return;
+        }
+
+        auto moduleObj = moduleVal->asObject();
+        if (!moduleObj) {
+            interpreter->lastResult = HavelRuntimeError("Module is null: " + moduleName);
+            return;
+        }
+
+        // Flatten all module functions into the current environment
+        for (const auto &[functionName, functionValue] : *moduleObj) {
+            interpreter->environment->Define(functionName, functionValue);
+        }
+    }
+
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitWithStatement(const ast::WithStatement& node) {
-    interpreter->visitWithStatement(node);
+    // Get the object from the environment
+    auto objectVal = interpreter->environment->Get(node.objectName);
+    if (!objectVal) {
+        interpreter->lastResult = HavelRuntimeError("Object not found: " + node.objectName);
+        return;
+    }
+
+    // Check if it's an object
+    if (!objectVal->isObject()) {
+        interpreter->lastResult = HavelRuntimeError("Not an object: " + node.objectName);
+        return;
+    }
+
+    auto withObject = objectVal->asObject();
+    if (!withObject) {
+        interpreter->lastResult = HavelRuntimeError("Object is null: " + node.objectName);
+        return;
+    }
+
+    // Create a new environment with the object's members available
+    auto withEnvironment = std::make_shared<Environment>(interpreter->environment);
+
+    // Add all object members to the new environment
+    for (const auto &[name, value] : *withObject) {
+        withEnvironment->Define(name, value);
+    }
+
+    // Execute the with block in the new environment
+    auto originalEnv = interpreter->environment;
+    interpreter->environment = withEnvironment;
+
+    for (const auto &stmt : node.body) {
+        auto result = Evaluate(*stmt);
+        if (isError(result) ||
+            std::holds_alternative<ReturnValue>(result) ||
+            std::holds_alternative<BreakValue>(result) ||
+            std::holds_alternative<ContinueValue>(result)) {
+            interpreter->environment = originalEnv;
+            interpreter->lastResult = result;
+            return;
+        }
+    }
+
+    interpreter->environment = originalEnv;
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitConfigBlock(const ast::ConfigBlock& node) {
-    interpreter->visitConfigBlock(node);
+    auto configObject =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    auto &config = Configs::Get();
+
+    // Special handling for "file" key - if present, load that config file
+    for (const auto &[key, valueExpr] : node.pairs) {
+        if (key == "file") {
+            auto result = Evaluate(*valueExpr);
+            if (isError(result)) {
+                interpreter->lastResult = result;
+                return;
+            }
+            std::string filePath = ValueToString(unwrap(result));
+
+            // Expand ~ to home directory
+            if (!filePath.empty() && filePath[0] == '~') {
+                const char *home = std::getenv("HOME");
+                if (home) {
+                    filePath = std::string(home) + filePath.substr(1);
+                }
+            }
+
+            config.Load(filePath);
+        }
+    }
+
+    // Process all config key-value pairs (including nested blocks)
+    processConfigPairs(node.pairs, config, "");
+
+    interpreter->lastResult = nullptr;
+}
+
+// Helper to process config pairs recursively
+void StatementEvaluator::processConfigPairs(
+    const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
+    Configs& config,
+    const std::string& prefix) {
+
+    for (const auto &[key, valueExpr] : pairs) {
+        // Skip "file" key (already processed)
+        if (key == "file") continue;
+
+        // Check if value is a nested ObjectLiteral (nested config block)
+        if (auto* objLit = dynamic_cast<const ast::ObjectLiteral*>(valueExpr.get())) {
+            // Recursively process nested block with updated prefix
+            processConfigPairs(objLit->pairs, config, prefix + key + ".");
+        } else {
+            // Regular value - evaluate and store
+            auto result = Evaluate(*valueExpr);
+            if (isError(result)) {
+                interpreter->lastResult = result;
+                return;
+            }
+
+            HavelValue value = unwrap(result);
+            std::string configKey = "Havel." + prefix + key;
+            std::string strValue = ValueToString(value);
+
+            if (value.isBool()) {
+                config.Set(configKey, value.get<bool>() ? "true" : "false");
+            } else if (value.isInt()) {
+                config.Set(configKey, value.get<int>());
+            } else if (value.isDouble()) {
+                config.Set(configKey, value.get<double>());
+            } else {
+                config.Set(configKey, strValue);
+            }
+        }
+    }
 }
 
 void StatementEvaluator::visitDevicesBlock(const ast::DevicesBlock& node) {
-    interpreter->visitDevicesBlock(node);
+    auto devicesObject =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    auto &config = Configs::Get();
+
+    // Device configuration mappings
+    std::unordered_map<std::string, std::string> deviceKeyMap = {
+        {"keyboard", "Device.Keyboard"},
+        {"mouse", "Device.Mouse"},
+        {"joystick", "Device.Joystick"},
+        {"mouseSensitivity", "Mouse.Sensitivity"},
+        {"ignoreMouse", "Device.IgnoreMouse"}};
+
+    for (const auto &[key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            interpreter->lastResult = result;
+            return;
+        }
+
+        HavelValue value = unwrap(result);
+        (*devicesObject)[key] = value;
+
+        if (deviceKeyMap.count(key)) {
+            std::string configKey = deviceKeyMap.at(key);
+            std::string strValue = ValueToString(value);
+
+            if (value.isBool()) {
+                config.Set(configKey, value.get<bool>() ? "true" : "false");
+            } else if (value.isInt()) {
+                config.Set(configKey, value.get<int>());
+            } else if (value.isDouble()) {
+                config.Set(configKey, value.get<double>());
+            } else {
+                config.Set(configKey, strValue);
+            }
+        }
+    }
+
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitModesBlock(const ast::ModesBlock& node) {
-    interpreter->visitModesBlock(node);
+    auto modesObject =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    auto &config = Configs::Get();
+
+    // Mode configuration mappings
+    std::unordered_map<std::string, std::string> modeKeyMap = {
+        {"default", "Mode.Default"},
+        {"current", "Mode.Current"}};
+
+    for (const auto &[key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            interpreter->lastResult = result;
+            return;
+        }
+
+        HavelValue value = unwrap(result);
+        (*modesObject)[key] = value;
+
+        if (modeKeyMap.count(key)) {
+            std::string configKey = modeKeyMap.at(key);
+            std::string strValue = ValueToString(value);
+
+            if (value.isBool()) {
+                config.Set(configKey, value.get<bool>() ? "true" : "false");
+            } else if (value.isInt()) {
+                config.Set(configKey, value.get<int>());
+            } else if (value.isDouble()) {
+                config.Set(configKey, value.get<double>());
+            } else {
+                config.Set(configKey, strValue);
+            }
+        }
+    }
+
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitConfigSection(const ast::ConfigSection& node) {
-    interpreter->visitConfigSection(node);
+    auto configObject =
+        std::make_shared<std::unordered_map<std::string, HavelValue>>();
+    auto &config = Configs::Get();
+
+    // Process key-value pairs
+    for (const auto &[key, valueExpr] : node.pairs) {
+        auto result = Evaluate(*valueExpr);
+        if (isError(result)) {
+            interpreter->lastResult = result;
+            return;
+        }
+
+        HavelValue value = unwrap(result);
+        (*configObject)[key] = value;
+
+        // Store in config with Havel. prefix
+        std::string configKey = "Havel." + key;
+        std::string strValue = ValueToString(value);
+
+        if (value.isBool()) {
+            config.Set(configKey, value.get<bool>() ? "true" : "false");
+        } else if (value.isInt()) {
+            config.Set(configKey, value.get<int>());
+        } else if (value.isDouble()) {
+            config.Set(configKey, value.get<double>());
+        } else {
+            config.Set(configKey, strValue);
+        }
+    }
+
+    interpreter->lastResult = nullptr;
 }
 
 void StatementEvaluator::visitSwitchStatement(const ast::SwitchStatement& node) {

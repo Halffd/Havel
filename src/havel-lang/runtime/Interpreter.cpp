@@ -310,6 +310,10 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
+  
+  // Initialize runtime services
+  services.setInput(io);
+  
   havel::modules::loadHostModules(*environment, this);
 }
 

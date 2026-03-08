@@ -6,8 +6,6 @@
  */
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
-#include "modules/process/ShellExecutor.hpp"
-#include "modules/io/InputModule.hpp"
 #include <regex>
 #include <thread>
 
@@ -248,7 +246,7 @@ void StatementEvaluator::visitRepeatStatement(const ast::RepeatStatement& node) 
 
 void StatementEvaluator::visitShellCommandStatement(const ast::ShellCommandStatement& node) {
     // Execute command chain using ShellExecutor service
-    ShellExecutor executor;
+    ShellExecutor& executor = interpreter->services.shell;
     
     // Build command chain from AST
     std::vector<std::string> commands;
@@ -526,8 +524,9 @@ void StatementEvaluator::visitDoWhileStatement(const ast::DoWhileStatement& node
 
 void StatementEvaluator::visitInputStatement(const ast::InputStatement& node) {
     // Execute input commands using InputModule service
-    InputModule inputModule(interpreter->io);
-    inputModule.execute(node);
+    if (interpreter->services.input) {
+        interpreter->services.input->execute(node);
+    }
     interpreter->lastResult = nullptr;
 }
 

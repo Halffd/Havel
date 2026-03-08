@@ -85,7 +85,10 @@ havel::Configs& havel::Configs::Get() {
 
 havel::Configs::~Configs() {
     StopFileWatching();
-    ForceSave();  // Ensure pending saves are completed
+    // Only save if we have a valid config path (not in pure mode)
+    if (!path.empty()) {
+        ForceSave();  // Ensure pending saves are completed
+    }
 }
 
 std::filesystem::file_time_type havel::Configs::GetLastModified(const std::string &filepath) const {
@@ -194,6 +197,11 @@ void havel::Configs::Load(const std::string &filename) {
 }
 
 void havel::Configs::Save(const std::string &filename) {
+    // Don't save if no config path (pure mode)
+    if (path.empty() && filename.empty()) {
+        return;
+    }
+    
     std::string savePath = filename.empty() ? path : ConfigPaths::GetConfigPath(filename);
     ConfigPaths::EnsureConfigDir();
     try {

@@ -294,9 +294,16 @@ void registerArrayModule(Environment* env) {
   // ============================================================================
 
   // join(array, separator) - join array elements into string
+  // Also supports strings (passthrough for pipeline compatibility)
   env->Define("join", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
-    if (args.empty()) return HavelRuntimeError("join() requires array");
-    if (!args[0].is<HavelArray>()) return HavelRuntimeError("join() first arg must be array");
+    if (args.empty()) return HavelRuntimeError("join() requires array or string");
+    
+    // If first arg is string, return it unchanged (pipeline passthrough)
+    if (args[0].isString()) {
+      return HavelValue(args[0].asString());
+    }
+    
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("join() first arg must be array or string");
 
     auto array = args[0].get<HavelArray>();
     std::string separator = args.size() > 1 ? valueToString(args[1]) : ",";

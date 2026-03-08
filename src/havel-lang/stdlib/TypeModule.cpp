@@ -11,6 +11,7 @@
 #include <set>
 #include <thread>
 #include <chrono>
+#include <iomanip>
 
 namespace havel::stdlib {
 
@@ -311,6 +312,26 @@ void registerTypeModule(Environment* env) {
       arr->push_back(HavelValue(i));
     }
     return HavelValue(arr);
+  }));
+
+  // log(level, message) - Log message with level
+  env->Define("log", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 1) return HavelRuntimeError("log() requires at least 1 argument");
+    
+    std::string level = args.size() >= 2 ? args[0].asString() : "INFO";
+    std::string message = args.size() >= 2 ? args[1].asString() : args[0].asString();
+    
+    // Convert level to uppercase
+    std::transform(level.begin(), level.end(), level.begin(), ::toupper);
+    
+    // Format timestamp
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    std::ostringstream ts;
+    ts << std::put_time(std::localtime(&time), "%Y-%m-%d %H:%M:%S");
+    
+    std::cerr << ts.str() << " [" << level << "] " << message << std::endl;
+    return HavelValue(nullptr);
   }));
 }
 

@@ -78,9 +78,9 @@ private:
     Interpreter* interpreter;
     
     // Helper methods
-    HavelValue Evaluate(ast::Expression& expr);
+    HavelResult Evaluate(const ast::ASTNode& node);
     bool isError(const HavelResult& result);
-    HavelValue unwrap(HavelResult& result);
+    HavelValue unwrap(const HavelResult& result);
     std::string ValueToString(const HavelValue& value);
     double ValueToNumber(const HavelValue& value);
     bool ValueToBool(const HavelValue& value);

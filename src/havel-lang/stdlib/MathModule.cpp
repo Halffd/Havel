@@ -155,7 +155,7 @@ void registerMathModule(Environment* env) {
   });
 
   // === Constants ===
-  
+
   math["PI"] = HavelValue(3.14159265358979323846);
   math["E"] = HavelValue(2.71828182845904523536);
   math["PHI"] = HavelValue(1.61803398874989484820);  // Golden ratio
@@ -163,6 +163,118 @@ void registerMathModule(Environment* env) {
   math["SQRT1_2"] = HavelValue(0.70710678118654752440);
   math["LN2"] = HavelValue(0.69314718055994530942);
   math["LN10"] = HavelValue(2.30258509299404568402);
+  math["TAU"] = HavelValue(6.28318530717958647692);  // 2*PI
+
+  // === Random functions ===
+
+  math["random"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) {
+      // random() - float [0, 1)
+      return HavelValue(static_cast<double>(rand()) / RAND_MAX);
+    } else if (args.size() == 1) {
+      // random(max) - float [0, max)
+      double max = toNum(args[0]);
+      return HavelValue(static_cast<double>(rand()) / RAND_MAX * max);
+    } else {
+      // random(min, max) - float [min, max)
+      double min = toNum(args[0]);
+      double max = toNum(args[1]);
+      return HavelValue(min + static_cast<double>(rand()) / RAND_MAX * (max - min));
+    }
+  });
+
+  math["randint"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) {
+      return HavelRuntimeError("randint() requires at least 1 argument");
+    } else if (args.size() == 1) {
+      // randint(max) - int [0, max]
+      int max = static_cast<int>(toNum(args[0]));
+      return HavelValue(rand() % (max + 1));
+    } else {
+      // randint(min, max) - int [min, max]
+      int min = static_cast<int>(toNum(args[0]));
+      int max = static_cast<int>(toNum(args[1]));
+      return HavelValue(min + rand() % (max - min + 1));
+    }
+  });
+
+  // === Utility functions ===
+
+  math["min"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("min() requires at least 1 argument");
+    double minVal = toNum(args[0]);
+    for (size_t i = 1; i < args.size(); ++i) {
+      double val = toNum(args[i]);
+      if (val < minVal) minVal = val;
+    }
+    return HavelValue(minVal);
+  });
+
+  math["max"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("max() requires at least 1 argument");
+    double maxVal = toNum(args[0]);
+    for (size_t i = 1; i < args.size(); ++i) {
+      double val = toNum(args[i]);
+      if (val > maxVal) maxVal = val;
+    }
+    return HavelValue(maxVal);
+  });
+
+  math["clamp"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 3) return HavelRuntimeError("clamp() requires (value, min, max)");
+    double val = toNum(args[0]);
+    double minVal = toNum(args[1]);
+    double maxVal = toNum(args[2]);
+    return HavelValue(std::max(minVal, std::min(val, maxVal)));
+  });
+
+  math["lerp"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 3) return HavelRuntimeError("lerp() requires (a, b, t)");
+    double a = toNum(args[0]);
+    double b = toNum(args[1]);
+    double t = toNum(args[2]);
+    return HavelValue(a + t * (b - a));
+  });
+
+  math["sign"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("sign() requires 1 argument");
+    double val = toNum(args[0]);
+    return HavelValue(val > 0 ? 1.0 : (val < 0 ? -1.0 : 0.0));
+  });
+
+  math["fract"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("fract() requires 1 argument");
+    double val = toNum(args[0]);
+    return HavelValue(val - std::floor(val));
+  });
+
+  math["mod"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 2) return HavelRuntimeError("mod() requires 2 arguments");
+    double a = toNum(args[0]);
+    double b = toNum(args[1]);
+    return HavelValue(std::fmod(a, b));
+  });
+
+  math["distance"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 4) return HavelRuntimeError("distance() requires (x1, y1, x2, y2)");
+    double x1 = toNum(args[0]);
+    double y1 = toNum(args[1]);
+    double x2 = toNum(args[2]);
+    double y2 = toNum(args[3]);
+    return HavelValue(std::sqrt(std::pow(x2 - x1, 2) + std::pow(y2 - y1, 2)));
+  });
+
+  math["deg2rad"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("deg2rad() requires 1 argument");
+    constexpr double PI = 3.14159265358979323846;
+    return HavelValue(toNum(args[0]) * PI / 180.0);
+  });
+
+  math["rad2deg"] = BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("rad2deg() requires 1 argument");
+    constexpr double PI = 3.14159265358979323846;
+    return HavelValue(toNum(args[0]) * 180.0 / PI);
+  });
 
   // Register math module in environment
   env->Define("math", HavelValue(mathObj));

@@ -6,6 +6,7 @@
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "utils/Logger.hpp"
 #include <QProcess>
+#include <QApplication>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -172,6 +173,56 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
   buffer << file.rdbuf();
   std::string code = buffer.str();
 
+  // Check if script contains hotkeys BEFORE creating QApplication
+  std::regex hotkeyPattern(R"(\b[A-Za-z0-9+^!#@~*$]+\s*=>)");
+  bool hasHotkeys = std::regex_search(code, hotkeyPattern);
+  
+  // Also check for GUI-dependent operations
+  bool needsGUI = (code.find("screenshot.") != std::string::npos ||
+                   code.find("pixel.") != std::string::npos ||
+                   code.find("gui.") != std::string::npos ||
+                   code.find("clipboard.") != std::string::npos);
+
+  if (!hasHotkeys && !needsGUI) {
+    // Run without Qt - pure script execution
+    info("No hotkeys or GUI operations detected - running in headless mode");
+    
+    havel::Interpreter interpreter;
+    interpreter.setScriptPath(cfg.scriptFile);
+    interpreter.setDebugParser(cfg.debugParser);
+    interpreter.setStopOnError(cfg.stopOnError);
+    interpreter.setShowAST(cfg.debugAst);
+
+    auto result = interpreter.Execute(code);
+
+    if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+      const auto& err = std::get<havel::HavelRuntimeError>(result);
+      havel::error("Runtime Error: {}", err.what());
+      if (err.hasLocation && err.line > 0) {
+        havel::error("  At line {}, column {}", err.line, err.column);
+        interpreter.printSourceWithContext(code, err.line);
+      }
+      return 1;
+    }
+
+    // Print result if any
+    if (auto* value = std::get_if<havel::HavelValue>(&result)) {
+      if (value->isString()) {
+        std::cout << value->asString() << std::endl;
+      } else if (value->isNumber()) {
+        std::cout << value->asNumber() << std::endl;
+      } else if (value->isBool()) {
+        std::cout << (value->asBool() ? "true" : "false") << std::endl;
+      }
+    }
+
+    info("Script executed successfully");
+    return 0;
+  }
+
+  // Hotkeys or GUI operations detected - need Qt event loop
+  info("Hotkeys or GUI operations detected - initializing Qt");
+  
   int dummy_argc = 1;
   char dummy_name[] = "havel-script";
   char *dummy_argv[] = {dummy_name, nullptr};
@@ -190,24 +241,24 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     error("Interpreter is not available");
     return 1;
   }
-  
+
   auto result = interpreter->Execute(code);
-  
+
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
     const auto& err = std::get<havel::HavelRuntimeError>(result);
-    
+
     // Print detailed error information
     havel::error("╔═══════════════════════════════════════════════════════════╗");
     havel::error("║         RUNTIME ERROR IN STARTUP SCRIPT                   ║");
     havel::error("╚═══════════════════════════════════════════════════════════╝");
     havel::error("");
     havel::error("  Error: {}", err.what());
-    
+
     // Use structured location data if available
     if (err.hasLocation && err.line > 0) {
       havel::error("");
       havel::error("  At line {}, column {}", err.line, err.column);
-      
+
       // Print source code context
       interpreter->printSourceWithContext(code, err.line);
     } else {
@@ -216,17 +267,13 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
       havel::error("  (No location information available)");
       interpreter->printSourceWithContext(code, 0);
     }
-    
+
     havel::error("");
     havel::error("  Script file: {}", cfg.scriptFile);
     havel::error("");
-    
+
     return 1;
   }
-
-  // Check if script contains hotkeys
-  std::regex hotkeyPattern(R"(\b[A-Za-z0-9+^!#@~*$]+\s*=>)");
-  bool hasHotkeys = std::regex_search(code, hotkeyPattern);
 
   if (hasHotkeys) {
     havelApp.hotkeyManager->printHotkeys();
@@ -297,11 +344,10 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
 
 int HavelLauncher::runRepl(const LaunchConfig &cfg) {
   info("Starting Havel REPL...");
-  int dummy_argc = 1;
-  char dummy_name[] = "havel-script";
-  char *dummy_argv[] = {dummy_name, nullptr};
-  QApplication app(dummy_argc, dummy_argv);
-
+  
+  // Don't create QApplication for REPL - it's not needed for script execution
+  // Qt will be lazily initialized only if GUI/clipboard functions are called
+  
   HavelApp havelApp(false, cfg.scriptFile, true);
 
   if (!havelApp.isInitialized()) {

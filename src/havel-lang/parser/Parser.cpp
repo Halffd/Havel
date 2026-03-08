@@ -2327,13 +2327,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parseCastExpression() {
 // Parse match expression: match value { pattern => expr, _ => default }
 std::unique_ptr<havel::ast::Expression> Parser::parseMatchExpression() {
   if (at().type != havel::TokenType::Match) {
-    return parsePrimaryExpression();
+    return parseBinaryExpression();
   }
 
   advance(); // consume 'match'
 
   // Parse the value to match on
-  auto value = parsePrimaryExpression();
+  auto value = parseBinaryExpression();
   auto match = std::make_unique<havel::ast::MatchExpression>(std::move(value));
 
   // Expect opening brace

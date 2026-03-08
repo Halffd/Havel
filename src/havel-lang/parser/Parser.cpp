@@ -2258,11 +2258,11 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
-  return parseConfigAppend();
+  return parseAssignmentExpression();
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {
-  auto left = parseLogicalOr();
+  auto left = parseAssignmentExpression();
 
   // Handle >> config operator
   if (at().type == havel::TokenType::ShiftRight) {

@@ -8,6 +8,7 @@
 
 #include "modules/process/ShellExecutor.hpp"
 #include "modules/io/InputModule.hpp"
+#include "modules/config/ConfigProcessor.hpp"
 
 namespace havel {
 
@@ -31,6 +32,9 @@ struct RuntimeServices {
     
     // Input handling (requires IO pointer)
     InputModule* input;  // Non-owning, set by Interpreter
+    
+    // Configuration DSL processing
+    ConfigProcessor config;
     
     RuntimeServices() : shell(), input(nullptr) {}
     

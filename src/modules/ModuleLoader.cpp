@@ -2,11 +2,8 @@
  * ModuleLoader.cpp
  *
  * Loads all host modules into the Havel environment.
- * Heavy modules (screenshot, pixel, automation) use lazy loading
- * to avoid loading PNG/zlib dependencies at startup.
  */
 #include "ModuleLoader.hpp"
-#include "LazyModuleLoader.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
@@ -92,65 +89,51 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     
     // Mode management
     registerModeModule(env, ctx);
-    
+
     // Hotkey management
     registerHotkeyModule(env, ctx);
-    
+
     // Runtime utilities
     registerRuntimeModule(env, interpreter);
-    
+
     // Standard library modules
     registerPhysicsModule(env, ctx);
 
     // =========================================================================
-    // HEAVY MODULES (lazy-loaded - only when first accessed)
+    // HEAVY MODULES (loaded at startup - lazy loading removed)
     // These modules pull in large dependencies (PNG, zlib, OpenCV, Qt, etc.)
+    // Lazy loading was removed - modules load when first used via services
     // =========================================================================
-    
-    static LazyModuleLoader lazyLoader(env, interpreter);
-    
-    // Screenshot module - loads libpng, zlib (~29% CPU when active)
-    lazyLoader.registerLazy("screenshot", registerScreenshotModule);
-    
+
+    // Screenshot module - loads libpng, zlib
+    registerScreenshotModule(env, ctx);
+
     // Pixel/image recognition - loads OpenCV, libpng, zlib
-    lazyLoader.registerLazy("pixel", registerPixelModule);
-    
+    registerPixelModule(env, ctx);
+
     // Automation module - loads image processing dependencies
-    lazyLoader.registerLazy("automation", registerAutomationModule);
-    
+    registerAutomationModule(env, ctx);
+
     // GUI module - loads Qt widgets, image handling
-    lazyLoader.registerLazy("gui", registerGUIModule);
-    
+    registerGUIModule(env, ctx);
+
     // Map manager - loads image handling
-    lazyLoader.registerLazy("mapmanager", registerMapManagerModule);
-    
+    registerMapManagerModule(env, ctx);
+
     // Browser automation - loads CDP, image handling
-    lazyLoader.registerLazy("browser", registerBrowserModule);
-    
+    registerBrowserModule(env, ctx);
+
     // HTTP module - loads network stack
-    lazyLoader.registerLazy("http", registerHTTPModule);
-    
+    registerHTTPModule(env, ctx);
+
     // Alt-tab window switcher - loads Qt, image handling
-    lazyLoader.registerLazy("alttab", registerAltTabModule);
-    
+    registerAltTabModule(env, ctx);
+
     // System module - loads additional system libraries
-    lazyLoader.registerLazy("system", registerSystemModule);
-    
+    registerSystemModule(env, ctx);
+
     // Async module - loads threading libraries
-    lazyLoader.registerLazy("async", registerAsyncModule);
-    
-    // Create lazy proxies in environment
-    // When user accesses screenshot.full(), the module loads automatically
-    env.Define("screenshot", lazyLoader.createLazyWrapper("screenshot", registerScreenshotModule));
-    env.Define("pixel", lazyLoader.createLazyWrapper("pixel", registerPixelModule));
-    env.Define("automation", lazyLoader.createLazyWrapper("automation", registerAutomationModule));
-    env.Define("gui", lazyLoader.createLazyWrapper("gui", registerGUIModule));
-    env.Define("mapmanager", lazyLoader.createLazyWrapper("mapmanager", registerMapManagerModule));
-    env.Define("browser", lazyLoader.createLazyWrapper("browser", registerBrowserModule));
-    env.Define("http", lazyLoader.createLazyWrapper("http", registerHTTPModule));
-    env.Define("alttab", lazyLoader.createLazyWrapper("alttab", registerAltTabModule));
-    env.Define("system", lazyLoader.createLazyWrapper("system", registerSystemModule));
-    env.Define("async", lazyLoader.createLazyWrapper("async", registerAsyncModule));
+    registerAsyncModule(env, ctx);
 }
 
 } // namespace havel::modules

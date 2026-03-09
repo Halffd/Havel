@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 namespace havel {
@@ -18,17 +19,22 @@ namespace havel {
 class IO;
 class EventListener;
 
+/**
+ * ConditionalHotkey - A hotkey with a condition
+ * 
+ * Condition can be:
+ * - String: evaluated via condition engine (e.g., "mode == 'gaming'")
+ * - Function: direct C++ callback
+ */
 struct ConditionalHotkey {
   int id;
   std::string key;
-  std::string condition; // String condition (for legacy)
-  std::shared_ptr<std::function<bool()>> conditionFunc; // Function condition (shared for thread safety)
-  std::shared_ptr<std::function<void()>> trueAction;  // Shared for thread safety
-  std::shared_ptr<std::function<void()>> falseAction; // Shared for thread safety
+  std::variant<std::string, std::function<bool()>> condition;
+  std::function<void()> trueAction;
+  std::function<void()> falseAction;
   bool currentlyGrabbed = false;
   bool lastConditionResult = false;
-  bool usesFunctionCondition = false; // Flag to indicate which condition type to use
-  bool monitoringEnabled = true; // Whether this hotkey should be monitored
+  bool monitoringEnabled = true;
 };
 
 // Stores the state of conditional hotkeys before suspension

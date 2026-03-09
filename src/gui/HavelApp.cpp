@@ -136,14 +136,11 @@ void HavelApp::initializeComponents(bool isStartup) {
 #endif
   info("Havel interpreter initialized successfully");
 
-  // Get screenshot manager with null guard
+  // Get screenshot manager with null guard (nullptr in REPL mode)
   auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
-  if (!screenshotMgrForHotkey) {
-    throw std::runtime_error("ScreenshotManager not available");
-  }
   hotkeyManager = std::make_shared<HotkeyManager>(
       *io, *windowManager, *mpv, *audioManager, *interpreter,
-      *screenshotMgrForHotkey, *brightnessManager,
+      screenshotMgrForHotkey, *brightnessManager,
       networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");

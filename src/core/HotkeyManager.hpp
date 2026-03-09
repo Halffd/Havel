@@ -47,7 +47,7 @@ class HotkeyManager {
 public:
   HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
                 AudioManager &audioManager, havel::Interpreter &interpreter,
-                ScreenshotManager &screenshotManager,
+                ScreenshotManager *screenshotManager,
                 BrightnessManager &brightnessManager,
                 std::shared_ptr<net::NetworkManager> networkManager);
   std::unique_ptr<MouseController> mouseController;
@@ -283,7 +283,7 @@ private:
   MPVController &mpv;
   AudioManager &audioManager;
   havel::Interpreter &interpreter;
-  ScreenshotManager &screenshotManager;
+  ScreenshotManager *screenshotManager;  // Optional - nullptr in REPL mode
   BrightnessManager &brightnessManager;
   std::shared_ptr<net::NetworkManager> networkManager;
 

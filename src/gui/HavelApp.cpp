@@ -114,12 +114,17 @@ void HavelApp::initializeComponents(bool isStartup) {
 
 #ifdef ENABLE_HAVEL_LANG
   std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
+  
+  // Get AutomationSuite components with null guards
+  auto* suite = AutomationSuite::Instance();
+  auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+  auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+  auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+  
   interpreter = std::make_shared<Interpreter>(
       *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
       audioManager.get(), guiManager.get(),
-      AutomationSuite::Instance()->getScreenshotManager(),
-      AutomationSuite::Instance()->getClipboardManager(),
-      AutomationSuite::Instance()->getPixelAutomation());
+      screenshotMgr, clipboardMgr, pixelAuto);
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
@@ -131,9 +136,14 @@ void HavelApp::initializeComponents(bool isStartup) {
 #endif
   info("Havel interpreter initialized successfully");
 
+  // Get screenshot manager with null guard
+  auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
+  if (!screenshotMgrForHotkey) {
+    throw std::runtime_error("ScreenshotManager not available");
+  }
   hotkeyManager = std::make_shared<HotkeyManager>(
       *io, *windowManager, *mpv, *audioManager, *interpreter,
-      *AutomationSuite::Instance()->getScreenshotManager(), *brightnessManager,
+      *screenshotMgrForHotkey, *brightnessManager,
       networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
@@ -259,12 +269,17 @@ void HavelApp::initializeComponents(bool isStartup) {
 #ifdef ENABLE_HAVEL_LANG
     guiManager = std::make_unique<GUIManager>(*windowManager);
     std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
+    
+    // Get AutomationSuite components with null guards
+    auto* suite = AutomationSuite::Instance();
+    auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+    auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+    auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+    
     interpreter = std::make_shared<Interpreter>(
         *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
         audioManager.get(), guiManager.get(),
-        AutomationSuite::Instance()->getScreenshotManager(),
-        AutomationSuite::Instance()->getClipboardManager(),
-        AutomationSuite::Instance()->getPixelAutomation());
+        screenshotMgr, clipboardMgr, pixelAuto);
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
     interpreter = nullptr;

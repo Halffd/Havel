@@ -1,6 +1,5 @@
 #pragma once
 
-#include "gui/ClipboardManager.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "gui/BrightnessPanel.hpp"
 #include "core/automation/PixelAutomation.hpp"
@@ -11,6 +10,7 @@
 #include "SettingsWindow.hpp"
 namespace havel {
 class SettingsWindow;
+class ClipboardManager;  // Forward declare - lazy init
 class AutomationSuite : public QObject {
     Q_OBJECT
 
@@ -19,7 +19,8 @@ public:
     AutomationSuite(const AutomationSuite&) = delete;
     AutomationSuite& operator=(const AutomationSuite&) = delete;
 
-    ClipboardManager* getClipboardManager() const { return clipboardMgr; }
+    // Lazy initialization - only creates GUI if QApplication exists
+    ClipboardManager* getClipboardManager();
     ScreenshotManager* getScreenshotManager() const { return screenshotMgr; }
     BrightnessPanel* getBrightnessManager() const { return brightnessMgr; }
     PixelAutomation* getPixelAutomation() const { return pixelAutomation.get(); }
@@ -35,7 +36,8 @@ private:
     IO* io = nullptr;
     static AutomationSuite* s_instance;
 
-    ClipboardManager* clipboardMgr;
+    // Lazy-initialized GUI components
+    ClipboardManager* clipboardMgr = nullptr;  // Lazy init
     ScreenshotManager* screenshotMgr;
     BrightnessPanel* brightnessMgr;
     std::unique_ptr<PixelAutomation> pixelAutomation;

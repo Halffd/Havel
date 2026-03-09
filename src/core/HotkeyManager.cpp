@@ -260,7 +260,7 @@ void HotkeyManager::printHotkeys() const {
 HotkeyManager::HotkeyManager(
     IO &io, WindowManager &windowManager, MPVController &mpv,
     AudioManager &audioManager, Interpreter &interpreter,
-    ScreenshotManager &screenshotManager, BrightnessManager &brightnessManager,
+    ScreenshotManager *screenshotManager, BrightnessManager &brightnessManager,
     std::shared_ptr<net::NetworkManager> networkManager)
     : io(io), windowManager(windowManager), mpv(mpv),
       audioManager(audioManager), interpreter(interpreter),
@@ -1178,15 +1178,17 @@ void HotkeyManager::RegisterDefaultHotkeys() {
       clipboard->setText(text);
     }
   });
-  // Register screenshot hotkeys
-  AddHotkey("@|#Print", "~/scripts/ocrs.sh");
+  // Register screenshot hotkeys (only if screenshotManager is available)
+  if (screenshotManager) {
+    AddHotkey("@|#Print", "~/scripts/ocrs.sh");
 
-  io.Hotkey("@|Print", [this]() { screenshotManager.takeScreenshot(); });
+    io.Hotkey("@|Print", [this]() { screenshotManager->takeScreenshot(); });
 
-  io.Hotkey("@|+Print", [this]() { screenshotManager.takeRegionScreenshot(); });
+    io.Hotkey("@|+Print", [this]() { screenshotManager->takeRegionScreenshot(); });
 
-  io.Hotkey("@|Pause",
-            [this]() { screenshotManager.takeScreenshotOfCurrentMonitor(); });
+    io.Hotkey("@|Pause",
+              [this]() { screenshotManager->takeScreenshotOfCurrentMonitor(); });
+  }
   AddHotkey("@|numpad5",
             [this]() { io.Click(MouseButton::Left, MouseAction::Hold); });
 

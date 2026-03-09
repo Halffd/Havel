@@ -1,5 +1,7 @@
 #include "AutomationSuite.hpp"
 #include "gui/ClipboardManager.hpp"
+#include "gui/ScreenshotManager.hpp"
+#include "gui/BrightnessPanel.hpp"
 #include "core/automation/PixelAutomation.hpp"
 #include <QApplication>
 #include <QMenu>
@@ -46,37 +48,72 @@ ClipboardManager* AutomationSuite::getClipboardManager() {
     return clipboardMgr;
 }
 
+ScreenshotManager* AutomationSuite::getScreenshotManager() {
+    // Lazy initialization - only create if QApplication exists
+    if (!screenshotMgr) {
+        if (!QApplication::instance()) {
+            qWarning() << "Warning: ScreenshotManager requested but no QApplication exists";
+            return nullptr;
+        }
+        screenshotMgr = new ScreenshotManager(getClipboardManager());
+    }
+    return screenshotMgr;
+}
+
+BrightnessPanel* AutomationSuite::getBrightnessManager() {
+    // Lazy initialization - only create if QApplication exists
+    if (!brightnessMgr) {
+        if (!QApplication::instance()) {
+            qWarning() << "Warning: BrightnessPanel requested but no QApplication exists";
+            return nullptr;
+        }
+        brightnessMgr = new BrightnessPanel();
+    }
+    return brightnessMgr;
+}
+
 AutomationSuite::AutomationSuite(IO* io, QObject *parent)
-    : QObject(parent), io(io), clipboardMgr(nullptr) {
-    // Don't create GUI components in constructor - lazy init instead
-    screenshotMgr = new ScreenshotManager();
-    brightnessMgr = new BrightnessPanel();
+    : QObject(parent), io(io), clipboardMgr(nullptr), screenshotMgr(nullptr), brightnessMgr(nullptr) {
+    // DON'T create ANY GUI components in constructor - ALL lazy init
+    // Non-GUI components can be created here
     pixelAutomation = std::make_unique<PixelAutomation>();
+    
+    // Tray icon and menu are lazy - created on first access if needed
+    trayIcon = nullptr;
+    trayMenu = nullptr;
+}
 
-    // Tray icon can be created lazily too, but keep for now
-    trayIcon = new QSystemTrayIcon(this);
-    trayIcon->setIcon(QIcon::fromTheme("applications-utilities"));
-    trayIcon->show();
+void AutomationSuite::ensureTrayIcon() {
+    // Lazy tray icon creation
+    if (!trayIcon && QApplication::instance()) {
+        trayIcon = new QSystemTrayIcon(this);
+        trayIcon->setIcon(QIcon::fromTheme("applications-utilities"));
+        trayIcon->show();
 
-    trayMenu = new QMenu();
-    trayMenu->addAction("Clipboard History", [this]() {
-        if (auto* cb = getClipboardManager()) cb->show();
-    });
-    trayMenu->addAction("Screenshots", [this]() { screenshotMgr->show(); });
-    trayMenu->addAction("Brightness", [this]() { brightnessMgr->show(); });
-    trayMenu->addSeparator();
-    trayMenu->addAction("Settings", [this]() { showSettings(); });
-    trayMenu->addSeparator();
-    trayMenu->addAction("Quit", QApplication::quit);
+        trayMenu = new QMenu();
+        trayMenu->addAction("Clipboard History", [this]() {
+            if (auto* cb = getClipboardManager()) cb->show();
+        });
+        trayMenu->addAction("Screenshots", [this]() {
+            if (auto* sm = getScreenshotManager()) sm->show();
+        });
+        trayMenu->addAction("Brightness", [this]() {
+            if (auto* bm = getBrightnessManager()) bm->show();
+        });
+        trayMenu->addSeparator();
+        trayMenu->addAction("Settings", [this]() { showSettings(); });
+        trayMenu->addSeparator();
+        trayMenu->addAction("Quit", QApplication::quit);
 
-    trayIcon->setContextMenu(trayMenu);
+        trayIcon->setContextMenu(trayMenu);
+    }
 }
 
 void AutomationSuite::showSettings() {
     if (!settingsWindow) {
         settingsWindow = std::make_unique<SettingsWindow>(this);
     }
-    
+
     settingsWindow->show();
     settingsWindow->raise();
     settingsWindow->activateWindow();

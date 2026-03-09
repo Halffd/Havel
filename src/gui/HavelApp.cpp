@@ -263,6 +263,13 @@ void HavelApp::initializeComponents(bool isStartup) {
           Qt::QueuedConnection);
     });
     AutomationSuite::Instance(io.get());
+    
+    // Create tray icon only in GUI mode (not REPL)
+    if (!repl) {
+        if (auto* suite = AutomationSuite::Instance()) {
+            suite->ensureTrayIcon();
+        }
+    }
 
     // ClipboardManager is now lazy-initialized in AutomationSuite
     // No need to create it separately here

@@ -1,4 +1,7 @@
 #include "SettingsWindow.hpp"
+#include "gui/ClipboardManager.hpp"
+#include "gui/ScreenshotManager.hpp"
+#include "gui/BrightnessPanel.hpp"
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QGroupBox>

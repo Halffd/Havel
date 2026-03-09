@@ -401,6 +401,7 @@ class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<
   // Friend evaluators to access private members
   friend class ExprEvaluator;
   friend class StatementEvaluator;
+  friend class CallDispatcher;
 
 public:
   // Full interpreter with IO and all managers
@@ -412,16 +413,19 @@ public:
               ClipboardManager *clipboard_mgr = nullptr,
               PixelAutomation *pixel_automation = nullptr,
               const std::vector<std::string> &cli_args = {});
-  
+
   // Minimal interpreter for pure script execution (no IO/hotkeys)
   explicit Interpreter(const std::vector<std::string> &cli_args = {});
 
-  ~Interpreter() { 
+  ~Interpreter() {
     if (m_destroyed) m_destroyed->store(true);
     // Explicitly clear environment and lastResult to ensure proper cleanup
     environment.reset();
-    lastResult = HavelValue(nullptr);  // Clear any held references
+    lastResult = HavelValue(nullptr);
   }
+
+  // Get environment (for CallDispatcher)
+  std::shared_ptr<Environment>& getEnvironment() { return environment; }
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);

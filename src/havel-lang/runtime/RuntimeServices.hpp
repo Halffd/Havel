@@ -10,6 +10,7 @@
 #include "modules/io/InputModule.hpp"
 #include "modules/config/ConfigProcessor.hpp"
 #include "services/CallDispatcher.hpp"
+#include "services/MemberResolver.hpp"
 
 namespace havel {
 
@@ -41,6 +42,9 @@ struct RuntimeServices {
     // Function call dispatch (requires Interpreter pointer)
     std::unique_ptr<CallDispatcher> callDispatcher;  // Created by Interpreter
 
+    // Member access resolution (requires Interpreter pointer)
+    std::unique_ptr<MemberResolver> memberResolver;  // Created by Interpreter
+
     RuntimeServices() : shell(), input(nullptr) {}
 
     void setInput(IO* io) {
@@ -51,9 +55,13 @@ struct RuntimeServices {
         callDispatcher = std::make_unique<CallDispatcher>(interp);
     }
 
+    void createMemberResolver(Interpreter* interp) {
+        memberResolver = std::make_unique<MemberResolver>(interp);
+    }
+
     ~RuntimeServices() {
         delete input;
-        // callDispatcher is unique_ptr, auto-deleted
+        // callDispatcher and memberResolver are unique_ptr, auto-deleted
     }
 };
 

@@ -15,11 +15,13 @@ class Interpreter;
 
 /**
  * ExprEvaluator - Expression evaluation helper
- * 
+ *
  * Handles evaluation of all expression types.
  * Separated from Interpreter to reduce file size.
  */
 class ExprEvaluator {
+  friend class CallDispatcher;  // Allow CallDispatcher to use helper methods
+
 public:
     explicit ExprEvaluator(Interpreter* interp) : interpreter(interp) {}
     
@@ -54,17 +56,17 @@ public:
     void visitExpressionStatement(const ast::ExpressionStatement& node);
     void visitBacktickExpression(const ast::BacktickExpression& node);
     void visitShellCommandExpression(const ast::ShellCommandExpression& node);
-    
-private:
-    Interpreter* interpreter;
-    
-    // Helper methods
+
+    // Helper methods (public for use by CallDispatcher)
     HavelResult Evaluate(const ast::ASTNode& node);
     bool isError(const HavelResult& result);
     HavelValue unwrap(const HavelResult& result);
     std::string ValueToString(const HavelValue& value);
     double ValueToNumber(const HavelValue& value);
     bool ValueToBool(const HavelValue& value);
+
+private:
+    Interpreter* interpreter;
 };
 
 } // namespace havel

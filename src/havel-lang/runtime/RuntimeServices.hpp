@@ -9,6 +9,7 @@
 #include "modules/process/ShellExecutor.hpp"
 #include "modules/io/InputModule.hpp"
 #include "modules/config/ConfigProcessor.hpp"
+#include "services/CallDispatcher.hpp"
 
 namespace havel {
 
@@ -18,11 +19,11 @@ class Environment;
 
 /**
  * RuntimeServices - Long-lived runtime service container
- * 
+ *
  * Services are created once by Interpreter and reused
  * for all AST node evaluations. This avoids object churn
  * and provides consistent service state.
- * 
+ *
  * Usage:
  *   Interpreter interpreter;
  *   interpreter.services.shell.executeShell(cmd);
@@ -30,21 +31,29 @@ class Environment;
 struct RuntimeServices {
     // Process execution
     ShellExecutor shell;
-    
+
     // Input handling (requires IO pointer)
     InputModule* input;  // Non-owning, set by Interpreter
-    
+
     // Configuration DSL processing
     ConfigProcessor config;
-    
+
+    // Function call dispatch (requires Interpreter pointer)
+    std::unique_ptr<CallDispatcher> callDispatcher;  // Created by Interpreter
+
     RuntimeServices() : shell(), input(nullptr) {}
-    
+
     void setInput(IO* io) {
         input = new InputModule(io);
     }
-    
+
+    void createCallDispatcher(Interpreter* interp) {
+        callDispatcher = std::make_unique<CallDispatcher>(interp);
+    }
+
     ~RuntimeServices() {
         delete input;
+        // callDispatcher is unique_ptr, auto-deleted
     }
 };
 

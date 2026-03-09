@@ -167,12 +167,8 @@ void HavelApp::initializeComponents(bool isStartup) {
         false);
   }
   if (scriptFile.empty()) {
-    // Register all hotkeys
-    hotkeyManager->RegisterDefaultHotkeys();
-    hotkeyManager->RegisterMediaHotkeys();
-    hotkeyManager->RegisterWindowHotkeys();
-    hotkeyManager->RegisterSystemHotkeys();
-    hotkeyManager->registerAutomationHotkeys();
+    // Hotkeys are now defined in Havel scripts (hotkeys.hv)
+    // No hardcoded hotkeys in C++
     hotkeyManager->LoadHotkeyConfigurations();
   }
 

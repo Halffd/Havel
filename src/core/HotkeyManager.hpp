@@ -87,15 +87,7 @@ public:
   // Cache statistics
   void printCacheStats();
 
-  void RegisterDefaultHotkeys();
-
-  void RegisterMediaHotkeys();
-
-  void RegisterWindowHotkeys();
-
-  void RegisterSystemHotkeys();
-
-  void RegisterNetworkHotkeys();
+  // Hotkeys are now defined in Havel scripts, not hardcoded in C++
 
   void updateAllConditionalHotkeys();
 
@@ -157,7 +149,7 @@ public:
   std::unordered_map<std::string, automation::TaskPtr> automationTasks_;
   std::mutex automationMutex_;
 
-  void registerAutomationHotkeys();
+  // Automation hotkeys now defined in Havel scripts
   void startAutoClicker(const std::string &button = "left");
   void startAutoRunner(const std::string &direction = "w");
   void startAutoKeyPresser(const std::string &key = "space");

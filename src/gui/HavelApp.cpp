@@ -254,28 +254,8 @@ void HavelApp::initializeComponents(bool isStartup) {
     });
     AutomationSuite::Instance(io.get());
 
-    try {
-      if (!io) {
-        throw std::runtime_error("IO system not available");
-      }
-
-      info("Initializing ClipboardManager...");
-      clipboardManager = std::make_unique<ClipboardManager>(io.get());
-
-      // Verify clipboard manager was created successfully
-      if (!clipboardManager) {
-        throw std::runtime_error("Failed to create ClipboardManager instance");
-      }
-
-      // Initialize hotkeys only if enabled in config (default: disabled for language control)
-      if (Configs::Get().Get("ClipboardManager.AutoHotkeys", false)) {
-        clipboardManager->initializeHotkeys();
-      }
-    } catch (const std::exception &e) {
-      std::string errorMsg =
-          std::string("Failed to initialize ClipboardManager: ") + e.what();
-      error(errorMsg);
-    }
+    // ClipboardManager is now lazy-initialized in AutomationSuite
+    // No need to create it separately here
 #ifdef ENABLE_HAVEL_LANG
     guiManager = std::make_unique<GUIManager>(*windowManager);
     std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
@@ -283,7 +263,7 @@ void HavelApp::initializeComponents(bool isStartup) {
         *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
         audioManager.get(), guiManager.get(),
         AutomationSuite::Instance()->getScreenshotManager(),
-        clipboardManager.get(),
+        AutomationSuite::Instance()->getClipboardManager(),
         AutomationSuite::Instance()->getPixelAutomation());
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
@@ -408,8 +388,7 @@ void HavelApp::cleanup() noexcept {
   shutdownRequested = true;
 
   // Clean up components in reverse order of initialization
-  // Reset in order to ensure proper cleanup sequence
-  clipboardManager.reset();
+  // ClipboardManager is now managed by AutomationSuite (lazy init)
 
   // Reset hotkey manager safely - this will trigger its cleanup
   if (hotkeyManager) {

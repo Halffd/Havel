@@ -66,7 +66,9 @@ public:
   bool gui = true;
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
-  ClipboardManager* getClipboardManager() { return clipboardManager.get(); }
+  ClipboardManager* getClipboardManager() { 
+    return AutomationSuite::Instance() ? AutomationSuite::Instance()->getClipboardManager() : nullptr; 
+  }
 #else
   Interpreter *getInterpreter() { return nullptr; }
   ClipboardManager* getClipboardManager() { return nullptr; }
@@ -76,7 +78,6 @@ public:
   std::shared_ptr<MPVController> mpv;
   std::shared_ptr<havel::Interpreter> interpreter;
   std::shared_ptr<HotkeyManager> hotkeyManager;
-  std::shared_ptr<ClipboardManager> clipboardManager;
   std::shared_ptr<AudioManager> audioManager;
   std::shared_ptr<BrightnessManager> brightnessManager;
   std::shared_ptr<automation::AutomationManager> automationManager;

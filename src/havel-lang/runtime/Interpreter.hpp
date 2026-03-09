@@ -402,6 +402,7 @@ class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<
   friend class ExprEvaluator;
   friend class StatementEvaluator;
   friend class CallDispatcher;
+  friend class MemberResolver;
 
 public:
   // Full interpreter with IO and all managers
@@ -426,6 +427,9 @@ public:
 
   // Get environment (for CallDispatcher)
   std::shared_ptr<Environment>& getEnvironment() { return environment; }
+
+  // Set last result (for services)
+  void setLastResult(HavelResult result) { lastResult = result; }
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);

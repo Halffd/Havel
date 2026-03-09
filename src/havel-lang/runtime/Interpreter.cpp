@@ -315,6 +315,7 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
   // Initialize runtime services
   services.setInput(io);
   services.createCallDispatcher(this);
+  services.createMemberResolver(this);
 
   havel::modules::loadHostModules(*environment, this);
 }

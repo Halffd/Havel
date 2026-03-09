@@ -21,6 +21,7 @@ class Interpreter;
  */
 class ExprEvaluator {
   friend class CallDispatcher;  // Allow CallDispatcher to use helper methods
+  friend class MemberResolver;  // Allow MemberResolver to use helper methods
 
 public:
     explicit ExprEvaluator(Interpreter* interp) : interpreter(interp) {}

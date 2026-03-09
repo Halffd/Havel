@@ -260,17 +260,11 @@ private:
   void PlayPause();
   std::atomic<bool> winKeyComboDetected{false};
   std::chrono::steady_clock::time_point winKeyPressTime;
-  std::atomic<bool> genshinAutomationActive = false;
-  std::thread genshinThread;
 
   // Key tap callback storage
   std::vector<AnyKeyPressCallback> onAnyKeyPressedCallbacks;
   mutable std::mutex callbacksMutex; // Protect callback vector
 
-  // Genshin automation timer management
-  std::shared_ptr<std::atomic<bool>> fTimer = nullptr;
-  std::shared_ptr<std::atomic<bool>> spaceTimer = nullptr;
-  bool fRunning = false;
   WindowManager &windowManager;
   MPVController &mpv;
   AudioManager &audioManager;
@@ -381,17 +375,6 @@ private:
   std::string handleScancode(const std::string &input);
 
   std::string normalizeKeyName(const std::string &keyName);
-
-  // ANSI color codes for logging
-  const std::string COLOR_RESET = "\033[0m";
-  const std::string COLOR_RED = "\033[31m";
-  const std::string COLOR_GREEN = "\033[32m";
-  const std::string COLOR_YELLOW = "\033[33m";
-  const std::string COLOR_BLUE = "\033[34m";
-  const std::string COLOR_MAGENTA = "\033[35m";
-  const std::string COLOR_CYAN = "\033[36m";
-  const std::string COLOR_BOLD = "\033[1m";
-  const std::string COLOR_DIM = "\033[2m";
 
   // Enhanced logging methods
   void logKeyEvent(const std::string &key, const std::string &eventType,

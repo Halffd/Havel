@@ -1344,27 +1344,21 @@ std::string HotkeyManager::parseHotkeyString(const std::string &hotkeyStr) {
 
 void HotkeyManager::logHotkeyEvent(const std::string &eventType,
                                    const std::string &details) {
-  std::string timestamp =
-      "[" + COLOR_DIM + std::to_string(time(nullptr)) + COLOR_RESET + "]";
-  std::string type =
-      COLOR_BOLD + COLOR_CYAN + "[" + eventType + "]" + COLOR_RESET;
+  std::string timestamp = "[" + std::to_string(time(nullptr)) + "]";
+  std::string type = "[" + eventType + "]";
   info(timestamp + " " + type + " " + details);
 }
 
 void HotkeyManager::logKeyConversion(const std::string &from,
                                      const std::string &to) {
-  std::string arrow = COLOR_BOLD + COLOR_BLUE + " → " + COLOR_RESET;
-  std::string fromStr = COLOR_YELLOW + from + COLOR_RESET;
-  std::string toStr = COLOR_GREEN + to + COLOR_RESET;
-  logHotkeyEvent("KEY_CONVERT", fromStr + arrow + toStr);
+  std::string arrow = " → ";
+  logHotkeyEvent("KEY_CONVERT", from + arrow + to);
 }
 
 void HotkeyManager::logModeSwitch(const std::string &from,
                                   const std::string &to) {
-  std::string arrow = COLOR_BOLD + COLOR_MAGENTA + " → " + COLOR_RESET;
-  std::string fromStr = COLOR_YELLOW + from + COLOR_RESET;
-  std::string toStr = COLOR_GREEN + to + COLOR_RESET;
-  logHotkeyEvent("MODE_SWITCH", fromStr + arrow + toStr);
+  std::string arrow = " → ";
+  logHotkeyEvent("MODE_SWITCH", from + arrow + to);
 }
 
 void HotkeyManager::logKeyEvent(const std::string &key,
@@ -1373,13 +1367,11 @@ void HotkeyManager::logKeyEvent(const std::string &key,
   if (!verboseKeyLogging)
     return;
 
-  std::string timestamp =
-      "[" + COLOR_DIM + std::to_string(time(nullptr)) + COLOR_RESET + "]";
-  std::string type =
-      COLOR_BOLD + COLOR_CYAN + "[KEY_" + eventType + "]" + COLOR_RESET;
-  std::string keyInfo = COLOR_YELLOW + key + COLOR_RESET;
+  std::string timestamp = "[" + std::to_string(time(nullptr)) + "]";
+  std::string type = "[KEY_" + eventType + "]";
+  std::string keyInfo = key;
   std::string detailInfo =
-      details.empty() ? "" : " (" + COLOR_GREEN + details + COLOR_RESET + ")";
+      details.empty() ? "" : " (" + details + ")";
 
   info(timestamp + " " + type + " " + keyInfo + detailInfo);
 }
@@ -1389,10 +1381,8 @@ void HotkeyManager::logWindowEvent(const std::string &eventType,
   if (!verboseWindowLogging)
     return;
 
-  std::string timestamp =
-      "[" + COLOR_DIM + std::to_string(time(nullptr)) + COLOR_RESET + "]";
-  std::string type =
-      COLOR_BOLD + COLOR_MAGENTA + "[WINDOW_" + eventType + "]" + COLOR_RESET;
+  std::string timestamp = "[" + std::to_string(time(nullptr)) + "]";
+  std::string type = "[WINDOW_" + eventType + "]";
   wID activeWindow = WindowManager::GetActiveWindow();
   std::string windowClass = WindowManager::GetActiveWindowClass();
   std::string windowTitle;
@@ -1403,14 +1393,12 @@ void HotkeyManager::logWindowEvent(const std::string &eventType,
     windowTitle = "<error getting title>";
   }
 
-  std::string windowInfo = COLOR_BOLD + COLOR_CYAN + "Class: " + COLOR_RESET +
-                           windowClass + COLOR_BOLD + COLOR_CYAN +
-                           " | Title: " + COLOR_RESET + windowTitle +
-                           COLOR_BOLD + COLOR_CYAN + " | ID: " + COLOR_RESET +
-                           std::to_string(activeWindow);
+  std::string windowInfo = "Class: " + windowClass +
+                           " | Title: " + windowTitle +
+                           " | ID: " + std::to_string(activeWindow);
 
   std::string detailInfo =
-      details.empty() ? "" : " (" + COLOR_GREEN + details + COLOR_RESET + ")";
+      details.empty() ? "" : " (" + details + ")";
 
   info(timestamp + " " + type + " " + windowInfo + detailInfo);
 }
@@ -1442,10 +1430,9 @@ std::string HotkeyManager::getWindowInfo(wID windowId) {
     title = "<no window>";
   }
 
-  return COLOR_BOLD + COLOR_CYAN + "Class: " + COLOR_RESET + windowClass +
-         COLOR_BOLD + COLOR_CYAN + " | Title: " + COLOR_RESET + title +
-         COLOR_BOLD + COLOR_CYAN + " | ID: " + COLOR_RESET +
-         std::to_string(windowId);
+  return "Class: " + windowClass +
+         " | Title: " + title +
+         " | ID: " + std::to_string(windowId);
 }
 
 bool HotkeyManager::isVideoSiteActive() {
@@ -2089,9 +2076,7 @@ void HotkeyManager::printActiveWindowInfo() {
   info(formatLine("Window Class: \"", windowClass + "\""));
   info(formatLine("Window Geometry: ", geometry));
 
-  std::string gamingStatusConsole =
-      isGaming ? (COLOR_GREEN + std::string("YES ✓") + COLOR_RESET)
-               : (COLOR_RED + std::string("NO ✗") + COLOR_RESET);
+  std::string gamingStatusConsole = isGaming ? "YES ✓" : "NO ✗";
   info(formatLine("Is Gaming Window: ", gamingStatusConsole));
 
   {
@@ -2160,7 +2145,6 @@ void HotkeyManager::cleanup() {
     conditionEngine->invalidateCache();
   }
 
-  genshinAutomationActive = false;
   if (monitorThread.joinable()) {
     monitorThread.join();
   }

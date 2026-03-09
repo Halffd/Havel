@@ -72,17 +72,21 @@ void HotkeyManager::reevaluateConditionalHotkeys(IO &io) {
     // Evaluate condition based on common patterns
     bool shouldGrab = false;
 
-    // For function-based conditions, use the function directly
-    if (ch.usesFunctionCondition) {
-      if (ch.conditionFunc) {
-        shouldGrab = ((*ch.conditionFunc)());
+    // Evaluate condition based on variant type
+    if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+      // Function-based condition
+      const auto& func = std::get<std::function<bool()>>(ch.condition);
+      if (func) {
+        shouldGrab = func();
       }
-    } else {
+    } else if (std::holds_alternative<std::string>(ch.condition)) {
+      // String condition
+      const auto& condStr = std::get<std::string>(ch.condition);
       // For mode-based conditions
       std::string currentActiveMode = getMode();
-      if (ch.condition.find("mode == 'gaming'") != std::string::npos) {
+      if (condStr.find("mode == 'gaming'") != std::string::npos) {
         shouldGrab = (currentActiveMode == "gaming");
-      } else if (ch.condition.find("mode != 'gaming'") != std::string::npos) {
+      } else if (condStr.find("mode != 'gaming'") != std::string::npos) {
         shouldGrab = (currentActiveMode != "gaming");
       } else {
         // For other conditions, default to checking gaming window state
@@ -953,12 +957,10 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
-  ch.condition = "";            // No string condition, using function
-  ch.conditionFunc = std::make_shared<std::function<bool()>>(condition); // Store the condition function
-  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
-  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
-  ch.currentlyGrabbed = true;     // Start in ungrabbed state
-  ch.usesFunctionCondition = true; // Mark as function-based condition
+  ch.condition = condition;  // std::variant holds function
+  ch.trueAction = trueAction;
+  ch.falseAction = falseAction;
+  ch.currentlyGrabbed = true;
 
   // Add to pending buffer (thread-safe)
   {

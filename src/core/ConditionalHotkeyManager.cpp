@@ -30,7 +30,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
     std::function<void()> falseAction, int id) {
   debug("Registering conditional hotkey - Key: '{}', Condition: '{}', ID: {}",
         key, condition, id);
-  
+
   if (id == 0) {
     static int nextId = 1000;
     id = nextId++;
@@ -47,12 +47,10 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
-  ch.condition = condition;
-  ch.conditionFunc = nullptr;
-  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
-  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
+  ch.condition = condition;  // std::variant holds string
+  ch.trueAction = trueAction;
+  ch.falseAction = falseAction;
   ch.currentlyGrabbed = true;
-  ch.usesFunctionCondition = false;
   ch.monitoringEnabled = true;
 
   {
@@ -76,7 +74,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
     std::function<void()> falseAction, int id) {
   debug("Registering conditional hotkey - Key: '{}', Lambda Condition, ID: {}",
         key, id);
-  
+
   if (id == 0) {
     static int nextId = 1000;
     id = nextId++;
@@ -93,12 +91,10 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   ConditionalHotkey ch;
   ch.id = id;
   ch.key = key;
-  ch.condition = "";
-  ch.conditionFunc = std::make_shared<std::function<bool()>>(condition);
-  ch.trueAction = std::make_shared<std::function<void()>>(trueAction);
-  ch.falseAction = std::make_shared<std::function<void()>>(falseAction);
+  ch.condition = condition;  // std::variant holds function
+  ch.trueAction = trueAction;
+  ch.falseAction = falseAction;
   ch.currentlyGrabbed = true;
-  ch.usesFunctionCondition = true;
   ch.monitoringEnabled = true;
 
   {
@@ -107,7 +103,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
     conditionalHotkeyIds.push_back(id);
   }
 
-  // Register with IO
+  // Register with IO - no string condition for function-based
   io.Hotkey(key, action, "", id);
 
   // Initial evaluation
@@ -184,24 +180,29 @@ void ConditionalHotkeyManager::ForceUpdateAllConditionalHotkeys() {
 
 void ConditionalHotkeyManager::ReevaluateConditionalHotkeys() {
   std::lock_guard<std::mutex> lock(hotkeyMutex);
-  
+
   for (auto& ch : conditionalHotkeys) {
     if (!ch.monitoringEnabled) continue;
-    
+
     bool shouldGrab = false;
-    
-    if (ch.usesFunctionCondition) {
-      if (ch.conditionFunc) {
-        shouldGrab = ((*ch.conditionFunc)());
+
+    // Evaluate condition based on variant type
+    if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+      // Function condition
+      const auto& func = std::get<std::function<bool()>>(ch.condition);
+      if (func) {
+        shouldGrab = func();
       }
-    } else {
-      // For mode-based conditions
-      if (ch.condition.find("mode == 'gaming'") != std::string::npos) {
+    } else if (std::holds_alternative<std::string>(ch.condition)) {
+      // String condition
+      const auto& condStr = std::get<std::string>(ch.condition);
+      // For mode-based conditions (legacy special handling)
+      if (condStr.find("mode == 'gaming'") != std::string::npos) {
         shouldGrab = isGamingModeActive ? isGamingModeActive() : false;
-      } else if (ch.condition.find("mode != 'gaming'") != std::string::npos) {
+      } else if (condStr.find("mode != 'gaming'") != std::string::npos) {
         shouldGrab = isGamingModeActive ? !isGamingModeActive() : true;
       } else {
-        shouldGrab = EvaluateCondition(ch.condition);
+        shouldGrab = EvaluateCondition(condStr);
       }
     }
 
@@ -294,31 +295,37 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
   }
 
   if (verboseLogging) {
-    if (hotkey.usesFunctionCondition) {
+    if (std::holds_alternative<std::function<bool()>>(hotkey.condition)) {
       debug("Updating conditional hotkey - Key: '{}', Function Condition, "
             "CurrentlyGrabbed: {}",
             hotkey.key, hotkey.currentlyGrabbed);
     } else {
       debug("Updating conditional hotkey - Key: '{}', Condition: '{}', "
             "CurrentlyGrabbed: {}",
-            hotkey.key, hotkey.condition, hotkey.currentlyGrabbed);
+            hotkey.key, std::get<std::string>(hotkey.condition), hotkey.currentlyGrabbed);
     }
   }
 
   bool conditionMet;
   auto now = std::chrono::steady_clock::now();
 
-  if (hotkey.usesFunctionCondition) {
-    if (hotkey.conditionFunc) {
-      conditionMet = ((*hotkey.conditionFunc)());
+  // Check condition type
+  if (std::holds_alternative<std::function<bool()>>(hotkey.condition)) {
+    // Function condition - no caching
+    const auto& func = std::get<std::function<bool()>>(hotkey.condition);
+    if (func) {
+      conditionMet = func();
     } else {
       conditionMet = false;
     }
   } else {
+    // String condition - use caching
+    const auto& condStr = std::get<std::string>(hotkey.condition);
+    
     // Check cache first
     {
       std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
-      auto cacheIt = conditionCache.find(hotkey.condition);
+      auto cacheIt = conditionCache.find(condStr);
       if (cacheIt != conditionCache.end()) {
         auto age = std::chrono::duration_cast<std::chrono::milliseconds>(
                        now - cacheIt->second.timestamp)
@@ -328,7 +335,7 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
 
           if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
             info("Condition from cache: {} for {} ({}) - was:{} now:{}",
-                 conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
+                 conditionMet ? 1 : 0, condStr, hotkey.key,
                  hotkey.lastConditionResult, conditionMet);
           }
 
@@ -339,24 +346,24 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
     }
 
     // Evaluate condition
-    conditionMet = EvaluateCondition(hotkey.condition);
+    conditionMet = EvaluateCondition(condStr);
 
     // Update cache
     {
       std::lock_guard<std::mutex> cacheLock(conditionCacheMutex);
-      conditionCache[hotkey.condition] = {conditionMet, now};
+      conditionCache[condStr] = {conditionMet, now};
     }
   }
 
   // Log changes
   if (conditionMet != hotkey.lastConditionResult && verboseConditionLogging) {
-    if (hotkey.usesFunctionCondition) {
+    if (std::holds_alternative<std::function<bool()>>(hotkey.condition)) {
       info("Function condition changed: {} for {} - was:{} now:{}",
            conditionMet ? 1 : 0, hotkey.key, hotkey.lastConditionResult,
            conditionMet);
     } else {
       info("Condition changed: {} for {} ({}) - was:{} now:{}",
-           conditionMet ? 1 : 0, hotkey.condition, hotkey.key,
+           conditionMet ? 1 : 0, std::get<std::string>(hotkey.condition), hotkey.key,
            hotkey.lastConditionResult, conditionMet);
     }
   }
@@ -370,13 +377,23 @@ void ConditionalHotkeyManager::UpdateHotkeyState(ConditionalHotkey& hotkey,
     io.GrabHotkey(hotkey.id);
     hotkey.currentlyGrabbed = true;
     if (verboseLogging) {
-      debug("Grabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+      if (std::holds_alternative<std::string>(hotkey.condition)) {
+        debug("Grabbed conditional hotkey: {} ({})", hotkey.key, 
+              std::get<std::string>(hotkey.condition));
+      } else {
+        debug("Grabbed conditional hotkey: {} (function condition)", hotkey.key);
+      }
     }
   } else if (!conditionMet && hotkey.currentlyGrabbed) {
     io.UngrabHotkey(hotkey.id);
     hotkey.currentlyGrabbed = false;
     if (verboseLogging) {
-      debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key, hotkey.condition);
+      if (std::holds_alternative<std::string>(hotkey.condition)) {
+        debug("Ungrabbed conditional hotkey: {} ({})", hotkey.key,
+              std::get<std::string>(hotkey.condition));
+      } else {
+        debug("Ungrabbed conditional hotkey: {} (function condition)", hotkey.key);
+      }
     }
   }
 
@@ -437,13 +454,19 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
       }
 
       // Always update hotkeys with mode in condition
-      if (!needsUpdate && ch.condition.find("mode") != std::string::npos) {
-        needsUpdate = true;
-        updatedHotkeys.push_back(&ch);
+      if (!needsUpdate && std::holds_alternative<std::string>(ch.condition)) {
+        const auto& condStr = std::get<std::string>(ch.condition);
+        if (condStr.find("mode") != std::string::npos) {
+          needsUpdate = true;
+          updatedHotkeys.push_back(&ch);
+        }
       }
 
       if (needsUpdate) {
-        bool shouldGrab = EvaluateCondition(ch.condition);
+        bool shouldGrab = false;
+        if (std::holds_alternative<std::string>(ch.condition)) {
+          shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
+        }
 
         if (shouldGrab && !ch.currentlyGrabbed) {
           toGrab.push_back(ch.id);

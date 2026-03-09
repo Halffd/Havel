@@ -279,11 +279,6 @@ private:
   time_t lastVideoCheck{0};
   const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
   bool holdClick = false;
-  enum class ControlMode { BRIGHTNESS, GAMMA, TEMPERATURE, SHADOW_LIFT };
-  enum class TargetMonitor { ALL, MONITOR_0, MONITOR_1 };
-
-  ControlMode currentBrightnessMode = ControlMode::BRIGHTNESS;
-  TargetMonitor targetBrightnessMonitor = TargetMonitor::ALL;
 
   // Window groups
   std::vector<std::string> videoSites; // Will be loaded from config

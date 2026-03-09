@@ -34,19 +34,25 @@ void SettingsWindow::setupUI() {
     
     auto* clipboardBtn = new QPushButton("Clipboard Manager", this);
     connect(clipboardBtn, &QPushButton::clicked, [this]() {
-        automationSuite->getClipboardManager()->show();
+        if (auto* cb = automationSuite->getClipboardManager()) {
+            cb->show();
+        }
     });
     componentsLayout->addWidget(clipboardBtn);
-    
+
     auto* screenshotBtn = new QPushButton("Screenshot Manager", this);
     connect(screenshotBtn, &QPushButton::clicked, [this]() {
-        automationSuite->getScreenshotManager()->show();
+        if (auto* sm = automationSuite->getScreenshotManager()) {
+            sm->show();
+        }
     });
     componentsLayout->addWidget(screenshotBtn);
-    
+
     auto* brightnessBtn = new QPushButton("Brightness Manager", this);
     connect(brightnessBtn, &QPushButton::clicked, [this]() {
-        automationSuite->getBrightnessManager()->show();
+        if (auto* bm = automationSuite->getBrightnessManager()) {
+            bm->show();
+        }
     });
     componentsLayout->addWidget(brightnessBtn);
     

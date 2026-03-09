@@ -67,7 +67,8 @@ public:
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
   ClipboardManager* getClipboardManager() { 
-    return AutomationSuite::Instance() ? AutomationSuite::Instance()->getClipboardManager() : nullptr; 
+    auto* suite = AutomationSuite::Instance();
+    return suite ? suite->getClipboardManager() : nullptr; 
   }
 #else
   Interpreter *getInterpreter() { return nullptr; }

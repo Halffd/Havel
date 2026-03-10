@@ -230,11 +230,15 @@ public:
     std::condition_variable pw_command_cv;
     std::atomic<bool> pw_command_thread_running{false};
     std::thread pw_command_thread;
+    std::atomic<bool> pw_shutting_down{false};
+    bool pw_initialized = false;
+    bool pw_failed = false;
 
     void startPipeWireCommandThread();
     void stopPipeWireCommandThread();
     void processPipeWireCommands();
     void queuePipeWireCommand(const PipeWireCommand& cmd);
+    void cleanupPipeWire();
 #endif // HAVE_PIPEWIRE
 
     // PulseAudio specific

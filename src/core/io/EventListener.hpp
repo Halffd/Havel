@@ -28,6 +28,7 @@ namespace havel {
 
 // Forward declarations
 struct HotKey;
+class SignalHandler;
 
 // Event listener that handles all input devices with unified evdev logic
 class EventListener {
@@ -56,12 +57,6 @@ public:
 
   // Check if running
   bool IsRunning() const { return running.load(); }
-
-  // Register hotkey
-  void RegisterHotkey(int id, const HotKey &hotkey);
-
-  // Unregister hotkey
-  void UnregisterHotkey(int id);
 
   // Get key state
   bool GetKeyState(int evdevCode) const;
@@ -155,6 +150,11 @@ public:
     inputEventCallback = std::move(callback);
   }
 
+  // Callback to decide if an input event should be blocked from forwarding.
+  void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
+    inputBlockCallback = std::move(callback);
+  }
+
   // Set HotkeyExecutor for thread-safe callback execution
   void SetHotkeyExecutor(HotkeyExecutor *executor) {
     hotkeyExecutor = executor;
@@ -170,26 +170,10 @@ public:
 
   // Raw input events emitted before internal matching.
   InputEventCallback inputEventCallback = nullptr;
+  std::function<bool(const InputEvent &)> inputBlockCallback = nullptr;
 
   // Callback for input notification (for watchdog)
   std::function<void()> inputNotificationCallback = nullptr;
-
-  // Mouse gesture methods
-  void ProcessMouseGesture(int dx, int dy);
-  MouseGestureDirection GetGestureDirection(int dx, int dy) const;
-  bool
-  MatchGesturePattern(const std::vector<MouseGestureDirection> &expected,
-                      const std::vector<MouseGestureDirection> &actual) const;
-  void ResetMouseGesture();
-  void
-  RegisterGestureHotkey(int id,
-                        const std::vector<MouseGestureDirection> &directions);
-  bool IsGestureValid(const std::vector<MouseGestureDirection> &pattern,
-                      int minDistance) const;
-  std::vector<MouseGestureDirection>
-  ParseGesturePattern(const std::string &patternStr) const;
-  std::vector<MouseGestureDirection>
-  ParseGesturePattern(const HotKey &hotkey) const;
 
   // Release all pressed virtual keys (for clean shutdown)
   void ReleaseAllVirtualKeys();
@@ -200,10 +184,11 @@ public:
 
   // Signal handling methods
   void SetupSignalHandling();
-  void HandleSignal(int sig);
   void ProcessSignal();
 
 private:
+  friend class SignalHandler;
+  void HandleSignal(int sig);
   // Signal handling members
   std::atomic<bool> signalReceived{false};
   int signalFd = -1; // fd for signalfd to integrate with select loop
@@ -217,6 +202,8 @@ private:
   int currentMouseY = 0;
 
 private:
+  std::unique_ptr<SignalHandler> signalHandler;
+
   // Device info
   struct DeviceInfo {
     std::string path;
@@ -224,7 +211,6 @@ private:
     std::string name;
   };
 
-  void ExecuteHotkeyCallback(const HotKey &hotkey);
   // Main event loop (exact logic from IO.cpp)
   void EventLoop();
 
@@ -234,11 +220,29 @@ private:
   // Process mouse event
   void ProcessMouseEvent(const input_event &ev);
 
-  // Evaluate hotkeys (exact logic from IO.cpp)
+  // Hotkey evaluation helpers (legacy; kept for compatibility)
+  void ExecuteHotkeyCallback(const HotKey &hotkey);
   bool EvaluateHotkeys(int evdevCode, bool down, bool repeat);
-
-  // Evaluate combo hotkeys (exact logic from IO.cpp)
   bool EvaluateCombo(const HotKey &hotkey);
+  bool EvaluateWheelCombo(const HotKey &hotkey, int wheelDirection);
+  void QueueMouseMovementHotkey(int virtualKey);
+  void ProcessQueuedMouseMovementHotkeys();
+  void EvaluateMouseMovementHotkeys(int virtualKey);
+
+  // Mouse gesture helpers (legacy; kept for compatibility)
+  void ProcessMouseGesture(int dx, int dy);
+  MouseGestureDirection GetGestureDirection(int dx, int dy) const;
+  bool MatchGesturePattern(const std::vector<MouseGestureDirection> &expected,
+                           const std::vector<MouseGestureDirection> &actual) const;
+  void ResetMouseGesture();
+  void RegisterGestureHotkey(int id,
+                             const std::vector<MouseGestureDirection> &directions);
+  bool IsGestureValid(const std::vector<MouseGestureDirection> &pattern,
+                      int minDistance) const;
+  std::vector<MouseGestureDirection>
+  ParseGesturePattern(const std::string &patternStr) const;
+  std::vector<MouseGestureDirection>
+  ParseGesturePattern(const HotKey &hotkey) const;
 
   // Check modifier match (exact logic from IO.cpp)
   bool CheckModifierMatch(int requiredModifiers, bool wildcard) const;
@@ -251,21 +255,11 @@ private:
   // Update modifier state
   void UpdateModifierState(int evdevCode, bool down);
 
-  // Check if should block event
-  bool ShouldBlockEvent(int evdevCode, bool down);
-
   // Handle key remap
   int RemapKey(int evdevCode, bool down);
-  bool EvaluateWheelCombo(const HotKey &hotkey, int wheelDirection);
 
-  // Queue mouse movement hotkeys for async processing
-  void QueueMouseMovementHotkey(int virtualKey);
-
-  // Process queued mouse movement hotkeys
-  void ProcessQueuedMouseMovementHotkeys();
-
-  // Evaluate mouse movement hotkeys
-  void EvaluateMouseMovementHotkeys(int virtualKey);
+  // Helper function to check if specific physical keys are pressed
+  bool ArePhysicalKeysPressed(const std::vector<int> &requiredKeys) const;
 
   std::atomic<bool> running{false};
   std::atomic<bool> shutdown{false};
@@ -283,58 +277,33 @@ private:
   // State tracking (exact from IO.cpp)
   mutable std::shared_mutex stateMutex;
   std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
-  std::unordered_map<int, ActiveInput>
-      activeInputs; // Maps key code to ActiveInput
+  std::unordered_map<int, ActiveInput> activeInputs;
   ModifierState modifierState;
-  // Physical key tracking - tracks individual physical keys separately from
-  // modifier state
-  std::unordered_map<int, bool>
-      physicalKeyStates; // Maps evdev code to pressed/released state
+  std::unordered_map<int, bool> physicalKeyStates;
 
   // Track pressed virtual keys sent to uinput to release on shutdown
   std::unordered_set<int> pressedVirtualKeys;
-
-  // Hotkey management (exact from IO.cpp)
-  mutable std::shared_mutex hotkeyMutex;
-
-  // Hotkey optimization data structures
-  std::unordered_map<int, std::vector<int>>
-      combosByKey; // keyCode -> hotkey IDs
-  std::unordered_map<int, int>
-      comboPressedCount; // hotkey ID -> count of pressed keys
 
   // Key remapping (exact from IO.cpp)
   std::mutex remapMutex;
   std::map<int, int> keyRemaps;
   std::map<int, int> activeRemaps;
 
-  // Combo tracking - 0 means infinite time window (hold-based combos)
-  int comboTimeWindow = 0; // milliseconds (0 = infinite)
-
   // Mouse and scroll sensitivity
   double mouseSensitivity = 1.0;
   double scrollSpeed = 1.0;
 
-  // Mouse button state tracking
+  // Hotkey management (legacy)
+  mutable std::shared_mutex hotkeyMutex;
+  std::unordered_map<int, std::vector<int>> combosByKey;
+  std::unordered_map<int, int> comboPressedCount;
+  int comboTimeWindow = 0; // milliseconds (0 = infinite)
   std::map<int, bool> mouseButtonState;
-
-  // Current event context tracking
   bool isProcessingWheelEvent = false;
-  int currentWheelDirection = 0; // 1 for up, -1 for down, 0 for none
-
-  // Helper function to check if specific physical keys are pressed
-  bool ArePhysicalKeysPressed(const std::vector<int> &requiredKeys) const;
-
-  // Wheel event tracking for wheel combos
-  // Use zero-initialized time_point to avoid overflow when calculating durations
+  int currentWheelDirection = 0;
   std::chrono::steady_clock::time_point lastWheelUpTime{};
   std::chrono::steady_clock::time_point lastWheelDownTime{};
-
-  // Gesture recognition state
   MouseGestureEngine mouseGestureEngine;
-
-  // Mouse movement hotkey queuing
-  // Use zero-initialized time_point to avoid overflow when calculating durations
   std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
   mutable std::shared_mutex movementHotkeyMutex;
   std::queue<int> queuedMovementHotkeys;
@@ -346,8 +315,6 @@ private:
 
   // HotkeyExecutor for thread-safe callback execution
   HotkeyExecutor *hotkeyExecutor = nullptr;
-
-  // Hotkey execution deduplication - prevent double execution of same hotkey
   std::mutex hotkeyExecMutex;
   std::unordered_set<std::string> executingHotkeys;
 

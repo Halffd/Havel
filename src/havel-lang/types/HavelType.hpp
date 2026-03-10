@@ -15,6 +15,10 @@ class HavelType;
 class HavelStructType;
 class HavelEnumType;
 
+namespace ast {
+    struct StructMethodDef;  // Forward declaration
+}
+
 /**
  * Type checking modes for gradual typing
  */
@@ -296,7 +300,90 @@ private:
 };
 
 /**
- * Type registry - stores all defined struct and enum types
+ * Union type (e.g., Result<T,E> = Ok(T) | Error(E))
+ */
+class HavelUnionType : public HavelType {
+public:
+    struct Variant {
+        std::string name;
+        std::shared_ptr<HavelType> type;
+        
+        Variant(const std::string& n, std::shared_ptr<HavelType> t) : name(n), type(t) {}
+    };
+    
+    HavelUnionType(const std::string& name) 
+        : HavelType(Kind::Any), name_(name) {}
+    
+    void addVariant(const std::string& name, std::shared_ptr<HavelType> type) {
+        variants_.emplace_back(name, type);
+    }
+    
+    const std::vector<Variant>& getVariants() const { return variants_; }
+    const std::string& getName() const { return name_; }
+    
+    std::string toString() const override {
+        std::string result = name_ + " = ";
+        for (size_t i = 0; i < variants_.size(); ++i) {
+            if (i > 0) result += " | ";
+            result += variants_[i].name;
+            if (variants_[i].type) {
+                result += "(" + variants_[i].type->toString() + ")";
+            }
+        }
+        return result;
+    }
+    
+private:
+    std::string name_;
+    std::vector<Variant> variants_;
+};
+
+/**
+ * Record type (e.g., {name: String, age: Int})
+ */
+class HavelRecordType : public HavelType {
+public:
+    struct Field {
+        std::string name;
+        std::shared_ptr<HavelType> type;
+        
+        Field(const std::string& n, std::shared_ptr<HavelType> t) : name(n), type(t) {}
+    };
+    
+    HavelRecordType() : HavelType(Kind::Object) {}
+    
+    void addField(const std::string& name, std::shared_ptr<HavelType> type) {
+        fields_.emplace_back(name, type);
+        fieldIndex_[name] = fields_.size() - 1;
+    }
+    
+    const std::vector<Field>& getFields() const { return fields_; }
+    
+    const Field* getField(const std::string& name) const {
+        auto it = fieldIndex_.find(name);
+        if (it != fieldIndex_.end()) {
+            return &fields_[it->second];
+        }
+        return nullptr;
+    }
+    
+    std::string toString() const override {
+        std::string result = "{";
+        for (size_t i = 0; i < fields_.size(); ++i) {
+            if (i > 0) result += ", ";
+            result += fields_[i].name + ": " + fields_[i].type->toString();
+        }
+        result += "}";
+        return result;
+    }
+    
+private:
+    std::vector<Field> fields_;
+    std::unordered_map<std::string, size_t> fieldIndex_;
+};
+
+/**
+ * Type registry - stores all defined struct, enum, and type alias types
  */
 class TypeRegistry {
 public:
@@ -312,6 +399,10 @@ public:
     void registerEnumType(std::shared_ptr<HavelEnumType> type) {
         enumTypes_[type->getName()] = type;
     }
+    
+    void registerTypeAlias(const std::string& name, std::shared_ptr<HavelType> type) {
+        typeAliases_[name] = type;
+    }
 
     std::shared_ptr<HavelStructType> getStructType(const std::string& name) {
         auto it = structTypes_.find(name);
@@ -322,6 +413,11 @@ public:
         auto it = enumTypes_.find(name);
         return (it != enumTypes_.end()) ? it->second : nullptr;
     }
+    
+    std::shared_ptr<HavelType> getTypeAlias(const std::string& name) {
+        auto it = typeAliases_.find(name);
+        return (it != typeAliases_.end()) ? it->second : nullptr;
+    }
 
     bool hasStructType(const std::string& name) const {
         return structTypes_.find(name) != structTypes_.end();
@@ -330,12 +426,17 @@ public:
     bool hasEnumType(const std::string& name) const {
         return enumTypes_.find(name) != enumTypes_.end();
     }
+    
+    bool hasTypeAlias(const std::string& name) const {
+        return typeAliases_.find(name) != typeAliases_.end();
+    }
 
 private:
     TypeRegistry() = default;
-    
+
     std::unordered_map<std::string, std::shared_ptr<HavelStructType>> structTypes_;
     std::unordered_map<std::string, std::shared_ptr<HavelEnumType>> enumTypes_;
+    std::unordered_map<std::string, std::shared_ptr<HavelType>> typeAliases_;
 };
 
 /**

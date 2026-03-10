@@ -97,7 +97,7 @@ void registerDetectorModule(Environment& env, HostContext&) {
 #else
         (*result)["os"] = HavelValue("Unknown");
 #endif
-        
+
         (*result)["arch"] = HavelValue(
 #ifdef __x86_64__
             "x86_64"
@@ -108,6 +108,16 @@ void registerDetectorModule(Environment& env, HostContext&) {
 #endif
         );
         
+        // Add window manager and desktop environment detection
+        (*result)["windowManager"] = HavelValue(WindowManagerDetector::GetWMName());
+        (*result)["displayServer"] = HavelValue(WindowManagerDetector::IsWayland() ? "Wayland" : "X11");
+        (*result)["isWayland"] = HavelValue(WindowManagerDetector::IsWayland());
+        (*result)["isX11"] = HavelValue(WindowManagerDetector::IsX11());
+        
+        // Desktop environment detection
+        const char* de = std::getenv("XDG_CURRENT_DESKTOP");
+        (*result)["desktopEnvironment"] = HavelValue(de ? de : "Unknown");
+
         return HavelValue(result);
     })));
 }

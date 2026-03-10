@@ -70,25 +70,29 @@ void registerRuntimeModule(Environment& env, Interpreter* interpreter) {
         }
 
         std::string id;
-        if (args[0].is<std::string>()) {
-            id = args[0].get<std::string>();
+        if (args[0].isString()) {
+            id = args[0].asString();
         } else {
             return HavelRuntimeError("runOnce: first argument must be a string id");
         }
 
         // Note: Full implementation requires hasRunOnce/markRunOnce in Interpreter
         // For now, just execute the command if provided
-        
+
         // If there's a command string argument, execute it
-        if (args.size() >= 2 && args[1].is<std::string>()) {
-            std::string cmd = args[1].get<std::string>();
-            auto result = Launcher::runShell(cmd);
-            if (result.success) {
-                info("runOnce('{}'): Command executed successfully", id);
-                return HavelValue(true);
+        if (args.size() >= 2) {
+            if (args[1].isString()) {
+                std::string cmd = args[1].asString();
+                auto result = Launcher::runShell(cmd);
+                if (result.success) {
+                    info("runOnce('{}'): Command executed successfully", id);
+                    return HavelValue(true);
+                } else {
+                    error("runOnce('{}'): Command failed: {}", id, result.error);
+                    return HavelValue(false);
+                }
             } else {
-                error("runOnce('{}'): Command failed: {}", id, result.error);
-                return HavelValue(false);
+                return HavelRuntimeError("runOnce: second argument must be a command string");
             }
         }
 

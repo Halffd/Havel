@@ -55,7 +55,22 @@ public:
 
     Kind getKind() const { return kind_; }
 
-    virtual std::string toString() const = 0;
+    virtual std::string toString() const {
+        switch (kind_) {
+            case Kind::Any: return "Any";
+            case Kind::Num: return "Num";
+            case Kind::Str: return "Str";
+            case Kind::Bool: return "Bool";
+            case Kind::Array: return "Array";
+            case Kind::Object: return "Object";
+            case Kind::Struct: return "Struct";
+            case Kind::Enum: return "Enum";
+            case Kind::Func: return "Func";
+            case Kind::Null: return "Null";
+            default: return "Unknown";
+        }
+    }
+    
     virtual bool isCompatible(const HavelType& other) const {
         // Base implementation: types are compatible if they have the same kind
         // or if one is Any type
@@ -71,6 +86,14 @@ public:
 
 private:
     Kind kind_;
+};
+
+/**
+ * Simple concrete type for basic types (Num, Str, Bool, etc.)
+ */
+class SimpleType : public HavelType {
+public:
+    explicit SimpleType(Kind kind) : HavelType(kind) {}
 };
 
 /**
@@ -342,5 +365,29 @@ private:
     TypeChecker() = default;
     TypeMode mode_ = TypeMode::None;
 };
+
+// ============================================================================
+// Inline factory method implementations
+// ============================================================================
+
+inline std::shared_ptr<HavelType> HavelType::any() {
+    return std::make_shared<SimpleType>(Kind::Any);
+}
+
+inline std::shared_ptr<HavelType> HavelType::num() {
+    return std::make_shared<SimpleType>(Kind::Num);
+}
+
+inline std::shared_ptr<HavelType> HavelType::str() {
+    return std::make_shared<SimpleType>(Kind::Str);
+}
+
+inline std::shared_ptr<HavelType> HavelType::boolean() {
+    return std::make_shared<SimpleType>(Kind::Bool);
+}
+
+inline std::shared_ptr<HavelType> HavelType::null() {
+    return std::make_shared<SimpleType>(Kind::Null);
+}
 
 } // namespace havel

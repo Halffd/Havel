@@ -1,9 +1,10 @@
 #include "EventListener.hpp"
 #include "KeyMap.hpp"
 #include "HotkeyExecutor.hpp"
-#include "core/IO.hpp"
-#include "core/MouseGestureTypes.hpp"
+#include "SignalHandler.hpp"
 #include "core/ConfigManager.hpp"
+#include "core/HotkeyManager.hpp"
+#include "core/IO.hpp"
 #include "utils/Logger.hpp"
 #include <cstring>
 #include <fcntl.h>
@@ -13,47 +14,10 @@
 #include <shared_mutex>
 #include <sys/ioctl.h>
 #include <sys/select.h>
-#include <sys/signalfd.h>
 #include <unistd.h>
 
 namespace havel {
 
-// Global pointer for signal handler access (Layer 1 & 2)
-static EventListener *g_eventListener = nullptr;
-
-// Async-signal-safe cleanup handler (Layer 2)
-// This is called IMMEDIATELY when a critical signal is received
-// It uses only async-signal-safe functions to ensure it never hangs
-static void SignalCleanupHandler(int sig) {
-  // FIRST and MOST IMPORTANT: Force ungrab all devices
-  // This is the critical operation that prevents stuck grabs
-  if (g_eventListener) {
-    g_eventListener->ForceUngrabAllDevices();
-  }
-
-  // Then exit immediately - don't try to do anything else in signal handler
-  // _exit is async-signal-safe, exit is not
-  _exit(sig);
-}
-
-// Install traditional signal handlers for critical signals
-// These work even if the event loop is hung or crashed
-static void InstallSignalHandlers() {
-  struct sigaction sa;
-  sa.sa_flags = 0;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_handler = SignalCleanupHandler;
-
-  // Install for critical signals - these MUST release grabs
-  // Even if the program crashes, these will fire
-  sigaction(SIGINT, &sa, nullptr);
-  sigaction(SIGTERM, &sa, nullptr);
-  sigaction(SIGABRT, &sa, nullptr);
-  sigaction(SIGSEGV, &sa, nullptr);
-  sigaction(SIGQUIT, &sa, nullptr);
-
-  debug("Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, SIGSEGV, SIGQUIT");
-}
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
     return "[none]";
@@ -94,22 +58,14 @@ std::string EventListener::GetActiveInputsString() const {
  * 6. Forwards events through uinput (with optional blocking)
  */
 EventListener::EventListener() {
-  // Set global pointer for signal handler access (Layer 1)
-  g_eventListener = this;
-  
-  // Install traditional signal handlers BEFORE anything else (Layer 2)
-  // These will fire even if the event loop hangs or crashes
-  InstallSignalHandlers();
-  
+  signalHandler = std::make_unique<SignalHandler>(this);
+  signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
 }
 
 EventListener::~EventListener() {
   Stop();
-  
-  // Clear global pointer - signal handlers will no longer try to access us
-  g_eventListener = nullptr;
-  
+
   if (shutdownFd >= 0) {
     close(shutdownFd);
   }
@@ -211,10 +167,8 @@ void EventListener::Stop() {
   }
   devices.clear();
 
-  // Close the signal file descriptor if it was created
-  if (signalFd >= 0) {
-    close(signalFd);
-    signalFd = -1;
+  if (signalHandler) {
+    signalHandler->Shutdown();
   }
 }
 
@@ -267,82 +221,6 @@ void EventListener::EmergencyReleaseAllKeys() {
     return;
   }
   uinputDevice->ReleaseAllKeys();
-}
-
-void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
-  std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
-
-  // If it's a combo hotkey, build the key index
-  if (hotkey.type == HotkeyType::Combo) {
-    for (const auto &part : hotkey.comboSequence) {
-      int keyCode = 0;
-      if (part.type == HotkeyType::Keyboard ||
-          part.type == HotkeyType::MouseMove) {
-        keyCode = static_cast<int>(part.key);
-      } else if (part.type == HotkeyType::MouseButton) {
-        keyCode = part.mouseButton;
-      } else if (part.type == HotkeyType::MouseWheel) {
-        // Skip wheel parts for now
-        continue;
-      }
-
-      if (keyCode != 0) {
-        combosByKey[keyCode].push_back(id);
-      }
-    }
-
-    // Initialize pressed count for this combo
-    comboPressedCount[id] = 0;
-  }
-  // Handle mouse gesture hotkeys
-  else if (hotkey.type == HotkeyType::MouseGesture) {
-    // Parse the gesture pattern and register it
-    std::vector<MouseGestureDirection> directions;
-
-    // Parse directions from the gesture pattern string
-    directions = ParseGesturePattern(hotkey);
-
-    if (!directions.empty()) {
-      RegisterGestureHotkey(id, directions);
-    }
-  }
-}
-
-void EventListener::UnregisterHotkey(int id) {
-  std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
-  std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-
-  // Remove from hotkeys map
-  auto it = HotkeyManager::RegisteredHotkeys().find(id);
-  if (it == HotkeyManager::RegisteredHotkeys().end())
-    return;
-
-  // If it's a combo, clean up the key index
-  if (it->second.type == HotkeyType::Combo) {
-    // Remove from combosByKey
-    for (auto &[keyCode, ids] : combosByKey) {
-      auto idIt = std::find(ids.begin(), ids.end(), id);
-      if (idIt != ids.end()) {
-        ids.erase(idIt);
-
-        // If no more combos use this key, remove the entry
-        if (ids.empty()) {
-          combosByKey.erase(keyCode);
-        }
-      }
-    }
-
-    // Remove from comboPressedCount
-    comboPressedCount.erase(id);
-  }
-  // Handle mouse gesture hotkeys
-  else if (it->second.type == HotkeyType::MouseGesture) {
-    // Remove from gesture hotkeys
-    mouseGestureEngine.UnregisterHotkey(id);
-  }
-
-  // Remove the hotkey
-  HotkeyManager::RegisteredHotkeys().erase(it);
 }
 
 bool EventListener::GetKeyState(int evdevCode) const {
@@ -446,7 +324,7 @@ void EventListener::EventLoop() {
     FD_SET(shutdownFd, &readfds);
 
     // Add signal fd if available
-    int signalFdToUse = signalFd;
+    int signalFdToUse = signalHandler ? signalHandler->GetSignalFd() : -1;
     if (signalFdToUse >= 0) {
       FD_SET(signalFdToUse, &readfds);
       if (signalFdToUse > maxFd) {
@@ -531,182 +409,198 @@ void EventListener::EventLoop() {
   debug("EventListener: Stopped");
 }
 void EventListener::ProcessKeyboardEvent(const input_event &ev) {
-  // Notify that input was received (for watchdog)
   if (inputNotificationCallback) {
     inputNotificationCallback();
   }
 
+  // New minimal forwarding path: emit event, consult block callback, forward.
+  if (ev.type == EV_KEY) {
+    bool down = (ev.value == 1 || ev.value == 2);
+    InputEvent event;
+    event.kind = InputEventKind::MouseButton;
+    event.code = ev.code;
+    event.value = ev.value;
+    event.down = down;
+    event.repeat = (ev.value == 2);
+    event.modifiers = GetCurrentModifiersMask();
+
+    if (inputEventCallback) {
+      inputEventCallback(event);
+    }
+
+    bool shouldBlock = false;
+    if (inputBlockCallback) {
+      shouldBlock = inputBlockCallback(event);
+    }
+
+    if (!shouldBlock && !blockInput.load()) {
+      SendUinputEvent(EV_KEY, ev.code, ev.value);
+    } else if (!down) {
+      SendUinputEvent(EV_KEY, ev.code, 0);
+    }
+    return;
+  }
+
+  if (ev.type == EV_REL) {
+    if (ev.code == REL_X || ev.code == REL_Y) {
+      double scaledValue = ev.value * IO::mouseSensitivity;
+      int32_t scaledInt = static_cast<int32_t>(scaledValue);
+
+      InputEvent event;
+      event.kind = InputEventKind::MouseMove;
+      event.code = ev.code;
+      event.value = scaledInt;
+      event.dx = (ev.code == REL_X) ? scaledInt : 0;
+      event.dy = (ev.code == REL_Y) ? scaledInt : 0;
+      event.modifiers = GetCurrentModifiersMask();
+
+      if (inputEventCallback) {
+        inputEventCallback(event);
+      }
+      if (mouseMovementCallback) {
+        mouseMovementCallback(event.dx, event.dy);
+      }
+
+      bool shouldBlock = false;
+      if (inputBlockCallback) {
+        shouldBlock = inputBlockCallback(event);
+      }
+
+      if (!shouldBlock && !blockInput.load()) {
+        SendUinputEvent(EV_REL, ev.code, scaledInt);
+      }
+
+      if (ev.code == REL_X) {
+        currentMouseX += scaledInt;
+      } else if (ev.code == REL_Y) {
+        currentMouseY += scaledInt;
+      }
+      return;
+    }
+
+    if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
+      InputEvent event;
+      event.kind = InputEventKind::MouseWheel;
+      event.code = ev.code;
+      event.value = ev.value;
+      event.dy = (ev.code == REL_WHEEL) ? ((ev.value > 0) ? 1 : -1) : 0;
+      event.dx = (ev.code == REL_HWHEEL) ? ((ev.value > 0) ? 1 : -1) : 0;
+      event.modifiers = GetCurrentModifiersMask();
+
+      if (inputEventCallback) {
+        inputEventCallback(event);
+      }
+
+      bool shouldBlock = false;
+      if (inputBlockCallback) {
+        shouldBlock = inputBlockCallback(event);
+      }
+
+      if (!shouldBlock && !blockInput.load()) {
+        double scaledValue = ev.value * IO::scrollSpeed;
+        int32_t scaledInt = static_cast<int32_t>(scaledValue);
+        if (scaledInt == 0 && ev.value != 0 && IO::scrollSpeed >= 1.0) {
+          scaledInt = (ev.value > 0) ? 1 : -1;
+        }
+        SendUinputEvent(EV_REL, ev.code, scaledInt);
+      }
+      return;
+    }
+
+    if (!blockInput.load()) {
+      SendUinputEvent(ev.type, ev.code, ev.value);
+    }
+    return;
+  }
+
+  if (ev.type == EV_ABS) {
+    InputEvent event;
+    event.kind = InputEventKind::Absolute;
+    event.code = ev.code;
+    event.value = ev.value;
+    event.modifiers = GetCurrentModifiersMask();
+
+    if (inputEventCallback) {
+      inputEventCallback(event);
+    }
+
+    bool shouldBlock = false;
+    if (inputBlockCallback) {
+      shouldBlock = inputBlockCallback(event);
+    }
+
+    if (ev.code == ABS_X) {
+      currentMouseX = ev.value;
+    } else if (ev.code == ABS_Y) {
+      currentMouseY = ev.value;
+    }
+
+    if (!shouldBlock && !blockInput.load()) {
+      SendUinputEvent(ev.type, ev.code, ev.value);
+    }
+    return;
+  }
+
   int originalCode = ev.code;
-  int mappedCode = originalCode;
   bool repeat = (ev.value == 2);
   bool down = (ev.value == 1 || repeat);
+  int mappedCode = RemapKey(originalCode, down);
 
-  // Get key name for callback notification
-  std::string keyName = KeyMap::EvdevToString(originalCode);
-  if (keyName.empty()) {
-    // If no name found, use a generic format
-    keyName = "evdev_" + std::to_string(originalCode);
-  }
-
-  // Send any key press notification
-  if (anyKeyPressCallback && down) {
-    anyKeyPressCallback(keyName);
-  }
-
-  // Handle key remapping
-  {
-    std::lock_guard<std::mutex> lock(remapMutex);
-    if (down && !repeat) {
-      // On press: apply remapping and store the mapping
-      auto remapIt = keyRemaps.find(originalCode);
-      if (remapIt != keyRemaps.end()) {
-        mappedCode = remapIt->second;
-      }
-      // Store the mapping for this key press
-      activeRemaps[originalCode] = mappedCode;
-    } else if (!down) {
-      // On release: use the same mapping we stored on press
-      auto it = activeRemaps.find(originalCode);
-      if (it != activeRemaps.end()) {
-        mappedCode = it->second;
-        // Remove from active remaps after we've used it for release
-        activeRemaps.erase(it);
-      } else {
-        // Fallback: try to get remapping from keyRemaps
-        auto remapIt = keyRemaps.find(originalCode);
-        if (remapIt != keyRemaps.end()) {
-          mappedCode = remapIt->second;
-        }
-      }
-    }
-  }
-
-  // Update key state
   {
     std::unique_lock<std::shared_mutex> lock(stateMutex);
     evdevKeyState[originalCode] = down;
-
-    // Update modifier state FIRST (before calculating currentModifiers)
-    UpdateModifierState(originalCode, down);
-
-    // NOW calculate modifiers (ModifierState is already updated)
-    int currentModifiers = 0;
-    if (modifierState.IsCtrlPressed())
-      currentModifiers |= Modifier::Ctrl;
-    if (modifierState.IsShiftPressed())
-      currentModifiers |= Modifier::Shift;
-    if (modifierState.IsAltPressed())
-      currentModifiers |= Modifier::Alt;
-    if (modifierState.IsMetaPressed())
-      currentModifiers |= Modifier::Meta;
-
-    // Track active inputs for combos - store BOTH original and mapped codes for
-    // remapping support
+    UpdateModifierState(mappedCode, down);
     if (down) {
-      // Store mapped code (what the system sees)
-      activeInputs[mappedCode] = ActiveInput(currentModifiers);
-
-      // Store original code too (what combo might be registered as)
-      if (mappedCode != originalCode) {
-        activeInputs[originalCode] = ActiveInput(currentModifiers);
-      }
-
-      // Track physical key state separately for precise combo matching
-      physicalKeyStates[originalCode] = true;
-
-      debug("🔑 Key PRESS: original={} mapped={} | Modifiers: {}{}{}{}",
-            originalCode, mappedCode,
-            modifierState.IsCtrlPressed() ? "Ctrl+" : "",
-            modifierState.IsShiftPressed() ? "Shift+" : "",
-            modifierState.IsAltPressed() ? "Alt+" : "",
-            modifierState.IsMetaPressed() ? "Meta+" : "");
-
-      // CHECK ALL COMBOS THAT MIGHT INCLUDE THIS KEY
-      // Loop through ALL hotkeys to find combos (more reliable than indexed
-      // lookup)
-      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-      for (auto &[hotkeyId, hotkey] : HotkeyManager::RegisteredHotkeys()) {
-        if (!hotkey.enabled || hotkey.type != HotkeyType::Combo) {
-          continue;
-        }
-
-        // Check if this combo includes the pressed key (mapped or original)
-        bool comboIncludesKey = false;
-        for (const auto &comboKey : hotkey.comboSequence) {
-          int comboKeyCode = (comboKey.type == HotkeyType::Keyboard)
-                                 ? static_cast<int>(comboKey.key)
-                             : (comboKey.type == HotkeyType::MouseButton)
-                                 ? comboKey.mouseButton
-                                 : -1;
-
-          if (comboKeyCode == mappedCode || comboKeyCode == originalCode) {
-            comboIncludesKey = true;
-            break;
-          }
-        }
-
-        // If this combo includes the key that was just pressed, evaluate it
-        try {
-          if (comboIncludesKey && EvaluateCombo(hotkey)) {
-            debug("✅ Combo hotkey '{}' triggered on key press", hotkey.alias);
-            ExecuteHotkeyCallback(hotkey);
-          }
-        } catch (const std::system_error &e) {
-          error("System error evaluating combo '{}': {}", hotkey.alias,
-                e.what());
-          // Continue with other hotkeys instead of crashing
-          continue;
-        } catch (const std::exception &e) {
-          error("Exception evaluating combo '{}': {}", hotkey.alias, e.what());
-          // Continue with other hotkeys instead of crashing
-          continue;
-        }
-      }
+      keyDownTime[originalCode] = std::chrono::steady_clock::now();
     } else {
-      // KEY UP - ALWAYS clear from activeInputs
-      activeInputs.erase(mappedCode);
-      if (mappedCode != originalCode) {
-        activeInputs.erase(originalCode);
-      }
-
-      // Clear physical key state as well
-      physicalKeyStates[originalCode] = false;
-
-      debug("🔼 Key UP: {} ({})", mappedCode,
-            KeyMap::EvdevToString(mappedCode));
+      keyDownTime.erase(originalCode);
     }
-    // Modifier state was already updated earlier
+  }
+
+  if (down && emergencyShutdownKey != 0 && originalCode == emergencyShutdownKey) {
+    error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
+    running.store(false);
+    shutdown.store(true);
+    ForceUngrabAllDevices();
+    if (shutdownFd >= 0) {
+      uint64_t val = 1;
+      write(shutdownFd, &val, sizeof(val));
+    }
+    return;
+  }
+
+  InputEvent event;
+  event.kind = InputEventKind::Key;
+  event.code = originalCode;
+  event.value = ev.value;
+  event.down = down;
+  event.repeat = repeat;
+  event.originalCode = originalCode;
+  event.mappedCode = mappedCode;
+  event.keyName = KeyMap::EvdevToString(mappedCode);
+  event.modifiers = GetCurrentModifiersMask();
+
+  if (down && anyKeyPressCallback) {
+    anyKeyPressCallback(event.keyName);
   }
 
   if (inputEventCallback) {
-    InputEvent event;
-    event.kind = InputEventKind::Key;
-    event.code = originalCode;
-    event.value = ev.value;
-    event.down = down;
-    event.repeat = repeat;
-    event.originalCode = originalCode;
-    event.mappedCode = mappedCode;
-    event.keyName = keyName;
-    event.modifiers = GetCurrentModifiersMask();
     inputEventCallback(event);
   }
 
-  // Evaluate hotkeys
-  bool shouldBlock = EvaluateHotkeys(originalCode, down, repeat);
+  bool shouldBlock = false;
+  if (inputBlockCallback) {
+    shouldBlock = inputBlockCallback(event);
+  }
 
   if (shouldBlock) {
     if (!down) {
-      // Always release grabbed keys to prevent sticking
       SendUinputEvent(EV_KEY, mappedCode, 0);
-    } else {
-      debug("Blocking key {} down (mapped from {})", mappedCode, originalCode);
-      // Don't send the down/repeat event
     }
-  } else {
-    // Not blocked, forward as-is
-    SendUinputEvent(EV_KEY, mappedCode, ev.value);
+    return;
   }
+
+  SendUinputEvent(EV_KEY, mappedCode, ev.value);
 }
 void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
   if (!hotkey.callback)
@@ -2016,50 +1910,20 @@ void EventListener::RegisterGestureHotkey(
 }
 
 void EventListener::SetupSignalHandling() {
-  // LAYER 1: Traditional signal handlers already installed in constructor
-  // These provide async-signal-safe cleanup for SIGINT, SIGTERM, SIGABRT, SIGSEGV
-  
-  // LAYER 2: signalfd for graceful shutdown in event loop
-  // This is a SECONDARY mechanism - traditional handlers are the primary defense
-  
-  // Initialize signal mask to block the signals we want to handle via signalfd
-  sigemptyset(&signalMask);
-  sigaddset(&signalMask, SIGTERM);
-  sigaddset(&signalMask, SIGINT);
-  sigaddset(&signalMask, SIGHUP);
-  sigaddset(&signalMask, SIGQUIT);
-
-  // Block these signals for all threads in the process
-  if (pthread_sigmask(SIG_BLOCK, &signalMask, nullptr) != 0) {
-    error("Failed to block signals for signalfd");
-    return;
+  if (signalHandler) {
+    signalHandler->SetupSignalfd();
   }
-
-  // Create the signalfd
-  signalFd = signalfd(-1, &signalMask, SFD_CLOEXEC);
-  if (signalFd == -1) {
-    error("Failed to create signalfd: {}", strerror(errno));
-    return;
-  }
-
-  debug("Signal handling: signalfd created (traditional handlers are primary defense)");
 }
 
 void EventListener::ProcessSignal() {
-  if (signalFd < 0)
-    return;
-
-  struct signalfd_siginfo si;
-  ssize_t s = read(signalFd, &si, sizeof(si));
-  if (s != sizeof(si)) {
-    error("Failed to read from signalfd: {}", strerror(errno));
-    return;
+  if (signalHandler) {
+    signalHandler->ProcessSignal();
   }
+}
 
-  int sig = si.ssi_signo;
+void EventListener::HandleSignal(int sig) {
   debug("EventListener received signal: {}", sig);
 
-  // Handle emergency cleanup immediately in the same thread
   switch (sig) {
   case SIGTERM:
   case SIGINT:
@@ -2067,26 +1931,16 @@ void EventListener::ProcessSignal() {
   case SIGQUIT:
     debug("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
-
-    // LAYER 2: Use ForceUngrabAllDevices() for consistent cleanup
-    // (Layer 1 traditional handlers would have already done this if they fired)
     ForceUngrabAllDevices();
-
-    // Stop the event listener
     running.store(false);
     shutdown.store(true);
-
-    // Signal shutdown
     if (shutdownFd >= 0) {
       uint64_t val = 1;
       write(shutdownFd, &val, sizeof(val));
     }
-
     debug("Emergency shutdown complete in EventListener thread");
     _exit(sig);
-    break;
   default:
-    // Other signals, just log
     debug("Received unhandled signal: {}", sig);
     break;
   }

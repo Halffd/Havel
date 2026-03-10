@@ -469,36 +469,7 @@ bool AudioManager::playNotificationSound() {
 
 void AudioManager::cleanup() {
     #ifdef HAVE_PIPEWIRE
-    // Destroy all PipeWire node proxies to prevent memory leaks
-    {
-        std::lock_guard<std::mutex> lock(pw_mutex);
-        for (auto& [id, node] : pw_nodes) {
-            if (node.proxy) {
-                pw_proxy_destroy(node.proxy);
-                node.proxy = nullptr;
-            }
-        }
-        pw_nodes.clear();
-    }
-
-    if (m_pw_loop) {
-        pw_thread_loop_stop(m_pw_loop);
-    }
-    if (m_pw_core) {
-        pw_core_disconnect(m_pw_core);
-    }
-    if (m_pw_context) {
-        pw_context_destroy(m_pw_context);
-    }
-    if (m_pw_loop) {
-        pw_thread_loop_destroy(m_pw_loop);
-    }
-    if (pw_ready) {
-        pw_deinit();
-    }
-
-    // Stop the command processing thread
-    stopPipeWireCommandThread();
+    cleanupPipeWire();
     #endif
 
     #ifdef HAVE_PULSEAUDIO
@@ -526,6 +497,9 @@ void AudioManager::cleanup() {
 #ifdef HAVE_PIPEWIRE
 
 void AudioManager::startPipeWireCommandThread() {
+    if (!pw_initialized || !m_pw_loop) {
+        return;
+    }
     pw_command_thread_running = true;
     pw_command_thread = std::thread([this]() {
         processPipeWireCommands();
@@ -533,12 +507,16 @@ void AudioManager::startPipeWireCommandThread() {
 }
 
 void AudioManager::stopPipeWireCommandThread() {
-    if (pw_command_thread_running) {
-        pw_command_thread_running = false;
-        pw_command_cv.notify_all();  // Wake up the thread to exit
-        if (pw_command_thread.joinable()) {
-            pw_command_thread.join();
-        }
+    pw_command_thread_running = false;
+    pw_command_cv.notify_all();
+    if (pw_command_thread.joinable()) {
+        pw_command_thread.join();
+    }
+
+    std::queue<PipeWireCommand> empty;
+    {
+        std::lock_guard<std::mutex> lock(pw_command_mutex);
+        std::swap(pw_command_queue, empty);
     }
 }
 
@@ -559,6 +537,10 @@ void AudioManager::processPipeWireCommands() {
                 cmd = pw_command_queue.front();
                 pw_command_queue.pop();
             }
+        }
+
+        if (pw_shutting_down || !pw_initialized || !m_pw_loop) {
+            continue;
         }
 
         if (cmd.type == PipeWireCommand::SET_VOLUME) {
@@ -697,12 +679,23 @@ void on_core_sync(void *data, uint32_t id, int seq) {
     }
 }
 
+void on_core_error(void *data, uint32_t, int seq, int res, const char *message) {
+    auto* am = static_cast<AudioManager*>(data);
+    am->pw_failed = true;
+    am->pw_ready = true;
+    warning("PipeWire core error seq={} res={}: {}", seq, res,
+            message ? message : "unknown");
+    if (am->m_pw_loop) {
+        pw_thread_loop_signal(am->m_pw_loop, false);
+    }
+}
+
 static const pw_core_events core_events = {
     .version = PW_VERSION_CORE_EVENTS,
     .info = nullptr,
     .done = on_core_sync,
     .ping = nullptr,
-    .error = nullptr,
+    .error = on_core_error,
     .remove_id = nullptr,
     .bound_id = nullptr,
     .add_mem = nullptr,
@@ -717,35 +710,109 @@ static const pw_registry_events registry_events = {
 };
 
 bool AudioManager::initializePipeWire() {
+    pw_shutting_down = false;
+    pw_initialized = false;
+    pw_failed = false;
+    pw_ready = false;
+
     pw_init(nullptr, nullptr);
     m_pw_loop = pw_thread_loop_new("havel-audio", nullptr);
     if (!m_pw_loop) return false;
 
     m_pw_context = pw_context_new(pw_thread_loop_get_loop(m_pw_loop), nullptr, 0);
-    if (!m_pw_context) return false;
+    if (!m_pw_context) {
+        cleanupPipeWire();
+        return false;
+    }
 
     m_pw_core = pw_context_connect(m_pw_context, nullptr, 0);
-    if (!m_pw_core) return false;
+    if (!m_pw_core) {
+        cleanupPipeWire();
+        return false;
+    }
 
     pw_core_add_listener(m_pw_core, &core_listener, &core_events, this);
     m_pw_registry = pw_core_get_registry(m_pw_core, PW_VERSION_REGISTRY, 0);
     pw_registry_add_listener(m_pw_registry, &registry_listener, &registry_events, this);
 
-    if (pw_thread_loop_start(m_pw_loop) < 0) return false;
+    if (pw_thread_loop_start(m_pw_loop) < 0) {
+        cleanupPipeWire();
+        return false;
+    }
 
     // Wait for initial sync
     pw_thread_loop_lock(m_pw_loop);
     pw_sync_seq = pw_core_sync(m_pw_core, PW_ID_CORE, 0);
-    while (!pw_ready) {
+    while (!pw_ready && !pw_failed) {
         pw_thread_loop_wait(m_pw_loop);
     }
     pw_thread_loop_unlock(m_pw_loop);
+
+    if (pw_failed) {
+        cleanupPipeWire();
+        return false;
+    }
+
+    pw_initialized = true;
 
     // Start the command processing thread
     startPipeWireCommandThread();
 
     info("PipeWire initialized successfully");
     return true;
+}
+
+void AudioManager::cleanupPipeWire() {
+    pw_shutting_down = true;
+
+    stopPipeWireCommandThread();
+
+    if (m_pw_loop) {
+        pw_thread_loop_lock(m_pw_loop);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(pw_mutex);
+        for (auto& [id, node] : pw_nodes) {
+            if (node.proxy) {
+                pw_proxy_destroy(node.proxy);
+                node.proxy = nullptr;
+            }
+        }
+        pw_nodes.clear();
+    }
+
+    if (m_pw_registry) {
+        pw_proxy_destroy(reinterpret_cast<pw_proxy*>(m_pw_registry));
+        m_pw_registry = nullptr;
+    }
+
+    if (m_pw_loop) {
+        pw_thread_loop_unlock(m_pw_loop);
+        pw_thread_loop_stop(m_pw_loop);
+    }
+
+    if (m_pw_core) {
+        pw_core_disconnect(m_pw_core);
+        m_pw_core = nullptr;
+    }
+    if (m_pw_context) {
+        pw_context_destroy(m_pw_context);
+        m_pw_context = nullptr;
+    }
+    if (m_pw_loop) {
+        pw_thread_loop_destroy(m_pw_loop);
+        m_pw_loop = nullptr;
+    }
+    if (pw_initialized || pw_ready || pw_failed) {
+        pw_deinit();
+    }
+
+    pw_initialized = false;
+    pw_ready = false;
+    pw_failed = false;
+    pw_sync_seq = -1;
+    pw_shutting_down = false;
 }
 #endif
 

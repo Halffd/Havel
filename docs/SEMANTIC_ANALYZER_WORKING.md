@@ -188,6 +188,7 @@ Example:
 3. **Control flow analysis** - Detect unreachable code
 4. **Data flow analysis** - Detect uninitialized variables
 5. **Inter-procedural analysis** - Track calls across functions
+6. **Dynamic types** - Variables without type annotations use `Any` type (already implemented)
 
 ## Conclusion
 

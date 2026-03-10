@@ -380,6 +380,8 @@ public:
   // Method to register callback for any key press
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
   void SetInputEventCallback(InputEventCallback callback);
+  void SetInputBlockCallback(std::function<bool(const InputEvent &)> callback);
+  HotkeyExecutor *GetHotkeyExecutor() const;
 
   bool GrabHotkeysByPrefix(const std::string &prefix);
 

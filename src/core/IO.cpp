@@ -2104,10 +2104,6 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
 
-    // Register with EventListener if using it
-    if (eventListener && hotkey.evdev) {
-      eventListener->RegisterHotkey(id, hotkey);
-    }
   }
 
   return hotkey;
@@ -2283,10 +2279,6 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
 
-    // Register with EventListener if using it
-    if (eventListener && hotkey.evdev) {
-      eventListener->RegisterHotkey(id, hotkey);
-    }
   }
 
   return hotkey;
@@ -2873,6 +2865,20 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
     eventListener->SetAnyKeyPressCallback(callback);
   }
 }
+
+void IO::SetInputEventCallback(InputEventCallback callback) {
+  if (eventListener) {
+    eventListener->SetInputEventCallback(std::move(callback));
+  }
+}
+
+void IO::SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
+  if (eventListener) {
+    eventListener->SetInputBlockCallback(std::move(callback));
+  }
+}
+
+HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }
 
 bool IO::GrabHotkeysByPrefix(const std::string &prefix) {
 #ifdef __linux__

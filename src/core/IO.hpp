@@ -4,6 +4,7 @@
 #include "core/io/Device.hpp"
 #include "core/io/HotkeyExecutor.hpp"
 #include "core/io/KeyMap.hpp"
+#include "core/io/MouseController.hpp"
 #include "types.hpp"
 #include "x11.h"
 #include <X11/extensions/XInput2.h>
@@ -45,8 +46,6 @@ enum class MouseButton {
   Side3 = BTN_FORWARD,
   Side4 = BTN_BACK
 };
-
-enum class MouseAction { Hold = 1, Release = 0, Click = 2 };
 
 enum class HotkeyEventType { Both, Down, Up };
 
@@ -218,9 +217,10 @@ class IO {
   std::unique_ptr<EventListener> eventListener;
   std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
 
+  // Mouse controller for mouse operations
+  std::unique_ptr<MouseController> mouseController;
+
 public:
-  static std::unordered_map<int, HotKey> hotkeys;
-  static std::mutex hotkeysMutex;  // Mutex to protect hotkeys map
   bool isSuspended = false;
   static bool globalEvdev;
   std::vector<HotKey> failedHotkeys;
@@ -379,6 +379,7 @@ public:
 
   // Method to register callback for any key press
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
+  void SetInputEventCallback(InputEventCallback callback);
 
   bool GrabHotkeysByPrefix(const std::string &prefix);
 
@@ -446,7 +447,6 @@ public:
 
 private:
   Display *display;
-  int uinputFd;
   std::mutex emergencyMutex;
   std::set<int> pressedKeys;
   std::mutex keyStateMutex;
@@ -474,7 +474,6 @@ private:
 public:
   bool EmitClick(int btnCode, MouseAction action);
 
-  bool SetupUinputDevice();
   // X11 hotkey monitoring removed - use EventListener instead
 
   static Key EvdevNameToKeyCode(std::string keyName);

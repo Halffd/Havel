@@ -1,178 +1,57 @@
 #pragma once
-#include "../media//MPVController.hpp"
-#include "../utils/Utils.hpp"
-#include "../window/WindowManager.hpp"
-#include "BrightnessManager.hpp"
-#include "ConditionSystem.hpp"
+
 #include "ConditionalHotkeyManager.hpp"
-#include "ConfigManager.hpp"
-#include "IO.hpp"
-#include "automation/AutoClicker.hpp"
-#include "automation/AutoKeyPresser.hpp"
-#include "automation/AutoRunner.hpp"
-#include "automation/AutomationManager.hpp"
-#include "core/io/KeyTap.hpp"
-#include "gui/ScreenshotManager.hpp"
-#include "havel-lang/runtime/Interpreter.hpp"
-#include "io/MouseController.hpp"
-#include "media/AudioManager.hpp"
-#include "net/NetworkManager.hpp"
-#include "qt.hpp"
-#include "utils/Timer.hpp"
-#include <atomic>
-#include <ctime>
-#include <filesystem>
+#include "core/CallbackTypes.hpp"
 #include <functional>
-#include <map>
 #include <memory>
 #include <mutex>
-#include <regex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace havel {
-struct HotkeyDefinition {
-  std::string key;
-  std::function<void()> trueAction;
-  std::function<void()> falseAction; // Optional
-  int id;
-};
 
-// Note: ConditionalHotkey is now defined in ConditionalHotkeyManager.hpp
-// Callback type for any key press
-using AnyKeyPressCallback = std::function<void(const std::string &key)>;
+class IO;
+class WindowManager;
+class MPVController;
+class AudioManager;
+class Interpreter;
+class ScreenshotManager;
+class BrightnessManager;
 
-class MPVController; // Forward declaration
+namespace net {
+class NetworkManager;
+}
+
 class HotkeyManager {
 public:
-  HotkeyManager(IO &io, WindowManager &windowManager, MPVController &mpv,
-                AudioManager &audioManager, havel::Interpreter &interpreter,
-                ScreenshotManager *screenshotManager,
-                BrightnessManager &brightnessManager,
-                std::shared_ptr<net::NetworkManager> networkManager);
-  std::unique_ptr<MouseController> mouseController;
-  virtual ~HotkeyManager() { cleanup(); }
-  void Zoom(int zoom);
-  void printHotkeys() const;
-  // Debug flags
-  bool verboseKeyLogging = false;
-  bool verboseWindowLogging = false;
-  bool verboseConditionLogging = false;
-  int winOffset = 10;
+  struct HotkeyInfo {
+    int id = 0;
+    std::string alias;
+    bool enabled = false;
+  };
 
-  int speed = 5;
-  float acc = 1.0f;
-  int dpi = 400;
-
-  bool evaluateCondition(const std::string &condition);
-
-  std::unique_ptr<ConditionEngine> conditionEngine;
-
-  void setupConditionEngine();
-  void updateWindowProperties();
-  void setVerboseKeyLogging(bool value) { verboseKeyLogging = value; }
-
-  void setVerboseWindowLogging(bool value) { verboseWindowLogging = value; }
-
-  void setVerboseConditionLogging(bool value) {
-    verboseConditionLogging = value;
-  }
-
-  // Load debug settings from config
-  void loadDebugSettings();
-
-  // Apply current debug settings
-  void applyDebugSettings();
-
-  // Cache statistics
-  void printCacheStats();
-
-  // Hotkeys are now defined in Havel scripts, not hardcoded in C++
-
-  void updateAllConditionalHotkeys();
-
-  void forceUpdateAllConditionalHotkeys();
-
-  // Conditional hotkey management
   struct ConditionalHotkeyInfo {
-    int id;
+    int id = 0;
     std::string key;
     std::string condition;
-    bool enabled;
-    bool active;
+    bool enabled = false;
+    bool active = false;
   };
-  
-  std::vector<ConditionalHotkeyInfo> getConditionalHotkeyList();
-  void setConditionalHotkeysEnabled(bool enabled);
-  bool getConditionalHotkeysEnabled() const { return conditionalHotkeysEnabled; }
 
-  void onActiveWindowChanged(wID newWindow);
+  explicit HotkeyManager(IO &io);
+  HotkeyManager(IO &io, WindowManager &, MPVController &, AudioManager &,
+                Interpreter &, ScreenshotManager *, BrightnessManager &,
+                std::shared_ptr<net::NetworkManager>);
+  ~HotkeyManager();
 
-  void LoadHotkeyConfigurations();
+  bool AddHotkey(const std::string &key, std::function<void()> callback);
+  bool AddHotkey(const std::string &key, const std::string &action);
+  bool RemoveHotkey(const std::string &key);
+  void HandleKeyEvent(const std::string &key);
+  void EnableHotkey(const std::string &key);
+  void DisableHotkey(const std::string &key);
 
-  void ReloadConfigurations();
-
-  // Mode management
-  void setMode(const std::string &mode);
-
-  std::string getMode() const;
-
-  // Public cleanup for safe shutdown
-  void cleanup();
-
-  void toggleFakeDesktopOverlay();
-
-  void showBlackOverlay();
-
-  void printActiveWindowInfo();
-
-  void toggleWindowFocusTracking();
-
-  // Network functions
-  void makeHttpRequest(const std::string &url,
-                       const std::string &method = "GET");
-  void downloadFile(const std::string &url, const std::string &outputPath = "");
-  void pingHost(const std::string &host);
-  void checkNetworkStatus();
-
-  // Shell-based network functions (use runShell for shell features)
-  void makeHttpRequestShell(const std::string &url,
-                            const std::string &method = "GET",
-                            const std::string &data = "");
-  void downloadFileShell(const std::string &url,
-                         const std::string &outputPath = "");
-  void pingHostShell(const std::string &host);
-  void checkNetworkStatusShell();
-
-  // Automation
-  std::shared_ptr<automation::AutomationManager> automationManager_;
-  std::unordered_map<std::string, automation::TaskPtr> automationTasks_;
-  std::mutex automationMutex_;
-
-  // Automation hotkeys now defined in Havel scripts
-  void startAutoClicker(const std::string &button = "left");
-  void startAutoRunner(const std::string &direction = "w");
-  void startAutoKeyPresser(const std::string &key = "space");
-  void stopAutomationTask(const std::string &taskType);
-  void toggleAutomationTask(const std::string &taskType,
-                            const std::string &param = "");
-
-  bool AddHotkey(const std::string &hotkeyStr, std::function<void()> callback);
-  bool AddHotkey(const std::string &hotkeyStr, const std::string &action);
-
-  bool RemoveHotkey(const std::string &hotkeyStr);
-  void clearAllHotkeys();
-  
-  // Hotkey info for listing
-  struct HotkeyInfo {
-    int id;
-    std::string alias;
-    bool enabled;
-  };
-  
-  std::vector<HotkeyInfo> getHotkeyList();
-  
-  // Contextual hotkey support
   int AddContextualHotkey(const std::string &key, const std::string &condition,
                           std::function<void()> trueAction,
                           std::function<void()> falseAction = nullptr,
@@ -184,279 +63,51 @@ public:
                           int id = 0);
   int AddGamingHotkey(const std::string &key, std::function<void()> trueAction,
                       std::function<void()> falseAction = nullptr, int id = 0);
-  IO &io;
-  bool conditionalHotkeysEnabled = true;
 
-  // Double-buffer for thread-safe conditional hotkey updates (public for IO.cpp access)
-  std::vector<ConditionalHotkey> activeConditionalHotkeys;
-  std::vector<ConditionalHotkey> pendingConditionalHotkeys;
-  std::mutex pendingHotkeysMutex; // Protects pendingConditionalHotkeys
+  void LoadHotkeyConfigurations();
+  void ReloadConfigurations();
+  void clearAllHotkeys();
+  std::vector<HotkeyInfo> getHotkeyList() const;
+  std::vector<ConditionalHotkeyInfo> getConditionalHotkeyList() const;
+  void printHotkeys() const;
 
-private:
-  bool altTabPressed = false;
-  std::thread monitorThread;
-  // Condition evaluation state
-  std::chrono::steady_clock::time_point lastConditionCheck =
-      std::chrono::steady_clock::now();
-  static constexpr int CONDITION_CHECK_INTERVAL_MS =
-      100; // Check every 100ms - balanced between responsiveness and performance
-  std::atomic<std::chrono::steady_clock::time_point> lastModeSwitch =
-      std::chrono::steady_clock::now();
-  static constexpr int MODE_SWITCH_DEBOUNCE_MS =
-      150; // 150ms debounce for mode switching
-  std::unique_ptr<KeyTap> lwin;
-  std::unique_ptr<KeyTap> ralt;
+  void updateAllConditionalHotkeys();
+  void forceUpdateAllConditionalHotkeys();
+  void reevaluateConditionalHotkeys(IO &io);
+  void setConditionalHotkeysEnabled(bool enabled);
+  std::mutex &getHotkeyMutex();
 
-  // Watchdog for detecting input freezes
-  std::atomic<std::chrono::steady_clock::time_point> lastInputTime{
-      std::chrono::steady_clock::now()};
-  std::thread watchdogThread;
-  std::atomic<bool> watchdogRunning{true};
+  void loadDebugSettings();
+  void applyDebugSettings();
+  void cleanup();
 
-  // Configurable timeout for input freeze detection (in seconds)
-  int inputFreezeTimeoutSeconds{300}; // Default to 5 minutes
+  void toggleFakeDesktopOverlay();
+  void showBlackOverlay();
+  void printActiveWindowInfo();
+  void toggleWindowFocusTracking();
 
-  // Deferred update queue for conditional hotkeys
-  std::queue<int> deferredUpdateQueue;
-  std::mutex deferredUpdateMutex;
-
-  // Flag to indicate we're in cleanup mode to prevent deadlocks
-  std::atomic<bool> inCleanupMode{false};
-  // Cached condition results
-  struct CachedCondition {
-    bool result;
-    std::chrono::steady_clock::time_point timestamp;
-  };
-  std::unordered_map<std::string, CachedCondition> conditionCache;
-  static constexpr int CACHE_DURATION_MS = 50; // Cache results for 50ms
-
-  static std::mutex modeMutex;
-  static std::string currentMode;
-  static std::mutex conditionCacheMutex; // Protects conditionCache
-
-  bool isZooming() const { return m_isZooming; }
-  void setZooming(bool zooming) { m_isZooming = zooming; }
-
-  // Helper method for gaming process detection
-  static bool IsGamingProcess(pid_t pid);
-
-  // Overlay functionality
-
-  // Window management
-  void minimizeActiveWindow();
-
-  void maximizeActiveWindow();
-
-  void tileWindows();
-
-  void centerActiveWindow();
-
-  void restoreWindow();
-
-  // Active window info
-
-  static bool isGamingWindow();
-
-  void PlayPause();
-  std::atomic<bool> winKeyComboDetected{false};
-  std::chrono::steady_clock::time_point winKeyPressTime;
-
-  // Key tap callback storage
-  std::vector<AnyKeyPressCallback> onAnyKeyPressedCallbacks;
-  mutable std::mutex callbacksMutex; // Protect callback vector
-
-  WindowManager &windowManager;
-  MPVController &mpv;
-  AudioManager &audioManager;
-  havel::Interpreter &interpreter;
-  ScreenshotManager *screenshotManager;  // Optional - nullptr in REPL mode
-  BrightnessManager &brightnessManager;
-  std::shared_ptr<net::NetworkManager> networkManager;
-
-  // Mode management
-  bool m_isZooming{false};
-  bool videoPlaying{false};
-  time_t lastVideoCheck{0};
-  const int VIDEO_TIMEOUT_SECONDS{1800}; // 30 minutes
-  bool holdClick = false;
-
-  // Window groups
-  std::vector<std::string> videoSites; // Will be loaded from config
-  bool mouse1Pressed{false};
-  bool mouse2Pressed{false};
-
-  std::unique_ptr<automation::AutoClicker> autoClicker;
-  std::unique_ptr<automation::AutoRunner> autoRunner;
-  std::unique_ptr<automation::AutoKeyPresser> autoKeyPresser;
-  wID autoclickerWindowID = 0;
-  double zoomLevel = 1.0;
-  // Key name conversion maps
-  const std::map<std::string, std::string> keyNameAliases = {
-      // Mouse buttons
-      {"button1", "Button1"},
-      {"lmb", "Button1"},
-      {"rmb", "Button2"},
-      {"mmb", "Button3"},
-      {"mouse1", "Button1"},
-      {"mouse2", "Button2"},
-      {"mouse3", "Button3"},
-      {"wheelup", "Button4"},
-      {"wheeldown", "Button5"},
-
-      // Numpad keys
-      {"numpad0", "KP_0"},
-      {"numpad1", "KP_1"},
-      {"numpad2", "KP_2"},
-      {"numpad3", "KP_3"},
-      {"numpad4", "KP_4"},
-      {"numpad5", "KP_5"},
-      {"numpad6", "KP_6"},
-      {"numpad7", "KP_7"},
-      {"numpad8", "KP_8"},
-      {"numpad9", "KP_9"},
-      {"numpaddot", "KP_Decimal"},
-      {"numpadenter", "KP_Enter"},
-      {"numpadplus", "KP_Add"},
-      {"numpadminus", "KP_Subtract"},
-      {"numpadmult", "KP_Multiply"},
-      {"numpaddiv", "KP_Divide"},
-
-      // Special keys
-      {"win", "Super_L"},
-      {"rwin", "Super_R"},
-      {"menu", "Menu"},
-      {"apps", "Menu"},
-      {"less", "comma"},
-      {"greater", "period"},
-      {"equals", "equal"},
-      {"minus", "minus"},
-      {"plus", "plus"},
-      {"return", "Return"},
-      {"enter", "Return"},
-      {"esc", "Escape"},
-      {"backspace", "BackSpace"},
-      {"del", "Delete"},
-      {"ins", "Insert"},
-      {"pgup", "Page_Up"},
-      {"pgdn", "Page_Down"},
-      {"prtsc", "Print"},
-
-      // Modifier keys
-      {"ctrl", "Control_L"},
-      {"rctrl", "Control_R"},
-      {"alt", "Alt_L"},
-      {"ralt", "Alt_R"},
-      {"shift", "Shift_L"},
-      {"rshift", "Shift_R"},
-      {"capslock", "Caps_Lock"},
-      {"numlock", "Num_Lock"},
-      {"scrolllock", "Scroll_Lock"}};
-
-  // Helper functions
-  void showNotification(const std::string &title, const std::string &message);
-
-  std::string convertKeyName(const std::string &keyName);
-
-  std::string parseHotkeyString(const std::string &hotkeyStr);
-
-  // Autoclicker helpers
-  void stopAllAutoclickers();
-
-  void startAutoclicker(const std::string &button);
-
-  // Key name conversion helpers
-  std::string handleKeycode(const std::string &input);
-
-  std::string handleScancode(const std::string &input);
-
-  std::string normalizeKeyName(const std::string &keyName);
-
-  // Enhanced logging methods
-  void logKeyEvent(const std::string &key, const std::string &eventType,
-                   const std::string &details = "");
-
-  void logWindowEvent(const std::string &eventType,
-                      const std::string &details = "");
-
-  std::string getWindowInfo(wID windowId = 0);
-
-  // Logging helpers
-  void logHotkeyEvent(const std::string &eventType, const std::string &details);
-
-  void logKeyConversion(const std::string &from, const std::string &to);
-
-  void logModeSwitch(const std::string &from, const std::string &to);
-
-  // New methods for video window group and playback status
-  bool isVideoSiteActive();
-
-  void updateVideoPlaybackStatus();
-
-  void handleMediaCommand(const std::vector<std::string> &mpvCommand);
-
-  // New methods for video timeout
-  void loadVideoSites();
-
-  bool hasVideoTimedOut() const;
-
-  void updateLastVideoCheck();
-
-public:
-  // Key tap callback registration
   void RegisterAnyKeyPressCallback(AnyKeyPressCallback callback);
-
-  // Internal method to notify all key presses
   void NotifyAnyKeyPressed(const std::string &key);
-
-  // Method to notify that input was received (for watchdog)
   void NotifyInputReceived();
 
-  static std::vector<ConditionalHotkey> conditionalHotkeys;
+  static std::unordered_map<int, HotKey> &RegisteredHotkeys();
+  static std::mutex &RegisteredHotkeysMutex();
 
-  // Instance accessors for IO suspend functionality
-  bool getCurrentGamingWindowStatus() const;
-  void reevaluateConditionalHotkeys(IO &io);
-  void reevaluateConditionalHotkeysInstance(IO &io); // For use with shared_ptr
-
-  // Mutex access for IO operations
-  std::mutex &getHotkeyMutex() { return hotkeyMutex; }
+  bool conditionalHotkeysEnabled = true;
+  std::vector<ConditionalHotkey> &activeConditionalHotkeys;
 
 private:
-  // Store IDs of MPV hotkeys for grab/ungrab
-  std::vector<int> conditionalHotkeyIds;
-  std::vector<int> gamingHotkeyIds;
-  std::vector<HotkeyDefinition> mpvHotkeys;
-  std::mutex hotkeyMutex; // Protects conditionalHotkeys and conditionCache
-  std::atomic<bool> updateLoopPaused{
-      false}; // Flag to pause update loop when window changes
-  void InvalidateConditionalHotkeys();
-  void updateConditionalHotkey(ConditionalHotkey &hotkey);
-  void updateHotkeyState(ConditionalHotkey &hotkey, bool conditionMet);
-  void batchUpdateConditionalHotkeys();
-  ConditionalHotkey *findConditionalHotkey(int id);
+  void initializeInputCallbacks();
 
-  // Helper function to check if window class is in a comma-separated list
-  bool isWindowClassInList(const std::string &windowClass,
-                           const std::string &classList);
-
-  // Window focus tracking
-  bool trackWindowFocus;
-  wID lastActiveWindowId;
-
-  // Update loop members
-  std::thread updateLoopThread;
-  std::atomic<bool> updateLoopRunning{false};
-  std::condition_variable updateLoopCv;
-  std::mutex updateLoopMutex;
-  void UpdateLoop();
-  void WatchdogLoop();
-  
-  // Thread to resume update loop after window change (replaces detached thread)
-  std::thread windowChangeResumeThread;
-  std::mutex windowChangeResumeThreadMutex;
-  
-  // Thread for emergency EventListener restart (replaces detached thread)
-  std::thread emergencyRestartThread;
-  std::mutex emergencyRestartThreadMutex;
+  IO &io;
+  ConditionalHotkeyManager conditionalManager;
+  std::unordered_map<std::string, std::function<void()>> simpleHotkeys;
+  std::unordered_map<std::string, bool> simpleHotkeyEnabled;
+  mutable std::mutex simpleHotkeysMutex;
+  std::vector<AnyKeyPressCallback> anyKeyCallbacks;
+  mutable std::mutex anyKeyCallbacksMutex;
+  bool inputCallbacksInitialized = false;
+  bool focusTrackingEnabled = false;
 };
+
 } // namespace havel

@@ -5,23 +5,16 @@
 #include "core/MouseGestureTypes.hpp"
 #include "core/ConfigManager.hpp"
 #include "utils/Logger.hpp"
-#include <algorithm>
-#include <cmath>
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
 #include <linux/uinput.h>
-#include <shared_mutex>
 #include <signal.h>
-#include <sstream>
+#include <shared_mutex>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <sys/signalfd.h>
 #include <unistd.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
 
 namespace havel {
 
@@ -109,7 +102,6 @@ EventListener::EventListener() {
   InstallSignalHandlers();
   
   shutdownFd = eventfd(0, EFD_NONBLOCK);
-  gestureLastTime = std::chrono::steady_clock::now();
 }
 
 EventListener::~EventListener() {
@@ -120,10 +112,6 @@ EventListener::~EventListener() {
   
   if (shutdownFd >= 0) {
     close(shutdownFd);
-  }
-  if (uinputFd >= 0) {
-    ioctl(uinputFd, UI_DEV_DESTROY);
-    close(uinputFd);
   }
 }
 
@@ -231,198 +219,54 @@ void EventListener::Stop() {
 }
 
 bool EventListener::SetupUinput() {
-  uinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-  if (uinputFd < 0) {
-    error("Failed to open /dev/uinput");
+  uinputDevice = std::make_unique<UinputDevice>();
+  if (!uinputDevice->Setup()) {
+    error("Failed to initialize UinputDevice");
     return false;
   }
-
-  // Enable all key events
-  ioctl(uinputFd, UI_SET_EVBIT, EV_KEY);
-  ioctl(uinputFd, UI_SET_EVBIT, EV_SYN);
-  ioctl(uinputFd, UI_SET_EVBIT, EV_REL);
-  ioctl(uinputFd, UI_SET_EVBIT, EV_ABS);
-
-  // Enable all keys
-  for (int i = 0; i < KEY_MAX; i++) {
-    ioctl(uinputFd, UI_SET_KEYBIT, i);
-  }
-
-  // Enable mouse buttons
-  for (int i = BTN_MOUSE; i < BTN_JOYSTICK; i++) {
-    ioctl(uinputFd, UI_SET_KEYBIT, i);
-  }
-
-  // Enable relative axes (mouse)
-  ioctl(uinputFd, UI_SET_RELBIT, REL_X);
-  ioctl(uinputFd, UI_SET_RELBIT, REL_Y);
-  ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL);
-  ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL);
-
-  // Setup device
-  struct uinput_setup usetup = {};
-  strcpy(usetup.name, "Havel Virtual Input");
-  usetup.id.bustype = BUS_USB;
-  usetup.id.vendor = 0x1234;
-  usetup.id.product = 0x5678;
-  usetup.id.version = 1;
-
-  if (ioctl(uinputFd, UI_DEV_SETUP, &usetup) < 0) {
-    error("Failed to setup uinput device");
-    close(uinputFd);
-    uinputFd = -1;
-    return false;
-  }
-
-  if (ioctl(uinputFd, UI_DEV_CREATE) < 0) {
-    error("Failed to create uinput device");
-    close(uinputFd);
-    uinputFd = -1;
-    return false;
-  }
-
-  debug("Uinput device created successfully");
+  info("UinputDevice initialized successfully");
   return true;
 }
 
 void EventListener::SendUinputEvent(int type, int code, int value) {
-  if (uinputFd < 0) {
-    error("Cannot send event: uinput not initialized (fd={})", uinputFd);
+  if (!uinputDevice || !uinputDevice->IsInitialized()) {
+    error("Cannot send event: uinput not initialized");
     return;
   }
 
-  // Track pressed virtual keys for cleanup on shutdown
-  if (type == EV_KEY) {
-    if (value == 1 || value == 2) {
-      pressedVirtualKeys.insert(code);
-    } else if (value == 0) {
-      pressedVirtualKeys.erase(code);
-    }
-  }
-
-  // If batching is enabled, queue the event instead of sending immediately
-  if (uinputBatching.load(std::memory_order_relaxed)) {
-    QueueUinputEvent(type, code, value);
-    return;
-  }
-
-  // Non-batched: send immediately with single write
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-
-  input_event ev = {};
-  ev.time.tv_sec = ts.tv_sec;
-  ev.time.tv_usec = ts.tv_nsec / 1000;
-  ev.type = static_cast<__u16>(type);
-  ev.code = static_cast<__u16>(code);
-  ev.value = value;
-
-  ssize_t written = write(uinputFd, &ev, sizeof(ev));
-  if (written != sizeof(ev)) {
-    error("Failed to write to uinput: {} (fd={})", strerror(errno), uinputFd);
-    return;
-  }
-
-  // Send SYN event - critical for uinput to work properly
-  input_event syn = {};
-  syn.time.tv_sec = ts.tv_sec;
-  syn.time.tv_usec = ts.tv_nsec / 1000;
-  syn.type = EV_SYN;
-  syn.code = SYN_REPORT;
-  syn.value = 0;
-
-  ssize_t syn_written = write(uinputFd, &syn, sizeof(syn));
-  if (syn_written != sizeof(syn)) {
-    error("Failed to write SYN event to uinput: {} (fd={})", strerror(errno),
-          uinputFd);
-  }
-
-  debug("Forwarded uinput: type={} code={} value={} fd={}", type, code, value,
-        uinputFd);
+  uinputDevice->SendEvent(type, code, value);
 }
 
 void EventListener::BeginUinputBatch() {
-  std::lock_guard<std::mutex> lock(uinputBatchMutex);
-  uinputBatchBuffer.clear();
-  uinputBatching.store(true, std::memory_order_relaxed);
+  if (!uinputDevice) {
+    error("Cannot begin batch: uinput not initialized");
+    return;
+  }
+  uinputDevice->BeginBatch();
 }
 
 void EventListener::QueueUinputEvent(int type, int code, int value) {
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-
-  input_event ev = {};
-  ev.time.tv_sec = ts.tv_sec;
-  ev.time.tv_usec = ts.tv_nsec / 1000;
-  ev.type = static_cast<__u16>(type);
-  ev.code = static_cast<__u16>(code);
-  ev.value = value;
-
-  bool shouldFlush = false;
-  {
-    std::lock_guard<std::mutex> lock(uinputBatchMutex);
-    uinputBatchBuffer.push_back(ev);
-
-    // Auto-flush if buffer is full
-    if (uinputBatchBuffer.size() >= MAX_BATCH_SIZE) {
-      shouldFlush = true;
-    }
+  if (!uinputDevice) {
+    error("Cannot queue event: uinput not initialized");
+    return;
   }
-
-  if (shouldFlush) {
-    EndUinputBatch();
-  }
+  uinputDevice->SendEvent(type, code, value);
 }
 
 void EventListener::EndUinputBatch() {
-  if (!uinputBatching.load(std::memory_order_relaxed)) {
+  if (!uinputDevice) {
+    error("Cannot end batch: uinput not initialized");
     return;
   }
+  uinputDevice->EndBatch();
+}
 
-  uinputBatching.store(false, std::memory_order_relaxed);
-
-  std::vector<input_event> batchCopy;
-  {
-    std::lock_guard<std::mutex> lock(uinputBatchMutex);
-    if (uinputBatchBuffer.empty()) {
-      return;
-    }
-    batchCopy = std::move(uinputBatchBuffer);
-  }
-
-  if (uinputFd < 0) {
-    error("Cannot flush batch: uinput not initialized (fd={})", uinputFd);
+void EventListener::EmergencyReleaseAllKeys() {
+  if (!uinputDevice) {
+    error("Cannot release keys: uinput not initialized");
     return;
   }
-
-  // Write all events in a single syscall
-  ssize_t written = write(uinputFd, batchCopy.data(),
-                          batchCopy.size() * sizeof(input_event));
-
-  if (written < 0) {
-    error("Failed to write batch to uinput: {} (fd={}, events={})",
-          strerror(errno), uinputFd, batchCopy.size());
-    return;
-  }
-
-  // Send single SYN event to flush all queued events
-  struct timespec ts;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-
-  input_event syn = {};
-  syn.time.tv_sec = ts.tv_sec;
-  syn.time.tv_usec = ts.tv_nsec / 1000;
-  syn.type = EV_SYN;
-  syn.code = SYN_REPORT;
-  syn.value = 0;
-
-  ssize_t syn_written = write(uinputFd, &syn, sizeof(syn));
-  if (syn_written != sizeof(syn)) {
-    error("Failed to write SYN event after batch: {}", strerror(errno));
-  }
-
-  debug("Flushed uinput batch: {} events ({} bytes)", batchCopy.size(),
-        written);
+  uinputDevice->ReleaseAllKeys();
 }
 
 void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
@@ -466,11 +310,11 @@ void EventListener::RegisterHotkey(int id, const HotKey &hotkey) {
 
 void EventListener::UnregisterHotkey(int id) {
   std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
-  std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+  std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
 
   // Remove from hotkeys map
-  auto it = IO::hotkeys.find(id);
-  if (it == IO::hotkeys.end())
+  auto it = HotkeyManager::RegisteredHotkeys().find(id);
+  if (it == HotkeyManager::RegisteredHotkeys().end())
     return;
 
   // If it's a combo, clean up the key index
@@ -494,11 +338,11 @@ void EventListener::UnregisterHotkey(int id) {
   // Handle mouse gesture hotkeys
   else if (it->second.type == HotkeyType::MouseGesture) {
     // Remove from gesture hotkeys
-    gestureHotkeys.erase(id);
+    mouseGestureEngine.UnregisterHotkey(id);
   }
 
   // Remove the hotkey
-  IO::hotkeys.erase(it);
+  HotkeyManager::RegisteredHotkeys().erase(it);
 }
 
 bool EventListener::GetKeyState(int evdevCode) const {
@@ -556,8 +400,8 @@ bool EventListener::StartX11Monitor(Display *display) {
   // Register all current hotkeys with X11 monitor
   {
     std::unique_lock<std::shared_mutex> lock(hotkeyMutex);
-    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
-    for (const auto &[id, hotkey] : IO::hotkeys) {
+    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+    for (const auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
       if (!hotkey.evdev) { // Only X11 hotkeys
         x11Monitor->RegisterHotkey(id, hotkey);
       }
@@ -780,8 +624,8 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
       // CHECK ALL COMBOS THAT MIGHT INCLUDE THIS KEY
       // Loop through ALL hotkeys to find combos (more reliable than indexed
       // lookup)
-      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
-      for (auto &[hotkeyId, hotkey] : IO::hotkeys) {
+      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+      for (auto &[hotkeyId, hotkey] : HotkeyManager::RegisteredHotkeys()) {
         if (!hotkey.enabled || hotkey.type != HotkeyType::Combo) {
           continue;
         }
@@ -832,6 +676,20 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
             KeyMap::EvdevToString(mappedCode));
     }
     // Modifier state was already updated earlier
+  }
+
+  if (inputEventCallback) {
+    InputEvent event;
+    event.kind = InputEventKind::Key;
+    event.code = originalCode;
+    event.value = ev.value;
+    event.down = down;
+    event.repeat = repeat;
+    event.originalCode = originalCode;
+    event.mappedCode = mappedCode;
+    event.keyName = keyName;
+    event.modifiers = GetCurrentModifiersMask();
+    inputEventCallback(event);
   }
 
   // Evaluate hotkeys
@@ -1053,6 +911,17 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       }
     } // stateMutex unlocked here
 
+    if (inputEventCallback) {
+      InputEvent event;
+      event.kind = InputEventKind::MouseButton;
+      event.code = ev.code;
+      event.value = ev.value;
+      event.down = down;
+      event.repeat = (ev.value == 2);
+      event.modifiers = GetCurrentModifiersMask();
+      inputEventCallback(event);
+    }
+
     // Collect matched hotkeys to avoid holding locks during callback execution
     std::vector<int> matchedHotkeyIds;
     bool shouldBlock = false;
@@ -1062,8 +931,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
       std::unique_lock<std::shared_mutex> stateLock(stateMutex);
 
-      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
-      for (auto &[id, hotkey] : IO::hotkeys) {
+      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+      for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
         if (!hotkey.enabled)
           continue;
 
@@ -1133,10 +1002,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     // Execute callbacks outside critical section
     for (int hotkeyId : matchedHotkeyIds) {
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-      auto it = IO::hotkeys.find(hotkeyId);
+      auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
-      if (it != IO::hotkeys.end() && it->second.enabled) {
+      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+      if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
         auto callback = it->second.callback; // Copy just the callback
         lock.unlock();                       // Release before executing
 
@@ -1160,6 +1029,16 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             ev.code == REL_X ? "X" : "Y", ev.value, scaledValue,
             IO::mouseSensitivity);
       int32_t scaledInt = static_cast<int32_t>(scaledValue);
+      if (inputEventCallback) {
+        InputEvent event;
+        event.kind = InputEventKind::MouseMove;
+        event.code = ev.code;
+        event.value = scaledInt;
+        event.dx = (ev.code == REL_X) ? scaledInt : 0;
+        event.dy = (ev.code == REL_Y) ? scaledInt : 0;
+        event.modifiers = GetCurrentModifiersMask();
+        inputEventCallback(event);
+      }
       if (mouseMovementCallback) {
         if (ev.code == REL_X) {
           mouseMovementCallback(scaledInt, 0); // dx, dy=0
@@ -1168,47 +1047,28 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         }
       }
       // Process mouse gesture if we have gesture hotkeys registered
-      if (!gestureHotkeys.empty()) {
-        auto now = std::chrono::steady_clock::now();
-
-        // Add movement to the gesture buffer
-        MouseMovement movement;
-        movement.time = now;
-
+      if (mouseGestureEngine.HasRegisteredGestures()) {
+        int dx = 0;
+        int dy = 0;
         if (ev.code == REL_X) {
-          movement.dx = scaledInt;
-          movement.dy = 0;
+          dx = scaledInt;
         } else if (ev.code == REL_Y) {
-          movement.dx = 0;
-          movement.dy = scaledInt;
+          dy = scaledInt;
         }
 
-        // Add movement to buffer
-        gestureBuffer.push_back(movement);
+        const auto matches = mouseGestureEngine.RecordMovement(dx, dy);
+        for (int hotkeyId : matches) {
+          std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+          auto hotkeyIt = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
+          if (hotkeyIt == HotkeyManager::RegisteredHotkeys().end()) {
+            continue;
+          }
 
-        // Keep only recent movements (in the last 50ms)
-        auto cutoffTime = now - std::chrono::milliseconds(50);
-        gestureBuffer.erase(
-            std::remove_if(gestureBuffer.begin(), gestureBuffer.end(),
-                           [cutoffTime](const MouseMovement &m) {
-                             return m.time < cutoffTime;
-                           }),
-            gestureBuffer.end());
-
-        // If we have a recent X and Y movement, combine them for gesture
-        // processing
-        int combinedX = 0, combinedY = 0;
-        for (const auto &m : gestureBuffer) {
-          combinedX += m.dx;
-          combinedY += m.dy;
-        }
-
-        // Process the combined movement if it's significant enough
-        if (std::abs(combinedX) > 5 || std::abs(combinedY) > 5) {
-          ProcessMouseGesture(combinedX, combinedY);
-
-          // Clear the buffer after processing
-          gestureBuffer.clear();
+          const auto &hotkey = hotkeyIt->second;
+          if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
+            ExecuteHotkeyCallback(hotkey);
+            break;
+          }
         }
       }
 
@@ -1238,6 +1098,16 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     // Mouse wheel
     else if (ev.code == REL_WHEEL || ev.code == REL_HWHEEL) {
       int wheelDirection = (ev.value > 0) ? 1 : -1;
+      if (inputEventCallback) {
+        InputEvent event;
+        event.kind = InputEventKind::MouseWheel;
+        event.code = ev.code;
+        event.value = ev.value;
+        event.dy = (ev.code == REL_WHEEL) ? wheelDirection : 0;
+        event.dx = (ev.code == REL_HWHEEL) ? wheelDirection : 0;
+        event.modifiers = GetCurrentModifiersMask();
+        inputEventCallback(event);
+      }
       debug("🖱️  Mouse WHEEL: axis={}, direction={}, speed={}",
             ev.code == REL_WHEEL ? "VERT" : "HORZ",
             wheelDirection > 0 ? "UP/LEFT" : "DOWN/RIGHT", IO::scrollSpeed);
@@ -1263,11 +1133,11 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           lastWheelDownTime = now;
         }
 
-        for (auto &[id, hotkey] : IO::hotkeys) {
+        for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
           if (!hotkey.enabled)
             continue;
           if (hotkey.type == HotkeyType::Combo) {
-        std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+        std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
             // Check if this combo involves a wheel
             bool hasWheel =
                 std::any_of(hotkey.comboSequence.begin(),
@@ -1343,12 +1213,12 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
 
         {
           std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-          auto it = IO::hotkeys.find(hotkeyId);
+          auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-          if (it != IO::hotkeys.end() && it->second.enabled) {
+          if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
             hotkeyCopy = it->second; // Copy just for execution
             found = true;
-          std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+          std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
           }
         }
 
@@ -1386,6 +1256,14 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
     }
 
   } else if (ev.type == EV_ABS) {
+    if (inputEventCallback) {
+      InputEvent event;
+      event.kind = InputEventKind::Absolute;
+      event.code = ev.code;
+      event.value = ev.value;
+      event.modifiers = GetCurrentModifiersMask();
+      inputEventCallback(event);
+    }
     // Absolute positioning or joystick axes
     // Track mouse position for Wayland support
     if (ev.code == ABS_X) {
@@ -1406,13 +1284,13 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
     std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
     std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
-    for (auto &[id, hotkey] : IO::hotkeys) {
+    for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
       if (!hotkey.enabled)
         continue;
 
       // Only match keyboard and mouse movement hotkeys with our virtual
       // movement keys
-    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
       if (hotkey.type != HotkeyType::Keyboard &&
           hotkey.type != HotkeyType::MouseMove)
         continue;
@@ -1444,14 +1322,14 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
   // Execute callbacks asynchronously to avoid blocking input thread
   for (int hotkeyId : matchedHotkeyIds) {
     std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-    auto it = IO::hotkeys.find(hotkeyId);
+    auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-    if (it != IO::hotkeys.end() && it->second.enabled) {
+    if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
       auto callback = it->second.callback;
       lock.unlock();
 
       // Execute callback in a separate thread to avoid blocking input
-    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
       std::thread([callback]() { callback(); }).detach();
     }
   }
@@ -1635,7 +1513,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     std::shared_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
     std::shared_lock<std::shared_mutex> stateLock(stateMutex);
 
-    for (auto &[id, hotkey] : IO::hotkeys) {
+    for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
       if (!hotkey.enabled || !hotkey.evdev) {
         continue;
       }
@@ -1645,7 +1523,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         try {
           if (EvaluateCombo(hotkey)) {
             // Combo matched, collect for execution outside locks
-    std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
             matchedHotkeyIds.push_back(id);
             if (hotkey.grab) {
               shouldBlock = true;
@@ -1791,9 +1669,9 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
 
     {
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-      auto it = IO::hotkeys.find(hotkeyId);
+      auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-      if (it != IO::hotkeys.end() && it->second.enabled) {
+      if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
         hotkeyCopy = it->second; // Copy just for execution
         found = true;
       }
@@ -1804,7 +1682,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     }
   }
 
-      std::lock_guard<std::mutex> ioLock(IO::hotkeysMutex);
+      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
   return shouldBlock;
 }
 
@@ -2038,117 +1916,30 @@ bool EventListener::ArePhysicalKeysPressed(
 }
 
 void EventListener::ProcessMouseGesture(int dx, int dy) {
-  auto now = std::chrono::steady_clock::now();
-
-  // If we don't have an active gesture, start one if movement is significant
-  // enough
-  if (!currentMouseGesture.isActive) {
-    // Check if the movement is large enough to start a gesture
-    double distance = std::sqrt(dx * dx + dy * dy);
-    if (distance >= currentMouseGesture.minDistance) {
-      currentMouseGesture.isActive = true;
-      currentMouseGesture.startTime = now;
-      currentMouseGesture.lastMoveTime = now;
-      currentMouseGesture.totalDistance = 0;
-
-      // Calculate the direction of this movement
-      MouseGestureDirection direction = GetGestureDirection(dx, dy);
-      currentMouseGesture.directions.push_back(direction);
-
-      // Update the total distance
-      currentMouseGesture.totalDistance += static_cast<int>(distance);
-    }
-  } else {
-    // We have an active gesture, check for timeout
-    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                       now - currentMouseGesture.startTime)
-                       .count();
-
-    if (elapsed > currentMouseGesture.timeout) {
-      // Reset gesture due to timeout
-      ResetMouseGesture();
-      return;
+  const auto matches = mouseGestureEngine.RecordMovement(dx, dy);
+  for (int hotkeyId : matches) {
+    std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
+    auto hotkeyIt = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
+    if (hotkeyIt == HotkeyManager::RegisteredHotkeys().end()) {
+      continue;
     }
 
-    // Calculate the direction of this movement
-    MouseGestureDirection direction = GetGestureDirection(dx, dy);
-
-    // Check if this direction is different from the last one
-    if (!currentMouseGesture.directions.empty() &&
-        currentMouseGesture.directions.back() != direction) {
-      currentMouseGesture.directions.push_back(direction);
-    }
-
-    // Update the total distance and last move time
-    double distance = std::sqrt(dx * dx + dy * dy);
-    currentMouseGesture.totalDistance += static_cast<int>(distance);
-    currentMouseGesture.lastMoveTime = now;
-
-    // Check for matching gestures
-    for (const auto &[id, expectedDirections] : gestureHotkeys) {
-      // Check if the current gesture matches any registered gesture
-      if (MatchGesturePattern(expectedDirections,
-                              currentMouseGesture.directions)) {
-        // Find the hotkey and execute its callback
-        std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
-        auto hotkeyIt = IO::hotkeys.find(id);
-        if (hotkeyIt != IO::hotkeys.end()) {
-          const auto &hotkey = hotkeyIt->second;
-          if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
-            ExecuteHotkeyCallback(hotkey);
-
-            // Reset the gesture after successful match
-            ResetMouseGesture();
-            break;
-          }
-        }
-      }
+    const auto &hotkey = hotkeyIt->second;
+    if (hotkey.enabled && hotkey.type == HotkeyType::MouseGesture) {
+      ExecuteHotkeyCallback(hotkey);
+      break;
     }
   }
 }
 
 MouseGestureDirection EventListener::GetGestureDirection(int dx, int dy) const {
-  // Calculate angle in degrees
-  double angle = std::atan2(dy, dx) * (180.0 / M_PI);
-  if (angle < 0)
-    angle += 360.0;
-
-  // Determine direction based on angle
-  if (angle >= 337.5 || angle < 22.5)
-    return MouseGestureDirection::Right; // 0°: Right
-  if (angle >= 22.5 && angle < 67.5)
-    return MouseGestureDirection::DownRight; // 45°: Down-Right
-  if (angle >= 67.5 && angle < 112.5)
-    return MouseGestureDirection::Down; // 90°: Down
-  if (angle >= 112.5 && angle < 157.5)
-    return MouseGestureDirection::DownLeft; // 135°: Down-Left
-  if (angle >= 157.5 && angle < 202.5)
-    return MouseGestureDirection::Left; // 180°: Left
-  if (angle >= 202.5 && angle < 247.5)
-    return MouseGestureDirection::UpLeft; // 225°: Up-Left
-  if (angle >= 247.5 && angle < 292.5)
-    return MouseGestureDirection::Up; // 270°: Up
-  if (angle >= 292.5 && angle < 337.5)
-    return MouseGestureDirection::UpRight; // 315°: Up-Right
-
-  return MouseGestureDirection::Right; // Default fallback
+  return mouseGestureEngine.GetDirection(dx, dy);
 }
 
 bool EventListener::MatchGesturePattern(
     const std::vector<MouseGestureDirection> &expected,
     const std::vector<MouseGestureDirection> &actual) const {
-  if (actual.size() < expected.size()) {
-    return false; // Not enough directions yet
-  }
-
-  // Check if the end of actual matches the expected pattern
-  size_t startIdx = actual.size() - expected.size();
-  for (size_t i = 0; i < expected.size(); ++i) {
-    if (actual[startIdx + i] != expected[i]) {
-      return false;
-    }
-  }
-  return true;
+  return mouseGestureEngine.MatchPattern(expected, actual);
 }
 
 // Release all pressed virtual keys (for clean shutdown)
@@ -2189,92 +1980,18 @@ void EventListener::ForceUngrabAllDevices() {
   }
   
   // Also destroy uinput device if active
-  if (uinputFd >= 0) {
-    ioctl(uinputFd, UI_DEV_DESTROY);
+  if (uinputDevice) {
+    const int uinputFd = uinputDevice->GetFd();
+    if (uinputFd >= 0) {
+      ioctl(uinputFd, UI_DEV_DESTROY);
+    }
   }
 }
 
 // Helper function to convert gesture pattern string to directions
 std::vector<MouseGestureDirection>
 EventListener::ParseGesturePattern(const std::string &patternStr) const {
-  std::vector<MouseGestureDirection> directions;
-
-  // Check if it's a predefined shape
-  if (patternStr == "circle") {
-    // A circle could be represented as: right, down, left, up (clockwise)
-    directions = {MouseGestureDirection::Right, MouseGestureDirection::Down,
-                  MouseGestureDirection::Left, MouseGestureDirection::Up};
-  } else if (patternStr == "square") {
-    // A square: right, down, left, up
-    directions = {MouseGestureDirection::Right, MouseGestureDirection::Down,
-                  MouseGestureDirection::Left, MouseGestureDirection::Up};
-  } else if (patternStr == "triangle") {
-    // A triangle: up-right, down-left, down
-    directions = {MouseGestureDirection::UpRight,
-                  MouseGestureDirection::DownLeft, MouseGestureDirection::Down};
-  } else if (patternStr == "zigzag") {
-    // A zigzag: right, down-left, right, up-left
-    directions = {MouseGestureDirection::Right, MouseGestureDirection::DownLeft,
-                  MouseGestureDirection::Right, MouseGestureDirection::UpLeft};
-  } else if (patternStr == "check") {
-    // A check mark: down-right, up-left
-    directions = {MouseGestureDirection::DownRight,
-                  MouseGestureDirection::UpRight};
-  } else {
-    // Parse comma-separated direction pattern
-    std::string dir;
-    std::istringstream iss(patternStr);
-
-    while (std::getline(iss, dir, ',')) {
-      // Remove leading/trailing whitespace
-      dir.erase(0, dir.find_first_not_of(" \t\n\r"));
-      dir.erase(dir.find_last_not_of(" \t\n\r") + 1);
-
-      // Mouse-specific directions (to avoid conflicts with arrow keys)
-      if (dir == "mouseup") {
-        directions.push_back(MouseGestureDirection::Up);
-      } else if (dir == "mousedown") {
-        directions.push_back(MouseGestureDirection::Down);
-      } else if (dir == "mouseleft") {
-        directions.push_back(MouseGestureDirection::Left);
-      } else if (dir == "mouseright") {
-        directions.push_back(MouseGestureDirection::Right);
-      }
-      // Corner directions with mouse prefix
-      else if (dir == "mouseupleft") {
-        directions.push_back(MouseGestureDirection::UpLeft);
-      } else if (dir == "mouseupright") {
-        directions.push_back(MouseGestureDirection::UpRight);
-      } else if (dir == "mousedownleft") {
-        directions.push_back(MouseGestureDirection::DownLeft);
-      } else if (dir == "mousedownright") {
-        directions.push_back(MouseGestureDirection::DownRight);
-      }
-      // For backward compatibility, also support generic directions but only in
-      // gesture contexts
-      else if (dir == "up") {
-        directions.push_back(MouseGestureDirection::Up);
-      } else if (dir == "down") {
-        directions.push_back(MouseGestureDirection::Down);
-      } else if (dir == "left") {
-        directions.push_back(MouseGestureDirection::Left);
-      } else if (dir == "right") {
-        directions.push_back(MouseGestureDirection::Right);
-      }
-      // Generic corner directions (for backward compatibility)
-      else if (dir == "up-left" || dir == "upleft") {
-        directions.push_back(MouseGestureDirection::UpLeft);
-      } else if (dir == "up-right" || dir == "upright") {
-        directions.push_back(MouseGestureDirection::UpRight);
-      } else if (dir == "down-left" || dir == "downleft") {
-        directions.push_back(MouseGestureDirection::DownLeft);
-      } else if (dir == "down-right" || dir == "downright") {
-        directions.push_back(MouseGestureDirection::DownRight);
-      }
-    }
-  }
-
-  return directions;
+  return mouseGestureEngine.ParsePattern(patternStr);
 }
 
 // Overloaded method that takes a HotKey and gets its pattern
@@ -2286,21 +2003,16 @@ EventListener::ParseGesturePattern(const HotKey &hotkey) const {
 // Helper function to validate gesture with tolerance
 bool EventListener::IsGestureValid(
     const std::vector<MouseGestureDirection> &pattern, int minDistance) const {
-  // For now, just check if we have any movement that meets the minimum distance
-  return currentMouseGesture.totalDistance >= minDistance;
+  return mouseGestureEngine.IsGestureValid(pattern, minDistance);
 }
 
 void EventListener::ResetMouseGesture() {
-  currentMouseGesture.isActive = false;
-  currentMouseGesture.directions.clear();
-  currentMouseGesture.xPositions.clear();
-  currentMouseGesture.yPositions.clear();
-  currentMouseGesture.totalDistance = 0;
+  mouseGestureEngine.Reset();
 }
 
 void EventListener::RegisterGestureHotkey(
     int id, const std::vector<MouseGestureDirection> &directions) {
-  gestureHotkeys[id] = directions;
+  mouseGestureEngine.RegisterHotkey(id, directions);
 }
 
 void EventListener::SetupSignalHandling() {

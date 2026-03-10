@@ -43,8 +43,8 @@ namespace havel {
 #if defined(WINDOWS)
 HHOOK IO::keyboardHook = NULL;
 #endif
-std::unordered_map<int, HotKey> IO::hotkeys;
-std::mutex IO::hotkeysMutex;
+static auto &hotkeys = HotkeyManager::RegisteredHotkeys();
+static auto &hotkeysMutex = HotkeyManager::RegisteredHotkeysMutex();
 bool IO::hotkeyEnabled = true;
 int IO::hotkeyCount = 0;
 bool IO::globalEvdev = true;
@@ -159,14 +159,22 @@ void IO::SendBatchedKeyEvents(const std::vector<input_event> &events) {
   if (events.empty())
     return;
 
-  // Use EventListener's batched write if available
+  // Delegate to EventListener
   if (eventListener) {
+    eventListener->BeginUinputBatch();
     for (const auto &ev : events) {
-      eventListener->SendUinputEvent(ev.type, ev.code, ev.value);
+      eventListener->QueueUinputEvent(ev.type, ev.code, ev.value);
     }
+    eventListener->EndUinputBatch();
   }
-  // Otherwise batch write directly (requires access to uinput fd)
-  // This is a fallback - EventListener should handle the batching
+}
+
+void IO::SendUInput(int keycode, bool down) {
+  if (!eventListener) {
+    warning("SendUInput called without EventListener");
+    return;
+  }
+  eventListener->SendUinputEvent(EV_KEY, keycode, down ? 1 : 0);
 }
 
 int IO::XErrorHandler(Display *dpy, XErrorEvent *ee) {
@@ -452,10 +460,16 @@ IO::IO() {
           eventListener = std::make_unique<EventListener>();
           eventListener->SetupUinput();
 
+          // Initialize MouseController
+          mouseController = std::make_unique<MouseController>(eventListener.get());
+          mouseController->SetSensitivity(mouseSensitivity);
+          mouseController->SetScrollSpeed(
+              Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
           // Pass HotkeyExecutor to EventListener for thread-safe execution
           eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
 
-          // Set mouse and scroll sensitivity
+          // Set mouse and scroll sensitivity on EventListener (for internal use)
           eventListener->SetMouseSensitivity(mouseSensitivity);
           eventListener->SetScrollSpeed(
               Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
@@ -464,7 +478,6 @@ IO::IO() {
           eventListener->Start(devices, true);
           info("Successfully started unified EventListener with {} devices",
                devices.size());
-          uinputFd = eventListener->uinputFd;
         } catch (const std::exception &e) {
           error("Failed to start unified EventListener: {}", e.what());
           globalEvdev = false;
@@ -532,55 +545,6 @@ void IO::cleanup() {
   std::cout << "IO cleanup completed" << std::endl;
 }
 
-bool IO::SetupUinputDevice() {
-  uinputFd = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
-  if (uinputFd < 0) {
-    std::cerr << "uinput: failed to open /dev/uinput: " << strerror(errno)
-              << "\n";
-    return false;
-  }
-
-  struct uinput_setup usetup = {};
-  usetup.id.bustype = BUS_USB;
-  usetup.id.vendor = 0x1234;
-  usetup.id.product = 0x5678;
-  strcpy(usetup.name, "havel-uinput-kb");
-  // Enable key event support
-  if (ioctl(uinputFd, UI_SET_EVBIT, EV_KEY) < 0)
-    goto error;
-  if (ioctl(uinputFd, UI_SET_EVBIT, EV_SYN) < 0)
-    goto error;
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_LEFT);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_MIDDLE);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_RIGHT);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_SIDE);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_EXTRA);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_FORWARD);
-  ioctl(uinputFd, UI_SET_KEYBIT, BTN_BACK);
-  ioctl(uinputFd, UI_SET_EVBIT, EV_REL);
-  ioctl(uinputFd, UI_SET_RELBIT, REL_WHEEL);
-  ioctl(uinputFd, UI_SET_RELBIT, REL_HWHEEL);
-
-  // Enable all possible key codes you might emit
-  for (int i = 0; i < 256; ++i)
-    ioctl(uinputFd, UI_SET_KEYBIT, i);
-
-  if (ioctl(uinputFd, UI_DEV_SETUP, &usetup) < 0)
-    goto error;
-  if (ioctl(uinputFd, UI_DEV_CREATE) < 0)
-    goto error;
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-  // Allow it to init
-
-  return true;
-
-error:
-  std::cerr << "uinput: device setup failed: " << strerror(errno) << "\n";
-  close(uinputFd);
-  uinputFd = -1;
-  return false;
-}
 bool IO::GrabKeyboard() {
   if (!display)
     return false;
@@ -1150,143 +1114,67 @@ bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
         return true;
     }
 
-    // For Wayland, fall back to REL with feedback loop
-    int currentX = 0, currentY = 0;
-    auto [x, y] = eventListener->GetMousePosition();
-    currentX = x;
-    currentY = y;
-
-    // Calculate distance and steps
-    int dx = targetX - currentX;
-    int dy = targetY - currentY;
-    int distance = std::abs(dx) + std::abs(dy);
-    
-    if (distance < 3) {
-        // Already close enough, just send final delta
-        if (dx != 0 || dy != 0) {
-            eventListener->SendUinputEvent(EV_REL, REL_X, dx);
-            eventListener->SendUinputEvent(EV_REL, REL_Y, dy);
-            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-        }
-        return true;
-    }
-    
-    // Calculate steps for smooth movement
-    if (speed <= 0) speed = 5;
-    int steps = std::min(30, std::max(5, distance / (speed * 10)));
-
-    // Use deterministic step distribution
-    int movedX = 0;
-    int movedY = 0;
-
-    for (int i = 0; i < steps; ++i) {
-        int remainingX = dx - movedX;
-        int remainingY = dy - movedY;
-
-        int stepDx = remainingX / (steps - i);
-        int stepDy = remainingY / (steps - i);
-
-        movedX += stepDx;
-        movedY += stepDy;
-
-        // Send RELATIVE movement
-        if (stepDx != 0 || stepDy != 0) {
-            eventListener->SendUinputEvent(EV_REL, REL_X, stepDx);
-            eventListener->SendUinputEvent(EV_REL, REL_Y, stepDy);
-            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-        }
-
-        // Minimal sleep for smooth movement
-        int sleepMs = std::max(1, 5 / std::max(1, speed));
-        std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-    }
-
-    // Corrective feedback loop - ensure exact positioning
-    const int maxAttempts = 5;
-    for (int attempt = 0; attempt < maxAttempts; ++attempt) {
-        // Get current position after movement
-        auto [actualX, actualY] = eventListener->GetMousePosition();
-
-        // Calculate remaining distance
-        int remainingDx = targetX - actualX;
-        int remainingDy = targetY - actualY;
-        
-        // Check if we're close enough (within 1 pixel)
-        if (std::abs(remainingDx) <= 1 && std::abs(remainingDy) <= 1) {
-            // Send final correction if needed
-            if (remainingDx != 0 || remainingDy != 0) {
-                eventListener->SendUinputEvent(EV_REL, REL_X, remainingDx);
-                eventListener->SendUinputEvent(EV_REL, REL_Y, remainingDy);
-                eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-            }
-            return true;
-        }
-
-        // Send correction for remaining distance
-        if (remainingDx != 0 || remainingDy != 0) {
-            eventListener->SendUinputEvent(EV_REL, REL_X, remainingDx);
-            eventListener->SendUinputEvent(EV_REL, REL_Y, remainingDy);
-            eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-            
-            // Small delay for system to process
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        }
-    }
-
-    // If we still didn't reach target after max attempts, try one final jump
-    auto [finalX, finalY] = eventListener->GetMousePosition();
-    int finalDx = targetX - finalX;
-    int finalDy = targetY - finalY;
-    if (finalDx != 0 || finalDy != 0) {
-        eventListener->SendUinputEvent(EV_REL, REL_X, finalDx);
-        eventListener->SendUinputEvent(EV_REL, REL_Y, finalDy);
-        eventListener->SendUinputEvent(EV_SYN, SYN_REPORT, 0);
-    }
-
-    return true;
+	    // For Wayland, fall back to REL with feedback loop
+	    int currentX = 0, currentY = 0;
+	    (void)currentX;
+	    (void)currentY;
+	    return false;
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
-    // Move to target position first
-    if (!MouseMoveTo(x, y, speed, accel)) {
-        error("ClickAt: Failed to move to target position ({}, {})", x, y);
-        return false;
-    }
-
-    // Small delay to ensure movement completes
-    std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-    // Perform click
-    return Click(button, MouseAction::Click);
+  if (!mouseController) {
+    error("Cannot click: MouseController not initialized");
+    return false;
+  }
+  return mouseController->ClickAt(x, y, button, speed, accel);
 }
+
+bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
+  if (!mouseController) {
+    error("Cannot move mouse: MouseController not initialized");
+    return false;
+  }
+  return mouseController->MoveSensitive(dx, dy, baseSpeed, accel);
+}
+
+bool IO::Scroll(double dy, double dx) {
+  if (!mouseController) {
+    error("Cannot scroll: MouseController not initialized");
+    return false;
+  }
+  return mouseController->Scroll(dy, dx);
+}
+
+void IO::SetMouseSensitivity(double sensitivity) {
+  mouseSensitivity = sensitivity;
+  if (mouseController) {
+    mouseController->SetSensitivity(sensitivity);
+  }
+  if (eventListener) {
+    eventListener->SetMouseSensitivity(sensitivity);
+  }
+}
+
+double IO::GetMouseSensitivity() const { return mouseSensitivity; }
+
+void IO::SetScrollSpeed(double speed) {
+  scrollSpeed = speed;
+  if (mouseController) {
+    mouseController->SetScrollSpeed(speed);
+  }
+  if (eventListener) {
+    eventListener->SetScrollSpeed(speed);
+  }
+}
+
+double IO::GetScrollSpeed() const { return scrollSpeed; }
 
 std::pair<int, int> IO::GetMousePosition() {
-    if (WindowManagerDetector::IsX11()) {
-        return GetMousePositionX11();
-    } else if (eventListener) {
-        return eventListener->GetMousePosition();
-    } else {
-        error("GetMousePosition: No method available to get mouse position");
-        return {0, 0};
-    }
-}
-
-// Set mouse sensitivity (0.1 - 10.0)
-void IO::SetMouseSensitivity(double sensitivity) {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-  // Clamp sensitivity between 0.1 and 10.0
-  sensitivity = std::max(0.1, std::min(10.0, sensitivity));
-
-  // Try to set hardware sensitivity first
-  if (!globalEvdev) {
-    if (xinput2Available) {
-      SetHardwareMouseSensitivity(sensitivity);
-    }
-    mouseSensitivity = sensitivity;
-  } else {
-    // Keep them in sync in case we need to fall back later
-    mouseSensitivity = sensitivity;
+  if (!mouseController) {
+    error("Cannot get mouse position: MouseController not initialized");
+    return {0, 0};
   }
+  return mouseController->GetPosition();
 }
 
 bool IO::InitializeXInput2() {
@@ -1370,98 +1258,6 @@ bool IO::SetHardwareMouseSensitivity(double sensitivity) {
   return true;
 }
 
-// Get current mouse sensitivity
-double IO::GetMouseSensitivity() const {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-  return mouseSensitivity;
-}
-
-// Set scroll speed (0.1 - 10.0)
-void IO::SetScrollSpeed(double speed) {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-  // Clamp scroll speed between 0.1 and 10.0
-  scrollSpeed = std::max(0.1, std::min(10.0, speed));
-  info("Scroll speed set to: {}", scrollSpeed);
-}
-
-// Get current scroll speed
-double IO::GetScrollSpeed() const {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-  return scrollSpeed;
-}
-
-// Enhanced mouse movement with custom sensitivity
-bool IO::MouseMoveSensitive(int dx, int dy, int baseSpeed, float accel) {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-
-  // Apply sensitivity and acceleration
-  double adjustedDx = dx * mouseSensitivity;
-  double adjustedDy = dy * mouseSensitivity;
-
-  // Apply acceleration if enabled (accel > 1.0)
-  if (accel > 1.0f) {
-    double distance = std::sqrt(dx * dx + dy * dy);
-    if (distance > 1.0) {
-      double factor = 1.0 + (accel - 1.0) * (distance / 100.0);
-      adjustedDx *= factor;
-      adjustedDy *= factor;
-    }
-  }
-
-  // Call the original MouseMove with adjusted values
-  return MouseMove(static_cast<int>(adjustedDx), static_cast<int>(adjustedDy),
-                   baseSpeed, 1.0f);
-}
-
-bool IO::Scroll(double dy, double dx) {
-  std::lock_guard<std::mutex> lock(mouseMutex);
-
-  // Apply scroll speed and accumulate
-  if (dy != 0.0) {
-    scrollAccumY += dy * scrollSpeed;
-  }
-  if (dx != 0.0) {
-    scrollAccumX += dx * scrollSpeed;
-  }
-
-  if (uinputFd < 0)
-    return false;
-
-  input_event ev = {};
-  auto emitScroll = [&](uint16_t code, int value) -> bool {
-    ev.type = EV_REL;
-    ev.code = code;
-    ev.value = value;
-    if (write(uinputFd, &ev, sizeof(ev)) < 0)
-      return false;
-    return true;
-  };
-  debug("Scrolling: {} {}", dx, dy);
-
-  // Emit accumulated scroll values
-  int emitY = (int)scrollAccumY;
-  int emitX = (int)scrollAccumX;
-
-  // Only emit if non-zero
-  if (emitY != 0 && !emitScroll(REL_WHEEL, emitY))
-    return false;
-  if (emitX != 0 && !emitScroll(REL_HWHEEL, emitX))
-    return false;
-
-  // Subtract emitted values from accumulation
-  scrollAccumY -= emitY;
-  scrollAccumX -= emitX;
-
-  // Sync event
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-  if (write(uinputFd, &ev, sizeof(ev)) < 0)
-    return false;
-
-  return true;
-}
-
 void IO::SendX11Key(const std::string &keyName, bool press) {
 #if defined(__linux__)
   if (!display) {
@@ -1485,51 +1281,8 @@ void IO::SendX11Key(const std::string &keyName, bool press) {
   XFlush(display);
 #endif
 }
-void IO::SendUInput(int keycode, bool down) {
-  static std::mutex uinputMutex;
-  if (uinputFd < 0)
-    return;
-  std::lock_guard<std::mutex> lock(uinputMutex);
-
-  // State tracking check
-  if (down) {
-    if (!TryPressKey(keycode))
-      return; // Already pressed
-  } else {
-    if (!TryReleaseKey(keycode))
-      return; // Not pressed
-  }
-
-  if (uinputFd < 0) {
-    if (!SetupUinputDevice()) {
-      error("Failed to initialize uinput device");
-      return;
-    }
-  }
-
-  struct input_event ev{};
-  gettimeofday(&ev.time, nullptr);
-
-  ev.type = EV_KEY;
-  ev.code = keycode;
-  ev.value = down ? 1 : 0;
-
-  if (Configs::Get().GetVerboseKeyLogging())
-    debug("Sending uinput key: {} ({})", keycode, down);
-
-  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
-    error("Failed to write key event");
-    return;
-  }
-
-  ev.type = EV_SYN;
-  ev.code = SYN_REPORT;
-  ev.value = 0;
-
-  if (write(uinputFd, &ev, sizeof(ev)) < 0) {
-    error("Failed to write sync event");
-  }
-}
+// SendUInput removed - delegate to EventListener instead
+// EventListener now manages uinput through UinputDevice class
 // State tracking implementation
 bool IO::TryPressKey(int keycode) {
   std::lock_guard<std::mutex> lock(keyStateMutex);
@@ -1562,21 +1315,9 @@ void IO::EmergencyReleaseAllKeys() {
   std::set<int> keysToRelease = pressedKeys;
   pressedKeys.clear();
 
-  // Release without state checking (bypass TryReleaseKey)
-  for (int keycode : keysToRelease) {
-    if (uinputFd >= 0) {
-      struct input_event ev{};
-      gettimeofday(&ev.time, nullptr);
-      ev.type = EV_KEY;
-      ev.code = keycode;
-      ev.value = 0; // RELEASE
-      write(uinputFd, &ev, sizeof(ev));
-
-      ev.type = EV_SYN;
-      ev.code = SYN_REPORT;
-      ev.value = 0;
-      write(uinputFd, &ev, sizeof(ev));
-    }
+  // Delegate to EventListener for emergency release
+  if (eventListener) {
+    eventListener->EmergencyReleaseAllKeys();
   }
 }
 

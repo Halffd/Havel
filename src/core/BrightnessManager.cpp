@@ -884,44 +884,68 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
 // === KELVIN TEMPERATURE METHODS ===
 bool BrightnessManager::setTemperature(int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
+  
+  debug("BrightnessManager::setTemperature({}) - clamped to {}K", kelvin, kelvin);
+  debug("Current display method: {}", displayMethod);
 
   // For Wayland, use gammastep directly with current brightness
   if (displayMethod == "wayland") {
+    debug("Using gammastep for Wayland temperature control");
     if (setGammastep(kelvin, brightness[primaryMonitor])) {
       for(const auto& monitor : getConnectedMonitors()){
         temperature[monitor] = kelvin;
+        debug("  Set monitor '{}' temperature to {}K", monitor, kelvin);
       }
+      debug("Temperature set successfully via gammastep");
       return true;
     }
+    debug("gammastep failed, falling through to applyAllSettings");
     // If gammastep fails, fall through to applyAllSettings
   }
 
   bool success = true;
   for(const auto& monitor : getConnectedMonitors()){
       temperature[monitor] = kelvin;
+      debug("  Applying settings to monitor '{}' with {}K temperature", monitor, kelvin);
       success &= applyAllSettings(monitor);
   }
+  
+  if (success) {
+    debug("Temperature set successfully for all monitors");
+  } else {
+    error("Failed to set temperature for one or more monitors");
+  }
+  
   return success;
 }
 
 bool BrightnessManager::setTemperature(const std::string &monitor, int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
   
+  debug("BrightnessManager::setTemperature('{}', {}) - clamped to {}K", monitor, kelvin, kelvin);
+
   // For Wayland, use gammastep directly with current brightness
   if (displayMethod == "wayland") {
+    debug("Using gammastep for Wayland temperature control on monitor '{}'", monitor);
     if (setGammastep(kelvin, brightness[monitor])) {
       temperature[monitor] = kelvin;
+      debug("Temperature set successfully to {}K on monitor '{}'", kelvin, monitor);
       return true;
     }
+    debug("gammastep failed for monitor '{}', falling through to setGammaRGB", monitor);
     // If gammastep fails, fall through to setGammaRGB
   }
-  
+
   RGBColor rgb = kelvinToRGB(kelvin);
+  debug("Converted {}K to RGB: ({}, {}, {})", kelvin, rgb.red, rgb.green, rgb.blue);
 
   // setGammaRGB will call applyAllSettings
   bool success = setGammaRGB(monitor, rgb.red, rgb.green, rgb.blue);
   if (success) {
     temperature[monitor] = kelvin;
+    debug("Temperature set successfully to {}K on monitor '{}' via GammaRGB", kelvin, monitor);
+  } else {
+    error("Failed to set temperature on monitor '{}' via GammaRGB", monitor);
   }
 
   return success;
@@ -1007,15 +1031,19 @@ bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
 
 // === TEMPERATURE INCREMENT METHODS ===
 bool BrightnessManager::increaseTemperature(int amount) {
-  int newTemp = std::min(
-      MAX_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) + amount);
+  int currentTemp = temperature[primaryMonitor];
+  int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
+  debug("BrightnessManager::increaseTemperature({}) - Primary monitor: {}K -> {}K", 
+        amount, currentTemp, newTemp);
   return setTemperature(newTemp);
 }
 
 bool BrightnessManager::increaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp = std::min(MAX_TEMPERATURE,
-                         static_cast<int>(temperature[monitor]) + amount);
+  int currentTemp = temperature[monitor];
+  int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
+  debug("BrightnessManager::increaseTemperature('{}', {}) - {}K -> {}K", 
+        monitor, amount, currentTemp, newTemp);
   return setTemperature(monitor, newTemp);
 }
 
@@ -1096,21 +1124,34 @@ BrightnessManager::RGBColor BrightnessManager::getGammaRGB() {
 // === TEMPERATURE GETTERS ===
 int BrightnessManager::getTemperature() {
   auto monitors = getConnectedMonitors();
-  if (monitors.empty())
+  if (monitors.empty()) {
+    debug("BrightnessManager::getTemperature() - No monitors found, returning default 6500K");
     return 6500;
-  return getTemperature(monitors[0]);
+  }
+  int temp = getTemperature(monitors[0]);
+  debug("BrightnessManager::getTemperature() - Primary monitor '{}' temperature: {}K", monitors[0], temp);
+  return temp;
 }
+
 int BrightnessManager::getTemperature(int monitorIndex){
   auto monitorName = getMonitor(monitorIndex);
-  if (monitorName.empty()) return 6500;
-  return getTemperature(monitorName);
+  if (monitorName.empty()) {
+    debug("BrightnessManager::getTemperature({}) - Invalid monitor index, returning default 6500K", monitorIndex);
+    return 6500;
+  }
+  int temp = getTemperature(monitorName);
+  debug("BrightnessManager::getTemperature({}) - Monitor '{}' temperature: {}K", monitorIndex, monitorName, temp);
+  return temp;
 }
+
 int BrightnessManager::getTemperature(const std::string &monitor) {
   // Get current RGB gamma values and reverse-engineer the temperature
   auto it = temperature.find(monitor);
   if (it != temperature.end()) {
+      debug("BrightnessManager::getTemperature('{}') - Found cached temperature: {}K", monitor, it->second);
       return it->second;
   }
+  debug("BrightnessManager::getTemperature('{}') - No cached temperature, returning default 6500K", monitor);
   return 6500; // Default
 }
 bool BrightnessManager::decreaseGamma(int amount) {
@@ -1329,15 +1370,19 @@ bool BrightnessManager::decreaseBrightness(const std::string &monitor,
 
 // === TEMPERATURE INCREMENT METHODS (CONTINUED) ===
 bool BrightnessManager::decreaseTemperature(int amount) {
-  int newTemp = std::max(
-      MIN_TEMPERATURE, static_cast<int>(temperature[primaryMonitor]) - amount);
+  int currentTemp = temperature[primaryMonitor];
+  int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
+  debug("BrightnessManager::decreaseTemperature({}) - Primary monitor: {}K -> {}K", 
+        amount, currentTemp, newTemp);
   return setTemperature(newTemp);
 }
 
 bool BrightnessManager::decreaseTemperature(const std::string &monitor,
                                             int amount) {
-  int newTemp = std::max(MIN_TEMPERATURE,
-                         static_cast<int>(temperature[monitor]) - amount);
+  int currentTemp = temperature[monitor];
+  int newTemp = std::max(MIN_TEMPERATURE, currentTemp - amount);
+  debug("BrightnessManager::decreaseTemperature('{}', {}) - {}K -> {}K", 
+        monitor, amount, currentTemp, newTemp);
   return setTemperature(monitor, newTemp);
 }
 

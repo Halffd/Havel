@@ -1,7 +1,7 @@
 /*
  * ProcessModule.hpp
- * 
- * Async process execution for Havel standard library.
+ *
+ * Process management for Havel standard library.
  */
 #pragma once
 

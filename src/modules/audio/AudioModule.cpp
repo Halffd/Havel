@@ -112,7 +112,66 @@ void registerAudioModule(Environment& env, HostContext& ctx) {
         
         return HavelValue(am.getVolume(device));
     }));
-    
+
+    // =========================================================================
+    // Per-application volume control (PipeWire/PulseAudio)
+    // =========================================================================
+
+    (*audioObj)["getApplications"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>&) -> HavelResult {
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        const auto& apps = am.getApplications();
+
+        for (const auto& app : apps) {
+            auto obj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*obj)["name"] = HavelValue(app.name);
+            (*obj)["index"] = HavelValue(static_cast<double>(app.index));
+            (*obj)["volume"] = HavelValue(am.getApplicationVolume(app.index));
+            (*obj)["isMuted"] = HavelValue(app.isMuted);
+            arr->push_back(HavelValue(obj));
+        }
+
+        return HavelValue(arr);
+    }));
+
+    (*audioObj)["setAppVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("audio.setAppVolume() requires (appName, volume)");
+        }
+
+        std::string appName = args[0].asString();
+        double volume = args[1].asNumber();
+        return HavelValue(am.setApplicationVolume(appName, volume));
+    }));
+
+    (*audioObj)["getAppVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("audio.getAppVolume() requires appName");
+        }
+
+        std::string appName = args[0].asString();
+        return HavelValue(am.getApplicationVolume(appName));
+    }));
+
+    (*audioObj)["increaseAppVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 1) {
+            return HavelRuntimeError("audio.increaseAppVolume() requires appName");
+        }
+
+        std::string appName = args[0].asString();
+        double amount = args.size() >= 2 ? args[1].asNumber() : 0.05;
+        return HavelValue(am.increaseApplicationVolume(appName, amount));
+    }));
+
+    (*audioObj)["decreaseAppVolume"] = HavelValue(BuiltinFunction([&am](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 1) {
+            return HavelRuntimeError("audio.decreaseAppVolume() requires appName");
+        }
+
+        std::string appName = args[0].asString();
+        double amount = args.size() >= 2 ? args[1].asNumber() : 0.05;
+        return HavelValue(am.decreaseApplicationVolume(appName, amount));
+    }));
+
     // Register audio module
     env.Define("audio", HavelValue(audioObj));
 }

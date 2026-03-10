@@ -10,6 +10,10 @@
 
 namespace havel::modules {
 
+// Global storage for KeyTap instances to keep them alive
+static std::vector<std::unique_ptr<KeyTap>> g_keyTapStorage;
+static std::mutex g_keyTapMutex;
+
 void registerIOModule(Environment& env, HostContext& ctx) {
     if (!ctx.isValid() || !ctx.io) {
         return;  // Skip if IO not available
@@ -197,6 +201,95 @@ void registerIOModule(Environment& env, HostContext& ctx) {
 
     (*ioObj)["getCurrentModifiers"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(static_cast<double>(io.GetCurrentModifiers()));
+    }));
+
+    // =========================================================================
+    // KeyTap - Advanced hotkey with conditions
+    // =========================================================================
+    
+    (*ioObj)["keyTap"] = HavelValue(BuiltinFunction([&io, &ctx](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("io.keyTap() requires at least a key name");
+        }
+        
+        std::string keyName;
+        if (args[0].isString()) {
+            keyName = args[0].asString();
+        } else {
+            return HavelRuntimeError("io.keyTap(): first argument must be key name string");
+        }
+        
+        // Parse optional arguments
+        std::function<void()> onTap;
+        std::variant<std::string, std::function<bool()>> tapCondition;
+        std::variant<std::string, std::function<bool()>> comboCondition;
+        std::function<void()> onCombo;
+        bool grabDown = true;
+        bool grabUp = true;
+        
+        if (args.size() > 1 && args[1].isFunction()) {
+            onTap = [func = args[1].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
+                func({});
+            };
+        }
+        
+        if (args.size() > 2) {
+            if (args[2].isString()) {
+                tapCondition = args[2].asString();
+            } else if (args[2].isFunction()) {
+                tapCondition = [func = args[2].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() -> bool {
+                    auto result = func({});
+                    if (auto* val = std::get_if<HavelValue>(&result)) {
+                        return val->isBool() ? val->get<bool>() : val->isNumber() ? (val->asNumber() != 0) : true;
+                    }
+                    return false;
+                };
+            }
+        }
+        
+        if (args.size() > 3) {
+            if (args[3].isString()) {
+                comboCondition = args[3].asString();
+            } else if (args[3].isFunction()) {
+                comboCondition = [func = args[3].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() -> bool {
+                    auto result = func({});
+                    if (auto* val = std::get_if<HavelValue>(&result)) {
+                        return val->isBool() ? val->get<bool>() : val->isNumber() ? (val->asNumber() != 0) : true;
+                    }
+                    return false;
+                };
+            }
+        }
+        
+        if (args.size() > 4 && args[4].isFunction()) {
+            onCombo = [func = args[4].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
+                func({});
+            };
+        }
+        
+        if (args.size() > 5 && args[5].isBool()) {
+            grabDown = args[5].get<bool>();
+        }
+        
+        if (args.size() > 6 && args[6].isBool()) {
+            grabUp = args[6].get<bool>();
+        }
+        
+        // Create KeyTap instance and store it to keep it alive
+        auto keyTap = std::make_unique<KeyTap>(
+            io, *ctx.hotkeyManager, keyName, onTap, tapCondition,
+            comboCondition, onCombo, grabDown, grabUp
+        );
+        
+        keyTap->setup();
+        
+        // Store instance to keep it alive
+        {
+            std::lock_guard<std::mutex> lock(g_keyTapMutex);
+            g_keyTapStorage.push_back(std::move(keyTap));
+        }
+        
+        return HavelValue(keyName + " KeyTap created");
     }));
 
     // =========================================================================

@@ -708,35 +708,41 @@ void SemanticAnalyzer::initializeKnownModules() {
         "active", "list", "focus", "minimize", "maximize",
         "close", "move", "resize",
         "getMonitors", "getMonitorArea",
-        "moveToNextMonitor"
+        "moveToNextMonitor", "title", "class", "pid"
     };
     
-    // Mode module
-    knownModules_["mode"] = {
-        "get", "set", "previous", "is"
+    // Mouse module
+    knownModules_["mouse"] = {
+        "move", "moveTo", "click", "doubleClick",
+        "press", "release", "scroll",
+        "getPosition", "setSensitivity", "getSensitivity"
     };
     
-    // IO module
-    knownModules_["io"] = {
-        "send", "sendKey", "keyDown", "keyUp",
-        "map", "remap",
-        "block", "unblock", "suspend", "resume",
-        "grab", "ungrab",
-        "keyTap",
-        "mouseMove", "mouseMoveTo", "mouseClick", "mouseDoubleClick",
-        "mousePress", "mouseRelease", "mouseScroll",
-        "mouseGetPosition", "mouseSetSensitivity", "mouseGetSensitivity",
-        "getCurrentModifiers"
+    // Pixel module
+    knownModules_["pixel"] = {
+        "get", "match", "wait", "region",
+        "find", "exists", "count"
     };
     
-    // System module
-    knownModules_["system"] = {
-        "notify", "run", "beep", "sleep"
+    // OCR module
+    knownModules_["ocr"] = {
+        "recognize", "findText", "waitForText"
+    };
+    
+    // Config module
+    knownModules_["config"] = {
+        "get", "set", "load", "save", "reload"
+    };
+    
+    // Hotkey module
+    knownModules_["hotkey"] = {
+        "register", "unregister", "grab", "ungrab"
     };
     
     // Clipboard module
     knownModules_["clipboard"] = {
-        "get", "set", "clear"
+        "get", "set", "clear",
+        "getHistory", "clearHistory", "getCount"
     };
     
     // Timer module
@@ -765,6 +771,29 @@ void SemanticAnalyzer::initializeKnownModules() {
     knownModules_["help"] = {
         "list", "show"
     };
+    
+    // Mode module
+    knownModules_["mode"] = {
+        "get", "set", "previous", "is"
+    };
+    
+    // IO module
+    knownModules_["io"] = {
+        "send", "sendKey", "keyDown", "keyUp",
+        "map", "remap",
+        "block", "unblock", "suspend", "resume",
+        "grab", "ungrab",
+        "keyTap",
+        "mouseMove", "mouseMoveTo", "mouseClick", "mouseDoubleClick",
+        "mousePress", "mouseRelease", "mouseScroll",
+        "mouseGetPosition", "mouseSetSensitivity", "mouseGetSensitivity",
+        "getCurrentModifiers"
+    };
+    
+    // System module
+    knownModules_["system"] = {
+        "notify", "run", "beep", "sleep"
+    };
 }
 
 void SemanticAnalyzer::initializeKnownBuiltins() {
@@ -775,7 +804,15 @@ void SemanticAnalyzer::initializeKnownBuiltins() {
         "sqrt", "abs", "sin", "cos", "tan", "PI", "E",
         "lower", "upper",
         "sleep", "exit",
-        "spawn", "await", "channel", "yield"
+        "spawn", "await", "channel", "yield",
+        // Process functions
+        "run", "runDetached",
+        // IO functions
+        "send", "click",
+        // System detection
+        "detectSystem", "detectDisplay", "detectMonitorConfig", "detectWindowManager",
+        // Hotkey function
+        "Hotkey"
     };
 }
 

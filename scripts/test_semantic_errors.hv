@@ -1,0 +1,22 @@
+// Test Semantic Error Detection
+
+print("=== Testing Semantic Error Detection ===\n")
+
+// Test 1: This should work fine
+print("Test 1: Valid code\n")
+let valid = 100
+print("valid =", valid)
+
+// Test 2: Uncomment to test duplicate variable detection
+// print("\nTest 2: Duplicate Variable (should fail)\n")
+// let duplicate = 1
+// let duplicate = 2  // Error: duplicate in same scope
+
+// Test 3: Uncomment to test undefined variable
+// print("\nTest 3: Undefined Variable (should fail)\n")
+// print(undefinedVar)  // Error: undefined variable
+
+// Test 4: Return outside function (already tested by analyzer)
+// This is caught at parse time
+
+print("\n=== Test Complete ===\n")

@@ -1,0 +1,8 @@
+// Test Semantic Error Detection - Duplicate Variable
+
+print("=== Testing Duplicate Variable Detection ===\n")
+
+let x = 10
+let x = 20  // This should trigger: DuplicateDefinition
+
+print("x =", x)

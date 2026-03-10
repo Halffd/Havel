@@ -1,5 +1,7 @@
 #pragma once
 #include "HotkeyExecutor.hpp"         // Include HotkeyExecutor
+#include "MouseGestureEngine.hpp"
+#include "UinputDevice.hpp"          // Include UinputDevice
 #include "core/CallbackTypes.hpp"     // Include callback types
 #include "core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
@@ -105,11 +107,14 @@ public:
 
   // Send event through uinput
   void SendUinputEvent(int type, int code, int value);
-  
+
   // Batch event sending for reduced syscall overhead
   void BeginUinputBatch();
   void QueueUinputEvent(int type, int code, int value);
   void EndUinputBatch();
+
+  // Emergency release all keys
+  void EmergencyReleaseAllKeys();
 
   // Set blocking mode for specific keys
   void SetBlockInput(bool block);
@@ -145,12 +150,15 @@ public:
   // Callback for any key press
   void SetAnyKeyPressCallback(AnyKeyPressCallback callback);
 
+  // Raw input event stream for external hotkey ownership.
+  void SetInputEventCallback(InputEventCallback callback) {
+    inputEventCallback = std::move(callback);
+  }
+
   // Set HotkeyExecutor for thread-safe callback execution
   void SetHotkeyExecutor(HotkeyExecutor *executor) {
     hotkeyExecutor = executor;
   }
-
-  int uinputFd = -1;
 
   // Get current mouse position (from evdev ABS events)
   std::pair<int, int> GetMousePosition() const {
@@ -159,6 +167,9 @@ public:
 
   // Callback for any key press
   std::function<void(const std::string &key)> anyKeyPressCallback = nullptr;
+
+  // Raw input events emitted before internal matching.
+  InputEventCallback inputEventCallback = nullptr;
 
   // Callback for input notification (for watchdog)
   std::function<void()> inputNotificationCallback = nullptr;
@@ -266,6 +277,9 @@ private:
   int shutdownFd = -1; // eventfd for clean shutdown
   int emergencyShutdownKey = 0;
 
+  // Uinput device for virtual input
+  std::unique_ptr<UinputDevice> uinputDevice;
+
   // State tracking (exact from IO.cpp)
   mutable std::shared_mutex stateMutex;
   std::map<int, std::chrono::steady_clock::time_point> keyDownTime;
@@ -316,16 +330,8 @@ private:
   std::chrono::steady_clock::time_point lastWheelUpTime{};
   std::chrono::steady_clock::time_point lastWheelDownTime{};
 
-  // Mouse gesture tracking
-  MouseGesture currentMouseGesture;
-
-  // Registered gesture hotkeys (ID -> vector of gesture directions)
-  std::unordered_map<int, std::vector<MouseGestureDirection>> gestureHotkeys;
-
-  // Mouse gesture tracking variables
-  int gestureLastX = 0;
-  int gestureLastY = 0;
-  std::chrono::steady_clock::time_point gestureLastTime;
+  // Gesture recognition state
+  MouseGestureEngine mouseGestureEngine;
 
   // Mouse movement hotkey queuing
   // Use zero-initialized time_point to avoid overflow when calculating durations
@@ -333,14 +339,6 @@ private:
   mutable std::shared_mutex movementHotkeyMutex;
   std::queue<int> queuedMovementHotkeys;
   std::atomic<bool> movementHotkeyProcessing{false};
-
-  // Buffer for recent mouse movements for gesture detection
-  struct MouseMovement {
-    int dx, dy;
-    std::chrono::steady_clock::time_point time;
-  };
-  std::vector<MouseMovement> gestureBuffer;
-  static const size_t GESTURE_BUFFER_SIZE = 10; // Store last 10 movements
 
   // Device grabbing
   bool grabDevices = false;

@@ -2,6 +2,8 @@
 
 #include "core/BrightnessManager.hpp"
 #include "core/automation/AutomationManager.hpp"
+#include "media/AudioManager.hpp"
+#include "media/MPVController.hpp"
 #include "gui/SettingsWindow.hpp"
 #include "qt.hpp"
 #include <QIcon>

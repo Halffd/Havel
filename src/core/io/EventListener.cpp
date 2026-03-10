@@ -246,6 +246,28 @@ void EventListener::RemoveKeyRemap(int fromCode) {
   keyRemaps.erase(fromCode);
 }
 
+int EventListener::RemapKey(int evdevCode, bool down) {
+  std::lock_guard<std::mutex> lock(remapMutex);
+  if (down) {
+    // On press: apply remapping and store the mapping
+    auto remapIt = keyRemaps.find(evdevCode);
+    if (remapIt != keyRemaps.end()) {
+      activeRemaps[evdevCode] = remapIt->second;
+      return remapIt->second;
+    }
+    activeRemaps[evdevCode] = evdevCode;
+  } else {
+    // On release: use the same mapping we stored on press
+    auto it = activeRemaps.find(evdevCode);
+    if (it != activeRemaps.end()) {
+      int mappedCode = it->second;
+      activeRemaps.erase(it);
+      return mappedCode;
+    }
+  }
+  return evdevCode;
+}
+
 void EventListener::SetEmergencyShutdownKey(int evdevCode) {
   emergencyShutdownKey = evdevCode;
 }

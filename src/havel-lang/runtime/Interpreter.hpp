@@ -601,6 +601,9 @@ private:
   std::mutex timersMutex; // Thread safety for timer operations
 
   HavelResult Evaluate(const ast::ASTNode &node);
+  
+  // Type system helpers
+  std::shared_ptr<HavelType> resolveType(const ast::TypeDefinition& typeDef);
 
   // KeyTap constructor for advanced hotkey functionality
   KeyTap* createKeyTap(

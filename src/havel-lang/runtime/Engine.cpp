@@ -33,7 +33,12 @@ static havel::HavelValue unwrapHavelResult(const havel::HavelResult &result) {
 Engine::Engine(havel::IO &io_ref, havel::WindowManager &wm_ref,
                const EngineConfig &cfg)
     : config(cfg), io(io_ref), windowManager(wm_ref) {
-  InitializeComponents();
+  // Build HostContext from individual managers
+  HostContext ctx;
+  ctx.io = &io_ref;
+  ctx.windowManager = &wm_ref;
+  
+  InitializeComponents(ctx);
 
 #ifdef HAVEL_ENABLE_LLVM
   if (config.mode == ExecutionMode::JIT || config.mode == ExecutionMode::AOT) {
@@ -50,10 +55,10 @@ Engine::Engine(havel::IO &io_ref, havel::WindowManager &wm_ref,
   }
 }
 
-void Engine::InitializeComponents() {
+void Engine::InitializeComponents(const HostContext& ctx) {
   // Always create parser and interpreter
   parser = std::make_unique<havel::parser::Parser>();
-  interpreter = std::make_unique<havel::Interpreter>(io, windowManager);
+  interpreter = std::make_unique<havel::Interpreter>(ctx);
 
   if (config.verboseOutput) {
     std::cout << "✅ Parser and Interpreter initialized" << std::endl;

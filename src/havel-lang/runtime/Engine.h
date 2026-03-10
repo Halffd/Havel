@@ -3,6 +3,7 @@
 #include "../lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "runtime/Interpreter.hpp"
+#include "runtime/Module.hpp"
 #include "ast/AST.h"
 #include "core/IO.hpp"
 #include "window/WindowManager.hpp"
@@ -140,7 +141,7 @@ public:
 private:
     // Helper methods
     std::string ReadFile(const std::string& filePath);
-    void InitializeComponents();
+    void InitializeComponents(const HostContext& ctx);
     void LogExecutionTime(const std::string& operation);
     void Log(const std::string& level, const std::string& message);
 

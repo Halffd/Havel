@@ -9,6 +9,7 @@
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
 #include "utils/Utils.hpp"
+#include "window/WindowManager.hpp"
 #include "window/WindowManagerDetector.hpp"
 #include <chrono>
 #include <fcntl.h>

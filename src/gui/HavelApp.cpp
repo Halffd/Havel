@@ -120,11 +120,20 @@ void HavelApp::initializeComponents(bool isStartup) {
   auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
   auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
   auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
-  
-  interpreter = std::make_shared<Interpreter>(
-      *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
-      audioManager.get(), guiManager.get(),
-      screenshotMgr, clipboardMgr, pixelAuto);
+
+  // Build HostContext from managers
+  HostContext ctx;
+  ctx.io = io.get();
+  ctx.windowManager = windowManager.get();
+  ctx.hotkeyManager = hotkeyManager.get();
+  ctx.brightnessManager = brightnessManager.get();
+  ctx.audioManager = audioManager.get();
+  ctx.guiManager = guiManager.get();
+  ctx.screenshotManager = screenshotMgr;
+  ctx.clipboardManager = clipboardMgr;
+  ctx.pixelAutomation = pixelAuto;
+
+  interpreter = std::make_shared<Interpreter>(ctx);
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
@@ -275,11 +284,20 @@ void HavelApp::initializeComponents(bool isStartup) {
     auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
     auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
     auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
-    
-    interpreter = std::make_shared<Interpreter>(
-        *io, *windowManager, hotkeyManager.get(), brightnessManager.get(),
-        audioManager.get(), guiManager.get(),
-        screenshotMgr, clipboardMgr, pixelAuto);
+
+    // Build HostContext from managers
+    HostContext ctx;
+    ctx.io = io.get();
+    ctx.windowManager = windowManager.get();
+    ctx.hotkeyManager = hotkeyManager.get();
+    ctx.brightnessManager = brightnessManager.get();
+    ctx.audioManager = audioManager.get();
+    ctx.guiManager = guiManager.get();
+    ctx.screenshotManager = screenshotMgr;
+    ctx.clipboardManager = clipboardMgr;
+    ctx.pixelAutomation = pixelAuto;
+
+    interpreter = std::make_shared<Interpreter>(ctx);
     std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
     interpreter = nullptr;

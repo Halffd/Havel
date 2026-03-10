@@ -18,6 +18,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include "utils/Util.hpp"
 
 namespace havel {
 
@@ -30,12 +31,8 @@ using ConfigMap = std::unordered_map<std::string, ConfigValue>;
 using ConfigObjectPtr = std::shared_ptr<ConfigObject>;
 
 // Trim whitespace helper
-inline std::string trim(const std::string &str) {
-    size_t first = str.find_first_not_of(" \t\n\r");
-    if (first == std::string::npos) return "";
-    size_t last = str.find_last_not_of(" \t\n\r");
-    return str.substr(first, last - first + 1);
-}
+using havel::trim; // from Util.hpp
+// inline std::string trim(const std::string &str) {
 
 // Case-insensitive string comparison
 inline bool iequals(const std::string &a, const std::string &b) {

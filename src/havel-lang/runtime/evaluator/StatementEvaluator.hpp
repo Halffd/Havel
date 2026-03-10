@@ -8,6 +8,7 @@
 
 #include "../Environment.hpp"
 #include "../../ast/AST.h"
+#include "../../../core/ConfigManager.hpp"
 
 namespace havel {
 

@@ -2,14 +2,21 @@
 
 #include "ConditionalHotkeyManager.hpp"
 #include "core/CallbackTypes.hpp"
+#include "core/MouseGestureTypes.hpp"
+#include "core/io/MouseGestureEngine.hpp"
+#include <chrono>
 #include <functional>
 #include <memory>
+#include <shared_mutex>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace havel {
+
+struct HotKey;
 
 class IO;
 class WindowManager;
@@ -90,6 +97,8 @@ public:
   void NotifyAnyKeyPressed(const std::string &key);
   void NotifyInputReceived();
 
+  bool HandleInputEvent(const InputEvent &event);
+
   static std::unordered_map<int, HotKey> &RegisteredHotkeys();
   static std::mutex &RegisteredHotkeysMutex();
 
@@ -108,6 +117,43 @@ private:
   mutable std::mutex anyKeyCallbacksMutex;
   bool inputCallbacksInitialized = false;
   bool focusTrackingEnabled = false;
+
+  struct ModifierState {
+    bool leftCtrl = false;
+    bool rightCtrl = false;
+    bool leftShift = false;
+    bool rightShift = false;
+    bool leftAlt = false;
+    bool rightAlt = false;
+    bool leftMeta = false;
+    bool rightMeta = false;
+  };
+
+  struct ActiveInput {
+    std::chrono::steady_clock::time_point timestamp;
+    int modifiers = 0;
+  };
+
+  void updateModifierState(int keyCode, bool down);
+  int currentModifierMask() const;
+  bool checkModifierMatch(int required, bool wildcard) const;
+  bool evaluateCombo(const HotKey &hotkey) const;
+  bool evaluateWheelCombo(const HotKey &hotkey, int wheelDirection) const;
+  void executeHotkey(const HotKey &hotkey) const;
+
+  mutable std::shared_mutex stateMutex;
+  std::unordered_map<int, ActiveInput> activeInputs;
+  std::unordered_map<int, bool> physicalKeyStates;
+  std::unordered_map<int, bool> mouseButtonStates;
+  ModifierState modifierState;
+  bool isProcessingWheelEvent = false;
+  int currentWheelDirection = 0;
+  std::chrono::steady_clock::time_point lastWheelUpTime{};
+  std::chrono::steady_clock::time_point lastWheelDownTime{};
+
+  MouseGestureEngine mouseGestureEngine;
+  std::unordered_set<int> registeredGestureHotkeys;
+  std::chrono::steady_clock::time_point lastMovementHotkeyTime{};
 };
 
 } // namespace havel

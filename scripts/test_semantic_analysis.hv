@@ -1,0 +1,44 @@
+// Test Semantic Analysis
+
+print("=== Testing Semantic Analysis ===\n")
+
+// Test 1: Variable declaration
+print("Test 1: Variable Declaration\n")
+let x = 10
+let y = 20
+print("x =", x, ", y =", y)
+
+// Test 2: Function definition and call
+print("\nTest 2: Function Definition\n")
+fn add(a, b) {
+    return a + b
+}
+print("add(5, 3) =", add(5, 3))
+
+// Test 3: Duplicate variable (should be caught by semantic analyzer)
+print("\nTest 3: Duplicate Variable in Same Scope\n")
+let z = 100
+// This should trigger a semantic error if we try to redefine z
+// let z = 200  // Uncomment to test duplicate detection
+
+// Test 4: Undefined variable (should be caught)
+print("\nTest 4: Using Variables\n")
+print("z =", z)
+print("add(z, x) =", add(z, x))
+
+// Test 5: Nested scopes
+print("\nTest 5: Nested Scopes\n")
+{
+    let inner = 42
+    print("Inner scope: inner =", inner)
+}
+// print(inner)  // This would be an error - out of scope
+
+// Test 6: Function parameters
+print("\nTest 6: Function Parameters\n")
+fn multiply(a, b) {
+    return a * b
+}
+print("multiply(6, 7) =", multiply(6, 7))
+
+print("\n=== Semantic Analysis Test Complete ===\n")

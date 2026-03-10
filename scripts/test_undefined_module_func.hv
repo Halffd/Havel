@@ -1,0 +1,4 @@
+// Test Semantic Analyzer - Undefined Module Function Detection
+
+// This should FAIL: undefined function in existing module
+let x = math.nonexistentFunction()

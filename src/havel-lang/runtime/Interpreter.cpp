@@ -29,6 +29,7 @@
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
 #include "stdlib/ProcessModule.hpp"  // For registerProcessModule
 #include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadHostModules
+#include "semantic/SemanticAnalyzer.hpp"  // For semantic analysis
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -306,6 +307,7 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
+  // Load all host modules (includes io module with keyTap, etc.)
   havel::modules::loadHostModules(*environment, this);
 }
 
@@ -365,6 +367,34 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
         havel::info("AST: (null program)");
       }
     }
+
+    // =========================================================================
+    // SEMANTIC ANALYSIS PHASE
+    // =========================================================================
+    // Now we actually USE the SemanticAnalyzer (it's not just for show anymore!)
+    semantic::SemanticAnalyzer semanticAnalyzer;
+    
+    havel::info("Running semantic analysis...");
+    bool semanticOk = semanticAnalyzer.analyze(*programPtr);
+    
+    if (!semanticOk) {
+      // Print semantic errors
+      std::ostringstream oss;
+      oss << "\n  ╭─ Semantic Analysis Errors (" << semanticAnalyzer.getErrors().size() << " errors found)\n";
+      oss << "  │\n";
+      for (const auto& err : semanticAnalyzer.getErrors()) {
+        oss << "  │ [ERROR line " << err.line << ":" << err.column << "] " << err.message << "\n";
+        oss << "  │\n";
+      }
+      oss << "  ╰─ Semantic analysis failed\n";
+      havel::error(oss.str());
+      return HavelRuntimeError("Semantic analysis failed with " + 
+                               std::to_string(semanticAnalyzer.getErrors().size()) + " errors");
+    }
+    
+    havel::info("Semantic analysis passed! Symbol table has " + 
+                std::to_string(semanticAnalyzer.getSymbolTable().getSymbolCount()) + " symbols");
+    // =========================================================================
 
     // Mark as not first run after initial execution
     bool wasFirstRun = isFirstRun.load();
@@ -1230,36 +1260,90 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   case ast::BinaryOperator::Or:
     lastResult = HavelValue(ValueToBool(left) || ValueToBool(right));
     break;
-  case ast::BinaryOperator::ConfigAppend:
+  case ast::BinaryOperator::ConfigAppend: {
     // >> config operator
     // value >> config.path - SET config value
-    // config.path >> variable - GET config value (not yet implemented)
+    // config.path >> variable - GET config value
+    // { block } >> config - SET config from object
+    auto& config = Configs::Get();
+
     if (right.isObject()) {
-      // value >> {config} - merge into config object
+      // value >> {config} - merge object into config
       auto rightObj = right.asObject();
-      if (rightObj && left.isString()) {
-        // Simple case: "value" >> configObj
-        // For now, just store in a special config variable
-        environment->Define("__config_value__", left);
-        lastResult = left;
+      if (rightObj) {
+        for (const auto& [key, val] : *rightObj) {
+          if (val.isString()) {
+            config.Set("General." + key, val.asString(), false);
+          } else if (val.isNumber()) {
+            config.Set("General." + key, val.asNumber(), false);
+          } else if (val.isBool()) {
+            config.Set("General." + key, val.asBool(), false);
+          }
+        }
+        config.EndBatch();  // Save all changes
+        lastResult = right;
       } else {
-        lastResult = HavelRuntimeError("Config append requires string value");
+        lastResult = HavelRuntimeError("Config append requires valid object");
       }
     } else if (right.isString()) {
       // value >> "config.key" - SET config value
       std::string configKey = right.asString();
+
       if (left.isString()) {
-        // Store in config
-        auto &config = Configs::Get();
-        config.Set(configKey, left.asString(), false);
+        config.Set(configKey, left.asString(), true);
+        lastResult = left;
+      } else if (left.isNumber()) {
+        config.Set(configKey, left.asNumber(), true);
+        lastResult = left;
+      } else if (left.isBool()) {
+        config.Set(configKey, left.asBool(), true);
+        lastResult = left;
+      } else if (left.isObject()) {
+        // Object >> "config" - merge object into config
+        auto leftObj = left.asObject();
+        if (leftObj) {
+          for (const auto& [key, val] : *leftObj) {
+            std::string fullKey = configKey.empty() ? key : configKey + "." + key;
+            if (val.isString()) {
+              config.Set(fullKey, val.asString(), false);
+            } else if (val.isNumber()) {
+              config.Set(fullKey, val.asNumber(), false);
+            } else if (val.isBool()) {
+              config.Set(fullKey, val.asBool(), false);
+            }
+          }
+          config.EndBatch();
+        }
         lastResult = left;
       } else {
-        lastResult = HavelRuntimeError("Config value must be a string");
+        lastResult = HavelRuntimeError("Config value must be string, number, bool, or object");
       }
     } else {
-      lastResult = HavelRuntimeError("Config append requires string or object on right side");
+      // config.path >> variable - GET config value (reverse direction)
+      // This handles: brightness.defaultBrightness >> var
+      std::string configKey;
+      if (right.isString()) {
+        configKey = right.asString();
+      } else {
+        lastResult = HavelRuntimeError("Config get requires string key on right side");
+        break;
+      }
+
+      // Get value from config
+      auto configVal = config.Get<std::string>(configKey, "");
+      if (!configVal.empty()) {
+        lastResult = HavelValue(configVal);
+      } else {
+        auto configNum = config.Get<double>(configKey, 0.0);
+        if (configNum != 0.0) {
+          lastResult = HavelValue(configNum);
+        } else {
+          lastResult = HavelValue(nullptr);  // Config key not found
+        }
+      }
     }
     break;
+  }
   default:
     lastResult = HavelRuntimeError("Unsupported binary operator");
   }
@@ -3199,24 +3283,113 @@ void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
   lastResult = nullptr;
 }
 
-// Stubs for unimplemented visit methods
+// ============================================================================
+// Type System Implementation
+// ============================================================================
+
+// Helper to resolve AST TypeDefinition to HavelType
+std::shared_ptr<HavelType> Interpreter::resolveType(const ast::TypeDefinition& typeDef) {
+    switch (typeDef.kind) {
+        case ast::NodeType::TypeAnnotation: {
+            const auto& typeRef = static_cast<const ast::TypeReference&>(typeDef);
+            const std::string& name = typeRef.name;
+            
+            // Check builtin types
+            if (name == "Num" || name == "Number") return HavelType::num();
+            if (name == "Str" || name == "String") return HavelType::str();
+            if (name == "Bool" || name == "Boolean") return HavelType::boolean();
+            if (name == "Any") return HavelType::any();
+            if (name == "Null") return HavelType::null();
+            
+            // Check registered types
+            auto& registry = TypeRegistry::getInstance();
+            if (auto structType = registry.getStructType(name)) return structType;
+            if (auto enumType = registry.getEnumType(name)) return enumType;
+            if (auto aliasType = registry.getTypeAlias(name)) return aliasType;
+            
+            // Unknown type - return Any
+            return HavelType::any();
+        }
+        
+        case ast::NodeType::UnionType: {
+            const auto& unionType = static_cast<const ast::UnionType&>(typeDef);
+            // For now, just return Any - full union type support needs more work
+            return HavelType::any();
+        }
+        
+        case ast::NodeType::RecordExpression: {
+            const auto& recordType = static_cast<const ast::RecordType&>(typeDef);
+            auto havelRecord = std::make_shared<HavelRecordType>();
+            for (const auto& [name, typeDefPtr] : recordType.fields) {
+                if (typeDefPtr) {
+                    havelRecord->addField(name, resolveType(*typeDefPtr));
+                }
+            }
+            return havelRecord;
+        }
+        
+        case ast::NodeType::FunctionDeclaration: {
+            const auto& funcType = static_cast<const ast::FunctionType&>(typeDef);
+            std::vector<std::shared_ptr<HavelType>> paramTypes;
+            for (const auto& paramDef : funcType.paramTypes) {
+                if (paramDef) {
+                    paramTypes.push_back(resolveType(*paramDef));
+                }
+            }
+            std::optional<std::shared_ptr<HavelType>> returnType;
+            if (funcType.returnType) {
+                returnType = resolveType(*funcType.returnType);
+            }
+            return std::make_shared<HavelFunctionType>(paramTypes, returnType);
+        }
+        
+        default:
+            return HavelType::any();
+    }
+}
+
 void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration &node) {
-  lastResult = HavelRuntimeError("Type declarations not implemented.");
+    // type Name = Definition
+    auto typeDef = resolveType(*node.definition);
+    
+    // Register as type alias
+    TypeRegistry::getInstance().registerTypeAlias(node.name, typeDef);
+    
+    lastResult = HavelValue(nullptr);
 }
+
 void Interpreter::visitTypeAnnotation(const ast::TypeAnnotation &node) {
-  lastResult = HavelRuntimeError("Type annotations not implemented.");
+    // Type annotations are handled during variable/function declaration
+    // This is called when annotation is used standalone
+    if (node.type) {
+        auto type = resolveType(*node.type);
+        // Store in lastResult for potential use
+        lastResult = HavelValue(nullptr);  // Type annotations don't produce values
+    } else {
+        lastResult = HavelValue(nullptr);
+    }
 }
+
 void Interpreter::visitUnionType(const ast::UnionType &node) {
-  lastResult = HavelRuntimeError("Union types not implemented.");
+    // Union types are resolved in resolveType()
+    // This visitor is for when UnionType appears in expression context
+    lastResult = HavelValue(nullptr);
 }
+
 void Interpreter::visitRecordType(const ast::RecordType &node) {
-  lastResult = HavelRuntimeError("Record types not implemented.");
+    // Record types are resolved in resolveType()
+    lastResult = HavelValue(nullptr);
 }
+
 void Interpreter::visitFunctionType(const ast::FunctionType &node) {
-  lastResult = HavelRuntimeError("Function types not implemented.");
+    // Function types are resolved in resolveType()
+    lastResult = HavelValue(nullptr);
 }
+
 void Interpreter::visitTypeReference(const ast::TypeReference &node) {
-  lastResult = HavelRuntimeError("Type references not implemented.");
+    // Type references are resolved in resolveType()
+    auto type = resolveType(node);
+    lastResult = HavelValue(nullptr);
 }
 
 
@@ -3243,19 +3416,131 @@ void Interpreter::setStopOnError(bool stop) {
 }
 
 std::string Interpreter::getInterpreterState() const {
-    return "Interpreter state: running";
+    return "Interpreter running";
 }
 
+// ============================================================================
+// Conditional Hotkey Implementation
+// ============================================================================
 
-// Missing visitor method stubs
 void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
-    (void)node;
-    lastResult = HavelRuntimeError("Conditional hotkeys not implemented");
+    // Need HotkeyManager to register conditional hotkey
+    if (!hostContext.hotkeyManager) {
+        lastResult = HavelRuntimeError("Conditional hotkeys require HotkeyManager", 
+                                       node.line, node.column);
+        return;
+    }
+    
+    // Evaluate the binding to get the hotkey details
+    if (!node.binding) {
+        lastResult = HavelRuntimeError("Conditional hotkey requires a binding",
+                                       node.line, node.column);
+        return;
+    }
+    
+    // Extract key string from binding
+    std::string keyStr;
+    if (!node.binding->hotkeys.empty()) {
+        // Get first hotkey as string
+        auto& hkExpr = node.binding->hotkeys[0];
+        if (hkExpr && hkExpr->kind == ast::NodeType::HotkeyLiteral) {
+            const auto& hkLit = static_cast<const ast::HotkeyLiteral&>(*hkExpr);
+            keyStr = hkLit.combination;
+        }
+    }
+    
+    if (keyStr.empty()) {
+        lastResult = HavelRuntimeError("Conditional hotkey requires a valid key",
+                                       node.line, node.column);
+        return;
+    }
+    
+    // Evaluate condition expression to get a function
+    if (!node.condition) {
+        lastResult = HavelRuntimeError("Conditional hotkey requires a condition",
+                                       node.line, node.column);
+        return;
+    }
+    
+    // Create condition function that evaluates the condition expression
+    auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
+        auto result = Evaluate(*condExpr);
+        if (isError(result)) {
+            return false;
+        }
+        HavelValue condValue = unwrap(result);
+        
+        // Check if true (bool or non-zero number)
+        if (condValue.isBool()) {
+            return condValue.get<bool>();
+        } else if (condValue.isNumber()) {
+            return (condValue.asNumber() != 0);
+        }
+        return true;
+    };
+    
+    // Create action function from binding
+    auto actionFunc = [this, binding = node.binding.get()]() {
+        // Execute the binding's action
+        if (binding->action) {
+            Evaluate(*binding->action);
+        }
+    };
+    
+    // Register with HotkeyManager using AddContextualHotkey
+    int id = hostContext.hotkeyManager->AddContextualHotkey(
+        keyStr, 
+        std::move(conditionFunc),
+        std::move(actionFunc)
+    );
+    
+    if (id > 0) {
+        lastResult = HavelValue(static_cast<double>(id));
+    } else {
+        lastResult = HavelRuntimeError("Failed to register conditional hotkey",
+                                       node.line, node.column);
+    }
 }
 
 void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
-    (void)node;
-    lastResult = HavelRuntimeError("When blocks not implemented");
+    // Evaluate the condition
+    if (!node.condition) {
+        lastResult = HavelRuntimeError("When block requires a condition",
+                                       node.line, node.column);
+        return;
+    }
+    
+    auto condResult = Evaluate(*node.condition);
+    if (isError(condResult)) {
+        lastResult = condResult;
+        return;
+    }
+    
+    HavelValue condValue = unwrap(condResult);
+    
+    // Check if condition is true
+    bool isTrue = false;
+    if (condValue.isBool()) {
+        isTrue = condValue.get<bool>();
+    } else if (condValue.isNumber()) {
+        isTrue = (condValue.asNumber() != 0);
+    } else {
+        isTrue = true;
+    }
+    
+    if (isTrue) {
+        // Execute all statements in the when block
+        for (const auto& stmt : node.statements) {
+            if (stmt) {
+                Evaluate(*stmt);
+                if (isError(lastResult)) {
+                    return;
+                }
+            }
+        }
+    }
+    
+    lastResult = HavelValue(nullptr);
 }
 
 

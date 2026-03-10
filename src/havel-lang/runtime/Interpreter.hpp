@@ -1,17 +1,14 @@
 #pragma once
 #include "ast/AST.h"
-#include "core/ConfigManager.hpp"
-#include "core/IO.hpp"
-#include "core/io/KeyTap.hpp"
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
 #include "types/HavelType.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
-#include "window/Window.hpp"
-#include "window/WindowManager.hpp"
-#include "../../host/HostContext.hpp"  // For HostContext
-#include "RuntimeServices.hpp"  // Runtime services container
+#include "../../host/HostContext.hpp"
+#include "RuntimeServices.hpp"
+#include "Module.hpp"
+#include "core/io/KeyTap.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -20,6 +17,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -28,17 +26,12 @@
 
 namespace havel {
 
-// Forward declarations for managers
+// Forward declarations - host managers accessed via HostContext
+class IO;
 class HotkeyManager;
-class BrightnessManager;
-class AudioManager;
-class GUIManager;
-class ScreenshotManager;
-class ClipboardManager;
-class PixelAutomation;
-
-// Forward declarations
 class Environment;
+class Configs;
+
 namespace ast {
 struct FunctionDeclaration;
 struct Program;
@@ -405,30 +398,26 @@ class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<
   friend class MemberResolver;
 
 public:
-  // Full interpreter with IO and all managers
-  Interpreter(IO &io_system, WindowManager &window_mgr,
-              HotkeyManager *hotkey_mgr = nullptr,
-              BrightnessManager *brightness_mgr = nullptr,
-              AudioManager *audio_mgr = nullptr, GUIManager *gui_mgr = nullptr,
-              ScreenshotManager *screenshot_mgr = nullptr,
-              ClipboardManager *clipboard_mgr = nullptr,
-              PixelAutomation *pixel_automation = nullptr,
-              const std::vector<std::string> &cli_args = {});
+  // Full interpreter with HostContext
+  explicit Interpreter(HostContext ctx, const std::vector<std::string> &cli_args = {});
 
   // Minimal interpreter for pure script execution (no IO/hotkeys)
   explicit Interpreter(const std::vector<std::string> &cli_args = {});
 
   ~Interpreter() {
     if (m_destroyed) m_destroyed->store(true);
-    // Explicitly clear environment and lastResult to ensure proper cleanup
     environment.reset();
     lastResult = HavelValue(nullptr);
   }
 
-  // Get environment (for CallDispatcher)
+  // Get environment
   std::shared_ptr<Environment>& getEnvironment() { return environment; }
 
-  // Set last result (for services)
+  // Get HostContext for module access
+  HostContext& getHostContext() { return hostContext; }
+  const HostContext& getHostContext() const { return hostContext; }
+
+  // Set last result
   void setLastResult(HavelResult result) { lastResult = result; }
 
   HavelResult Execute(const std::string &sourceCode);
@@ -562,17 +551,9 @@ public:
 
 private:
   std::shared_ptr<Environment> environment;
-  IO *io;
-  WindowManager *windowManager;
-  HotkeyManager *hotkeyManager;
-  BrightnessManager *brightnessManager;
-  AudioManager *audioManager;
-  GUIManager *guiManager;
-  ScreenshotManager *screenshotManager;
-  ClipboardManager *clipboardManager;
-  PixelAutomation *pixelAutomation;
+  HostContext hostContext;  // All host managers accessed via context
   HavelResult lastResult;
-  std::mutex interpreterMutex; // Protect interpreter state
+  std::mutex interpreterMutex;
 
   // Runtime services (long-lived, reused for all evaluations)
   RuntimeServices services;
@@ -587,27 +568,26 @@ private:
     bool bytecode = false;
     bool jit = false;
   } debug;
-  
-  // Debug control flags
-  bool stopOnError = false;  // Stop execution on first error/warning
-  bool showASTOnParse = false;  // Show AST after parsing
 
-  // KeyTap instances for advanced hotkey functionality
+  // Debug control flags
+  bool stopOnError = false;
+  bool showASTOnParse = false;
+
+  // KeyTap instances
   std::vector<std::unique_ptr<KeyTap>> keyTaps;
 
-  // Keep parsed programs alive for function declarations captured by closures
+  // Keep parsed programs alive
   std::vector<std::unique_ptr<ast::Program>> loadedPrograms;
 
-  // Shared atomic flag to prevent use-after-free in conditional hotkey lambdas
-  // Using shared_ptr ensures the flag outlives the Interpreter and can be safely checked by lambdas
+  // Shared atomic flag for conditional hotkey lambdas
   std::shared_ptr<std::atomic<bool>> m_destroyed;
 
   // Script auto-reload support
-  std::string scriptPath;  // Path to current script file
-  std::atomic<bool> reloadEnabled{false};  // Auto-reload enabled state
-  std::atomic<bool> isFirstRun{true};  // Track if this is first run vs reload
-  std::filesystem::file_time_type lastModifiedTime;  // Last known file modification time
-  std::thread reloadWatcherThread;  // File watcher thread
+  std::string scriptPath;
+  std::atomic<bool> reloadEnabled{false};
+  std::atomic<bool> isFirstRun{true};
+  std::filesystem::file_time_type lastModifiedTime;
+  std::thread reloadWatcherThread;
   std::atomic<bool> reloadWatcherRunning{false};  // Watcher thread control
   std::mutex reloadMutex;  // Protect reload state
   
@@ -667,21 +647,6 @@ public:
 
   // Get shared pointer to destroyed flag for safe lambda capture
   std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
-  
-  // Get host context for module loading
-  HostContext getHostContext() const {
-    HostContext ctx;
-    ctx.io = io;
-    ctx.windowManager = windowManager;
-    ctx.hotkeyManager = hotkeyManager;
-    ctx.brightnessManager = brightnessManager;
-    ctx.audioManager = audioManager;
-    ctx.guiManager = guiManager;
-    ctx.screenshotManager = screenshotManager;
-    ctx.clipboardManager = clipboardManager;
-    ctx.pixelAutomation = pixelAutomation;
-    return ctx;
-  }
 
   // Reload helper methods (private)
   void executeOnStart();

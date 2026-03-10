@@ -293,27 +293,16 @@ double Interpreter::ValueToNumber(const HavelValue &value) {
       value.data); // Use .data member for std::visit
 }
 
-// Constructor with Dependency Injection
-Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
-                         HotkeyManager *hotkey_mgr,
-                         BrightnessManager *brightness_mgr,
-                         AudioManager *audio_mgr, GUIManager *gui_mgr,
-                         ScreenshotManager *screenshot_mgr,
-                         ClipboardManager *clipboard_mgr,
-                         PixelAutomation *pixel_automation,
-                         const std::vector<std::string> &cli_args)
-    : io(&io_system), windowManager(&window_mgr), hotkeyManager(hotkey_mgr),
-      brightnessManager(brightness_mgr), audioManager(audio_mgr),
-      guiManager(gui_mgr), screenshotManager(screenshot_mgr),
-      clipboardManager(clipboard_mgr), pixelAutomation(pixel_automation),
-      lastResult(HavelValue(nullptr)), cliArgs(cli_args),
+// Constructor with HostContext
+Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_args)
+    : hostContext(std::move(ctx)), lastResult(HavelValue(nullptr)), cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
 
   // Initialize runtime services
-  services.setInput(io);
+  services.setInput(hostContext.io);
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
@@ -322,15 +311,10 @@ Interpreter::Interpreter(IO &io_system, WindowManager &window_mgr,
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)
 Interpreter::Interpreter(const std::vector<std::string> &cli_args)
-    : io(nullptr), windowManager(nullptr),
-      hotkeyManager(nullptr), brightnessManager(nullptr), audioManager(nullptr),
-      guiManager(nullptr), screenshotManager(nullptr),
-      clipboardManager(nullptr), pixelAutomation(nullptr),
-      lastResult(HavelValue(nullptr)), cliArgs(cli_args),
+    : hostContext(), lastResult(HavelValue(nullptr)), cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
-  // Initialize KeyMap for key name lookups (even in pure mode)
   KeyMap::Initialize();
-  
+
   info("Minimal Interpreter created (pure mode - no IO/hotkeys)");
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
@@ -774,17 +758,17 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
         });
       } else if (condType == "title") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeTitle = this->windowManager->GetActiveWindowTitle();
+          std::string activeTitle = hostContext.windowManager->GetActiveWindowTitle();
           return activeTitle.find(condValue) != std::string::npos;
         });
       } else if (condType == "class") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeClass = this->windowManager->GetActiveWindowClass();
+          std::string activeClass = hostContext.windowManager->GetActiveWindowClass();
           return activeClass.find(condValue) != std::string::npos;
         });
       } else if (condType == "process") {
         contextChecks.push_back([this, condValue]() {
-          pID pid = this->windowManager->GetActiveWindowPID();
+          pID pid = hostContext.windowManager->GetActiveWindowPID();
           std::string processName = WindowManager::getProcessName(pid);
           return processName.find(condValue) != std::string::npos;
         });
@@ -823,8 +807,8 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     }
 
     std::string hotkey = hotkeyLiteral->combination;
-    if (io) {
-      io->Hotkey(hotkey, actionHandler);
+    if (hostContext.io) {
+      hostContext.io->Hotkey(hotkey, actionHandler);
     } else {
       // In pure mode, hotkeys cannot be registered
       std::cerr << "Warning: Hotkey '" << hotkey << "' registered but IO not available (pure mode)\n";
@@ -1044,24 +1028,24 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
   for (const auto &cmd : node.commands) {
     switch (cmd.type) {
       case ast::InputCommand::SendText:
-        io->Send(cmd.text.c_str());
+        hostContext.io->Send(cmd.text.c_str());
         break;
 
       case ast::InputCommand::SendKey:
-        io->Send(("{ " + cmd.key + " }").c_str());
+        hostContext.io->Send(("{ " + cmd.key + " }").c_str());
         break;
 
       case ast::InputCommand::MouseClick:
         if (cmd.text == "left" || cmd.text == "lmb") {
-          io->MouseClick(1);
+          hostContext.io->MouseClick(1);
         } else if (cmd.text == "right" || cmd.text == "rmb") {
-          io->MouseClick(2);
+          hostContext.io->MouseClick(2);
         } else if (cmd.text == "middle" || cmd.text == "mmb") {
-          io->MouseClick(3);
+          hostContext.io->MouseClick(3);
         } else if (cmd.text == "side1" || cmd.text == "btn4") {
-          io->MouseClick(4);
+          hostContext.io->MouseClick(4);
         } else if (cmd.text == "side2" || cmd.text == "btn5") {
-          io->MouseClick(5);
+          hostContext.io->MouseClick(5);
         }
         break;
 
@@ -1079,7 +1063,7 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
         if (!cmd.accelExprStr.empty()) {
           try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
         }
-        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
+        hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
         break;
       }
 
@@ -1097,7 +1081,7 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
         if (!cmd.accelExprStr.empty()) {
           try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
         }
-        io->MouseMove(static_cast<int>(x), static_cast<int>(y), speed, accel);
+        hostContext.io->MouseMove(static_cast<int>(x), static_cast<int>(y), speed, accel);
         break;
       }
 
@@ -1110,7 +1094,7 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
           try { y = std::stod(cmd.yExprStr); } catch (...) {}
         }
         // Use IO::Scroll for wheel events (dy, dx)
-        io->Scroll(y, x);
+        hostContext.io->Scroll(y, x);
         break;
       }
 
@@ -1142,8 +1126,8 @@ void Interpreter::visitInputStatement(const ast::InputStatement &node) {
           }
         }
         // Move to position and click
-        io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
-        io->MouseClick(button);
+        hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
+        hostContext.io->MouseClick(button);
         break;
       }
 
@@ -1812,7 +1796,7 @@ void Interpreter::visitImportStatement(const ast::ImportStatement &node) {
 
       // Execute module in a new environment
       // Note: For now, modules use the same IO/windowManager as parent
-      Interpreter moduleInterpreter(*io, *windowManager);
+      Interpreter moduleInterpreter(hostContext);
       auto moduleResult = moduleInterpreter.Execute(source);
       if (isError(moduleResult)) {
         lastResult = moduleResult;

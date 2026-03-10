@@ -1,0 +1,99 @@
+// Test Semantic Analysis and Syntax Validation
+
+print("=== Testing Semantic Analysis ===\n")
+
+// Test 1: Struct definition and type registration
+print("Test 1: Struct Definition\n")
+struct Vec2 {
+    x: Num
+    y: Num
+}
+
+let v = Vec2 { x: 10, y: 20 }
+print("Vec2 created:", v.x, v.y)
+
+// Test 2: Enum definition
+print("\nTest 2: Enum Definition\n")
+enum Color {
+    Red
+    Green
+    Blue
+}
+
+let c = Color.Red
+print("Color enum created:", c)
+
+// Test 3: Type annotations
+print("\nTest 3: Type Annotations\n")
+let num: Num = 42
+let str: Str = "Hello"
+let flag: Bool = true
+
+print("Typed variables:", num, str, flag)
+
+// Test 4: Function with parameters
+print("\nTest 4: Function Definition\n")
+fn add(a, b) {
+    return a + b
+}
+
+let result = add(5, 3)
+print("add(5, 3) =", result)
+
+// Test 5: Array type inference
+print("\nTest 5: Array Type Inference\n")
+let numbers = [1, 2, 3, 4, 5]
+print("Array:", numbers)
+print("Array type inferred, length:", numbers.length)
+
+// Test 6: Object literal
+print("\nTest 6: Object Literal\n")
+let person = {
+    name: "Alice",
+    age: 30,
+    active: true
+}
+print("Person:", person.name, person.age, person.active)
+
+// Test 7: Lambda expression
+print("\nTest 7: Lambda Expression\n")
+let multiply = fn(x, y) { return x * y }
+print("multiply(4, 5) =", multiply(4, 5))
+
+// Test 8: Nested struct
+print("\nTest 8: Complex Types\n")
+struct Point3D {
+    x: Num
+    y: Num
+    z: Num
+}
+
+let p = Point3D { x: 1, y: 2, z: 3 }
+print("Point3D:", p.x, p.y, p.z)
+
+// Test 9: Enum with usage
+print("\nTest 9: Enum Usage\n")
+enum Status {
+    Pending
+    Running
+    Completed
+    Failed
+}
+
+let status = Status.Running
+print("Current status:", status)
+
+// Test 10: Conditional logic with typed values
+print("\nTest 10: Typed Conditionals\n")
+let score: Num = 85
+if score >= 90 {
+    print("Grade: A")
+} else if score >= 80 {
+    print("Grade: B")
+} else if score >= 70 {
+    print("Grade: C")
+} else {
+    print("Grade: D")
+}
+
+print("\n=== All Semantic Tests Complete ===\n")

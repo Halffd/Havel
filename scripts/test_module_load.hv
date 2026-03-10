@@ -1,0 +1,25 @@
+// Quick module test
+print("Testing module loading...")
+
+// Check if Promise exists
+try {
+    print("Promise exists:", Promise)
+} catch e {
+    print("Promise NOT loaded:", e)
+}
+
+// Check if async exists
+try {
+    print("await exists:", await)
+} catch e {
+    print("await NOT loaded:", e)
+}
+
+// Check if CancellationTokenSource exists
+try {
+    print("CancellationTokenSource exists")
+    let cts = CancellationTokenSource()
+    print("Created token:", cts)
+} catch e {
+    print("CancellationTokenSource NOT loaded:", e)
+}

@@ -612,7 +612,7 @@ void StatementEvaluator::visitImportStatement(const ast::ImportStatement& node) 
 
         // Execute module in a new environment
         // Note: For now, modules use the same IO/windowManager as parent
-        Interpreter moduleInterpreter(*interpreter->io, *interpreter->windowManager);
+        Interpreter moduleInterpreter(interpreter->getHostContext());
         auto moduleResult = moduleInterpreter.Execute(source);
         if (isError(moduleResult)) {
             interpreter->lastResult = moduleResult;

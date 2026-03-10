@@ -1,0 +1,91 @@
+// Test Async Module - Promise utilities and CancellationToken
+
+print("=== Testing Async Module ===\n")
+
+// Test 1: Promise.resolve
+print("Test 1: Promise.resolve\n")
+let resolved = Promise.resolve("Hello from Promise!")
+print("Resolved value:", resolved)
+
+// Test 2: Promise.all
+print("\nTest 2: Promise.all\n")
+let promises = [1, 2, 3, 4, 5]
+let allResult = Promise.all(promises)
+print("Promise.all result:", allResult)
+
+// Test 3: Promise.race
+print("\nTest 3: Promise.race\n")
+let raceResult = Promise.race(promises)
+print("Promise.race result:", raceResult)
+
+// Test 4: Promise.allSettled
+print("\nTest 4: Promise.allSettled\n")
+let settledResult = Promise.allSettled(promises)
+print("Promise.allSettled result:", settledResult)
+
+// Test 5: Promise.any
+print("\nTest 5: Promise.any\n")
+let anyResult = Promise.any(promises)
+print("Promise.any result:", anyResult)
+
+// Test 6: Promise.reject
+print("\nTest 6: Promise.reject\n")
+try {
+    let rejected = Promise.reject("Test error")
+    print("Rejected:", rejected)
+} catch e {
+    print("Caught rejection:", e)
+}
+
+// Test 7: CancellationTokenSource
+print("\nTest 7: CancellationTokenSource\n")
+let cts = CancellationTokenSource()
+print("Initial cancellation state:", cts.token.isCancellationRequested())
+
+cts.cancel()
+print("After cancel:", cts.token.isCancellationRequested())
+
+// Test 8: throwIfCancellationRequested
+print("\nTest 8: throwIfCancellationRequested\n")
+let cts2 = CancellationTokenSource()
+try {
+    throwIfCancellationRequested(cts2.token)
+    print("No cancellation requested - OK")
+} catch e {
+    print("Unexpected error:", e)
+}
+
+// Cancel and test again
+cts2.cancel()
+try {
+    throwIfCancellationRequested(cts2.token)
+    print("Should have thrown!")
+} catch e {
+    print("Correctly caught cancellation:", e)
+}
+
+// Test 9: withTimeout
+print("\nTest 9: withTimeout\n")
+let timeoutResult = withTimeout(1000, () => {
+    print("Operation executed")
+    return "Completed"
+})
+print("withTimeout result:", timeoutResult)
+
+// Test 10: withCancellation
+print("\nTest 10: withCancellation\n")
+let cts3 = CancellationTokenSource()
+let cancelResult = withCancellation(cts3.token, () => {
+    print("Operation with cancellation")
+    return "Success"
+})
+print("withCancellation result:", cancelResult)
+
+// Test 11: sleep
+print("\nTest 11: sleep (500ms)\n")
+let startTime = time()
+sleep(500)
+let endTime = time()
+print("Slept for:", (endTime - startTime) * 1000, "ms")
+
+print("\n=== All Async Tests Complete ===\n")

@@ -2,9 +2,11 @@
  * ModuleLoader.cpp
  *
  * Loads all host modules into the Havel environment.
+ * Uses map-based registration for cleaner architecture.
  */
 #include "ModuleLoader.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/runtime/HostModuleRegistry.hpp"
 #include "havel-lang/stdlib/StringModule.hpp"
 #include "havel-lang/stdlib/ArrayModule.hpp"
 #include "havel-lang/stdlib/MathModule.hpp"
@@ -38,14 +40,17 @@
 #include "mode/ModeModule.hpp"
 #include "hotkey/HotkeyModule.hpp"
 #include "browser/BrowserModule.hpp"
-#include "havel-lang/stdlib/PhysicsModule.hpp"
 #include "ffi/FFIModule.hpp"
+#include "process/Launcher.hpp"
 
 namespace havel::modules {
 
+// Forward declaration for module registration
+static void registerBuiltinModules();
+
 void loadHostModules(Environment& env, Interpreter* interpreter) {
     if (!interpreter) {
-        return;  // Can't load modules without interpreter
+        return;
     }
 
     // Get HostContext from interpreter
@@ -63,99 +68,116 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     havel::stdlib::registerProcessModule(&env);
 
     // =========================================================================
-    // CORE MODULES (loaded immediately - essential for basic operation)
-    // These have minimal dependencies and no heavy image processing
+    // HOST MODULES (loaded via registry)
     // =========================================================================
+    
+    // Register modules on first load
+    static bool modulesRegistered = false;
+    if (!modulesRegistered) {
+        registerBuiltinModules();
+        modulesRegistered = true;
+    }
+    
+    // Load all registered modules using HostContext
+    auto& registry = HostModuleRegistry::getInstance();
+    registry.loadAllModules(env, ctx);
+}
 
+void registerAllModules() {
+    registerBuiltinModules();
+}
+
+// ============================================================================
+// Module Registration
+// ============================================================================
+
+static void registerBuiltinModules() {
+    auto& registry = HostModuleRegistry::getInstance();
+    
     // Window management
-    registerWindowModule(env, ctx);
+    registry.registerModule("window", registerWindowModule, "Window management functions", true);
     
     // Brightness control
-    registerBrightnessModule(env, ctx);
+    registry.registerModule("brightness", registerBrightnessModule, "Display brightness control", true);
     
     // Audio control
-    registerAudioModule(env, ctx);
+    registry.registerModule("audio", registerAudioModule, "Audio and volume control", true);
     
     // Clipboard operations
-    registerClipboardModule(env, ctx);
+    registry.registerModule("clipboard", registerClipboardModule, "Clipboard operations", true);
     
     // Process launcher
-    registerLauncherModule(env, ctx);
+    registry.registerModule("launcher", registerLauncherModule, "Process launching", true);
     
-    // Media playback control
-    registerMediaModule(env, ctx);
+    // Media playback
+    registry.registerModule("media", registerMediaModule, "Media playback control", true);
     
     // Help system
-    registerHelpModule(env, ctx);
+    registry.registerModule("help", registerHelpModule, "Help and documentation", true);
     
-    // File system operations
-    registerFileManagerModule(env, ctx);
+    // File system
+    registry.registerModule("filesystem", registerFileManagerModule, "File system operations", true);
     
     // System information
-    registerDetectorModule(env, ctx);
+    registry.registerModule("system", [](Environment& env, HostContext& ctx) {
+        registerDetectorModule(env, ctx);
+        registerSystemModule(env, ctx);
+    }, "System information and detection", true);
     
-    // I/O operations (keyboard/mouse)
-    registerIOModule(env, ctx);
+    // I/O operations
+    registry.registerModule("io", registerIOModule, "Input/output operations", true);
     
-    // Timer functionality
-    registerTimerModule(env, ctx);
+    // Async/concurrency
+    registry.registerModule("async", registerAsyncModule, "Async and concurrency primitives", true);
     
-    // Configuration
-    registerConfigModule(env, ctx);
+    // Timer
+    registry.registerModule("timer", registerTimerModule, "Timer and scheduling", true);
     
-    // Application control
-    registerAppModule(env, ctx);
+    // Config
+    registry.registerModule("config", registerConfigModule, "Configuration management", true);
+    
+    // App
+    registry.registerModule("app", registerAppModule, "Application lifecycle", true);
+    
+    // HTTP/Network
+    registry.registerModule("http", registerHTTPModule, "HTTP client", true);
+    
+    // Runtime - requires Interpreter*, skip for now
+    // registry.registerModule("runtime", [](Environment& env, HostContext& ctx) {
+    //     registerRuntimeModule(env, nullptr);
+    // }, "Runtime introspection", false);
     
     // Mode management
-    registerModeModule(env, ctx);
-
-    // Hotkey management
-    registerHotkeyModule(env, ctx);
-
-    // Runtime utilities
-    registerRuntimeModule(env, interpreter);
-
-    // Standard library modules
-    registerPhysicsModule(env, ctx);
-
-    // =========================================================================
-    // HEAVY MODULES (loaded at startup - lazy loading removed)
-    // These modules pull in large dependencies (PNG, zlib, OpenCV, Qt, etc.)
-    // Lazy loading was removed - modules load when first used via services
-    // =========================================================================
-
-    // Screenshot module - loads libpng, zlib
-    registerScreenshotModule(env, ctx);
-
-    // Pixel/image recognition - loads OpenCV, libpng, zlib
-    registerPixelModule(env, ctx);
-
-    // Automation module - loads image processing dependencies
-    registerAutomationModule(env, ctx);
-
-    // GUI module - loads Qt widgets, image handling
-    registerGUIModule(env, ctx);
-
-    // Map manager - loads image handling
-    registerMapManagerModule(env, ctx);
-
-    // Browser automation - loads CDP, image handling
-    registerBrowserModule(env, ctx);
-
-    // HTTP module - loads network stack
-    registerHTTPModule(env, ctx);
-
-    // Alt-tab window switcher - loads Qt, image handling
-    registerAltTabModule(env, ctx);
-
-    // System module - loads additional system libraries
-    registerSystemModule(env, ctx);
-
-    // Async module - loads threading libraries
-    registerAsyncModule(env, ctx);
-
-    // FFI module - dynamic library loading and C function calls
-    ffi::registerFFIModule(env);
+    registry.registerModule("mode", registerModeModule, "Mode management", true);
+    
+    // Hotkey
+    registry.registerModule("hotkey", registerHotkeyModule, "Hotkey management", true);
+    
+    // Browser automation
+    registry.registerModule("browser", registerBrowserModule, "Browser automation", true);
+    
+    // FFI - takes only Environment
+    registry.registerModule("ffi", [](Environment& env, HostContext&) {
+        ffi::registerFFIModule(env);
+    }, "Foreign function interface", false);
+    
+    // GUI
+    registry.registerModule("gui", registerGUIModule, "GUI operations", true);
+    
+    // Alt-tab
+    registry.registerModule("alttab", registerAltTabModule, "Alt-tab switching", false);
+    
+    // Map manager
+    registry.registerModule("mapmanager", registerMapManagerModule, "Map management", false);
+    
+    // Screenshot
+    registry.registerModule("screenshot", registerScreenshotModule, "Screenshot capture", true);
+    
+    // Pixel automation
+    registry.registerModule("pixel", registerPixelModule, "Pixel and image automation", true);
+    
+    // Automation
+    registry.registerModule("automation", registerAutomationModule, "Automation workflows", true);
 }
 
 } // namespace havel::modules

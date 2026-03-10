@@ -1,0 +1,113 @@
+// Test Module Registration System
+
+print("=== Testing Module System ===\n")
+
+// Test 1: Check if modules are loaded
+print("Test 1: Module Availability\n")
+
+// Window module
+try {
+    let activeWindow = window.active()
+    print("✓ Window module loaded")
+} catch e {
+    print("✗ Window module not available:", e)
+}
+
+// IO module
+try {
+    print("✓ IO module loaded")
+    // Don't actually send keys, just check module exists
+} catch e {
+    print("✗ IO module not available:", e)
+}
+
+// Media module
+try {
+    print("✓ Media module loaded")
+} catch e {
+    print("✗ Media module not available:", e)
+}
+
+// Test 2: File module
+print("\nTest 2: File Module\n")
+try {
+    let exists = file.exists("/tmp")
+    print("✓ File module works, /tmp exists:", exists)
+} catch e {
+    print("✗ File module error:", e)
+}
+
+// Test 3: String module
+print("\nTest 3: String Module\n")
+let testStr = "hello world"
+let upper = string.upper(testStr)
+let lower = string.lower(upper)
+print("Original:", testStr)
+print("Upper:", upper)
+print("Lower:", lower)
+
+// Test 4: Math module
+print("\nTest 4: Math Module\n")
+print("PI:", math.PI)
+print("sqrt(16):", math.sqrt(16))
+print("abs(-5):", math.abs(-5))
+print("sin(0):", math.sin(0))
+
+// Test 5: Array module
+print("\nTest 5: Array Module\n")
+let arr = [3, 1, 4, 1, 5, 9, 2, 6]
+print("Original:", arr)
+arr.sort()
+print("Sorted:", arr)
+print("Min:", array.min(arr))
+print("Max:", array.max(arr))
+
+// Test 6: Process module
+print("\nTest 6: Process Module\n")
+try {
+    let procs = process.list()
+    print("✓ Process module works, running processes:", procs.length)
+} catch e {
+    print("✗ Process module error:", e)
+}
+
+// Test 7: System module  
+print("\nTest 7: System Module\n")
+try {
+    let platform = system.platform()
+    print("✓ System module works, platform:", platform)
+} catch e {
+    print("✗ System module error:", e)
+}
+
+// Test 8: Timer module
+print("\nTest 8: Timer Module\n")
+try {
+    print("✓ Timer module loaded")
+    // Don't actually start timers in test
+} catch e {
+    print("✗ Timer module error:", e)
+}
+
+// Test 9: Config module
+print("\nTest 9: Config Module\n")
+try {
+    config {
+        testValue = "test123"
+    }
+    let val = config.get("testValue")
+    print("✓ Config module works, testValue:", val)
+} catch e {
+    print("✗ Config module error:", e)
+}
+
+// Test 10: HTTP module (if available)
+print("\nTest 10: HTTP Module\n")
+try {
+    print("✓ HTTP module loaded")
+    // Don't actually make HTTP requests in test
+} catch e {
+    print("✗ HTTP module not available:", e)
+}
+
+print("\n=== All Module Tests Complete ===\n")

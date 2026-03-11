@@ -123,7 +123,7 @@ void HavelApp::initializeComponents(bool isStartup) {
 
   // Build HostContext from managers
   HostContext ctx;
-  ctx.io = io.get();
+  ctx.io = io;  // Share ownership
   ctx.windowManager = windowManager.get();
   ctx.hotkeyManager = hotkeyManager.get();
   ctx.brightnessManager = brightnessManager.get();
@@ -287,7 +287,7 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Build HostContext from managers
     HostContext ctx;
-    ctx.io = io.get();
+    ctx.io = io;  // Share ownership
     ctx.windowManager = windowManager.get();
     ctx.hotkeyManager = hotkeyManager.get();
     ctx.brightnessManager = brightnessManager.get();

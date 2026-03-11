@@ -2862,14 +2862,20 @@ bool IO::UngrabHotkey(int hotkeyId) {
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
+  debug("IO::SetAnyKeyPressCallback called, eventListener={}", (void*)eventListener.get());
   if (!eventListener) {
     warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will not be registered");
     return;
   }
   try {
+    // Double-check that eventListener is valid
+    debug("Calling eventListener->SetAnyKeyPressCallback");
     eventListener->SetAnyKeyPressCallback(callback);
+    debug("SetAnyKeyPressCallback completed successfully");
   } catch (const std::exception& e) {
     error("IO::SetAnyKeyPressCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetAnyKeyPressCallback failed with unknown exception");
   }
 }
 
@@ -2878,7 +2884,13 @@ void IO::SetInputEventCallback(InputEventCallback callback) {
     warn("IO::SetInputEventCallback: eventListener is null - callback will not be registered");
     return;
   }
-  eventListener->SetInputEventCallback(std::move(callback));
+  try {
+    eventListener->SetInputEventCallback(std::move(callback));
+  } catch (const std::exception& e) {
+    error("IO::SetInputEventCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetInputEventCallback failed with unknown exception");
+  }
 }
 
 void IO::SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
@@ -2886,7 +2898,13 @@ void IO::SetInputBlockCallback(std::function<bool(const InputEvent &)> callback)
     warn("IO::SetInputBlockCallback: eventListener is null - callback will not be registered");
     return;
   }
-  eventListener->SetInputBlockCallback(std::move(callback));
+  try {
+    eventListener->SetInputBlockCallback(std::move(callback));
+  } catch (const std::exception& e) {
+    error("IO::SetInputBlockCallback failed: {}", e.what());
+  } catch (...) {
+    error("IO::SetInputBlockCallback failed with unknown exception");
+  }
 }
 
 HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }

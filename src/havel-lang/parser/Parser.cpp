@@ -132,7 +132,7 @@ Parser::produceAST(const std::string &sourceCode) {
 }
 
 std::unique_ptr<havel::ast::Program>
-Parser::produceASTStrict(const std::string &sourceCode) {
+Parser::parseStrict(const std::string &sourceCode) {
   havel::Lexer lexer(sourceCode);
   tokens = lexer.tokenize();
   position = 0;
@@ -557,7 +557,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return parseInputStatement();
   default: {
     // In input context (hotkey blocks), bare expressions may be input commands
-    if (inInputContext) {
+    if (context.inInputContext) {
       // Check if this looks like an input command:
       // - String: "text"
       // - Identifier: lmb, rmb, m, r, w
@@ -1379,10 +1379,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
   advance(); // consume "if"
 
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto condition = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   std::unique_ptr<havel::ast::Statement> consequence;
 
@@ -1420,10 +1420,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseIfStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseWhileStatement() {
   advance(); // consume "while"
 
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto condition = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   std::unique_ptr<havel::ast::Statement> body;
   
@@ -1457,10 +1457,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDoWhileStatement() {
   advance(); // consume "while"
 
   // Parse the condition
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto condition = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   return std::make_unique<havel::ast::DoWhileStatement>(std::move(body),
                                                         std::move(condition));
@@ -1470,10 +1470,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSwitchStatement() {
   advance(); // consume "switch"
 
   // Parse the switch expression
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto expression = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   // Expect opening brace
   if (at().type != havel::TokenType::OpenBrace) {
@@ -1599,10 +1599,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
   advance(); // consume "in"
 
   // Disable brace call sugar to prevent for loop body { from being consumed
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto iterable = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   // Skip newlines before body
   while (at().type == havel::TokenType::NewLine) {
@@ -1638,10 +1638,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     advance(); // consume "while"
 
     // Parse condition expression
-    bool prevAllow = allowBraceCallSugar;
-    allowBraceCallSugar = false;
+    bool prevAllow = context.allowBraceSugar;
+    context.allowBraceSugar = false;
     condition = parseExpression();
-    allowBraceCallSugar = prevAllow;
+    context.allowBraceSugar = prevAllow;
 
     // Skip newlines before body
     while (at().type == havel::TokenType::NewLine) {
@@ -2005,10 +2005,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWhenBlock() {
   advance(); // consume 'when'
 
   // Parse the condition
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto condition = parseExpression();
-  allowBraceCallSugar = prevAllow;
+  context.allowBraceSugar = prevAllow;
 
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after when condition");
@@ -2060,10 +2060,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseRepeatStatement() {
   advance(); // consume 'repeat'
 
   // Parse count expression - disable brace call sugar to avoid n {...} being parsed as call
-  bool prevAllowBraceCallSugar = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllowBraceCallSugar = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto countExpr = parseExpression();
-  allowBraceCallSugar = prevAllowBraceCallSugar;
+  context.allowBraceSugar = prevAllowBraceCallSugar;
 
   // Skip newlines before body
   while (at().type == havel::TokenType::NewLine) {
@@ -2093,8 +2093,8 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(bool inp
   advance();
 
   // Save and set input context
-  bool savedInputContext = inInputContext;
-  inInputContext = inputContext;
+  bool savedInputContext = context.inInputContext;
+  context.inInputContext = inputContext;
 
   // Parse statements until closing brace
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
@@ -2114,7 +2114,7 @@ std::unique_ptr<havel::ast::BlockStatement> Parser::parseBlockStatement(bool inp
   }
 
   // Restore input context
-  inInputContext = savedInputContext;
+  context.inInputContext = savedInputContext;
 
   // Consume closing brace - it might not be there if error recovery happened
   if (at().type != havel::TokenType::CloseBrace) {
@@ -3391,8 +3391,8 @@ std::unique_ptr<havel::ast::Expression> Parser::parseIfExpression() {
   advance(); // consume 'if'
 
   // Disable brace call sugar to prevent { from being parsed as part of condition
-  bool prevAllow = allowBraceCallSugar;
-  allowBraceCallSugar = false;
+  bool prevAllow = context.allowBraceSugar;
+  context.allowBraceSugar = false;
   auto condition = parseExpression();
 
   // Expect then branch (block or expression)
@@ -3581,7 +3581,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       expr = parseCallExpression(std::move(expr));
       // Trailing block as last argument: func(...){ ... }
       // Only allow this if brace call sugar is enabled
-      if (at().type == havel::TokenType::OpenBrace && allowBraceCallSugar) {
+      if (at().type == havel::TokenType::OpenBrace && context.allowBraceSugar) {
         // Decide if this is object-literal or block lambda by lookahead
         size_t savePos = position;
         auto next = at(1);
@@ -3606,7 +3606,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
     } else if (at().type == havel::TokenType::OpenBracket) {
       expr = parseIndexExpression(std::move(expr));
     } else if (at().type == havel::TokenType::OpenBrace) {
-      if (!allowBraceCallSugar) {
+      if (!context.allowBraceSugar) {
         break;
       }
       // Sugar: expr { ... } -> expr({ ... }) or expr(() => { ... })
@@ -3634,7 +3634,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
                at().type == havel::TokenType::Number ||
                at().type == havel::TokenType::Identifier ||
                at().type == havel::TokenType::InterpolatedString) &&
-               allowBraceCallSugar) {
+               context.allowBraceSugar) {
       // Implicit call: expression followed by a literal (e.g., variable
       // "Hello")
       // Only allowed when brace call sugar is enabled

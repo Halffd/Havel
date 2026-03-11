@@ -6,17 +6,25 @@
  */
 #include "HotkeyModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
+#include "../../havel-lang/runtime/Interpreter.hpp"
 #include "core/HotkeyManager.hpp"
 
 namespace havel::modules {
+
+// Global interpreter reference for hotkey callbacks
+static Interpreter* g_hotkeyInterpreter = nullptr;
+
+void SetHotkeyInterpreter(Interpreter* interp) {
+    g_hotkeyInterpreter = interp;
+}
 
 void registerHotkeyModule(Environment& env, HostContext& ctx) {
     if (!ctx.hotkeyManager) {
         return;  // Skip if hotkey manager not available
     }
-    
+
     auto& hotkeyManager = *ctx.hotkeyManager;
-    
+
     // Create hotkey object
     auto hotkeyObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
@@ -105,8 +113,23 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
         std::string condition;
 
         if (args[1].isFunction()) {
-            callback = [func = args[1].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
-                func({});
+            // Store the function value for later execution through interpreter
+            HavelValue funcValue = args[1];
+            
+            callback = [funcValue]() {
+                try {
+                    // Execute through global interpreter if available
+                    if (g_hotkeyInterpreter) {
+                        g_hotkeyInterpreter->CallFunction(funcValue, {});
+                    } else if (funcValue.isFunction()) {
+                        // Fallback: try to call builtin directly
+                        if (auto* builtinFunc = funcValue.get_if<BuiltinFunction>()) {
+                            (*builtinFunc)({});
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    havel::error("Hotkey callback error: {}", e.what());
+                }
             };
         } else {
             return HavelRuntimeError("Hotkey(): second argument must be a function");
@@ -124,8 +147,19 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
 
         // Parse optional conditionFalse callback
         if (args.size() >= 4 && args[3].isFunction()) {
-            conditionFalse = [func = args[3].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
-                func({});
+            HavelValue conditionFunc = args[3];
+            conditionFalse = [conditionFunc]() {
+                try {
+                    if (g_hotkeyInterpreter) {
+                        g_hotkeyInterpreter->CallFunction(conditionFunc, {});
+                    } else if (conditionFunc.isFunction()) {
+                        if (auto* builtinFunc = conditionFunc.get_if<BuiltinFunction>()) {
+                            (*builtinFunc)({});
+                        }
+                    }
+                } catch (const std::exception& e) {
+                    havel::error("Hotkey conditionFalse error: {}", e.what());
+                }
             };
         }
 

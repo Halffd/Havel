@@ -566,12 +566,10 @@ void SemanticAnalyzer::validateMemberAccess(const ast::Program& program) {
 
 void SemanticAnalyzer::validateInitialization(const ast::Program& program) {
     // Check for uninitialized variables
-    for (const auto* sym : symbolTable_.getAllSymbols()) {
-        if (sym->isVariable() && !sym->attributes.isInitialized) {
-            // Warning only - might be assigned later in execution
-            // reportError(SemanticErrorKind::UninitializedVariable, ...);
-        }
-    }
+    // TODO: Implement proper traversal when needed
+    (void)program;  // Suppress unused warning
+    // Note: Shadow stack design doesn't support getAllSymbols efficiently
+    // This would require a separate symbol list if needed
 }
 
 // ============================================================================

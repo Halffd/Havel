@@ -2,12 +2,13 @@
  * RuntimeContext.hpp
  *
  * Runtime context for evaluators.
- * 
+ *
  * This provides evaluators with access to necessary services
  * without depending on Interpreter internals.
  */
 #pragma once
 
+#include <memory>
 #include <functional>
 #include <string>
 #include <vector>
@@ -29,7 +30,7 @@ struct RuntimeContext {
     Environment* env = nullptr;
 
     // IO for system operations (optional - can be null for pure mode)
-    IO* io = nullptr;
+    std::shared_ptr<IO> io;
 
     // Shell executor
     std::function<ShellResult(const std::string& command)> executeShell;

@@ -13,7 +13,7 @@ namespace havel {
 RuntimeContext createPureContext(Environment* env) {
     RuntimeContext ctx;
     ctx.env = env;
-    ctx.io = nullptr;
+    ctx.io = std::shared_ptr<IO>();
     ctx.executeShell = [](const std::string&) -> ShellResult {
         return ShellResult{"", "", -1, false, ""};
     };
@@ -32,7 +32,7 @@ RuntimeContext createPureContext(Environment* env) {
 RuntimeContext createFullContext(Environment* env, IO* io) {
     RuntimeContext ctx;
     ctx.env = env;
-    ctx.io = io;
+    ctx.io = std::shared_ptr<IO>(io, [](IO*){});  // Non-owning
     
     if (io) {
         ctx.executeShell = [](const std::string& cmd) -> ShellResult {

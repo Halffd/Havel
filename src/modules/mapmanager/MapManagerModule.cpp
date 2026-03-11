@@ -50,8 +50,8 @@ void registerMapManagerModule(Environment& env, HostContext& ctx) {
     // =========================================================================
     
     (*mapManagerObj)["init"] = HavelValue(BuiltinFunction([ctx](const std::vector<HavelValue>&) -> HavelResult {
-        if (!coreMapManager && ctx.io) {
-            coreMapManager = std::make_unique<MapManager>(ctx.io);
+        if (!coreMapManager && ctx.io.get()) {
+            coreMapManager = std::make_unique<MapManager>(ctx.io.get());
         }
         return HavelValue(coreMapManager != nullptr);
     }));

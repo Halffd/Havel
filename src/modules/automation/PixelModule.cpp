@@ -16,7 +16,7 @@ void registerPixelModule(Environment& env, HostContext& ctx) {
     }
     
     auto& pa = *ctx.pixelAutomation;
-    IO* io = ctx.io;  // For mouse position
+    IO* io = ctx.io.get();  // For mouse position
     
     // Create pixel module object
     auto pixelObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

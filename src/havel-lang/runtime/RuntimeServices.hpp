@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include <memory>
 #include "modules/process/ShellExecutor.hpp"
 #include "modules/io/InputModule.hpp"
 #include "modules/config/ConfigProcessor.hpp"
@@ -47,8 +48,9 @@ struct RuntimeServices {
 
     RuntimeServices() : shell(), input(nullptr) {}
 
-    void setInput(IO* io) {
-        input = new InputModule(io);
+    void setInput(std::shared_ptr<IO> io) {
+        input = new InputModule(io.get());
+        ioRef = io;  // Keep shared_ptr alive
     }
 
     void createCallDispatcher(Interpreter* interp) {
@@ -63,6 +65,9 @@ struct RuntimeServices {
         delete input;
         // callDispatcher and memberResolver are unique_ptr, auto-deleted
     }
+
+private:
+    std::shared_ptr<IO> ioRef;  // Keep IO alive
 };
 
 } // namespace havel

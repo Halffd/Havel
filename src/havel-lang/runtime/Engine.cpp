@@ -35,7 +35,7 @@ Engine::Engine(havel::IO &io_ref, havel::WindowManager &wm_ref,
     : config(cfg), io(io_ref), windowManager(wm_ref) {
   // Build HostContext from individual managers
   HostContext ctx;
-  ctx.io = &io_ref;
+  ctx.io = std::shared_ptr<IO>(&io_ref, [](IO*){});  // Non-owning shared_ptr
   ctx.windowManager = &wm_ref;
   
   InitializeComponents(ctx);

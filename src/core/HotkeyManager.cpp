@@ -408,6 +408,12 @@ bool HotkeyManager::evaluateWheelCombo(const HotKey &hotkey,
     int keyCode = 0;
     if (comboKey.type == HotkeyType::MouseButton) {
       keyCode = comboKey.mouseButton;
+      // Check mouse button state
+      auto mouseIt = mouseButtonStates.find(keyCode);
+      if (mouseIt == mouseButtonStates.end() || !mouseIt->second) {
+        return false;
+      }
+      continue;
     } else if (comboKey.type == HotkeyType::Keyboard ||
                comboKey.type == HotkeyType::MouseMove) {
       keyCode = static_cast<int>(comboKey.key);
@@ -415,8 +421,28 @@ bool HotkeyManager::evaluateWheelCombo(const HotKey &hotkey,
       return false;
     }
 
+    // Check if key is currently pressed
     auto it = activeInputs.find(keyCode);
     if (it == activeInputs.end()) {
+      // Key not in activeInputs - check if it's a modifier that might be tracked differently
+      if (KeyMap::IsModifier(keyCode)) {
+        // Modifiers are tracked in modifierState
+        int mods = currentModifierMask();
+        int keyMod = 0;
+        if (keyCode == KEY_LEFTCTRL || keyCode == KEY_RIGHTCTRL) {
+          keyMod = 1 << 0;
+        } else if (keyCode == KEY_LEFTSHIFT || keyCode == KEY_RIGHTSHIFT) {
+          keyMod = 1 << 1;
+        } else if (keyCode == KEY_LEFTALT || keyCode == KEY_RIGHTALT) {
+          keyMod = 1 << 2;
+        } else if (keyCode == KEY_LEFTMETA || keyCode == KEY_RIGHTMETA) {
+          keyMod = 1 << 3;
+        }
+        if ((mods & keyMod) == 0) {
+          return false;
+        }
+        continue;
+      }
       return false;
     }
 

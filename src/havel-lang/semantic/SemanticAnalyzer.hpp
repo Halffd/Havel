@@ -93,7 +93,11 @@ struct SemanticError {
  */
 struct AnalysisContext {
     bool inFunction = false;
+    std::vector<bool> functionStack;  // Stack for nested functions
+    
     bool inLoop = false;
+    int loopDepth = 0;  // Counter for nested loops
+    
     bool inSwitch = false;
     const Symbol* currentFunction = nullptr;
     std::shared_ptr<HavelType> expectedReturnType;

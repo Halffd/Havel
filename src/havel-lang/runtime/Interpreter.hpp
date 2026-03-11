@@ -417,6 +417,9 @@ public:
     // Clear global interpreter reference to prevent dangling pointer
     havel::modules::SetHotkeyInterpreter(std::weak_ptr<Interpreter>());
   }
+  
+  // Register this interpreter for hotkey callbacks (call AFTER construction)
+  void RegisterForHotkeys();
 
   // Get environment
   std::shared_ptr<Environment>& getEnvironment() { return environment; }

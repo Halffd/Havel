@@ -308,12 +308,17 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
-  // Set global interpreter reference for hotkey callbacks (use shared_from_this)
-  havel::modules::SetHotkeyInterpreter(shared_from_this());
-  info("Set hotkey interpreter to {}", (void*)this);
-
   // Load all host modules (includes io module with keyTap, etc.)
   havel::modules::loadHostModules(*environment, this);
+  
+  info("Interpreter initialized (hotkey interpreter will be set by caller)");
+}
+
+// Helper to register interpreter for hotkey callbacks (call AFTER construction)
+void Interpreter::RegisterForHotkeys() {
+  auto self = shared_from_this();
+  havel::modules::SetHotkeyInterpreter(self);
+  info("Registered interpreter {} for hotkey callbacks", (void*)this);
 }
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)

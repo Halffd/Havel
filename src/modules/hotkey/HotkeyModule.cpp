@@ -16,6 +16,11 @@ static Interpreter* g_hotkeyInterpreter = nullptr;
 
 void SetHotkeyInterpreter(Interpreter* interp) {
     g_hotkeyInterpreter = interp;
+    if (interp) {
+        havel::info("Hotkey interpreter set to {}", (void*)interp);
+    } else {
+        havel::warn("Hotkey interpreter cleared");
+    }
 }
 
 void registerHotkeyModule(Environment& env, HostContext& ctx) {
@@ -118,14 +123,23 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
             
             callback = [funcValue]() {
                 try {
+                    havel::debug("Hotkey callback executing, interpreter={}", (void*)g_hotkeyInterpreter);
                     // Execute through global interpreter if available
                     if (g_hotkeyInterpreter) {
-                        g_hotkeyInterpreter->CallFunction(funcValue, {});
+                        auto result = g_hotkeyInterpreter->CallFunction(funcValue, {});
+                        if (std::holds_alternative<HavelRuntimeError>(result)) {
+                            havel::error("Hotkey callback error: {}", 
+                                std::get<HavelRuntimeError>(result).what());
+                        }
                     } else if (funcValue.isFunction()) {
                         // Fallback: try to call builtin directly
                         if (auto* builtinFunc = funcValue.get_if<BuiltinFunction>()) {
                             (*builtinFunc)({});
+                        } else {
+                            havel::error("Hotkey callback: function type not supported without interpreter");
                         }
+                    } else {
+                        havel::error("Hotkey callback: not a function");
                     }
                 } catch (const std::exception& e) {
                     havel::error("Hotkey callback error: {}", e.what());

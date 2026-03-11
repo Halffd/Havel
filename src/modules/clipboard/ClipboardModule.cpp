@@ -21,18 +21,27 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
     // =========================================================================
     // Basic clipboard functions (always available)
     // =========================================================================
-    
+
     (*clip)["get"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("clipboard.get() requires GUI application");
+        }
         QClipboard* clipboard = QGuiApplication::clipboard();
         return HavelValue(clipboard->text().toStdString());
     }));
-    
+
     (*clip)["in"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("clipboard.in() requires GUI application");
+        }
         QClipboard* clipboard = QGuiApplication::clipboard();
         return HavelValue(clipboard->text().toStdString());
     }));
-    
+
     (*clip)["out"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("clipboard.out() requires GUI application");
+        }
         QClipboard* clipboard = QGuiApplication::clipboard();
         return HavelValue(clipboard->text().toStdString());
     }));
@@ -41,15 +50,30 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         if (args.empty()) {
             return HavelRuntimeError("clipboard.set() requires text");
         }
-        std::string text = args[0].isString() ? args[0].asString() : 
+        std::string text = args[0].isString() ? args[0].asString() :
             std::to_string(static_cast<int>(args[0].asNumber()));
+        
+        // Check if Qt application exists
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("clipboard.set() requires GUI application (not available in REPL mode)");
+        }
+        
         QClipboard* clipboard = QGuiApplication::clipboard();
+        if (!clipboard) {
+            return HavelRuntimeError("Failed to access clipboard");
+        }
         clipboard->setText(QString::fromStdString(text));
         return HavelValue(true);
     }));
     
     (*clip)["clear"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("clipboard.clear() requires GUI application");
+        }
         QClipboard* clipboard = QGuiApplication::clipboard();
+        if (!clipboard) {
+            return HavelRuntimeError("Failed to access clipboard");
+        }
         clipboard->clear();
         return HavelValue(nullptr);
     }));

@@ -28,6 +28,7 @@
 #include "stdlib/FileModule.hpp"  // For registerFileModule
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
 #include "stdlib/ProcessModule.hpp"  // For registerProcessModule
+#include "../../modules/hotkey/HotkeyModule.hpp"  // For SetHotkeyInterpreter
 #include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadHostModules
 #include "semantic/SemanticAnalyzer.hpp"  // For semantic analysis
 #include <QBuffer>
@@ -307,6 +308,9 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
+  // Set global interpreter reference for hotkey callbacks
+  havel::modules::SetHotkeyInterpreter(this);
+
   // Load all host modules (includes io module with keyTap, etc.)
   havel::modules::loadHostModules(*environment, this);
 }
@@ -321,6 +325,10 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
   environment->Define("__pure_mode__", HavelValue(true));
+  
+  // Set global interpreter reference for hotkey callbacks
+  havel::modules::SetHotkeyInterpreter(this);
+  
   havel::modules::loadHostModules(*environment, this);
 }
 
@@ -1537,6 +1545,43 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
                                    ValueToString(callee),
                                    node.line, node.column);
   }
+}
+
+// CallFunction - Execute a function value (for hotkey callbacks)
+HavelResult Interpreter::CallFunction(const HavelValue& func, const std::vector<HavelValue>& args) {
+    if (auto* builtin = func.get_if<BuiltinFunction>()) {
+        return (*builtin)(args);
+    } else if (auto* userFunc = func.get_if<std::shared_ptr<HavelFunction>>()) {
+        auto& f = **userFunc;
+        
+        // Create new environment with function's closure
+        auto funcEnv = std::make_shared<Environment>(f.closure);
+        for (size_t i = 0; i < args.size() && i < f.declaration->parameters.size(); ++i) {
+            funcEnv->Define(f.declaration->parameters[i]->paramName->symbol, args[i]);
+        }
+        
+        // Save and switch environment
+        auto originalEnv = this->environment;
+        this->environment = funcEnv;
+        
+        // Execute function body
+        auto bodyResult = Evaluate(*f.declaration->body);
+        
+        // Restore environment
+        this->environment = originalEnv;
+        
+        // Handle return value
+        if (std::holds_alternative<ReturnValue>(bodyResult)) {
+            auto ret = std::get<ReturnValue>(bodyResult);
+            return ret.value ? *ret.value : HavelValue();
+        } else if (isError(bodyResult)) {
+            return bodyResult;
+        } else {
+            return unwrap(bodyResult); // Implicit return
+        }
+    } else {
+        return HavelRuntimeError("Attempted to call a non-callable value: " + ValueToString(func));
+    }
 }
 
 void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {

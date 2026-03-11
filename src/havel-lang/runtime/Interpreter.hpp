@@ -423,6 +423,9 @@ public:
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);
   
+  // Call a function value (for hotkey callbacks)
+  HavelResult CallFunction(const HavelValue& func, const std::vector<HavelValue>& args);
+  
   // Debug control methods
   void setStopOnError(bool stop);
   bool getStopOnError() const { return stopOnError; }

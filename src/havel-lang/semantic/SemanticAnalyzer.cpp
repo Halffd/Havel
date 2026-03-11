@@ -708,12 +708,13 @@ void SemanticAnalyzer::initializeKnownModules() {
         "active", "list", "focus", "minimize", "maximize",
         "close", "move", "resize",
         "getMonitors", "getMonitorArea",
-        "moveToNextMonitor", "title", "class", "pid"
+        "moveToNextMonitor", "title", "class", "pid",
+        "getActiveWindow", "getNextMonitor"
     };
     
     // Mouse module
     knownModules_["mouse"] = {
-        "move", "moveTo", "click", "doubleClick",
+        "move", "moveTo", "moveRel", "click", "clickAt", "doubleClick",
         "press", "release", "scroll",
         "getPosition", "setSensitivity", "getSensitivity"
     };
@@ -721,12 +722,14 @@ void SemanticAnalyzer::initializeKnownModules() {
     // Pixel module
     knownModules_["pixel"] = {
         "get", "match", "wait", "region",
-        "find", "exists", "count"
+        "find", "exists", "count",
+        "getColor", "waitForColor"
     };
     
     // OCR module
     knownModules_["ocr"] = {
-        "recognize", "findText", "waitForText"
+        "recognize", "findText", "waitForText",
+        "read", "fromScreen", "fromFile"
     };
     
     // Config module
@@ -797,22 +800,44 @@ void SemanticAnalyzer::initializeKnownModules() {
 }
 
 void SemanticAnalyzer::initializeKnownBuiltins() {
-    // Core builtins
+    // Core builtins - AHK-style global functions
     knownBuiltins_ = {
+        // Output
         "print", "println", "error", "warn", "info", "debug",
+        // Utility
         "len", "type",
+        // Math
         "sqrt", "abs", "sin", "cos", "tan", "PI", "E",
-        "lower", "upper",
-        "sleep", "exit",
-        "spawn", "await", "channel", "yield",
-        // Process functions
-        "run", "runDetached",
-        // IO functions
-        "send", "click",
+        "min", "max", "round", "floor", "ceil",
+        // String
+        "lower", "upper", "trim", "replace", "split", "join",
+        // Process
+        "run", "runDetached", "runWait",
+        // IO/Input
+        "send", "click", "clickAt",
+        "keyDown", "keyUp",
+        "mouseMove", "mouseMoveTo", "mouseClick", "mouseDoubleClick",
+        "moveRel", "wheelUp", "wheelDown",
         // System detection
         "detectSystem", "detectDisplay", "detectMonitorConfig", "detectWindowManager",
-        // Hotkey function
-        "Hotkey"
+        // Hotkey
+        "Hotkey",
+        // Window properties
+        "title", "class", "pid", "hwnd",
+        // OCR
+        "ocrRead", "ocrFindText",
+        // Clipboard
+        "getClipboard", "setClipboard", "clipboard",
+        // File
+        "readFile", "writeFile", "fileExists", "read", "write", "exists",
+        // Time
+        "time", "date", "now",
+        // Thread/sleep
+        "sleep", "wait",
+        // Async
+        "spawn", "await", "channel", "yield",
+        // Exit
+        "exit"
     };
 }
 

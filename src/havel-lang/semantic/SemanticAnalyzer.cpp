@@ -177,12 +177,86 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     for (const auto& [moduleName, _] : knownModules_) {
         symbolTable_.define(moduleName, SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     }
-    
+
     // Async builtins
     symbolTable_.define("spawn", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("await", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("channel", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("yield", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // AHK-style global builtins (process, IO, system)
+    symbolTable_.define("run", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("runDetached", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("runWait", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("send", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("click", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("clickAt", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("keyDown", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("keyUp", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("mouseMove", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("mouseMoveTo", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("mouseClick", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("mouseDoubleClick", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("moveRel", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("wheelUp", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("wheelDown", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // System detection builtins
+    symbolTable_.define("detectSystem", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("detectDisplay", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("detectMonitorConfig", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("detectWindowManager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Hotkey builtin
+    symbolTable_.define("Hotkey", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Window property builtins
+    symbolTable_.define("title", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("class", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("pid", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("hwnd", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // OCR builtins
+    symbolTable_.define("ocrRead", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("ocrFindText", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Clipboard builtins
+    symbolTable_.define("getClipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("setClipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("clipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // File builtins
+    symbolTable_.define("readFile", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("writeFile", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("fileExists", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("read", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("write", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("exists", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Math builtins (also available as math.*)
+    symbolTable_.define("min", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("max", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("round", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("floor", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("ceil", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // String builtins (also available as string.*)
+    symbolTable_.define("trim", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("replace", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("split", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("join", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Time builtins
+    symbolTable_.define("time", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("date", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("now", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Thread/sleep builtins
+    symbolTable_.define("sleep", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("wait", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Exit builtin
+    symbolTable_.define("exit", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
 
     // First pass: register all top-level declarations
     for (const auto& stmt : program.body) {

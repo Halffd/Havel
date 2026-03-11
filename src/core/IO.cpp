@@ -2862,21 +2862,31 @@ bool IO::UngrabHotkey(int hotkeyId) {
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
-  if (eventListener) {
+  if (!eventListener) {
+    warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will not be registered");
+    return;
+  }
+  try {
     eventListener->SetAnyKeyPressCallback(callback);
+  } catch (const std::exception& e) {
+    error("IO::SetAnyKeyPressCallback failed: {}", e.what());
   }
 }
 
 void IO::SetInputEventCallback(InputEventCallback callback) {
-  if (eventListener) {
-    eventListener->SetInputEventCallback(std::move(callback));
+  if (!eventListener) {
+    warn("IO::SetInputEventCallback: eventListener is null - callback will not be registered");
+    return;
   }
+  eventListener->SetInputEventCallback(std::move(callback));
 }
 
 void IO::SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
-  if (eventListener) {
-    eventListener->SetInputBlockCallback(std::move(callback));
+  if (!eventListener) {
+    warn("IO::SetInputBlockCallback: eventListener is null - callback will not be registered");
+    return;
   }
+  eventListener->SetInputBlockCallback(std::move(callback));
 }
 
 HotkeyExecutor *IO::GetHotkeyExecutor() const { return hotkeyExecutor.get(); }

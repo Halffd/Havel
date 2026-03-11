@@ -86,6 +86,41 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
         return HavelValue(arr);
     }));
 
+    // =========================================================================
+    // Global Hotkey() function - AHK-style hotkey registration
+    // Hotkey(key, callback, condition?)
+    // =========================================================================
+
+    env.Define("Hotkey", HavelValue(BuiltinFunction([&hotkeyManager](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("Hotkey() requires at least (key, callback)");
+        }
+
+        std::string key = args[0].asString();
+        std::function<void()> callback;
+        std::string condition;
+
+        if (args[1].isFunction()) {
+            callback = [func = args[1].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
+                func({});
+            };
+        } else {
+            return HavelRuntimeError("Hotkey(): second argument must be a function");
+        }
+
+        if (args.size() >= 3 && args[2].isString()) {
+            condition = args[2].asString();
+        }
+
+        if (!condition.empty()) {
+            hotkeyManager.AddContextualHotkey(key, condition, callback);
+        } else {
+            hotkeyManager.AddHotkey(key, callback);
+        }
+
+        return HavelValue(nullptr);
+    })));
+
     // Register hotkey module
     env.Define("hotkey", HavelValue(hotkeyObj));
 }

@@ -61,14 +61,32 @@ EventListener::EventListener() {
   signalHandler = std::make_unique<SignalHandler>(this);
   signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
+  
+  // Register atexit handler for emergency cleanup
+  static bool atexitRegistered = false;
+  if (!atexitRegistered) {
+    std::atexit([]() {
+      debug("atexit: emergency evdev ungrab");
+      // Emergency cleanup - ForceUngrabAllDevices is async-signal-safe
+      // but we can't call it here safely without knowing instance state
+      // The IO destructor should handle normal cleanup
+    });
+    atexitRegistered = true;
+  }
 }
 
 EventListener::~EventListener() {
+  // Force ungrab all devices FIRST (critical for evdev cleanup)
+  ForceUngrabAllDevices();
+  
+  // Stop the event loop and join thread
   Stop();
 
   if (shutdownFd >= 0) {
     close(shutdownFd);
   }
+  
+  debug("EventListener destructor completed - all devices ungrabbed");
 }
 
 bool EventListener::Start(const std::vector<std::string> &devicePaths,

@@ -28,6 +28,12 @@ namespace havel {
 
 // Forward declarations - host managers accessed via HostContext
 class IO;
+class Interpreter;  // Forward declare for modules namespace
+
+// HotkeyModule function - declared here to avoid circular dependency
+namespace modules {
+  void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);
+}
 class HotkeyManager;
 class Environment;
 class Configs;
@@ -408,6 +414,8 @@ public:
     if (m_destroyed) m_destroyed->store(true);
     environment.reset();
     lastResult = HavelValue(nullptr);
+    // Clear global interpreter reference to prevent dangling pointer
+    havel::modules::SetHotkeyInterpreter(std::weak_ptr<Interpreter>());
   }
 
   // Get environment

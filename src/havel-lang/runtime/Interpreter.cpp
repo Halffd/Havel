@@ -308,8 +308,8 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
-  // Set global interpreter reference for hotkey callbacks
-  havel::modules::SetHotkeyInterpreter(this);
+  // Set global interpreter reference for hotkey callbacks (use shared_from_this)
+  havel::modules::SetHotkeyInterpreter(shared_from_this());
   info("Set hotkey interpreter to {}", (void*)this);
 
   // Load all host modules (includes io module with keyTap, etc.)
@@ -328,7 +328,7 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   environment->Define("__pure_mode__", HavelValue(true));
   
   // Set global interpreter reference for hotkey callbacks
-  havel::modules::SetHotkeyInterpreter(this);
+  havel::modules::SetHotkeyInterpreter(shared_from_this());
   
   havel::modules::loadHostModules(*environment, this);
 }

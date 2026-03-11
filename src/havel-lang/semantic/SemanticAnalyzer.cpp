@@ -236,6 +236,13 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     symbolTable_.define("write", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("exists", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     
+    // Utility builtins (common in hotkey callbacks)
+    symbolTable_.define("keys", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("items", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("list", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("pairs", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("range", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
     // Math builtins (also available as math.*)
     symbolTable_.define("min", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("max", SymbolKind::Builtin, HavelType::any(), builtinAttrs);

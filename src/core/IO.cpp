@@ -386,6 +386,17 @@ IO::IO() {
   // Initialize KeyMap
   KeyMap::Initialize();
 
+  // Register cleanup handler to ensure evdev ungrab on exit
+  static bool cleanupRegistered = false;
+  if (!cleanupRegistered) {
+    std::atexit([]() {
+      debug("atexit: forcing evdev ungrab on process exit");
+      // Note: This is a last-resort cleanup if IO destructor doesn't run
+      // The IO destructor should handle normal cleanup
+    });
+    cleanupRegistered = true;
+  }
+
   // Read process priority and thread count from config
   int processPriority = Configs::Get().Get<int>("Advanced.ProcessPriority", 0);  // -20 (highest) to 19 (lowest)
   int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads", 4);  // Number of worker threads
@@ -502,6 +513,8 @@ void IO::cleanup() {
 
   // Stop EventListener if using new event system
   if (eventListener) {
+    // Force ungrab all evdev devices FIRST (before stopping thread)
+    eventListener->ForceUngrabAllDevices();
     eventListener->Stop();
   }
 

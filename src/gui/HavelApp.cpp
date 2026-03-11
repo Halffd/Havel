@@ -137,6 +137,8 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
+  // Register interpreter for hotkey callbacks (must be after construction)
+  interpreter->RegisterForHotkeys();
   std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
 #else
   interpreter = nullptr;
@@ -300,6 +302,8 @@ void HavelApp::initializeComponents(bool isStartup) {
         ctx.pixelAutomation = pixelAuto;
 
         interpreter = std::make_shared<Interpreter>(ctx);
+        // Register interpreter for hotkey callbacks (must be after construction)
+        interpreter->RegisterForHotkeys();
         std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
     } else {
         std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;

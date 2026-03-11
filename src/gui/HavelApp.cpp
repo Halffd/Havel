@@ -113,19 +113,19 @@ void HavelApp::initializeComponents(bool isStartup) {
   info("NetworkManager initialized successfully");
 
 #ifdef ENABLE_HAVEL_LANG
-  std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
-  
+  std::cerr << "[DEBUG] Creating interpreter (without HotkeyManager)..." << std::endl;
+
   // Get AutomationSuite components with null guards
   auto* suite = AutomationSuite::Instance();
   auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
   auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
   auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
-  // Build HostContext from managers
+  // Build HostContext from managers (hotkeyManager will be set later)
   HostContext ctx;
   ctx.io = io;  // Share ownership
   ctx.windowManager = windowManager.get();
-  ctx.hotkeyManager = hotkeyManager;
+  ctx.hotkeyManager = nullptr;  // Will be set after HotkeyManager creation
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
@@ -137,6 +137,32 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
+  
+  std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
+
+  // Get screenshot manager with null guard (nullptr in REPL mode)
+  auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
+  
+  // Create HotkeyManager - needs interpreter reference
+  hotkeyManager = std::make_shared<HotkeyManager>(
+      io, *windowManager, *mpv, *audioManager, *interpreter,
+      screenshotMgrForHotkey, *brightnessManager,
+      networkManager);
+  if (!hotkeyManager) {
+    throw std::runtime_error("Failed to create HotkeyManager");
+  }
+
+  // Set the hotkeyManager on the IO instance so it can access it during
+  // suspend/resume operations
+  io->setHotkeyManager(hotkeyManager);
+
+  // Initialize hotkey manager
+  hotkeyManager->loadDebugSettings();
+  hotkeyManager->applyDebugSettings();
+  
+  // Update interpreter's hostContext with hotkeyManager
+  interpreter->getHostContext().hotkeyManager = hotkeyManager;
+  
   // Register interpreter for hotkey callbacks (must be after construction)
   interpreter->RegisterForHotkeys();
   std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
@@ -146,16 +172,6 @@ void HavelApp::initializeComponents(bool isStartup) {
             << std::endl;
 #endif
   info("Havel interpreter initialized successfully");
-
-  // Get screenshot manager with null guard (nullptr in REPL mode)
-  auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
-  hotkeyManager = std::make_shared<HotkeyManager>(
-      io, *windowManager, *mpv, *audioManager, *interpreter,
-      screenshotMgrForHotkey, *brightnessManager,
-      networkManager);
-  if (!hotkeyManager) {
-    throw std::runtime_error("Failed to create HotkeyManager");
-  }
 
   // Set the hotkeyManager on the IO instance so it can access it during
   // suspend/resume operations

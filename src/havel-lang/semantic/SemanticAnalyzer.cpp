@@ -220,7 +220,6 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     symbolTable_.define("mpv", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("audio", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("brightnessManager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("brightness", SymbolKind::Builtin, HavelType::any(), builtinAttrs);  // Alias
     symbolTable_.define("config", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("clipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("process", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
@@ -234,16 +233,6 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     symbolTable_.define("timer", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("http", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("browser", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("media", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("pixel", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("automation", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("launcher", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("gui", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("detector", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("ffi", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("async", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("runtime", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mapmanager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     
     // Common functions used in hotkeys
     symbolTable_.define("play", SymbolKind::Builtin, HavelType::any(), builtinAttrs);

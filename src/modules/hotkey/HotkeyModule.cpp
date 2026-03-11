@@ -88,8 +88,11 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
 
     // =========================================================================
     // Global Hotkey() function - AHK-style hotkey registration
-    // Hotkey(key, callback, condition?)
+    // Hotkey(key, callback, condition?, conditionFalse?)
+    // Returns: Hotkey object with id, key, condition, etc.
     // =========================================================================
+
+    static std::atomic<int> nextHotkeyId{1000};
 
     env.Define("Hotkey", HavelValue(BuiltinFunction([&hotkeyManager](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
@@ -98,6 +101,7 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
 
         std::string key = args[0].asString();
         std::function<void()> callback;
+        std::function<void()> conditionFalse;
         std::string condition;
 
         if (args[1].isFunction()) {
@@ -108,17 +112,72 @@ void registerHotkeyModule(Environment& env, HostContext& ctx) {
             return HavelRuntimeError("Hotkey(): second argument must be a function");
         }
 
-        if (args.size() >= 3 && args[2].isString()) {
-            condition = args[2].asString();
+        // Parse optional condition (string or function)
+        if (args.size() >= 3) {
+            if (args[2].isString()) {
+                condition = args[2].asString();
+            } else if (args[2].isFunction()) {
+                // Condition function - will be evaluated by ConditionalHotkeyManager
+                condition = args[2].asString();  // Store as string representation
+            }
         }
 
+        // Parse optional conditionFalse callback
+        if (args.size() >= 4 && args[3].isFunction()) {
+            conditionFalse = [func = args[3].get<std::function<HavelResult(const std::vector<HavelValue>&)>>()]() {
+                func({});
+            };
+        }
+
+        // Register the hotkey
+        int hotkeyId = nextHotkeyId++;
+        
         if (!condition.empty()) {
-            hotkeyManager.AddContextualHotkey(key, condition, callback);
+            if (conditionFalse) {
+                // With conditionFalse callback
+                hotkeyManager.AddContextualHotkey(key, condition, callback, conditionFalse, hotkeyId);
+            } else {
+                // With condition, no conditionFalse
+                hotkeyManager.AddContextualHotkey(key, condition, callback, nullptr, hotkeyId);
+            }
         } else {
-            hotkeyManager.AddHotkey(key, callback);
+            // No condition
+            hotkeyManager.AddHotkey(key, callback, hotkeyId);
         }
 
-        return HavelValue(nullptr);
+        // Return hotkey object with all info
+        auto hotkeyInfo = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*hotkeyInfo)["id"] = HavelValue(static_cast<double>(hotkeyId));
+        (*hotkeyInfo)["key"] = HavelValue(key);
+        (*hotkeyInfo)["condition"] = HavelValue(condition);
+        (*hotkeyInfo)["hasConditionFalse"] = HavelValue(conditionFalse ? true : false);
+        (*hotkeyInfo)["active"] = HavelValue(true);
+        
+        // Methods
+        (*hotkeyInfo)["ungrab"] = HavelValue(BuiltinFunction([hotkeyId, &hotkeyManager](const std::vector<HavelValue>&) -> HavelResult {
+            hotkeyManager.UngrabHotkey(hotkeyId);
+            return HavelValue(nullptr);
+        }));
+        
+        (*hotkeyInfo)["grab"] = HavelValue(BuiltinFunction([hotkeyId, &hotkeyManager](const std::vector<HavelValue>&) -> HavelResult {
+            hotkeyManager.GrabHotkey(hotkeyId);
+            return HavelValue(nullptr);
+        }));
+        
+        (*hotkeyInfo)["remove"] = HavelValue(BuiltinFunction([hotkeyId, &hotkeyManager](const std::vector<HavelValue>&) -> HavelResult {
+            hotkeyManager.RemoveHotkey(hotkeyId);
+            return HavelValue(nullptr);
+        }));
+        
+        (*hotkeyInfo)["info"] = HavelValue(BuiltinFunction([hotkeyId, key, condition](const std::vector<HavelValue>&) -> HavelResult {
+            auto info = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*info)["id"] = HavelValue(static_cast<double>(hotkeyId));
+            (*info)["key"] = HavelValue(key);
+            (*info)["condition"] = HavelValue(condition);
+            return HavelValue(info);
+        }));
+
+        return HavelValue(hotkeyInfo);
     })));
 
     // Register hotkey module

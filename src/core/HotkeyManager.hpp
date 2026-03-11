@@ -53,11 +53,15 @@ public:
   ~HotkeyManager();
 
   bool AddHotkey(const std::string &key, std::function<void()> callback);
+  bool AddHotkey(const std::string &key, std::function<void()> callback, int id);
   bool AddHotkey(const std::string &key, const std::string &action);
   bool RemoveHotkey(const std::string &key);
+  bool RemoveHotkey(int id);  // Remove by id
   void HandleKeyEvent(const std::string &key);
   void EnableHotkey(const std::string &key);
   void DisableHotkey(const std::string &key);
+  bool GrabHotkey(int id);      // Grab hotkey by id
+  bool UngrabHotkey(int id);    // Ungrab hotkey by id
 
   int AddContextualHotkey(const std::string &key, const std::string &condition,
                           std::function<void()> trueAction,

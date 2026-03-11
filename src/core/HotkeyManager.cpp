@@ -47,6 +47,16 @@ bool HotkeyManager::AddHotkey(const std::string &key,
 }
 
 bool HotkeyManager::AddHotkey(const std::string &key,
+                              std::function<void()> callback, int id) {
+  {
+    std::lock_guard<std::mutex> lock(simpleHotkeysMutex);
+    simpleHotkeys[key] = callback;
+    simpleHotkeyEnabled[key] = true;
+  }
+  return io->Hotkey(key, std::move(callback), "", id);
+}
+
+bool HotkeyManager::AddHotkey(const std::string &key,
                               const std::string &action) {
   return AddHotkey(key, [action]() { info("Hotkey action: {}", action); });
 }
@@ -66,6 +76,39 @@ bool HotkeyManager::RemoveHotkey(const std::string &key) {
       hotkeys.erase(it);
       return true;
     }
+  }
+  return false;
+}
+
+bool HotkeyManager::RemoveHotkey(int id) {
+  std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+  auto &hotkeys = RegisteredHotkeys();
+  auto it = hotkeys.find(id);
+  if (it != hotkeys.end()) {
+    io->UngrabHotkey(id);
+    hotkeys.erase(it);
+    return true;
+  }
+  return false;
+}
+
+bool HotkeyManager::GrabHotkey(int id) {
+  std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+  auto &hotkeys = RegisteredHotkeys();
+  auto it = hotkeys.find(id);
+  if (it != hotkeys.end()) {
+    return io->GrabHotkey(id);
+  }
+  return false;
+}
+
+bool HotkeyManager::UngrabHotkey(int id) {
+  std::lock_guard<std::mutex> lock(RegisteredHotkeysMutex());
+  auto &hotkeys = RegisteredHotkeys();
+  auto it = hotkeys.find(id);
+  if (it != hotkeys.end()) {
+    io->UngrabHotkey(id);
+    return true;
   }
   return false;
 }

@@ -310,6 +310,7 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
 
   // Set global interpreter reference for hotkey callbacks
   havel::modules::SetHotkeyInterpreter(this);
+  info("Set hotkey interpreter to {}", (void*)this);
 
   // Load all host modules (includes io module with keyTap, etc.)
   havel::modules::loadHostModules(*environment, this);

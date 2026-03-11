@@ -832,11 +832,29 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     if (action) {
       // Lock interpreter mutex to protect environment and lastResult
       std::lock_guard<std::mutex> lock(this->interpreterMutex);
-      auto result = this->Evaluate(*action);
-      if (isError(result)) {
-        std::cerr << "Runtime error in hotkey: " << getErrorMessage(result)
+      
+      // Evaluate the action (could be a lambda or expression)
+      auto actionResult = this->Evaluate(*action);
+      
+      // Check for errors first
+      if (isError(actionResult)) {
+        std::cerr << "Runtime error in hotkey: " << getErrorMessage(actionResult)
                   << std::endl;
+        return;
       }
+      
+      // Unwrap the result to get the actual value
+      HavelValue funcValue = unwrap(actionResult);
+      
+      // If the result is a function, CALL it
+      if (funcValue.isFunction()) {
+        auto callResult = this->CallFunction(funcValue, {});
+        if (isError(callResult)) {
+          std::cerr << "Runtime error in hotkey: " << getErrorMessage(callResult)
+                    << std::endl;
+        }
+      }
+      // If not a function, the action was an expression - result is already computed
     }
   };
 

@@ -14,6 +14,7 @@
 #include "havel-lang/stdlib/FileModule.hpp"
 #include "havel-lang/stdlib/RegexModule.hpp"
 #include "havel-lang/stdlib/ProcessModule.hpp"
+#include "havel-lang/stdlib/UtilityModule.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -66,6 +67,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     havel::stdlib::registerFileModule(&env);
     havel::stdlib::registerRegexModule(&env);
     havel::stdlib::registerProcessModule(&env);
+    havel::stdlib::registerUtilityModule(&env);
 
     // =========================================================================
     // HOST MODULES (loaded via registry)

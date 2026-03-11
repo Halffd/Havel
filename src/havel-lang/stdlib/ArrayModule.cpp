@@ -273,7 +273,7 @@ void registerArrayModule(Environment* env) {
     auto array = args[0].get<HavelArray>();
     if (!array) return HavelRuntimeError("push() received null array");
     array->push_back(args[1]);
-    return HavelValue(array);
+    return HavelValue(static_cast<double>(array->size()));  // Return new length like JS
   }));
 
   // pop(array) - remove and return last element
@@ -287,6 +287,188 @@ void registerArrayModule(Environment* env) {
     HavelValue last = array->back();
     array->pop_back();
     return last;
+  }));
+
+  // shift(array) - remove and return first element
+  env->Define("shift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("shift() requires array");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("shift() arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array || array->empty()) return HavelRuntimeError("Cannot shift from empty array");
+
+    HavelValue first = array->front();
+    array->erase(array->begin());
+    return first;
+  }));
+
+  // unshift(array, value) - add element to beginning
+  env->Define("unshift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 2) return HavelRuntimeError("unshift() requires (array, value)");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("unshift() first arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array) return HavelRuntimeError("unshift() received null array");
+    array->insert(array->begin(), args[1]);
+    return HavelValue(static_cast<double>(array->size()));  // Return new length
+  }));
+
+  // concat(array1, array2, ...) - concatenate arrays
+  env->Define("concat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("concat() requires at least one array");
+    
+    auto result = std::make_shared<std::vector<HavelValue>>();
+    
+    for (const auto& arg : args) {
+      if (arg.is<HavelArray>()) {
+        auto array = arg.get<HavelArray>();
+        if (array) {
+          result->insert(result->end(), array->begin(), array->end());
+        }
+      } else {
+        // Non-array values are added as-is
+        result->push_back(arg);
+      }
+    }
+    return HavelValue(result);
+  }));
+
+  // slice(array, start, end) - extract portion of array
+  env->Define("slice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("slice() requires array");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("slice() first arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array) return HavelRuntimeError("slice() received null array");
+
+    int start = 0;
+    int end = static_cast<int>(array->size());
+    
+    if (args.size() > 1 && args[1].isNumber()) {
+      start = static_cast<int>(args[1].asNumber());
+      if (start < 0) start = std::max(0, static_cast<int>(array->size()) + start);
+    }
+    if (args.size() > 2 && args[2].isNumber()) {
+      end = static_cast<int>(args[2].asNumber());
+      if (end < 0) end = std::max(0, static_cast<int>(array->size()) + end);
+    }
+
+    auto result = std::make_shared<std::vector<HavelValue>>();
+    start = std::max(0, std::min(start, static_cast<int>(array->size())));
+    end = std::max(0, std::min(end, static_cast<int>(array->size())));
+    
+    for (int i = start; i < end && i < static_cast<int>(array->size()); ++i) {
+      result->push_back((*array)[i]);
+    }
+    return HavelValue(result);
+  }));
+
+  // splice(array, start, deleteCount, ...items) - modify array in place
+  env->Define("splice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 2) return HavelRuntimeError("splice() requires (array, start)");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("splice() first arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array) return HavelRuntimeError("splice() received null array");
+
+    int start = static_cast<int>(args[1].asNumber());
+    if (start < 0) start = std::max(0, static_cast<int>(array->size()) + start);
+    
+    int deleteCount = 0;
+    if (args.size() > 2 && args[2].isNumber()) {
+      deleteCount = static_cast<int>(args[2].asNumber());
+    }
+
+    // Collect deleted elements
+    auto deleted = std::make_shared<std::vector<HavelValue>>();
+    start = std::max(0, std::min(start, static_cast<int>(array->size())));
+    deleteCount = std::max(0, deleteCount);
+    
+    for (int i = 0; i < deleteCount && start < static_cast<int>(array->size()); ++i) {
+      deleted->push_back((*array)[start]);
+      array->erase(array->begin() + start);
+    }
+
+    // Insert new items
+    for (size_t i = 3; i < args.size(); ++i) {
+      array->insert(array->begin() + start, args[i]);
+      start++;
+    }
+
+    return HavelValue(deleted);
+  }));
+
+  // reverse(array) - reverse array in place
+  env->Define("reverse", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("reverse() requires array");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("reverse() arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array) return HavelRuntimeError("reverse() received null array");
+
+    std::reverse(array->begin(), array->end());
+    return HavelValue(array);
+  }));
+
+  // flat(array, depth) - flatten nested arrays
+  env->Define("flat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.empty()) return HavelRuntimeError("flat() requires array");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("flat() first arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    if (!array) return HavelRuntimeError("flat() received null array");
+
+    int depth = 1;
+    if (args.size() > 1 && args[1].isNumber()) {
+      depth = static_cast<int>(args[1].asNumber());
+    }
+
+    auto result = std::make_shared<std::vector<HavelValue>>();
+
+    std::function<void(const std::vector<HavelValue>&, int)> flatten = [&](const std::vector<HavelValue>& arr, int d) {
+      for (const auto& item : arr) {
+        if (item.is<HavelArray>() && d > 0) {
+          auto nested = item.get<HavelArray>();
+          if (nested) flatten(*nested, d - 1);
+        } else {
+          result->push_back(item);
+        }
+      }
+    };
+
+    if (array) {
+      flatten(*array, depth);
+    }
+    return HavelValue(result);
+  }));
+
+  // flatMap(array, function) - map then flatten
+  env->Define("flatMap", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+    if (args.size() < 2) return HavelRuntimeError("flatMap() requires (array, function)");
+    if (!args[0].is<HavelArray>()) return HavelRuntimeError("flatMap() first arg must be array");
+
+    auto array = args[0].get<HavelArray>();
+    auto& fn = args[1];
+    auto result = std::make_shared<std::vector<HavelValue>>();
+
+    if (array) {
+      for (const auto& item : *array) {
+        auto res = callFunction(fn, {item});
+        if (isError(res)) return res;
+        auto mapped = unwrap(res);
+        
+        // Flatten one level
+        if (mapped.is<HavelArray>()) {
+          auto mappedArray = mapped.get<HavelArray>();
+          if (mappedArray) {
+            result->insert(result->end(), mappedArray->begin(), mappedArray->end());
+          }
+        } else {
+          result->push_back(mapped);
+        }
+      }
+    }
+    return HavelValue(result);
   }));
 
   // ============================================================================

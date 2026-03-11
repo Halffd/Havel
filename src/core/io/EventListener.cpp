@@ -457,7 +457,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
   if (ev.type == EV_KEY) {
     bool down = (ev.value == 1 || ev.value == 2);
     InputEvent event;
-    event.kind = InputEventKind::MouseButton;
+    event.kind = InputEventKind::Key;  // FIXED: Was MouseButton
     event.code = ev.code;
     event.value = ev.value;
     event.down = down;

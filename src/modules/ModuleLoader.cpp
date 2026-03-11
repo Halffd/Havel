@@ -53,8 +53,8 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
         return;
     }
 
-    // Get HostContext from interpreter
-    HostContext ctx = interpreter->getHostContext();
+    // Get HostContext from interpreter - pass by reference to avoid dangling refs
+    HostContext& ctx = interpreter->getHostContext();
 
     // =========================================================================
     // STANDARD LIBRARY (always loaded - core language functions)

@@ -50,7 +50,7 @@ struct ConditionalHotkeyState {
  */
 class ConditionalHotkeyManager {
 public:
-  ConditionalHotkeyManager(IO& io);
+  ConditionalHotkeyManager(std::shared_ptr<IO> io);
   ~ConditionalHotkeyManager();
 
   // Register a conditional hotkey with string condition
@@ -122,7 +122,7 @@ public:
   bool verboseLogging = false;
 
 private:
-  IO& io;
+  std::shared_ptr<IO> io;  // Shared ownership
   std::vector<ConditionalHotkey> conditionalHotkeys;
   std::vector<int> conditionalHotkeyIds;
   std::vector<int> gamingHotkeyIds;

@@ -1,14 +1,15 @@
 #pragma once
 #include "core/IO.hpp"
+#include "core/HotkeyManager.hpp"
 #include <atomic>
 #include <chrono>
 #include <functional>
 #include <string>
 #include <thread>
 #include <variant>
+#include <memory>
 
 namespace havel {
-class HotkeyManager; // Forward declaration
 
 class KeyTap {
 private:
@@ -17,7 +18,7 @@ private:
   std::function<void()> onCombo;
   std::variant<std::string, std::function<bool()>> tapCondition;
   std::variant<std::string, std::function<bool()>> comboCondition;
-  HotkeyManager &hotkeyManager;
+  std::shared_ptr<HotkeyManager> hotkeyManager;  // Shared ownership
   std::function<bool(const std::string&)> conditionEvaluator;  // Callback for string conditions
 
   // State variables
@@ -46,14 +47,14 @@ private:
 public:
   // Single unified constructor using templates
   template <typename TapCond, typename ComboCond = std::monostate>
-  KeyTap(IO &ioRef, HotkeyManager &hotkeyManagerRef, const std::string &key,
+  KeyTap(std::shared_ptr<HotkeyManager> hotkeyManagerPtr, const std::string &key,
          std::function<void()> tapAction, TapCond tapCond = TapCond{},
          ComboCond comboCond = ComboCond{},
          std::function<void()> comboAction = nullptr, bool grabDownFlag = true,
          bool grabUpFlag = true,
          std::function<bool(const std::string&)> conditionEval = nullptr)
       : keyName(key), onTap(tapAction), onCombo(comboAction),
-        hotkeyManager(hotkeyManagerRef), grabDown(grabDownFlag),
+        hotkeyManager(hotkeyManagerPtr), grabDown(grabDownFlag),
         grabUp(grabUpFlag), conditionEvaluator(conditionEval) {
 
     // Handle tap condition

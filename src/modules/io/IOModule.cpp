@@ -274,21 +274,22 @@ void registerIOModule(Environment& env, HostContext& ctx) {
         if (args.size() > 6 && args[6].isBool()) {
             grabUp = args[6].get<bool>();
         }
-        
+
         // Create KeyTap instance and store it to keep it alive
+        // Pass shared_ptr to ensure KeyTap keeps HotkeyManager alive
         auto keyTap = std::make_unique<KeyTap>(
-            io, *ctx.hotkeyManager, keyName, onTap, tapCondition,
+            ctx.hotkeyManager, keyName, onTap, tapCondition,
             comboCondition, onCombo, grabDown, grabUp
         );
-        
+
         keyTap->setup();
-        
+
         // Store instance to keep it alive
         {
             std::lock_guard<std::mutex> lock(g_keyTapMutex);
             g_keyTapStorage.push_back(std::move(keyTap));
         }
-        
+
         return HavelValue(keyName + " KeyTap created");
     }));
 

@@ -21,14 +21,14 @@ std::mutex &HotkeyManager::RegisteredHotkeysMutex() {
   return g_registeredHotkeysMutex;
 }
 
-HotkeyManager::HotkeyManager(IO &io)
+HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
     : activeConditionalHotkeys(conditionalManager.GetHotkeys()), io(io),
       conditionalManager(io) {
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   initializeInputCallbacks();
 }
 
-HotkeyManager::HotkeyManager(IO &io, WindowManager &, MPVController &,
+HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
                              AudioManager &, Interpreter &, ScreenshotManager *,
                              BrightnessManager &,
                              std::shared_ptr<net::NetworkManager>)
@@ -43,7 +43,7 @@ bool HotkeyManager::AddHotkey(const std::string &key,
     simpleHotkeys[key] = callback;
     simpleHotkeyEnabled[key] = true;
   }
-  return io.Hotkey(key, std::move(callback));
+  return io->Hotkey(key, std::move(callback));
 }
 
 bool HotkeyManager::AddHotkey(const std::string &key,
@@ -62,7 +62,7 @@ bool HotkeyManager::RemoveHotkey(const std::string &key) {
   auto &hotkeys = RegisteredHotkeys();
   for (auto it = hotkeys.begin(); it != hotkeys.end(); ++it) {
     if (it->second.alias == key) {
-      io.UngrabHotkey(it->first);
+      io->UngrabHotkey(it->first);
       hotkeys.erase(it);
       return true;
     }
@@ -137,7 +137,7 @@ void HotkeyManager::clearAllHotkeys() {
   auto &hotkeys = RegisteredHotkeys();
   for (const auto &[id, hotkey] : hotkeys) {
     if (hotkey.enabled) {
-      io.UngrabHotkey(id);
+      io->UngrabHotkey(id);
     }
   }
   hotkeys.clear();
@@ -241,15 +241,15 @@ void HotkeyManager::initializeInputCallbacks() {
     return;
   }
 
-  io.SetAnyKeyPressCallback(
+  io->SetAnyKeyPressCallback(
       [this](const std::string &key) { NotifyAnyKeyPressed(key); });
-  io.SetInputEventCallback([this](const InputEvent &event) {
+  io->SetInputEventCallback([this](const InputEvent &event) {
     if (event.down || event.kind == InputEventKind::MouseMove ||
         event.kind == InputEventKind::MouseWheel) {
       NotifyInputReceived();
     }
   });
-  io.SetInputBlockCallback(
+  io->SetInputBlockCallback(
       [this](const InputEvent &event) { return HandleInputEvent(event); });
   inputCallbacksInitialized = true;
 }
@@ -507,7 +507,7 @@ void HotkeyManager::executeHotkey(const HotKey &hotkey) const {
 
   auto callback = hotkey.callback;
   auto alias = hotkey.alias;
-  if (auto *executor = io.GetHotkeyExecutor()) {
+  if (auto *executor = io->GetHotkeyExecutor()) {
     auto result = executor->submit([callback = std::move(callback),
                                     hotkeyAlias = alias]() {
       try {

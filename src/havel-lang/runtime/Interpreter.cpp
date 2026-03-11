@@ -374,7 +374,12 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     // Now we actually USE the SemanticAnalyzer (it's not just for show anymore!)
     semantic::SemanticAnalyzer semanticAnalyzer;
     
-    havel::info("Running semantic analysis...");
+    // Use Basic mode by default - checks variables/functions but NOT modules
+    // This avoids false positives for dynamically-loaded modules
+    // Set to Strict mode if you want full module checking
+    semanticAnalyzer.setMode(semantic::SemanticMode::Basic);
+    
+    havel::info("Running semantic analysis (mode: Basic)...");
     bool semanticOk = semanticAnalyzer.analyze(*programPtr);
     
     if (!semanticOk) {

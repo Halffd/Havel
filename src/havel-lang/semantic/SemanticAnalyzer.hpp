@@ -17,6 +17,15 @@
 namespace havel::semantic {
 
 /**
+ * Semantic analysis mode
+ */
+enum class SemanticMode {
+    None,        // Skip semantic analysis (AHK-style, runtime errors only)
+    Basic,       // Check variables, functions, duplicates (no module checking)
+    Strict       // Full checking including modules (default)
+};
+
+/**
  * Semantic error types
  */
 enum class SemanticErrorKind {
@@ -27,7 +36,7 @@ enum class SemanticErrorKind {
     DuplicateDefinition,
     ForwardReference,
     
-    // Module errors
+    // Module errors (only checked in Strict mode)
     UndefinedModule,
     UndefinedModuleFunction,
     UndefinedBuiltin,
@@ -104,6 +113,15 @@ class SemanticAnalyzer {
 public:
     SemanticAnalyzer();
     ~SemanticAnalyzer() = default;
+    
+    /**
+     * Set semantic analysis mode
+     * None = skip analysis (AHK-style)
+     * Basic = check variables/functions only
+     * Strict = full checking (default)
+     */
+    void setMode(SemanticMode mode) { mode_ = mode; }
+    SemanticMode getMode() const { return mode_; }
     
     /**
      * Analyze AST and collect semantic information
@@ -206,7 +224,8 @@ private:
     std::vector<SemanticError> errors_;
     AnalysisContext context_;
     TypeChecker& typeChecker_;
-
+    SemanticMode mode_ = SemanticMode::Basic;  // Default to Basic (no module checking)
+    
     // Constant folding
     std::unordered_map<std::string, int64_t> constantAddresses_;
     int64_t nextConstantAddress_ = 0;

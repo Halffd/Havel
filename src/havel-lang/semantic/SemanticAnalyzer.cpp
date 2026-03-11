@@ -420,16 +420,16 @@ void SemanticAnalyzer::visitExpression(const ast::Expression& expr) {
 
                     if (sym && sym->kind == SymbolKind::Function) {
                         validateProcedureCall(*sym, call);
-                    } else if (!sym && !isKnownBuiltin(ident.symbol)) {
-                        // Check if it's an unknown builtin
+                    } else if (!sym && mode_ == SemanticMode::Strict && !isKnownBuiltin(ident.symbol)) {
+                        // Only check builtins in Strict mode
                         reportError(SemanticErrorKind::UndefinedBuiltin,
                                    "Undefined function: " + ident.symbol,
                                    expr.line, expr.column);
                     }
                 }
                 
-                // Check for module.function() calls
-                if (call.callee->kind == ast::NodeType::MemberExpression) {
+                // Check for module.function() calls - only in Strict mode
+                if (mode_ == SemanticMode::Strict && call.callee->kind == ast::NodeType::MemberExpression) {
                     const auto& member = static_cast<const ast::MemberExpression&>(*call.callee);
                     if (member.object && member.object->kind == ast::NodeType::Identifier) {
                         const auto& moduleIdent = static_cast<const ast::Identifier&>(*member.object);

@@ -866,7 +866,7 @@ int HavelLauncher::runCli(int argc, char *argv[]) {
     std::vector<havel::Token> tokens = lexer.tokenize();
 
     havel::parser::Parser parser;
-    (void)parser.produceASTStrict(source);
+    (void)parser.parseStrict(source);
 
     std::cout << prettify(tokens);
     return 0;

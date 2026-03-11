@@ -42,10 +42,14 @@ private:
   // Controls whether `expr { ... }` is treated as call-sugar/lambda.
   // This must be disabled when parsing conditions for statements like
   // `if/while/when` to ensure the `{` starts the statement body.
-  bool allowBraceCallSugar = true;
 
-  // Track if we're inside a hotkey block where bare expressions are input commands
-  bool inInputContext = false;
+  // Parser context - replaces individual bool flags
+  struct ParserContext {
+    bool inInputContext = false;      // Inside hotkey block (bare expressions are input)
+    bool allowBraceSugar = true;       // Allow expr { ... } as call sugar
+  };
+  
+  ParserContext context;
 
   // Debug options
   DebugOptions debug;
@@ -167,7 +171,7 @@ public:
   // Main entry point (like Tyler's produceAST)
   std::unique_ptr<ast::Program> produceAST(const std::string &sourceCode);
 
-  std::unique_ptr<ast::Program> produceASTStrict(const std::string &sourceCode);
+  std::unique_ptr<ast::Program> parseStrict(const std::string &sourceCode);
 
   void printAST(const ast::ASTNode &node, int indent = 0) const;
   

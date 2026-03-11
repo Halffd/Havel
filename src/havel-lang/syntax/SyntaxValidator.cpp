@@ -81,10 +81,18 @@ void SyntaxValidator::validateDestructuringSyntax(const ast::Expression&) {}
 
 bool SyntaxValidator::isValidIdentifier(const std::string& name) {
   if (name.empty()) return false;
-  char first = name[0];
-  if (!std::isalpha(first) && first != '_') return false;
+  unsigned char first = static_cast<unsigned char>(name[0]);
+  // ASCII-safe check: a-z, A-Z, or _
+  if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') || first == '_')) {
+    return false;
+  }
   for (size_t i = 1; i < name.size(); ++i) {
-    if (!std::isalnum(name[i]) && name[i] != '_') return false;
+    unsigned char c = static_cast<unsigned char>(name[i]);
+    // ASCII-safe check: a-z, A-Z, 0-9, or _
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+          (c >= '0' && c <= '9') || c == '_')) {
+      return false;
+    }
   }
   static const std::unordered_set<std::string> keywords = {
     "let", "fn", "if", "else", "while", "for", "return", "break", "continue",
@@ -95,9 +103,18 @@ bool SyntaxValidator::isValidIdentifier(const std::string& name) {
 
 bool SyntaxValidator::isValidTypeName(const std::string& name) {
   if (name.empty()) return false;
-  if (!std::isupper(name[0])) return false;
+  unsigned char first = static_cast<unsigned char>(name[0]);
+  // ASCII-safe check: A-Z only (type names must start with uppercase)
+  if (!(first >= 'A' && first <= 'Z')) {
+    return false;
+  }
   for (size_t i = 1; i < name.size(); ++i) {
-    if (!std::isalnum(name[i]) && name[i] != '_') return false;
+    unsigned char c = static_cast<unsigned char>(name[i]);
+    // ASCII-safe check: a-z, A-Z, 0-9, or _
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+          (c >= '0' && c <= '9') || c == '_')) {
+      return false;
+    }
   }
   return true;
 }

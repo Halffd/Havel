@@ -466,19 +466,24 @@ struct BlockStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Function parameter with optional default value
+// Function parameter with optional default value and type annotation
 struct FunctionParameter : public ASTNode {
   std::unique_ptr<Identifier> paramName;
   std::optional<std::unique_ptr<Expression>> defaultValue;
+  std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation;  // Optional type annotation
 
   FunctionParameter(std::unique_ptr<Identifier> n,
-                    std::optional<std::unique_ptr<Expression>> defVal = std::nullopt)
-      : paramName(std::move(n)), defaultValue(std::move(defVal)) {
+                    std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
+                    std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt)
+      : paramName(std::move(n)), defaultValue(std::move(defVal)), typeAnnotation(std::move(typeAnn)) {
     kind = NodeType::FunctionParameter;
   }
 
   std::string toString() const override {
     std::string result = paramName ? paramName->toString() : "nullptr";
+    if (typeAnnotation) {
+      result += ": " + (*typeAnnotation)->toString();
+    }
     if (defaultValue) {
       result += " = " + (*defaultValue)->toString();
     }
@@ -1330,16 +1335,18 @@ struct OnStartStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Function Declaration
+// Function Declaration with optional return type annotation
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
   std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<BlockStatement> body;
+  std::optional<std::unique_ptr<TypeAnnotation>> returnType;  // Optional return type annotation
 
   FunctionDeclaration(std::unique_ptr<Identifier> n,
                       std::vector<std::unique_ptr<FunctionParameter>> params,
-                      std::unique_ptr<BlockStatement> bd)
-      : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)) {
+                      std::unique_ptr<BlockStatement> bd,
+                      std::optional<std::unique_ptr<TypeAnnotation>> returnAnn = std::nullopt)
+      : name(std::move(n)), parameters(std::move(params)), body(std::move(bd)), returnType(std::move(returnAnn)) {
     kind = NodeType::FunctionDeclaration;
   }
 
@@ -1350,9 +1357,13 @@ struct FunctionDeclaration : public Statement {
       if (i < parameters.size() - 1)
         paramsStr += ", ";
     }
-    return "FunctionDeclaration{name: " +
-           (name ? name->toString() : "nullptr") + ", params: [" + paramsStr +
-           "]" + ", body: " + (body ? body->toString() : "nullptr") + "}";
+    std::string result = "FunctionDeclaration{name: " +
+           (name ? name->toString() : "nullptr") + ", params: [" + paramsStr + "]";
+    if (returnType) {
+      result += ", returnType: " + (*returnType)->toString();
+    }
+    result += ", body: " + (body ? body->toString() : "nullptr") + "}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

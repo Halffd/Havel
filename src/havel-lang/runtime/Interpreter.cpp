@@ -846,8 +846,16 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
       // Unwrap the result to get the actual value
       HavelValue funcValue = unwrap(actionResult);
       
-      // If the result is a function, CALL it
+      // If the result is a function, CALL it with the current environment
       if (funcValue.isFunction()) {
+        // For user-defined functions, update the closure to use current environment
+        if (auto* userFunc = funcValue.get_if<std::shared_ptr<HavelFunction>>()) {
+          // Update the function's closure to use current environment
+          // This ensures the function has access to all currently defined symbols
+          (*userFunc)->closure = this->environment;
+          havel::debug("Hotkey: Updated function closure to current environment");
+        }
+        
         auto callResult = this->CallFunction(funcValue, {});
         if (isError(callResult)) {
           std::cerr << "Runtime error in hotkey: " << getErrorMessage(callResult)

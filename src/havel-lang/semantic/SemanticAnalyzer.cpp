@@ -209,6 +209,9 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     
     // Hotkey builtin
     symbolTable_.define("Hotkey", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("When", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("On", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("Off", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     
     // Window property builtins
     symbolTable_.define("title", SymbolKind::Builtin, HavelType::any(), builtinAttrs);

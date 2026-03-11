@@ -3041,6 +3041,64 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     }
     // else: '(' already consumed, don't consume again
 
+    // Check if this is a tuple (comma-separated expressions)
+    // First, peek ahead to see if there's a comma after the first expression
+    size_t checkPos = position;
+    bool mightBeTuple = false;
+    
+    // Skip the first expression
+    while (at(checkPos).type == havel::TokenType::NewLine) checkPos++;
+    
+    // Try to parse expressions and look for commas
+    int exprCount = 0;
+    size_t tempPos = checkPos;
+    while (tempPos < tokens.size()) {
+      auto& tok = tokens[tempPos];
+      if (tok.type == havel::TokenType::Comma) {
+        mightBeTuple = true;
+        break;
+      } else if (tok.type == havel::TokenType::CloseParen) {
+        break;
+      } else if (tok.type != havel::TokenType::NewLine) {
+        exprCount++;
+      }
+      tempPos++;
+    }
+    
+    if (mightBeTuple && exprCount >= 1) {
+      // Parse as tuple
+      std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+      
+      while (notEOF() && at().type != havel::TokenType::CloseParen) {
+        while (at().type == havel::TokenType::NewLine) {
+          advance();
+        }
+        if (at().type == havel::TokenType::CloseParen) {
+          break;
+        }
+        
+        elements.push_back(parseExpression());
+        
+        while (at().type == havel::TokenType::NewLine) {
+          advance();
+        }
+        
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+        } else if (at().type != havel::TokenType::CloseParen) {
+          failAt(at(), "Expected ',' or ')' in tuple");
+        }
+      }
+      
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after tuple elements");
+      }
+      advance(); // consume ')'
+      
+      return std::make_unique<havel::ast::TupleExpression>(std::move(elements));
+    }
+
+    // Parse as grouped expression
     auto expr = parseExpression();
     if (at().type != havel::TokenType::CloseParen) {
       auto errTok = at();

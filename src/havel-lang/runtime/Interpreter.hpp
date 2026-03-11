@@ -482,6 +482,7 @@ public:
   void visitUseStatement(const ast::UseStatement &node) override;
   void visitWithStatement(const ast::WithStatement &node) override;
   void visitArrayLiteral(const ast::ArrayLiteral &node) override;
+  void visitTupleExpression(const ast::TupleExpression &node) override;
   void visitObjectLiteral(const ast::ObjectLiteral &node) override;
   void visitSpreadExpression(const ast::SpreadExpression &node) override;
   void visitConfigBlock(const ast::ConfigBlock &node) override;

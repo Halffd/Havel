@@ -2178,6 +2178,22 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
   lastResult = HavelValue(array);
 }
 
+void Interpreter::visitTupleExpression(const ast::TupleExpression &node) {
+  // Tuples are represented as arrays in the runtime (immutable by convention)
+  auto tuple = std::make_shared<std::vector<HavelValue>>();
+
+  for (const auto &element : node.elements) {
+    auto result = Evaluate(*element);
+    if (isError(result)) {
+      lastResult = result;
+      return;
+    }
+    tuple->push_back(unwrap(result));
+  }
+
+  lastResult = HavelValue(tuple);
+}
+
 void Interpreter::visitSpreadExpression(const ast::SpreadExpression &node) {
   // Spread expressions are handled by their container (array/object literal)
   // This is just a fallback - should not normally be reached

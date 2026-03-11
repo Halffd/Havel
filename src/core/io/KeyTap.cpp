@@ -23,7 +23,7 @@ void KeyTap::setup() {
     debug("KeyTap: Registering keyDown='{}', keyUp='{}'", keyDown, keyUp);
     
     // Register any-key callback to detect combos
-    hotkeyManager.RegisterAnyKeyPressCallback([this](const std::string& key) {
+    hotkeyManager->RegisterAnyKeyPressCallback([this](const std::string& key) {
         if (keyHeld && key != keyName) {
             combo = true;
             // If we have a combo action, trigger it immediately
@@ -39,7 +39,7 @@ void KeyTap::setup() {
     // Key down - just set held state
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         auto func = std::get<std::function<bool()>>(tapCondition);
-        hotkeyManager.AddHotkey(keyDown, [this, func]() {
+        hotkeyManager->AddHotkey(keyDown, [this, func]() {
             if (func && func()) {
                 keyHeld = true;
                 combo = false;
@@ -48,18 +48,18 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            hotkeyManager.AddContextualHotkey(keyDown, condStr, [this]() {
+            hotkeyManager->AddContextualHotkey(keyDown, condStr, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         } else {
-            hotkeyManager.AddHotkey(keyDown, [this]() {
+            hotkeyManager->AddHotkey(keyDown, [this]() {
                 keyHeld = true;
                 combo = false;
             });
         }
     } else {
-        hotkeyManager.AddHotkey(keyDown, [this]() {
+        hotkeyManager->AddHotkey(keyDown, [this]() {
             keyHeld = true;
             combo = false;
         });
@@ -68,7 +68,7 @@ void KeyTap::setup() {
     // Key up - check for tap
     if (std::holds_alternative<std::function<bool()>>(tapCondition)) {
         auto func = std::get<std::function<bool()>>(tapCondition);
-        hotkeyManager.AddHotkey(keyUp, [this, func]() {
+        hotkeyManager->AddHotkey(keyUp, [this, func]() {
             if (keyHeld && !combo && func && func()) {
                 onTap();   // clean tap
             }
@@ -78,7 +78,7 @@ void KeyTap::setup() {
     } else if (std::holds_alternative<std::string>(tapCondition)) {
         auto condStr = std::get<std::string>(tapCondition);
         if (!condStr.empty()) {
-            hotkeyManager.AddContextualHotkey(keyUp, condStr, [this]() {
+            hotkeyManager->AddContextualHotkey(keyUp, condStr, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
                 }
@@ -86,7 +86,7 @@ void KeyTap::setup() {
                 combo = false;
             });
         } else {
-            hotkeyManager.AddHotkey(keyUp, [this]() {
+            hotkeyManager->AddHotkey(keyUp, [this]() {
                 if (keyHeld && !combo) {
                     onTap();   // clean tap
                 }
@@ -95,7 +95,7 @@ void KeyTap::setup() {
             });
         }
     } else {
-        hotkeyManager.AddHotkey(keyUp, [this]() {
+        hotkeyManager->AddHotkey(keyUp, [this]() {
             if (keyHeld && !combo) {
                 onTap();   // clean tap
             }

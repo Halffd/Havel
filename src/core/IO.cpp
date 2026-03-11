@@ -2878,6 +2878,8 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
   debug("IO::SetAnyKeyPressCallback called, eventListener={}", (void*)eventListener.get());
   if (!eventListener) {
     warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will not be registered");
+    warn("  This usually means no input devices were found or EventListener failed to start");
+    warn("  Check if /dev/input/event* devices are accessible and grabDevices is enabled");
     return;
   }
   try {

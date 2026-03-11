@@ -11,7 +11,7 @@ namespace havel {
 std::mutex ConditionalHotkeyManager::modeMutex;
 std::string ConditionalHotkeyManager::currentMode = "default";
 
-ConditionalHotkeyManager::ConditionalHotkeyManager(IO& io)
+ConditionalHotkeyManager::ConditionalHotkeyManager(std::shared_ptr<IO> io)
     : io(io) {
   info("Initializing ConditionalHotkeyManager");
   
@@ -60,7 +60,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   }
 
   // Register with IO
-  io.Hotkey(key, action, condition, id);
+  io->Hotkey(key, action, condition, id);
 
   // Initial evaluation
   UpdateConditionalHotkey(conditionalHotkeys.back());
@@ -104,7 +104,7 @@ int ConditionalHotkeyManager::AddConditionalHotkey(
   }
 
   // Register with IO - no string condition for function-based
-  io.Hotkey(key, action, "", id);
+  io->Hotkey(key, action, "", id);
 
   // Initial evaluation
   UpdateConditionalHotkey(conditionalHotkeys.back());
@@ -124,7 +124,7 @@ bool ConditionalHotkeyManager::RemoveConditionalHotkey(int id) {
 
   // Ungrab if currently grabbed
   if (it->currentlyGrabbed) {
-    io.UngrabHotkey(id);
+    io->UngrabHotkey(id);
   }
 
   conditionalHotkeys.erase(it);
@@ -150,7 +150,7 @@ bool ConditionalHotkeyManager::SetHotkeyMonitoring(int id, bool enabled) {
   it->monitoringEnabled = enabled;
   
   if (!enabled && it->currentlyGrabbed) {
-    io.UngrabHotkey(id);
+    io->UngrabHotkey(id);
     it->currentlyGrabbed = false;
   }
 
@@ -208,11 +208,11 @@ void ConditionalHotkeyManager::ReevaluateConditionalHotkeys() {
 
     // Update grab state
     if (shouldGrab && !ch.currentlyGrabbed) {
-      io.GrabHotkey(ch.id);
+      io->GrabHotkey(ch.id);
       ch.currentlyGrabbed = true;
       ch.lastConditionResult = true;
     } else if (!shouldGrab && ch.currentlyGrabbed) {
-      io.UngrabHotkey(ch.id);
+      io->UngrabHotkey(ch.id);
       ch.currentlyGrabbed = false;
       ch.lastConditionResult = false;
     }
@@ -235,10 +235,10 @@ bool ConditionalHotkeyManager::Suspend() {
           
           if (it != conditionalHotkeys.end()) {
             if (state.wasGrabbed && !it->currentlyGrabbed) {
-              io.GrabHotkey(state.id);
+              io->GrabHotkey(state.id);
               it->currentlyGrabbed = true;
             } else if (!state.wasGrabbed && it->currentlyGrabbed) {
-              io.UngrabHotkey(state.id);
+              io->UngrabHotkey(state.id);
               it->currentlyGrabbed = false;
             }
           }
@@ -269,7 +269,7 @@ bool ConditionalHotkeyManager::Suspend() {
 
           // Ungrab during suspension
           if (ch.currentlyGrabbed) {
-            io.UngrabHotkey(ch.id);
+            io->UngrabHotkey(ch.id);
             ch.currentlyGrabbed = false;
           }
         }
@@ -374,7 +374,7 @@ void ConditionalHotkeyManager::UpdateConditionalHotkey(ConditionalHotkey& hotkey
 void ConditionalHotkeyManager::UpdateHotkeyState(ConditionalHotkey& hotkey,
                                                   bool conditionMet) {
   if (conditionMet && !hotkey.currentlyGrabbed) {
-    io.GrabHotkey(hotkey.id);
+    io->GrabHotkey(hotkey.id);
     hotkey.currentlyGrabbed = true;
     if (verboseLogging) {
       if (std::holds_alternative<std::string>(hotkey.condition)) {
@@ -385,7 +385,7 @@ void ConditionalHotkeyManager::UpdateHotkeyState(ConditionalHotkey& hotkey,
       }
     }
   } else if (!conditionMet && hotkey.currentlyGrabbed) {
-    io.UngrabHotkey(hotkey.id);
+    io->UngrabHotkey(hotkey.id);
     hotkey.currentlyGrabbed = false;
     if (verboseLogging) {
       if (std::holds_alternative<std::string>(hotkey.condition)) {
@@ -482,10 +482,10 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
   }
   // Apply grab/ungrab operations outside of lock
   for (int id : toGrab) {
-    io.GrabHotkey(id);
+    io->GrabHotkey(id);
   }
   for (int id : toUngrab) {
-    io.UngrabHotkey(id);
+    io->UngrabHotkey(id);
   }
 }
 
@@ -526,7 +526,7 @@ void ConditionalHotkeyManager::Cleanup() {
     std::lock_guard<std::mutex> lock(hotkeyMutex);
     for (auto& ch : conditionalHotkeys) {
       if (ch.currentlyGrabbed) {
-        io.UngrabHotkey(ch.id);
+        io->UngrabHotkey(ch.id);
         ch.currentlyGrabbed = false;
       }
     }

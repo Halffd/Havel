@@ -46,8 +46,8 @@ public:
     bool active = false;
   };
 
-  explicit HotkeyManager(IO &io);
-  HotkeyManager(IO &io, WindowManager &, MPVController &, AudioManager &,
+  explicit HotkeyManager(std::shared_ptr<IO> io);
+  HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &, AudioManager &,
                 Interpreter &, ScreenshotManager *, BrightnessManager &,
                 std::shared_ptr<net::NetworkManager>);
   ~HotkeyManager();
@@ -108,7 +108,7 @@ public:
 private:
   void initializeInputCallbacks();
 
-  IO &io;
+  std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
   ConditionalHotkeyManager conditionalManager;
   std::unordered_map<std::string, std::function<void()>> simpleHotkeys;
   std::unordered_map<std::string, bool> simpleHotkeyEnabled;

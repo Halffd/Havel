@@ -125,7 +125,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   HostContext ctx;
   ctx.io = io;  // Share ownership
   ctx.windowManager = windowManager.get();
-  ctx.hotkeyManager = hotkeyManager.get();
+  ctx.hotkeyManager = hotkeyManager;
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
@@ -148,7 +148,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Get screenshot manager with null guard (nullptr in REPL mode)
   auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
   hotkeyManager = std::make_shared<HotkeyManager>(
-      *io, *windowManager, *mpv, *audioManager, *interpreter,
+      io, *windowManager, *mpv, *audioManager, *interpreter,
       screenshotMgrForHotkey, *brightnessManager,
       networkManager);
   if (!hotkeyManager) {
@@ -289,7 +289,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     HostContext ctx;
     ctx.io = io;  // Share ownership
     ctx.windowManager = windowManager.get();
-    ctx.hotkeyManager = hotkeyManager.get();
+    ctx.hotkeyManager = hotkeyManager;
     ctx.brightnessManager = brightnessManager.get();
     ctx.audioManager = audioManager.get();
     ctx.guiManager = guiManager.get();

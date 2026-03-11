@@ -41,8 +41,8 @@ struct HostContext {
     // Window management
     WindowManager* windowManager = nullptr;
 
-    // Input handling
-    HotkeyManager* hotkeyManager = nullptr;
+    // Input handling - use shared_ptr to ensure lifetime
+    std::shared_ptr<HotkeyManager> hotkeyManager;
 
     // Display
     BrightnessManager* brightnessManager = nullptr;

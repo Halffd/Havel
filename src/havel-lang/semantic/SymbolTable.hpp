@@ -1,8 +1,8 @@
 /*
  * SymbolTable.hpp
  *
- * Enhanced symbol table implementation for Havel language.
- * Supports scoping, type attributes, memory addresses, and semantic validation.
+ * Symbol table implementation for Havel language.
+ * Supports nested scopes, symbol shadowing, and type tracking.
  */
 #pragma once
 
@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <memory>
 #include <optional>
-#include <cstdint>
 
 namespace havel::semantic {
 
@@ -20,17 +19,17 @@ namespace havel::semantic {
  * Symbol categories
  */
 enum class SymbolKind {
-    Variable,       // Regular variable
-    Constant,       // Constant value
-    Function,       // Function/procedure
-    Parameter,      // Function parameter
-    Struct,         // Struct type definition
-    Enum,           // Enum type definition
-    Trait,          // Trait/interface definition
-    Builtin,        // Built-in function
-    Field,          // Struct field
-    Variant,        // Enum variant
-    Label           // Jump label
+    Variable,
+    Constant,
+    Function,
+    Parameter,
+    Struct,
+    Enum,
+    Trait,
+    Builtin,
+    Field,
+    Variant,
+    Label
 };
 
 /**
@@ -75,8 +74,8 @@ struct SymbolAttributes {
     std::optional<std::string> constValue;
     
     // Function information
-    std::vector<ParamPass> paramPassModes;  // Parameter passing modes
     size_t paramCount = 0;                   // Number of parameters
+    std::vector<ParamPass> paramPassModes;   // Parameter passing modes
     
     // Visibility and linkage
     bool isPublic = true;             // Exported from module
@@ -100,13 +99,12 @@ struct Symbol {
     SymbolKind kind;
     SymbolAttributes attributes;
     size_t scopeLevel;
-    size_t scopeId;
     
-    Symbol() : kind(SymbolKind::Variable), scopeLevel(0), scopeId(0) {}
+    Symbol() : kind(SymbolKind::Variable), scopeLevel(0) {}
     
     Symbol(const std::string& name, SymbolKind kind, 
-           std::shared_ptr<HavelType> type, size_t scopeLevel, size_t scopeId)
-        : name(name), kind(kind), scopeLevel(scopeLevel), scopeId(scopeId) {
+           std::shared_ptr<HavelType> type, size_t scopeLevel)
+        : name(name), kind(kind), scopeLevel(scopeLevel) {
         attributes.type = type;
     }
     
@@ -124,30 +122,31 @@ struct Symbol {
 };
 
 /**
- * Scope information
+ * Scope information - stored directly, no heap allocation
  */
 struct Scope {
-    size_t id;
     size_t level;
-    Scope* parent;
-    std::string name;  // Optional: function name, block name, etc.
+    std::string name;
     
-    Scope(size_t id, size_t level, Scope* parent, const std::string& name = "")
-        : id(id), level(level), parent(parent), name(name) {}
+    Scope(size_t lvl = 0, const std::string& n = "") 
+        : level(lvl), name(n) {}
 };
 
 /**
  * Symbol Table with scope support
  * 
- * Uses hash map for O(1) average lookup, with scope stack for nesting.
- * Supports symbol shadowing in nested scopes.
+ * Design:
+ * - Symbols stored by name with all scope levels
+ * - Lookup finds innermost symbol at or below current scope
+ * - Scopes stored directly (no raw pointers)
+ * - O(1) average lookup, O(n) worst case for shadowed symbols
  */
 class SymbolTable {
 public:
     SymbolTable();
-    ~SymbolTable();
+    ~SymbolTable() = default;
     
-    // Disable copying to prevent double-free
+    // Disable copying
     SymbolTable(const SymbolTable&) = delete;
     SymbolTable& operator=(const SymbolTable&) = delete;
     
@@ -159,57 +158,41 @@ public:
     void enterScope(const std::string& name = "");
     void exitScope();
     size_t getCurrentScopeLevel() const { return currentScopeLevel_; }
-    Scope* getCurrentScope() { return currentScope_; }
     
     // Symbol insertion
     bool define(const Symbol& symbol);
-    bool define(const std::string& name, SymbolKind kind, 
+    bool define(const std::string& name, SymbolKind kind,
                 std::shared_ptr<HavelType> type,
                 const SymbolAttributes& attrs = SymbolAttributes());
-    
+
     // Symbol lookup (returns innermost matching symbol)
     const Symbol* lookup(const std::string& name) const;
     const Symbol* lookupInCurrentScope(const std::string& name) const;
-    const Symbol* lookupInParentScope(const std::string& name) const;
-    
+
     // Type lookup (convenience for type symbols)
     std::shared_ptr<HavelType> lookupType(const std::string& name) const;
-    
+
     // All symbols in current scope
     std::vector<const Symbol*> getAllInCurrentScope() const;
-    
+
     // All symbols (for debugging)
     std::vector<const Symbol*> getAllSymbols() const;
-    
+
     // Statistics
     size_t getSymbolCount() const { return symbols_.size(); }
     size_t getScopeCount() const { return scopes_.size(); }
-    
-    // Memory address allocation
-    int64_t allocateAddress(size_t size, size_t alignment = 1);
-    void resetAddressCounter() { nextAddress_ = 0; }
-    
-    // Validation
-    std::vector<std::string> validate() const;
 
 private:
-    // All symbols, keyed by name + scope
+    // Symbols keyed by name, with all scope levels
+    // Lookup finds symbol with highest scopeLevel <= currentScopeLevel
     std::unordered_map<std::string, std::vector<Symbol>> symbols_;
 
-    // Scope storage (raw pointers, manually managed)
-    std::vector<Scope*> scopeStorage_;
-    
-    // Scope stack (non-owning pointers)
-    std::vector<Scope*> scopes_;
-    Scope* currentScope_ = nullptr;
+    // Scope stack - stores scopes directly (no raw pointers, no heap)
+    std::vector<Scope> scopes_;
     size_t currentScopeLevel_ = 0;
-    size_t nextScopeId_ = 0;
-
-    // Memory address allocation
+    
+    // Memory address allocation for constants
     int64_t nextAddress_ = 0;
-
-    // Helper to create unique key
-    static std::string makeKey(const std::string& name, size_t scopeId);
 };
 
 /**

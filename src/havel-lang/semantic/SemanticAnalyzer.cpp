@@ -69,30 +69,36 @@ void SemanticAnalyzer::registerStructTypes(const ast::Program& program) {
             structType->addField(StructField(field.name, fieldType));
             
             // Add field to symbol table
-            Symbol fieldSym(field.name, SymbolKind::Field, fieldType.value_or(HavelType::any()),
-                           symbolTable_.getCurrentScopeLevel(), 0);
+            Symbol fieldSym;
+            fieldSym.name = field.name;
+            fieldSym.kind = SymbolKind::Field;
+            fieldSym.attributes.type = fieldType.value_or(HavelType::any());
+            fieldSym.scopeLevel = symbolTable_.getCurrentScopeLevel();
             fieldSym.attributes.size = 8;  // Default size
             symbolTable_.define(fieldSym);
         }
-        
+
         registry.registerStructType(structType);
-        
+
         // Register struct name in symbol table
-        Symbol structSym(structDecl.name, SymbolKind::Struct, structType,
-                        symbolTable_.getCurrentScopeLevel(), 0);
+        Symbol structSym;
+        structSym.name = structDecl.name;
+        structSym.kind = SymbolKind::Struct;
+        structSym.attributes.type = structType;
+        structSym.scopeLevel = symbolTable_.getCurrentScopeLevel();
         symbolTable_.define(structSym);
     }
 }
 
 void SemanticAnalyzer::registerEnumTypes(const ast::Program& program) {
     auto& registry = getTypeRegistry();
-    
+
     for (const auto& stmt : program.body) {
         if (!stmt || stmt->kind != ast::NodeType::EnumDeclaration) continue;
-        
+
         const auto& enumDecl = static_cast<const ast::EnumDeclaration&>(*stmt);
         auto enumType = std::make_shared<HavelEnumType>(enumDecl.name);
-        
+
         // Register variants
         for (const auto& variant : enumDecl.definition.variants) {
             std::optional<std::shared_ptr<HavelType>> payloadType;
@@ -101,18 +107,24 @@ void SemanticAnalyzer::registerEnumTypes(const ast::Program& program) {
                 payloadType = HavelType::any();  // TODO: Resolve actual type
             }
             enumType->addVariant(EnumVariant(variant.name, hasPayload, payloadType));
-            
+
             // Add variant to symbol table
-            Symbol variantSym(variant.name, SymbolKind::Variant, HavelType::any(),
-                            symbolTable_.getCurrentScopeLevel(), 0);
+            Symbol variantSym;
+            variantSym.name = variant.name;
+            variantSym.kind = SymbolKind::Variant;
+            variantSym.attributes.type = HavelType::any();
+            variantSym.scopeLevel = symbolTable_.getCurrentScopeLevel();
             symbolTable_.define(variantSym);
         }
-        
+
         registry.registerEnumType(enumType);
-        
+
         // Register enum name in symbol table
-        Symbol enumSym(enumDecl.name, SymbolKind::Enum, enumType,
-                      symbolTable_.getCurrentScopeLevel(), 0);
+        Symbol enumSym;
+        enumSym.name = enumDecl.name;
+        enumSym.kind = SymbolKind::Enum;
+        enumSym.attributes.type = enumType;
+        enumSym.scopeLevel = symbolTable_.getCurrentScopeLevel();
         symbolTable_.define(enumSym);
     }
 }
@@ -234,7 +246,8 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
             // Process function body in new scope
             enterScope(funcDecl.name ? funcDecl.name->symbol : "anonymous");
             
-            // Set function context
+            // Push function context (supports nested functions)
+            context_.functionStack.push_back(context_.inFunction);
             context_.inFunction = true;
             
             // Register parameters
@@ -253,8 +266,9 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
                 visitStatement(*funcDecl.body);
             }
             
-            // Exit function context
-            context_.inFunction = false;
+            // Pop function context
+            context_.inFunction = context_.functionStack.back();
+            context_.functionStack.pop_back();
             
             exitScope();
             break;
@@ -288,28 +302,28 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
         
         case ast::NodeType::WhileStatement: {
             const auto& whileStmt = static_cast<const ast::WhileStatement&>(stmt);
-            
+
             enterScope("while");
-            context_.inLoop = true;
             
             if (whileStmt.condition) {
                 visitExpression(*whileStmt.condition);
             }
             if (whileStmt.body) {
+                // Push loop context (supports nested loops)
+                context_.loopDepth++;
                 visitStatement(*whileStmt.body);
+                context_.loopDepth--;
             }
-            
-            context_.inLoop = false;
+
             exitScope();
             break;
         }
-        
+
         case ast::NodeType::ForStatement: {
             const auto& forStmt = static_cast<const ast::ForStatement&>(stmt);
-            
+
             enterScope("for");
-            context_.inLoop = true;
-            
+
             // Register loop variable(s)
             for (const auto& iter : forStmt.iterators) {
                 if (iter) {
@@ -320,15 +334,17 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
                                        HavelType::any(), attrs);
                 }
             }
-            
+
             if (forStmt.iterable) {
                 visitExpression(*forStmt.iterable);
             }
             if (forStmt.body) {
+                // Push loop context (supports nested loops)
+                context_.loopDepth++;
                 visitStatement(*forStmt.body);
+                context_.loopDepth--;
             }
-            
-            context_.inLoop = false;
+
             exitScope();
             break;
         }
@@ -350,14 +366,15 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
         
         case ast::NodeType::BreakStatement:
         case ast::NodeType::ContinueStatement: {
-            if (!context_.inLoop) {
+            // Check if we're in a loop (loopDepth > 0)
+            if (context_.loopDepth == 0) {
                 SemanticErrorKind kind = (stmt.kind == ast::NodeType::BreakStatement)
                     ? SemanticErrorKind::BreakOutsideLoop
                     : SemanticErrorKind::ContinueOutsideLoop;
                 const char* msg = (stmt.kind == ast::NodeType::BreakStatement)
                     ? "break statement outside loop"
                     : "continue statement outside loop";
-                
+
                 reportError(kind, msg, stmt.line, stmt.column);
             }
             break;
@@ -622,7 +639,10 @@ void SemanticAnalyzer::validateTypedAssignment(const Symbol& var,
 }
 
 void SemanticAnalyzer::optimizeConstants() {
-    // Rule 6: Constant folding - same address for identical constants
+    // Rule 6: Constant pooling - same address for identical constants
+    // (Note: This is constant pooling, not folding.
+    //  Folding is: 2 + 3 → 5
+    //  Pooling is: "hello" + "hello" → same memory)
     // This would be done during code generation
 }
 

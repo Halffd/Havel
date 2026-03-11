@@ -276,29 +276,34 @@ void HavelApp::initializeComponents(bool isStartup) {
     // ClipboardManager is now lazy-initialized in AutomationSuite
     // No need to create it separately here
 #ifdef ENABLE_HAVEL_LANG
-    guiManager = std::make_unique<GUIManager>(*windowManager);
-    std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
-    
-    // Get AutomationSuite components with null guards
-    auto* suite = AutomationSuite::Instance();
-    auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
-    auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
-    auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+    // Only create interpreter if it doesn't already exist
+    if (!interpreter) {
+        guiManager = std::make_unique<GUIManager>(*windowManager);
+        std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
 
-    // Build HostContext from managers
-    HostContext ctx;
-    ctx.io = io;  // Share ownership
-    ctx.windowManager = windowManager.get();
-    ctx.hotkeyManager = hotkeyManager;
-    ctx.brightnessManager = brightnessManager.get();
-    ctx.audioManager = audioManager.get();
-    ctx.guiManager = guiManager.get();
-    ctx.screenshotManager = screenshotMgr;
-    ctx.clipboardManager = clipboardMgr;
-    ctx.pixelAutomation = pixelAuto;
+        // Get AutomationSuite components with null guards
+        auto* suite = AutomationSuite::Instance();
+        auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+        auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+        auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
-    interpreter = std::make_shared<Interpreter>(ctx);
-    std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+        // Build HostContext from managers
+        HostContext ctx;
+        ctx.io = io;  // Share ownership
+        ctx.windowManager = windowManager.get();
+        ctx.hotkeyManager = hotkeyManager;
+        ctx.brightnessManager = brightnessManager.get();
+        ctx.audioManager = audioManager.get();
+        ctx.guiManager = guiManager.get();
+        ctx.screenshotManager = screenshotMgr;
+        ctx.clipboardManager = clipboardMgr;
+        ctx.pixelAutomation = pixelAuto;
+
+        interpreter = std::make_shared<Interpreter>(ctx);
+        std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+    } else {
+        std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;
+    }
 #else
     interpreter = nullptr;
     std::cerr << "[DEBUG] Havel language disabled, interpreter is null"

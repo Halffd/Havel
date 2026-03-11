@@ -65,22 +65,22 @@ void registerConfigModule(Environment& env, HostContext&) {
         if (args.size() < 2) {
             return HavelRuntimeError("config.set() requires (key, value)");
         }
-        
-        std::string key = args[0].isString() ? args[0].asString() : 
+
+        std::string key = args[0].isString() ? args[0].asString() :
             std::to_string(static_cast<int>(args[0].asNumber()));
-        
+
         auto& config = Configs::Get();
         const HavelValue& value = args[1];
-        
+
         if (value.is<bool>()) {
-            config.Set(key, value.get<bool>());
+            config.Set(key, value.get<bool>(), true);  // Save to disk
         } else if (value.is<int>()) {
-            config.Set(key, value.get<int>());
+            config.Set(key, value.get<int>(), true);  // Save to disk
         } else if (value.is<double>()) {
-            config.Set(key, value.get<double>());
+            config.Set(key, value.get<double>(), true);  // Save to disk
         } else {
-            config.Set(key, value.isString() ? value.asString() : 
-                std::to_string(static_cast<int>(value.asNumber())));
+            config.Set(key, value.isString() ? value.asString() :
+                std::to_string(static_cast<int>(value.asNumber())), true);  // Save to disk
         }
         return HavelValue(true);
     }));
@@ -122,7 +122,7 @@ void registerConfigModule(Environment& env, HostContext&) {
     // =========================================================================
     // config.reload() - Reload configuration from current path
     // =========================================================================
-    
+
     (*configObj)["reload"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
         try {
             auto& config = Configs::Get();
@@ -133,7 +133,22 @@ void registerConfigModule(Environment& env, HostContext&) {
             return HavelRuntimeError("Failed to reload configuration: " + std::string(e.what()));
         }
     }));
-    
+
+    // =========================================================================
+    // config.save() - Save configuration to disk
+    // =========================================================================
+
+    (*configObj)["save"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        try {
+            auto& config = Configs::Get();
+            config.Save();
+            std::cout << "[INFO] Configuration saved successfully" << std::endl;
+            return HavelValue(true);
+        } catch (const std::exception& e) {
+            return HavelRuntimeError("Failed to save configuration: " + std::string(e.what()));
+        }
+    }));
+
     // Register config module
     env.Define("config", HavelValue(configObj));
 }

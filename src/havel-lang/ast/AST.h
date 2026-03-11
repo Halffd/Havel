@@ -1572,6 +1572,28 @@ struct ArrayLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Tuple Expression ((1, "hello", true))
+struct TupleExpression : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  TupleExpression(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::TupleExpression;
+  }
+
+  std::string toString() const override {
+    std::string result = "TupleExpr{(";
+    for (size_t i = 0; i < elements.size(); ++i) {
+      if (i > 0) result += ", ";
+      result += elements[i] ? elements[i]->toString() : "nullptr";
+    }
+    result += ")}";
+    return result;
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Object Literal ({key: value, ...})
 struct ObjectLiteral : public Expression {
   std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
@@ -2089,6 +2111,7 @@ public:
   virtual void visitUseStatement(const UseStatement &node) = 0;
   virtual void visitWithStatement(const WithStatement &node) = 0;
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
+  virtual void visitTupleExpression(const TupleExpression &node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
   virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
@@ -2256,6 +2279,10 @@ inline void FunctionDeclaration::accept(ASTVisitor &visitor) const {
 
 inline void ArrayLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitArrayLiteral(*this);
+}
+
+inline void TupleExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitTupleExpression(*this);
 }
 
 inline void ObjectLiteral::accept(ASTVisitor &visitor) const {

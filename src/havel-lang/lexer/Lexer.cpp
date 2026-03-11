@@ -485,6 +485,16 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle return type arrow ->
+    if (c == '-' && peek() == '>') {
+      advance(); // consume '>'
+      tokens.push_back(makeToken("->", TokenType::ReturnType));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
     // Handle arrow operator =>
     if (c == '=' && peek() == '>') {
       advance(); // consume '>'

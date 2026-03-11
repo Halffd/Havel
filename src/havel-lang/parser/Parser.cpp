@@ -628,6 +628,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
     auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
 
+    // Check for type annotation (paramName: Type)
+    std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+    if (at().type == havel::TokenType::Colon) {
+      advance(); // consume ':'
+      typeAnnotation = parseTypeAnnotation();
+    }
+
     // Check for default value
     std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
     if (at().type == havel::TokenType::Assign) {
@@ -636,7 +643,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
 
     params.push_back(std::make_unique<havel::ast::FunctionParameter>(
-        std::move(paramName), std::move(defaultValue)));
+        std::move(paramName), std::move(defaultValue), std::move(typeAnnotation)));
 
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -654,10 +661,20 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
   }
   advance(); // consume ')'
 
+  // Check for return type annotation (-> Type)
+  std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> returnType;
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  if (at().type == havel::TokenType::ReturnType) {
+    advance(); // consume '->'
+    returnType = parseTypeAnnotation();
+  }
+
   auto body = parseBlockStatement();
 
   return std::make_unique<havel::ast::FunctionDeclaration>(
-      std::move(name), std::move(params), std::move(body));
+      std::move(name), std::move(params), std::move(body), std::move(returnType));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseReturnStatement() {
@@ -1307,11 +1324,12 @@ std::unique_ptr<ast::TypeDefinition> Parser::parseTypeDefinition() {
 }
 
 std::unique_ptr<ast::TypeAnnotation> Parser::parseTypeAnnotation() {
-  if (at().type != havel::TokenType::Colon) {
-    failAt(at(), "Expected ':' for type annotation");
+  // Note: ':' should already be consumed by caller for parameter annotations
+  // For standalone type annotations, we consume the ':' here
+  if (at().type == havel::TokenType::Colon) {
+    advance(); // consume ':'
   }
-  advance(); // consume ':'
-  
+
   auto type = parseTypeDefinition();
   return std::make_unique<ast::TypeAnnotation>(std::move(type));
 }
@@ -1845,7 +1863,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStartStatement() {
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
   bool isConst = false;
-  
+
   // Check if this is 'const' or 'let'
   if (at().type == havel::TokenType::Const) {
     isConst = true;
@@ -1868,10 +1886,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     failAt(at(), "Expected identifier, '[' or '{' after '" + std::string(isConst ? "const" : "let") + "'");
   }
 
+  // Check for type annotation (let x: int = 5)
+  std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
+  if (at().type == havel::TokenType::Colon) {
+    typeAnnotation = parseTypeAnnotation();
+  }
+
   if (at().type != havel::TokenType::Assign) {
     // Allow declarations without assignment, e.g., `let x;`
     if (dynamic_cast<havel::ast::Identifier *>(pattern.get())) {
-      return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern), nullptr, std::nullopt, isConst);
+      return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern), nullptr, std::move(typeAnnotation), isConst);
     } else {
       failAt(at(), "Destructuring patterns require initialization");
     }
@@ -1882,7 +1906,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
 
   return std::make_unique<havel::ast::LetDeclaration>(std::move(pattern),
                                                       std::move(value),
-                                                      std::nullopt,
+                                                      std::move(typeAnnotation),
                                                       isConst);
 }
 

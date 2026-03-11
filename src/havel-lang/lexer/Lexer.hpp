@@ -75,7 +75,8 @@ enum class TokenType {
   ShellCommand,  // $ command for shell execution
   ShellCommandCapture,  // $! command (capture output)
   Hotkey,
-  Arrow,
+  Arrow,         // => (fat arrow for lambdas)
+  ReturnType,    // -> (thin arrow for return types)
   BinaryOp,
   OpenParen,
   CloseParen,

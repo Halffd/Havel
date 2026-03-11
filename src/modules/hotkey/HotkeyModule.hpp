@@ -6,6 +6,7 @@
 #pragma once
 
 #include "../../host/HostContext.hpp"
+#include <memory>
 
 namespace havel {
 
@@ -16,8 +17,8 @@ namespace modules {
 
 void registerHotkeyModule(Environment& env, HostContext& ctx);
 
-// Set the global interpreter reference for hotkey callbacks
-void SetHotkeyInterpreter(Interpreter* interp);
+// Set the global interpreter reference for hotkey callbacks (uses weak_ptr for safety)
+void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);
 
 } // namespace modules
 } // namespace havel

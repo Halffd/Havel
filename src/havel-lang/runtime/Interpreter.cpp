@@ -833,39 +833,18 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
       // Lock interpreter mutex to protect environment and lastResult
       std::lock_guard<std::mutex> lock(this->interpreterMutex);
       
-      HavelValue funcValue;
-      
-      // Check if action is an ExpressionStatement containing a lambda
-      if (auto* exprStmt = dynamic_cast<const ast::ExpressionStatement*>(action)) {
-        // Evaluate the expression to get the function
-        auto actionResult = this->Evaluate(*exprStmt->expression);
-        if (isError(actionResult)) {
-          std::cerr << "Runtime error in hotkey: " << getErrorMessage(actionResult)
-                    << std::endl;
-          return;
-        }
-        funcValue = unwrap(actionResult);
-      } else {
-        // For other statement types, evaluate and use result
-        auto actionResult = this->Evaluate(*action);
-        if (isError(actionResult)) {
-          std::cerr << "Runtime error in hotkey: " << getErrorMessage(actionResult)
-                    << std::endl;
-          return;
-        }
-        funcValue = unwrap(actionResult);
+      // Evaluate the action (lambda or expression)
+      auto actionResult = this->Evaluate(*action);
+      if (isError(actionResult)) {
+        std::cerr << "Runtime error in hotkey: " << getErrorMessage(actionResult)
+                  << std::endl;
+        return;
       }
       
-      // If the result is a function, CALL it with the current environment
+      HavelValue funcValue = unwrap(actionResult);
+      
+      // If the result is a function, CALL it
       if (funcValue.isFunction()) {
-        // For user-defined functions, update the closure to use current environment
-        if (auto* userFunc = funcValue.get_if<std::shared_ptr<HavelFunction>>()) {
-          // Update the function's closure to use current environment
-          // This ensures the function has access to all currently defined symbols
-          (*userFunc)->closure = this->environment;
-          havel::debug("Hotkey: Updated function closure to current environment");
-        }
-        
         auto callResult = this->CallFunction(funcValue, {});
         if (isError(callResult)) {
           std::cerr << "Runtime error in hotkey: " << getErrorMessage(callResult)

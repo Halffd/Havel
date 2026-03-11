@@ -213,6 +213,32 @@ void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
     symbolTable_.define("On", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("Off", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     
+    // Module objects (registered as builtins for semantic analysis)
+    symbolTable_.define("mouse", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("io", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("screenshot", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("mpv", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("audio", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("brightnessManager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("config", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("clipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("process", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("window", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("system", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("app", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("help", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("math", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("string", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("file", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("timer", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("http", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("browser", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
+    // Common functions used in hotkeys
+    symbolTable_.define("play", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("stop", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    symbolTable_.define("toggle", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
+    
     // Window property builtins
     symbolTable_.define("title", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
     symbolTable_.define("class", SymbolKind::Builtin, HavelType::any(), builtinAttrs);

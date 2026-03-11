@@ -64,9 +64,9 @@ private:
   [[noreturn]] void fail(const std::string &message);
   [[noreturn]] void failAt(const Token &token, const std::string &message);
 
-  // Helper methods (like Tyler's at() and eat())
-  Token at(size_t offset = 0) const;
-  Token advance();
+  // Helper methods - return const references to avoid copies
+  const Token& at(size_t offset = 0) const;
+  const Token& advance();
   bool notEOF() const;
 
   // Parser methods (following Tyler's structure)

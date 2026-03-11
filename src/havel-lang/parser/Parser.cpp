@@ -65,17 +65,19 @@ void Parser::synchronizeTo(havel::TokenType type) {
   throw havel::parser::ParseError(token.line, token.column, message);
 }
 
-havel::Token Parser::at(size_t offset) const {
+const havel::Token& Parser::at(size_t offset) const {
   size_t pos = position + offset;
+  static const havel::Token eofToken("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
   if (pos >= tokens.size()) {
-    return havel::Token("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
+    return eofToken;
   }
   return tokens[pos];
 }
 
-havel::Token Parser::advance() {
+const havel::Token& Parser::advance() {
+  static const havel::Token eofToken("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
   if (position >= tokens.size()) {
-    return havel::Token("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
+    return eofToken;
   }
   return tokens[position++];
 }

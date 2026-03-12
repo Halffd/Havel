@@ -723,11 +723,17 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
   double currentShadowLift = shadowLift.count(monitor) ? shadowLift[monitor] : 0.0;
   RGBColor currentGamma = gammaRGB.count(monitor) ? gammaRGB[monitor] : RGBColor{1.0, 1.0, 1.0};
   RGBColor tempColor = {1.0, 1.0, 1.0};
-  
+
   // Apply temperature if set
   if (temperature.count(monitor)) {
       tempColor = kelvinToRGB(temperature[monitor]);
+      debug("applyAllSettings('{}'): temperature={}K -> RGB({:.3f}, {:.3f}, {:.3f})",
+            monitor, temperature[monitor], tempColor.red, tempColor.green, tempColor.blue);
+  } else {
+      debug("applyAllSettings('{}'): no temperature set, using neutral RGB", monitor);
   }
+  debug("applyAllSettings('{}'): brightness={}, shadowLift={}, gamma=({:.3f}, {:.3f}, {:.3f})",
+        monitor, currentBrightness, currentShadowLift, currentGamma.red, currentGamma.green, currentGamma.blue);
 
   int gamma_size = XRRGetCrtcGammaSize(x11_display, monitorInfo.crtc_id);
   if (gamma_size > 0) {
@@ -736,26 +742,26 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
           // Generate combined gamma ramps
           for (int j = 0; j < gamma_size; ++j) {
               double normalized = (double)j / (gamma_size - 1);
-              
+
               // Apply gamma curve first
               RGBColor gammaValue = {
                   std::pow(normalized, 1.0 / currentGamma.red),
-                  std::pow(normalized, 1.0 / currentGamma.green), 
+                  std::pow(normalized, 1.0 / currentGamma.green),
                   std::pow(normalized, 1.0 / currentGamma.blue)
               };
-              
+
               // Apply shadow lift (lifts dark areas, preserves highlights)
               RGBColor liftedValue = {
                   gammaValue.red + currentShadowLift * (1.0 - gammaValue.red),
                   gammaValue.green + currentShadowLift * (1.0 - gammaValue.green),
                   gammaValue.blue + currentShadowLift * (1.0 - gammaValue.blue)
               };
-              
+
               // Apply temperature tint and brightness
               double redValue = liftedValue.red * tempColor.red * currentBrightness;
               double greenValue = liftedValue.green * tempColor.green * currentBrightness;
               double blueValue = liftedValue.blue * tempColor.blue * currentBrightness;
-              
+
               // Convert to 16-bit values and clamp
               gamma->red[j] = (unsigned short)std::clamp(redValue * 65535.0, 0.0, 65535.0);
               gamma->green[j] = (unsigned short)std::clamp(greenValue * 65535.0, 0.0, 65535.0);
@@ -765,10 +771,12 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
           XRRSetCrtcGamma(x11_display, monitorInfo.crtc_id, gamma);
           XFlush(x11_display);
           XRRFreeGamma(gamma);
+          debug("applyAllSettings('{}'): gamma ramp set successfully", monitor);
           return true;
       }
   }
 
+  error("applyAllSettings('{}'): failed to set gamma ramp", monitor);
   return false;
 }
 // === WAYLAND BACKEND IMPLEMENTATION ===
@@ -884,7 +892,7 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &monitor,
 // === KELVIN TEMPERATURE METHODS ===
 bool BrightnessManager::setTemperature(int kelvin) {
   kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
-  
+
   debug("BrightnessManager::setTemperature({}) - clamped to {}K", kelvin, kelvin);
   debug("Current display method: {}", displayMethod);
 
@@ -906,16 +914,19 @@ bool BrightnessManager::setTemperature(int kelvin) {
   bool success = true;
   for(const auto& monitor : getConnectedMonitors()){
       temperature[monitor] = kelvin;
+      RGBColor rgb = kelvinToRGB(kelvin);
+      debug("  Monitor '{}' - {}K converts to RGB({:.3f}, {:.3f}, {:.3f})", 
+            monitor, kelvin, rgb.red, rgb.green, rgb.blue);
       debug("  Applying settings to monitor '{}' with {}K temperature", monitor, kelvin);
       success &= applyAllSettings(monitor);
   }
-  
+
   if (success) {
     debug("Temperature set successfully for all monitors");
   } else {
     error("Failed to set temperature for one or more monitors");
   }
-  
+
   return success;
 }
 
@@ -1033,18 +1044,22 @@ bool BrightnessManager::setGammaRGB(const std::string &monitor, double red,
 bool BrightnessManager::increaseTemperature(int amount) {
   int currentTemp = temperature[primaryMonitor];
   int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
-  debug("BrightnessManager::increaseTemperature({}) - Primary monitor: {}K -> {}K", 
+  debug("BrightnessManager::increaseTemperature({}) - Primary monitor: {}K -> {}K",
         amount, currentTemp, newTemp);
-  return setTemperature(newTemp);
+  bool result = setTemperature(newTemp);
+  debug("increaseTemperature result: {}", result ? "success" : "failed");
+  return result;
 }
 
 bool BrightnessManager::increaseTemperature(const std::string &monitor,
                                             int amount) {
   int currentTemp = temperature[monitor];
   int newTemp = std::min(MAX_TEMPERATURE, currentTemp + amount);
-  debug("BrightnessManager::increaseTemperature('{}', {}) - {}K -> {}K", 
+  debug("BrightnessManager::increaseTemperature('{}', {}) - {}K -> {}K",
         monitor, amount, currentTemp, newTemp);
-  return setTemperature(monitor, newTemp);
+  bool result = setTemperature(monitor, newTemp);
+  debug("increaseTemperature result: {}", result ? "success" : "failed");
+  return result;
 }
 
 // === BRIGHTNESS CONTROL METHODS ===

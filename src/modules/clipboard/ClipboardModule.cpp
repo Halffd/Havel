@@ -1,6 +1,6 @@
 /*
  * ClipboardModule.cpp
- * 
+ *
  * Clipboard module for Havel language.
  * Host binding - connects language to ClipboardManager and Qt clipboard.
  */
@@ -10,6 +10,7 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QMetaObject>
+#include <QTimer>
 
 namespace havel::modules {
 
@@ -17,7 +18,7 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
     // Basic clipboard functions don't need ClipboardManager
     // Create clipboard module object
     auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
+
     // =========================================================================
     // Basic clipboard functions (always available)
     // =========================================================================
@@ -45,27 +46,34 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         QClipboard* clipboard = QGuiApplication::clipboard();
         return HavelValue(clipboard->text().toStdString());
     }));
-    
+
     (*clip)["set"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("clipboard.set() requires text");
         }
         std::string text = args[0].isString() ? args[0].asString() :
             std::to_string(static_cast<int>(args[0].asNumber()));
-        
+
         // Check if Qt application exists
         if (!QGuiApplication::instance()) {
             return HavelRuntimeError("clipboard.set() requires GUI application (not available in REPL mode)");
         }
-        
+
         QClipboard* clipboard = QGuiApplication::clipboard();
         if (!clipboard) {
             return HavelRuntimeError("Failed to access clipboard");
         }
-        clipboard->setText(QString::fromStdString(text));
+        
+        // Use QTimer to make clipboard operation asynchronous and avoid X11 blocking
+        // This prevents freezing when browsers or other apps are holding clipboard selection
+        QString textToSet = QString::fromStdString(text);
+        QTimer::singleShot(0, [clipboard, textToSet]() {
+            clipboard->setText(textToSet);
+        });
+        
         return HavelValue(true);
     }));
-    
+
     (*clip)["clear"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
         if (!QGuiApplication::instance()) {
             return HavelRuntimeError("clipboard.clear() requires GUI application");
@@ -74,7 +82,12 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         if (!clipboard) {
             return HavelRuntimeError("Failed to access clipboard");
         }
-        clipboard->clear();
+        
+        // Use QTimer to make clipboard operation asynchronous
+        QTimer::singleShot(0, [clipboard]() {
+            clipboard->clear();
+        });
+        
         return HavelValue(nullptr);
     }));
     

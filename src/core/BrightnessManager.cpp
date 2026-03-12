@@ -371,35 +371,43 @@ void BrightnessManager::initializeWayland() {
 #endif
 
 // === KELVIN TO RGB CONVERSION ===
-// Based on algorithms used in color temperature calculations, similar to Redshift/gammastep
+// Based on Tanner Helland's color temperature algorithm
+// http://www.tannerhelland.com/4435/convert-temperature-rgb-algorithm-code/
 BrightnessManager::RGBColor BrightnessManager::kelvinToRGB(int kelvin) const {
     kelvin = std::clamp(kelvin, MIN_TEMPERATURE, MAX_TEMPERATURE);
-    double temp = static_cast<double>(kelvin);
-
+    double temp = static_cast<double>(kelvin) / 100.0;  // Scale to hundreds
+    
     double r, g, b;
 
-    if (temp <= 6600.0) {
-        r = 1.0;
-        g = 0.390081578769 * ::log(temp) - 0.631841443788;
+    // Calculate red
+    if (temp <= 66.0) {
+        r = 255.0;
     } else {
-        r = 1.292936186062 * pow(temp - 6000.0, -0.1332047592);
-        g = 1.129890860895 * pow(temp - 6000.0, -0.0755148492);
-    }
-    
-    if (temp <= 1900.0) {
-        b = 0.0;
-    } else if (temp <= 6600.0) {
-        b = 0.543206789110 * ::log(temp - 1000.0) - 1.19625408914;
-    } else {
-        b = 1.0;
+        r = 329.698727446 * pow(temp - 60.0, -0.1332047592);
+        r = std::clamp(r, 0.0, 255.0);
     }
 
-    // Clamp values
-    r = std::clamp(r, 0.0, 1.0);
-    g = std::clamp(g, 0.0, 1.0);
-    b = std::clamp(b, 0.0, 1.0);
-    
-    return {r, g, b};
+    // Calculate green
+    if (temp <= 66.0) {
+        g = 99.4708025861 * std::log(temp) - 161.1195681661;
+        g = std::clamp(g, 0.0, 255.0);
+    } else {
+        g = 288.1221695283 * pow(temp - 60.0, -0.0755148492);
+        g = std::clamp(g, 0.0, 255.0);
+    }
+
+    // Calculate blue
+    if (temp >= 66.0) {
+        b = 255.0;
+    } else if (temp <= 19.0) {
+        b = 0.0;
+    } else {
+        b = 138.5177312231 * std::log(temp - 10.0) - 305.0447927307;
+        b = std::clamp(b, 0.0, 255.0);
+    }
+
+    // Normalize to 0.0-1.0 range
+    return {r / 255.0, g / 255.0, b / 255.0};
 }
 
 

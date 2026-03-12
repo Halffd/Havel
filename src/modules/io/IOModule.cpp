@@ -439,16 +439,16 @@ void registerIOModule(Environment& env, HostContext& ctx) {
         if (!args[0].isNumber()) {
             return HavelRuntimeError("mouse.scroll() requires numeric arguments");
         }
-        double dx = 0.0;
-        double dy = 0.0;
+        double dy = 0.0;  // Vertical scroll (default)
+        double dx = 0.0;  // Horizontal scroll
         if (args.size() == 1) {
-            dy = args[0].asNumber();
+            dy = args[0].asNumber();  // Single arg = vertical scroll
         } else {
             if (!args[1].isNumber()) {
                 return HavelRuntimeError("mouse.scroll() requires numeric arguments");
             }
-            dx = args[0].asNumber();
-            dy = args[1].asNumber();
+            dy = args[0].asNumber();  // First arg = vertical (dy)
+            dx = args[1].asNumber();  // Second arg = horizontal (dx)
         }
         if (!io.Scroll(dy, dx)) {
             return HavelRuntimeError("MouseScroll failed");

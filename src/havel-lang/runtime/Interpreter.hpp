@@ -9,6 +9,7 @@
 #include "RuntimeServices.hpp"
 #include "Module.hpp"
 #include "core/io/KeyTap.hpp"
+#include "semantic/SemanticAnalyzer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -572,6 +573,7 @@ private:
 
   // Runtime services (long-lived, reused for all evaluations)
   RuntimeServices services;
+  semantic::SemanticAnalyzer semanticAnalyzer;
 
   std::vector<std::string> cliArgs;
 

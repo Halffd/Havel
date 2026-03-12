@@ -26,6 +26,23 @@ namespace modules {
 void loadHostModules(Environment& env, Interpreter* interpreter);
 
 /**
+ * Define an alias to a module member (memberPath supports dotted paths).
+ *
+ * @return true if alias was defined, false otherwise.
+ */
+bool defineHostAlias(Environment& env, const std::string& alias,
+                     const std::string& moduleName,
+                     const std::string& memberPath);
+
+/**
+ * Define an alias to an existing global name.
+ *
+ * @return true if alias was defined, false otherwise.
+ */
+bool defineGlobalAlias(Environment& env, const std::string& alias,
+                       const std::string& sourceName);
+
+/**
  * Register all modules with the registry
  * Called once at startup
  */

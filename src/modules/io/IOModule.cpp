@@ -7,12 +7,53 @@
 #include "IOModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "core/IO.hpp"
+#include <algorithm>
+#include <cctype>
+#include <optional>
 
 namespace havel::modules {
 
 // Global storage for KeyTap instances to keep them alive
 static std::vector<std::unique_ptr<KeyTap>> g_keyTapStorage;
 static std::mutex g_keyTapMutex;
+
+static std::string toLowerString(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return s;
+}
+
+static std::optional<int> parseMouseButton(const HavelValue& value) {
+    if (value.isNumber()) {
+        return static_cast<int>(value.asNumber());
+    }
+    if (!value.isString()) {
+        return std::nullopt;
+    }
+
+    std::string raw = toLowerString(value.asString());
+    if (raw.empty()) {
+        return std::nullopt;
+    }
+
+    bool isNumeric = std::all_of(raw.begin(), raw.end(),
+                                 [](unsigned char c) { return std::isdigit(c) != 0; });
+    if (isNumeric) {
+        try {
+            return std::stoi(raw);
+        } catch (...) {
+            return std::nullopt;
+        }
+    }
+
+    if (raw == "left" || raw == "lmb" || raw == "button1") return 1;
+    if (raw == "right" || raw == "rmb" || raw == "button2") return 2;
+    if (raw == "middle" || raw == "mmb" || raw == "button3") return 3;
+    if (raw == "wheelup" || raw == "scrollup" || raw == "button4") return 4;
+    if (raw == "wheeldown" || raw == "scrolldown" || raw == "button5") return 5;
+
+    return std::nullopt;
+}
 
 void registerIOModule(Environment& env, HostContext& ctx) {
     if (!ctx.isValid() || !ctx.io) {
@@ -330,13 +371,27 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     }));
 
     (*mouseObj)["click"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1 : static_cast<int>(args[0].asNumber());
+        int button = 1;
+        if (!args.empty()) {
+            auto parsed = parseMouseButton(args[0]);
+            if (!parsed || *parsed <= 0) {
+                return HavelRuntimeError("mouse.click() requires a valid button");
+            }
+            button = *parsed;
+        }
         io.MouseClick(button);
         return HavelValue(true);
     }));
 
     (*mouseObj)["doubleClick"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1 : static_cast<int>(args[0].asNumber());
+        int button = 1;
+        if (!args.empty()) {
+            auto parsed = parseMouseButton(args[0]);
+            if (!parsed || *parsed <= 0) {
+                return HavelRuntimeError("mouse.doubleClick() requires a valid button");
+            }
+            button = *parsed;
+        }
         // Double click = two clicks in sequence
         io.MouseClick(button);
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -345,7 +400,14 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     }));
 
     (*mouseObj)["press"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1 : static_cast<int>(args[0].asNumber());
+        int button = 1;
+        if (!args.empty()) {
+            auto parsed = parseMouseButton(args[0]);
+            if (!parsed || *parsed <= 0) {
+                return HavelRuntimeError("mouse.press() requires a valid button");
+            }
+            button = *parsed;
+        }
         if (!io.MouseDown(button)) {
             return HavelRuntimeError("MouseDown failed");
         }
@@ -353,19 +415,41 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     }));
 
     (*mouseObj)["release"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
-        int button = args.empty() ? 1 : static_cast<int>(args[0].asNumber());
+        int button = 1;
+        if (!args.empty()) {
+            auto parsed = parseMouseButton(args[0]);
+            if (!parsed || *parsed <= 0) {
+                return HavelRuntimeError("mouse.release() requires a valid button");
+            }
+            button = *parsed;
+        }
         if (!io.MouseUp(button)) {
             return HavelRuntimeError("MouseUp failed");
         }
         return HavelValue(true);
     }));
 
+    (*mouseObj)["down"] = (*mouseObj)["press"];
+    (*mouseObj)["up"] = (*mouseObj)["release"];
+
     (*mouseObj)["scroll"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
-        if (args.size() < 2) {
-            return HavelRuntimeError("mouse.scroll(x, y) requires 2 arguments");
+        if (args.empty()) {
+            return HavelRuntimeError("mouse.scroll() requires 1 or 2 arguments");
         }
-        double dx = args[0].asNumber();
-        double dy = args[1].asNumber();
+        if (!args[0].isNumber()) {
+            return HavelRuntimeError("mouse.scroll() requires numeric arguments");
+        }
+        double dx = 0.0;
+        double dy = 0.0;
+        if (args.size() == 1) {
+            dy = args[0].asNumber();
+        } else {
+            if (!args[1].isNumber()) {
+                return HavelRuntimeError("mouse.scroll() requires numeric arguments");
+            }
+            dx = args[0].asNumber();
+            dy = args[1].asNumber();
+        }
         if (!io.Scroll(dy, dx)) {
             return HavelRuntimeError("MouseScroll failed");
         }

@@ -16,13 +16,15 @@ SemanticAnalyzer::SemanticAnalyzer()
     initializeKnownBuiltins();
 }
 
-bool SemanticAnalyzer::analyze(const ast::Program& program) {
+bool SemanticAnalyzer::analyze(const ast::Program& program, bool resetSymbols) {
     errors_.clear();
     constantAddresses_.clear();
     nextConstantAddress_ = 0;
     
-    // Reset symbol table (keep global scope)
-    symbolTable_ = SymbolTable();
+    // Reset symbol table when requested (keep existing symbols for REPL)
+    if (resetSymbols) {
+        symbolTable_ = SymbolTable();
+    }
     
     // Phase 1: Register all type definitions
     registerStructTypes(program);
@@ -138,169 +140,11 @@ void SemanticAnalyzer::registerTraitTypes(const ast::Program& program) {
 // ============================================================================
 
 void SemanticAnalyzer::buildSymbolTable(const ast::Program& program) {
-    symbolTable_.enterScope("global");
-    
-    // Register built-in functions
-    SymbolAttributes builtinAttrs;
-    builtinAttrs.type = HavelType::any();
-    builtinAttrs.isMutable = false;
-    builtinAttrs.isInitialized = true;
-    
-    // Core builtins
-    symbolTable_.define("print", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("println", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("error", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("warn", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("info", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("debug", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Math builtins
-    symbolTable_.define("sqrt", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("abs", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("sin", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("cos", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("tan", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("PI", SymbolKind::Constant, HavelType::num(), builtinAttrs);
-    
-    // String builtins
-    symbolTable_.define("len", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("lower", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("upper", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Type builtins
-    symbolTable_.define("type", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("Num", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("Str", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("Bool", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Register known modules as symbols
-    for (const auto& [moduleName, _] : knownModules_) {
-        symbolTable_.define(moduleName, SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    }
-
-    // Async builtins
-    symbolTable_.define("spawn", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("await", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("channel", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("yield", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // AHK-style global builtins (process, IO, system)
-    symbolTable_.define("run", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("runDetached", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("runWait", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("send", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("click", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("clickAt", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("keyDown", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("keyUp", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mouseMove", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mouseMoveTo", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mouseClick", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mouseDoubleClick", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("moveRel", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("wheelUp", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("wheelDown", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // System detection builtins
-    symbolTable_.define("detectSystem", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("detectDisplay", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("detectMonitorConfig", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("detectWindowManager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Hotkey builtin
-    symbolTable_.define("Hotkey", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("When", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("On", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("Off", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Module objects (registered as builtins for semantic analysis)
-    symbolTable_.define("mouse", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("io", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("screenshot", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("mpv", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("audio", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("brightnessManager", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("config", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("clipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("process", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("window", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("system", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("app", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("help", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("math", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("string", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("file", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("timer", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("http", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("browser", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Common functions used in hotkeys
-    symbolTable_.define("play", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("stop", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("toggle", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Window property builtins
-    symbolTable_.define("title", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("class", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("pid", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("hwnd", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // OCR builtins
-    symbolTable_.define("ocrRead", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("ocrFindText", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Clipboard builtins
-    symbolTable_.define("getClipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("setClipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("clipboard", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // File builtins
-    symbolTable_.define("readFile", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("writeFile", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("fileExists", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("read", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("write", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("exists", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Utility builtins (common in hotkey callbacks)
-    symbolTable_.define("keys", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("items", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("list", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("pairs", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("range", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Math builtins (also available as math.*)
-    symbolTable_.define("min", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("max", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("round", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("floor", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("ceil", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // String builtins (also available as string.*)
-    symbolTable_.define("trim", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("replace", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("split", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("join", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Time builtins
-    symbolTable_.define("time", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("date", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("now", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Thread/sleep builtins
-    symbolTable_.define("sleep", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    symbolTable_.define("wait", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-    
-    // Exit builtin
-    symbolTable_.define("exit", SymbolKind::Builtin, HavelType::any(), builtinAttrs);
-
     // First pass: register all top-level declarations
     for (const auto& stmt : program.body) {
         if (!stmt) continue;
         visitStatement(*stmt);
     }
-
-    symbolTable_.exitScope();
 }
 
 void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
@@ -510,9 +354,11 @@ void SemanticAnalyzer::visitExpression(const ast::Expression& expr) {
             const Symbol* sym = symbolTable_.lookup(ident.symbol);
             
             if (!sym) {
-                reportError(SemanticErrorKind::UndefinedVariable,
-                           "Undefined variable: " + ident.symbol,
-                           expr.line, expr.column);
+                if (mode_ == SemanticMode::Strict) {
+                    reportError(SemanticErrorKind::UndefinedVariable,
+                               "Undefined variable: " + ident.symbol,
+                               expr.line, expr.column);
+                }
             } else if (sym->kind == SymbolKind::Function) {
                 // Using function name without call - might be valid (function pointer)
                 // or error depending on context
@@ -538,47 +384,31 @@ void SemanticAnalyzer::visitExpression(const ast::Expression& expr) {
             const auto& call = static_cast<const ast::CallExpression&>(expr);
 
             if (call.callee) {
-                visitExpression(*call.callee);
-
-                // Check if calling a procedure as function
                 if (call.callee->kind == ast::NodeType::Identifier) {
                     const auto& ident = static_cast<const ast::Identifier&>(*call.callee);
                     const Symbol* sym = symbolTable_.lookup(ident.symbol);
 
                     if (sym && sym->kind == SymbolKind::Function) {
                         validateProcedureCall(*sym, call);
-                    } else if (!sym && mode_ == SemanticMode::Strict && !isKnownBuiltin(ident.symbol)) {
-                        // Only check builtins in Strict mode
-                        reportError(SemanticErrorKind::UndefinedBuiltin,
-                                   "Undefined function: " + ident.symbol,
-                                   expr.line, expr.column);
                     }
-                }
-                
-                // Check for module.function() calls - only in Strict mode
-                if (mode_ == SemanticMode::Strict && call.callee->kind == ast::NodeType::MemberExpression) {
+                    // If not found, treat as global callable (resolved at runtime).
+                } else if (call.callee->kind == ast::NodeType::MemberExpression) {
                     const auto& member = static_cast<const ast::MemberExpression&>(*call.callee);
-                    if (member.object && member.object->kind == ast::NodeType::Identifier) {
-                        const auto& moduleIdent = static_cast<const ast::Identifier&>(*member.object);
-                        if (member.property && member.property->kind == ast::NodeType::Identifier) {
-                            const auto& funcIdent = static_cast<const ast::Identifier&>(*member.property);
-                            
-                            // Check if module exists and function exists in module
-                            if (!isKnownModuleFunction(moduleIdent.symbol, funcIdent.symbol)) {
-                                if (knownModules_.count(moduleIdent.symbol) > 0) {
-                                    // Module exists but function doesn't
-                                    reportError(SemanticErrorKind::UndefinedModuleFunction,
-                                               "Undefined function '" + funcIdent.symbol + "' in module '" + moduleIdent.symbol + "'",
-                                               expr.line, expr.column);
-                                } else {
-                                    // Module doesn't exist
-                                    reportError(SemanticErrorKind::UndefinedModule,
-                                               "Undefined module: " + moduleIdent.symbol,
-                                               expr.line, expr.column);
-                                }
+                    if (member.object) {
+                        if (member.object->kind == ast::NodeType::Identifier) {
+                            const auto& moduleIdent =
+                                static_cast<const ast::Identifier&>(*member.object);
+                            const Symbol* sym = symbolTable_.lookup(moduleIdent.symbol);
+                            if (sym) {
+                                visitExpression(*member.object);
                             }
+                            // If not found, treat as global module reference.
+                        } else {
+                            visitExpression(*member.object);
                         }
                     }
+                } else {
+                    visitExpression(*call.callee);
                 }
             }
 
@@ -592,7 +422,14 @@ void SemanticAnalyzer::visitExpression(const ast::Expression& expr) {
             const auto& member = static_cast<const ast::MemberExpression&>(expr);
             
             if (member.object) {
-                visitExpression(*member.object);
+                if (member.object->kind == ast::NodeType::Identifier) {
+                    const auto& ident = static_cast<const ast::Identifier&>(*member.object);
+                    if (symbolTable_.lookup(ident.symbol)) {
+                        visitExpression(*member.object);
+                    }
+                } else {
+                    visitExpression(*member.object);
+                }
             }
             // Member validation happens in validateMemberAccess()
             break;
@@ -713,7 +550,11 @@ void SemanticAnalyzer::validateAssignmentTarget(const ast::Expression& target) {
         const auto& ident = static_cast<const ast::Identifier&>(target);
         const Symbol* sym = symbolTable_.lookup(ident.symbol);
         
-        if (sym && sym->kind == SymbolKind::Function) {
+        if (!sym) {
+            reportError(SemanticErrorKind::UndefinedVariable,
+                       "Undefined variable: " + ident.symbol,
+                       target.line, target.column);
+        } else if (sym->kind == SymbolKind::Function) {
             reportError(SemanticErrorKind::InvalidAssignment,
                        "Cannot assign to function '" + ident.symbol + "'",
                        target.line, target.column);

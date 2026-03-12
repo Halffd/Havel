@@ -15,7 +15,7 @@ void registerObjectModule(Environment* env) {
   // Object static methods
   // ============================================================================
 
-  // Object.keys(obj) - get array of keys
+  // Object.keys(obj) - get array of keys (sorted for deterministic order)
   env->Define("Object.keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.keys() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.keys() arg must be object");
@@ -27,10 +27,14 @@ void registerObjectModule(Environment* env) {
     for (const auto& [key, val] : *obj) {
       keys->push_back(HavelValue(key));
     }
+    // Sort keys alphabetically for deterministic order
+    std::sort(keys->begin(), keys->end(), [](const HavelValue& a, const HavelValue& b) {
+      return a.asString() < b.asString();
+    });
     return HavelValue(keys);
   }));
 
-  // Object.values(obj) - get array of values
+  // Object.values(obj) - get array of values (sorted by key for deterministic order)
   env->Define("Object.values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.values() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.values() arg must be object");
@@ -38,14 +42,23 @@ void registerObjectModule(Environment* env) {
     auto obj = args[0].asObject();
     if (!obj) return HavelRuntimeError("Object.values() failed to get object");
 
-    auto values = std::make_shared<std::vector<HavelValue>>();
+    // Collect key-value pairs and sort by key
+    std::vector<std::pair<std::string, HavelValue>> pairs;
     for (const auto& [key, val] : *obj) {
+      pairs.push_back({key, val});
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+      return a.first < b.first;
+    });
+
+    auto values = std::make_shared<std::vector<HavelValue>>();
+    for (const auto& [key, val] : pairs) {
       values->push_back(val);
     }
     return HavelValue(values);
   }));
 
-  // Object.entries(obj) - get array of [key, value] pairs
+  // Object.entries(obj) - get array of [key, value] pairs (sorted by key)
   env->Define("Object.entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.entries() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.entries() arg must be object");
@@ -53,8 +66,17 @@ void registerObjectModule(Environment* env) {
     auto obj = args[0].asObject();
     if (!obj) return HavelRuntimeError("Object.entries() failed to get object");
 
-    auto entries = std::make_shared<std::vector<HavelValue>>();
+    // Collect and sort by key
+    std::vector<std::pair<std::string, HavelValue>> pairs;
     for (const auto& [key, val] : *obj) {
+      pairs.push_back({key, val});
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+      return a.first < b.first;
+    });
+
+    auto entries = std::make_shared<std::vector<HavelValue>>();
+    for (const auto& [key, val] : pairs) {
       auto entry = std::make_shared<std::vector<HavelValue>>();
       entry->push_back(HavelValue(key));
       entry->push_back(val);
@@ -178,7 +200,7 @@ void registerObjectModule(Environment* env) {
     return HavelValue(descriptor);
   }));
 
-  // Object.keys equivalent as standalone function (for pipeline style)
+  // Object.keys equivalent as standalone function (for pipeline style, sorted)
   env->Define("keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("keys() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("keys() arg must be object");
@@ -190,10 +212,14 @@ void registerObjectModule(Environment* env) {
     for (const auto& [key, val] : *obj) {
       keys->push_back(HavelValue(key));
     }
+    // Sort keys alphabetically for deterministic order
+    std::sort(keys->begin(), keys->end(), [](const HavelValue& a, const HavelValue& b) {
+      return a.asString() < b.asString();
+    });
     return HavelValue(keys);
   }));
 
-  // Object.values equivalent as standalone function
+  // Object.values equivalent as standalone function (sorted by key)
   env->Define("values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("values() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("values() arg must be object");
@@ -201,14 +227,23 @@ void registerObjectModule(Environment* env) {
     auto obj = args[0].asObject();
     if (!obj) return HavelRuntimeError("values() failed to get object");
 
-    auto values = std::make_shared<std::vector<HavelValue>>();
+    // Collect key-value pairs and sort by key
+    std::vector<std::pair<std::string, HavelValue>> pairs;
     for (const auto& [key, val] : *obj) {
+      pairs.push_back({key, val});
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+      return a.first < b.first;
+    });
+
+    auto values = std::make_shared<std::vector<HavelValue>>();
+    for (const auto& [key, val] : pairs) {
       values->push_back(val);
     }
     return HavelValue(values);
   }));
 
-  // Object.entries equivalent as standalone function
+  // Object.entries equivalent as standalone function (sorted by key)
   env->Define("entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("entries() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("entries() arg must be object");
@@ -216,8 +251,17 @@ void registerObjectModule(Environment* env) {
     auto obj = args[0].asObject();
     if (!obj) return HavelRuntimeError("entries() failed to get object");
 
-    auto entries = std::make_shared<std::vector<HavelValue>>();
+    // Collect and sort by key
+    std::vector<std::pair<std::string, HavelValue>> pairs;
     for (const auto& [key, val] : *obj) {
+      pairs.push_back({key, val});
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+      return a.first < b.first;
+    });
+
+    auto entries = std::make_shared<std::vector<HavelValue>>();
+    for (const auto& [key, val] : pairs) {
       auto entry = std::make_shared<std::vector<HavelValue>>();
       entry->push_back(HavelValue(key));
       entry->push_back(val);

@@ -63,6 +63,16 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
       return (currentClass == classVal);
     }
     
+    // Check for process conditions: "process steam", "process firefox"
+    if (condition.find("process ") == 0) {
+      std::string currentProcess = io->GetActiveWindowProcess();
+      std::string processVal = condition.substr(8);  // Skip "process "
+      // Trim whitespace
+      processVal.erase(0, processVal.find_first_not_of(" "));
+      processVal.erase(processVal.find_last_not_of(" ") + 1);
+      return (currentProcess == processVal);
+    }
+    
     // Check for combined conditions (AND)
     if (condition.find(" && ") != std::string::npos) {
       size_t andPos = condition.find(" && ");

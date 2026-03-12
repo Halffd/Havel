@@ -239,6 +239,7 @@ public:
   // Window information methods
   std::string GetActiveWindowTitle();
   std::string GetActiveWindowClass();
+  std::string GetActiveWindowProcess();
 
   // Key sending methods
   void Send(Key key, bool down = true);

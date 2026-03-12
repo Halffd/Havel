@@ -17,27 +17,14 @@ namespace havel::modules {
 void registerScreenshotModule(Environment& env, HostContext& ctx) {
     // Create screenshot module object
     auto screenshotObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
-    // Check if screenshot manager is available
-    if (!ctx.isValid() || !ctx.screenshotManager) {
-        // Register stub functions that return error
-        (*screenshotObj)["full"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-            return HavelRuntimeError("screenshot.full() requires GUI application (QApplication)");
-        }));
-        (*screenshotObj)["region"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-            return HavelRuntimeError("screenshot.region() requires GUI application (QApplication)");
-        }));
-        (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-            return HavelRuntimeError("screenshot.monitor() requires GUI application (QApplication)");
-        }));
-        (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-            return HavelRuntimeError("screenshot.getMonitors() requires GUI application (QApplication)");
-        }));
-        env.Define("screenshot", HavelValue(screenshotObj));
-        return;
-    }
 
-    auto& sm = *ctx.screenshotManager;
+    // Helper to check if screenshot manager is available at runtime
+    auto requireScreenshotManager = [&ctx](const std::string& fn) -> std::optional<HavelRuntimeError> {
+        if (!ctx.isValid() || !ctx.screenshotManager) {
+            return HavelRuntimeError("screenshot." + fn + " requires GUI application (QApplication)");
+        }
+        return std::nullopt;
+    };
 
     // Helper to encode image as base64 and create result object
     auto createScreenshotResult = [](const QString& fullPath) -> HavelValue {
@@ -74,39 +61,48 @@ void registerScreenshotModule(Environment& env, HostContext& ctx) {
         }
         return HavelValue(monitors);
     };
-    
+
     // =========================================================================
-    // Screenshot functions
+    // Screenshot functions - check manager at runtime, not registration time
     // =========================================================================
-    
-    (*screenshotObj)["full"] = HavelValue(BuiltinFunction([&sm, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*screenshotObj)["full"] = HavelValue(BuiltinFunction([&ctx, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+        if (auto err = requireScreenshotManager("full")) return *err;
+        auto& sm = *ctx.screenshotManager;
+
         // Get optional path argument
         QString path;
         if (!args.empty() && args[0].isString()) {
             path = QString::fromStdString(args[0].asString());
         }
-        
+
         // Take screenshot synchronously
         QString fullPath = sm.takeScreenshot();
         return createScreenshotResult(fullPath);
     }));
-    
-    (*screenshotObj)["region"] = HavelValue(BuiltinFunction([&sm, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*screenshotObj)["region"] = HavelValue(BuiltinFunction([&ctx, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+        if (auto err = requireScreenshotManager("region")) return *err;
+        auto& sm = *ctx.screenshotManager;
+
         if (args.size() < 4) {
             return HavelRuntimeError("screenshot.region() requires (x, y, width, height)");
         }
-        
+
         int x = static_cast<int>(args[0].asNumber());
         int y = static_cast<int>(args[1].asNumber());
         int w = static_cast<int>(args[2].asNumber());
         int h = static_cast<int>(args[3].asNumber());
-        
+
         QRect region(x, y, w, h);
         QString fullPath = sm.captureRegion(region);
         return createScreenshotResult(fullPath);
     }));
-    
-    (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([&sm, createScreenshotResult](const std::vector<HavelValue>&) -> HavelResult {
+
+    (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([&ctx, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>&) -> HavelResult {
+        if (auto err = requireScreenshotManager("monitor")) return *err;
+        auto& sm = *ctx.screenshotManager;
+
         QString fullPath = sm.takeScreenshotOfCurrentMonitor();
         return createScreenshotResult(fullPath);
     }));
@@ -115,7 +111,9 @@ void registerScreenshotModule(Environment& env, HostContext& ctx) {
     // Monitor information
     // =========================================================================
 
-    (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([getMonitorInfo](const std::vector<HavelValue>&) -> HavelResult {
+    (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([&ctx, &requireScreenshotManager, getMonitorInfo](const std::vector<HavelValue>&) -> HavelResult {
+        if (auto err = requireScreenshotManager("getMonitors")) return *err;
+        (void)ctx;  // Suppress unused warning
         return getMonitorInfo();
     }));
 

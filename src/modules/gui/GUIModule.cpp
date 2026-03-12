@@ -51,24 +51,23 @@ void registerGUIModule(Environment& env, HostContext& ctx) {
     // GUI initialization functions
     // =========================================================================
 
-    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&ctx, &env](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>& args) -> HavelResult {
         // Check if QApplication already exists
         if (QApplication::instance()) {
             return HavelValue(true);  // Already initialized
         }
 
-        // Create QApplication
+        // Create QApplication with proper argc/argv
+        // Note: In REPL mode, we don't have access to original argv
+        // For full CLI argument support, arguments should be passed via HostContext
         static int argc = 1;
         static char* argv[] = { (char*)"havel", nullptr };
         new QApplication(argc, argv);
 
-        // Initialize GUI manager
+        // Initialize GUI manager if available
         if (ctx.guiManager) {
             ctx.guiManager->initialize();
         }
-
-        // Re-register GUI module with actual manager
-        registerGUIModule(env, ctx);
 
         return HavelValue(true);
     }));
@@ -78,7 +77,7 @@ void registerGUIModule(Environment& env, HostContext& ctx) {
             return HavelRuntimeError("gui.reload() requires GUI to be initialized first");
         }
 
-        // Reload GUI components
+        // Reload GUI components - refresh windows and dialogs
         ctx.guiManager->reload();
 
         return HavelValue(true);

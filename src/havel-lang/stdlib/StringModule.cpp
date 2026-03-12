@@ -212,6 +212,8 @@ void registerStringModule(Environment* env) {
     std::string search = toString(args[1]);
     return HavelValue(text.find(search) != std::string::npos);
   }));
+  
+  // includes(text, search) - alias for contains (string method style)
   env->Define("includes", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("includes() requires (text, search)");
     std::string text = toString(args[0]);

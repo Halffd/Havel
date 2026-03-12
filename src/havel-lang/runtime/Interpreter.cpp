@@ -1634,6 +1634,24 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     return;
   }
 
+  // Strings: methods like lower, upper, replace, includes, etc.
+  // Check strings FIRST before arrays to ensure correct method binding
+  if (auto *strPtr = objectValue.get_if<std::string>()) {
+    std::optional<HavelValue> methodValOpt = environment->Get(propName);
+    if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
+      auto builtin = methodValOpt->get<BuiltinFunction>();
+      // Create a bound function that captures the string as first argument
+      auto str = objectValue;  // Capture the string value
+      lastResult = HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
+        std::vector<HavelValue> boundArgs;
+        boundArgs.push_back(str);
+        boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+        return builtin(boundArgs);
+      }));
+      return;
+    }
+  }
+
   // Arrays: special properties like length and methods
   if (auto *arrPtr = objectValue.get_if<HavelArray>()) {
     if (propName == "length") {
@@ -1649,23 +1667,6 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
       lastResult = HavelValue(BuiltinFunction([array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
         std::vector<HavelValue> boundArgs;
         boundArgs.push_back(array);
-        boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-        return builtin(boundArgs);
-      }));
-      return;
-    }
-  }
-
-  // Strings: methods like lower, upper, replace, etc.
-  if (auto *strPtr = objectValue.get_if<std::string>()) {
-    std::optional<HavelValue> methodValOpt = environment->Get(propName);
-    if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
-      auto builtin = methodValOpt->get<BuiltinFunction>();
-      // Create a bound function that captures the string as first argument
-      auto str = objectValue;  // Capture the string value
-      lastResult = HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
-        std::vector<HavelValue> boundArgs;
-        boundArgs.push_back(str);
         boundArgs.insert(boundArgs.end(), args.begin(), args.end());
         return builtin(boundArgs);
       }));

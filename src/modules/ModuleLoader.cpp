@@ -113,7 +113,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     // =========================================================================
     // STANDARD LIBRARY (always loaded - core language functions)
     // =========================================================================
-    havel::stdlib::registerStringModule(&env);
+    // Order matters! Array first, then String so string methods override for method calls
     havel::stdlib::registerArrayModule(&env);
     havel::stdlib::registerMathModule(&env);
     havel::stdlib::registerTypeModule(&env);
@@ -122,6 +122,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     havel::stdlib::registerProcessModule(&env);
     havel::stdlib::registerUtilityModule(&env);
     havel::stdlib::registerObjectModule(&env);
+    havel::stdlib::registerStringModule(&env);  // Register AFTER array so string methods work
 
     // =========================================================================
     // HOST MODULES (loaded via registry)

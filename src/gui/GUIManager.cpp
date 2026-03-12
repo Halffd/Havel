@@ -42,8 +42,18 @@ void GUIManager::initialize() {
 }
 
 void GUIManager::reload() {
-  // Reload GUI components - for now just log
-  debug("GUIManager reloaded");
+  // Reload GUI components - refresh any open dialogs and windows
+  debug("GUIManager reload() called");
+  
+  // Refresh custom windows if any are open
+  for (auto& [id, widget] : customWindows) {
+    if (widget && widget->isVisible()) {
+      widget->update();
+      widget->repaint();
+    }
+  }
+  
+  debug("GUIManager reload complete");
 }
 
 void GUIManager::ensureQApplication() {

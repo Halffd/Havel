@@ -1525,15 +1525,37 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     lastResult = (*builtin)(args);
   } else if (auto *userFunc = callee.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
-    if (args.size() != func->declaration->parameters.size()) {
-      lastResult = HavelRuntimeError("Mismatched argument count for function " +
+    
+    // Check argument count (allow fewer args if defaults exist)
+    if (args.size() > func->declaration->parameters.size()) {
+      lastResult = HavelRuntimeError("Too many arguments for function " +
                                      func->declaration->name->symbol);
       return;
     }
 
     auto funcEnv = std::make_shared<Environment>(func->closure);
-    for (size_t i = 0; i < args.size(); ++i) {
-      funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, args[i]);
+    
+    // Bind arguments and apply defaults
+    for (size_t i = 0; i < func->declaration->parameters.size(); ++i) {
+      HavelValue value;
+      if (i < args.size()) {
+        // Argument provided
+        value = args[i];
+      } else if (func->declaration->parameters[i]->defaultValue) {
+        // Use default value (evaluated at call time)
+        auto defaultRes = Evaluate(*func->declaration->parameters[i]->defaultValue->get());
+        if (isError(defaultRes)) {
+          lastResult = defaultRes;
+          return;
+        }
+        value = unwrap(defaultRes);
+      } else {
+        // No default and no argument
+        lastResult = HavelRuntimeError("Missing argument for parameter '" +
+                                       func->declaration->parameters[i]->paramName->symbol + "'");
+        return;
+      }
+      funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, value);
     }
 
     auto originalEnv = this->environment;
@@ -1875,17 +1897,37 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
       currentResult = (*builtin)(args);
     } else if (auto *userFunc =
                    callee.get_if<std::shared_ptr<HavelFunction>>()) {
-      // This logic is duplicated from visitCallExpression, could be refactored
       auto &func = *userFunc;
-      if (args.size() != func->declaration->parameters.size()) {
+      
+      // Check argument count (allow fewer args if defaults exist)
+      if (args.size() > func->declaration->parameters.size()) {
         lastResult = HavelRuntimeError(
-            "Mismatched argument count for function in pipeline");
+            "Too many arguments for function in pipeline");
         return;
       }
+      
       auto funcEnv = std::make_shared<Environment>(func->closure);
-      for (size_t i = 0; i < args.size(); ++i) {
-        funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, args[i]);
+      
+      // Bind arguments and apply defaults
+      for (size_t i = 0; i < func->declaration->parameters.size(); ++i) {
+        HavelValue value;
+        if (i < args.size()) {
+          value = args[i];
+        } else if (func->declaration->parameters[i]->defaultValue) {
+          auto defaultRes = this->Evaluate(*func->declaration->parameters[i]->defaultValue->get());
+          if (isError(defaultRes)) {
+            lastResult = defaultRes;
+            return;
+          }
+          value = unwrap(defaultRes);
+        } else {
+          lastResult = HavelRuntimeError("Missing argument for parameter '" +
+                                         func->declaration->parameters[i]->paramName->symbol + "'");
+          return;
+        }
+        funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, value);
       }
+      
       auto originalEnv = this->environment;
       this->environment = funcEnv;
       currentResult = Evaluate(*func->declaration->body);

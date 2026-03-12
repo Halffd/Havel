@@ -40,14 +40,25 @@ void registerAppModule(Environment& env, HostContext& ctx) {
     // =========================================================================
     // app.restart() - Restart application
     // =========================================================================
-    
-    (*appObj)["restart"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+
+    (*appObj)["restart"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+        info("Restart requested");
+        
+        // Stop EventListener FIRST to prevent use-after-free in KeyMap access
+        if (io.GetEventListener()) {
+            info("Stopping EventListener before restart...");
+            io.GetEventListener()->Stop();
+            info("EventListener stopped");
+        }
+        
         if (QApplication::instance()) {
-            // Use Qt's proper restart mechanism
-            QCoreApplication::exit(42);  // Use special exit code for restart
+            // Use Qt's proper restart mechanism - exit code 42 signals restart
+            QCoreApplication::exit(42);
             return HavelValue(true);
         }
-        return HavelRuntimeError("App is not running");
+        
+        // No QApplication - can't restart properly
+        return HavelRuntimeError("app.restart() requires GUI application");
     }));
     
     // =========================================================================

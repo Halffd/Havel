@@ -126,10 +126,27 @@ void registerPixelModule(Environment& env, HostContext& ctx) {
         std::string color = args[2].isString() ? args[2].asString() : valueToString(args[2]);
         int tolerance = args.size() > 3 ? static_cast<int>(args[3].asNumber()) : 0;
         int timeout = args.size() > 4 ? static_cast<int>(args[4].asNumber()) : 5000;
-        
+
         return HavelValue(pa.waitPixel(x, y, color, tolerance, timeout));
     }));
-    
+
+    (*pixelObj)["region"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 4) {
+            return HavelRuntimeError("pixel.region() requires (x, y, width, height)");
+        }
+        int x = static_cast<int>(args[0].asNumber());
+        int y = static_cast<int>(args[1].asNumber());
+        int w = static_cast<int>(args[2].asNumber());
+        int h = static_cast<int>(args[3].asNumber());
+        
+        auto regionObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*regionObj)["x"] = HavelValue(static_cast<double>(x));
+        (*regionObj)["y"] = HavelValue(static_cast<double>(y));
+        (*regionObj)["w"] = HavelValue(static_cast<double>(w));
+        (*regionObj)["h"] = HavelValue(static_cast<double>(h));
+        return HavelValue(regionObj);
+    }));
+
     // =========================================================================
     // Image recognition functions
     // =========================================================================

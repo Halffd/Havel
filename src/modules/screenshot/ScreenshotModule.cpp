@@ -15,15 +15,30 @@
 namespace havel::modules {
 
 void registerScreenshotModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.screenshotManager) {
-        return;  // Skip if no screenshot manager available
-    }
-    
-    auto& sm = *ctx.screenshotManager;
-    
     // Create screenshot module object
     auto screenshotObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
+    // Check if screenshot manager is available
+    if (!ctx.isValid() || !ctx.screenshotManager) {
+        // Register stub functions that return error
+        (*screenshotObj)["full"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+            return HavelRuntimeError("screenshot.full() requires GUI application (QApplication)");
+        }));
+        (*screenshotObj)["region"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+            return HavelRuntimeError("screenshot.region() requires GUI application (QApplication)");
+        }));
+        (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+            return HavelRuntimeError("screenshot.monitor() requires GUI application (QApplication)");
+        }));
+        (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+            return HavelRuntimeError("screenshot.getMonitors() requires GUI application (QApplication)");
+        }));
+        env.Define("screenshot", HavelValue(screenshotObj));
+        return;
+    }
+
+    auto& sm = *ctx.screenshotManager;
+
     // Helper to encode image as base64 and create result object
     auto createScreenshotResult = [](const QString& fullPath) -> HavelValue {
         auto result = std::make_shared<std::unordered_map<std::string, HavelValue>>();

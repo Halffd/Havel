@@ -86,10 +86,16 @@ void registerUtilityModule(Environment* env) {
             if (!obj) {
                 return HavelRuntimeError("list() failed to get object");
             }
+            
+            // Convert to vector of pairs and sort by key for deterministic order
+            std::vector<std::pair<std::string, HavelValue>> pairs(obj->begin(), obj->end());
+            std::sort(pairs.begin(), pairs.end(), [](const auto& a, const auto& b) {
+                return a.first < b.first;
+            });
 
             auto arr = std::make_shared<std::vector<HavelValue>>();
-            for (const auto& [key, val] : *obj) {
-                arr->push_back(HavelValue(key));
+            for (const auto& [key, val] : pairs) {
+                arr->push_back(val);
             }
             return HavelValue(arr);
         }

@@ -24,7 +24,7 @@ SignalHandler::~SignalHandler() {
 
 void SignalHandler::SignalCleanupHandler(int sig) {
   if (instance && instance->listener) {
-    instance->listener->SignalSafeShutdown(sig, true);
+    instance->listener->RequestShutdownFromSignal(sig);
   }
 }
 

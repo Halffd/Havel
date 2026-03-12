@@ -463,6 +463,7 @@ void registerIOModule(Environment& env, HostContext& ctx) {
         (*posObj)["y"] = HavelValue(static_cast<double>(pos.second));
         return HavelValue(posObj);
     }));
+    (*mouseObj)["pos"] = (*mouseObj)["getPosition"];  // Alias
 
     (*mouseObj)["setSensitivity"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {

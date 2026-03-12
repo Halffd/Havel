@@ -401,8 +401,12 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
     std::string prompt = (braceCount > 0) ? "... " : ">>> ";
 
 #ifdef HAVE_READLINE
+    // Disable readline signal handling
+    rl_catch_signals = 0;
+    rl_catch_sigwinch = 0;
+
     char *input = readline(prompt.c_str());
-    if (!input)
+    if (!input) { std::cout << "\nGoodbye!\n"; break; }
       break;
     line = std::string(input);
     free(input);
@@ -579,8 +583,12 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
     std::string prompt = (braceCount > 0) ? "... " : ">>> ";
 
 #ifdef HAVE_READLINE
+    // Disable readline signal handling
+    rl_catch_signals = 0;
+    rl_catch_sigwinch = 0;
+
     char *input = readline(prompt.c_str());
-    if (!input)
+    if (!input) { std::cout << "\nGoodbye!\n"; break; }
       break;
     line = std::string(input);
     free(input);

@@ -24,9 +24,8 @@ SignalHandler::~SignalHandler() {
 
 void SignalHandler::SignalCleanupHandler(int sig) {
   if (instance && instance->listener) {
-    instance->listener->ForceUngrabAllDevices();
+    instance->listener->SignalSafeShutdown(sig, true);
   }
-  _exit(sig);
 }
 
 void SignalHandler::InstallAsyncHandlers() {

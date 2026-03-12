@@ -189,6 +189,7 @@ public:
 private:
   friend class SignalHandler;
   void HandleSignal(int sig);
+  void SignalSafeShutdown(int sig, bool exitAfter = false);
   // Signal handling members
   std::atomic<bool> signalReceived{false};
   int signalFd = -1; // fd for signalfd to integrate with select loop
@@ -235,6 +236,7 @@ private:
   bool MatchGesturePattern(const std::vector<MouseGestureDirection> &expected,
                            const std::vector<MouseGestureDirection> &actual) const;
   void ResetMouseGesture();
+  void ResetInputState();
   void RegisterGestureHotkey(int id,
                              const std::vector<MouseGestureDirection> &directions);
   bool IsGestureValid(const std::vector<MouseGestureDirection> &pattern,

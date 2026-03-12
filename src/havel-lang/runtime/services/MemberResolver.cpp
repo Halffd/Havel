@@ -56,10 +56,32 @@ void MemberResolver::resolveMember(const ast::MemberExpression& node) {
         return;
     }
 
+    // Strings: methods like lower, upper, replace, includes, etc.
+    // Check strings FIRST before arrays to ensure correct method binding
+    if (auto *strPtr = objectValue.get_if<std::string>()) {
+        if (!interpreter->getEnvironment()) {
+            interpreter->setLastResult(HavelRuntimeError("Environment not available for method lookup"));
+            return;
+        }
+        std::optional<HavelValue> methodValOpt = interpreter->getEnvironment()->Get(propName);
+        if (methodValOpt.has_value() && methodValOpt->is<BuiltinFunction>()) {
+            auto builtin = methodValOpt->get<BuiltinFunction>();
+            // Create a bound function that captures the string as first argument
+            auto str = objectValue;  // Capture the string value
+            interpreter->setLastResult(HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
+                std::vector<HavelValue> boundArgs;
+                boundArgs.push_back(str);
+                boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+                return builtin(boundArgs);
+            })));
+            return;
+        }
+    }
+
     // Arrays: special properties like length and methods
     if (auto *arrPtr = objectValue.get_if<HavelArray>()) {
         if (propName == "length") {
-            interpreter->setLastResult(static_cast<double>((*arrPtr) ? (*arrPtr)->size() : 0));
+            interpreter->setLastResult(HavelValue(static_cast<double>((*arrPtr) ? (*arrPtr)->size() : 0)));
             return;
         }
         // Check for array methods (push, pop, etc.)
@@ -75,27 +97,6 @@ void MemberResolver::resolveMember(const ast::MemberExpression& node) {
             interpreter->setLastResult(HavelValue(BuiltinFunction([array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
                 std::vector<HavelValue> boundArgs;
                 boundArgs.push_back(array);
-                boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-                return builtin(boundArgs);
-            })));
-            return;
-        }
-    }
-
-    // Strings: methods like lower, upper, replace, etc.
-    if (auto *strPtr = objectValue.get_if<std::string>()) {
-        if (!interpreter->getEnvironment()) {
-            interpreter->setLastResult(HavelRuntimeError("Environment not available for method lookup"));
-            return;
-        }
-        std::optional<HavelValue> methodValOpt = interpreter->getEnvironment()->Get(propName);
-        if (methodValOpt.has_value() && methodValOpt->is<BuiltinFunction>()) {
-            auto builtin = methodValOpt->get<BuiltinFunction>();
-            // Create a bound function that captures the string as first argument
-            auto str = objectValue;  // Capture the string value
-            interpreter->setLastResult(HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
-                std::vector<HavelValue> boundArgs;
-                boundArgs.push_back(str);
                 boundArgs.insert(boundArgs.end(), args.begin(), args.end());
                 return builtin(boundArgs);
             })));

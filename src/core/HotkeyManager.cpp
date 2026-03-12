@@ -229,21 +229,25 @@ void HotkeyManager::printHotkeys() const {
 }
 
 void HotkeyManager::updateAllConditionalHotkeys() {
+  std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   conditionalManager.UpdateAllConditionalHotkeys();
 }
 
 void HotkeyManager::forceUpdateAllConditionalHotkeys() {
+  std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   conditionalManager.ForceUpdateAllConditionalHotkeys();
 }
 
 void HotkeyManager::reevaluateConditionalHotkeys(IO &) {
+  std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   conditionalManager.ReevaluateConditionalHotkeys();
 }
 
 void HotkeyManager::setConditionalHotkeysEnabled(bool enabled) {
+  std::lock_guard<std::mutex> lock(conditionalManager.GetMutex());
   conditionalHotkeysEnabled = enabled;
   conditionalManager.SetEnabled(enabled);
   conditionalManager.UpdateAllConditionalHotkeys();

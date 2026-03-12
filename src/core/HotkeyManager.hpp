@@ -86,6 +86,8 @@ public:
   void forceUpdateAllConditionalHotkeys();
   void reevaluateConditionalHotkeys(IO &io);
   void setConditionalHotkeysEnabled(bool enabled);
+  void setMode(const std::string& mode);  // Set current mode for conditional hotkeys
+  std::string getMode() const;  // Get current mode
   std::mutex &getHotkeyMutex();
 
   void loadDebugSettings();

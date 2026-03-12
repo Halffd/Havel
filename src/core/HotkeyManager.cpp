@@ -25,6 +25,41 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
     : activeConditionalHotkeys(conditionalManager.GetHotkeys()), io(io),
       conditionalManager(io) {
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
+  
+  // Set up condition evaluator to check interpreter environment for mode
+  // This allows conditional hotkeys to use mode conditions like "mode == 'gaming'"
+  conditionalManager.SetConditionEvaluator([this](const std::string& condition) {
+    // Check for mode conditions
+    if (condition.find("mode == '") != std::string::npos ||
+        condition.find("mode != '") != std::string::npos) {
+      // Get current mode from ConditionalHotkeyManager
+      std::string currentMode = conditionalManager.GetMode();
+      
+      if (condition.find("mode == 'gaming'") != std::string::npos) {
+        return (currentMode == "gaming");
+      } else if (condition.find("mode != 'gaming'") != std::string::npos) {
+        return (currentMode != "gaming");
+      } else if (condition.find("mode == '") != std::string::npos) {
+        // Extract mode value from condition string
+        size_t start = condition.find("mode == '") + 9;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string modeVal = condition.substr(start, end - start);
+          return (currentMode == modeVal);
+        }
+      } else if (condition.find("mode != '") != std::string::npos) {
+        // Extract mode value from condition string
+        size_t start = condition.find("mode != '") + 9;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string modeVal = condition.substr(start, end - start);
+          return (currentMode != modeVal);
+        }
+      }
+    }
+    return false;
+  });
+  
   initializeInputCallbacks();
 }
 
@@ -255,6 +290,14 @@ void HotkeyManager::setConditionalHotkeysEnabled(bool enabled) {
 
 std::mutex &HotkeyManager::getHotkeyMutex() {
   return conditionalManager.GetMutex();
+}
+
+void HotkeyManager::setMode(const std::string& mode) {
+  conditionalManager.SetMode(mode);
+}
+
+std::string HotkeyManager::getMode() const {
+  return conditionalManager.GetMode();
 }
 
 void HotkeyManager::loadDebugSettings() {}

@@ -453,34 +453,6 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     inputNotificationCallback();
   }
 
-  // New minimal forwarding path: emit event, consult block callback, forward.
-  if (ev.type == EV_KEY) {
-    bool down = (ev.value == 1 || ev.value == 2);
-    InputEvent event;
-    event.kind = InputEventKind::Key;  // FIXED: Was MouseButton
-    event.code = ev.code;
-    event.value = ev.value;
-    event.down = down;
-    event.repeat = (ev.value == 2);
-    event.modifiers = GetCurrentModifiersMask();
-
-    if (inputEventCallback) {
-      inputEventCallback(event);
-    }
-
-    bool shouldBlock = false;
-    if (inputBlockCallback) {
-      shouldBlock = inputBlockCallback(event);
-    }
-
-    if (!shouldBlock && !blockInput.load()) {
-      SendUinputEvent(EV_KEY, ev.code, ev.value);
-    } else if (!down) {
-      SendUinputEvent(EV_KEY, ev.code, 0);
-    }
-    return;
-  }
-
   if (ev.type == EV_REL) {
     if (ev.code == REL_X || ev.code == REL_Y) {
       double scaledValue = ev.value * IO::mouseSensitivity;
@@ -581,6 +553,7 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     return;
   }
 
+  auto now = std::chrono::steady_clock::now();
   int originalCode = ev.code;
   bool repeat = (ev.value == 2);
   bool down = (ev.value == 1 || repeat);
@@ -591,9 +564,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     evdevKeyState[originalCode] = down;
     UpdateModifierState(mappedCode, down);
     if (down) {
-      keyDownTime[originalCode] = std::chrono::steady_clock::now();
+      keyDownTime[originalCode] = now;
+      activeInputs[originalCode] = ActiveInput(GetCurrentModifiersMask(), now);
+      physicalKeyStates[originalCode] = true;
     } else {
       keyDownTime.erase(originalCode);
+      activeInputs.erase(originalCode);
+      physicalKeyStates[originalCode] = false;
     }
   }
 

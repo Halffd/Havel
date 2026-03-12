@@ -130,7 +130,7 @@ public:
     /**
      * Analyze AST and collect semantic information
      */
-    bool analyze(const ast::Program& program);
+    bool analyze(const ast::Program& program, bool resetSymbols = true);
     
     /**
      * Get collected errors

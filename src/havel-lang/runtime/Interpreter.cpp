@@ -318,6 +318,9 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
 void Interpreter::RegisterForHotkeys() {
   auto self = shared_from_this();
   havel::modules::SetHotkeyInterpreter(self);
+  // Register hotkey module now that hotkeyManager is available.
+  // This ensures Hotkey() exists at runtime for scripts.
+  havel::modules::registerHotkeyModule(*environment, hostContext);
   info("Registered interpreter {} for hotkey callbacks", (void*)this);
 }
 
@@ -385,48 +388,34 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     // =========================================================================
     // SEMANTIC ANALYSIS PHASE
     // =========================================================================
-    // For REPL mode, skip semantic analysis after first run to allow incremental
-    // variable definitions. The environment already tracks all symbols.
-    if (!isFirstRun) {
-      // REPL mode - just execute, environment already has symbols
-      goto execute_phase;
-    }
-    
-    // First run - do full semantic analysis
-    {
-      semantic::SemanticAnalyzer semanticAnalyzer;
+    // For REPL mode, keep semantic state and only reset on the first run.
+    bool shouldResetSymbols = isFirstRun.load();
 
-      // Use Basic mode by default - checks variables/functions but NOT modules
-      // This avoids false positives for dynamically-loaded modules
-      // Set to Strict mode if you want full module checking
-      semanticAnalyzer.setMode(semantic::SemanticMode::Basic);
+    // Use Basic mode by default - checks variables/functions but allows globals
+    // to resolve at runtime (avoid false positives for dynamically-loaded modules)
+    semanticAnalyzer.setMode(semantic::SemanticMode::Basic);
 
-      havel::info("Running semantic analysis (mode: Basic)...");
-      bool semanticOk = semanticAnalyzer.analyze(*programPtr);
+    havel::info("Running semantic analysis (mode: Basic)...");
+    bool semanticOk = semanticAnalyzer.analyze(*programPtr, shouldResetSymbols);
 
-      if (!semanticOk) {
-        // Print semantic errors
-        std::ostringstream oss;
-        oss << "\n  ╭─ Semantic Analysis Errors (" << semanticAnalyzer.getErrors().size() << " errors found)\n";
+    if (!semanticOk) {
+      // Print semantic errors
+      std::ostringstream oss;
+      oss << "\n  ╭─ Semantic Analysis Errors (" << semanticAnalyzer.getErrors().size() << " errors found)\n";
+      oss << "  │\n";
+      for (const auto& err : semanticAnalyzer.getErrors()) {
+        oss << "  │ [ERROR line " << err.line << ":" << err.column << "] " << err.message << "\n";
         oss << "  │\n";
-        for (const auto& err : semanticAnalyzer.getErrors()) {
-          oss << "  │ [ERROR line " << err.line << ":" << err.column << "] " << err.message << "\n";
-          oss << "  │\n";
-        }
-        oss << "  ╰─ Semantic analysis failed\n";
-        havel::error(oss.str());
-        return HavelRuntimeError("Semantic analysis failed with " +
-                                 std::to_string(semanticAnalyzer.getErrors().size()) + " errors");
       }
-
-      havel::info("Semantic analysis passed! Symbol table has " +
-                  std::to_string(semanticAnalyzer.getSymbolTable().getSymbolCount()) + " symbols");
+      oss << "  ╰─ Semantic analysis failed\n";
+      havel::error(oss.str());
+      return HavelRuntimeError("Semantic analysis failed with " +
+                               std::to_string(semanticAnalyzer.getErrors().size()) + " errors");
     }
-    
-    // Mark as not first run after initial execution
-    isFirstRun = false;
-    
-execute_phase:
+
+    havel::info("Semantic analysis passed! Symbol table has " +
+                std::to_string(semanticAnalyzer.getSymbolTable().getSymbolCount()) + " symbols");
+
     // =========================================================================
     bool wasFirstRun = isFirstRun.load();
     auto result = Evaluate(*programPtr);

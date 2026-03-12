@@ -56,51 +56,60 @@ void registerWindowModule(Environment& env, HostContext& ctx) {
     // =========================================================================
     // Window functions
     // =========================================================================
-    
+
     (*win)["getTitle"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(wm.GetActiveWindowTitle());
     }));
-    
+    (*win)["title"] = (*win)["getTitle"];  // Alias
+
     (*win)["getPID"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(static_cast<double>(wm.GetActiveWindowPID()));
     }));
-    
+    (*win)["pid"] = (*win)["getPID"];  // Alias
+
+    (*win)["getClass"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(wm.GetActiveWindowClass());
+    }));
+    (*win)["class"] = (*win)["getClass"];  // Alias
+
     (*win)["maximize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Max();
         return HavelValue(nullptr);
     }));
-    
+
     (*win)["minimize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Min();
         return HavelValue(nullptr);
     }));
-    
+
+    (*win)["active"] = (*win)["isActive"];  // Alias
+
     (*win)["next"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
         wm.AltTab();
         return HavelValue(nullptr);
     }));
-    
+
     (*win)["previous"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
         wm.AltTab();
         return HavelValue(nullptr);
     }));
-    
+
     (*win)["close"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Close();
         return HavelValue(nullptr);
     }));
-    
+
     (*win)["center"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         // Note: wm.Center(Window) not available, use Window::Center() instead
         getActiveWindow().Center();
         return HavelValue(nullptr);
     }));
-    
+
     (*win)["focus"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("window.focus() requires window title");
         }
-        std::string title = args[0].isString() ? args[0].asString() : 
+        std::string title = args[0].isString() ? args[0].asString() :
             std::to_string(static_cast<int>(args[0].asNumber()));
         wID winId = WindowManager::FindByTitle(title.c_str());
         if (winId != 0) {
@@ -110,7 +119,7 @@ void registerWindowModule(Environment& env, HostContext& ctx) {
         }
         return HavelValue(false);
     }));
-    
+
     (*win)["move"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("window.move() requires (x, y)");
@@ -119,7 +128,7 @@ void registerWindowModule(Environment& env, HostContext& ctx) {
         int y = static_cast<int>(args[1].asNumber());
         return HavelValue(getActiveWindow().Move(x, y));
     }));
-    
+
     (*win)["resize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("window.resize() requires (width, height)");
@@ -128,7 +137,7 @@ void registerWindowModule(Environment& env, HostContext& ctx) {
         int height = static_cast<int>(args[1].asNumber());
         return HavelValue(getActiveWindow().Resize(width, height));
     }));
-    
+
     (*win)["moveResize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 4) {
             return HavelRuntimeError("window.moveResize() requires (x, y, width, height)");

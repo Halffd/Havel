@@ -407,7 +407,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
     char *input = readline(prompt.c_str());
     if (!input) { std::cout << "\nGoodbye!\n"; break; }
-      break;
+
     line = std::string(input);
     free(input);
     if (!line.empty())
@@ -415,7 +415,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 #else
     std::cout << prompt;
     if (!std::getline(std::cin, line))
-      break;
+
 #endif
 
     // Trim whitespace
@@ -589,7 +589,7 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
 
     char *input = readline(prompt.c_str());
     if (!input) { std::cout << "\nGoodbye!\n"; break; }
-      break;
+
     line = std::string(input);
     free(input);
     if (!line.empty())
@@ -597,7 +597,7 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
 #else
     std::cout << prompt;
     if (!std::getline(std::cin, line))
-      break;
+
 #endif
 
     // Trim whitespace
@@ -796,7 +796,7 @@ int HavelLauncher::runCli(int argc, char *argv[]) {
 
     for (const auto &tok : tokens) {
       if (tok.type == havel::TokenType::EOF_TOKEN)
-        break;
+  
 
       if (tok.type == havel::TokenType::NewLine) {
         while (!out.empty() && out.back() == ' ')

@@ -505,22 +505,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   case havel::TokenType::ShellCommandCapture: {
     bool captureOutput = (at().type == havel::TokenType::ShellCommandCapture);
     advance(); // consume '$' or '$!'
-    // Skip whitespace
+    // Skip newlines (spaces already skipped by lexer)
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    // Expression forms: $! var, $! (expr), $! [array], $! "string"
+    // Expression forms: $ firefox, $! ls, $! (cmd), $! [array], $! var, $! "string"
     std::unique_ptr<havel::ast::Expression> cmdExpr;
     if (at().type == havel::TokenType::OpenParen || at().type == havel::TokenType::OpenBracket) {
       cmdExpr = parseExpression();
     } else if (at().type == havel::TokenType::Identifier) {
-      // Just an identifier - parse as primary expression
+      // Just an identifier - parse as primary expression (e.g., $ firefox)
       cmdExpr = parsePrimaryExpression();
     } else if (at().type == havel::TokenType::String) {
       // String literal for shell command
       cmdExpr = parsePrimaryExpression();
     } else {
-      failAt(at(), "Shell command requires expression: $ (cmd), $! [array], $! var, or $! \"string\"");
+      failAt(at(), "Shell command requires expression: $ firefox, $ (cmd), $! [array], $! var, or $! \"string\"");
     }
     
     auto stmt = std::make_unique<havel::ast::ShellCommandStatement>(std::move(cmdExpr), captureOutput);

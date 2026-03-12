@@ -1,23 +1,25 @@
 /*
  * GUIModule.cpp
- * 
+ *
  * GUI dialogs module for Havel language.
  * Host binding - connects language to GUIManager.
  */
 #include "GUIModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "gui/GUIManager.hpp"
+#include "gui/HavelApp.hpp"
 #include <optional>
+#include <QApplication>
 
 namespace havel::modules {
 
 void registerGUIModule(Environment& env, HostContext& ctx) {
     bool hasManager = ctx.isValid() && ctx.guiManager;
     GUIManager* gm = hasManager ? ctx.guiManager : nullptr;
-    
+
     // Create gui module object
     auto guiObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
+
     // Helper to convert value to string
     auto valueToString = [](const HavelValue& v) -> std::string {
         if (v.isString()) return v.asString();
@@ -44,14 +46,55 @@ void registerGUIModule(Environment& env, HostContext& ctx) {
         if (v.isBool()) return v.asBool() ? "true" : "false";
         return "";
     };
-    
+
+    // =========================================================================
+    // GUI initialization functions
+    // =========================================================================
+
+    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&ctx, &env](const std::vector<HavelValue>& args) -> HavelResult {
+        // Check if QApplication already exists
+        if (QApplication::instance()) {
+            return HavelValue(true);  // Already initialized
+        }
+
+        // Create QApplication
+        static int argc = 1;
+        static char* argv[] = { (char*)"havel", nullptr };
+        new QApplication(argc, argv);
+
+        // Initialize GUI manager
+        if (ctx.guiManager) {
+            ctx.guiManager->initialize();
+        }
+
+        // Re-register GUI module with actual manager
+        registerGUIModule(env, ctx);
+
+        return HavelValue(true);
+    }));
+
+    (*guiObj)["reload"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
+        if (!ctx.guiManager) {
+            return HavelRuntimeError("gui.reload() requires GUI to be initialized first");
+        }
+
+        // Reload GUI components
+        ctx.guiManager->reload();
+
+        return HavelValue(true);
+    }));
+
+    (*guiObj)["isInitialized"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(QApplication::instance() != nullptr);
+    }));
+
     // =========================================================================
     // Menu dialog
     // =========================================================================
-    
+
     auto requireGui = [hasManager](const std::string& fn) -> std::optional<HavelRuntimeError> {
         if (!hasManager) {
-            return HavelRuntimeError("gui." + fn + " requires a GUI manager");
+            return HavelRuntimeError("gui." + fn + " requires a GUI manager. Call gui.initialize() first.");
         }
         return std::nullopt;
     };

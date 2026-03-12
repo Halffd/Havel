@@ -481,6 +481,19 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     // Register io and mouse modules
     (*ioObj)["mouse"] = HavelValue(mouseObj);
     env.Define("io", HavelValue(ioObj));
+    
+    // =========================================================================
+    // Global convenience aliases (fast path for common operations)
+    // =========================================================================
+    
+    // Mouse operations
+    env.Define("click", (*mouseObj)["click"]);
+    env.Define("doubleClick", (*mouseObj)["doubleClick"]);
+    env.Define("mousePress", (*mouseObj)["press"]);
+    env.Define("mouseRelease", (*mouseObj)["release"]);
+    env.Define("mouseMove", (*mouseObj)["move"]);
+    env.Define("mouseMoveRel", (*mouseObj)["moveRel"]);
+    env.Define("scroll", (*mouseObj)["scroll"]);
 }
 
 } // namespace havel::modules

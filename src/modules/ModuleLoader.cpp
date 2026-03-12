@@ -111,9 +111,44 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     HostContext& ctx = interpreter->getHostContext();
 
     // =========================================================================
+    // Condition evaluation builtins (for hotkey conditions)
+    // =========================================================================
+    
+    // mode - returns current mode string
+    env.Define("mode", HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
+        if (ctx.hotkeyManager) {
+            return HavelValue(ctx.hotkeyManager->getMode());
+        }
+        return HavelValue("default");
+    })));
+    
+    // title - returns active window title
+    env.Define("title", HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
+        if (ctx.io) {
+            return HavelValue(ctx.io->GetActiveWindowTitle());
+        }
+        return HavelValue("");
+    })));
+    
+    // class - returns active window class
+    env.Define("class", HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
+        if (ctx.io) {
+            return HavelValue(ctx.io->GetActiveWindowClass());
+        }
+        return HavelValue("");
+    })));
+    
+    // process - returns active window process name
+    env.Define("process", HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
+        if (ctx.io) {
+            return HavelValue(ctx.io->GetActiveWindowProcess());
+        }
+        return HavelValue("");
+    })));
+
+    // =========================================================================
     // STANDARD LIBRARY (always loaded - core language functions)
     // =========================================================================
-    // Order matters! Array first, then String so string methods override for method calls
     havel::stdlib::registerArrayModule(&env);
     havel::stdlib::registerMathModule(&env);
     havel::stdlib::registerTypeModule(&env);
@@ -122,7 +157,7 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     havel::stdlib::registerProcessModule(&env);
     havel::stdlib::registerUtilityModule(&env);
     havel::stdlib::registerObjectModule(&env);
-    havel::stdlib::registerStringModule(&env);  // Register AFTER array so string methods work
+    havel::stdlib::registerStringModule(&env);  // Register after array for proper method override
 
     // =========================================================================
     // HOST MODULES (loaded via registry)

@@ -729,32 +729,94 @@ max()                     // Maximize window
 
 ## Conditional Hotkeys
 
-### Postfix Conditional Syntax
-```
-hotkey => action if condition
-```
-
-### Prefix Conditional Syntax
-```
-hotkey if condition => action
+### Hotkey with When Condition
+```havel
+hotkey "F1" when mode == 'gaming' => {
+    print("Gaming mode!")
+}
 ```
 
-### When Blocks
+### When Blocks (Execute Statements When Condition is True)
+```havel
+when mode == 'gaming' {
+    print("Entered gaming mode")
+    brightnessManager.setBrightness(0.5)
+}
 ```
-when condition {
-    hotkey1 => action1
-    hotkey2 => action2
+
+### Hotkeys Inside When Blocks
+```havel
+when mode == 'gaming' {
+    hotkey "F1" => { print("Gaming F1") }
+    hotkey "F2" => { print("Gaming F2") }
+}
+```
+
+### Multiple Conditions (AND/OR)
+```havel
+// AND conditions - both must be true
+hotkey "F1" when mode == 'gaming' && title == 'Game' => {
+    print("Gaming in game window")
+}
+
+// OR conditions - either can be true
+hotkey "F2" when title == 'Firefox' || title == 'Chrome' => {
+    print("Browser is active")
+}
+
+// Complex combinations
+hotkey "F3" when mode == 'work' && (class == 'code' || class == 'eclipse') => {
+    print("Coding in work mode")
+}
+```
+
+### Window Title and Class Conditions
+```havel
+// Window title conditions
+hotkey "F1" when title == 'Firefox' => {
+    print("Firefox is active")
+}
+
+hotkey "F2" when title != 'Chrome' => {
+    print("Chrome is not active")
+}
+
+hotkey "F3" when title.contains('Visual') => {
+    print("Visual Studio is active")
+}
+
+// Window class conditions
+hotkey "F4" when class == 'firefox' => {
+    print("Firefox class detected")
+}
+
+hotkey "F5" when class.contains('code') => {
+    print("VS Code or similar")
 }
 ```
 
 ### Nested Conditions
-```
-when outer_condition {
-    hotkey if inner_condition => action
+```havel
+when mode == 'work' {
+    hotkey "F1" when class == 'code' => {
+        print("Coding mode")
+    }
 }
 ```
 
-All conditions are evaluated dynamically at runtime, allowing variables to change and trigger hotkeys accordingly.
+**All conditions are evaluated dynamically at runtime**, allowing variables to change and trigger hotkeys accordingly.
+
+**Condition Types:**
+- `mode == 'name'` - Mode equals name
+- `mode != 'name'` - Mode not equals name  
+- `title == 'text'` - Window title equals text
+- `title != 'text'` - Window title not equals text
+- `title.contains('text')` - Window title contains text
+- `class == 'name'` - Window class equals name
+- `class != 'name'` - Window class not equals name
+- `class.contains('name')` - Window class contains name
+- `cond1 && cond2` - Both conditions must be true
+- `cond1 || cond2` - Either condition can be true
 
 Target Use Cases
 	* Hotkey automation and mapping

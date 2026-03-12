@@ -6,7 +6,6 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
-#include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
@@ -18,25 +17,6 @@
 #include <unistd.h>
 
 namespace havel {
-
-namespace {
-void DrainDeviceEvents(int fd) {
-  struct input_event ev;
-  while (true) {
-    ssize_t n = read(fd, &ev, sizeof(ev));
-    if (n < 0) {
-      if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        break;
-      }
-      break;
-    }
-    if (n == 0) {
-      break;
-    }
-    // Continue draining
-  }
-}
-} // namespace
 
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
@@ -152,7 +132,7 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
       debug("Successfully grabbed device: {} ({})", name, path);
     }
 
-    DrainDeviceEvents(fd);
+    // DrainDeviceEvents(fd);  // TODO: Implement or remove
 
     DeviceInfo device;
     device.path = path;
@@ -419,8 +399,13 @@ void EventListener::EventLoop() {
     if (ret == 0)
       continue;
 
-    if (FD_ISSET(shutdownFd, &readfds))
+    if (FD_ISSET(shutdownFd, &readfds)) {
+      if (asyncSignalRequested != 0) {
+        SignalSafeShutdown(asyncSignalRequested, false);
+        asyncSignalRequested = 0;
+      }
       break;
+    }
 
     // Check for signal
     if (signalFdToUse >= 0 && FD_ISSET(signalFdToUse, &readfds)) {
@@ -2002,6 +1987,15 @@ void EventListener::HandleSignal(int sig) {
   default:
     debug("Received unhandled signal: {}", sig);
     break;
+  }
+}
+
+void EventListener::RequestShutdownFromSignal(int sig) {
+  ForceUngrabAllDevices();
+  asyncSignalRequested = sig;
+  if (shutdownFd >= 0) {
+    uint64_t val = 1;
+    write(shutdownFd, &val, sizeof(val));
   }
 }
 

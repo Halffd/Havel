@@ -5,6 +5,7 @@
 #include "core/CallbackTypes.hpp"     // Include callback types
 #include "core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
+#include <csignal>
 #include <chrono>
 #include <functional>
 #include <linux/input.h>
@@ -185,6 +186,7 @@ public:
   // Signal handling methods
   void SetupSignalHandling();
   void ProcessSignal();
+  void RequestShutdownFromSignal(int sig);
 
 private:
   friend class SignalHandler;
@@ -194,6 +196,7 @@ private:
   std::atomic<bool> signalReceived{false};
   int signalFd = -1; // fd for signalfd to integrate with select loop
   sigset_t signalMask{};
+  std::sig_atomic_t asyncSignalRequested = 0;
 
   // Signal handling for device cleanup
   std::atomic<int> pendingSignal{0};

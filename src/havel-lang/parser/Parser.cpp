@@ -2287,25 +2287,6 @@ std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
   return parsePipelineExpression();
 }
 
-std::unique_ptr<havel::ast::Expression> Parser::parseConfigAppend() {
-  auto left = parseAssignmentExpression();
-
-  // Handle >> config operator
-  if (at().type == havel::TokenType::ShiftRight) {
-    auto opTok = at();
-    auto op = tokenToBinaryOperator(at().type);
-    advance();
-    auto right = parseLogicalOr();
-    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
-                                                          std::move(right));
-    bin->line = opTok.line;
-    bin->column = opTok.column;
-    return bin;
-  }
-
-  return left;
-}
-
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
   auto left = parseTernaryExpression();
 
@@ -2442,6 +2423,19 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
     }
 
     return std::move(pipeline);
+  }
+
+  // Check for config append operator >>
+  if (at().type == havel::TokenType::ShiftRight) {
+    auto opTok = at();
+    auto op = tokenToBinaryOperator(at().type);
+    advance(); // consume '>>'
+    auto right = parseLogicalOr();
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
+                                                          std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    return std::move(bin);
   }
 
   return left;

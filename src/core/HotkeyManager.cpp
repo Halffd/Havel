@@ -28,95 +28,39 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
   
   // Set up condition evaluator to check interpreter environment for mode, title, class
   // This allows conditional hotkeys to use conditions like:
-  // - mode == 'gaming'
-  // - title == 'Firefox'
-  // - class == 'firefox'
+  // - mode gaming
+  // - title Firefox
+  // - class code
   std::function<bool(const std::string&)> evalCondition;
   evalCondition = [this, &evalCondition, &io](const std::string& condition) -> bool {
-    // Check for mode conditions
-    if (condition.find("mode == '") != std::string::npos ||
-        condition.find("mode != '") != std::string::npos) {
+    // Check for mode conditions: "mode gaming", "mode work", etc.
+    if (condition.find("mode ") == 0) {
       std::string currentMode = conditionalManager.GetMode();
-      
-      if (condition.find("mode == 'gaming'") != std::string::npos) {
-        return (currentMode == "gaming");
-      } else if (condition.find("mode != 'gaming'") != std::string::npos) {
-        return (currentMode != "gaming");
-      } else if (condition.find("mode == '") != std::string::npos) {
-        size_t start = condition.find("mode == '") + 9;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string modeVal = condition.substr(start, end - start);
-          return (currentMode == modeVal);
-        }
-      } else if (condition.find("mode != '") != std::string::npos) {
-        size_t start = condition.find("mode != '") + 9;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string modeVal = condition.substr(start, end - start);
-          return (currentMode != modeVal);
-        }
-      }
+      std::string modeVal = condition.substr(5);  // Skip "mode "
+      // Trim whitespace
+      modeVal.erase(0, modeVal.find_first_not_of(" "));
+      modeVal.erase(modeVal.find_last_not_of(" ") + 1);
+      return (currentMode == modeVal);
     }
     
-    // Check for window title conditions
-    if (condition.find("title == '") != std::string::npos ||
-        condition.find("title != '") != std::string::npos ||
-        condition.find("title.contains('") != std::string::npos) {
+    // Check for window title conditions: "title Firefox"
+    if (condition.find("title ") == 0) {
       std::string currentTitle = io->GetActiveWindowTitle();
-      
-      if (condition.find("title == '") != std::string::npos) {
-        size_t start = condition.find("title == '") + 10;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string titleVal = condition.substr(start, end - start);
-          return (currentTitle == titleVal);
-        }
-      } else if (condition.find("title != '") != std::string::npos) {
-        size_t start = condition.find("title != '") + 10;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string titleVal = condition.substr(start, end - start);
-          return (currentTitle != titleVal);
-        }
-      } else if (condition.find("title.contains('") != std::string::npos) {
-        size_t start = condition.find("title.contains('") + 16;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string titleVal = condition.substr(start, end - start);
-          return (currentTitle.find(titleVal) != std::string::npos);
-        }
-      }
+      std::string titleVal = condition.substr(6);  // Skip "title "
+      // Trim whitespace
+      titleVal.erase(0, titleVal.find_first_not_of(" "));
+      titleVal.erase(titleVal.find_last_not_of(" ") + 1);
+      return (currentTitle == titleVal);
     }
     
-    // Check for window class conditions
-    if (condition.find("class == '") != std::string::npos ||
-        condition.find("class != '") != std::string::npos ||
-        condition.find("class.contains('") != std::string::npos) {
+    // Check for window class conditions: "class code"
+    if (condition.find("class ") == 0) {
       std::string currentClass = io->GetActiveWindowClass();
-      
-      if (condition.find("class == '") != std::string::npos) {
-        size_t start = condition.find("class == '") + 10;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string classVal = condition.substr(start, end - start);
-          return (currentClass == classVal);
-        }
-      } else if (condition.find("class != '") != std::string::npos) {
-        size_t start = condition.find("class != '") + 10;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string classVal = condition.substr(start, end - start);
-          return (currentClass != classVal);
-        }
-      } else if (condition.find("class.contains('") != std::string::npos) {
-        size_t start = condition.find("class.contains('") + 16;
-        size_t end = condition.find("'", start);
-        if (end != std::string::npos) {
-          std::string classVal = condition.substr(start, end - start);
-          return (currentClass.find(classVal) != std::string::npos);
-        }
-      }
+      std::string classVal = condition.substr(6);  // Skip "class "
+      // Trim whitespace
+      classVal.erase(0, classVal.find_first_not_of(" "));
+      classVal.erase(classVal.find_last_not_of(" ") + 1);
+      return (currentClass == classVal);
     }
     
     // Check for combined conditions (AND)
@@ -133,25 +77,6 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
       
       bool leftResult = evalCondition(leftCond);
       if (!leftResult) return false;  // Short-circuit
-      
-      bool rightResult = evalCondition(rightCond);
-      return rightResult;
-    }
-    
-    // Check for combined conditions (OR)
-    if (condition.find(" || ") != std::string::npos) {
-      size_t orPos = condition.find(" || ");
-      std::string leftCond = condition.substr(0, orPos);
-      std::string rightCond = condition.substr(orPos + 4);
-      
-      // Trim whitespace
-      leftCond.erase(0, leftCond.find_first_not_of(" "));
-      leftCond.erase(leftCond.find_last_not_of(" ") + 1);
-      rightCond.erase(0, rightCond.find_first_not_of(" "));
-      rightCond.erase(rightCond.find_last_not_of(" ") + 1);
-      
-      bool leftResult = evalCondition(leftCond);
-      if (leftResult) return true;  // Short-circuit
       
       bool rightResult = evalCondition(rightCond);
       return rightResult;

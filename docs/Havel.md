@@ -729,94 +729,86 @@ max()                     // Maximize window
 
 ## Conditional Hotkeys
 
+### Basic Hotkey
+```havel
+F3 => {
+    print("hello")
+}
+```
+
 ### Hotkey with When Condition
 ```havel
-hotkey "F1" when mode == 'gaming' => {
-    print("Gaming mode!")
+F3 when mode gaming => {
+    print("gaming mode!")
 }
 ```
 
-### When Blocks (Execute Statements When Condition is True)
+### Multiple Conditions (AND)
 ```havel
-when mode == 'gaming' {
-    print("Entered gaming mode")
-    brightnessManager.setBrightness(0.5)
-}
-```
-
-### Hotkeys Inside When Blocks
-```havel
-when mode == 'gaming' {
-    hotkey "F1" => { print("Gaming F1") }
-    hotkey "F2" => { print("Gaming F2") }
-}
-```
-
-### Multiple Conditions (AND/OR)
-```havel
-// AND conditions - both must be true
-hotkey "F1" when mode == 'gaming' && title == 'Game' => {
+F1 when mode gaming && title Game => {
     print("Gaming in game window")
 }
 
-// OR conditions - either can be true
-hotkey "F2" when title == 'Firefox' || title == 'Chrome' => {
-    print("Browser is active")
-}
-
-// Complex combinations
-hotkey "F3" when mode == 'work' && (class == 'code' || class == 'eclipse') => {
-    print("Coding in work mode")
+F2 when mode work && class code => {
+    print("Coding at work")
 }
 ```
 
-### Window Title and Class Conditions
+### When Blocks (Group Hotkeys by Condition)
 ```havel
-// Window title conditions
-hotkey "F1" when title == 'Firefox' => {
-    print("Firefox is active")
+when mode gaming {
+    F1 => { print("Attack!") }
+    F2 => { print("Defend!") }
+    F3 => { print("Special!") }
 }
 
-hotkey "F2" when title != 'Chrome' => {
-    print("Chrome is not active")
-}
-
-hotkey "F3" when title.contains('Visual') => {
-    print("Visual Studio is active")
-}
-
-// Window class conditions
-hotkey "F4" when class == 'firefox' => {
-    print("Firefox class detected")
-}
-
-hotkey "F5" when class.contains('code') => {
-    print("VS Code or similar")
+when mode work {
+    F1 => { print("Build project") }
+    F2 => { print("Run tests") }
 }
 ```
 
-### Nested Conditions
+### Nested When Blocks
 ```havel
-when mode == 'work' {
-    hotkey "F1" when class == 'code' => {
-        print("Coding mode")
+when mode gaming {
+    when title Steam {
+        F1 => { print("Steam overlay") }
     }
 }
 ```
 
-**All conditions are evaluated dynamically at runtime**, allowing variables to change and trigger hotkeys accordingly.
+### Condition Types
 
-**Condition Types:**
-- `mode == 'name'` - Mode equals name
-- `mode != 'name'` - Mode not equals name  
-- `title == 'text'` - Window title equals text
-- `title != 'text'` - Window title not equals text
-- `title.contains('text')` - Window title contains text
-- `class == 'name'` - Window class equals name
-- `class != 'name'` - Window class not equals name
-- `class.contains('name')` - Window class contains name
-- `cond1 && cond2` - Both conditions must be true
-- `cond1 || cond2` - Either condition can be true
+**Mode conditions:**
+```havel
+F1 when mode gaming => { ... }
+F2 when mode work => { ... }
+```
+
+**Window title conditions:**
+```havel
+F1 when title Firefox => { ... }
+F2 when title Chrome => { ... }
+```
+
+**Window class conditions:**
+```havel
+F1 when class code => { ... }
+F2 when class firefox => { ... }
+```
+
+**Process conditions:**
+```havel
+F1 when process steam => { ... }
+```
+
+**Combined conditions:**
+```havel
+F1 when mode gaming && title Steam => { ... }
+F2 when mode work && class code && title Visual => { ... }
+```
+
+**All conditions are evaluated dynamically at runtime**, allowing hotkeys to activate/deactivate based on current state.
 
 Target Use Cases
 	* Hotkey automation and mapping

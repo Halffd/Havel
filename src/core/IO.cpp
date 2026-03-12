@@ -342,6 +342,14 @@ std::vector<std::string> IO::GetInputDevices() {
   return devices;
 }
 
+std::string IO::GetActiveWindowTitle() {
+  return WindowManager::GetActiveWindowTitle();
+}
+
+std::string IO::GetActiveWindowClass() {
+  return WindowManager::GetActiveWindowClass();
+}
+
 void IO::listInputDevices() {
   auto devices = Device::getAllDevices();
 

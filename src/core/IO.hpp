@@ -235,6 +235,10 @@ public:
   void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
     this->hotkeyManager = hotkeyManager;
   }
+  
+  // Window information methods
+  std::string GetActiveWindowTitle();
+  std::string GetActiveWindowClass();
 
   // Key sending methods
   void Send(Key key, bool down = true);

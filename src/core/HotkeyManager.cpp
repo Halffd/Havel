@@ -26,13 +26,16 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
       conditionalManager(io) {
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   
-  // Set up condition evaluator to check interpreter environment for mode
-  // This allows conditional hotkeys to use mode conditions like "mode == 'gaming'"
-  conditionalManager.SetConditionEvaluator([this](const std::string& condition) {
+  // Set up condition evaluator to check interpreter environment for mode, title, class
+  // This allows conditional hotkeys to use conditions like:
+  // - mode == 'gaming'
+  // - title == 'Firefox'
+  // - class == 'firefox'
+  std::function<bool(const std::string&)> evalCondition;
+  evalCondition = [this, &evalCondition, &io](const std::string& condition) -> bool {
     // Check for mode conditions
     if (condition.find("mode == '") != std::string::npos ||
         condition.find("mode != '") != std::string::npos) {
-      // Get current mode from ConditionalHotkeyManager
       std::string currentMode = conditionalManager.GetMode();
       
       if (condition.find("mode == 'gaming'") != std::string::npos) {
@@ -40,7 +43,6 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
       } else if (condition.find("mode != 'gaming'") != std::string::npos) {
         return (currentMode != "gaming");
       } else if (condition.find("mode == '") != std::string::npos) {
-        // Extract mode value from condition string
         size_t start = condition.find("mode == '") + 9;
         size_t end = condition.find("'", start);
         if (end != std::string::npos) {
@@ -48,7 +50,6 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
           return (currentMode == modeVal);
         }
       } else if (condition.find("mode != '") != std::string::npos) {
-        // Extract mode value from condition string
         size_t start = condition.find("mode != '") + 9;
         size_t end = condition.find("'", start);
         if (end != std::string::npos) {
@@ -57,8 +58,109 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
         }
       }
     }
+    
+    // Check for window title conditions
+    if (condition.find("title == '") != std::string::npos ||
+        condition.find("title != '") != std::string::npos ||
+        condition.find("title.contains('") != std::string::npos) {
+      std::string currentTitle = io->GetActiveWindowTitle();
+      
+      if (condition.find("title == '") != std::string::npos) {
+        size_t start = condition.find("title == '") + 10;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string titleVal = condition.substr(start, end - start);
+          return (currentTitle == titleVal);
+        }
+      } else if (condition.find("title != '") != std::string::npos) {
+        size_t start = condition.find("title != '") + 10;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string titleVal = condition.substr(start, end - start);
+          return (currentTitle != titleVal);
+        }
+      } else if (condition.find("title.contains('") != std::string::npos) {
+        size_t start = condition.find("title.contains('") + 16;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string titleVal = condition.substr(start, end - start);
+          return (currentTitle.find(titleVal) != std::string::npos);
+        }
+      }
+    }
+    
+    // Check for window class conditions
+    if (condition.find("class == '") != std::string::npos ||
+        condition.find("class != '") != std::string::npos ||
+        condition.find("class.contains('") != std::string::npos) {
+      std::string currentClass = io->GetActiveWindowClass();
+      
+      if (condition.find("class == '") != std::string::npos) {
+        size_t start = condition.find("class == '") + 10;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string classVal = condition.substr(start, end - start);
+          return (currentClass == classVal);
+        }
+      } else if (condition.find("class != '") != std::string::npos) {
+        size_t start = condition.find("class != '") + 10;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string classVal = condition.substr(start, end - start);
+          return (currentClass != classVal);
+        }
+      } else if (condition.find("class.contains('") != std::string::npos) {
+        size_t start = condition.find("class.contains('") + 16;
+        size_t end = condition.find("'", start);
+        if (end != std::string::npos) {
+          std::string classVal = condition.substr(start, end - start);
+          return (currentClass.find(classVal) != std::string::npos);
+        }
+      }
+    }
+    
+    // Check for combined conditions (AND)
+    if (condition.find(" && ") != std::string::npos) {
+      size_t andPos = condition.find(" && ");
+      std::string leftCond = condition.substr(0, andPos);
+      std::string rightCond = condition.substr(andPos + 4);
+      
+      // Trim whitespace
+      leftCond.erase(0, leftCond.find_first_not_of(" "));
+      leftCond.erase(leftCond.find_last_not_of(" ") + 1);
+      rightCond.erase(0, rightCond.find_first_not_of(" "));
+      rightCond.erase(rightCond.find_last_not_of(" ") + 1);
+      
+      bool leftResult = evalCondition(leftCond);
+      if (!leftResult) return false;  // Short-circuit
+      
+      bool rightResult = evalCondition(rightCond);
+      return rightResult;
+    }
+    
+    // Check for combined conditions (OR)
+    if (condition.find(" || ") != std::string::npos) {
+      size_t orPos = condition.find(" || ");
+      std::string leftCond = condition.substr(0, orPos);
+      std::string rightCond = condition.substr(orPos + 4);
+      
+      // Trim whitespace
+      leftCond.erase(0, leftCond.find_first_not_of(" "));
+      leftCond.erase(leftCond.find_last_not_of(" ") + 1);
+      rightCond.erase(0, rightCond.find_first_not_of(" "));
+      rightCond.erase(rightCond.find_last_not_of(" ") + 1);
+      
+      bool leftResult = evalCondition(leftCond);
+      if (leftResult) return true;  // Short-circuit
+      
+      bool rightResult = evalCondition(rightCond);
+      return rightResult;
+    }
+    
     return false;
-  });
+  };
+  
+  conditionalManager.SetConditionEvaluator(evalCondition);
   
   initializeInputCallbacks();
 }

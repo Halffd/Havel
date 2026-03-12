@@ -1254,7 +1254,36 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     lastResult = ValueToNumber(left) - ValueToNumber(right);
     break;
   case ast::BinaryOperator::Mul:
-    lastResult = ValueToNumber(left) * ValueToNumber(right);
+    // Support string repetition: "abc" * 3 or 3 * "abc"
+    if (left.isString() && right.isNumber()) {
+      std::string str = left.asString();
+      int count = static_cast<int>(right.asNumber());
+      if (count < 0) {
+        lastResult = HavelRuntimeError("String repetition count must be non-negative", node.line, node.column);
+        return;
+      }
+      std::string result;
+      result.reserve(str.size() * count);
+      for (int i = 0; i < count; ++i) {
+        result += str;
+      }
+      lastResult = HavelValue(result);
+    } else if (left.isNumber() && right.isString()) {
+      int count = static_cast<int>(left.asNumber());
+      std::string str = right.asString();
+      if (count < 0) {
+        lastResult = HavelRuntimeError("String repetition count must be non-negative", node.line, node.column);
+        return;
+      }
+      std::string result;
+      result.reserve(str.size() * count);
+      for (int i = 0; i < count; ++i) {
+        result += str;
+      }
+      lastResult = HavelValue(result);
+    } else {
+      lastResult = ValueToNumber(left) * ValueToNumber(right);
+    }
     break;
   case ast::BinaryOperator::Div:
     if (ValueToNumber(right) == 0.0) {

@@ -32,6 +32,12 @@ public:
   GUIManager(WindowManager &windowMgr);
   ~GUIManager();
 
+  // Initialize GUI (call after QApplication created)
+  void initialize();
+  
+  // Reload GUI components
+  void reload();
+
   // === MENU FUNCTIONS ===
   /**
    * @brief Display a menu with options and return selected item

@@ -36,6 +36,16 @@ GUIManager::~GUIManager() {
   customWindows.clear();
 }
 
+void GUIManager::initialize() {
+  // GUI Manager initialized - QApplication should already exist
+  debug("GUIManager initialized");
+}
+
+void GUIManager::reload() {
+  // Reload GUI components - for now just log
+  debug("GUIManager reloaded");
+}
+
 void GUIManager::ensureQApplication() {
   if (!QApplication::instance()) {
     Logger::getInstance().warning("[GUIManager] QApplication not initialized, "

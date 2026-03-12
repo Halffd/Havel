@@ -20,6 +20,13 @@ void registerModeModule(Environment& env, HostContext& ctx) {
             ctx.hotkeyManager->updateAllConditionalHotkeys();
         }
     };
+    
+    // Helper to set mode in ConditionalHotkeyManager
+    auto setModeInManager = [&ctx](const std::string& newMode) {
+        if (ctx.hotkeyManager) {
+            ctx.hotkeyManager->setMode(newMode);
+        }
+    };
 
     // =========================================================================
     // mode.get() - Get current mode
@@ -39,7 +46,7 @@ void registerModeModule(Environment& env, HostContext& ctx) {
     // mode.set(newMode) - Set current mode and update conditional hotkeys
     // =========================================================================
 
-    (*modeObj)["set"] = HavelValue(BuiltinFunction([&env, &updateConditionalHotkeys](const std::vector<HavelValue>& args) -> HavelResult {
+    (*modeObj)["set"] = HavelValue(BuiltinFunction([&env, &updateConditionalHotkeys, &setModeInManager](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("mode.set() requires mode name");
         }
@@ -58,9 +65,12 @@ void registerModeModule(Environment& env, HostContext& ctx) {
         // Store previous mode
         env.Define("__previous_mode__", HavelValue(currentMode));
 
-        // Set new mode
+        // Set new mode in environment
         env.Define("__current_mode__", HavelValue(newMode));
         
+        // Set new mode in ConditionalHotkeyManager
+        setModeInManager(newMode);
+
         // Update conditional hotkeys to reflect mode change
         updateConditionalHotkeys();
 
@@ -71,7 +81,7 @@ void registerModeModule(Environment& env, HostContext& ctx) {
     // mode.previous() - Switch to previous mode and update conditional hotkeys
     // =========================================================================
 
-    (*modeObj)["previous"] = HavelValue(BuiltinFunction([&env, &updateConditionalHotkeys](const std::vector<HavelValue>&) -> HavelResult {
+    (*modeObj)["previous"] = HavelValue(BuiltinFunction([&env, &updateConditionalHotkeys, &setModeInManager](const std::vector<HavelValue>&) -> HavelResult {
         auto currentModeOpt = env.Get("__current_mode__");
         auto previousModeOpt = env.Get("__previous_mode__");
 
@@ -89,6 +99,9 @@ void registerModeModule(Environment& env, HostContext& ctx) {
         env.Define("__previous_mode__", HavelValue(currentMode));
         env.Define("__current_mode__", HavelValue(previousMode));
         
+        // Set mode in ConditionalHotkeyManager
+        setModeInManager(previousMode);
+
         // Update conditional hotkeys to reflect mode change
         updateConditionalHotkeys();
 

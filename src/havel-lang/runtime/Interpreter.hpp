@@ -29,15 +29,15 @@ namespace havel {
 
 // Forward declarations - host managers accessed via HostContext
 class IO;
+class HotkeyManager;
+class Environment;
+class Configs;
 class Interpreter;  // Forward declare for modules namespace
 
 // HotkeyModule function - declared here to avoid circular dependency
 namespace modules {
   void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);
 }
-class HotkeyManager;
-class Environment;
-class Configs;
 
 namespace ast {
 struct FunctionDeclaration;
@@ -630,50 +630,24 @@ private:
       std::function<void()> onCombo = nullptr, bool grabDown = true,
       bool grabUp = true);
 
-  void InitializeStandardLibrary();
-  void InitializeSystemBuiltins();
-  void InitializeWindowBuiltins();
-  void InitializeClipboardBuiltins();
-  void InitializeTextBuiltins();
-  void InitializeFileBuiltins();
-  void InitializeArrayBuiltins();
-  void InitializeIOBuiltins();
-  void InitializeBrightnessBuiltins();
-  void InitializeMathBuiltins();
-  void InitializeRegexBuiltins();
-  void InitializeDebugBuiltins();
-  
-public:
-  // Error formatting helpers - public for use by HavelLauncher
-  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
-  void printError(const HavelResult& error, const std::string& sourceCode);
-  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
-  
-  // Debug options setter - public for use by HavelLauncher
-  void setDebugParser(bool enable) { debug.parser = enable; }
-
-  void InitializeAudioBuiltins();
-  void InitializeMediaBuiltins();
-  void InitializeFileManagerBuiltins();
-  void InitializeLauncherBuiltins();
-  void InitializeGUIBuiltins();
-  void InitializeScreenshotBuiltins();
-  void InitializePixelBuiltins();
-  void InitializeTimerBuiltins();
-  void InitializeAutomationBuiltins();
-  void InitializeAsyncBuiltins();
-  void InitializePhysicsBuiltins();
-  void InitializeHelpBuiltin();
-
   // Get shared pointer to destroyed flag for safe lambda capture
   std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
 
-  // Reload helper methods (private)
+  // Reload helper methods
   void executeOnStart();
   void executeOnReload();
   bool hasRunOnce(const std::string& id);
   void markRunOnce(const std::string& id);
   void clearRunOnce(const std::string& id);
+
+public:
+  // Error formatting helpers - public for use by HavelLauncher
+  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
+  void printError(const HavelResult& error, const std::string& sourceCode);
+  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
+
+  // Debug options setter - public for use by HavelLauncher
+  void setDebugParser(bool enable) { debug.parser = enable; }
 };
 
 } // namespace havel

@@ -92,6 +92,46 @@ pID WindowManager::GetActiveWindowPID() {
 #endif
 }
 
+std::string WindowManager::GetActiveWindowProcess() {
+#ifdef __linux__
+  pID pid = GetActiveWindowPID();
+  if (pid == 0) return "";
+  
+  // Get process name from /proc/[pid]/comm
+  std::string procPath = "/proc/" + std::to_string(pid) + "/comm";
+  std::ifstream procFile(procPath);
+  if (procFile.is_open()) {
+    std::string processName;
+    std::getline(procFile, processName);
+    procFile.close();
+    if (!processName.empty()) {
+      return processName;
+    }
+  }
+  
+  // Fallback: use /proc/[pid]/cmdline
+  procPath = "/proc/" + std::to_string(pid) + "/cmdline";
+  procFile.open(procPath);
+  if (procFile.is_open()) {
+    std::string cmdline;
+    std::getline(procFile, cmdline);
+    procFile.close();
+    if (!cmdline.empty()) {
+      // Extract just the process name from cmdline
+      size_t slashPos = cmdline.rfind('/');
+      if (slashPos != std::string::npos) {
+        return cmdline.substr(slashPos + 1);
+      }
+      return cmdline;
+    }
+  }
+  
+  return "";
+#else
+  return "";
+#endif
+}
+
 std::string WindowManager::GetActiveWindowTitle() {
 #ifdef __linux__
   // On Wayland, use CompositorBridge

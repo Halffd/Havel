@@ -350,6 +350,10 @@ std::string IO::GetActiveWindowClass() {
   return WindowManager::GetActiveWindowClass();
 }
 
+std::string IO::GetActiveWindowProcess() {
+  return WindowManager::GetActiveWindowProcess();
+}
+
 void IO::listInputDevices() {
   auto devices = Device::getAllDevices();
 

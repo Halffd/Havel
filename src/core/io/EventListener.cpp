@@ -6,6 +6,7 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "utils/Logger.hpp"
+#include <cerrno>
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/format.h>
@@ -17,6 +18,25 @@
 #include <unistd.h>
 
 namespace havel {
+
+namespace {
+void DrainDeviceEvents(int fd) {
+  struct input_event ev;
+  while (true) {
+    ssize_t n = read(fd, &ev, sizeof(ev));
+    if (n < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;
+      }
+      break;
+    }
+    if (n == 0) {
+      break;
+    }
+    // Continue draining
+  }
+}
+} // namespace
 
 std::string EventListener::GetActiveInputsString() const {
   if (activeInputs.empty())
@@ -132,6 +152,8 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
       debug("Successfully grabbed device: {} ({})", name, path);
     }
 
+    DrainDeviceEvents(fd);
+
     DeviceInfo device;
     device.path = path;
     device.fd = fd;
@@ -145,6 +167,8 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
     error("No input devices opened");
     return false;
   }
+
+  ResetInputState();
 
   running.store(true);
   shutdown.store(false);
@@ -1635,6 +1659,7 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
 
     // Build a set of required keys for this combo
     std::set<int> requiredKeys;
+    std::vector<int> orderedRequiredKeys;
     int requiredModifiers = 0;
 
     for (const auto &comboKey : hotkey.comboSequence) {
@@ -1656,11 +1681,14 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         } else {
           // Regular key
           requiredKeys.insert(keyCode);
+          orderedRequiredKeys.push_back(keyCode);
         }
       } else if (comboKey.type == HotkeyType::MouseButton) {
         requiredKeys.insert(comboKey.mouseButton);
+        orderedRequiredKeys.push_back(comboKey.mouseButton);
       } else if (comboKey.type == HotkeyType::MouseMove) {
         requiredKeys.insert(static_cast<int>(comboKey.key));
+        orderedRequiredKeys.push_back(static_cast<int>(comboKey.key));
       } else if (comboKey.type == HotkeyType::MouseWheel) {
         // ← ADD THIS CASE
         // Wheel events are TRANSIENT - they don't stay in activeInputs
@@ -1740,8 +1768,10 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
       // If we passed the loop, all active keys are allowed
     }
 
-    // Check each required key is actually active
-    for (int requiredKey : requiredKeys) {
+    // Check each required key is actually active in the defined order
+    std::chrono::steady_clock::time_point lastTimestamp{};
+    bool hasLastTimestamp = false;
+    for (int requiredKey : orderedRequiredKeys) {
       auto it = activeInputs.find(requiredKey);
 
       if (it == activeInputs.end()) {
@@ -1749,6 +1779,16 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
               hotkey.alias, requiredKey);
         return false;
       }
+
+      if (hasLastTimestamp &&
+          it->second.timestamp < lastTimestamp) {
+        debug("❌ Combo '{}' rejected: key {} order mismatch", hotkey.alias,
+              requiredKey);
+        return false;
+      }
+
+      lastTimestamp = it->second.timestamp;
+      hasLastTimestamp = true;
 
       // Check timing if time window is set
       if (comboTimeWindow > 0) {
@@ -1921,6 +1961,14 @@ void EventListener::ResetMouseGesture() {
   mouseGestureEngine.Reset();
 }
 
+void EventListener::ResetInputState() {
+  std::unique_lock<std::shared_mutex> lock(stateMutex);
+  activeInputs.clear();
+  physicalKeyStates.clear();
+  keyDownTime.clear();
+  modifierState = ModifierState();
+}
+
 void EventListener::RegisterGestureHotkey(
     int id, const std::vector<MouseGestureDirection> &directions) {
   mouseGestureEngine.RegisterHotkey(id, directions);
@@ -1948,18 +1996,25 @@ void EventListener::HandleSignal(int sig) {
   case SIGQUIT:
     debug("Emergency shutdown: Ungrabbing all devices immediately in "
          "EventListener thread");
-    ForceUngrabAllDevices();
-    running.store(false);
-    shutdown.store(true);
-    if (shutdownFd >= 0) {
-      uint64_t val = 1;
-      write(shutdownFd, &val, sizeof(val));
-    }
+    SignalSafeShutdown(sig, true);
     debug("Emergency shutdown complete in EventListener thread");
-    _exit(sig);
+    break;
   default:
     debug("Received unhandled signal: {}", sig);
     break;
+  }
+}
+
+void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
+  ForceUngrabAllDevices();
+  running.store(false);
+  shutdown.store(true);
+  if (shutdownFd >= 0) {
+    uint64_t val = 1;
+    write(shutdownFd, &val, sizeof(val));
+  }
+  if (exitAfter) {
+    _exit(sig);
   }
 }
 

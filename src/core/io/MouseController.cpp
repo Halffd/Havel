@@ -162,6 +162,8 @@ bool MouseController::Scroll(double dy, double dx) {
     return false;
   }
 
+  debug("MouseController::Scroll dy={} dx={} scrollSpeed={}", dy, dx,
+        scrollSpeed);
   // Apply scroll speed and accumulate
   if (dy != 0.0) {
     scrollAccumY += dy * scrollSpeed;

@@ -45,7 +45,7 @@ public:
      */
     void addHost(const std::string& name, HostModuleFn fn) {
         modules[name] = [fn](Environment& env) {
-            // Wrapper - actual call needs hostAPI
+            // Wrapper - will fail at load time if hostAPI not provided
         };
         hostModules[name] = true;
         hostFns[name] = fn;

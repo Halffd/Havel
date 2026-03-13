@@ -12,6 +12,7 @@
 #include "stdlib/ProcessModule.hpp"
 #include "stdlib/UtilityModule.hpp"
 #include "stdlib/TypeModule.hpp"
+#include "stdlib/TimeModule.hpp"
 
 namespace havel {
 
@@ -29,6 +30,7 @@ void registerStdLibModules(ModuleLoader& loader) {
     loader.add("process", stdlib::registerProcessModule);
     loader.add("utility", stdlib::registerUtilityModule);
     loader.add("type", stdlib::registerTypeModule);
+    loader.add("time", stdlib::registerTimeModule);
 }
 
 /**
@@ -44,6 +46,7 @@ void loadStdLibModules(Environment& env, ModuleLoader& loader) {
     loader.load(env, "process");
     loader.load(env, "utility");
     loader.load(env, "type");
+    loader.load(env, "time");
 }
 
 } // namespace havel

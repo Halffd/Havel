@@ -72,6 +72,10 @@ public:
 
     // Group management
     static void AddGroup(cstr groupName, cstr identifier);
+    static void LoadGroupsFromConfig();  // Load groups from config
+    static std::vector<std::string> GetGroupNames();  // Get all group names
+    static std::vector<std::string> GetGroupWindows(cstr groupName);  // Get windows in group
+    static bool IsWindowInGroup(cstr windowTitle, cstr groupName);  // Check if window is in group
 
     // Window switching
     static void AltTab();

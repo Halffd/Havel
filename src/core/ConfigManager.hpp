@@ -92,7 +92,12 @@ public:
   // Batch mode - use RequestSave() for multiple changes
   void BeginBatch() { savePending = false; }  // Disable auto-save
   void EndBatch() { RequestSave(); }  // Save all changes at once
-  
+
+  // Get all config keys
+  std::vector<std::string> GetAllKeys() const {
+    return config.keys();
+  }
+
   // Convenience getters
   bool GetVerboseKeyLogging() const { return Get<bool>("Debug.VerboseKeyLogging", false); }
   bool GetVerboseWindowLogging() const { return Get<bool>("Debug.VerboseWindowLogging", false); }

@@ -253,7 +253,57 @@ void registerWindowModule(Environment& env, HostContext& ctx) {
         (void)getActiveWindow();  // Suppress unused warning
         return HavelValue(nullptr);
     }));
-    
+
+    // =========================================================================
+    // Window group functions
+    // =========================================================================
+
+    (*win)["getGroups"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
+        auto groups = WindowManager::GetGroupNames();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& group : groups) {
+            arr->push_back(HavelValue(group));
+        }
+        return HavelValue(arr);
+    }));
+
+    (*win)["getGroupWindows"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("window.getGroupWindows() requires group name");
+        }
+        std::string groupName = args[0].isString() ? args[0].asString() : "";
+        auto windows = WindowManager::GetGroupWindows(groupName.c_str());
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& win : windows) {
+            arr->push_back(HavelValue(win));
+        }
+        return HavelValue(arr);
+    }));
+
+    (*win)["isWindowInGroup"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("window.isWindowInGroup() requires (windowTitle, groupName)");
+        }
+        std::string windowTitle = args[0].isString() ? args[0].asString() : "";
+        std::string groupName = args[1].isString() ? args[1].asString() : "";
+        return HavelValue(WindowManager::IsWindowInGroup(windowTitle.c_str(), groupName.c_str()));
+    }));
+
+    (*win)["findInGroup"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("window.findInGroup() requires group name");
+        }
+        std::string groupName = args[0].isString() ? args[0].asString() : "";
+        wID winId = WindowManager::FindWindowInGroup(groupName.c_str());
+        if (winId) {
+            auto winObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*winObj)["id"] = HavelValue(static_cast<double>(winId));
+            (*winObj)["found"] = HavelValue(true);
+            return HavelValue(winObj);
+        }
+        return HavelValue(nullptr);
+    }));
+
     // Register window module
     env.Define("window", HavelValue(win));
     

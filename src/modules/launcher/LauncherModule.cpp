@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerLauncherModule(Environment& env, HostContext&) {
+void registerLauncherModule(Environment& env, IHostAPI*) {
     // Create launcher module object
     auto launcherObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

@@ -10,8 +10,8 @@
 
 namespace havel::modules {
 
-void registerHTTPModule(Environment& env, HostContext& ctx) {
-    (void)ctx;  // HTTP doesn't need host context
+void registerHTTPModule(Environment& env, IHostAPI* hostAPI) {
+    (void)hostAPI;  // HTTP doesn't need host context
 
     // HTTP client for REST API calls
     auto httpMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();

@@ -10,12 +10,12 @@
 
 namespace havel::modules {
 
-void registerBrightnessModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.brightnessManager) {
+void registerBrightnessModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no brightness manager available
     }
     
-    auto& bm = *ctx.brightnessManager;
+    auto& bm = *hostAPI->GetBrightnessManager();
     
     // Create brightnessManager module object
     auto brightnessObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

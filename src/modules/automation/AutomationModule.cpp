@@ -11,7 +11,7 @@
 
 namespace havel::modules {
 
-void registerAutomationModule(Environment& env, HostContext& ctx) {
+void registerAutomationModule(Environment& env, IHostAPI* hostAPI) {
     // Automation module depends on HavelApp singleton
     auto app = HavelApp::instance;
     if (!app || !app->automationManager) {

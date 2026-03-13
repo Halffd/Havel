@@ -13,7 +13,7 @@ namespace havel::modules {
 // Static instance - matches the pattern in Interpreter.cpp
 static std::unique_ptr<AltTabWindow> altTabWindow;
 
-void registerAltTabModule(Environment& env, HostContext&) {
+void registerAltTabModule(Environment& env, IHostAPI*) {
     // Create altTab module object
     auto altTabObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

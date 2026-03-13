@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * ClipboardModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerClipboardModule(Environment& env, HostContext& ctx);
+void registerClipboardModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

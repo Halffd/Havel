@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * HotkeyModule.hpp
  *
@@ -15,7 +16,7 @@ class Interpreter;
 
 namespace modules {
 
-void registerHotkeyModule(Environment& env, HostContext& ctx);
+void registerHotkeyModule(Environment& env, IHostAPI* hostAPI);
 
 // Set the global interpreter reference for hotkey callbacks (uses weak_ptr for safety)
 void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);

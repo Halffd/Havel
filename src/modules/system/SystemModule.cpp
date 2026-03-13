@@ -13,8 +13,8 @@
 
 namespace havel::modules {
 
-void registerSystemModule(Environment& env, HostContext& ctx) {
-    (void)ctx;  // System info doesn't need host context
+void registerSystemModule(Environment& env, IHostAPI* hostAPI) {
+    (void)hostAPI;  // System info doesn't need host context
     
     // =========================================================================
     // CPU information

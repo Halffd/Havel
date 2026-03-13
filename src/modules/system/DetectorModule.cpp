@@ -11,7 +11,7 @@
 
 namespace havel::modules {
 
-void registerDetectorModule(Environment& env, HostContext&) {
+void registerDetectorModule(Environment& env, IHostAPI*) {
     // =========================================================================
     // Display detector
     // =========================================================================

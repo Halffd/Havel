@@ -10,21 +10,21 @@
 
 namespace havel::modules {
 
-void registerModeModule(Environment& env, HostContext& ctx) {
+void registerModeModule(Environment& env, IHostAPI* hostAPI) {
     // Create mode object
     auto modeObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
     // Helper to update conditional hotkeys
-    auto updateConditionalHotkeys = [&ctx]() {
-        if (ctx.hotkeyManager) {
-            ctx.hotkeyManager->updateAllConditionalHotkeys();
+    auto updateConditionalHotkeys = [&hostAPI]() {
+        if (hostAPI->GetHotkeyManager()) {
+            hostAPI->GetHotkeyManager()->updateAllConditionalHotkeys();
         }
     };
     
     // Helper to set mode in ConditionalHotkeyManager
-    auto setModeInManager = [&ctx](const std::string& newMode) {
-        if (ctx.hotkeyManager) {
-            ctx.hotkeyManager->setMode(newMode);
+    auto setModeInManager = [&hostAPI](const std::string& newMode) {
+        if (hostAPI->GetHotkeyManager()) {
+            hostAPI->GetHotkeyManager()->setMode(newMode);
         }
     };
 

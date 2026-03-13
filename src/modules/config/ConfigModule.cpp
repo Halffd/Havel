@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerConfigModule(Environment& env, HostContext&) {
+void registerConfigModule(Environment& env, IHostAPI*) {
     // Create config object with proper namespace
     auto configObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

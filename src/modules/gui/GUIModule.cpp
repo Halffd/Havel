@@ -13,9 +13,9 @@
 
 namespace havel::modules {
 
-void registerGUIModule(Environment& env, HostContext& ctx) {
-    bool hasManager = ctx.isValid() && ctx.guiManager;
-    GUIManager* gm = hasManager ? ctx.guiManager : nullptr;
+void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
+    bool hasManager = hostAPI->GetIO() != nullptr && hostAPI->GetGUIManager();
+    GUIManager* gm = hasManager ? hostAPI->GetGUIManager() : nullptr;
 
     // Create gui module object
     auto guiObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -51,7 +51,7 @@ void registerGUIModule(Environment& env, HostContext& ctx) {
     // GUI initialization functions
     // =========================================================================
 
-    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
         // Check if QApplication already exists
         if (QApplication::instance()) {
             return HavelValue(true);  // Already initialized
@@ -65,20 +65,20 @@ void registerGUIModule(Environment& env, HostContext& ctx) {
         new QApplication(argc, argv);
 
         // Initialize GUI manager if available
-        if (ctx.guiManager) {
-            ctx.guiManager->initialize();
+        if (hostAPI->GetGUIManager()) {
+            hostAPI->GetGUIManager()->initialize();
         }
 
         return HavelValue(true);
     }));
 
-    (*guiObj)["reload"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>&) -> HavelResult {
-        if (!ctx.guiManager) {
+    (*guiObj)["reload"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (!hostAPI->GetGUIManager()) {
             return HavelRuntimeError("gui.reload() requires GUI to be initialized first");
         }
 
         // Reload GUI components - refresh windows and dialogs
-        ctx.guiManager->reload();
+        hostAPI->GetGUIManager()->reload();
 
         return HavelValue(true);
     }));

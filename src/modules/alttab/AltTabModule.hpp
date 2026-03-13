@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * AltTabModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerAltTabModule(Environment& env, HostContext& ctx);
+void registerAltTabModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

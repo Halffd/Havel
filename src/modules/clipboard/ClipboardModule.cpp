@@ -14,7 +14,7 @@
 
 namespace havel::modules {
 
-void registerClipboardModule(Environment& env, HostContext& ctx) {
+void registerClipboardModule(Environment& env, IHostAPI* hostAPI) {
     // Basic clipboard functions don't need ClipboardManager
     // Create clipboard module object
     auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -91,7 +91,7 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         return HavelValue(nullptr);
     }));
 
-    (*clip)["send"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>& args) -> HavelResult {
+    (*clip)["send"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
         // Get text from argument or clipboard
         std::string text;
         if (!args.empty()) {
@@ -107,9 +107,9 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         }
 
         // Send clipboard text using IO
-        if (ctx.io) {
+        if (hostAPI->GetIO()) {
             // Use async send to avoid blocking
-            QTimer::singleShot(0, [io = ctx.io, text]() {
+            QTimer::singleShot(0, [io = hostAPI->GetIO(), text]() {
                 io->Send(text.c_str());
             });
             return HavelValue(true);
@@ -122,8 +122,8 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
     // ClipboardManager functions (only if available)
     // =========================================================================
     
-    if (ctx.clipboardManager) {
-        auto& cm = *ctx.clipboardManager;
+    if (hostAPI->GetClipboardManager()) {
+        auto& cm = *hostAPI->GetClipboardManager();
         auto clipMgrObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
         
         // Show/hide clipboard manager window

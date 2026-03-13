@@ -4333,3 +4333,14 @@ MouseAction IO::GetMouseAction(int idx) {
 }
 
 } // namespace havel
+
+// Additional methods for HostAPI
+pID havel::IO::GetActiveWindowPID() {
+  return WindowManager::GetActiveWindowPID();
+}
+
+void havel::IO::Scroll(int dy, int dx) {
+  if (mouseController) {
+    mouseController->Scroll(dy, dx);
+  }
+}

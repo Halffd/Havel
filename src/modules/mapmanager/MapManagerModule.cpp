@@ -14,7 +14,7 @@ namespace havel::modules {
 // Static instance - matches the pattern in Interpreter.cpp
 static std::unique_ptr<MapManager> coreMapManager;
 
-void registerMapManagerModule(Environment& env, HostContext& ctx) {
+void registerMapManagerModule(Environment& env, IHostAPI* hostAPI) {
     // Create mapmanager module object
     auto mapManagerObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
@@ -49,9 +49,9 @@ void registerMapManagerModule(Environment& env, HostContext& ctx) {
     // Initialize MapManager
     // =========================================================================
     
-    (*mapManagerObj)["init"] = HavelValue(BuiltinFunction([ctx](const std::vector<HavelValue>&) -> HavelResult {
-        if (!coreMapManager && ctx.io.get()) {
-            coreMapManager = std::make_unique<MapManager>(ctx.io.get());
+    (*mapManagerObj)["init"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (!coreMapManager && hostAPI->GetIO()) {
+            coreMapManager = std::make_unique<MapManager>(hostAPI->GetIO());
         }
         return HavelValue(coreMapManager != nullptr);
     }));

@@ -7,6 +7,16 @@
 #include "core/HotkeyManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "window/WindowManager.hpp"
+#include "core/BrightnessManager.hpp"
+#include "media/AudioManager.hpp"
+#include "gui/GUIManager.hpp"
+#include "gui/ScreenshotManager.hpp"
+#include "gui/ClipboardManager.hpp"
+#include "core/automation/PixelAutomation.hpp"
+#include "core/automation/AutomationManager.hpp"
+#include "fs/FileManager.hpp"
+#include "core/process/ProcessManager.hpp"
+#include "core/io/MapManager.hpp"
 #include <QGuiApplication>
 #include <QClipboard>
 
@@ -14,8 +24,25 @@ namespace havel {
 
 HostAPI::HostAPI(std::shared_ptr<IO> io,
                  std::shared_ptr<HotkeyManager> hotkeyManager,
-                 Configs& config)
-    : io(io), hotkeyManager(hotkeyManager), config(config) {}
+                 Configs& config,
+                 WindowManager* windowManager,
+                 BrightnessManager* brightnessManager,
+                 AudioManager* audioManager,
+                 GUIManager* guiManager,
+                 ScreenshotManager* screenshotManager,
+                 ClipboardManager* clipboardManager,
+                 PixelAutomation* pixelAutomation,
+                 AutomationManager* automationManager,
+                 FileManager* fileManager,
+                 ProcessManager* processManager,
+                 MapManager* mapManager)
+    : io(io), hotkeyManager(hotkeyManager), config(config),
+      windowManager(windowManager), brightnessManager(brightnessManager),
+      audioManager(audioManager), guiManager(guiManager),
+      screenshotManager(screenshotManager), clipboardManager(clipboardManager),
+      pixelAutomation(pixelAutomation), automationManager(automationManager),
+      fileManager(fileManager), processManager(processManager),
+      mapManager(mapManager) {}
 
 // Window Operations
 std::string HostAPI::GetActiveWindowTitle() {
@@ -125,5 +152,24 @@ std::vector<std::string> HostAPI::GetGroupNames() {
 std::vector<std::string> HostAPI::GetGroupWindows(const std::string& groupName) {
     return WindowManager::GetGroupWindows(groupName.c_str());
 }
+
+// Direct subsystem access for modules
+IO* HostAPI::GetIO() { return io.get(); }
+std::shared_ptr<HotkeyManager> HostAPI::GetHotkeyManagerShared() { return hotkeyManager; }
+HotkeyManager* HostAPI::GetHotkeyManager() { return hotkeyManager.get(); }
+Configs& HostAPI::GetConfig() { return config; }
+
+// Additional managers for modules
+WindowManager* HostAPI::GetWindowManager() { return windowManager; }
+BrightnessManager* HostAPI::GetBrightnessManager() { return brightnessManager; }
+AudioManager* HostAPI::GetAudioManager() { return audioManager; }
+GUIManager* HostAPI::GetGUIManager() { return guiManager; }
+ScreenshotManager* HostAPI::GetScreenshotManager() { return screenshotManager; }
+ClipboardManager* HostAPI::GetClipboardManager() { return clipboardManager; }
+PixelAutomation* HostAPI::GetPixelAutomation() { return pixelAutomation; }
+AutomationManager* HostAPI::GetAutomationManager() { return automationManager; }
+FileManager* HostAPI::GetFileManager() { return fileManager; }
+ProcessManager* HostAPI::GetProcessManager() { return processManager; }
+MapManager* HostAPI::GetMapManager() { return mapManager; }
 
 } // namespace havel

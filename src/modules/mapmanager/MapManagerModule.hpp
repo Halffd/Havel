@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * MapManagerModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerMapManagerModule(Environment& env, HostContext& ctx);
+void registerMapManagerModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

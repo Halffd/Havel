@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * MediaModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerMediaModule(Environment& env, HostContext& ctx);
+void registerMediaModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

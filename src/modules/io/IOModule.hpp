@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * IOModule.hpp
  *
@@ -15,7 +16,7 @@ class IO;
 
 namespace modules {
 
-void registerIOModule(Environment& env, HostContext& ctx);
+void registerIOModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

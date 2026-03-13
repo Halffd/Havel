@@ -1,12 +1,11 @@
 // HostAPI.hpp
-// IHostAPI interface and HostAPI concrete implementation
-// Composes subsystems rather than making IO do everything
+// Abstract interfaces for host system operations
+// Split into focused interfaces to avoid god interface problem
 
 #pragma once
 #include <string>
 #include <functional>
 #include <vector>
-#include <memory>
 
 namespace havel {
 
@@ -14,58 +13,88 @@ namespace havel {
 using pID = int;
 
 /**
- * Abstract interface for host system operations
- * 
- * This allows the language runtime to depend on an interface
- * rather than concrete implementations.
+ * Window operations interface
  */
-class IHostAPI {
+class IWindowAPI {
 public:
-    virtual ~IHostAPI() = default;
+    virtual ~IWindowAPI() = default;
     
-    // Window Operations
     virtual std::string GetActiveWindowTitle() = 0;
     virtual std::string GetActiveWindowClass() = 0;
     virtual pID GetActiveWindowPID() = 0;
     virtual std::string GetActiveWindowProcess() = 0;
+    virtual bool IsWindowInGroup(const std::string& windowTitle, const std::string& groupName) = 0;
+    virtual std::vector<std::string> GetGroupNames() = 0;
+    virtual std::vector<std::string> GetGroupWindows(const std::string& groupName) = 0;
+};
+
+/**
+ * Hotkey operations interface
+ */
+class IHotkeyAPI {
+public:
+    virtual ~IHotkeyAPI() = default;
     
-    // Hotkey Operations
     virtual bool RegisterHotkey(const std::string& key, std::function<void()> callback) = 0;
     virtual bool UnregisterHotkey(int id) = 0;
     virtual void SuspendHotkeys(bool suspend) = 0;
     virtual bool AreHotkeysSuspended() const = 0;
+    virtual std::string GetCurrentMode() const = 0;
+    virtual void SetCurrentMode(const std::string& mode) = 0;
+};
+
+/**
+ * IO operations interface
+ */
+class IIOAPI {
+public:
+    virtual ~IIOAPI() = default;
     
-    // IO Operations
     virtual void SendKeys(const std::string& keys) = 0;
     virtual void SendKey(const std::string& key, bool press) = 0;
     virtual void MouseMove(int x, int y) = 0;
     virtual void MouseClick(int button) = 0;
     virtual void Scroll(int dy, int dx) = 0;
+};
+
+/**
+ * Clipboard operations interface
+ */
+class IClipboardAPI {
+public:
+    virtual ~IClipboardAPI() = default;
     
-    // Clipboard Operations
     virtual std::string GetClipboardText() = 0;
     virtual void SetClipboardText(const std::string& text) = 0;
+};
+
+/**
+ * Config operations interface
+ */
+class IConfigAPI {
+public:
+    virtual ~IConfigAPI() = default;
     
-    // Config Operations
     virtual std::string GetConfigString(const std::string& key, const std::string& defaultVal) = 0;
     virtual void SetConfig(const std::string& key, const std::string& value) = 0;
+};
+
+/**
+ * Base interface - aggregates all host API interfaces
+ * Modules should depend on specific interfaces when possible
+ */
+class IHostAPI : public IWindowAPI, public IHotkeyAPI, 
+                 public IIOAPI, public IClipboardAPI, public IConfigAPI {
+public:
+    virtual ~IHostAPI() = default;
     
-    // Mode Operations
-    virtual std::string GetCurrentMode() const = 0;
-    virtual void SetCurrentMode(const std::string& mode) = 0;
-    
-    // Window Group Operations
-    virtual bool IsWindowInGroup(const std::string& windowTitle, const std::string& groupName) = 0;
-    virtual std::vector<std::string> GetGroupNames() = 0;
-    virtual std::vector<std::string> GetGroupWindows(const std::string& groupName) = 0;
-    
-    // Direct IO access for modules that need subsystem access
-    virtual class IO* GetIO() = 0;
-    virtual std::shared_ptr<class HotkeyManager> GetHotkeyManagerShared() = 0;
-    virtual class HotkeyManager* GetHotkeyManager() = 0;
+    // Access to Config (needed by many modules)
     virtual class Configs& GetConfig() = 0;
     
-    // Additional managers for modules
+    // Manager access for modules that need direct subsystem access
+    // TODO: Replace with specific operation methods over time
+    virtual class IO* GetIO() = 0;
+    virtual class HotkeyManager* GetHotkeyManager() = 0;
     virtual class WindowManager* GetWindowManager() = 0;
     virtual class BrightnessManager* GetBrightnessManager() = 0;
     virtual class AudioManager* GetAudioManager() = 0;
@@ -80,15 +109,13 @@ public:
 };
 
 /**
- * HostAPI - Concrete implementation of IHostAPI
- * 
- * Composes subsystems (IO, HotkeyManager, Config) rather than
- * making IO do everything. This keeps IO focused on input/output only.
+ * HostAPI - Concrete implementation
+ * Composes subsystems rather than making IO do everything
  */
 class HostAPI : public IHostAPI {
 public:
-    HostAPI(std::shared_ptr<class IO> io,
-            std::shared_ptr<class HotkeyManager> hotkeyManager,
+    HostAPI(class IO* io,
+            class HotkeyManager* hotkeyManager,
             class Configs& config,
             class WindowManager* windowManager = nullptr,
             class BrightnessManager* brightnessManager = nullptr,
@@ -102,64 +129,59 @@ public:
             class ProcessManager* processManager = nullptr,
             class MapManager* mapManager = nullptr);
 
-    // Window Operations
+    // IWindowAPI implementation
     std::string GetActiveWindowTitle() override;
     std::string GetActiveWindowClass() override;
     pID GetActiveWindowPID() override;
     std::string GetActiveWindowProcess() override;
-
-    // Hotkey Operations
+    bool IsWindowInGroup(const std::string& windowTitle, const std::string& groupName) override;
+    std::vector<std::string> GetGroupNames() override;
+    std::vector<std::string> GetGroupWindows(const std::string& groupName) override;
+    
+    // IHotkeyAPI implementation
     bool RegisterHotkey(const std::string& key, std::function<void()> callback) override;
     bool UnregisterHotkey(int id) override;
     void SuspendHotkeys(bool suspend) override;
     bool AreHotkeysSuspended() const override;
-
-    // IO Operations
+    std::string GetCurrentMode() const override;
+    void SetCurrentMode(const std::string& mode) override;
+    
+    // IIOAPI implementation
     void SendKeys(const std::string& keys) override;
     void SendKey(const std::string& key, bool press) override;
     void MouseMove(int x, int y) override;
     void MouseClick(int button) override;
     void Scroll(int dy, int dx) override;
-
-    // Clipboard Operations
+    
+    // IClipboardAPI implementation
     std::string GetClipboardText() override;
     void SetClipboardText(const std::string& text) override;
-
-    // Config Operations
+    
+    // IConfigAPI implementation
     std::string GetConfigString(const std::string& key, const std::string& defaultVal) override;
     void SetConfig(const std::string& key, const std::string& value) override;
-
-    // Mode Operations
-    std::string GetCurrentMode() const override;
-    void SetCurrentMode(const std::string& mode) override;
-
-    // Window Group Operations
-    bool IsWindowInGroup(const std::string& windowTitle, const std::string& groupName) override;
-    std::vector<std::string> GetGroupNames() override;
-    std::vector<std::string> GetGroupWindows(const std::string& groupName) override;
     
-    // Direct subsystem access for modules
-    class IO* GetIO() override;
-    std::shared_ptr<class HotkeyManager> GetHotkeyManagerShared() override;
-    class HotkeyManager* GetHotkeyManager() override;
+    // IHostAPI implementation
     class Configs& GetConfig() override;
     
-    // Additional managers for modules
-    class WindowManager* GetWindowManager() override;
-    class BrightnessManager* GetBrightnessManager() override;
-    class AudioManager* GetAudioManager() override;
-    class GUIManager* GetGUIManager() override;
-    class ScreenshotManager* GetScreenshotManager() override;
-    class ClipboardManager* GetClipboardManager() override;
-    class PixelAutomation* GetPixelAutomation() override;
-    class AutomationManager* GetAutomationManager() override;
-    class FileManager* GetFileManager() override;
-    class ProcessManager* GetProcessManager() override;
-    class MapManager* GetMapManager() override;
+    // Manager access for modules
+    class IO* GetIO();
+    class HotkeyManager* GetHotkeyManager();
+    class WindowManager* GetWindowManager();
+    class BrightnessManager* GetBrightnessManager();
+    class AudioManager* GetAudioManager();
+    class GUIManager* GetGUIManager();
+    class ScreenshotManager* GetScreenshotManager();
+    class ClipboardManager* GetClipboardManager();
+    class PixelAutomation* GetPixelAutomation();
+    class AutomationManager* GetAutomationManager();
+    class FileManager* GetFileManager();
+    class ProcessManager* GetProcessManager();
+    class MapManager* GetMapManager();
 
 private:
-    std::shared_ptr<class IO> io;
-    std::shared_ptr<class HotkeyManager> hotkeyManager;
+    class IO* io;
+    class HotkeyManager* hotkeyManager;
     class Configs& config;
     class WindowManager* windowManager;
     class BrightnessManager* brightnessManager;

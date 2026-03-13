@@ -8,6 +8,7 @@
 #include <functional>
 #include <unordered_map>
 #include <unordered_set>
+#include <stdexcept>
 
 namespace havel {
 
@@ -59,11 +60,11 @@ public:
         if (it == modules.end()) {
             return false;
         }
-        
+
         // Check if host module
         if (hostModules[name]) {
             if (!hostAPI) {
-                return false;
+                throw std::runtime_error("Host module '" + name + "' requires host API");
             }
             auto hostIt = hostFns.find(name);
             if (hostIt != hostFns.end()) {
@@ -72,7 +73,7 @@ public:
         } else {
             it->second(env);
         }
-        
+
         loaded.insert(name);
         return true;
     }

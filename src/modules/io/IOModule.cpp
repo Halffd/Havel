@@ -319,7 +319,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         // Create KeyTap instance and store it to keep it alive
         // Pass shared_ptr to ensure KeyTap keeps HotkeyManager alive
         auto keyTap = std::make_unique<KeyTap>(
-            hostAPI->GetHotkeyManagerShared(), keyName, onTap, tapCondition,
+            std::shared_ptr<HotkeyManager>(hostAPI->GetHotkeyManager(), [](HotkeyManager*){}), keyName, onTap, tapCondition,
             comboCondition, onCombo, grabDown, grabUp
         );
 

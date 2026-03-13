@@ -14,115 +14,53 @@
 - Stdlib functions mixed with core semantics
 - Hard to test language core in isolation
 
-## Phase 1: Extract Host Context (Week 1-2)
+## Phase 1: Extract Host Context (Week 1-2) ✅ DONE
 
-### Goal: Interpreter never directly accesses WindowManager, HotkeyManager, etc.
+**Created:** `src/havel-lang/runtime/HostAPI.hpp`
 
-**Create:** `src/havel-lang/runtime/HostAPI.hpp`
+Abstract interface for host operations. Interpreter will depend on this instead of concrete managers.
+
+## Phase 2: Simple Module System (Week 2-3) ✅ DONE
+
+**Created:** `ModuleLoader` - simple, explicit, no singletons
 
 ```cpp
-// Abstract interface for host operations
-class IHostAPI {
-public:
-    virtual ~IHostAPI() = default;
-    
-    // Window operations
-    virtual std::string GetActiveWindowTitle() = 0;
-    virtual std::string GetActiveWindowClass() = 0;
-    virtual pID GetActiveWindowPID() = 0;
-    
-    // Hotkey operations  
-    virtual bool RegisterHotkey(const std::string& key, std::function<void()> cb) = 0;
-    
-    // ... other host operations
-};
+ModuleLoader loader;
+loader.add("array", registerArrayModule);
+loader.addHost("window", registerWindowModule);
+loader.loadAll(env, hostAPI);
 ```
 
-**Change:** Interpreter takes `IHostAPI*` instead of concrete managers
+**Key principles:**
+- No singletons (each Interpreter has its own loader)
+- No static registration (explicit function calls)
+- No macros (simple registration)
+- Clear stdlib vs host separation
 
-**Benefit:** Language core can be tested without GUI/hotkey infrastructure
+## Phase 3: Split Stdlib (Week 3-4) - IN PROGRESS
 
-## Phase 2: Split Stdlib (Week 2-3)
+Most stdlib modules already exist as separate files. Just need to:
+1. Ensure consistent registration pattern
+2. Register via ModuleLoader
+3. Remove any remaining inline builtins from Interpreter
 
-### Goal: Move builtin functions out of Interpreter
+## Phase 4: Module Loader Cleanup (Week 4-5)
 
-**Current:**
-```cpp
-// In Interpreter.cpp
-void Interpreter::visitArrayLiteral(...) { ... }
-void Interpreter::visitObjectLiteral(...) { ... }
-```
-
-**Should be:**
-```cpp
-// In stdlib/ArrayModule.cpp
-void registerArrayModule(Environment& env) {
-    env.Define("array", BuiltinFunction(...));
-}
-```
-
-**Files to create:**
-- `stdlib/CoreModule.cpp` - core language functions
-- `stdlib/ArrayModule.cpp` - array operations  
-- `stdlib/ObjectModule.cpp` - object operations
-- `stdlib/StringModule.cpp` - string operations (already exists!)
-- `stdlib/MathModule.cpp` - math operations (already exists!)
-
-## Phase 3: Module Loader Cleanup (Week 3-4)
-
-### Goal: Clear separation between language and modules
-
-**Current:** ModuleLoader knows about everything
-
-**Should be:**
-```cpp
-// Language core loads only core modules
-void Interpreter::InitializeStandardLibrary() {
-    registerCoreModule(env);
-    registerArrayModule(env);
-    registerObjectModule(env);
-    // ... only language essentials
-}
-
-// Host loads host modules separately  
-void LoadHostModules(Environment& env, IHostAPI* host) {
-    registerWindowModule(env, host);
-    registerHotkeyModule(env, host);
-    registerAudioModule(env, host);
-    // ... host-specific modules
-}
-```
-
-## Phase 4: Value System Prep for VM (Future)
-
-### Goal: Make value system VM-friendly
-
-**Current:** `std::variant<...>` (fine for interpreter)
-
-**Future VM:** Tagged union
-```cpp
-struct Value {
-    enum Type { NIL, BOOL, NUMBER, OBJ } type;
-    union {
-        bool boolean;
-        double number;
-        Obj* obj;
-    };
-};
-```
-
-**Don't do this yet** - but design current code to make future migration easier
+Split ModuleLoader.cpp into:
+- `StdLibModules.cpp` - registers only stdlib
+- `HostModules.cpp` - registers only host modules
 
 ## Immediate Actions (This Week)
 
-1. **Create IHostAPI interface** - Decouple interpreter from concrete managers
-2. **Extract Array/Object builtins** - Move out of Interpreter.cpp  
-3. **Document module boundaries** - What belongs in core vs modules
+1. ✅ Create IHostAPI interface
+2. ✅ Create simple ModuleLoader
+3. ⏳ Update existing modules to use ModuleLoader
+4. ✅ Document module patterns
 
 ## Success Metrics
 
-- [ ] Interpreter.cpp < 2.5k lines
-- [ ] Zero direct dependencies on WindowManager/HotkeyManager
+- [ ] ModuleLoader used consistently
+- [ ] Zero direct dependencies on WindowManager/HotkeyManager in Interpreter
 - [ ] Language core testable without GUI
 - [ ] Clear module API documentation
 - [ ] Build time < 60 seconds
@@ -151,3 +89,23 @@ The visitor pattern is clean. The environment system works. The module system ex
 The problem is just **coupling**, not fundamental design.
 
 Small, incremental refactors will fix this without breaking everything.
+
+## Simple Module Pattern
+
+```cpp
+// 1. Declare in header
+void registerArrayModule(Environment& env);
+
+// 2. Implement in cpp
+void registerArrayModule(Environment& env) {
+    env.Define("push", BuiltinFunction(...));
+}
+
+// 3. Register in loader
+loader.add("array", registerArrayModule);
+
+// 4. Load
+loader.load(env, "array");
+```
+
+That's it. No macros. No singletons. No magic.

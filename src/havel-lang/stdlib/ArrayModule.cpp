@@ -1,6 +1,6 @@
 /*
  * ArrayModule.cpp
- * 
+ *
  * Array manipulation functions for Havel standard library.
  * Extracted from Interpreter.cpp as part of runtime refactoring.
  */
@@ -10,7 +10,7 @@
 
 namespace havel::stdlib {
 
-void registerArrayModule(Environment* env) {
+void registerArrayModule(Environment& env) {
   // Helper: convert value to string
   auto valueToString = [](const HavelValue& v) -> std::string {
     if (v.isString()) return v.asString();

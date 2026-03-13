@@ -1,6 +1,6 @@
 /*
  * ArrayModule.hpp
- * 
+ *
  * Array manipulation functions for Havel standard library.
  */
 #pragma once
@@ -9,6 +9,7 @@
 
 namespace havel::stdlib {
 
-void registerArrayModule(Environment* env);
+// Module registration function (auto-registered via STD_MODULE_DESC macro)
+void registerArrayModule(Environment& env);
 
 } // namespace havel::stdlib

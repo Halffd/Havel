@@ -1,327 +1,247 @@
-# Havel Module System Guide
+# Havel Module System
 
-## Overview
+## Simple, Explicit Module Loading
 
-Havel uses a clean module system that separates:
-- **Standard Library** - Portable, OS-agnostic functions
-- **Host Modules** - OS-specific integrations (window, audio, hotkeys, etc.)
+No singletons. No static registration. No macro magic.
+
+## Basic Usage
+
+### Register Modules
+
+```cpp
+ModuleLoader loader;
+
+// Register standard library modules
+loader.add("array", registerArrayModule);
+loader.add("string", registerStringModule);
+loader.add("math", registerMathModule);
+
+// Register host modules
+loader.addHost("window", registerWindowModule);
+loader.addHost("audio", registerAudioModule);
+```
+
+### Load Modules
+
+```cpp
+// Load specific module
+loader.load(env, "array");
+loader.load(env, "window", hostAPI);  // Host module needs hostAPI
+
+// Load all registered modules
+loader.loadAll(env, hostAPI);
+```
 
 ## Module Structure
 
 ### Standard Library Module
 
 ```cpp
-// MyModule.hpp
+// ArrayModule.hpp
 #pragma once
-#include "../havel-lang/runtime/Environment.hpp"
+#include "../runtime/Environment.hpp"
 
-namespace havel::modules {
-    void registerMyModule(Environment& env);
+namespace havel::stdlib {
+    void registerArrayModule(Environment& env);
 }
 ```
 
 ```cpp
-// MyModule.cpp
-#include "MyModule.hpp"
-#include "../havel-lang/runtime/ModuleMacros.hpp"
+// ArrayModule.cpp
+#include "ArrayModule.hpp"
 
-namespace havel::modules {
+namespace havel::stdlib {
 
-STD_MODULE_DESC(my, "My custom module") {
-    // Define functions
-    env.Define("hello", HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
-        return HavelValue("Hello from my module!");
-    }));
+void registerArrayModule(Environment& env) {
+    env.Define("push", HavelValue(BuiltinFunction(...)));
+    env.Define("pop", HavelValue(BuiltinFunction(...)));
 }
 
-} // namespace havel::modules
+} // namespace havel::stdlib
 ```
 
 ### Host Module
 
 ```cpp
 // WindowModule.cpp
-#include "../havel-lang/runtime/ModuleMacros.hpp"
+#include "../runtime/ModuleLoader.hpp"
 
-HOST_MODULE_DESC(window, "Window management") {
-    // Check if hostAPI is available
+namespace havel::modules {
+
+void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI) return;
+    
+    env.Define("focus", HavelValue(BuiltinFunction([hostAPI](...) {
+        hostAPI->FocusWindow(...);
+    })));
+}
+
+} // namespace havel::modules
+```
+
+## Registration Pattern
+
+### In Interpreter Initialization
+
+```cpp
+Interpreter::Interpreter() {
+    env = std::make_shared<Environment>();
+    
+    // Create module loader
+    ModuleLoader loader;
+    
+    // Register modules
+    registerStdLibModules(loader);
+    registerHostModules(loader);
+    
+    // Load modules
+    loadStdLibModules(*env, loader);
+    loadHostModules(*env, loader, hostAPI);
+}
+```
+
+### Separate Registration Function
+
+```cpp
+// StdLibModules.cpp
+void registerStdLibModules(ModuleLoader& loader) {
+    loader.add("array", registerArrayModule);
+    loader.add("string", registerStringModule);
+    loader.add("math", registerMathModule);
+}
+```
+
+## Best Practices
+
+### 1. One Function Per Module
+
+```cpp
+// Good
+void registerArrayModule(Environment& env);
+
+// Bad - multiple registration functions
+void registerArrayFunctions(Environment& env);
+void registerArrayMethods(Environment& env);
+```
+
+### 2. Explicit Dependencies
+
+```cpp
+// Good - explicit
+void registerJsonModule(Environment& env) {
+    registerArrayModule(env);  // Explicit dependency
+    registerStringModule(env);
+    // ... json registration
+}
+
+// Bad - implicit via macro
+REGISTER_MODULE_WITH_DEPS(json, (array, string))
+```
+
+### 3. Host Modules Check hostAPI
+
+```cpp
+void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
     if (!hostAPI) {
         havel::error("Window module requires host API");
         return;
     }
+    // ... registration
+}
+```
+
+### 4. Group Related Modules
+
+```cpp
+void registerStdLibModules(ModuleLoader& loader) {
+    // Core types
+    loader.add("array", registerArrayModule);
+    loader.add("string", registerStringModule);
+    loader.add("object", registerObjectModule);
     
-    // Use hostAPI to access window operations
-    env.Define("focus", HavelValue(BuiltinFunction([hostAPI](...) {
-        // hostAPI->FocusWindow(...);
-    }));
+    // Utilities
+    loader.add("math", registerMathModule);
+    loader.add("file", registerFileModule);
+    loader.add("regex", registerRegexModule);
 }
 ```
 
-## Registration Macros
-
-### Standard Library
-
-```cpp
-// Simple registration
-STD_MODULE(array) {
-    // Module code
-}
-
-// With custom description
-STD_MODULE_DESC(math, "Mathematical functions") {
-    // Module code
-}
-
-// With dependencies
-STD_MODULE_DEPS(json, (array, string)) {
-    // Can use array and string functions
-}
-```
-
-### Host Modules
-
-```cpp
-// Simple registration
-HOST_MODULE(window) {
-    // Module code with hostAPI access
-}
-
-// With custom description
-HOST_MODULE_DESC(audio, "Audio control") {
-    // Module code
-}
-
-// With dependencies
-HOST_MODULE_DEPS(media, (window, config)) {
-    // Can use window and config modules
-}
-```
-
-## Module Loading
-
-### Automatic Loading
-
-Modules registered with `autoLoad = true` (default) are loaded automatically:
-
-```cpp
-// In interpreter initialization
-LOAD_ALL_STD_MODULES(env, hostAPI);   // Load all stdlib modules
-LOAD_ALL_HOST_MODULES(env, hostAPI);  // Load all host modules
-```
-
-### Manual Loading
-
-```cpp
-// Load specific module
-LOAD_MODULE(env, array);
-LOAD_HOST_MODULE(env, hostAPI, window);
-
-// Or using API directly
-ModuleRegistry::Load(env, "array");
-ModuleRegistry::Load(env, "window", hostAPI);
-```
-
-### Check Module Status
-
-```cpp
-// Check if registered
-if (ModuleRegistry::IsRegistered("array")) {
-    // Module is available
-}
-
-// Check if loaded
-if (ModuleRegistry::IsLoaded("array")) {
-    // Module is already loaded
-}
-
-// Get module info
-auto* info = ModuleRegistry::GetModuleInfo("array");
-if (info) {
-    print(info->name);
-    print(info->description);
-}
-```
-
-## Module Dependencies
-
-Declare dependencies when registering:
-
-```cpp
-REGISTER_MODULE("json", "JSON parsing", registerJsonModule, true, 
-                {"array", "string"});  // Depends on array and string
-```
-
-Dependencies are loaded automatically before the module.
-
-## Best Practices
-
-### 1. Keep Modules Focused
-
-Each module should have a single responsibility:
-
-```cpp
-// Good
-STD_MODULE(array) { ... }    // Array operations only
-STD_MODULE(string) { ... }   // String operations only
-
-// Bad
-STD_MODULE(utils) { 
-    // Array operations
-    // String operations
-    // Math operations
-    // ... too many responsibilities
-}
-```
-
-### 2. Use HostAPI Interface
-
-Host modules should **only** access system features through `IHostAPI`:
-
-```cpp
-// Good
-HOST_MODULE(window) {
-    env.Define("focus", [hostAPI](...) {
-        hostAPI->FocusWindow(...);  // Uses interface
-    });
-}
-
-// Bad - direct dependency on concrete class
-HOST_MODULE(window) {
-    env.Define("focus", [](...) {
-        WindowManager::Focus(...);  // Direct coupling!
-    });
-}
-```
-
-### 3. Error Handling
-
-Always validate arguments and provide clear error messages:
-
-```cpp
-env.Define("divide", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
-    if (args.size() < 2) {
-        return HavelRuntimeError("divide() requires two arguments");
-    }
-    
-    double b = args[1].asNumber();
-    if (b == 0.0) {
-        return HavelRuntimeError("divide() by zero");
-    }
-    
-    return HavelValue(args[0].asNumber() / b);
-}));
-```
-
-### 4. Document Modules
-
-Add documentation comments:
-
-```cpp
-/**
- * Array Module
- * 
- * Provides array manipulation functions:
- * - array.push(arr, value) - Add element to end
- * - array.pop(arr) - Remove last element
- * - array.map(arr, fn) - Transform elements
- */
-STD_MODULE_DESC(array, "Array operations") {
-    ...
-}
-```
-
-## Module Naming Conventions
-
-- **Lowercase** - `array`, `string`, `math`
-- **Descriptive** - `clipboard`, `brightness`, `screenshot`
-- **No prefixes** - `window.focus` not `window.windowFocus`
-
-## Testing Modules
-
-### Test Standard Library Module
+## Testing
 
 ```cpp
 TEST(ArrayModule, Push) {
     Environment env;
-    registerArrayModule(env);
+    ModuleLoader loader;
+    loader.add("array", registerArrayModule);
+    loader.load(env, "array");
     
-    // Test array.push functionality
-    auto result = env.Execute("let arr = [1,2]; push(arr, 3); return arr");
+    // Test array functions
+    auto result = env.Execute("push([1,2], 3)");
     EXPECT_EQ(result, "[1, 2, 3]");
 }
-```
 
-### Test Host Module
-
-```cpp
 TEST(WindowModule, Focus) {
     Environment env;
     MockHostAPI mockHost;
+    ModuleLoader loader;
+    loader.addHost("window", registerWindowModule);
     
     EXPECT_CALL(mockHost, FocusWindow(_)).Times(1);
-    
-    registerWindowModule(env, &mockHost);
-    env.Execute("window.focus('Firefox')");
+    loader.load(env, "window", &mockHost);
 }
 ```
 
-## Migration Guide
+## Migration from Old System
 
-### Old Style (Before Refactoring)
+### Before
 
 ```cpp
 // In Interpreter.cpp
-void Interpreter::visitSomeNode(...) {
-    WindowManager::Focus(...);  // Direct coupling
+void Interpreter::InitializeStandardLibrary() {
+    registerArrayModule(environment.get());
+    registerMathModule(environment.get());
+    // ...
 }
 ```
 
-### New Style (After Refactoring)
+### After
 
 ```cpp
-// In modules/window/WindowModule.cpp
-HOST_MODULE(window) {
-    env.Define("focus", [hostAPI](...) {
-        hostAPI->FocusWindow(...);  // Through interface
-    });
+// In Interpreter.cpp
+void Interpreter::InitializeStandardLibrary() {
+    ModuleLoader loader;
+    registerStdLibModules(loader);
+    loadStdLibModules(*environment, loader);
 }
 ```
 
-## Troubleshooting
+## File Organization
 
-### Module Not Loading
-
-1. Check module is registered: `ModuleRegistry::IsRegistered("name")`
-2. Check dependencies are satisfied
-3. Check hostAPI is provided for host modules
-
-### Circular Dependencies
-
-Modules cannot have circular dependencies. Restructure:
-
-```cpp
-// Bad - circular
-REGISTER_MODULE("a", ..., ..., {"b"});
-REGISTER_MODULE("b", ..., ..., {"a"});
-
-// Good - extract shared functionality
-REGISTER_MODULE("common", ..., ..., {});
-REGISTER_MODULE("a", ..., ..., {"common"});
-REGISTER_MODULE("b", ..., ..., {"common"});
+```
+src/
+  havel-lang/
+    runtime/
+      ModuleLoader.hpp       # Core module loader
+      StdLibModules.hpp      # Stdlib registration
+      StdLibModules.cpp
+    stdlib/
+      ArrayModule.hpp
+      ArrayModule.cpp
+      StringModule.hpp
+      StringModule.cpp
+      ...
+  modules/
+    window/
+      WindowModule.cpp
+    audio/
+      AudioModule.cpp
+    ...
 ```
 
-### Host API Not Available
+## Key Points
 
-```cpp
-HOST_MODULE(window) {
-    if (!hostAPI) {
-        havel::error("Window module requires host API");
-        return;
-    }
-    // ... rest of module
-}
-```
-
-## Examples
-
-See `src/modules/example/` for complete working examples of both standard library and host modules.
+1. **No singletons** - Each interpreter has its own ModuleLoader
+2. **No static registration** - Explicit registration in code
+3. **No macros** - Simple function calls
+4. **Clear separation** - Stdlib vs host modules
+5. **Test-friendly** - Easy to test modules in isolation

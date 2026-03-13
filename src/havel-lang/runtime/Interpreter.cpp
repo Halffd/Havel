@@ -352,8 +352,8 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   environment->Define("constructor_called", HavelValue(true));
   environment->Define("__pure_mode__", HavelValue(true));
 
-  // Set global interpreter reference for hotkey callbacks
-  havel::modules::SetHotkeyInterpreter(shared_from_this());
+  // Don't set hotkey interpreter in pure mode - no hotkeys available
+  // havel::modules::SetHotkeyInterpreter(shared_from_this());
 
   // Load only stdlib modules in pure mode (no host APIs)
   havel::ModuleLoader loader;

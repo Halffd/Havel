@@ -13,7 +13,7 @@ namespace havel::stdlib {
 
 void registerStringModule(Environment& env) {
   // Helper: convert value to string
-  auto toString = [env](const HavelValue& v) -> std::string {
+  auto toString = [](const HavelValue& v) -> std::string {
     if (v.isString()) return v.asString();
     if (v.isNumber()) {
       double val = v.asNumber();

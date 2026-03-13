@@ -10,13 +10,13 @@
 
 namespace havel::modules {
 
-void registerPixelModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.pixelAutomation) {
+void registerPixelModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI->GetIO() || !hostAPI->GetBrightnessManager()) {
         return;  // Skip if no pixel automation available
     }
     
-    auto& pa = *ctx.pixelAutomation;
-    IO* io = ctx.io.get();  // For mouse position
+    auto& pa = *hostAPI->GetPixelAutomation();
+    IO* io = hostAPI->GetIO();  // For mouse position
     
     // Create pixel module object
     auto pixelObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

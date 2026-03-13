@@ -10,8 +10,8 @@
 
 namespace havel::modules {
 
-void registerBrowserModule(Environment& env, HostContext& ctx) {
-    (void)ctx;  // Browser doesn't need host context
+void registerBrowserModule(Environment& env, IHostAPI* hostAPI) {
+    (void)hostAPI;  // Browser doesn't need host context
     
     // Browser automation via Chrome DevTools Protocol
     auto browserMod = std::make_shared<std::unordered_map<std::string, HavelValue>>();

@@ -23,12 +23,12 @@ void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp) {
     }
 }
 
-void registerHotkeyModule(Environment& env, HostContext& ctx) {
-    if (!ctx.hotkeyManager) {
+void registerHotkeyModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI->GetHotkeyManager()) {
         return;  // Skip if hotkey manager not available
     }
 
-    auto& hotkeyManager = *ctx.hotkeyManager;
+    auto& hotkeyManager = *hostAPI->GetHotkeyManager();
 
     // Create hotkey object
     auto hotkeyObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

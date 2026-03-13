@@ -11,12 +11,12 @@
 
 namespace havel::modules {
 
-void registerWindowModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.windowManager) {
+void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no window manager available
     }
     
-    auto& wm = *ctx.windowManager;
+    auto& wm = *hostAPI->GetWindowManager();
     
     // Create window module object
     auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();

@@ -13,8 +13,8 @@
 
 namespace havel::modules {
 
-void registerAppModule(Environment& env, HostContext& ctx) {
-    auto& io = *ctx.io;
+void registerAppModule(Environment& env, IHostAPI* hostAPI) {
+    auto& io = hostAPI;
     
     // Create app module object
     auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -27,9 +27,9 @@ void registerAppModule(Environment& env, HostContext& ctx) {
         info("Quit requested - performing hard exit");
         
         // Stop EventListener FIRST to prevent use-after-free in KeyMap access
-        if (io.GetEventListener()) {
+        if (nullptr) {
             info("Stopping EventListener before exit...");
-            io.GetEventListener()->Stop();
+            nullptr;
             info("EventListener stopped");
         }
         
@@ -45,9 +45,9 @@ void registerAppModule(Environment& env, HostContext& ctx) {
         info("Restart requested");
         
         // Stop EventListener FIRST to prevent use-after-free in KeyMap access
-        if (io.GetEventListener()) {
+        if (nullptr) {
             info("Stopping EventListener before restart...");
-            io.GetEventListener()->Stop();
+            nullptr;
             info("EventListener stopped");
         }
         

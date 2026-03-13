@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * AudioModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerAudioModule(Environment& env, HostContext& ctx);
+void registerAudioModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

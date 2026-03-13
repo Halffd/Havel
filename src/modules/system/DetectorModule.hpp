@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * DetectorModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerDetectorModule(Environment& env, HostContext& ctx);
+void registerDetectorModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

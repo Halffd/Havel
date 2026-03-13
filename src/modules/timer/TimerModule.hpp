@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * TimerModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerTimerModule(Environment& env, HostContext& ctx);
+void registerTimerModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * FileManagerModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerFileManagerModule(Environment& env, HostContext& ctx);
+void registerFileManagerModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

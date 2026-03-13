@@ -38,32 +38,32 @@ namespace havel {
  * These modules require IHostAPI
  */
 void registerHostModules(ModuleLoader& loader) {
-    loader.addHost("window", registerWindowModule);
-    loader.addHost("brightness", registerBrightnessModule);
-    loader.addHost("audio", registerAudioModule);
-    loader.addHost("screenshot", registerScreenshotModule);
-    loader.addHost("clipboard", registerClipboardModule);
-    loader.addHost("pixel", registerPixelModule);
-    loader.addHost("automation", registerAutomationModule);
-    loader.addHost("launcher", registerLauncherModule);
-    loader.addHost("media", registerMediaModule);
-    loader.addHost("help", registerHelpModule);
-    loader.addHost("filesystem", registerFileManagerModule);
-    loader.addHost("system", registerSystemModule);
-    loader.addHost("gui", registerGUIModule);
-    loader.addHost("alttab", registerAltTabModule);
-    loader.addHost("mapmanager", registerMapManagerModule);
-    loader.addHost("io", registerIOModule);
-    loader.addHost("async", registerAsyncModule);
-    loader.addHost("timer", registerTimerModule);
-    loader.addHost("config", registerConfigModule);
-    loader.addHost("app", registerAppModule);
-    loader.addHost("http", registerHTTPModule);
-    loader.addHost("runtime", registerRuntimeModule);
-    loader.addHost("mode", registerModeModule);
-    loader.addHost("hotkey", registerHotkeyModule);
-    loader.addHost("browser", registerBrowserModule);
-    loader.addHost("ffi", registerFFIModule);
+    loader.addHost("window", modules::registerWindowModule);
+    loader.addHost("brightness", modules::registerBrightnessModule);
+    loader.addHost("audio", modules::registerAudioModule);
+    loader.addHost("screenshot", modules::registerScreenshotModule);
+    loader.addHost("clipboard", modules::registerClipboardModule);
+    loader.addHost("pixel", modules::registerPixelModule);
+    loader.addHost("automation", modules::registerAutomationModule);
+    loader.addHost("launcher", modules::registerLauncherModule);
+    loader.addHost("media", modules::registerMediaModule);
+    loader.addHost("help", modules::registerHelpModule);
+    loader.addHost("filesystem", modules::registerFileManagerModule);
+    loader.addHost("system", modules::registerSystemModule);
+    loader.addHost("gui", modules::registerGUIModule);
+    loader.addHost("alttab", modules::registerAltTabModule);
+    loader.addHost("mapmanager", modules::registerMapManagerModule);
+    loader.addHost("io", modules::registerIOModule);
+    loader.addHost("async", modules::registerAsyncModule);
+    loader.addHost("timer", modules::registerTimerModule);
+    loader.addHost("config", modules::registerConfigModule);
+    loader.addHost("app", modules::registerAppModule);
+    loader.addHost("http", modules::registerHTTPModule);
+    // loader.addHost("runtime", modules::registerRuntimeModule);  // Needs Interpreter*
+    loader.addHost("mode", modules::registerModeModule);
+    loader.addHost("hotkey", modules::registerHotkeyModule);
+    loader.addHost("browser", modules::registerBrowserModule);
+    // loader.addHost("ffi", modules::ffi::registerFFIModule);  // No IHostAPI
 }
 
 /**

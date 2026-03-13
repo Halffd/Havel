@@ -10,8 +10,8 @@
 
 namespace havel::modules {
 
-void registerHelpModule(Environment& env, HostContext& ctx) {
-    (void)ctx;  // Help doesn't need host context
+void registerHelpModule(Environment& env, IHostAPI* hostAPI) {
+    (void)hostAPI;  // Help doesn't need host context
 
     env.Define("help", HavelValue(BuiltinFunction(
         [](const std::vector<HavelValue>& args) -> HavelResult {

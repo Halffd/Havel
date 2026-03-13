@@ -10,12 +10,12 @@
 
 namespace havel::modules {
 
-void registerAudioModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.audioManager) {
+void registerAudioModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no audio manager available
     }
     
-    auto& am = *ctx.audioManager;
+    auto& am = *hostAPI->GetAudioManager();
     
     // Create audio module object
     auto audioObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * HTTPModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerHTTPModule(Environment& env, HostContext& ctx);
+void registerHTTPModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

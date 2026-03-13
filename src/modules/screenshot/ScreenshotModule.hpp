@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * ScreenshotModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerScreenshotModule(Environment& env, HostContext& ctx);
+void registerScreenshotModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

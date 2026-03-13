@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * PixelModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerPixelModule(Environment& env, HostContext& ctx);
+void registerPixelModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

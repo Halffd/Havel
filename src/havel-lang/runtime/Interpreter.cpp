@@ -310,8 +310,23 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
-  // Create HostAPI wrapper (composes IO, HotkeyManager, Config)
-  auto hostAPI = std::make_shared<HostAPI>(hostContext.io, hostContext.hotkeyManager, Configs::Get());
+  // Create HostAPI wrapper (composes IO, HotkeyManager, Config and other managers)
+  auto hostAPI = std::make_shared<HostAPI>(
+      hostContext.io,
+      hostContext.hotkeyManager,
+      Configs::Get(),
+      hostContext.windowManager,
+      hostContext.brightnessManager,
+      hostContext.audioManager,
+      hostContext.guiManager,
+      hostContext.screenshotManager,
+      hostContext.clipboardManager,
+      nullptr,  // pixelAutomation - not in HostContext
+      hostContext.automationManager,
+      hostContext.fileManager,
+      hostContext.processManager,
+      nullptr   // mapManager - not in HostContext
+  );
 
   // Load all modules (stdlib + host)
   havel::modules::loadAllModules(*environment, hostAPI.get());

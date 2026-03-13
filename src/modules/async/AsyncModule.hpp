@@ -1,3 +1,4 @@
+#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * AsyncModule.hpp
  * 
@@ -13,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerAsyncModule(Environment& env, HostContext& ctx);
+void registerAsyncModule(Environment& env, IHostAPI* hostAPI);
 
 } // namespace modules
 } // namespace havel

@@ -55,12 +55,12 @@ static std::optional<int> parseMouseButton(const HavelValue& value) {
     return std::nullopt;
 }
 
-void registerIOModule(Environment& env, HostContext& ctx) {
-    if (!ctx.isValid() || !ctx.io) {
+void registerIOModule(Environment& env, IHostAPI* hostAPI) {
+    if (!hostAPI || !hostAPI->GetIO()) {
         return;  // Skip if IO not available
     }
 
-    auto& io = *ctx.io;
+    auto& io = *hostAPI->GetIO();
 
     // Create io module object
     auto ioObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -248,7 +248,7 @@ void registerIOModule(Environment& env, HostContext& ctx) {
     // KeyTap - Advanced hotkey with conditions
     // =========================================================================
     
-    (*ioObj)["keyTap"] = HavelValue(BuiltinFunction([&io, &ctx](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["keyTap"] = HavelValue(BuiltinFunction([&io, &hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io.keyTap() requires at least a key name");
         }
@@ -319,7 +319,7 @@ void registerIOModule(Environment& env, HostContext& ctx) {
         // Create KeyTap instance and store it to keep it alive
         // Pass shared_ptr to ensure KeyTap keeps HotkeyManager alive
         auto keyTap = std::make_unique<KeyTap>(
-            ctx.hotkeyManager, keyName, onTap, tapCondition,
+            hostAPI->GetHotkeyManagerShared(), keyName, onTap, tapCondition,
             comboCondition, onCombo, grabDown, grabUp
         );
 

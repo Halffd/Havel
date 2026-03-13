@@ -29,7 +29,9 @@
 #include "stdlib/RegexModule.hpp"  // For registerRegexModule
 #include "stdlib/ProcessModule.hpp"  // For registerProcessModule
 #include "../../modules/hotkey/HotkeyModule.hpp"  // For SetHotkeyInterpreter
-#include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadHostModules
+#include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadAllModules
+#include "StdLibModules.hpp"  // For registerStdLibModules, loadStdLibModules
+#include "HostAPI.hpp"  // For HostAPI wrapper
 #include "semantic/SemanticAnalyzer.hpp"  // For semantic analysis
 #include <QBuffer>
 #include <QClipboard>
@@ -308,9 +310,12 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
-  // Load all host modules (includes io module with keyTap, etc.)
-  havel::modules::loadHostModules(*environment, this);
-  
+  // Create HostAPI wrapper (composes IO, HotkeyManager, Config)
+  auto hostAPI = std::make_shared<HostAPI>(hostContext.io, hostContext.hotkeyManager, Configs::Get());
+
+  // Load all modules (stdlib + host)
+  havel::modules::loadAllModules(*environment, hostAPI.get());
+
   info("Interpreter initialized (hotkey interpreter will be set by caller)");
 }
 
@@ -318,9 +323,6 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
 void Interpreter::RegisterForHotkeys() {
   auto self = shared_from_this();
   havel::modules::SetHotkeyInterpreter(self);
-  // Register hotkey module now that hotkeyManager is available.
-  // This ensures Hotkey() exists at runtime for scripts.
-  havel::modules::registerHotkeyModule(*environment, hostContext);
   info("Registered interpreter {} for hotkey callbacks", (void*)this);
 }
 
@@ -334,11 +336,14 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   environment = std::make_shared<Environment>();
   environment->Define("constructor_called", HavelValue(true));
   environment->Define("__pure_mode__", HavelValue(true));
-  
+
   // Set global interpreter reference for hotkey callbacks
   havel::modules::SetHotkeyInterpreter(shared_from_this());
-  
-  havel::modules::loadHostModules(*environment, this);
+
+  // Load only stdlib modules in pure mode (no host APIs)
+  havel::ModuleLoader loader;
+  havel::registerStdLibModules(loader);
+  havel::loadStdLibModules(*environment, loader);
 }
 
 HavelResult Interpreter::Execute(const std::string &sourceCode) {

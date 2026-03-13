@@ -7,7 +7,7 @@
 #include "utils/Util.hpp"
 #include "../../host/HostContext.hpp"
 #include "RuntimeServices.hpp"
-#include "Module.hpp"
+#include "ModuleLoader.hpp"
 #include "core/io/KeyTap.hpp"
 #include "semantic/SemanticAnalyzer.hpp"
 

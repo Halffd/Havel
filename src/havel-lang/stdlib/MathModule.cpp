@@ -9,7 +9,7 @@
 
 namespace havel::stdlib {
 
-void registerMathModule(Environment* env) {
+void registerMathModule(Environment& env) {
   auto mathObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
   auto& math = *mathObj;
   
@@ -277,7 +277,7 @@ void registerMathModule(Environment* env) {
   });
 
   // Register math module in environment
-  env->Define("math", HavelValue(mathObj));
+  env.Define("math", HavelValue(mathObj));
 }
 
 } // namespace havel::stdlib

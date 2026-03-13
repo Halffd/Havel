@@ -9,6 +9,6 @@
 
 namespace havel::stdlib {
 
-void registerUtilityModule(Environment* env);
+void registerUtilityModule(Environment& env);
 
 } // namespace havel::stdlib

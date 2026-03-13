@@ -20,15 +20,15 @@ namespace havel {
  * These modules have NO host dependencies
  */
 void registerStdLibModules(ModuleLoader& loader) {
-    loader.add("array", registerArrayModule);
-    loader.add("math", registerMathModule);
-    loader.add("string", registerStringModule);
-    loader.add("object", registerObjectModule);
-    loader.add("file", registerFileModule);
-    loader.add("regex", registerRegexModule);
-    loader.add("process", registerProcessModule);
-    loader.add("utility", registerUtilityModule);
-    loader.add("type", registerTypeModule);
+    loader.add("array", stdlib::registerArrayModule);
+    loader.add("math", stdlib::registerMathModule);
+    loader.add("string", stdlib::registerStringModule);
+    loader.add("object", stdlib::registerObjectModule);
+    loader.add("file", stdlib::registerFileModule);
+    loader.add("regex", stdlib::registerRegexModule);
+    loader.add("process", stdlib::registerProcessModule);
+    loader.add("utility", stdlib::registerUtilityModule);
+    loader.add("type", stdlib::registerTypeModule);
 }
 
 /**

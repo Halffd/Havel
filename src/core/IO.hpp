@@ -5,6 +5,7 @@
 #include "core/io/HotkeyExecutor.hpp"
 #include "core/io/KeyMap.hpp"
 #include "core/io/MouseController.hpp"
+#include "runtime/HostAPI.hpp"
 #include "types.hpp"
 #include "x11.h"
 #include <X11/extensions/XInput2.h>
@@ -239,6 +240,7 @@ public:
   // Window information methods
   std::string GetActiveWindowTitle();
   std::string GetActiveWindowClass();
+  pID GetActiveWindowPID();
   std::string GetActiveWindowProcess();
 
   // Key sending methods
@@ -285,6 +287,7 @@ public:
   // Mouse methods
   bool MouseMove(int dx, int dy, int speed = 1, float accel = 1.0f);
   bool MouseMoveTo(int targetX, int targetY, int speed = 1, float accel = 1.0f);
+  void Scroll(int dy, int dx);
   bool ClickAt(int x, int y, int button = 1, int speed = 1, float accel = 1.0f);
   std::pair<int, int> GetMousePosition();
 

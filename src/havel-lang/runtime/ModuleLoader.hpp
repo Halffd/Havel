@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace havel {
 
@@ -29,6 +30,8 @@ using HostModuleFn = std::function<void(Environment&, IHostAPI*)>;
  */
 class ModuleLoader {
 public:
+    ModuleLoader() = default;  // Public constructor
+    
     /**
      * Register a standard library module
      */

@@ -12,7 +12,7 @@
 
 namespace havel::stdlib {
 
-void registerProcessModule(Environment* env) {
+void registerProcessModule(Environment& env) {
     // Create process namespace
     auto processObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
@@ -347,7 +347,7 @@ void registerProcessModule(Environment* env) {
     }));
 
     // Register process namespace
-    env->Define("process", HavelValue(processObj));
+    env.Define("process", HavelValue(processObj));
 }
 
 } // namespace havel::stdlib

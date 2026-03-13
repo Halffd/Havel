@@ -514,8 +514,18 @@ use io
 mouseMove(100, 200)     // Move mouse
 click()                  // Click mouse
 send("hello")            // Send keystrokes
-keyDown("ctrl")           // Key down
-keyUp("ctrl")             // Key up
+keyDown("ctrl")          // Key down
+keyUp("ctrl")            // Key up
+suspend()                // Toggle hotkey suspend
+
+// Global convenience functions (no module prefix needed)
+click()                  // Left click
+doubleClick()            // Double click
+mousePress()             // Press mouse button
+mouseRelease()           // Release mouse button
+mouseMove(x, y)          // Move to position
+mouseMoveRel(dx, dy)     // Relative movement
+scroll(dy, dx)           // Scroll
 ```
 
 #### Media Module (Media Control)
@@ -544,8 +554,14 @@ size("/path/to/file")           // Get file size
 // Direct access
 use clipboard
 get()                    // Get clipboard content
-set("text")               // Set clipboard content
-clear()                   // Clear clipboard
+set("text")              // Set clipboard content
+clear()                  // Clear clipboard
+send()                   // Send clipboard as keystrokes
+send("hello")            // Send text as keystrokes
+
+// Global variable
+$Clipboard = "text"      // Set clipboard
+print($Clipboard)        // Get clipboard
 ```
 
 #### Text Module (Text Processing)
@@ -802,6 +818,12 @@ F2 when class firefox => { ... }
 F1 when process steam => { ... }
 ```
 
+**Window group conditions:**
+```havel
+F1 when group browsers => { ... }
+F2 when group terminals => { ... }
+```
+
 **Combined conditions:**
 ```havel
 F1 when mode gaming && title Steam => { ... }
@@ -939,9 +961,11 @@ Language Runtime
 Standard Library Modules
 Clipboard Module
 clipboard.get        // Get clipboard content
-clipboard.set(text)   // Set clipboard content  
+clipboard.set(text)  // Set clipboard content
 clipboard.clear()    // Clear clipboard
+clipboard.send([text]) // Send clipboard/text as keystrokes
 clipboard.history    // Access clipboard history
+$Clipboard           // Global clipboard variable (get/set)
 
 Text Processing Module
 text.upper           // Convert to uppercase
@@ -959,6 +983,10 @@ window.min()         // Minimize window
 window.max()         // Maximize window
 window.getMonitors() // Get array of monitor info objects
 window.getMonitorArea() // Get combined area of all monitors
+window.getGroups()   // Get all window group names
+window.getGroupWindows(group) // Get windows in group
+window.isWindowInGroup(title, group) // Check if window in group
+window.findInGroup(group) // Find first window in group
 
 System Integration Module
 system.run(cmd)      // Execute system command
@@ -1267,7 +1295,172 @@ havel run hello.hv
 
 ## New Features (Latest)
 
-### Spread Operator (`...`)
+### Hotkey Self-Management with `this` Context
+
+Hotkeys can now manage themselves from within their action blocks using the `this` context:
+
+```havel
+// Self-disable based on window title
+Enter if mode == "default" => { 
+    if window.title == "vscode" {
+        print("Disabling " + this.alias)
+        this.disable()
+    } else {
+        clipboard.send()
+    }
+}
+
+// Self-remove after first use
+F1 => {
+    print("This hotkey only works once!")
+    this.remove()  // Remove myself
+}
+
+// Toggle based on state
+F2 => {
+    this.toggle()
+    print("Hotkey is now " + (isEnabled ? "enabled" : "disabled"))
+}
+```
+
+**Available `this` Properties:**
+- `this.id` - Hotkey ID
+- `this.alias` - Hotkey alias/name
+- `this.key` - Hotkey key combination
+- `this.condition` - Condition string
+
+**Available `this` Methods:**
+- `this.enable()` - Enable this hotkey
+- `this.disable()` - Disable this hotkey
+- `this.toggle()` - Toggle hotkey enabled state
+- `this.remove()` - Remove this hotkey
+
+### Window Groups
+
+Organize windows into named groups for easier management:
+
+```havel
+// Config format (havel.cfg)
+[window]
+window.group.browsers = title Firefox
+window.group.browsers = title Chrome
+window.group.terminals = title Alacritty
+window.group.terminals = class kitty
+window.group.music = title Spotify
+```
+
+**Window Module Functions:**
+```havel
+// Get all groups
+let groups = window.getGroups()
+
+// Get windows in a group
+let wins = window.getGroupWindows("browsers")
+
+// Check if current window is in group
+if window.isWindowInGroup(window.title, "browsers") {
+    print("Browser is active")
+}
+
+// Find window in group
+let win = window.findInGroup("terminals")
+if win.found {
+    print("Found terminal: " + win.id)
+}
+```
+
+**Conditional Hotkeys with Groups:**
+```havel
+// Hotkey only active when browser is focused
+F1 when group browsers => {
+    print("Browser action")
+}
+
+// Multiple conditions
+F2 when group terminals && mode == "work" => {
+    print("Work terminal action")
+}
+```
+
+### String Repetition with `*`
+
+Python-style string repetition:
+
+```havel
+// String * Number
+"abc" * 3      // "abcabcabc"
+"-" * 5        // "-----"
+"hi" * 0       // ""
+
+// Number * String (commutative)
+3 * "abc"      // "abcabcabc"
+5 * "-"        // "-----"
+
+// With variables
+let sep = "-"
+print(sep * 40)  // Print separator line
+
+// In expressions
+print("=" * 60)
+```
+
+### Global Clipboard Variable `$Clipboard`
+
+Read/write clipboard using a global variable:
+
+```havel
+// Set clipboard
+$Clipboard = "hello"
+$Clipboard = 123
+
+// Get clipboard
+print($Clipboard)
+let text = $Clipboard
+
+// Use in expressions
+if $Clipboard.contains("http") {
+    run($Clipboard)  // Open URL
+}
+```
+
+### Clipboard Send Function
+
+Send clipboard content or text as keystrokes:
+
+```havel
+// Send current clipboard content
+clipboard.send()
+
+// Send specific text
+clipboard.send("hello world")
+
+// Send number
+clipboard.send(123)
+```
+
+### IO Suspend/Resume
+
+Toggle hotkey processing on/off:
+
+```havel
+io.suspend()    // Toggle suspend state
+```
+
+### Global Convenience Functions
+
+Common mouse operations available as globals:
+
+```havel
+click()           // Left click
+doubleClick()     // Double click
+mousePress()      // Press mouse button
+mouseRelease()    // Release mouse button
+mouseMove(x, y)   // Move to position
+mouseMoveRel(dx, dy)  // Relative movement
+scroll(dy, dx)    // Scroll (vertical, horizontal)
+```
+
+### Spread Operator (`*`)
 
 The spread operator expands arrays and objects inline, similar to JavaScript.
 

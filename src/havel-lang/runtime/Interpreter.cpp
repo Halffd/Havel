@@ -822,6 +822,11 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
           std::string processName = WindowManager::getProcessName(pid);
           return processName.find(condValue) != std::string::npos;
         });
+      } else if (condType == "group") {
+        contextChecks.push_back([this, condValue]() {
+          std::string activeTitle = hostContext.windowManager->GetActiveWindowTitle();
+          return WindowManager::IsWindowInGroup(activeTitle.c_str(), condValue.c_str());
+        });
       }
     }
   }

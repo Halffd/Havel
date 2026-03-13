@@ -20,6 +20,7 @@
 
 namespace havel {
 // Define global variables
+typedef std::map<std::string, std::vector<std::string>> group;
 static group groups;
 
 #ifdef _WIN32
@@ -28,6 +29,31 @@ static str defaultTerminal = "Cmd";
 str WindowManager::defaultTerminal = "alacritty"; // gnome-terminal
 static cstr globalShell = "zsh";
 #endif
+
+// Load window groups from config
+void WindowManager::LoadGroupsFromConfig() {
+    auto& config = Configs::Get();
+    
+    // Get all keys from config and find window groups
+    auto allKeys = config.GetAllKeys();
+    for (const auto& key : allKeys) {
+        if (key.find("window.group.") == 0) {
+            // Extract group name and window identifier
+            std::string rest = key.substr(13); // Skip "window.group."
+            size_t dotPos = rest.find('.');
+            if (dotPos != std::string::npos) {
+                std::string groupName = "group." + rest.substr(0, dotPos);
+                std::string identifier = config.Get<std::string>(key, "");
+                if (!identifier.empty()) {
+                    AddGroup(groupName, identifier);
+                    debug("Loaded window group: {} = {}", groupName, identifier);
+                }
+            }
+        }
+    }
+    
+    info("Loaded {} window groups from config", groups.size());
+}
 
 // Initialize the static previousActiveWindow variable
 XWindow havel::WindowManager::previousActiveWindow = x11::XNone;
@@ -45,6 +71,9 @@ WindowManager::WindowManager() {
   if (IsX11()) {
     InitializeX11();
   }
+  
+  // Load window groups from config
+  LoadGroupsFromConfig();
 #endif
 }
 
@@ -734,6 +763,34 @@ wID WindowManager::FindWindowInGroup(cstr groupName) {
     }
   }
   return 0;
+}
+
+std::vector<std::string> WindowManager::GetGroupNames() {
+  std::vector<std::string> names;
+  for (const auto& [name, windows] : groups) {
+    names.push_back(name);
+  }
+  return names;
+}
+
+std::vector<std::string> WindowManager::GetGroupWindows(cstr groupName) {
+  auto it = groups.find(groupName);
+  if (it != groups.end()) {
+    return it->second;
+  }
+  return {};
+}
+
+bool WindowManager::IsWindowInGroup(cstr windowTitle, cstr groupName) {
+  auto it = groups.find(groupName);
+  if (it != groups.end()) {
+    for (const auto& identifier : it->second) {
+      if (identifier == windowTitle) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 wID WindowManager::NewWindow(cstr name, std::vector<int> *dimensions,

@@ -8,15 +8,14 @@
 
 namespace havel::stdlib {
 
-void registerObjectModule(Environment* env) {
-  if (!env) return;
+void registerObjectModule(Environment& env) {
 
   // ============================================================================
   // Object static methods
   // ============================================================================
 
   // Object.keys(obj) - get array of keys (sorted for deterministic order)
-  env->Define("Object.keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.keys() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.keys() arg must be object");
 
@@ -35,7 +34,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.values(obj) - get array of values (sorted by key for deterministic order)
-  env->Define("Object.values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.values() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.values() arg must be object");
 
@@ -59,7 +58,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.entries(obj) - get array of [key, value] pairs (sorted by key)
-  env->Define("Object.entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.entries() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.entries() arg must be object");
 
@@ -86,7 +85,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.assign(target, ...sources) - copy properties from sources to target
-  env->Define("Object.assign", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.assign", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.assign() requires target object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.assign() target must be object");
 
@@ -107,7 +106,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.hasOwn(obj, key) - check if object has own property
-  env->Define("Object.hasOwn", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.hasOwn", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("Object.hasOwn() requires (obj, key)");
     if (!args[0].isObject()) return HavelRuntimeError("Object.hasOwn() first arg must be object");
 
@@ -127,7 +126,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.freeze(obj) - mark object as immutable (shallow freeze)
-  env->Define("Object.freeze", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.freeze", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.freeze() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.freeze() arg must be object");
     // Note: This is a no-op for now, just returns the object
@@ -136,7 +135,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.seal(obj) - seal object (prevent new properties)
-  env->Define("Object.seal", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.seal", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.seal() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("Object.seal() arg must be object");
     // Note: This is a no-op for now
@@ -144,7 +143,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.fromEntries(entries) - create object from entries array
-  env->Define("Object.fromEntries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.fromEntries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("Object.fromEntries() requires entries array");
     if (!args[0].isArray()) return HavelRuntimeError("Object.fromEntries() arg must be array");
 
@@ -173,7 +172,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.getOwnPropertyDescriptor(obj, key) - get property descriptor
-  env->Define("Object.getOwnPropertyDescriptor", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("Object.getOwnPropertyDescriptor", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("Object.getOwnPropertyDescriptor() requires (obj, key)");
     if (!args[0].isObject()) return HavelRuntimeError("Object.getOwnPropertyDescriptor() first arg must be object");
 
@@ -201,7 +200,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.keys equivalent as standalone function (for pipeline style, sorted)
-  env->Define("keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("keys() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("keys() arg must be object");
 
@@ -220,7 +219,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.values equivalent as standalone function (sorted by key)
-  env->Define("values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("values", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("values() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("values() arg must be object");
 
@@ -244,7 +243,7 @@ void registerObjectModule(Environment* env) {
   }));
 
   // Object.entries equivalent as standalone function (sorted by key)
-  env->Define("entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("entries", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("entries() requires object");
     if (!args[0].isObject()) return HavelRuntimeError("entries() arg must be object");
 

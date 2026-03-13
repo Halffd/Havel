@@ -10,7 +10,7 @@
 
 namespace havel::stdlib {
 
-void registerFileModule(Environment* env) {
+void registerFileModule(Environment& env) {
   // Helper: convert value to string
   auto valueToString = [](const HavelValue& v) -> std::string {
     if (v.isString()) return v.asString();
@@ -78,7 +78,7 @@ void registerFileModule(Environment* env) {
   });
 
   // Register file namespace
-  env->Define("file", HavelValue(fileObj));
+  env.Define("file", HavelValue(fileObj));
 }
 
 } // namespace havel::stdlib

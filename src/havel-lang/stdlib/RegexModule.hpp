@@ -9,6 +9,6 @@
 
 namespace havel::stdlib {
 
-void registerRegexModule(Environment* env);
+void registerRegexModule(Environment& env);
 
 } // namespace havel::stdlib

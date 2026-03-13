@@ -81,7 +81,7 @@ void registerArrayModule(Environment& env) {
   // ============================================================================
 
   // map(array, function) - transform array elements
-  env->Define("map", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("map", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("map() requires (array, function)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("map() first arg must be array");
 
@@ -100,7 +100,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // filter(array, predicate) - filter array elements
-  env->Define("filter", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("filter", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("filter() requires (array, predicate)");
     if (!args[0].isArray()) return HavelRuntimeError("filter() first arg must be array");
 
@@ -121,7 +121,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // reduce(array, function, initial) - reduce array to single value
-  env->Define("reduce", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("reduce", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 3) return HavelRuntimeError("reduce() requires (array, function, initial)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("reduce() first arg must be array");
 
@@ -140,7 +140,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // forEach(array, function) - execute function for each element
-  env->Define("forEach", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("forEach", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("forEach() requires (array, function)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("forEach() first arg must be array");
 
@@ -156,7 +156,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // find(array, predicate) - find first matching element
-  env->Define("find", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("find", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("find() requires (array, predicate)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("find() first arg must be array");
 
@@ -176,7 +176,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // some(array, predicate) - check if any element matches
-  env->Define("some", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("some", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("some() requires (array, predicate)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("some() first arg must be array");
 
@@ -196,7 +196,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // every(array, predicate) - check if all elements match
-  env->Define("every", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("every", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("every() requires (array, predicate)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("every() first arg must be array");
 
@@ -217,7 +217,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // includes(array, value) - check if array contains value
-  env->Define("includes", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("includes", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("includes() requires (array, value)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("includes() first arg must be array");
 
@@ -239,7 +239,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // indexOf(array, value) - find index of value
-  env->Define("indexOf", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("indexOf", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("indexOf() requires (array, value)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("indexOf() first arg must be array");
 
@@ -266,7 +266,7 @@ void registerArrayModule(Environment& env) {
   // ============================================================================
 
   // push(array, value) - add element to end
-  env->Define("push", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("push", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("push() requires (array, value)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("push() first arg must be array");
 
@@ -277,7 +277,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // pop(array) - remove and return last element
-  env->Define("pop", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("pop", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("pop() requires array");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("pop() arg must be array");
 
@@ -290,7 +290,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // shift(array) - remove and return first element
-  env->Define("shift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("shift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("shift() requires array");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("shift() arg must be array");
 
@@ -303,7 +303,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // unshift(array, value) - add element to beginning
-  env->Define("unshift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("unshift", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("unshift() requires (array, value)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("unshift() first arg must be array");
 
@@ -314,7 +314,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // concat(array1, array2, ...) - concatenate arrays
-  env->Define("concat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("concat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("concat() requires at least one array");
     
     auto result = std::make_shared<std::vector<HavelValue>>();
@@ -334,7 +334,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // slice(array, start, end) - extract portion of array
-  env->Define("slice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("slice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("slice() requires array");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("slice() first arg must be array");
 
@@ -364,7 +364,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // splice(array, start, deleteCount, ...items) - modify array in place
-  env->Define("splice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("splice", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("splice() requires (array, start)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("splice() first arg must be array");
 
@@ -399,7 +399,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // reverse(array) - reverse array in place
-  env->Define("reverse", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("reverse", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("reverse() requires array");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("reverse() arg must be array");
 
@@ -411,7 +411,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // flat(array, depth) - flatten nested arrays
-  env->Define("flat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("flat", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("flat() requires array");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("flat() first arg must be array");
 
@@ -443,7 +443,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // flatMap(array, function) - map then flatten
-  env->Define("flatMap", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("flatMap", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() < 2) return HavelRuntimeError("flatMap() requires (array, function)");
     if (!args[0].is<HavelArray>()) return HavelRuntimeError("flatMap() first arg must be array");
 
@@ -477,7 +477,7 @@ void registerArrayModule(Environment& env) {
 
   // join(array, separator) - join array elements into string
   // Also supports strings (passthrough for pipeline compatibility)
-  env->Define("join", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("join", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("join() requires array or string");
     
     // If first arg is string, return it unchanged (pipeline passthrough)
@@ -501,7 +501,7 @@ void registerArrayModule(Environment& env) {
   }));
 
   // split(text, delimiter) - split string into array
-  env->Define("split", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("split", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("split() requires string");
     std::string text = valueToString(args[0]);
     std::string delimiter = args.size() > 1 ? valueToString(args[1]) : ",";

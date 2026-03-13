@@ -12,7 +12,7 @@
 
 namespace havel::stdlib {
 
-void registerTypeModule(Environment* env) {
+void registerTypeModule(Environment& env) {
   // Helper: convert value to number
   auto toNumber = [](const HavelValue& v) -> double {
     if (v.is<double>()) return v.get<double>();
@@ -84,7 +84,7 @@ void registerTypeModule(Environment* env) {
   // ============================================================================
 
   // int(x) - truncate to integer
-  env->Define("int", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("int", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("int() requires an argument");
     const auto& arg = args[0];
     if (arg.isNumber()) {
@@ -103,7 +103,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // num(x) - convert to double
-  env->Define("num", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("num", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("num() requires an argument");
     const auto& arg = args[0];
     if (arg.isNumber()) {
@@ -121,13 +121,13 @@ void registerTypeModule(Environment* env) {
   }));
 
   // str(x) - convert to string
-  env->Define("str", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("str", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("str() requires an argument");
     return HavelValue(toString(args[0]));
   }));
 
   // list(...) - construct list from arguments or convert iterable
-  env->Define("list", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("list", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() == 1) {
       auto result = iterableToArray(args[0]);
       if (!result->empty()) {
@@ -142,7 +142,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // tuple(...) - construct tuple (alias for list, documented as immutable convention)
-  env->Define("tuple", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("tuple", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.size() == 1) {
       auto result = iterableToArray(args[0]);
       if (!result->empty()) {
@@ -157,7 +157,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // set(...) - construct set from arguments or convert iterable
-  env->Define("set", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("set", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     auto elements = std::make_shared<std::vector<HavelValue>>();
     
     if (args.size() == 1) {
@@ -201,7 +201,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // type(x) - get type name
-  env->Define("type", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("type", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("type() requires an argument");
     const auto& arg = args[0];
     if (arg.isNull()) return HavelValue("null");
@@ -217,7 +217,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // len(x) - get length
-  env->Define("len", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("len", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("len() requires an argument");
     const auto& arg = args[0];
     if (arg.isString()) {
@@ -236,7 +236,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // typeof(x) - alias for type(x)
-  env->Define("typeof", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("typeof", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("typeof() requires an argument");
     const auto& arg = args[0];
     if (arg.isNull()) return HavelValue("null");
@@ -252,7 +252,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // print(...) - Print values to stdout with newline
-  env->Define("print", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("print", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     for (const auto& arg : args) {
       if (arg.isString()) {
         std::cout << arg.asString();
@@ -271,7 +271,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // put(...) - Print values to stdout WITHOUT newline (raw output)
-  env->Define("put", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("put", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     for (const auto& arg : args) {
       if (arg.isString()) {
         std::cout << arg.asString();
@@ -289,7 +289,7 @@ void registerTypeModule(Environment* env) {
   }));
 
   // format(template, ...) - Format string with placeholders
-  env->Define("format", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
+  env.Define("format", BuiltinFunction([&](const std::vector<HavelValue>& args) -> HavelResult {
     if (args.empty()) return HavelRuntimeError("format() requires a template string");
     
     std::string template_str = args[0].asString();

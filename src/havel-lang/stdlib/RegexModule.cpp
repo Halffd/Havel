@@ -9,7 +9,7 @@
 
 namespace havel::stdlib {
 
-void registerRegexModule(Environment* env) {
+void registerRegexModule(Environment& env) {
   // Helper: convert value to string
   auto valueToString = [](const HavelValue& v) -> std::string {
     if (v.isString()) return v.asString();
@@ -255,7 +255,7 @@ void registerRegexModule(Environment* env) {
   });
 
   // Register regex namespace
-  env->Define("regex", HavelValue(regexObj));
+  env.Define("regex", HavelValue(regexObj));
 }
 
 } // namespace havel::stdlib

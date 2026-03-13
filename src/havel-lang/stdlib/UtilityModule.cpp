@@ -9,13 +9,12 @@
 
 namespace havel::stdlib {
 
-void registerUtilityModule(Environment* env) {
-    if (!env) return;
+void registerUtilityModule(Environment& env) {
 
     // =========================================================================
     // keys(obj) - Get keys from object/map
     // =========================================================================
-    env->Define("keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("keys", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("keys() requires an object");
         }
@@ -40,7 +39,7 @@ void registerUtilityModule(Environment* env) {
     // =========================================================================
     // items(obj) - Get key-value pairs from object/map
     // =========================================================================
-    env->Define("items", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("items", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("items() requires an object");
         }
@@ -68,7 +67,7 @@ void registerUtilityModule(Environment* env) {
     // =========================================================================
     // list(value) - Convert to list
     // =========================================================================
-    env->Define("list", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("list", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("list() requires an argument");
         }
@@ -119,7 +118,7 @@ void registerUtilityModule(Environment* env) {
     // =========================================================================
     // pairs(obj) - Iterate over key-value pairs (alias for items)
     // =========================================================================
-    env->Define("pairs", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("pairs", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("pairs() requires an object");
         }
@@ -147,7 +146,7 @@ void registerUtilityModule(Environment* env) {
     // =========================================================================
     // range(start, end?, step?) - Generate number sequence
     // =========================================================================
-    env->Define("range", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("range", BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("range() requires at least a start value");
         }

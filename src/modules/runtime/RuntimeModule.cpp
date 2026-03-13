@@ -136,7 +136,7 @@ void registerRuntimeModule(Environment& env, Interpreter* interpreter) {
     // Register stdlib modules
     // =========================================================================
     
-    havel::stdlib::registerTypeModule(&env);
+    havel::stdlib::registerTypeModule(env);
 }
 
 } // namespace havel::modules

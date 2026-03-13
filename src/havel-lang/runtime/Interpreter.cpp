@@ -311,9 +311,10 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createMemberResolver(this);
 
   // Create HostAPI wrapper (composes IO, HotkeyManager, Config and other managers)
+  // Use raw pointers - Interpreter owns these, no shared ownership needed
   auto hostAPI = std::make_shared<HostAPI>(
-      hostContext.io,
-      hostContext.hotkeyManager,
+      hostContext.io.get(),
+      hostContext.hotkeyManager.get(),
       Configs::Get(),
       hostContext.windowManager,
       hostContext.brightnessManager,

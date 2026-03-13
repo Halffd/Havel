@@ -187,6 +187,35 @@ void loadHostModules(Environment& env, Interpreter* interpreter) {
     defineHostAlias(env, "play", "media", "play");
     defineHostAlias(env, "window.active", "window", "getActiveWindow");
     defineGlobalAlias(env, "sleep", "sleep");
+    
+    // =========================================================================
+    // Global variables
+    // =========================================================================
+    
+    // $Clipboard - global clipboard variable (read/write)
+    env.Define("$Clipboard", HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+        // If called with argument, set clipboard
+        if (!args.empty()) {
+            std::string text = args[0].isString() ? args[0].asString() :
+                std::to_string(static_cast<int>(args[0].asNumber()));
+            
+            if (QGuiApplication::instance()) {
+                QClipboard* clipboard = QGuiApplication::clipboard();
+                QTimer::singleShot(0, [clipboard, text]() {
+                    clipboard->setText(QString::fromStdString(text));
+                });
+                return HavelValue(true);
+            }
+            return HavelRuntimeError("$Clipboard requires GUI application");
+        }
+        
+        // Otherwise get clipboard
+        if (!QGuiApplication::instance()) {
+            return HavelRuntimeError("$Clipboard requires GUI application");
+        }
+        QClipboard* clipboard = QGuiApplication::clipboard();
+        return HavelValue(clipboard->text().toStdString());
+    })));
 }
 
 void registerAllModules() {

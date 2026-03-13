@@ -90,6 +90,33 @@ void registerClipboardModule(Environment& env, HostContext& ctx) {
         
         return HavelValue(nullptr);
     }));
+
+    (*clip)["send"] = HavelValue(BuiltinFunction([&ctx](const std::vector<HavelValue>& args) -> HavelResult {
+        // Get text from argument or clipboard
+        std::string text;
+        if (!args.empty()) {
+            text = args[0].isString() ? args[0].asString() :
+                std::to_string(static_cast<int>(args[0].asNumber()));
+        } else {
+            // Get from clipboard
+            if (!QGuiApplication::instance()) {
+                return HavelRuntimeError("clipboard.send() requires GUI application");
+            }
+            QClipboard* clipboard = QGuiApplication::clipboard();
+            text = clipboard->text().toStdString();
+        }
+
+        // Send clipboard text using IO
+        if (ctx.io) {
+            // Use async send to avoid blocking
+            QTimer::singleShot(0, [io = ctx.io, text]() {
+                io->Send(text.c_str());
+            });
+            return HavelValue(true);
+        }
+        
+        return HavelRuntimeError("clipboard.send() requires IO context");
+    }));
     
     // =========================================================================
     // ClipboardManager functions (only if available)

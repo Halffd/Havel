@@ -173,4 +173,13 @@ FileManager* HostAPI::GetFileManager() { return fileManager; }
 ProcessManager* HostAPI::GetProcessManager() { return processManager; }
 MapManager* HostAPI::GetMapManager() { return mapManager; }
 
+// Update manager pointers (called after managers are created)
+void HostAPI::SetHotkeyManager(HotkeyManager* hm) {
+    hotkeyManager = hm;
+}
+
+void HostAPI::SetIO(IO* newIo) {
+    io = newIo;
+}
+
 } // namespace havel

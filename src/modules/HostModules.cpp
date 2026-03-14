@@ -30,6 +30,7 @@
 #include "hotkey/HotkeyModule.hpp"
 #include "browser/BrowserModule.hpp"
 #include "ffi/FFIModule.hpp"
+#include "process/ProcessModule.hpp"
 
 namespace havel {
 
@@ -46,6 +47,7 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("pixel", modules::registerPixelModule);
     loader.addHost("automation", modules::registerAutomationModule);
     loader.addHost("launcher", modules::registerLauncherModule);
+    loader.addHost("process", modules::registerProcessModule);
     loader.addHost("media", modules::registerMediaModule);
     loader.addHost("help", modules::registerHelpModule);
     loader.addHost("filesystem", modules::registerFileManagerModule);

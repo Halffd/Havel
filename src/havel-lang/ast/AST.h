@@ -495,20 +495,25 @@ struct FunctionParameter : public ASTNode {
 
 // Struct method definition (including constructor)
 struct StructMethodDef : public ASTNode {
-  std::string name;  // "init" for constructor, otherwise method name
+  std::string name;  // "init" for constructor, otherwise method name, or operator like "op_add"
   std::vector<std::unique_ptr<FunctionParameter>> parameters;
   std::unique_ptr<BlockStatement> body;
   bool isConstructor;
+  bool isOperator;  // true if this is an operator overload (op +, op ==, etc.)
 
   StructMethodDef(const std::string& methodName,
                   std::vector<std::unique_ptr<FunctionParameter>> params,
                   std::unique_ptr<BlockStatement> b,
-                  bool isCtor = false)
-    : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor) {
+                  bool isCtor = false,
+                  bool isOp = false)
+    : name(methodName), parameters(std::move(params)), body(std::move(b)), isConstructor(isCtor), isOperator(isOp) {
     kind = NodeType::StructMethodDef;
   }
 
   std::string toString() const override {
+    if (isOperator) {
+      return "op " + name.substr(3) + "(...) {...}";  // Remove "op_" prefix for display
+    }
     std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
     for (size_t i = 0; i < parameters.size(); ++i) {
       if (i > 0) result += ", ";

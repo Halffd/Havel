@@ -22,6 +22,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"case", TokenType::Case},
     {"default", TokenType::Default},
     {"fn", TokenType::Fn},
+    {"op", TokenType::Op},
     {"return", TokenType::Return},
     {"ret", TokenType::Ret},
     {"try", TokenType::Try},

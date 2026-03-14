@@ -169,6 +169,23 @@ public:
     bool hasMethod(const std::string& name) const {
         return methods_.find(name) != methods_.end();
     }
+    
+    // Operator support (op_add, op_sub, op_mul, op_div, op_eq, op_lt, etc.)
+    void addOperator(const std::string& opName, const ast::StructMethodDef* method) {
+        operators_[opName] = method;
+    }
+    
+    const ast::StructMethodDef* getOperator(const std::string& opName) const {
+        auto it = operators_.find(opName);
+        if (it != operators_.end()) {
+            return it->second;
+        }
+        return nullptr;
+    }
+    
+    bool hasOperator(const std::string& opName) const {
+        return operators_.find(opName) != operators_.end();
+    }
 
     std::string toString() const override {
         return "Struct<" + name_ + ">";
@@ -179,6 +196,7 @@ private:
     std::vector<StructField> fields_;
     std::unordered_map<std::string, size_t> fieldIndex_;
     std::unordered_map<std::string, const ast::StructMethodDef*> methods_;
+    std::unordered_map<std::string, const ast::StructMethodDef*> operators_;  // op_add, op_sub, etc.
 };
 
 /**

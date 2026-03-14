@@ -1035,18 +1035,24 @@ std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::Str
       continue;
     }
 
-    // Check for method definition (fn keyword)
-    if (at().type == havel::TokenType::Fn) {
-      advance(); // consume 'fn'
+    // Check for method definition (fn keyword) or operator (op keyword)
+    if (at().type == havel::TokenType::Fn || at().type == havel::TokenType::Op) {
+      bool isOperator = (at().type == havel::TokenType::Op);
+      advance(); // consume 'fn' or 'op'
 
-      // Parse method name
+      // Parse method/operator name
       if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected method name after 'fn'");
+        failAt(at(), "Expected name after '" + std::string(isOperator ? "op" : "fn") + "'");
       }
       std::string methodName = advance().value;
+      
+      // For operators, prefix with "op_" for internal storage
+      if (isOperator) {
+        methodName = "op_" + methodName;  // e.g., "+" becomes "op_+"
+      }
 
       // Check if this is a constructor (named 'init')
-      bool isConstructor = (methodName == "init");
+      bool isConstructor = (methodName == "init" || methodName == "op_init");
 
       // Parse parameters
       if (at().type != havel::TokenType::OpenParen) {
@@ -1074,7 +1080,7 @@ std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::Str
       // Parse body
       auto body = parseBlockStatement();
 
-      methods.push_back(std::make_unique<ast::StructMethodDef>(methodName, std::move(params), std::move(body), isConstructor));
+      methods.push_back(std::make_unique<ast::StructMethodDef>(methodName, std::move(params), std::move(body), isConstructor, isOperator));
       continue;
     }
 

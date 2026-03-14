@@ -1546,6 +1546,13 @@ void IO::Send(cstr keys) {
   activeModifiers.clear();
 #endif
 }
+
+void IO::StopEventListener() {
+  if (eventListener) {
+    eventListener->Stop();
+  }
+}
+
 bool IO::Suspend() {
   try {
     if (isSuspended) {

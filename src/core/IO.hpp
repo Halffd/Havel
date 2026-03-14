@@ -278,6 +278,9 @@ public:
 
   // Public cleanup method for safe shutdown
   void cleanup();
+  
+  // Stop EventListener thread
+  void StopEventListener();
 
   bool Resume(int id);
 

@@ -284,3 +284,45 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 - `/log` - Log files
 - `/build` - Build directory
 - `/scripts` - Scripts examples
+
+## Embedding Havel
+
+Havel can be easily embedded in C++ applications (games, window managers, etc.):
+
+```cpp
+#include <Havel.hpp>
+
+int main() {
+    havel::VM vm;
+    
+    // Load and run code
+    vm.load(R"(
+        fn add(a, b) { return a + b }
+        print(add(5, 3))
+    )");
+    
+    return 0;
+}
+```
+
+See [embed/README.md](embed/README.md) for full documentation.
+
+### Examples
+
+- [Basic embedding](examples/example_embed.cpp)
+- [Game integration](examples/example_game.cpp)
+- [Window manager](examples/example_wm.cpp)
+
+### C API
+
+A C API is also available for embedding in other languages:
+
+```c
+#include <Havel-cAPI.h>
+
+HavelVM* vm = havel_vm_create();
+havel_vm_load(vm, "print(\"Hello from C!\")", "script");
+havel_vm_destroy(vm);
+```
+
+See [include/Havel-cAPI.h](include/Havel-cAPI.h) for the full C API.

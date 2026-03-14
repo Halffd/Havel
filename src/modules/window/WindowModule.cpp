@@ -12,17 +12,17 @@
 namespace havel::modules {
 
 void registerWindowModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
-        return;  // Skip if no window manager available
+    if (!hostAPI->GetWindowManager()) {
+        return;  // Skip if window manager not available
     }
-    
+
     auto& wm = *hostAPI->GetWindowManager();
-    
+
     // Create window module object
     auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
+
     // Helper to get active window
-    auto getActiveWindow = [wm]() -> Window {
+    auto getActiveWindow = [&wm]() -> Window {
         return Window(wm.GetActiveWindow());
     };
     
@@ -248,9 +248,79 @@ void registerWindowModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(pos);
     }));
 
-    (*win)["moveToNextMonitor"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
-        // Note: MoveToNextMonitor not available, stub out
-        (void)getActiveWindow();  // Suppress unused warning
+    (*win)["moveToNextMonitor"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+        WindowManager::MoveWindowToNextMonitor();
+        return HavelValue(nullptr);
+    }));
+
+    (*win)["moveToMonitor"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("window.moveToMonitor() requires monitor index");
+        }
+        int monitor = static_cast<int>(args[0].asNumber());
+        getActiveWindow().MoveToMonitor(monitor);
+        return HavelValue(nullptr);
+    }));
+
+    (*win)["moveTo"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.size() < 2) {
+            return HavelRuntimeError("window.moveTo() requires (x, y)");
+        }
+        int x = static_cast<int>(args[0].asNumber());
+        int y = static_cast<int>(args[1].asNumber());
+        getActiveWindow().Move(x, y);
+        return HavelValue(nullptr);
+    }));
+
+    (*win)["move"] = (*win)["moveTo"];  // Alias
+
+    (*win)["pin"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+        // Pin to all desktops (sticky window)
+        bool pin = args.empty() ? true : args[0].asBool();
+        getActiveWindow().AlwaysOnTop(pin);
+        return HavelValue(nullptr);
+    }));
+
+    (*win)["pos"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+        auto pos = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        auto rect = getActiveWindow().Pos();
+        (*pos)["x"] = HavelValue(static_cast<double>(rect.x));
+        (*pos)["y"] = HavelValue(static_cast<double>(rect.y));
+        (*pos)["width"] = HavelValue(static_cast<double>(rect.width));
+        (*pos)["height"] = HavelValue(static_cast<double>(rect.height));
+        return HavelValue(pos);
+    }));
+
+    (*win)["fullscreen"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            // Toggle fullscreen
+            getActiveWindow().ToggleFullscreen();
+        } else {
+            // Set fullscreen state
+            bool fs = args[0].asBool();
+            if (fs) {
+                getActiveWindow().Max();  // Maximize as fullscreen approximation
+            }
+        }
+        return HavelValue(nullptr);
+    }));
+
+    (*win)["state"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+        auto state = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        Window win = getActiveWindow();
+        (*state)["active"] = HavelValue(win.Active());
+        (*state)["exists"] = HavelValue(win.Exists());
+        // Note: Fullscreen state check not available
+        (*state)["fullscreen"] = HavelValue(false);
+        return HavelValue(state);
+    }));
+
+    (*win)["transparency"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            return HavelRuntimeError("window.transparency() requires alpha value (0-255)");
+        }
+        int alpha = static_cast<int>(args[0].asNumber());
+        getActiveWindow().Transparency(alpha);
         return HavelValue(nullptr);
     }));
 

@@ -131,6 +131,33 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
+    // Load and execute startup script if specified
+    if (!cfg.scriptFile.empty()) {
+      std::ifstream file(cfg.scriptFile);
+      if (file) {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string code = buffer.str();
+        
+        auto* interpreter = havelApp.getInterpreter();
+        if (interpreter) {
+          info("Loading startup script: {}", cfg.scriptFile);
+          auto result = interpreter->Execute(code);
+          
+          if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            if (err.hasLocation && err.line > 0) {
+              error("Startup script error at line {}: {}", err.line, err.what());
+            } else {
+              error("Startup script error: {}", err.what());
+            }
+          }
+        }
+      } else {
+        error("Cannot open startup script: {}", cfg.scriptFile);
+      }
+    }
+
     info("Havel started successfully - running in system tray");
     int exitCode = app.exec();
 
@@ -156,6 +183,33 @@ int HavelLauncher::runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]) {
     if (!havelApp.isInitialized()) {
       error("Failed to initialize HavelApp");
       return 1;
+    }
+
+    // Load and execute startup script if specified
+    if (!cfg.scriptFile.empty()) {
+      std::ifstream file(cfg.scriptFile);
+      if (file) {
+        std::stringstream buffer;
+        buffer << file.rdbuf();
+        std::string code = buffer.str();
+        
+        auto* interpreter = havelApp.getInterpreter();
+        if (interpreter) {
+          info("Loading startup script: {}", cfg.scriptFile);
+          auto result = interpreter->Execute(code);
+          
+          if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            if (err.hasLocation && err.line > 0) {
+              error("Startup script error at line {}: {}", err.line, err.what());
+            } else {
+              error("Startup script error: {}", err.what());
+            }
+          }
+        }
+      } else {
+        error("Cannot open startup script: {}", cfg.scriptFile);
+      }
     }
 
     info("Havel GUI started");

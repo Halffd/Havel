@@ -22,7 +22,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
     auto win = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
     // Helper to get active window
-    auto getActiveWindow = [&wm]() -> Window {
+    auto getActiveWindow = [wm]() -> Window {
         return Window(wm.GetActiveWindow());
     };
     
@@ -57,49 +57,49 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
     // Window functions
     // =========================================================================
 
-    (*win)["getTitle"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getTitle"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(wm.GetActiveWindowTitle());
     }));
     (*win)["title"] = (*win)["getTitle"];  // Alias
 
-    (*win)["getPID"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getPID"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(static_cast<double>(wm.GetActiveWindowPID()));
     }));
     (*win)["pid"] = (*win)["getPID"];  // Alias
 
-    (*win)["getClass"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getClass"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(wm.GetActiveWindowClass());
     }));
     (*win)["class"] = (*win)["getClass"];  // Alias
 
-    (*win)["maximize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["maximize"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Max();
         return HavelValue(nullptr);
     }));
 
-    (*win)["minimize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["minimize"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Min();
         return HavelValue(nullptr);
     }));
 
     (*win)["active"] = (*win)["isActive"];  // Alias
 
-    (*win)["next"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["next"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         wm.AltTab();
         return HavelValue(nullptr);
     }));
 
-    (*win)["previous"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["previous"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         wm.AltTab();
         return HavelValue(nullptr);
     }));
 
-    (*win)["close"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["close"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().Close();
         return HavelValue(nullptr);
     }));
 
-    (*win)["center"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["center"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         // Note: wm.Center(Window) not available, use Window::Center() instead
         getActiveWindow().Center();
         return HavelValue(nullptr);
@@ -120,7 +120,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(false);
     }));
 
-    (*win)["move"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["move"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("window.move() requires (x, y)");
         }
@@ -129,7 +129,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(getActiveWindow().Move(x, y));
     }));
 
-    (*win)["resize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["resize"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("window.resize() requires (width, height)");
         }
@@ -138,7 +138,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(getActiveWindow().Resize(width, height));
     }));
 
-    (*win)["moveResize"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["moveResize"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 4) {
             return HavelRuntimeError("window.moveResize() requires (x, y, width, height)");
         }
@@ -149,24 +149,24 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(getActiveWindow().MoveResize(x, y, width, height));
     }));
     
-    (*win)["alwaysOnTop"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["alwaysOnTop"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         bool top = args.empty() ? true : args[0].asBool();
         getActiveWindow().AlwaysOnTop(top);
         return HavelValue(nullptr);
     }));
     
-    (*win)["transparency"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["transparency"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         int alpha = args.empty() ? 255 : static_cast<int>(args[0].asNumber());
         getActiveWindow().Transparency(alpha);
         return HavelValue(nullptr);
     }));
     
-    (*win)["toggleFullscreen"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["toggleFullscreen"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         getActiveWindow().ToggleFullscreen();
         return HavelValue(nullptr);
     }));
     
-    (*win)["snap"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["snap"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("window.snap() requires position (0-3)");
         }
@@ -175,7 +175,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
     
-    (*win)["moveToMonitor"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["moveToMonitor"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("window.moveToMonitor() requires monitor index");
         }
@@ -191,7 +191,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(getActiveWindow().MoveToCorner(corner));
     }));
     
-    (*win)["getClass"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getClass"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(wm.GetActiveWindowClass());
     }));
     
@@ -204,11 +204,11 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(winId != 0);
     }));
     
-    (*win)["isActive"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["isActive"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(getActiveWindow().Active());
     }));
 
-    (*win)["getMonitors"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getMonitors"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         // Note: GetMonitorCount not available, return single monitor
         (void)wm;  // Suppress unused warning
         auto monitors = std::make_shared<std::vector<HavelValue>>();
@@ -216,7 +216,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(monitors);
     }));
 
-    (*win)["getMonitorArea"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>& args) -> HavelResult {
+    (*win)["getMonitorArea"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("window.getMonitorArea() requires monitor index");
         }
@@ -231,7 +231,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(area);
     }));
 
-    (*win)["getActiveWindow"] = HavelValue(BuiltinFunction([&wm](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["getActiveWindow"] = HavelValue(BuiltinFunction([wm](const std::vector<HavelValue>&) -> HavelResult {
         auto winObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
         wID id = wm.GetActiveWindow();
         (*winObj)["id"] = HavelValue(static_cast<double>(id));
@@ -239,7 +239,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(winObj);
     }));
 
-    (*win)["pos"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["pos"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         auto pos = std::make_shared<std::unordered_map<std::string, HavelValue>>();
         // Note: GetRect not available, use Pos() instead
         auto rect = getActiveWindow().Pos();
@@ -248,7 +248,7 @@ void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(pos);
     }));
 
-    (*win)["moveToNextMonitor"] = HavelValue(BuiltinFunction([&getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
+    (*win)["moveToNextMonitor"] = HavelValue(BuiltinFunction([getActiveWindow](const std::vector<HavelValue>&) -> HavelResult {
         // Note: MoveToNextMonitor not available, stub out
         (void)getActiveWindow();  // Suppress unused warning
         return HavelValue(nullptr);

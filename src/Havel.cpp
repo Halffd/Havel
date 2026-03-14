@@ -300,7 +300,17 @@ void Struct::setField(const std::string& name, const Value& val) {
 }
 
 Value Struct::callMethod(const std::string& name, const std::vector<Value>& args) {
-    // TODO: Implement method calling
+    if (!value.impl || !value.impl->internal) return Value();
+    
+    auto* structPtr = value.impl->internal->get_if<::havel::HavelStructInstance>();
+    if (!structPtr || !structPtr->structType) return Value();
+    
+    // Get method from struct type
+    auto method = structPtr->structType->getMethod(name);
+    if (!method || !method->body) return Value();
+    
+    // TODO: Execute method through VM
+    // For now, return nil
     return Value();
 }
 
@@ -389,9 +399,33 @@ Result<Value> VM::call(const Value& func, const std::vector<Value>& args) {
             internalArgs.push_back(internal::toInternalValue(arg));
         }
         
+        // Get function value
+        auto funcVal = getGlobal(funcName);
+        if (funcVal.isNil()) {
+            return Result<Value>::err_result("Function not found: " + funcName);
+        }
+        
         // Call the function through interpreter
-        // TODO: Implement proper function calling
-        return Result<Value>::err_result("Function calling not yet implemented");
+        try {
+            auto internalFunc = internal::toInternalValue(funcVal);
+            auto result = impl->interpreter->CallFunction(internalFunc, internalArgs);
+            
+            // Check for errors
+            if (std::holds_alternative<::havel::HavelRuntimeError>(result)) {
+                auto& err = std::get<::havel::HavelRuntimeError>(result);
+                return Result<Value>::err_result(err.what());
+            }
+            
+            // Return result value
+            if (auto* valPtr = std::get_if<::havel::HavelValue>(&result)) {
+                return Result<Value>::ok_result(internal::toPublicValue(*valPtr));
+            }
+            
+            return Result<Value>::ok_result(Value());
+            
+        } catch (const std::exception& e) {
+            return Result<Value>::err_result(e.what());
+        }
         
     } catch (const std::exception& e) {
         return Result<Value>::err_result(e.what());

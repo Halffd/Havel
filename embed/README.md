@@ -20,6 +20,34 @@ int main() {
 }
 ```
 
+## Building
+
+### Option 1: Use existing Havel build
+
+```bash
+cd build-debug
+cmake -DCMAKE_BUILD_TYPE=Debug ..
+make
+```
+
+Then link against `libhavel.a` or `libhavel.so`.
+
+### Option 2: Build with embedding example
+
+```bash
+mkdir build-embed && cd build-embed
+cmake -C ../CMakeLists_embed.txt ..
+make
+./embed_example
+```
+
+### Option 3: Manual compilation
+
+```bash
+g++ -std=c++17 -I src -I include myapp.cpp src/Havel.cpp \
+    -L build-debug -lhavel -lpthread -o myapp
+```
+
 ## Features
 
 - **Direct API** - No stack manipulation (unlike Lua)

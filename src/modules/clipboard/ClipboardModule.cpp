@@ -91,7 +91,7 @@ void registerClipboardModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
 
-    (*clip)["send"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+    (*clip)["send"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
         // Get text from argument or clipboard
         std::string text;
         if (!args.empty()) {

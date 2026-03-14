@@ -51,7 +51,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // GUI initialization functions
     // =========================================================================
 
-    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["initialize"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
         // Check if QApplication already exists
         if (QApplication::instance()) {
             return HavelValue(true);  // Already initialized
@@ -72,7 +72,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(true);
     }));
 
-    (*guiObj)["reload"] = HavelValue(BuiltinFunction([&hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+    (*guiObj)["reload"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
         if (!hostAPI->GetGUIManager()) {
             return HavelRuntimeError("gui.reload() requires GUI to be initialized first");
         }

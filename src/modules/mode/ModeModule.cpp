@@ -15,14 +15,14 @@ void registerModeModule(Environment& env, IHostAPI* hostAPI) {
     auto modeObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
     // Helper to update conditional hotkeys
-    auto updateConditionalHotkeys = [&hostAPI]() {
+    auto updateConditionalHotkeys = [hostAPI]() {
         if (hostAPI->GetHotkeyManager()) {
             hostAPI->GetHotkeyManager()->updateAllConditionalHotkeys();
         }
     };
     
     // Helper to set mode in ConditionalHotkeyManager
-    auto setModeInManager = [&hostAPI](const std::string& newMode) {
+    auto setModeInManager = [hostAPI](const std::string& newMode) {
         if (hostAPI->GetHotkeyManager()) {
             hostAPI->GetHotkeyManager()->setMode(newMode);
         }

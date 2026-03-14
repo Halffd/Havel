@@ -19,7 +19,7 @@ void registerScreenshotModule(Environment& env, IHostAPI* hostAPI) {
     auto screenshotObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
     // Helper to check if screenshot manager is available at runtime
-    auto requireScreenshotManager = [&hostAPI](const std::string& fn) -> std::optional<HavelRuntimeError> {
+    auto requireScreenshotManager = [hostAPI](const std::string& fn) -> std::optional<HavelRuntimeError> {
         if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
             return HavelRuntimeError("screenshot." + fn + " requires GUI application (QApplication)");
         }

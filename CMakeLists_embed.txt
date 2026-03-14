@@ -9,17 +9,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Adjust path to your Havel build
 set(HAVEL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(HAVEL_INCLUDE "${HAVEL_ROOT}/include")
+set(HAVEL_SRC "${HAVEL_ROOT}/src")
 set(HAVEL_LIB "${HAVEL_ROOT}/build-debug")
 
 # Include directories
 include_directories(${HAVEL_INCLUDE})
-include_directories(${HAVEL_ROOT}/src)
+include_directories(${HAVEL_SRC})
+include_directories(${HAVEL_SRC}/havel-lang)
 
 # Link directories
 link_directories(${HAVEL_LIB})
 
 # Example executable
-add_executable(embed_example examples/example_embed.cpp)
+add_executable(embed_example examples/example_embed.cpp src/Havel.cpp)
 
 # Link against Havel library
 target_link_libraries(embed_example 
@@ -32,10 +34,3 @@ set_target_properties(embed_example PROPERTIES
     BUILD_RPATH "${HAVEL_LIB}"
     INSTALL_RPATH "${HAVEL_LIB}"
 )
-
-# Alternative: Static linking example
-# add_executable(embed_example_static 
-#     examples/example_embed.cpp
-#     src/Havel.cpp
-# )
-# target_link_libraries(embed_example_static havel pthread)

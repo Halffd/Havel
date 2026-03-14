@@ -2,9 +2,9 @@
 // Implementation of embeddable C++ API
 
 #include "Havel.hpp"
-#include "../src/havel-lang/runtime/Interpreter.hpp"
-#include "../src/havel-lang/runtime/Environment.hpp"
-#include "../src/havel-lang/types/HavelType.hpp"
+#include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/runtime/Environment.hpp"
+#include "havel-lang/types/HavelType.hpp"
 #include <sstream>
 #include <fstream>
 

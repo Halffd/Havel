@@ -351,14 +351,17 @@ void HavelApp::setupTimers() {
           &HavelApp::onPeriodicCheck);
   periodicTimer->start(PERIODIC_INTERVAL_MS);
   info("Periodic timer started");
-  
+
   // Connect to Qt's aboutToQuit signal to ensure cleanup on exit
-  connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
-    debug("Qt aboutToQuit signal received - forcing evdev ungrab");
-    if (io) {
-      io->cleanup();
-    }
-  });
+  // Only if QApplication exists (not in pure script mode)
+  if (qApp) {
+    connect(qApp, &QCoreApplication::aboutToQuit, this, [this]() {
+      debug("Qt aboutToQuit signal received - forcing evdev ungrab");
+      if (io) {
+        io->cleanup();
+      }
+    });
+  }
 }
 
 void HavelApp::setupSignalHandling() {

@@ -53,6 +53,7 @@ enum class TokenType {
   Case,
   Default,
   Fn,
+  Op,         // op (operator overload)
   Return,
   Ret,
   Config,

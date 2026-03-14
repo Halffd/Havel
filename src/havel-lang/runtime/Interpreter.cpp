@@ -1267,6 +1267,49 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   HavelValue left = unwrap(leftRes);
   HavelValue right = unwrap(rightRes);
 
+  // Check for struct operator overloads first
+  if (left.isStructInstance()) {
+    auto structInst = left.asStructInstance();
+    if (structInst.structType) {
+      std::string opName;
+      switch (node.operator_) {
+        case ast::BinaryOperator::Add: opName = "op_add"; break;
+        case ast::BinaryOperator::Sub: opName = "op_sub"; break;
+        case ast::BinaryOperator::Mul: opName = "op_mul"; break;
+        case ast::BinaryOperator::Div: opName = "op_div"; break;
+        case ast::BinaryOperator::Equal: opName = "op_eq"; break;
+        case ast::BinaryOperator::Less: opName = "op_lt"; break;
+        default: opName = ""; break;
+      }
+      
+      if (!opName.empty() && structInst.structType->hasOperator(opName)) {
+        auto opMethod = structInst.structType->getOperator(opName);
+        if (opMethod && opMethod->body) {
+          // Create method environment with 'this' bound to left operand
+          auto methodEnv = std::make_shared<Environment>(this->environment);
+          methodEnv->Define("this", left);
+          methodEnv->Define("other", right);
+          
+          // Execute operator body
+          auto originalEnv = this->environment;
+          this->environment = methodEnv;
+          auto result = Evaluate(*opMethod->body);
+          this->environment = originalEnv;
+          
+          if (std::holds_alternative<ReturnValue>(result)) {
+            auto ret = std::get<ReturnValue>(result);
+            lastResult = ret.value ? *ret.value : HavelValue();
+          } else if (isError(result)) {
+            lastResult = result;
+          } else {
+            lastResult = unwrap(result);
+          }
+          return;
+        }
+      }
+    }
+  }
+
   switch (node.operator_) {
   case ast::BinaryOperator::Add:
     if (left.isString() || right.isString()) {
@@ -3155,10 +3198,16 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
     // For now, just store field names without type validation
     structType->addField(havelField);
   }
-  // Store methods in the struct type
+  // Store methods and operators in the struct type
   for (const auto& method : node.definition.methods) {
     if (method) {
-      structType->addMethod(method->name, method.get());
+      if (method->isOperator) {
+        // Register as operator (op_add, op_sub, op_eq, etc.)
+        structType->addOperator(method->name, method.get());
+      } else {
+        // Register as regular method
+        structType->addMethod(method->name, method.get());
+      }
     }
   }
   TypeRegistry::getInstance().registerStructType(structType);

@@ -18,7 +18,7 @@ void registerProcessModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) 
     // process.list() - Get list of running processes
     // =========================================================================
     (*proc)["list"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-        auto processes = std::make_shared<std::vector<HavelValue>>();
+        HavelArray processes = std::make_shared<std::vector<HavelValue>>();
         
         try {
             for (const auto& entry : std::filesystem::directory_iterator("/proc")) {
@@ -46,7 +46,7 @@ void registerProcessModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) 
         }
         
         std::string name = args[0].asString();
-        auto pids = std::make_shared<std::vector<HavelValue>>();
+        HavelArray pids = std::make_shared<std::vector<HavelValue>>();
         
         try {
             for (const auto& entry : std::filesystem::directory_iterator("/proc")) {

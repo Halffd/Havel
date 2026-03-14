@@ -24,10 +24,9 @@ void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp) {
 }
 
 void registerHotkeyModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI->GetHotkeyManager()) {
-        return;  // Skip if hotkey manager not available
-    }
-
+    // Don't skip - register even if hotkeyManager is null initially
+    // It will be set later via HostAPI::SetHotkeyManager()
+    
     // Create hotkey object
     auto hotkeyObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     
@@ -106,6 +105,12 @@ void registerHotkeyModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     static std::atomic<int> nextHotkeyId{1000};
 
     env.Define("Hotkey", HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        // Check if HotkeyManager is available
+        auto* hm = hostAPI->GetHotkeyManager();
+        if (!hm) {
+            return HavelRuntimeError("Hotkey() requires HotkeyManager (not initialized yet)");
+        }
+        
         if (args.size() < 2) {
             return HavelRuntimeError("Hotkey() requires at least (key, callback)");
         }

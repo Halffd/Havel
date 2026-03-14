@@ -1698,6 +1698,24 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
   }
   std::string propName = propId->symbol;
 
+  // Handle null/undefined
+  if (objectValue.is<std::nullptr_t>()) {
+    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on null");
+    return;
+  }
+  
+  // Handle numbers
+  if (objectValue.isNumber()) {
+    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on number");
+    return;
+  }
+  
+  // Handle booleans
+  if (objectValue.isBool()) {
+    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on boolean");
+    return;
+  }
+
   // Objects: o.b
   if (auto *objPtr = objectValue.get_if<HavelObject>()) {
     if (*objPtr) {

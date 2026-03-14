@@ -316,20 +316,27 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
             grabUp = args[6].get<bool>();
         }
 
+        // Check if HotkeyManager is available
+        auto* hm = hostAPI->GetHotkeyManager();
+        if (!hm) {
+            return HavelRuntimeError("io.keyTap() requires HotkeyManager (not available in pure mode)");
+        }
+
         // Create KeyTap instance and store it to keep it alive
         // Pass shared_ptr to ensure KeyTap keeps HotkeyManager alive
         auto keyTap = std::make_unique<KeyTap>(
-            std::shared_ptr<HotkeyManager>(hostAPI->GetHotkeyManager(), [](HotkeyManager*){}), keyName, onTap, tapCondition,
+            std::shared_ptr<HotkeyManager>(hm, [](HotkeyManager*){}), keyName, onTap, tapCondition,
             comboCondition, onCombo, grabDown, grabUp
         );
 
-        keyTap->setup();
-
-        // Store instance to keep it alive
+        // Store instance FIRST to ensure it stays alive during setup
         {
             std::lock_guard<std::mutex> lock(g_keyTapMutex);
             g_keyTapStorage.push_back(std::move(keyTap));
         }
+
+        // Now setup callbacks (KeyTap is already stored, so it won't be destroyed)
+        g_keyTapStorage.back()->setup();
 
         return HavelValue(keyName + " KeyTap created");
     }));

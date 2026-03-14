@@ -1,0 +1,41 @@
+# CMakeLists.txt for Havel embedding example
+cmake_minimum_required(VERSION 3.10)
+project(HavelEmbedExample)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find Havel library
+# Adjust path to your Havel build
+set(HAVEL_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
+set(HAVEL_INCLUDE "${HAVEL_ROOT}/include")
+set(HAVEL_LIB "${HAVEL_ROOT}/build-debug")
+
+# Include directories
+include_directories(${HAVEL_INCLUDE})
+include_directories(${HAVEL_ROOT}/src)
+
+# Link directories
+link_directories(${HAVEL_LIB})
+
+# Example executable
+add_executable(embed_example examples/example_embed.cpp)
+
+# Link against Havel library
+target_link_libraries(embed_example 
+    havel
+    pthread
+)
+
+# Set rpath for runtime library loading
+set_target_properties(embed_example PROPERTIES
+    BUILD_RPATH "${HAVEL_LIB}"
+    INSTALL_RPATH "${HAVEL_LIB}"
+)
+
+# Alternative: Static linking example
+# add_executable(embed_example_static 
+#     examples/example_embed.cpp
+#     src/Havel.cpp
+# )
+# target_link_libraries(embed_example_static havel pthread)

@@ -7,6 +7,7 @@
 #include "IOModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "core/IO.hpp"
+#include "window/WindowManager.hpp"
 #include <algorithm>
 #include <cctype>
 #include <optional>
@@ -501,6 +502,22 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     env.Define("mouseMove", (*mouseObj)["move"]);
     env.Define("mouseMoveRel", (*mouseObj)["moveRel"]);
     env.Define("scroll", (*mouseObj)["scroll"]);
+    
+    // =========================================================================
+    // Global window information (for use in when blocks and conditions)
+    // =========================================================================
+    
+    env.Define("title", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io->GetActiveWindowTitle());
+    })));
+    
+    env.Define("class", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io->GetActiveWindowClass());
+    })));
+    
+    env.Define("process", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(WindowManager::getProcessName(io->GetActiveWindowPID()));
+    })));
 }
 
 } // namespace havel::modules

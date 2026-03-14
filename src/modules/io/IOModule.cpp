@@ -96,7 +96,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
     // Key sending functions
     // =========================================================================
 
-    (*ioObj)["send"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["send"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->send() requires keys to send");
         }
@@ -105,7 +105,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
 
-    (*ioObj)["sendKey"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["sendKey"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->sendKey() requires key name");
         }
@@ -116,7 +116,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
 
-    (*ioObj)["keyDown"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["keyDown"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->keyDown() requires key name");
         }
@@ -125,7 +125,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
 
-    (*ioObj)["keyUp"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["keyUp"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->keyUp() requires key name");
         }
@@ -138,7 +138,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
     // Key mapping functions
     // =========================================================================
 
-    (*ioObj)["map"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["map"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("io->map() requires (from, to)");
         }
@@ -149,7 +149,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(nullptr);
     }));
 
-    (*ioObj)["remap"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["remap"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.size() < 2) {
             return HavelRuntimeError("io->remap() requires (key1, key2)");
         }
@@ -206,7 +206,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
     // Key state functions
     // =========================================================================
 
-    (*ioObj)["getKeyState"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["getKeyState"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->getKeyState() requires key name");
         }
@@ -215,7 +215,7 @@ void registerIOModule(Environment& env, IHostAPI* hostAPI) {
         return HavelValue(io->GetKeyState(key));
     }));
 
-    (*ioObj)["isKeyPressed"] = HavelValue(BuiltinFunction([&io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*ioObj)["isKeyPressed"] = HavelValue(BuiltinFunction([io, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("io->isKeyPressed() requires key name");
         }

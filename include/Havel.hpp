@@ -238,18 +238,4 @@ struct Struct {
     Value callMethod(const std::string& name, const std::vector<Value>& args = {});
 };
 
-// ============================================================================
-// Inline implementations
-// ============================================================================
-
-inline Value::Value(bool b) : type(Type::Bool) {}
-inline Value::Value(double n) : type(Type::Number) {}
-inline Value::Value(int n) : type(Type::Number) {}
-inline Value::Value(const std::string& s) : type(Type::String) {}
-inline Value::Value(const char* s) : type(Type::String) {}
-
-inline Array::Array(const Value& v) : value(v) {}
-inline Object::Object(const Value& v) : value(v) {}
-inline Struct::Struct(const Value& v) : value(v) {}
-
 } // namespace havel

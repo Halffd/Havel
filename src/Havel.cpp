@@ -5,10 +5,19 @@
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/runtime/Environment.hpp"
 #include "havel-lang/types/HavelType.hpp"
+#include "havel-lang/ast/AST.h"
 #include <sstream>
 #include <fstream>
 
 namespace havel {
+
+// ============================================================================
+// Value::Impl definition (must be before internal helpers)
+// ============================================================================
+
+struct Value::Impl {
+    std::shared_ptr<::havel::HavelValue> internal;
+};
 
 // ============================================================================
 // Internal helpers
@@ -20,7 +29,6 @@ namespace internal {
 Value toPublicValue(const ::havel::HavelValue& internal) {
     Value publicVal;
     
-    // Check type and set accordingly
     if (internal.is<std::nullptr_t>()) {
         publicVal.type = Value::Type::Nil;
     } else if (internal.is<bool>()) {
@@ -38,11 +46,8 @@ Value toPublicValue(const ::havel::HavelValue& internal) {
     } else if (internal.is<::havel::BuiltinFunction>() || 
                internal.is<std::shared_ptr<::havel::HavelFunction>>()) {
         publicVal.type = Value::Type::Function;
-    } else if (internal.is<::havel::HavelRuntimeError>()) {
-        publicVal.type = Value::Type::Error;
     }
     
-    // Store internal value
     publicVal.impl = std::make_shared<Value::Impl>();
     publicVal.impl->internal = std::make_shared<::havel::HavelValue>(internal);
     
@@ -51,9 +56,10 @@ Value toPublicValue(const ::havel::HavelValue& internal) {
 
 // Convert public Value to internal HavelValue
 ::havel::HavelValue toInternalValue(const Value& publicVal) {
-    if (!publicVal.impl || !publicVal.impl->internal) {
+    if (!publicVal.impl) {
         return ::havel::HavelValue(nullptr);
     }
+    // Access internal through the complete type defined later
     return *publicVal.impl->internal;
 }
 
@@ -62,10 +68,6 @@ Value toPublicValue(const ::havel::HavelValue& internal) {
 // ============================================================================
 // Value implementation
 // ============================================================================
-
-struct Value::Impl {
-    std::shared_ptr<::havel::HavelValue> internal;
-};
 
 Value::Value(bool b) : type(Type::Bool), impl(std::make_shared<Impl>()) {
     impl->internal = std::make_shared<::havel::HavelValue>(b);
@@ -399,33 +401,21 @@ Result<Value> VM::call(const Value& func, const std::vector<Value>& args) {
             internalArgs.push_back(internal::toInternalValue(arg));
         }
         
-        // Get function value
-        auto funcVal = getGlobal(funcName);
-        if (funcVal.isNil()) {
-            return Result<Value>::err_result("Function not found: " + funcName);
+        // Call the function through interpreter
+        auto result = impl->interpreter->CallFunction(internal::toInternalValue(func), internalArgs);
+        
+        // Check for errors
+        if (std::holds_alternative<::havel::HavelRuntimeError>(result)) {
+            auto& err = std::get<::havel::HavelRuntimeError>(result);
+            return Result<Value>::err_result(err.what());
         }
         
-        // Call the function through interpreter
-        try {
-            auto internalFunc = internal::toInternalValue(funcVal);
-            auto result = impl->interpreter->CallFunction(internalFunc, internalArgs);
-            
-            // Check for errors
-            if (std::holds_alternative<::havel::HavelRuntimeError>(result)) {
-                auto& err = std::get<::havel::HavelRuntimeError>(result);
-                return Result<Value>::err_result(err.what());
-            }
-            
-            // Return result value
-            if (auto* valPtr = std::get_if<::havel::HavelValue>(&result)) {
-                return Result<Value>::ok_result(internal::toPublicValue(*valPtr));
-            }
-            
-            return Result<Value>::ok_result(Value());
-            
-        } catch (const std::exception& e) {
-            return Result<Value>::err_result(e.what());
+        // Return result value
+        if (auto* valPtr = std::get_if<::havel::HavelValue>(&result)) {
+            return Result<Value>::ok_result(internal::toPublicValue(*valPtr));
         }
+        
+        return Result<Value>::ok_result(Value());
         
     } catch (const std::exception& e) {
         return Result<Value>::err_result(e.what());
@@ -436,8 +426,8 @@ Value VM::getGlobal(const std::string& name) {
     if (!impl->interpreter) return Value();
     
     try {
-        auto& env = impl->interpreter->getEnvironment();
-        if (auto val = env.Get(name)) {
+        auto env = impl->interpreter->getEnvironment();
+        if (auto val = env->Get(name)) {
             return internal::toPublicValue(*val);
         }
     } catch (...) {
@@ -451,8 +441,8 @@ void VM::setGlobal(const std::string& name, const Value& value) {
     if (!impl->interpreter) return;
     
     try {
-        auto& env = impl->interpreter->getEnvironment();
-        env.Define(name, internal::toInternalValue(value));
+        auto env = impl->interpreter->getEnvironment();
+        env->Define(name, internal::toInternalValue(value));
     } catch (...) {
         // Ignore errors
     }
@@ -462,7 +452,7 @@ void VM::registerFn(const std::string& name, NativeFunction fn) {
     if (!impl->interpreter) return;
     
     try {
-        auto& env = impl->interpreter->getEnvironment();
+        auto env = impl->interpreter->getEnvironment();
         
         // Wrap native function in Havel BuiltinFunction
         ::havel::BuiltinFunction wrapper([fn, this](const std::vector<::havel::HavelValue>& internalArgs) -> ::havel::HavelResult {
@@ -479,7 +469,7 @@ void VM::registerFn(const std::string& name, NativeFunction fn) {
             return internal::toInternalValue(result);
         });
         
-        env.Define(name, wrapper);
+        env->Define(name, wrapper);
         
     } catch (...) {
         // Ignore errors
@@ -490,7 +480,7 @@ void VM::registerModule(const std::string& name, const std::vector<std::pair<std
     if (!impl->interpreter) return;
     
     try {
-        auto& env = impl->interpreter->getEnvironment();
+        auto env = impl->interpreter->getEnvironment();
         
         // Create module object
         ::havel::HavelObject moduleObj = std::make_shared<std::unordered_map<std::string, ::havel::HavelValue>>();
@@ -511,7 +501,7 @@ void VM::registerModule(const std::string& name, const std::vector<std::pair<std
         }
         
         // Register module
-        env.Define(name, ::havel::HavelValue(moduleObj));
+        env->Define(name, ::havel::HavelValue(moduleObj));
         
     } catch (...) {
         // Ignore errors

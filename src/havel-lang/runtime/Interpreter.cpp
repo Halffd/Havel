@@ -1277,8 +1277,13 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
         case ast::BinaryOperator::Sub: opName = "op_sub"; break;
         case ast::BinaryOperator::Mul: opName = "op_mul"; break;
         case ast::BinaryOperator::Div: opName = "op_div"; break;
+        case ast::BinaryOperator::Mod: opName = "op_mod"; break;
         case ast::BinaryOperator::Equal: opName = "op_eq"; break;
+        case ast::BinaryOperator::NotEqual: opName = "op_ne"; break;
         case ast::BinaryOperator::Less: opName = "op_lt"; break;
+        case ast::BinaryOperator::Greater: opName = "op_gt"; break;
+        case ast::BinaryOperator::LessEqual: opName = "op_le"; break;
+        case ast::BinaryOperator::GreaterEqual: opName = "op_ge"; break;
         default: opName = ""; break;
       }
       
@@ -1490,6 +1495,45 @@ void Interpreter::visitUnaryExpression(const ast::UnaryExpression &node) {
   }
   HavelValue operand = unwrap(operandRes);
 
+  // Check for struct unary operator overloads
+  if (operand.isStructInstance()) {
+    auto structInst = operand.asStructInstance();
+    if (structInst.structType) {
+      std::string opName;
+      switch (node.operator_) {
+        case ast::UnaryExpression::UnaryOperator::Not: opName = "op_not"; break;
+        case ast::UnaryExpression::UnaryOperator::Minus: opName = "op_neg"; break;
+        case ast::UnaryExpression::UnaryOperator::Plus: opName = "op_pos"; break;
+        default: opName = ""; break;
+      }
+      
+      if (!opName.empty() && structInst.structType->hasOperator(opName)) {
+        auto opMethod = structInst.structType->getOperator(opName);
+        if (opMethod && opMethod->body) {
+          // Create method environment with 'this' bound to operand
+          auto methodEnv = std::make_shared<Environment>(this->environment);
+          methodEnv->Define("this", operand);
+          
+          // Execute operator body
+          auto originalEnv = this->environment;
+          this->environment = methodEnv;
+          auto result = Evaluate(*opMethod->body);
+          this->environment = originalEnv;
+          
+          if (std::holds_alternative<ReturnValue>(result)) {
+            auto ret = std::get<ReturnValue>(result);
+            lastResult = ret.value ? *ret.value : HavelValue();
+          } else if (isError(result)) {
+            lastResult = result;
+          } else {
+            lastResult = unwrap(result);
+          }
+          return;
+        }
+      }
+    }
+  }
+
   switch (node.operator_) {
   case ast::UnaryExpression::UnaryOperator::Not:
     lastResult = !ValueToBool(operand);
@@ -1616,6 +1660,40 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       }
     } else {
       args.push_back(unwrap(argRes));
+    }
+  }
+
+  // Check for struct call operator: obj()
+  if (callee.isStructInstance()) {
+    auto structInst = callee.asStructInstance();
+    if (structInst.structType && structInst.structType->hasOperator("op_call")) {
+      auto opMethod = structInst.structType->getOperator("op_call");
+      if (opMethod && opMethod->body) {
+        // Create method environment with 'this' bound to callee
+        auto methodEnv = std::make_shared<Environment>(this->environment);
+        methodEnv->Define("this", callee);
+        
+        // Bind arguments to parameters
+        for (size_t i = 0; i < opMethod->parameters.size() && i < args.size(); ++i) {
+          methodEnv->Define(opMethod->parameters[i]->paramName->symbol, args[i]);
+        }
+        
+        // Execute operator body
+        auto originalEnv = this->environment;
+        this->environment = methodEnv;
+        auto result = Evaluate(*opMethod->body);
+        this->environment = originalEnv;
+        
+        if (std::holds_alternative<ReturnValue>(result)) {
+          auto ret = std::get<ReturnValue>(result);
+          lastResult = ret.value ? *ret.value : HavelValue();
+        } else if (isError(result)) {
+          lastResult = result;
+        } else {
+          lastResult = unwrap(result);
+        }
+        return;
+      }
     }
   }
 
@@ -1857,6 +1935,25 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
             return ret.value ? *ret.value : HavelValue();
           }
           return res;
+        }));
+        return;
+      }
+      
+      // Default toString() method for all structs
+      if (propName == "toString") {
+        auto structInst = objectValue.asStructInstance();
+        lastResult = HavelValue(BuiltinFunction([structInst](const std::vector<HavelValue>&) -> HavelResult {
+          std::string result = structInst.typeName + "{";
+          bool first = true;
+          if (structInst.fields) {
+            for (const auto& [name, value] : *structInst.fields) {
+              if (!first) result += ", ";
+              result += name + "=" + ValueToString(value);
+              first = false;
+            }
+          }
+          result += "}";
+          return HavelValue(result);
         }));
         return;
       }
@@ -2624,6 +2721,36 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression &node) {
 
   HavelValue objectValue = unwrap(objectResult);
   HavelValue indexValue = unwrap(indexResult);
+
+  // Check for struct index operator overload: obj[index]
+  if (objectValue.isStructInstance()) {
+    auto structInst = objectValue.asStructInstance();
+    if (structInst.structType && structInst.structType->hasOperator("op_index")) {
+      auto opMethod = structInst.structType->getOperator("op_index");
+      if (opMethod && opMethod->body) {
+        // Create method environment with 'this' bound to object
+        auto methodEnv = std::make_shared<Environment>(this->environment);
+        methodEnv->Define("this", objectValue);
+        methodEnv->Define("key", indexValue);
+        
+        // Execute operator body
+        auto originalEnv = this->environment;
+        this->environment = methodEnv;
+        auto result = Evaluate(*opMethod->body);
+        this->environment = originalEnv;
+        
+        if (std::holds_alternative<ReturnValue>(result)) {
+          auto ret = std::get<ReturnValue>(result);
+          lastResult = ret.value ? *ret.value : HavelValue();
+        } else if (isError(result)) {
+          lastResult = result;
+        } else {
+          lastResult = unwrap(result);
+        }
+        return;
+      }
+    }
+  }
 
   // Handle array indexing
   if (objectValue.isArray()) {

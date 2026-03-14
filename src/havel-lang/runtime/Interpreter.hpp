@@ -428,6 +428,9 @@ public:
   // Get HostContext for module access
   HostContext& getHostContext() { return hostContext; }
   const HostContext& getHostContext() const { return hostContext; }
+  
+  // Get HostAPI for updating manager pointers
+  std::shared_ptr<IHostAPI> getHostAPI() { return hostAPI; }
 
   // Set last result
   void setLastResult(HavelResult result) { lastResult = result; }

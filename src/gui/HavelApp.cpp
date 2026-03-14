@@ -163,6 +163,11 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Update interpreter's hostContext with hotkeyManager
   interpreter->getHostContext().hotkeyManager = hotkeyManager;
   
+  // Update HostAPI with hotkeyManager (HostAPI was created with nullptr)
+  if (interpreter->getHostAPI()) {
+    interpreter->getHostAPI()->SetHotkeyManager(hotkeyManager.get());
+  }
+
   // Register interpreter for hotkey callbacks (must be after construction)
   interpreter->RegisterForHotkeys();
   std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;

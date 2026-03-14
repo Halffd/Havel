@@ -1039,16 +1039,40 @@ std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::Str
     if (at().type == havel::TokenType::Fn || at().type == havel::TokenType::Op) {
       bool isOperator = (at().type == havel::TokenType::Op);
       advance(); // consume 'fn' or 'op'
-
-      // Parse method/operator name
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected name after '" + std::string(isOperator ? "op" : "fn") + "'");
-      }
-      std::string methodName = advance().value;
       
-      // For operators, prefix with "op_" for internal storage
+      // Skip whitespace/newlines after fn/op
+      while ((at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Comment) && notEOF()) {
+        advance();
+      }
+
+      std::string methodName;
+      
       if (isOperator) {
-        methodName = "op_" + methodName;  // e.g., "+" becomes "op_+"
+        // For operators, accept operator symbols (+, -, *, /, etc.)
+        // Check token value directly for reliability
+        const std::string& tokenVal = at().value;
+        if (tokenVal == "+") { methodName = "op_add"; advance(); }
+        else if (tokenVal == "-") { methodName = "op_sub"; advance(); }
+        else if (tokenVal == "*") { methodName = "op_mul"; advance(); }
+        else if (tokenVal == "/") { methodName = "op_div"; advance(); }
+        else if (tokenVal == "%") { methodName = "op_mod"; advance(); }
+        else if (tokenVal == "==") { methodName = "op_eq"; advance(); }
+        else if (tokenVal == "!=") { methodName = "op_ne"; advance(); }
+        else if (tokenVal == "<") { methodName = "op_lt"; advance(); }
+        else if (tokenVal == ">") { methodName = "op_gt"; advance(); }
+        else if (tokenVal == "<=") { methodName = "op_le"; advance(); }
+        else if (tokenVal == ">=") { methodName = "op_ge"; advance(); }
+        else if (tokenVal == "[") { methodName = "op_index"; advance(); }
+        else if (tokenVal == "(") { methodName = "op_call"; advance(); }
+        else {
+          failAt(at(), "Expected operator symbol (+, -, *, /, ==, etc.) after 'op'");
+        }
+      } else {
+        // Regular method - expect identifier
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected method name after 'fn'");
+        }
+        methodName = advance().value;
       }
 
       // Check if this is a constructor (named 'init')

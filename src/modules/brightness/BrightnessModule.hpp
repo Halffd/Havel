@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerBrightnessModule(Environment& env, IHostAPI* hostAPI);
+void registerBrightnessModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerTimerModule(Environment& env, IHostAPI*) {
+void registerTimerModule(Environment& env, std::shared_ptr<IHostAPI>) {
     // Create timer module object
     auto timerObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

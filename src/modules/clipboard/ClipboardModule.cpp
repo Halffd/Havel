@@ -14,7 +14,7 @@
 
 namespace havel::modules {
 
-void registerClipboardModule(Environment& env, IHostAPI* hostAPI) {
+void registerClipboardModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // Basic clipboard functions don't need ClipboardManager
     // Create clipboard module object
     auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();

@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerTimerModule(Environment& env, IHostAPI* hostAPI);
+void registerTimerModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

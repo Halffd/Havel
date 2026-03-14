@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerAudioModule(Environment& env, IHostAPI* hostAPI) {
+void registerAudioModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no audio manager available
     }

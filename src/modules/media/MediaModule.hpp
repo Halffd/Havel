@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerMediaModule(Environment& env, IHostAPI* hostAPI);
+void registerMediaModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

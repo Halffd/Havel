@@ -55,7 +55,7 @@ static std::optional<int> parseMouseButton(const HavelValue& value) {
     return std::nullopt;
 }
 
-void registerIOModule(Environment& env, IHostAPI* hostAPI) {
+void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI || !hostAPI->GetIO()) {
         return;  // Skip if IO not available
     }

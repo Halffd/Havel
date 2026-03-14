@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerBrowserModule(Environment& env, IHostAPI* hostAPI);
+void registerBrowserModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

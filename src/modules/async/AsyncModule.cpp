@@ -13,7 +13,7 @@
 
 namespace havel::modules {
 
-void registerAsyncModule(Environment& env, IHostAPI*) {
+void registerAsyncModule(Environment& env, std::shared_ptr<IHostAPI>) {
     // =========================================================================
     // Async task functions - Simplified stub implementation
     // Full implementation requires interpreter context

@@ -68,7 +68,7 @@ bool defineGlobalAlias(Environment& env, const std::string& alias,
  * Load all modules (stdlib + host)
  * This is the main entry point for module loading
  */
-void loadAllModules(Environment& env, IHostAPI* hostAPI) {
+void loadAllModules(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // Create module loader
     ModuleLoader loader;
     

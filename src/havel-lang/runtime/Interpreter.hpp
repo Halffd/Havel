@@ -568,7 +568,7 @@ public:
 private:
   std::shared_ptr<Environment> environment;
   HostContext hostContext;  // All host managers accessed via context
-  std::shared_ptr<HostAPI> hostAPI;  // Keep HostAPI alive for module lambdas
+  std::shared_ptr<IHostAPI> hostAPI;  // Keep HostAPI alive for module lambdas
   HavelResult lastResult;
   std::mutex interpreterMutex;
 

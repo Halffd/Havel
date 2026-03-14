@@ -11,7 +11,7 @@
 
 namespace havel::modules {
 
-void registerDetectorModule(Environment& env, IHostAPI*) {
+void registerDetectorModule(Environment& env, std::shared_ptr<IHostAPI>) {
     // =========================================================================
     // Display detector
     // =========================================================================

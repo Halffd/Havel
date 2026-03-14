@@ -22,7 +22,7 @@ bool defineGlobalAlias(Environment& env, const std::string& alias,
                        const std::string& sourceName);
 
 // Load all modules (stdlib + host)
-void loadAllModules(Environment& env, IHostAPI* hostAPI);
+void loadAllModules(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

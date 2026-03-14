@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerHTTPModule(Environment& env, IHostAPI* hostAPI) {
+void registerHTTPModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     (void)hostAPI;  // HTTP doesn't need host context
 
     // HTTP client for REST API calls

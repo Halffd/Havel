@@ -13,7 +13,7 @@
 
 namespace havel::modules {
 
-void registerAppModule(Environment& env, IHostAPI* hostAPI) {
+void registerAppModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     auto& io = hostAPI;
     
     // Create app module object

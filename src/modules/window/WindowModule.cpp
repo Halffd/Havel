@@ -11,7 +11,7 @@
 
 namespace havel::modules {
 
-void registerWindowModule(Environment& env, IHostAPI* hostAPI) {
+void registerWindowModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no window manager available
     }

@@ -1577,7 +1577,13 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
   }
 
   if (auto *builtin = callee.get_if<BuiltinFunction>()) {
-    lastResult = (*builtin)(args);
+    auto result = (*builtin)(args);
+    // Unwrap the result to get the actual value
+    if (isError(result)) {
+      lastResult = result;
+    } else {
+      lastResult = unwrap(result);
+    }
   } else if (auto *userFunc = callee.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
     

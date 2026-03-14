@@ -342,8 +342,26 @@ void HotkeyManager::loadDebugSettings() {}
 void HotkeyManager::applyDebugSettings() {}
 
 void HotkeyManager::cleanup() {
+  // Stop EventListener FIRST to prevent callbacks during cleanup
+  if (io) {
+    debug("HotkeyManager::cleanup() - stopping EventListener");
+    io->StopEventListener();
+  }
+  
+  // Clear callbacks in IO to prevent dangling this pointers
+  if (io) {
+    debug("HotkeyManager::cleanup() - clearing IO callbacks");
+    io->SetAnyKeyPressCallback(nullptr);
+    io->SetInputEventCallback(nullptr);
+    io->SetInputBlockCallback(nullptr);
+  }
+  inputCallbacksInitialized = false;
+  
+  // Original cleanup
   conditionalHotkeysEnabled = false;
   conditionalManager.SetEnabled(false);
+  
+  debug("HotkeyManager::cleanup() - cleanup complete");
 }
 
 void HotkeyManager::toggleFakeDesktopOverlay() {

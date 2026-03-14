@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerMediaModule(Environment& env, IHostAPI*) {
+void registerMediaModule(Environment& env, std::shared_ptr<IHostAPI>) {
     auto app = HavelApp::instance;
     if (!app) {
         return;  // Skip if HavelApp not available

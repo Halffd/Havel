@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerAudioModule(Environment& env, IHostAPI* hostAPI);
+void registerAudioModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

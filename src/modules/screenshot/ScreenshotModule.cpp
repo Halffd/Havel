@@ -14,7 +14,7 @@
 
 namespace havel::modules {
 
-void registerScreenshotModule(Environment& env, IHostAPI* hostAPI) {
+void registerScreenshotModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // Create screenshot module object
     auto screenshotObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 

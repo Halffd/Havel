@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerAltTabModule(Environment& env, IHostAPI* hostAPI);
+void registerAltTabModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

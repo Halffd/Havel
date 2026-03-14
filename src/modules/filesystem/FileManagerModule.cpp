@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerFileManagerModule(Environment& env, IHostAPI*) {
+void registerFileManagerModule(Environment& env, std::shared_ptr<IHostAPI>) {
     // Create filemanager module object
     auto filemanagerObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

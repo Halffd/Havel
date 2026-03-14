@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerModeModule(Environment& env, IHostAPI* hostAPI) {
+void registerModeModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // Create mode object
     auto modeObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 

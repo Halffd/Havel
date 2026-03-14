@@ -10,6 +10,6 @@ namespace havel {
 void registerHostModules(ModuleLoader& loader);
 
 // Load all host modules into environment
-void loadHostModules(Environment& env, ModuleLoader& loader, IHostAPI* hostAPI);
+void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace havel

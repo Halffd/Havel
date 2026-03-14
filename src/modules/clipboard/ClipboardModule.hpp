@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerClipboardModule(Environment& env, IHostAPI* hostAPI);
+void registerClipboardModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

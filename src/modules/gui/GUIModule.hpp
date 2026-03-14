@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerGUIModule(Environment& env, IHostAPI* hostAPI);
+void registerGUIModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

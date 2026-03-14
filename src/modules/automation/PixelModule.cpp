@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerPixelModule(Environment& env, IHostAPI* hostAPI) {
+void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetIO() || !hostAPI->GetBrightnessManager()) {
         return;  // Skip if no pixel automation available
     }

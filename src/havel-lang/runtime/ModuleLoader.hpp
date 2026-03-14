@@ -9,6 +9,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <stdexcept>
+#include <memory>
 
 namespace havel {
 
@@ -22,8 +23,9 @@ using ModuleFn = std::function<void(Environment&)>;
 
 /**
  * Host module registration function (has IHostAPI access)
+ * Takes shared_ptr to keep HostAPI alive for lambdas
  */
-using HostModuleFn = std::function<void(Environment&, IHostAPI*)>;
+using HostModuleFn = std::function<void(Environment&, std::shared_ptr<IHostAPI>)>;
 
 /**
  * Simple module registry - NOT a singleton
@@ -55,7 +57,7 @@ public:
     /**
      * Load a module
      */
-    bool load(Environment& env, const std::string& name, IHostAPI* hostAPI = nullptr) {
+    bool load(Environment& env, const std::string& name, std::shared_ptr<IHostAPI> hostAPI = nullptr) {
         auto it = modules.find(name);
         if (it == modules.end()) {
             return false;
@@ -81,7 +83,7 @@ public:
     /**
      * Load all registered modules
      */
-    void loadAll(Environment& env, IHostAPI* hostAPI = nullptr) {
+    void loadAll(Environment& env, std::shared_ptr<IHostAPI> hostAPI = nullptr) {
         for (const auto& [name, fn] : modules) {
             load(env, name, hostAPI);
         }

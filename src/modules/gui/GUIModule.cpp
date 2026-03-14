@@ -13,7 +13,7 @@
 
 namespace havel::modules {
 
-void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
+void registerGUIModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     bool hasManager = hostAPI->GetIO() != nullptr && hostAPI->GetGUIManager();
     GUIManager* gm = hasManager ? hostAPI->GetGUIManager() : nullptr;
 

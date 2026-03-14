@@ -330,7 +330,7 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   );
 
   // Load all modules (stdlib + host)
-  havel::modules::loadAllModules(*environment, this->hostAPI.get());
+  havel::modules::loadAllModules(*environment, this->hostAPI);
 
   info("Interpreter initialized (hotkey interpreter will be set by caller)");
 }

@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerDetectorModule(Environment& env, IHostAPI* hostAPI);
+void registerDetectorModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

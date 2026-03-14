@@ -14,7 +14,7 @@ class Environment;
 
 namespace modules {
 
-void registerPixelModule(Environment& env, IHostAPI* hostAPI);
+void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace modules
 } // namespace havel

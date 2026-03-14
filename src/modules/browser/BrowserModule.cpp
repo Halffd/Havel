@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerBrowserModule(Environment& env, IHostAPI* hostAPI) {
+void registerBrowserModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     (void)hostAPI;  // Browser doesn't need host context
     
     // Browser automation via Chrome DevTools Protocol

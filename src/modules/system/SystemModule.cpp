@@ -13,7 +13,7 @@
 
 namespace havel::modules {
 
-void registerSystemModule(Environment& env, IHostAPI* hostAPI) {
+void registerSystemModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     (void)hostAPI;  // System info doesn't need host context
     
     // =========================================================================

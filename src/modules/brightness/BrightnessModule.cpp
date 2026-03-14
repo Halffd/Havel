@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerBrightnessModule(Environment& env, IHostAPI* hostAPI) {
+void registerBrightnessModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
         return;  // Skip if no brightness manager available
     }

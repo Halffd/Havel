@@ -14,7 +14,7 @@ namespace havel::modules {
 // Static instance - matches the pattern in Interpreter.cpp
 static std::unique_ptr<MapManager> coreMapManager;
 
-void registerMapManagerModule(Environment& env, IHostAPI* hostAPI) {
+void registerMapManagerModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // Create mapmanager module object
     auto mapManagerObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
     

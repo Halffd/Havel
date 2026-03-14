@@ -10,7 +10,7 @@
 
 namespace havel::modules {
 
-void registerHelpModule(Environment& env, IHostAPI* hostAPI) {
+void registerHelpModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     (void)hostAPI;  // Help doesn't need host context
 
     env.Define("help", HavelValue(BuiltinFunction(

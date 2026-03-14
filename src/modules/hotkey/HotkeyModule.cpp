@@ -23,7 +23,7 @@ void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp) {
     }
 }
 
-void registerHotkeyModule(Environment& env, IHostAPI* hostAPI) {
+void registerHotkeyModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetHotkeyManager()) {
         return;  // Skip if hotkey manager not available
     }

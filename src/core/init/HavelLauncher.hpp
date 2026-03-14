@@ -28,6 +28,7 @@ private:
     bool debugAst = false;
     bool debugLexer = false;
     bool stopOnError = false;  // Stop on first error/warning
+    bool fullRepl = false;     // Full REPL with all features (hotkeys, GUI, etc.)
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

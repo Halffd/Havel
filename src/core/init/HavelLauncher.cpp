@@ -76,6 +76,10 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       repl = true;
     } else if (arg == "--gui") {
       cfg.mode = Mode::GUI_ONLY;
+    } else if (arg == "--full-repl" || arg == "-fr") {
+      // Full REPL with all features (hotkeys, GUI, etc.)
+      cfg.fullRepl = true;
+      repl = true;
     } else if (arg == "--config" || arg == "-c") {
       // Config file path
       if (i + 1 < argc) {
@@ -108,10 +112,23 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.mode = Mode::SCRIPT;
     }
   }
-  if(repl) {
+  
+  // Determine mode based on flags and script file
+  if (repl && !cfg.scriptFile.empty()) {
+    // Script + REPL mode - full features
+    cfg.mode = Mode::SCRIPT_AND_REPL;
+  } else if (repl && cfg.fullRepl) {
+    // Full REPL mode - full features even without script
+    cfg.mode = Mode::SCRIPT_AND_REPL;
+  } else if (repl) {
+    // REPL only mode
     cfg.mode = Mode::REPL;
+  } else if (cfg.scriptFile.empty() && cfg.mode == Mode::DAEMON) {
+    // No script, no REPL - daemon mode
+    cfg.mode = Mode::DAEMON;
   }
-
+  // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
+  
   return cfg;
 }
 
@@ -981,12 +998,18 @@ void HavelLauncher::showHelp() {
   std::cout << "  --debug-ast, -da    Enable AST debugging\n";
   std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";
-  std::cout << "  --repl, -r          Start interactive REPL\n";
+  std::cout << "  --repl, -r          Start interactive REPL (minimal mode)\n";
+  std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, GUI, etc.)\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout << "  --run               Run script without IO/hotkeys (pure mode)\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no script is provided, the GUI tray application starts.\n";
+  std::cout << "\nModes:\n";
+  std::cout << "  havel script.hv           - Run script with full features\n";
+  std::cout << "  havel --repl script.hv    - Run script then enter REPL (full features)\n";
+  std::cout << "  havel --full-repl         - Start REPL with all features\n";
+  std::cout << "  havel --run script.hv     - Run script in minimal mode (no hotkeys)\n";
   std::cout << "\nPure mode (--run):\n";
   std::cout << "  Executes scripts without IO, hotkeys, display, or GUI.\n";
   std::cout << "  Useful for testing scripts that auto-exit or don't need input.\n";

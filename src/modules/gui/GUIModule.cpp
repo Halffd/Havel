@@ -127,7 +127,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Input dialog
     // =========================================================================
     
-    (*guiObj)["input"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["input"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("input")) return *err;
         if (args.empty()) {
             return HavelRuntimeError("gui.input() requires title");
@@ -145,7 +145,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Confirm dialog
     // =========================================================================
     
-    (*guiObj)["confirm"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["confirm"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("confirm")) return *err;
         if (args.size() < 2) {
             return HavelRuntimeError("gui.confirm() requires (title, message)");
@@ -162,7 +162,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Notification
     // =========================================================================
     
-    (*guiObj)["notify"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["notify"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("notify")) return *err;
         if (args.size() < 2) {
             return HavelRuntimeError("gui.notify() requires (title, message)");
@@ -180,7 +180,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // File dialog
     // =========================================================================
     
-    (*guiObj)["fileDialog"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["fileDialog"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("fileDialog")) return *err;
         std::string title = args.size() > 0 ? valueToString(args[0]) : "Select File";
         std::string dir = args.size() > 1 ? valueToString(args[1]) : "";
@@ -194,7 +194,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Directory dialog
     // =========================================================================
     
-    (*guiObj)["directoryDialog"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["directoryDialog"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("directoryDialog")) return *err;
         std::string title = args.size() > 0 ? valueToString(args[0]) : "Select Directory";
         std::string dir = args.size() > 1 ? valueToString(args[1]) : "";
@@ -207,7 +207,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Window transparency
     // =========================================================================
     
-    (*guiObj)["setTransparency"] = HavelValue(BuiltinFunction([&gm, requireGui](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["setTransparency"] = HavelValue(BuiltinFunction([gm, requireGui](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("setTransparency")) return *err;
         if (args.empty()) {
             return HavelRuntimeError("window.setTransparency() requires opacity (0.0-1.0)");
@@ -222,7 +222,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Password dialog
     // =========================================================================
 
-    (*guiObj)["password"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["password"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("password")) return *err;
         if (args.empty()) {
             return HavelRuntimeError("gui.password() requires title");
@@ -239,7 +239,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Color picker
     // =========================================================================
 
-    (*guiObj)["colorPicker"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["colorPicker"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("colorPicker")) return *err;
         std::string title = args.size() > 0 ? valueToString(args[0]) : "Select Color";
         std::string defaultColor = args.size() > 1 ? valueToString(args[1]) : "#FFFFFF";
@@ -252,7 +252,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Window transparency (by window ID)
     // =========================================================================
 
-    (*guiObj)["setWindowTransparency"] = HavelValue(BuiltinFunction([&gm, requireGui](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["setWindowTransparency"] = HavelValue(BuiltinFunction([gm, requireGui](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("setWindowTransparency")) return *err;
         if (args.size() < 2) {
             return HavelRuntimeError("gui.setWindowTransparency() requires (windowId, opacity)");
@@ -268,7 +268,7 @@ void registerGUIModule(Environment& env, IHostAPI* hostAPI) {
     // Window transparency (by title)
     // =========================================================================
 
-    (*guiObj)["setTransparencyByTitle"] = HavelValue(BuiltinFunction([&gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*guiObj)["setTransparencyByTitle"] = HavelValue(BuiltinFunction([gm, requireGui, valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireGui("setTransparencyByTitle")) return *err;
         if (args.size() < 2) {
             return HavelRuntimeError("gui.setTransparencyByTitle() requires (title, opacity)");

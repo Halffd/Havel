@@ -580,6 +580,64 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
     }
   }
   
+  // Check for window title conditions (multiple syntaxes)
+  std::string currentTitle = io->GetActiveWindowTitle();
+  
+  // Syntax: window.title == 'Chatterino' or window.title=='Chatterino'
+  if (condition.find("window.title ==") != std::string::npos ||
+      condition.find("window.title==") != std::string::npos) {
+    size_t start = condition.find("'");
+    if (start != std::string::npos) {
+      size_t end = condition.find("'", start + 1);
+      if (end != std::string::npos) {
+        std::string titleVal = condition.substr(start + 1, end - start - 1);
+        return (currentTitle.find(titleVal) != std::string::npos);
+      }
+    }
+  }
+  
+  // Syntax: title == 'Chatterino' or title=='Chatterino'
+  if (condition.find("title ==") != std::string::npos ||
+      condition.find("title==") != std::string::npos) {
+    size_t start = condition.find("'");
+    if (start != std::string::npos) {
+      size_t end = condition.find("'", start + 1);
+      if (end != std::string::npos) {
+        std::string titleVal = condition.substr(start + 1, end - start - 1);
+        return (currentTitle.find(titleVal) != std::string::npos);
+      }
+    }
+  }
+  
+  // Check for window class conditions
+  std::string currentClass = io->GetActiveWindowClass();
+  
+  // Syntax: window.class == 'Firefox' or window.class=='Firefox'
+  if (condition.find("window.class ==") != std::string::npos ||
+      condition.find("window.class==") != std::string::npos) {
+    size_t start = condition.find("'");
+    if (start != std::string::npos) {
+      size_t end = condition.find("'", start + 1);
+      if (end != std::string::npos) {
+        std::string classVal = condition.substr(start + 1, end - start - 1);
+        return (currentClass.find(classVal) != std::string::npos);
+      }
+    }
+  }
+  
+  // Syntax: class == 'Firefox' or class=='Firefox'
+  if (condition.find("class ==") != std::string::npos ||
+      condition.find("class==") != std::string::npos) {
+    size_t start = condition.find("'");
+    if (start != std::string::npos) {
+      size_t end = condition.find("'", start + 1);
+      if (end != std::string::npos) {
+        std::string classVal = condition.substr(start + 1, end - start - 1);
+        return (currentClass.find(classVal) != std::string::npos);
+      }
+    }
+  }
+  
   // Default: return false if no evaluator and condition is not recognized
   return false;
 }

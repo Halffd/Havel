@@ -311,8 +311,8 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createMemberResolver(this);
 
   // Create HostAPI wrapper (composes IO, HotkeyManager, Config and other managers)
-  // Use raw pointers - Interpreter owns these, no shared ownership needed
-  auto hostAPI = std::make_shared<HostAPI>(
+  // Store as member to keep it alive for module lambdas
+  this->hostAPI = std::make_shared<HostAPI>(
       hostContext.io.get(),
       hostContext.hotkeyManager.get(),
       Configs::Get(),
@@ -330,7 +330,7 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   );
 
   // Load all modules (stdlib + host)
-  havel::modules::loadAllModules(*environment, hostAPI.get());
+  havel::modules::loadAllModules(*environment, this->hostAPI.get());
 
   info("Interpreter initialized (hotkey interpreter will be set by caller)");
 }

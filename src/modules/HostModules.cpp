@@ -50,6 +50,7 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("help", modules::registerHelpModule);
     loader.addHost("filesystem", modules::registerFileManagerModule);
     loader.addHost("system", modules::registerSystemModule);
+    loader.addHost("detector", modules::registerDetectorModule);
     loader.addHost("gui", modules::registerGUIModule);
     loader.addHost("alttab", modules::registerAltTabModule);
     loader.addHost("mapmanager", modules::registerMapManagerModule);
@@ -84,6 +85,7 @@ void loadHostModules(Environment& env, ModuleLoader& loader, IHostAPI* hostAPI) 
     loader.load(env, "help", hostAPI);
     loader.load(env, "filesystem", hostAPI);
     loader.load(env, "system", hostAPI);
+    loader.load(env, "detector", hostAPI);
     loader.load(env, "gui", hostAPI);
     loader.load(env, "alttab", hostAPI);
     loader.load(env, "mapmanager", hostAPI);
@@ -97,7 +99,7 @@ void loadHostModules(Environment& env, ModuleLoader& loader, IHostAPI* hostAPI) 
     loader.load(env, "mode", hostAPI);
     loader.load(env, "hotkey", hostAPI);
     loader.load(env, "browser", hostAPI);
-    loader.load(env, "ffi", hostAPI);
+    // loader.load(env, "ffi", hostAPI);  // Not registered
 }
 
 } // namespace havel

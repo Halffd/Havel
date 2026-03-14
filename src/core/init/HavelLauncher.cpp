@@ -188,7 +188,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     std::string code = buffer.str();
 
     // Check if script contains hotkeys BEFORE creating QApplication
-    std::regex hotkeyPattern(R"(\b[A-Za-z0-9+^!#@~*$]+\s*=>)");
+    // Match: "key =>", "key if condition =>", "key when condition =>"
+    std::regex hotkeyPattern(R"(\b[A-Za-z0-9+^!#@~*$]+\s+(?:if|when|=>))");
     bool hasHotkeys = std::regex_search(code, hotkeyPattern);
 
     // Also check for GUI-dependent operations

@@ -67,6 +67,63 @@ HavelApp::~HavelApp() {
   debug("HavelApp destroyed");
 }
 
+void HavelApp::cleanup() noexcept {
+  debug("HavelApp::cleanup() - starting cleanup");
+  
+  // 1. Stop EventListener FIRST to prevent callbacks during cleanup
+  if (io) {
+    debug("HavelApp::cleanup() - stopping EventListener");
+    io->StopEventListener();
+  }
+  
+  // 2. Destroy hotkeyManager (this will clear callbacks)
+  if (hotkeyManager) {
+    debug("HavelApp::cleanup() - destroying HotkeyManager");
+    hotkeyManager->cleanup();
+    hotkeyManager.reset();
+  }
+  
+  // 3. Destroy interpreter (which holds HostAPI)
+  if (interpreter) {
+    debug("HavelApp::cleanup() - destroying Interpreter");
+    interpreter.reset();
+  }
+  
+  // 4. Destroy other components
+  if (automationManager) {
+    debug("HavelApp::cleanup() - destroying AutomationManager");
+    automationManager.reset();
+  }
+  
+  if (brightnessManager) {
+    debug("HavelApp::cleanup() - destroying BrightnessManager");
+    brightnessManager.reset();
+  }
+  
+  if (audioManager) {
+    debug("HavelApp::cleanup() - destroying AudioManager");
+    audioManager.reset();
+  }
+  
+  if (mpv) {
+    debug("HavelApp::cleanup() - destroying MPVController");
+    mpv.reset();
+  }
+  
+  if (windowManager) {
+    debug("HavelApp::cleanup() - destroying WindowManager");
+    windowManager.reset();
+  }
+  
+  // 5. Destroy IO LAST (after all callbacks are cleared)
+  if (io) {
+    debug("HavelApp::cleanup() - destroying IO");
+    io.reset();
+  }
+  
+  debug("HavelApp::cleanup() - cleanup complete");
+}
+
 void HavelApp::initializeComponents(bool isStartup) {
   info("Initializing HvC components...");
 
@@ -454,37 +511,6 @@ void HavelApp::exitApp() {
   std::exit(0);
 }
 
-void HavelApp::cleanup() noexcept {
-  if (shutdownRequested) {
-    return; // Already cleaning up
-  }
-
-  shutdownRequested = true;
-
-  // Clean up components in reverse order of initialization
-  // ClipboardManager is now managed by AutomationSuite (lazy init)
-
-  // Reset hotkey manager safely - this will trigger its cleanup
-  if (hotkeyManager) {
-    hotkeyManager->cleanup(); // Call cleanup directly
-    hotkeyManager.reset();
-  }
-
-  mpv.reset();
-
-  // Shutdown compositor bridge before window manager
-  WindowManager::ShutdownCompositorBridge();
-
-  windowManager.reset();
-
-  // Reset IO safely
-  if (io) {
-    io->cleanup();
-    io.reset();
-  }
-
-  info("HavelApp cleanup complete");
-}
 void HavelApp::showTextChunker() {
   QClipboard *clipboard = QApplication::clipboard();
   std::string text = clipboard->text().toStdString();

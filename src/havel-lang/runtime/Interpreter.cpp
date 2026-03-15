@@ -11,6 +11,7 @@
 #include "core/io/MapManager.hpp"
 #include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
+#include "core/process/ShellExecutor.hpp"
 #include "fs/FileManager.hpp"
 #include "gui/AltTab.hpp"
 #include "gui/GUIManager.hpp"
@@ -1106,95 +1107,62 @@ void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression 
 }
 
 void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
-  // Execute command chain (support pipes: $! cmd1 | cmd2 | cmd3)
-  const ast::ShellCommandStatement* current = &node;
-  std::string inputStdin;  // Stdin from previous command in pipe
-  int pipeStage = 0;  // Unique identifier for each stage in the pipe
+  // Build command string from expression
+  auto cmdResult = Evaluate(*node.commandExpr);
+  if (isError(cmdResult)) {
+    lastResult = cmdResult;
+    return;
+  }
 
-  havel::ProcessResult result;
+  // Defensive check: ensure result is valid
+  if (!std::holds_alternative<HavelValue>(cmdResult)) {
+    lastResult = HavelRuntimeError("Shell command must be a value, not control flow");
+    return;
+  }
 
-  while (current != nullptr) {
-    // Evaluate command expression
-    auto cmdResult = Evaluate(*current->commandExpr);
-    if (isError(cmdResult)) {
-      lastResult = cmdResult;
-      return;
-    }
+  HavelValue cmdValue = unwrap(cmdResult);
 
-    // Defensive check: ensure result is valid before unwrapping
-    if (!std::holds_alternative<HavelValue>(cmdResult)) {
-      lastResult = HavelRuntimeError("Shell command must be a value, not control flow");
-      return;
-    }
-    
-    HavelValue cmdValue = unwrap(cmdResult);
-    
-    // Defensive check: ensure the value itself is valid
-    if (cmdValue.is<BuiltinFunction>()) {
-      lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");
-      return;
-    }
+  // Defensive check: ensure the value itself is valid
+  if (cmdValue.is<BuiltinFunction>()) {
+    lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");
+    return;
+  }
 
-    // Check if command is an array (argument vector) or string
-    if (cmdValue.isArray()) {
-      // Array mode: ["cmd", "arg1", "arg2"] - execute without shell
-      auto argsArray = cmdValue.asArray();
-      if (argsArray && !argsArray->empty()) {
-        std::vector<std::string> args;
-        for (size_t i = 0; i < argsArray->size(); ++i) {
-          args.push_back(ValueToString((*argsArray)[i]));
-        }
-        
-        // If there's stdin from previous command in pipe, use shell
-        if (!inputStdin.empty()) {
-          std::string cmd = args[0];
-          for (size_t i = 1; i < args.size(); ++i) {
-            cmd += " " + args[i];
-          }
-          result = havel::Launcher::runShell(cmd);
-        } else {
-          result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
-        }
-      } else {
-        lastResult = HavelRuntimeError("Shell command array is empty");
-        return;
+  std::string command;
+  
+  // Check if command is an array (argument vector) or string
+  if (cmdValue.isArray()) {
+    // Array mode: ["cmd", "arg1", "arg2"] - join into single command
+    auto argsArray = cmdValue.asArray();
+    if (argsArray && !argsArray->empty()) {
+      for (size_t i = 0; i < argsArray->size(); ++i) {
+        if (i > 0) command += " ";
+        command += ValueToString((*argsArray)[i]);
       }
     } else {
-      // String mode: execute through shell
-      std::string command = ValueToString(cmdValue);
-      
-      // If there's stdin from previous command, pipe it
-      if (!inputStdin.empty()) {
-        // Write stdin to a temp file with unique name
-        std::string tempFile = "/tmp/havel_pipe_" + std::to_string(getpid()) + "_" + std::to_string(pipeStage++);
-        std::ofstream ofs(tempFile);
-        ofs << inputStdin;
-        ofs.close();
-        
-        command = "cat " + tempFile + " | " + command;
-        result = havel::Launcher::runShell(command);
-        std::remove(tempFile.c_str());
-      } else {
-        result = havel::Launcher::runShell(command);
-      }
+      lastResult = HavelRuntimeError("Shell command array is empty");
+      return;
     }
-    
-    // Prepare stdin for next command in chain
-    inputStdin = result.stdout;
-    
-    // Move to next command in pipe chain
-    current = current->next.get();
+  } else {
+    // String mode
+    command = ValueToString(cmdValue);
   }
 
-  // Return exit code (shell semantics)
-  // 0 = success, non-zero = failure
-  // Also forward stdout/stderr
-  if (!result.stdout.empty()) {
-    std::cout << result.stdout;
+  // Split by pipe character (respects quotes)
+  auto commands = ShellExecutor::splitPipes(command);
+  
+  // Execute command chain
+  ShellResult result = ShellExecutor::executeChain(commands);
+  
+  // Forward stdout/stderr
+  if (!result.stdout_.empty()) {
+    std::cout << result.stdout_;
   }
-  if (!result.stderr.empty()) {
-    std::cerr << result.stderr;
+  if (!result.stderr_.empty()) {
+    std::cerr << result.stderr_;
   }
+  
+  // Return exit code
   lastResult = HavelValue(static_cast<double>(result.exitCode));
 }
 

@@ -67,7 +67,7 @@ public:
 
 private:
     // Internal execution helpers
-    ShellResult executeSingle(const std::string& command, bool useShell);
+    static ShellResult executeSingle(const std::string& command, bool useShell);
 };
 
 } // namespace havel

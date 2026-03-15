@@ -109,7 +109,7 @@ public:
   static std::mutex &RegisteredHotkeysMutex();
 
   bool conditionalHotkeysEnabled = true;
-  std::vector<ConditionalHotkey> &activeConditionalHotkeys;
+  std::vector<ConditionalHotkey> *activeConditionalHotkeys;
 
 private:
   void initializeInputCallbacks();

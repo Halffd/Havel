@@ -22,8 +22,12 @@ std::mutex &HotkeyManager::RegisteredHotkeysMutex() {
 }
 
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
-    : activeConditionalHotkeys(conditionalManager.GetHotkeys()), io(io),
-      conditionalManager(io) {
+    : io(io),
+      conditionalManager(io),
+      activeConditionalHotkeys(nullptr) {  // Will be set after conditionalManager is initialized
+  // Now conditionalManager is initialized, safe to use
+  activeConditionalHotkeys = &conditionalManager.GetHotkeys();
+  
   conditionalManager.SetEnabled(conditionalHotkeysEnabled);
   
   // Set up condition evaluator to check interpreter environment for mode, title, class
@@ -278,8 +282,8 @@ HotkeyManager::getConditionalHotkeyList() const {
   std::vector<ConditionalHotkeyInfo> list;
   auto &manager = const_cast<ConditionalHotkeyManager &>(conditionalManager);
   std::lock_guard<std::mutex> lock(manager.GetMutex());
-  list.reserve(activeConditionalHotkeys.size());
-  for (const auto &hotkey : activeConditionalHotkeys) {
+  list.reserve(activeConditionalHotkeys->size());
+  for (const auto &hotkey : *activeConditionalHotkeys) {
     std::string conditionString;
     if (std::holds_alternative<std::string>(hotkey.condition)) {
       conditionString = std::get<std::string>(hotkey.condition);

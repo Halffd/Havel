@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <set>
+#include <regex>
 
 namespace havel {
 
@@ -133,12 +134,19 @@ std::vector<DynamicConditionEvaluator::Token> DynamicConditionEvaluator::tokeniz
         // Operators
         if (i + 1 < condition.size()) {
             std::string twoChar = condition.substr(i, 2);
-            if (twoChar == "==" || twoChar == "!=" || twoChar == "<=" || 
+            if (twoChar == "==" || twoChar == "!=" || twoChar == "<=" ||
                 twoChar == ">=" || twoChar == "&&" || twoChar == "||") {
                 tokens.push_back({TokenType::Operator, twoChar});
                 i += 2;
                 continue;
             }
+        }
+
+        // Regex match operator ~
+        if (condition[i] == '~') {
+            tokens.push_back({TokenType::Operator, "~"});
+            i++;
+            continue;
         }
 
         if (condition[i] == '<' || condition[i] == '>' || condition[i] == '!' ||
@@ -255,7 +263,7 @@ bool DynamicConditionEvaluator::parseComparison(const std::vector<Token>& tokens
     // Check for "in" operator
     if (pos < tokens.size() && tokens[pos].type == TokenType::Identifier && tokens[pos].value == "in") {
         pos++;
-        
+
         // Expect [list]
         if (pos >= tokens.size() || tokens[pos].type != TokenType::Operator || tokens[pos].value != "[") {
             return false;
@@ -269,7 +277,7 @@ bool DynamicConditionEvaluator::parseComparison(const std::vector<Token>& tokens
             }
             pos++;
         }
-        
+
         if (pos < tokens.size() && tokens[pos].type == TokenType::Operator && tokens[pos].value == "]") {
             pos++;
         }
@@ -287,6 +295,40 @@ bool DynamicConditionEvaluator::parseComparison(const std::vector<Token>& tokens
     std::string op = tokens[pos].value;
     pos++;
 
+    // Handle regex match operator ~
+    if (op == "~") {
+        // Get right operand (pattern)
+        if (pos >= tokens.size()) return false;
+
+        const Token& right = tokens[pos];
+        std::string pattern;
+
+        if (right.type == TokenType::String) {
+            pattern = right.value;
+            pos++;
+        } else if (right.type == TokenType::Identifier) {
+            // Could be a regex literal like /pattern/
+            std::string idValue = right.value;
+            if (idValue.size() >= 2 && idValue.front() == '/' && idValue.back() == '/') {
+                pattern = idValue.substr(1, idValue.size() - 2);
+                pos++;
+            } else {
+                pattern = getIdentifierValue(idValue);
+                pos++;
+            }
+        } else {
+            return false;
+        }
+
+        // Perform regex match
+        try {
+            std::regex re(pattern);
+            return std::regex_search(leftStr, re);
+        } catch (const std::regex_error&) {
+            return false;
+        }
+    }
+
     // Get right operand
     std::string rightStr;
     double rightNum = 0;
@@ -295,7 +337,7 @@ bool DynamicConditionEvaluator::parseComparison(const std::vector<Token>& tokens
     if (pos >= tokens.size()) return false;
 
     const Token& right = tokens[pos];
-    
+
     if (right.type == TokenType::Identifier) {
         rightStr = getIdentifierValue(right.value);
         pos++;

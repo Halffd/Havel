@@ -116,7 +116,8 @@ private:
   std::unique_ptr<ast::Statement> parseWithStatement();
   std::unique_ptr<ast::Statement> parseConfigBlock();
   std::unique_ptr<ast::Statement> parseDevicesBlock();
-  std::unique_ptr<ast::Statement> parseModesBlock();
+  std::unique_ptr<ast::Statement> parseModeDefinition();  // mode name { ... }
+  std::unique_ptr<ast::Statement> parseModesBlock();      // modes { ... }
   std::unique_ptr<ast::Statement> parseConfigSection();
 
   // Type system parsers

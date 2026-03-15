@@ -4093,6 +4093,25 @@ void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
 
 // Delegate implementations for visitors moved to evaluators
 void Interpreter::visitIdentifier(const ast::Identifier& node) {
+    // Special identifiers for active window info
+    if (node.symbol == "exe") {
+        lastResult = HavelValue(getActiveWindowExe());
+        return;
+    }
+    if (node.symbol == "class") {
+        lastResult = HavelValue(getActiveWindowClass());
+        return;
+    }
+    if (node.symbol == "title") {
+        lastResult = HavelValue(getActiveWindowTitle());
+        return;
+    }
+    if (node.symbol == "pid") {
+        lastResult = HavelValue(static_cast<double>(getActiveWindowPid()));
+        return;
+    }
+    
+    // Normal variable lookup
     if (auto val = environment->Get(node.symbol)) {
         lastResult = *val;
     } else {

@@ -219,6 +219,19 @@ struct HavelValue {
   bool isObject() const { return is<HavelObject>(); }
   bool isStructInstance() const { return is<HavelStructInstance>(); }
   bool isFunction() const { return is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>(); }
+  
+  // Get type name for error messages
+  std::string typeName() const {
+    if (is<std::nullptr_t>()) return "null";
+    if (is<bool>()) return "bool";
+    if (is<int>() || is<double>()) return "number";
+    if (is<std::string>()) return "string";
+    if (is<HavelArray>()) return "array";
+    if (is<HavelObject>()) return "object";
+    if (is<HavelStructInstance>()) return "struct";
+    if (is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>()) return "function";
+    return "unknown";
+  }
 
   double asNumber() const {
     if (is<double>()) return get<double>();

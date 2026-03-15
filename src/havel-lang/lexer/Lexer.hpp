@@ -104,6 +104,7 @@ enum class TokenType {
   Or,
   Not,
   Matches,    // regex match operator
+  Tilde,      // ~ regex match shorthand
   True,        // boolean literal true
   False,       // boolean literal false
   Assign,

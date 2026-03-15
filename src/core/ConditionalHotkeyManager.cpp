@@ -1,6 +1,7 @@
 #include "ConditionalHotkeyManager.hpp"
 #include "IO.hpp"
 #include "ModeManager.hpp"
+#include "havel-lang/runtime/Interpreter.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
@@ -511,9 +512,18 @@ void ConditionalHotkeyManager::UpdateLoop() {
     if (!updateLoopRunning.load()) break;
 
     // Update modes first (may trigger enter/exit callbacks)
-    // Note: Mode evaluation happens in interpreter context where expressions can be evaluated
-    // For now, modes are updated via mode.set() or when conditions change
-    
+    if (auto modeMgr = modeManager.lock()) {
+      // Create evaluator that uses interpreter to evaluate expressions
+      ModeManager::ExprEvaluator evaluator = [this](const ast::Expression& expr) -> bool {
+        // Evaluate condition using interpreter
+        if (interpreter) {
+          return interpreter->evaluateCondition(expr);
+        }
+        return false;
+      };
+      modeMgr->update(evaluator);
+    }
+
     BatchUpdateConditionalHotkeys();
   }
 

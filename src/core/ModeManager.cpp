@@ -1,5 +1,6 @@
 #include "ModeManager.hpp"
 #include "havel-lang/ast/AST.h"
+#include "utils/Logger.hpp"
 #include <chrono>
 #include <algorithm>
 
@@ -75,47 +76,58 @@ void ModeManager::triggerExit(ModeDefinition& mode) {
 
 void ModeManager::update(ExprEvaluator evaluator) {
     std::lock_guard<std::mutex> lock(modeMutex);
-    
+
     std::string newActiveMode = currentMode;
     bool modeChanged = false;
-    
+
+    debug("ModeManager::update() - checking {} modes, current={}", modes.size(), currentMode);
+
     // Check all mode conditions
     for (auto& mode : modes) {
         if (mode.conditionExpr && evaluator) {
             bool shouldActivate = evaluator(*mode.conditionExpr);
-            
+            debug("  Mode '{}' condition = {}", mode.name, shouldActivate ? "true" : "false");
+
             if (shouldActivate && !mode.isActive) {
                 // Mode condition met, activate it
                 // First exit current mode if different
                 if (currentMode != mode.name) {
                     for (auto& activeMode : modes) {
                         if (activeMode.isActive && activeMode.name != mode.name) {
+                            debug("  Exiting mode '{}'", activeMode.name);
                             triggerExit(activeMode);
                         }
                     }
                 }
+                debug("  Entering mode '{}'", mode.name);
                 triggerEnter(mode);
                 modeChanged = true;
                 newActiveMode = mode.name;
             } else if (!shouldActivate && mode.isActive && mode.name == currentMode) {
                 // Current mode condition no longer met
+                debug("  Exiting mode '{}' (condition no longer met)", mode.name);
                 triggerExit(mode);
                 newActiveMode = "default";
                 modeChanged = true;
             }
         }
     }
-    
+
     // If no mode is active, switch to default
     if (newActiveMode == "default" && currentMode != "default") {
         for (auto& mode : modes) {
             if (mode.isActive) {
+                debug("  Exiting mode '{}' (no mode active)", mode.name);
                 triggerExit(mode);
             }
         }
         previousMode = currentMode;
         currentMode = "default";
         modeChanged = true;
+    }
+    
+    if (modeChanged) {
+        info("Mode changed to '{}'", currentMode);
     }
 }
 

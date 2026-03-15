@@ -467,6 +467,33 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
   }
 }
 
+// Evaluate condition expression and return boolean result (for mode detection)
+bool Interpreter::evaluateCondition(const ast::Expression& expr) {
+  // Save current result state
+  auto savedResult = lastResult;
+  
+  // Evaluate the expression
+  Evaluate(expr);
+  
+  // Convert result to boolean
+  bool result = false;
+  if (!isError(lastResult)) {
+    HavelValue value = unwrap(lastResult);
+    if (value.isBool()) {
+      result = value.get<bool>();
+    } else if (value.isNumber()) {
+      result = (value.asNumber() != 0);
+    } else {
+      result = true;  // Non-boolean, non-number values are truthy
+    }
+  }
+  
+  // Restore previous result state
+  lastResult = savedResult;
+  
+  return result;
+}
+
 void Interpreter::printSourceWithContext(const std::string& sourceCode, size_t errorLine) {
   std::istringstream iss(sourceCode);
   std::string line;

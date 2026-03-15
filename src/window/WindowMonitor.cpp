@@ -72,8 +72,8 @@ void WindowMonitor::MonitorLoop() {
     }
 }
 
-WindowInfo WindowMonitor::GetWindowInfo(wID windowId) const {
-    WindowInfo info;
+MonitorWindowInfo WindowMonitor::GetWindowInfo(wID windowId) const {
+    MonitorWindowInfo info;
     info.windowId = windowId;
     info.lastUpdate = std::chrono::steady_clock::now();
     
@@ -108,7 +108,7 @@ void WindowMonitor::UpdateWindowMap() {
     // TODO: Implement window listing
     #endif
     
-    std::unordered_map<wID, WindowInfo> newWindows;
+    std::unordered_map<wID, MonitorWindowInfo> newWindows;
     
     for (const auto& windowId : windows) {
         auto info = GetWindowInfo(windowId);
@@ -163,6 +163,27 @@ void WindowMonitor::CheckForWindowChanges() {
 
 void WindowMonitor::SetPollInterval(std::chrono::milliseconds newInterval) {
     interval = newInterval;
+}
+
+// Convenience methods for window info access
+std::string WindowMonitor::GetActiveWindowExe() const {
+    std::shared_lock<std::shared_mutex> lock(windowsMutex);
+    return activeWindow.isValid ? activeWindow.processName : "";
+}
+
+std::string WindowMonitor::GetActiveWindowClass() const {
+    std::shared_lock<std::shared_mutex> lock(windowsMutex);
+    return activeWindow.isValid ? activeWindow.windowClass : "";
+}
+
+std::string WindowMonitor::GetActiveWindowTitle() const {
+    std::shared_lock<std::shared_mutex> lock(windowsMutex);
+    return activeWindow.isValid ? activeWindow.title : "";
+}
+
+pid_t WindowMonitor::GetActiveWindowPid() const {
+    std::shared_lock<std::shared_mutex> lock(windowsMutex);
+    return activeWindow.isValid ? activeWindow.pid : 0;
 }
 
 } // namespace havel 

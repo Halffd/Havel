@@ -21,6 +21,7 @@
 #include "process/Launcher.hpp"
 #include "qt.hpp"
 #include "window/WindowManagerDetector.hpp"
+#include "window/WindowMonitor.hpp"
 #include "Environment.hpp"  // For Environment and TraitRegistry
 #include "stdlib/MathModule.hpp"  // For registerMathModule
 #include "stdlib/TypeModule.hpp"  // For registerTypeModule
@@ -492,6 +493,48 @@ bool Interpreter::evaluateCondition(const ast::Expression& expr) {
   lastResult = savedResult;
   
   return result;
+}
+
+// Get window info via WindowMonitor (for condition evaluation)
+std::string Interpreter::getActiveWindowExe() const {
+  if (hostContext.windowMonitor) {
+    return hostContext.windowMonitor->GetActiveWindowExe();
+  }
+  // Fallback to WindowManager
+  if (hostContext.windowManager) {
+    return hostContext.windowManager->getProcessName(hostContext.windowManager->GetActiveWindowPID());
+  }
+  return "";
+}
+
+std::string Interpreter::getActiveWindowClass() const {
+  if (hostContext.windowMonitor) {
+    return hostContext.windowMonitor->GetActiveWindowClass();
+  }
+  if (hostContext.windowManager) {
+    return hostContext.windowManager->GetActiveWindowClass();
+  }
+  return "";
+}
+
+std::string Interpreter::getActiveWindowTitle() const {
+  if (hostContext.windowMonitor) {
+    return hostContext.windowMonitor->GetActiveWindowTitle();
+  }
+  if (hostContext.windowManager) {
+    return hostContext.windowManager->GetActiveWindowTitle();
+  }
+  return "";
+}
+
+pid_t Interpreter::getActiveWindowPid() const {
+  if (hostContext.windowMonitor) {
+    return hostContext.windowMonitor->GetActiveWindowPid();
+  }
+  if (hostContext.windowManager) {
+    return hostContext.windowManager->GetActiveWindowPID();
+  }
+  return 0;
 }
 
 void Interpreter::printSourceWithContext(const std::string& sourceCode, size_t errorLine) {

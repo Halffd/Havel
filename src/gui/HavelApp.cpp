@@ -4,11 +4,12 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/ModeManager.hpp"
-#include "core/io/EventListener.hpp" // Include EventListener for access to its members
+#include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
 #include "gui/GUIManager.hpp"
 #include "utils/Logger.hpp"
 #include "window/CompositorBridge.hpp"
+#include "window/WindowMonitor.hpp"
 #include <QApplication>
 #include <QColor>
 #include <QIcon>
@@ -179,12 +180,16 @@ void HavelApp::initializeComponents(bool isStartup) {
   auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
   auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
+  // Create WindowMonitor for efficient window info caching
+  auto windowMonitor = std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
+
   // Build HostContext from managers (hotkeyManager will be set later)
   HostContext ctx;
   ctx.io = io;  // Share ownership
   ctx.windowManager = windowManager.get();
   ctx.hotkeyManager = nullptr;  // Will be set after HotkeyManager creation
   ctx.modeManager = nullptr;  // Will be set after HotkeyManager creation
+  ctx.windowMonitor = windowMonitor;  // Window monitoring
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
@@ -211,8 +216,8 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }
 
-  // Set the hotkeyManager on the IO instance so it can access it during
-  // suspend/resume operations
+  // Start window monitor AFTER HotkeyManager is created
+  windowMonitor->Start();
   io->setHotkeyManager(hotkeyManager);
 
   // Initialize hotkey manager

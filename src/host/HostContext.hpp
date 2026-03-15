@@ -28,6 +28,7 @@ class FileManager;
 class ProcessManager;
 class IO;
 class ModeManager;
+class WindowMonitor;
 
 /**
  * HostContext - Bridge between language runtime and host system
@@ -47,6 +48,9 @@ struct HostContext {
 
     // Mode management - use shared_ptr to ensure lifetime
     std::shared_ptr<ModeManager> modeManager;
+
+    // Window monitoring - use shared_ptr to ensure lifetime
+    std::shared_ptr<WindowMonitor> windowMonitor;
 
     // Display
     BrightnessManager* brightnessManager = nullptr;

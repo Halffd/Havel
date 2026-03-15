@@ -18,7 +18,7 @@ class TcpClient;
 class TcpServer;
 class UdpSocket;
 class HttpClient;
-class NetworkEvent;
+struct NetworkEvent;
 
 /**
  * Network event types for callbacks

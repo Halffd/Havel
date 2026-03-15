@@ -515,9 +515,8 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(io->GetActiveWindowClass());
     })));
     
-    env.Define("process", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
-        return HavelValue(WindowManager::getProcessName(io->GetActiveWindowPID()));
-    })));
+    // Note: process module provides process.find(), process.exists(), etc.
+    // Use process.name(pid) to get process name by PID
 }
 
 } // namespace havel::modules

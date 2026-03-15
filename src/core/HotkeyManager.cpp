@@ -243,7 +243,11 @@ int HotkeyManager::AddContextualHotkey(const std::string &key,
 int HotkeyManager::AddGamingHotkey(const std::string &key,
                                    std::function<void()> trueAction,
                                    std::function<void()> falseAction, int id) {
-  return AddContextualHotkey(key, "mode == 'gaming'", std::move(trueAction),
+  // Use function condition instead of string - no mini-parser needed!
+  auto condition = [this]() -> bool {
+    return conditionalManager.GetMode() == "gaming";
+  };
+  return AddContextualHotkey(key, std::move(condition), std::move(trueAction),
                              std::move(falseAction), id);
 }
 

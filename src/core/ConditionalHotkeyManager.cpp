@@ -572,11 +572,9 @@ std::string ConditionalHotkeyManager::GetMode() const {
 }
 
 bool ConditionalHotkeyManager::EvaluateCondition(const std::string& condition) {
-  if (conditionEvaluator) {
-    return conditionEvaluator(condition);
-  }
-  
-  // Default evaluation for common patterns
+  // If we have an interpreter, we could parse and evaluate the condition properly
+  // For now, the mini-parser handles legacy string conditions
+  // Future enhancement: parse condition string to AST and use interpreter
   return EvaluateConditionInternal(condition);
 }
 
@@ -601,7 +599,7 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
   // Check for window title conditions (multiple syntaxes)
   std::string currentTitle = io->GetActiveWindowTitle();
   
-  // Syntax: window.title == 'Chatterino' or window.title=='Chatterino'
+  // Syntax: window.title == '' or window.title==''
   if (condition.find("window.title ==") != std::string::npos ||
       condition.find("window.title==") != std::string::npos) {
     size_t start = condition.find("'");

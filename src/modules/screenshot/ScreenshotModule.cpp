@@ -66,7 +66,7 @@ void registerScreenshotModule(Environment& env, std::shared_ptr<IHostAPI> hostAP
     // Screenshot functions - check manager at runtime, not registration time
     // =========================================================================
 
-    (*screenshotObj)["full"] = HavelValue(BuiltinFunction([&hostAPI, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+    (*screenshotObj)["full"] = HavelValue(BuiltinFunction([hostAPI, requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireScreenshotManager("full")) return *err;
         auto& sm = *hostAPI->GetScreenshotManager();
 
@@ -81,7 +81,7 @@ void registerScreenshotModule(Environment& env, std::shared_ptr<IHostAPI> hostAP
         return createScreenshotResult(fullPath);
     }));
 
-    (*screenshotObj)["region"] = HavelValue(BuiltinFunction([&hostAPI, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
+    (*screenshotObj)["region"] = HavelValue(BuiltinFunction([hostAPI, requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>& args) -> HavelResult {
         if (auto err = requireScreenshotManager("region")) return *err;
         auto& sm = *hostAPI->GetScreenshotManager();
 
@@ -99,7 +99,7 @@ void registerScreenshotModule(Environment& env, std::shared_ptr<IHostAPI> hostAP
         return createScreenshotResult(fullPath);
     }));
 
-    (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([&hostAPI, &requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>&) -> HavelResult {
+    (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction([hostAPI, requireScreenshotManager, createScreenshotResult](const std::vector<HavelValue>&) -> HavelResult {
         if (auto err = requireScreenshotManager("monitor")) return *err;
         auto& sm = *hostAPI->GetScreenshotManager();
 
@@ -111,7 +111,7 @@ void registerScreenshotModule(Environment& env, std::shared_ptr<IHostAPI> hostAP
     // Monitor information
     // =========================================================================
 
-    (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([&hostAPI, &requireScreenshotManager, getMonitorInfo](const std::vector<HavelValue>&) -> HavelResult {
+    (*screenshotObj)["getMonitors"] = HavelValue(BuiltinFunction([hostAPI, requireScreenshotManager, getMonitorInfo](const std::vector<HavelValue>&) -> HavelResult {
         if (auto err = requireScreenshotManager("getMonitors")) return *err;
         (void)hostAPI;  // Suppress unused warning
         return getMonitorInfo();

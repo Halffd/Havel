@@ -23,14 +23,14 @@ BUILD_MODE=1
 BUILD_TYPE="Release"
 BUILD_DIR="build"
 LOG_DIR="logs"
-THREADS=3
+THREADS=12
 
 # Build mode configurations
 # Format: "BuildType,EnableTests,EnableHavelLang,EnableLLVM,BuildDir"
 declare -A BUILD_CONFIGS=(
     [0]="Debug,ON,ON,ON,build-debug"              # 0: debug, tests, lang, llvm
     [1]="Release,OFF,OFF,ON,build-release"        # 1: release, no tests, no lang, llvm  
-    [2]="Debug,OFF,OFF,ON,build-debug"    # 2: debug, no tests, no lang, llvm
+    [2]="Debug,OFF,ON,OFF,build-debug"    # 2: debug, no tests, no lang, llvm
     [3]="Debug,OFF,OFF,OFF,build-debug"      # 3: debug, tests, no lang, llvm
     [5]="Release,ON,ON,ON,build-release"     # 5: release, tests, lang, llvm
     

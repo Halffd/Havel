@@ -23,7 +23,7 @@ void registerAppModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // app.quit() - Exit application
     // =========================================================================
     
-    (*appObj)["quit"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+    (*appObj)["quit"] = HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
         info("Quit requested - performing hard exit");
         
         // Stop EventListener FIRST to prevent use-after-free in KeyMap access
@@ -41,7 +41,7 @@ void registerAppModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // app.restart() - Restart application
     // =========================================================================
 
-    (*appObj)["restart"] = HavelValue(BuiltinFunction([&io](const std::vector<HavelValue>&) -> HavelResult {
+    (*appObj)["restart"] = HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
         info("Restart requested");
         
         // Stop EventListener FIRST to prevent use-after-free in KeyMap access

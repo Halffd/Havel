@@ -146,11 +146,11 @@ void registerHTTPModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     // http.setTimeout(ms) - Set HTTP timeout
     // =========================================================================
     
-    (*httpMod)["setTimeout"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*httpMod)["setTimeout"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("http.setTimeout() requires timeout in ms");
         }
-        
+
         int timeout = static_cast<int>(args[0].asNumber());
         getHttp().setTimeout(timeout);
         return HavelValue(true);

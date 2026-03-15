@@ -1399,6 +1399,61 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   case ast::BinaryOperator::Or:
     lastResult = HavelValue(ValueToBool(left) || ValueToBool(right));
     break;
+  case ast::BinaryOperator::In: {
+    // Membership operator: left in right
+    bool found = false;
+    
+    if (right.isArray()) {
+      // Check if left exists in array
+      auto& arr = *right.asArray();
+      for (const auto& elem : arr) {
+        if (ValueToString(elem) == ValueToString(left)) {
+          found = true;
+          break;
+        }
+      }
+    } else if (right.isObject()) {
+      // Check if object has key equal to left
+      auto& obj = *right.asObject();
+      std::string key = ValueToString(left);
+      found = (obj.find(key) != obj.end());
+    } else if (right.isString() && left.isString()) {
+      // Substring check: left in right
+      found = (right.asString().find(left.asString()) != std::string::npos);
+    } else {
+      lastResult = HavelRuntimeError("'in' operator requires array, object, or string on right side", node.line, node.column);
+      return;
+    }
+    
+    lastResult = HavelValue(found);
+    break;
+  }
+  case ast::BinaryOperator::NotIn: {
+    // Negated membership: left not in right
+    bool found = false;
+    
+    if (right.isArray()) {
+      auto& arr = *right.asArray();
+      for (const auto& elem : arr) {
+        if (ValueToString(elem) == ValueToString(left)) {
+          found = true;
+          break;
+        }
+      }
+    } else if (right.isObject()) {
+      auto& obj = *right.asObject();
+      std::string key = ValueToString(left);
+      found = (obj.find(key) != obj.end());
+    } else if (right.isString() && left.isString()) {
+      found = (right.asString().find(left.asString()) != std::string::npos);
+    } else {
+      lastResult = HavelRuntimeError("'not in' operator requires array, object, or string on right side", node.line, node.column);
+      return;
+    }
+    
+    lastResult = HavelValue(!found);
+    break;
+  }
   case ast::BinaryOperator::ConfigAppend: {
     // >> config operator
     // value >> config.path - SET config value

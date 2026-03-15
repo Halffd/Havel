@@ -308,6 +308,8 @@ enum class BinaryOperator {
   Greater,
   And,
   Or,
+  In,         // membership: x in [1,2,3]
+  NotIn,      // negated membership: x not in [1,2,3]
   ConfigAppend  // >> config operator
 };
 
@@ -354,6 +356,10 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
     return os << "&&";
   case BinaryOperator::Or:
     return os << "||";
+  case BinaryOperator::In:
+    return os << "in";
+  case BinaryOperator::NotIn:
+    return os << "not in";
   case BinaryOperator::ConfigAppend:
     return os << ">>";
   default:
@@ -420,6 +426,10 @@ struct BinaryExpression : public Expression {
       return "&&";
     case BinaryOperator::Or:
       return "||";
+    case BinaryOperator::In:
+      return "in";
+    case BinaryOperator::NotIn:
+      return "not in";
     case BinaryOperator::ConfigAppend:
       return ">>";
     }

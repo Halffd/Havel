@@ -57,6 +57,13 @@ public:
      * @return ShellResult from final command
      */
     ShellResult executeChain(const std::vector<std::string>& commands);
+    
+    /**
+     * Split command string by pipe character (respects quotes)
+     * @param command Command string potentially containing pipes
+     * @return Vector of command strings
+     */
+    static std::vector<std::string> splitPipes(const std::string& command);
 
 private:
     // Internal execution helpers

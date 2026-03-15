@@ -1150,18 +1150,18 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
 
   // Split by pipe character (respects quotes)
   auto commands = ShellExecutor::splitPipes(command);
-  
+
   // Execute command chain
   ShellResult result = ShellExecutor::executeChain(commands);
-  
+
   // Forward stdout/stderr
-  if (!result.stdout_.empty()) {
-    std::cout << result.stdout_;
+  if (!result.stdout.empty()) {
+    std::cout << result.stdout;
   }
-  if (!result.stderr_.empty()) {
-    std::cerr << result.stderr_;
+  if (!result.stderr.empty()) {
+    std::cerr << result.stderr;
   }
-  
+
   // Return exit code
   lastResult = HavelValue(static_cast<double>(result.exitCode));
 }

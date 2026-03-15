@@ -515,6 +515,11 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(io->GetActiveWindowClass());
     })));
     
+    // Get current active window executable name
+    env.Define("exe", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(WindowManager::getProcessName(io->GetActiveWindowPID()));
+    })));
+    
     // Note: process module provides process.find(), process.exists(), etc.
     // Use process.name(pid) to get process name by PID
 }

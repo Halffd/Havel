@@ -2,6 +2,7 @@
 #include "evaluator/ExprEvaluator.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/ModeManager.hpp"
 #include "core/automation/AutomationManager.hpp"
 #include "core/browser/BrowserModule.hpp"
 #include "core/io/EventListener.hpp"
@@ -2623,55 +2624,82 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {
 }
 
 void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
-  auto modesObject =
-      std::make_shared<std::unordered_map<std::string, HavelValue>>();
-
   // Process mode definitions
-  for (const auto &[modeName, valueExpr] : node.pairs) {
-    auto result = Evaluate(*valueExpr);
-    if (isError(result)) {
-      lastResult = result;
-      return;
+  for (const auto& modeDef : node.modes) {
+    // Evaluate condition expression
+    std::string conditionStr;
+    if (modeDef.condition) {
+      // Convert condition expression to string for DynamicConditionEvaluator
+      conditionStr = modeDef.condition->toString();
     }
-
-    HavelValue value = unwrap(result);
-    (*modesObject)[modeName] = value;
-
-    // If value is an object with class/title/ignore arrays, register with
-    // condition system
-    if (value.isObject()) {
-      auto modeConfig = value.asObject();
-
-      // Store mode configuration for condition checking
-      // The mode config will be checked later when evaluating conditions
-      // Format: modes.gaming.class = ["steam", "lutris", ...]
-      if (modeConfig)
-        for (const auto &[configKey, configValue] : *modeConfig) {
-          std::string fullKey = "__mode_" + modeName + "_" + configKey;
-          environment->Define(fullKey, configValue);
+    
+    // Create enter callback
+    std::function<void()> enterCallback;
+    if (modeDef.enterBlock) {
+      enterCallback = [this, block = modeDef.enterBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode enter block");
+              break;
+            }
+          }
         }
+        lastResult = oldResult;
+      };
+    }
+    
+    // Create exit callback
+    std::function<void()> exitCallback;
+    if (modeDef.exitBlock) {
+      exitCallback = [this, block = modeDef.exitBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode exit block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+    
+    // Create condition function using DynamicConditionEvaluator
+    std::function<bool()> conditionFunc;
+    if (!conditionStr.empty() && hostContext.modeManager) {
+      conditionFunc = [conditionStr, modeManager = hostContext.modeManager]() {
+        return modeManager->evaluateCondition(conditionStr);
+      };
+    }
+    
+    // Register mode with ModeManager
+    if (hostContext.modeManager) {
+      ModeManager::ModeDefinition modeDefn;
+      modeDefn.name = modeDef.name;
+      modeDefn.conditionStr = conditionStr;
+      modeDefn.condition = conditionFunc;
+      modeDefn.onEnter = enterCallback;
+      modeDefn.onExit = exitCallback;
+      hostContext.modeManager->defineMode(std::move(modeDefn));
     }
   }
 
-  // Initialize current mode (default to first mode or "default")
-  if (modesObject && !modesObject->empty()) {
-    std::string initialMode = modesObject->begin()->first;
+  // Initialize current mode
+  if (!node.modes.empty()) {
+    std::string initialMode = node.modes[0].name;
     environment->Define("__current_mode__", HavelValue(initialMode));
-    environment->Define("current_mode",
-                        HavelValue(initialMode)); // Use different variable name
-    environment->Define("__previous_mode__",
-                        HavelValue(std::string("default")));
+    environment->Define("current_mode", HavelValue(initialMode));
+    environment->Define("__previous_mode__", HavelValue(std::string("default")));
   } else {
     environment->Define("__current_mode__", HavelValue(std::string("default")));
-    environment->Define(
-        "current_mode",
-        HavelValue(std::string("default"))); // Use different variable name
-    environment->Define("__previous_mode__",
-                        HavelValue(std::string("default")));
+    environment->Define("current_mode", HavelValue(std::string("default")));
+    environment->Define("__previous_mode__", HavelValue(std::string("default")));
   }
-
-  // Store the modes block as a special variable for script access
-  environment->Define("__modes__", HavelValue(modesObject));
 
   lastResult = nullptr; // Modes blocks don't return a value
 }

@@ -6,6 +6,7 @@
  */
 #include "StatementEvaluator.hpp"
 #include "../Interpreter.hpp"
+#include "core/ModeManager.hpp"
 #include <regex>
 #include <thread>
 
@@ -856,39 +857,51 @@ void StatementEvaluator::visitDevicesBlock(const ast::DevicesBlock& node) {
 }
 
 void StatementEvaluator::visitModesBlock(const ast::ModesBlock& node) {
-    auto modesObject =
-        std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    auto &config = Configs::Get();
-
     // Mode configuration mappings
     std::unordered_map<std::string, std::string> modeKeyMap = {
         {"default", "Mode.Default"},
         {"current", "Mode.Current"}};
 
-    for (const auto &[key, valueExpr] : node.pairs) {
-        auto result = Evaluate(*valueExpr);
-        if (isError(result)) {
-            interpreter->lastResult = result;
-            return;
-        }
+    auto &config = Configs::Get();
 
-        HavelValue value = unwrap(result);
-        (*modesObject)[key] = value;
-
-        if (modeKeyMap.count(key)) {
-            std::string configKey = modeKeyMap.at(key);
-            std::string strValue = ValueToString(value);
-
-            if (value.isBool()) {
-                config.Set(configKey, value.get<bool>() ? "true" : "false");
-            } else if (value.isInt()) {
-                config.Set(configKey, value.get<int>());
-            } else if (value.isDouble()) {
-                config.Set(configKey, value.get<double>());
-            } else {
-                config.Set(configKey, strValue);
+    // Process mode definitions
+    for (const auto& modeDef : node.modes) {
+        // Register mode with ModeManager if available
+        if (interpreter->hostContext.modeManager) {
+            std::string conditionStr;
+            if (modeDef.condition) {
+                conditionStr = modeDef.condition->toString();
             }
+            
+            // Create condition function
+            std::function<bool()> conditionFunc;
+            if (!conditionStr.empty()) {
+                conditionFunc = [conditionStr, modeManager = interpreter->hostContext.modeManager]() {
+                    return modeManager->evaluateCondition(conditionStr);
+                };
+            }
+            
+            ModeManager::ModeDefinition modeDefn;
+            modeDefn.name = modeDef.name;
+            modeDefn.conditionStr = conditionStr;
+            modeDefn.condition = conditionFunc;
+            interpreter->hostContext.modeManager->defineMode(std::move(modeDefn));
         }
+    }
+
+    // Initialize current mode
+    if (!node.modes.empty()) {
+        std::string initialMode = node.modes[0].name;
+        interpreter->environment->Define("__current_mode__", HavelValue(initialMode));
+        interpreter->environment->Define("current_mode", HavelValue(initialMode));
+        interpreter->environment->Define("__previous_mode__", HavelValue(std::string("default")));
+        
+        // Store in config
+        config.Set("Mode.Current", initialMode);
+    } else {
+        interpreter->environment->Define("__current_mode__", HavelValue(std::string("default")));
+        interpreter->environment->Define("current_mode", HavelValue(std::string("default")));
+        interpreter->environment->Define("__previous_mode__", HavelValue(std::string("default")));
     }
 
     interpreter->lastResult = nullptr;

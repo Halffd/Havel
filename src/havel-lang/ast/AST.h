@@ -1682,18 +1682,33 @@ struct DevicesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Modes Block (modes { ... })
-struct ModesBlock : public Statement {
-  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> pairs;
+// Mode Definition (mode name { condition = ...; enter { ... }; exit { ... } })
+struct ModeDefinition {
+  std::string name;
+  std::unique_ptr<Expression> condition;
+  std::unique_ptr<BlockStatement> enterBlock;
+  std::unique_ptr<BlockStatement> exitBlock;
 
-  ModesBlock(
-      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> p = {})
-      : pairs(std::move(p)) {
+  ModeDefinition() = default;
+  ModeDefinition(const std::string& n,
+                 std::unique_ptr<Expression> cond,
+                 std::unique_ptr<BlockStatement> enter,
+                 std::unique_ptr<BlockStatement> exit)
+      : name(n), condition(std::move(cond)), 
+        enterBlock(std::move(enter)), exitBlock(std::move(exit)) {}
+};
+
+// Modes Block (modes { name { condition = ...; enter { ... }; exit { ... } } })
+struct ModesBlock : public Statement {
+  std::vector<ModeDefinition> modes;
+
+  ModesBlock(std::vector<ModeDefinition> m = {})
+      : modes(std::move(m)) {
     kind = NodeType::ModesBlock;
   }
 
   std::string toString() const override {
-    return "ModesBlock{" + std::to_string(pairs.size()) + " pairs}";
+    return "ModesBlock{" + std::to_string(modes.size()) + " modes}";
   }
 
   void accept(ASTVisitor &visitor) const override;

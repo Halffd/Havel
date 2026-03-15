@@ -232,7 +232,13 @@ void registerTypeModule(Environment& env) {
       auto setPtr = arg.get_if<HavelSet>();
       return HavelValue(setPtr && setPtr->elements ? static_cast<double>(setPtr->elements->size()) : 0.0);
     }
-    return HavelRuntimeError("len() requires string, array, object, or set");
+    // Debug: print what type we got
+    std::cerr << "DEBUG len(): got type that is not string/array/object/set" << std::endl;
+    std::cerr << "  isNull: " << arg.isNull() << std::endl;
+    std::cerr << "  isBool: " << arg.isBool() << std::endl;
+    std::cerr << "  isNumber: " << arg.isNumber() << std::endl;
+    std::cerr << "  isFunction: " << arg.isFunction() << std::endl;
+    return HavelRuntimeError("len() requires string, array, object, or set - got unknown type");
   }));
 
   // typeof(x) - alias for type(x)

@@ -15,7 +15,7 @@ void test_parsing(const std::string& input) {
         }
 
         havel::parser::Parser parser;
-        auto ast = parser.produceASTStrict(input);
+        auto ast = parser.parseStrict(input);
         std::cout << "Parse success!" << std::endl;
     } catch (const havel::parser::ParseError& e) {
         std::cout << "Parse error (" << e.line << ":" << e.column << "): " << e.what() << std::endl;
@@ -52,7 +52,7 @@ int main() {
                 accum += "\n";
                 try {
                     havel::parser::Parser parser;
-                    (void)parser.produceASTStrict(accum);
+                    (void)parser.parseStrict(accum);
                 } catch (const havel::parser::ParseError& e) {
                     std::cout << "First failing line <= " << lineNo << ": parse error (" << e.line << ":" << e.column << "): " << e.what() << "\n";
                     break;

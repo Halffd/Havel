@@ -929,7 +929,20 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         auto callback = it->second.callback; // Copy just the callback
         lock.unlock();                       // Release before executing
 
-        std::thread([callback]() { callback(); }).detach();
+        // Use HotkeyExecutor instead of spawning threads
+        if (hotkeyExecutor) {
+          hotkeyExecutor->submit([callback]() {
+            try {
+              callback();
+            } catch (const std::exception& e) {
+              error("Callback exception: {}", e.what());
+            } catch (...) {
+              error("Callback unknown exception");
+            }
+          });
+        } else {
+          std::thread([callback]() { callback(); }).detach();
+        }
       }
     }
 
@@ -1248,9 +1261,21 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
       auto callback = it->second.callback;
       lock.unlock();
 
-      // Execute callback in a separate thread to avoid blocking input
-    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-      std::thread([callback]() { callback(); }).detach();
+      // Use HotkeyExecutor instead of spawning threads
+      if (hotkeyExecutor) {
+        hotkeyExecutor->submit([callback]() {
+          try {
+            callback();
+          } catch (const std::exception& e) {
+            error("Callback exception: {}", e.what());
+          } catch (...) {
+            error("Callback unknown exception");
+          }
+        });
+      } else {
+        std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+        std::thread([callback]() { callback(); }).detach();
+      }
     }
   }
 }
@@ -1285,11 +1310,24 @@ void EventListener::QueueMouseMovementHotkey(int virtualKey) {
 
   // Process queued hotkeys asynchronously if not already processing
   if (!movementHotkeyProcessing.exchange(true)) {
-    // Process in a separate thread to avoid blocking the input thread
-    std::thread([this]() {
-      ProcessQueuedMouseMovementHotkeys();
-      movementHotkeyProcessing.store(false);
-    }).detach();
+    // Use HotkeyExecutor instead of spawning threads
+    if (hotkeyExecutor) {
+      hotkeyExecutor->submit([this]() {
+        try {
+          ProcessQueuedMouseMovementHotkeys();
+        } catch (const std::exception& e) {
+          error("Mouse movement callback exception: {}", e.what());
+        } catch (...) {
+          error("Mouse movement callback unknown exception");
+        }
+        movementHotkeyProcessing.store(false);
+      });
+    } else {
+      std::thread([this]() {
+        ProcessQueuedMouseMovementHotkeys();
+        movementHotkeyProcessing.store(false);
+      }).detach();
+    }
   }
 }
 

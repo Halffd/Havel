@@ -169,19 +169,19 @@ public:
     class Configs& GetConfig() override;
     
     // Manager access for modules
-    class IO* GetIO();
-    class HotkeyManager* GetHotkeyManager();
-    class WindowManager* GetWindowManager();
-    class BrightnessManager* GetBrightnessManager();
-    class AudioManager* GetAudioManager();
-    class GUIManager* GetGUIManager();
-    class ScreenshotManager* GetScreenshotManager();
-    class ClipboardManager* GetClipboardManager();
-    class PixelAutomation* GetPixelAutomation();
-    class AutomationManager* GetAutomationManager();
-    class FileManager* GetFileManager();
-    class ProcessManager* GetProcessManager();
-    class MapManager* GetMapManager();
+    class IO* GetIO() override;
+    class HotkeyManager* GetHotkeyManager() override;
+    class WindowManager* GetWindowManager() override;
+    class BrightnessManager* GetBrightnessManager() override;
+    class AudioManager* GetAudioManager() override;
+    class GUIManager* GetGUIManager() override;
+    class ScreenshotManager* GetScreenshotManager() override;
+    class ClipboardManager* GetClipboardManager() override;
+    class PixelAutomation* GetPixelAutomation() override;
+    class AutomationManager* GetAutomationManager() override;
+    class FileManager* GetFileManager() override;
+    class ProcessManager* GetProcessManager() override;
+    class MapManager* GetMapManager() override;
     
     // Update manager pointers (called after managers are created)
     void SetHotkeyManager(class HotkeyManager* hm) override;

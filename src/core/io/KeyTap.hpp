@@ -54,8 +54,8 @@ public:
          bool grabUpFlag = true,
          std::function<bool(const std::string&)> conditionEval = nullptr)
       : keyName(key), onTap(tapAction), onCombo(comboAction),
-        hotkeyManager(hotkeyManagerPtr), grabDown(grabDownFlag),
-        grabUp(grabUpFlag), conditionEvaluator(conditionEval) {
+        hotkeyManager(hotkeyManagerPtr), conditionEvaluator(conditionEval),
+        grabDown(grabDownFlag), grabUp(grabUpFlag) {
 
     // Handle tap condition
     if constexpr (std::is_same_v<TapCond, std::string> ||

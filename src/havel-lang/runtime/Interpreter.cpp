@@ -2007,10 +2007,10 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the string as first argument
-      auto str = objectValue;  // Capture the string value
+      auto str = *strPtr;  // Capture the string value
       lastResult = HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
         std::vector<HavelValue> boundArgs;
-        boundArgs.push_back(str);
+        boundArgs.push_back(HavelValue(str));
         boundArgs.insert(boundArgs.end(), args.begin(), args.end());
         return builtin(boundArgs);
       }));

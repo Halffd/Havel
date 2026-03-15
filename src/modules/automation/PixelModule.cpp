@@ -11,16 +11,16 @@
 namespace havel::modules {
 
 void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI->GetIO() || !hostAPI->GetBrightnessManager()) {
-        return;  // Skip if no pixel automation available
+    if (!hostAPI->GetIO()) {
+        return;  // Skip if no IO available
     }
-    
-    auto& pa = *hostAPI->GetPixelAutomation();
+
+    auto* pa = hostAPI->GetPixelAutomation();
     IO* io = hostAPI->GetIO();  // For mouse position
-    
+
     // Create pixel module object
     auto pixelObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
+
     // Helper to convert value to string
     auto valueToString = [](const HavelValue& v) -> std::string {
         if (v.isString()) return v.asString();
@@ -47,14 +47,26 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         if (v.isBool()) return v.asBool() ? "true" : "false";
         return "";
     };
-    
+
+    // Helper to check if pixel automation is available
+    auto checkPixelAutomation = [pa]() -> bool {
+        if (!pa) {
+            return false;
+        }
+        return true;
+    };
+
     // =========================================================================
     // Pixel functions
     // =========================================================================
-    
-    (*pixelObj)["get"] = HavelValue(BuiltinFunction([&pa, io, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
-        int x, y;
+
+    (*pixelObj)["get"] = HavelValue(BuiltinFunction([pa, io, &valueToString, &checkPixelAutomation](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkPixelAutomation()) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         
+        int x, y;
+
         // Get cursor position if no args provided
         if (args.size() < 2) {
             if (io) {
@@ -79,15 +91,18 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(colorObj);
     }));
     
-    (*pixelObj)["match"] = HavelValue(BuiltinFunction([&pa, io, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+    (*pixelObj)["match"] = HavelValue(BuiltinFunction([pa, io, &valueToString, &checkPixelAutomation](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkPixelAutomation()) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.size() < 1) {
             return HavelRuntimeError("pixel.match() requires (color) or (x, y, color)");
         }
-        
+
         int x, y;
         std::string color;
         int tolerance = 0;
-        
+
         // If 1 arg: match at cursor position with color
         // If 2 args: match at cursor position with color and tolerance
         // If 3+ args: match at (x, y) with color (and optional tolerance)
@@ -113,11 +128,14 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
                 tolerance = static_cast<int>(args[3].asNumber());
             }
         }
-        
-        return HavelValue(pa.pixelMatch(x, y, color, tolerance));
+
+        return HavelValue(pa->pixelMatch(x, y, color, tolerance));
     }));
-    
-    (*pixelObj)["wait"] = HavelValue(BuiltinFunction([&pa, &valueToString](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*pixelObj)["wait"] = HavelValue(BuiltinFunction([pa, &valueToString, &checkPixelAutomation](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkPixelAutomation()) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.size() < 3) {
             return HavelRuntimeError("pixel.wait() requires (x, y, color)");
         }
@@ -127,7 +145,7 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         int tolerance = args.size() > 3 ? static_cast<int>(args[3].asNumber()) : 0;
         int timeout = args.size() > 4 ? static_cast<int>(args[4].asNumber()) : 5000;
 
-        return HavelValue(pa.waitPixel(x, y, color, tolerance, timeout));
+        return HavelValue(pa->waitPixel(x, y, color, tolerance, timeout));
     }));
 
     (*pixelObj)["region"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
@@ -187,67 +205,82 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(matchObj);
     };
     
-    (*imageObj)["find"] = HavelValue(BuiltinFunction([&pa, extractRegion, createMatchResult](const std::vector<HavelValue>& args) -> HavelResult {
+    (*imageObj)["find"] = HavelValue(BuiltinFunction([pa, extractRegion, createMatchResult](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!pa) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("image.find() requires imagePath");
         }
         std::string imagePath = args[0].asString();
-        
+
         ScreenRegion region = extractRegion(args, 1);
         float threshold = args.size() > 2 ? static_cast<float>(args[2].asNumber()) : 0.9f;
-        
-        ImageMatch match = pa.findImage(imagePath, region, threshold);
+
+        ImageMatch match = pa->findImage(imagePath, region, threshold);
         return createMatchResult(match);
     }));
-    
-    (*imageObj)["wait"] = HavelValue(BuiltinFunction([&pa, extractRegion, createMatchResult](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*imageObj)["wait"] = HavelValue(BuiltinFunction([pa, extractRegion, createMatchResult](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!pa) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("image.wait() requires imagePath");
         }
         std::string imagePath = args[0].asString();
-        
+
         ScreenRegion region = extractRegion(args, 1);
         int timeout = args.size() > 2 ? static_cast<int>(args[2].asNumber()) : 5000;
         float threshold = args.size() > 3 ? static_cast<float>(args[3].asNumber()) : 0.9f;
-        
-        ImageMatch match = pa.waitImage(imagePath, region, timeout, threshold);
+
+        ImageMatch match = pa->waitImage(imagePath, region, timeout, threshold);
         return createMatchResult(match);
     }));
-    
-    (*imageObj)["exists"] = HavelValue(BuiltinFunction([&pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*imageObj)["exists"] = HavelValue(BuiltinFunction([pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!pa) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("image.exists() requires imagePath");
         }
         std::string imagePath = args[0].asString();
-        
+
         ScreenRegion region = extractRegion(args, 1);
         float threshold = args.size() > 2 ? static_cast<float>(args[2].asNumber()) : 0.9f;
-        
-        return HavelValue(pa.existsImage(imagePath, region, threshold));
+
+        return HavelValue(pa->existsImage(imagePath, region, threshold));
     }));
-    
-    (*imageObj)["count"] = HavelValue(BuiltinFunction([&pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*imageObj)["count"] = HavelValue(BuiltinFunction([pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!pa) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("image.count() requires imagePath");
         }
         std::string imagePath = args[0].asString();
-        
+
         ScreenRegion region = extractRegion(args, 1);
         float threshold = args.size() > 2 ? static_cast<float>(args[2].asNumber()) : 0.9f;
-        
-        return HavelValue(static_cast<double>(pa.countImage(imagePath, region, threshold)));
+
+        return HavelValue(static_cast<double>(pa->countImage(imagePath, region, threshold)));
     }));
-    
-    (*imageObj)["findAll"] = HavelValue(BuiltinFunction([&pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+
+    (*imageObj)["findAll"] = HavelValue(BuiltinFunction([pa, extractRegion](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!pa) {
+            return HavelRuntimeError("Pixel automation not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("image.findAll() requires imagePath");
         }
         std::string imagePath = args[0].asString();
-        
+
         ScreenRegion region = extractRegion(args, 1);
         float threshold = args.size() > 2 ? static_cast<float>(args[2].asNumber()) : 0.9f;
-        
-        auto matches = pa.findAllImage(imagePath, region, threshold);
+
+        auto matches = pa->findAllImage(imagePath, region, threshold);
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
         for (const auto& match : matches) {
             auto matchObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();

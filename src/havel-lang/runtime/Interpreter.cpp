@@ -1110,9 +1110,9 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
   const ast::ShellCommandStatement* current = &node;
   std::string inputStdin;  // Stdin from previous command in pipe
   int pipeStage = 0;  // Unique identifier for each stage in the pipe
-  
+
   havel::ProcessResult result;
-  
+
   while (current != nullptr) {
     // Evaluate command expression
     auto cmdResult = Evaluate(*current->commandExpr);
@@ -1121,7 +1121,19 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
       return;
     }
 
+    // Defensive check: ensure result is valid before unwrapping
+    if (!std::holds_alternative<HavelValue>(cmdResult)) {
+      lastResult = HavelRuntimeError("Shell command must be a value, not control flow");
+      return;
+    }
+    
     HavelValue cmdValue = unwrap(cmdResult);
+    
+    // Defensive check: ensure the value itself is valid
+    if (cmdValue.is<BuiltinFunction>()) {
+      lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");
+      return;
+    }
 
     // Check if command is an array (argument vector) or string
     if (cmdValue.isArray()) {
@@ -2557,10 +2569,23 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
       lastResult = result;
       return;
     }
+
+    // Defensive check: ensure result is valid
+    if (!std::holds_alternative<HavelValue>(result)) {
+      lastResult = HavelRuntimeError("Array element must be a value, not control flow");
+      return;
+    }
     
+    HavelValue value = unwrap(result);
+    
+    // Defensive check: skip corrupted values
+    if (value.is<BuiltinFunction>()) {
+      lastResult = HavelRuntimeError("Array cannot contain functions. Did you forget ()?");
+      return;
+    }
+
     // Check if this is a spread expression
     if (dynamic_cast<const ast::SpreadExpression *>(element.get())) {
-      auto value = unwrap(result);
       // Spread arrays - flatten one level
       if (auto *arrPtr = value.get_if<HavelArray>()) {
         if (*arrPtr) {
@@ -2578,7 +2603,7 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
         array->push_back(value);
       }
     } else {
-      array->push_back(unwrap(result));
+      array->push_back(value);
     }
   }
 

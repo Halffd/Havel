@@ -1113,6 +1113,8 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
     lastResult = cmdResult;
     return;
   }
+  havel::debug("node: {}", node.toString());
+  havel::debug("commandExpr: {}", node.commandExpr->toString());
 
   // Defensive check: ensure result is valid
   if (!std::holds_alternative<HavelValue>(cmdResult)) {
@@ -1122,6 +1124,10 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
 
   HavelValue cmdValue = unwrap(cmdResult);
 
+  havel::printStackTrace(100);
+  havel::debug("cmdValue: {}", cmdValue.typeName());
+  havel::debug("node at line {}: {}", node.line, node.toString());
+  havel::debug("commandExpr at line {}: {}", node.commandExpr->line, node.commandExpr->toString());
   // Defensive check: ensure the value itself is valid
   if (cmdValue.is<BuiltinFunction>()) {
     lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");

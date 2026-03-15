@@ -5,203 +5,128 @@
 #include <unordered_map>
 #include <memory>
 #include <chrono>
-#include <shared_mutex> // For read-write lock
-#include <exception>
-#include <optional>
+#include <shared_mutex>
 #include <functional>
-#include <iostream> // For basic logging
-#include "Window.hpp"
-#include "WindowManager.hpp"
+#include <optional>
+#include "WindowManager.hpp"  // Your existing WindowManager
 
 namespace havel {
 
-// Custom exceptions
-class WindowMonitorError : public std::runtime_error {
-    using std::runtime_error::runtime_error;
-};
-
-// Window information structure for monitoring (renamed to avoid conflicts)
+// Window information structure for monitoring
 struct MonitorWindowInfo {
+    wID windowId{0};
     std::string title;
     std::string windowClass;
     std::string processName;
     pid_t pid{0};
-    unsigned long windowId{0};
     std::chrono::steady_clock::time_point lastUpdate;
-    bool isValid{false}; // Validity flag
+    bool isValid{false};
 
-    // Thread-safe copy constructor
+    MonitorWindowInfo() = default;
+    
     MonitorWindowInfo(const MonitorWindowInfo& other) {
-        std::atomic_thread_fence(std::memory_order_acquire);
+        windowId = other.windowId;
         title = other.title;
         windowClass = other.windowClass;
         processName = other.processName;
         pid = other.pid;
-        windowId = other.windowId;
         lastUpdate = other.lastUpdate;
         isValid = other.isValid;
-        std::atomic_thread_fence(std::memory_order_release);
     }
 
     MonitorWindowInfo& operator=(const MonitorWindowInfo& other) {
         if (this != &other) {
-            MonitorWindowInfo temp(other);
-            std::swap(*this, temp);
+            windowId = other.windowId;
+            title = other.title;
+            windowClass = other.windowClass;
+            processName = other.processName;
+            pid = other.pid;
+            lastUpdate = other.lastUpdate;
+            isValid = other.isValid;
         }
         return *this;
     }
-
-    MonitorWindowInfo() = default;
-    MonitorWindowInfo(MonitorWindowInfo&&) noexcept = default;
-    MonitorWindowInfo& operator=(MonitorWindowInfo&&) noexcept = default;
 };
 
-// Add operator== for MonitorWindowInfo
 inline bool operator==(const MonitorWindowInfo& lhs, const MonitorWindowInfo& rhs) {
-    return lhs.windowId == rhs.windowId &&
-           lhs.pid == rhs.pid &&
-           lhs.title == rhs.title &&
-           lhs.windowClass == rhs.windowClass &&
-           lhs.processName == rhs.processName;
+    return lhs.windowId == rhs.windowId;
 }
 
 class WindowMonitor {
 public:
-    // Define callback type before using it
     using WindowCallback = std::function<void(const MonitorWindowInfo&)>;
 
     explicit WindowMonitor(std::chrono::milliseconds pollInterval = std::chrono::milliseconds(100));
     ~WindowMonitor();
-    
-    // Non-copyable, non-movable (because of shared_mutex)
+
     WindowMonitor(const WindowMonitor&) = delete;
     WindowMonitor& operator=(const WindowMonitor&) = delete;
-    WindowMonitor(WindowMonitor&&) noexcept = delete;
-    WindowMonitor& operator=(WindowMonitor&&) noexcept = delete;
-    // Start/Stop monitoring with error handling
+
     void Start();
     void Stop();
-    
-    // Getters with shared mutex for better performance
-    std::optional<MonitorWindowInfo> GetActiveWindowInfo() const {
-        std::shared_lock<std::shared_mutex> lock(windowsMutex);
-        return activeWindow;
-    }
 
-    std::unordered_map<wID, MonitorWindowInfo> GetAllWindows() const {
-        std::shared_lock<std::shared_mutex> lock(windowsMutex);
-        return windows;
-    }
-    
-    // Callbacks defined in header to avoid redefinition
-    void SetActiveWindowCallback(WindowCallback callback) {
-        std::lock_guard<std::mutex> lock(callbackMutex);
-        activeWindowCallback = std::make_shared<WindowCallback>(std::move(callback));
-    }
-    
-    void SetWindowAddedCallback(WindowCallback callback) {
-        std::lock_guard<std::mutex> lock(callbackMutex);
-        windowAddedCallback = std::make_shared<WindowCallback>(std::move(callback));
-    }
-    
-    void SetWindowRemovedCallback(WindowCallback callback) {
-        std::lock_guard<std::mutex> lock(callbackMutex);
-        windowRemovedCallback = std::make_shared<WindowCallback>(std::move(callback));
-    }
-    
-    // Settings
+    // Get active window info
+    std::optional<MonitorWindowInfo> GetActiveWindowInfo() const;
+
+    // Get all tracked windows (if full window tracking is enabled)
+    std::unordered_map<wID, MonitorWindowInfo> GetAllWindows() const;
+
+    // Callbacks
+    void SetActiveWindowCallback(WindowCallback callback);
+    void SetWindowAddedCallback(WindowCallback callback);
+    void SetWindowRemovedCallback(WindowCallback callback);
+
     void SetPollInterval(std::chrono::milliseconds interval);
     bool IsRunning() const noexcept { return running.load(std::memory_order_acquire); }
 
-    // Convenience methods for window info access
+    // Convenience methods
     std::string GetActiveWindowExe() const;
     std::string GetActiveWindowClass() const;
     std::string GetActiveWindowTitle() const;
     pid_t GetActiveWindowPid() const;
-    
-    // Performance monitoring
-    struct Stats {
-        std::atomic<uint64_t> windowsTracked{0};
-        std::atomic<uint64_t> windowsAdded{0};
-        std::atomic<int64_t> windowsRemoved{0};
-        std::atomic<int64_t> activeWindowChanges{0};
-        
-        // Delete copy operations
-        Stats() = default;
-        Stats(const Stats&) = delete;
-        Stats& operator=(const Stats&) = delete;
-        // Delete move operations since atomic types aren't moveable
-        Stats(Stats&&) = delete;
-        Stats& operator=(Stats&&) = delete;
-    };
-
-    // Return stats by reference to avoid copy/move issues
-    const Stats& GetStats() const noexcept { return stats; }
 
 private:
     void MonitorLoop();
-    MonitorWindowInfo GetWindowInfo(wID windowId) const;
-    void UpdateWindowMap();
-    void CheckForWindowChanges();
+    MonitorWindowInfo GetWindowInfo(wID windowId);
+    void UpdateWindowMap();          // Full window tracking (optional)
+    void CheckActiveWindow();        // Just track active window
 
-    // Thread synchronization
-    mutable std::shared_mutex windowsMutex;
+    mutable std::shared_mutex dataMutex;
     mutable std::mutex callbackMutex;
     std::atomic<bool> running{false};
     std::atomic<bool> stopRequested{false};
     std::chrono::milliseconds interval;
 
-    // Resource management
     std::unique_ptr<std::thread> monitorThread;
-    std::unordered_map<wID, MonitorWindowInfo> windows;
+
+    // Data
     MonitorWindowInfo activeWindow;
-    Stats stats;
-    
-    // Callbacks stored as shared_ptr instead of weak_ptr
+    std::unordered_map<wID, MonitorWindowInfo> windows;  // all windows (if tracking)
+
+    // Callbacks
     std::shared_ptr<WindowCallback> activeWindowCallback;
     std::shared_ptr<WindowCallback> windowAddedCallback;
     std::shared_ptr<WindowCallback> windowRemovedCallback;
-    
-    // Thread-safe cache
-    class Cache {
-    public:
-        struct CacheEntry {
-            pid_t pid;
-            std::string processName;
-        };
 
-        void Set(wID windowId, pid_t pid, const std::string& procName = "") {
-            std::unique_lock<std::shared_mutex> lock(mutex);
-            pidCache[windowId] = CacheEntry{pid, procName};
-        }
-
-        std::optional<CacheEntry> Get(wID windowId) const {
-            std::shared_lock<std::shared_mutex> lock(mutex);
-            auto it = pidCache.find(windowId);
-            if (it != pidCache.end()) {
-                return it->second;
-            }
-            return std::nullopt;
-        }
-
-    private:
-        mutable std::shared_mutex mutex;
-        std::unordered_map<wID, CacheEntry> pidCache;
+    // Simple cache for process names (to avoid hitting /proc too often)
+    struct CacheEntry {
+        std::string processName;
+        std::chrono::steady_clock::time_point timestamp;
     };
-    mutable Cache cache;
+    mutable std::shared_mutex cacheMutex;
+    std::unordered_map<pid_t, CacheEntry> processNameCache;
+    std::string GetProcessNameCached(pid_t pid);
 
-    // Logging helpers defined inline to avoid redefinition
+    // Logging helpers
     static void LogInfo(const std::string& msg) {
-        std::cout << "[INFO] " << msg << std::endl;
+        std::cout << "[WindowMonitor] " << msg << std::endl;
     }
-    
     static void LogWarning(const std::string& msg) {
-        std::cerr << "[WARNING] " << msg << std::endl;
+        std::cerr << "[WindowMonitor] WARNING: " << msg << std::endl;
     }
-    
     static void LogError(const std::string& msg) {
-        std::cerr << "[ERROR] " << msg << std::endl;
+        std::cerr << "[WindowMonitor] ERROR: " << msg << std::endl;
     }
 };
 
-} // namespace havel 
+} // namespace havel

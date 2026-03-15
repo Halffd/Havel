@@ -23,7 +23,11 @@ public:
     // Window properties
     wID ID() const { return m_id; }
     std::string Title() const { return m_title; }
-    std::string Title(wID win);
+    static std::string Title(wID win);
+    std::string Class() const { return m_class; }
+    static std::string Class(wID win);
+    pID PID() const { return m_pid; }
+    static pID PID(wID win);
     
     // Position methods
     Rect Pos() const;
@@ -99,6 +103,8 @@ private:
     static void SetAlwaysOnTopX11(wID win, bool top);
 
     std::string m_title;
+    std::string m_class;
+    pID m_pid {0};
     wID m_id {0};
 
     bool operator==(const Window& other) const noexcept {

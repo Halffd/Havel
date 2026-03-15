@@ -304,8 +304,6 @@ wID Window::FindByClass(cstr className) {
 std::string Window::Title(wID win) {
   std::cout << "Window::Title() called with win=" << win << std::endl;
   if (!win)
-    win = m_id;
-  if (!win)
     return "";
 
 #ifdef WINDOWS
@@ -374,6 +372,111 @@ std::string Window::Title(wID win) {
   return result;
 #else
   return "";
+#endif
+}
+
+// Class retrieval
+std::string Window::Class(wID win) {
+  if (!win)
+    return "";
+
+#ifdef WINDOWS
+  // Windows: Get window class name
+  char className[256];
+  if (GetClassNameA(reinterpret_cast<HWND>(win), className, sizeof(className))) {
+    return std::string(className);
+  }
+  return "";
+#elif defined(__linux__)
+  // On Wayland, use CompositorBridge
+  if (WindowManager::IsWayland()) {
+    auto compositorBridge = WindowManager::GetCompositorBridge();
+    if (compositorBridge && compositorBridge->IsAvailable()) {
+      auto windowInfo = compositorBridge->GetActiveWindow();
+      if (windowInfo.valid) {
+        return windowInfo.appId;
+      }
+    }
+    return "";
+  }
+
+  // X11: Get WM_CLASS property
+  if (!display) {
+    std::cerr << "Failed to open X11 display." << std::endl;
+    return "";
+  }
+
+  XClassHint hint;
+  if (XGetClassHint(display.get(), win, &hint) == 0) {
+    return "";
+  }
+
+  std::string result;
+  if (hint.res_class) {
+    result = hint.res_class;
+    XFree(hint.res_class);
+  }
+  if (hint.res_name) {
+    XFree(hint.res_name);
+  }
+  return result;
+#else
+  return "";
+#endif
+}
+
+// PID retrieval
+pID Window::PID(wID win) {
+  if (!win)
+    return 0;
+
+#ifdef WINDOWS
+  // Windows: Get process ID
+  DWORD pid = 0;
+  GetWindowThreadProcessId(reinterpret_cast<HWND>(win), &pid);
+  return pid;
+#elif defined(__linux__)
+  // On Wayland, use CompositorBridge
+  if (WindowManager::IsWayland()) {
+    auto compositorBridge = WindowManager::GetCompositorBridge();
+    if (compositorBridge && compositorBridge->IsAvailable()) {
+      auto windowInfo = compositorBridge->GetActiveWindow();
+      if (windowInfo.valid) {
+        return windowInfo.pid;
+      }
+    }
+    return 0;
+  }
+
+  // X11: Get _NET_WM_PID property
+  if (!display) {
+    std::cerr << "Failed to open X11 display." << std::endl;
+    return 0;
+  }
+
+  Atom pidAtom = XInternAtom(display.get(), "_NET_WM_PID", x11::XTrue);
+  if (pidAtom == x11::XNone) {
+    return 0;
+  }
+
+  Atom actualType;
+  int actualFormat;
+  unsigned long nitems, bytesAfter;
+  unsigned char *prop = nullptr;
+
+  if (XGetWindowProperty(display.get(), win, pidAtom, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actualType, &actualFormat, &nitems,
+                         &bytesAfter, &prop) == x11::XSuccess && prop) {
+    if (nitems > 0) {
+      pID pid = *reinterpret_cast<pID*>(prop);
+      XFree(prop);
+      return pid;
+    }
+    XFree(prop);
+  }
+  return 0;
+#else
+  return 0;
 #endif
 }
 

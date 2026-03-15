@@ -1,16 +1,14 @@
 #include "WindowMonitor.hpp"
-#include <sys/types.h>
-#include <unistd.h>
+#include "Window.hpp"
 #include <fstream>
-#include <filesystem>
-#include <system_error>
+#include <algorithm>
 
 namespace havel {
 
 WindowMonitor::WindowMonitor(std::chrono::milliseconds pollInterval)
     : interval(pollInterval) {
     if (pollInterval.count() < 10) {
-        throw WindowMonitorError("Poll interval too small (minimum 10ms)");
+        throw std::runtime_error("Poll interval too small (minimum 10ms)");
     }
 }
 
@@ -19,171 +17,203 @@ WindowMonitor::~WindowMonitor() {
 }
 
 void WindowMonitor::Start() {
-    if (running) {
-        return;
-    }
-    
+    if (running) return;
     running = true;
     stopRequested = false;
     monitorThread = std::make_unique<std::thread>(&WindowMonitor::MonitorLoop, this);
-    LogInfo("Window monitor started");
+    LogInfo("Started");
 }
 
 void WindowMonitor::Stop() {
-    try {
-        if (!running) {
-            return;
-        }
-        
-        stopRequested = true;
-        if (monitorThread && monitorThread->joinable()) {
-            monitorThread->join();
-        }
-        running = false;
-        LogInfo("Window monitor stopped");
-    } catch (const std::exception& e) {
-        LogError("Error stopping monitor: " + std::string(e.what()));
-        throw;
+    if (!running) return;
+    stopRequested = true;
+    if (monitorThread && monitorThread->joinable()) {
+        monitorThread->join();
     }
+    running = false;
+    LogInfo("Stopped");
 }
 
-void WindowMonitor::MonitorLoop() {
-    while (!stopRequested) {
-        try {
-            auto start = std::chrono::steady_clock::now();
-            
-            UpdateWindowMap();
-            CheckForWindowChanges();
-            
-            auto end = std::chrono::steady_clock::now();
-            auto duration = end - start;
-            
-            if (duration > interval) {
-                LogWarning("Monitor loop took longer than interval: " + 
-                    std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(duration).count()) + "ms");
+std::string WindowMonitor::GetProcessNameCached(pid_t pid) {
+    if (pid <= 0) return "";
+
+    {
+        std::shared_lock lock(cacheMutex);
+        auto it = processNameCache.find(pid);
+        if (it != processNameCache.end()) {
+            auto age = std::chrono::duration_cast<std::chrono::seconds>(
+                std::chrono::steady_clock::now() - it->second.timestamp).count();
+            if (age < 5) { // 5 second cache
+                return it->second.processName;
             }
-            
-            std::this_thread::sleep_for(interval);
-            
-        } catch (const std::exception& e) {
-            LogError("Error in monitor loop: " + std::string(e.what()));
-            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
+
+    // Read from /proc
+    std::string result;
+    std::string procPath = "/proc/" + std::to_string(pid) + "/cmdline";
+    std::ifstream cmdline(procPath);
+    if (cmdline) {
+        std::getline(cmdline, result, '\0');
+        // Extract basename
+        size_t pos = result.rfind('/');
+        if (pos != std::string::npos) {
+            result = result.substr(pos + 1);
+        }
+    }
+
+    {
+        std::unique_lock lock(cacheMutex);
+        processNameCache[pid] = {result, std::chrono::steady_clock::now()};
+    }
+    return result;
 }
 
-MonitorWindowInfo WindowMonitor::GetWindowInfo(wID windowId) const {
+MonitorWindowInfo WindowMonitor::GetWindowInfo(wID windowId) {
     MonitorWindowInfo info;
     info.windowId = windowId;
     info.lastUpdate = std::chrono::steady_clock::now();
+    info.isValid = false;
+
+    // Get window info using Window class methods
+    info.title = Window::Title(windowId);
+    info.windowClass = Window::Class(windowId);
+    info.pid = Window::PID(windowId);
     
-    WindowManager wm;
-    if (wm.IsX11()) {
-        // Use cached info if available
-        if (auto entry = cache.Get(windowId)) {
-            info.pid = entry->pid;
-            info.processName = entry->processName;
-        } else {
-            // Get PID from window property
-            // ... X11 specific code to get PID ...
-            
-            // Read process name from /proc
-            std::ifstream cmdline("/proc/" + std::to_string(info.pid) + "/cmdline");
-            if (cmdline) {
-                std::getline(cmdline, info.processName, '\0');
-                cache.Set(windowId, info.pid, info.processName);
-            }
-        }
+    // Get process name from PID
+    if (info.pid != 0) {
+        info.processName = WindowManager::getProcessName(info.pid);
+    }
+    
+    // Mark as valid if we got any info
+    if (!info.title.empty() || info.pid != 0) {
+        info.isValid = true;
     }
     
     return info;
 }
 
-void WindowMonitor::UpdateWindowMap() {
-    WindowManager wm;
-    // Temporary fix until ListWindows is implemented
-    std::vector<wID> windows;
-    #ifdef __linux__
-    // Get window list from X11 or Wayland
-    // TODO: Implement window listing
-    #endif
-    
-    std::unordered_map<wID, MonitorWindowInfo> newWindows;
-    
-    for (const auto& windowId : windows) {
-        auto info = GetWindowInfo(windowId);
-        newWindows[windowId] = std::move(info);
-    }
-    
-    // Update main window map with proper locks
+void WindowMonitor::CheckActiveWindow() {
+    wID activeId = WindowManager::GetActiveWindow();
+    if (activeId == 0) return;
+
+    auto newInfo = GetWindowInfo(activeId);
+
     {
-        std::unique_lock<std::shared_mutex> lock(windowsMutex);
-        
-        // Check for removed windows
-        for (const auto& [id, info] : this->windows) {
-            if (newWindows.find(id) == newWindows.end()) {
-                std::lock_guard<std::mutex> cbLock(callbackMutex);
-                if (auto cb = windowRemovedCallback) {
-                    (*cb)(info);
-                }
+        std::unique_lock lock(dataMutex);
+        if (!(newInfo == activeWindow)) {
+            activeWindow = newInfo;
+            std::lock_guard cbLock(callbackMutex);
+            if (activeWindowCallback) {
+                (*activeWindowCallback)(newInfo);
             }
         }
-        
-        // Check for new windows
-        for (const auto& [id, info] : newWindows) {
-            if (this->windows.find(id) == this->windows.end()) {
-                std::lock_guard<std::mutex> cbLock(callbackMutex);
-                if (auto cb = windowAddedCallback) {
-                    (*cb)(info);
-                }
-            }
-        }
-        
-        this->windows = std::move(newWindows);
     }
 }
 
-void WindowMonitor::CheckForWindowChanges() {
-    try {
-        WindowManager wm;
-        auto activeWin = wm.GetActiveWindow();
-        auto newInfo = GetWindowInfo(activeWin);
-        
-        if (!(newInfo == activeWindow)) {
-            std::lock_guard<std::mutex> lock(callbackMutex);
-            activeWindow = newInfo;
-            if (auto cb = activeWindowCallback) {
-                (*cb)(newInfo);
+void WindowMonitor::UpdateWindowMap() {
+    // This requires WindowManager to have a way to list all windows.
+    // If not, you can either skip full tracking or implement X11/Wayland enumeration here.
+    // For now, we'll just track active window. Uncomment below if you add GetAllWindows().
+    /*
+    auto allIds = WindowManager::GetAllWindows();
+    std::unordered_map<wID, MonitorWindowInfo> newMap;
+
+    for (auto id : allIds) {
+        newMap[id] = GetWindowInfo(id);
+    }
+
+    {
+        std::unique_lock lock(dataMutex);
+        // Detect removed windows
+        for (const auto& [id, info] : windows) {
+            if (newMap.find(id) == newMap.end()) {
+                std::lock_guard cbLock(callbackMutex);
+                if (windowRemovedCallback) (*windowRemovedCallback)(info);
             }
         }
-    } catch (const std::exception& e) {
-        LogWarning("Failed to check active window: " + std::string(e.what()));
+        // Detect new windows
+        for (const auto& [id, info] : newMap) {
+            if (windows.find(id) == windows.end()) {
+                std::lock_guard cbLock(callbackMutex);
+                if (windowAddedCallback) (*windowAddedCallback)(info);
+            }
+        }
+        windows = std::move(newMap);
     }
+    */
+}
+
+void WindowMonitor::MonitorLoop() {
+    LogInfo("Monitor loop started");
+    while (!stopRequested) {
+        auto start = std::chrono::steady_clock::now();
+        try {
+            CheckActiveWindow();
+            // UpdateWindowMap(); // enable if full tracking is implemented
+        } catch (const std::exception& e) {
+            LogError(std::string("Exception: ") + e.what());
+        }
+
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        auto sleepTime = interval - std::chrono::duration_cast<std::chrono::milliseconds>(elapsed);
+        if (sleepTime.count() > 0 && !stopRequested) {
+            std::this_thread::sleep_for(sleepTime);
+        }
+    }
+    LogInfo("Monitor loop stopped");
+}
+
+std::optional<MonitorWindowInfo> WindowMonitor::GetActiveWindowInfo() const {
+    std::shared_lock lock(dataMutex);
+    if (activeWindow.isValid) {
+        return activeWindow;
+    }
+    return std::nullopt;
+}
+
+std::unordered_map<wID, MonitorWindowInfo> WindowMonitor::GetAllWindows() const {
+    std::shared_lock lock(dataMutex);
+    return windows;
+}
+
+void WindowMonitor::SetActiveWindowCallback(WindowCallback callback) {
+    std::lock_guard lock(callbackMutex);
+    activeWindowCallback = std::make_shared<WindowCallback>(std::move(callback));
+}
+
+void WindowMonitor::SetWindowAddedCallback(WindowCallback callback) {
+    std::lock_guard lock(callbackMutex);
+    windowAddedCallback = std::make_shared<WindowCallback>(std::move(callback));
+}
+
+void WindowMonitor::SetWindowRemovedCallback(WindowCallback callback) {
+    std::lock_guard lock(callbackMutex);
+    windowRemovedCallback = std::make_shared<WindowCallback>(std::move(callback));
 }
 
 void WindowMonitor::SetPollInterval(std::chrono::milliseconds newInterval) {
     interval = newInterval;
 }
 
-// Convenience methods for window info access
 std::string WindowMonitor::GetActiveWindowExe() const {
-    std::shared_lock<std::shared_mutex> lock(windowsMutex);
-    return activeWindow.isValid ? activeWindow.processName : "";
+    std::shared_lock lock(dataMutex);
+    return activeWindow.processName;
 }
 
 std::string WindowMonitor::GetActiveWindowClass() const {
-    std::shared_lock<std::shared_mutex> lock(windowsMutex);
-    return activeWindow.isValid ? activeWindow.windowClass : "";
+    std::shared_lock lock(dataMutex);
+    return activeWindow.windowClass;
 }
 
 std::string WindowMonitor::GetActiveWindowTitle() const {
-    std::shared_lock<std::shared_mutex> lock(windowsMutex);
-    return activeWindow.isValid ? activeWindow.title : "";
+    std::shared_lock lock(dataMutex);
+    return activeWindow.title;
 }
 
 pid_t WindowMonitor::GetActiveWindowPid() const {
-    std::shared_lock<std::shared_mutex> lock(windowsMutex);
-    return activeWindow.isValid ? activeWindow.pid : 0;
+    std::shared_lock lock(dataMutex);
+    return activeWindow.pid;
 }
 
-} // namespace havel 
+} // namespace havel

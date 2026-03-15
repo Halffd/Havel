@@ -428,10 +428,7 @@ public:
     if (m_destroyed) m_destroyed->store(true);
     
     // Clear in reverse order of dependency
-    if (environment) {
-      environment->clear();  // Free all variables
-    }
-    environment.reset();
+    environment.reset();           // Free all variables
     lastResult = HavelValue(nullptr);
     
     // Clear HostContext components (stops threads, frees resources)

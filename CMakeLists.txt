@@ -433,8 +433,8 @@ target_precompile_headers(havel PRIVATE
     <sys/types.h>
 )
 
-# DISABLED: target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-# DISABLED: target_link_options(havel PRIVATE -fsanitize=address,undefined)
+target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+target_link_options(havel PRIVATE -fsanitize=address,undefined)
 # Include directories
 target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src

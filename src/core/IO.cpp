@@ -1575,7 +1575,7 @@ bool IO::Suspend() {
           std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
           // Restore to the original state before suspension
           for (const auto &state : suspendedConditionalHotkeyStates) {
-            auto &ch = hotkeyManager->activeConditionalHotkeys;
+            auto &ch = *hotkeyManager->activeConditionalHotkeys;
             auto it = std::find_if(ch.begin(), ch.end(),
                                    [state](const auto &ch_item) {
                                      return ch_item.id == state.id;
@@ -1620,7 +1620,7 @@ bool IO::Suspend() {
         hotkeyManager->conditionalHotkeysEnabled = false;
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
-        for (auto &ch : hotkeyManager->activeConditionalHotkeys) {
+        for (auto &ch : *hotkeyManager->activeConditionalHotkeys) {
           ConditionalHotkeyState state;
           state.id = ch.id;
           state.wasGrabbed = ch.currentlyGrabbed;

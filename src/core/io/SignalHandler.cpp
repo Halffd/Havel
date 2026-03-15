@@ -3,6 +3,7 @@
 #include "utils/Logger.hpp"
 #include <cerrno>
 #include <csignal>
+#include <cstring>
 #include <pthread.h>
 #include <sys/signalfd.h>
 #include <unistd.h>

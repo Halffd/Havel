@@ -1454,6 +1454,24 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     lastResult = HavelValue(!found);
     break;
   }
+  case ast::BinaryOperator::Matches: {
+    // Regex match operator: left matches right
+    // right should be a regex pattern string
+    if (!left.isString() || !right.isString()) {
+      lastResult = HavelRuntimeError("'matches' operator requires strings on both sides", node.line, node.column);
+      return;
+    }
+    
+    try {
+      std::regex pattern(right.asString());
+      bool matched = std::regex_search(left.asString(), pattern);
+      lastResult = HavelValue(matched);
+    } catch (const std::regex_error& e) {
+      lastResult = HavelRuntimeError("Invalid regex pattern: " + right.asString(), node.line, node.column);
+      return;
+    }
+    break;
+  }
   case ast::BinaryOperator::ConfigAppend: {
     // >> config operator
     // value >> config.path - SET config value

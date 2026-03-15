@@ -310,6 +310,7 @@ enum class BinaryOperator {
   Or,
   In,         // membership: x in [1,2,3]
   NotIn,      // negated membership: x not in [1,2,3]
+  Matches,    // regex match: title matches ".*Steam.*"
   ConfigAppend  // >> config operator
 };
 
@@ -360,6 +361,8 @@ inline std::ostream &operator<<(std::ostream &os, BinaryOperator op) {
     return os << "in";
   case BinaryOperator::NotIn:
     return os << "not in";
+  case BinaryOperator::Matches:
+    return os << "matches";
   case BinaryOperator::ConfigAppend:
     return os << ">>";
   default:
@@ -430,6 +433,8 @@ struct BinaryExpression : public Expression {
       return "in";
     case BinaryOperator::NotIn:
       return "not in";
+    case BinaryOperator::Matches:
+      return "matches";
     case BinaryOperator::ConfigAppend:
       return ">>";
     }

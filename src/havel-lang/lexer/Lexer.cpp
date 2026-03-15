@@ -48,6 +48,11 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"text", TokenType::Identifier},      // Built-in module
     {"window", TokenType::Identifier},    // Built-in module
     {"import", TokenType::Import},
+    // English-style logical operators (aliases for &&, ||, !)
+    {"and", TokenType::And},
+    {"or", TokenType::Or},
+    {"not", TokenType::Not},
+    {"matches", TokenType::Matches},  // regex match operator
     {"from", TokenType::From},
     {"as", TokenType::As},
     {"use", TokenType::Use},

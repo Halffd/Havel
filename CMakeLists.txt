@@ -256,6 +256,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/*.cpp"
     "src/core/io/*.cpp"
     "src/core/net/*.cpp"
+    "src/core/process/*.cpp"
     "src/window/*.cpp"
     "src/utils/*.cpp"
     "src/fs/*.cpp"

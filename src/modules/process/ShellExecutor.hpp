@@ -40,7 +40,7 @@ public:
      * @param command Command string (may contain pipes)
      * @return ShellResult with stdout, stderr, exit code
      */
-    ShellResult executeShell(const std::string& command);
+    static ShellResult executeShell(const std::string& command);
 
     /**
      * Execute command directly (no shell)
@@ -48,7 +48,7 @@ public:
      * @param args Arguments
      * @return ShellResult with stdout, stderr, exit code
      */
-    ShellResult execute(const std::string& executable, 
+    static ShellResult execute(const std::string& executable,
                         const std::vector<std::string>& args);
 
     /**
@@ -56,7 +56,7 @@ public:
      * @param commands Vector of command strings
      * @return ShellResult from final command
      */
-    ShellResult executeChain(const std::vector<std::string>& commands);
+    static ShellResult executeChain(const std::vector<std::string>& commands);
     
     /**
      * Split command string by pipe character (respects quotes)

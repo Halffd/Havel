@@ -81,7 +81,7 @@ void registerPixelModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
             y = static_cast<int>(args[1].asNumber());
         }
         
-        Color c = pa.getPixel(x, y);
+        Color c = pa->getPixel(x, y);
         auto colorObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*colorObj)["r"] = HavelValue(static_cast<double>(c.r));
         (*colorObj)["g"] = HavelValue(static_cast<double>(c.g));

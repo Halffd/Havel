@@ -2593,10 +2593,10 @@ std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
     left = std::move(bin);
   }
 
-  // Regex match operator: matches
-  if (at().type == havel::TokenType::Matches) {
-    auto matchesTok = at();  // Save location of 'matches'
-    advance();  // consume 'matches'
+  // Regex match operator: matches or ~
+  if (at().type == havel::TokenType::Matches || at().type == havel::TokenType::Tilde) {
+    auto matchesTok = at();  // Save location
+    advance();  // consume 'matches' or '~'
     auto right = parseRange();
     auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), 
                                                               havel::ast::BinaryOperator::Matches,
@@ -2793,6 +2793,7 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
   case TokenType::Or:
     return havel::ast::BinaryOperator::Or;
   case TokenType::Matches:
+  case TokenType::Tilde:  // ~ is shorthand for matches
     return havel::ast::BinaryOperator::Matches;
   case TokenType::ShiftRight:
     return havel::ast::BinaryOperator::ConfigAppend;

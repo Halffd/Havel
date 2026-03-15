@@ -428,7 +428,10 @@ public:
   // Get HostContext for module access
   HostContext& getHostContext() { return hostContext; }
   const HostContext& getHostContext() const { return hostContext; }
-  
+
+  // Evaluate condition expression (for mode detection)
+  bool evaluateCondition(const ast::Expression& expr);
+
   // Get HostAPI for updating manager pointers
   std::shared_ptr<IHostAPI> getHostAPI() { return hostAPI; }
 

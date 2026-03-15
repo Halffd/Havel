@@ -1,5 +1,6 @@
 #include "ConditionalHotkeyManager.hpp"
 #include "IO.hpp"
+#include "ModeManager.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
@@ -466,6 +467,9 @@ void ConditionalHotkeyManager::BatchUpdateConditionalHotkeys() {
         bool shouldGrab = false;
         if (std::holds_alternative<std::string>(ch.condition)) {
           shouldGrab = EvaluateCondition(std::get<std::string>(ch.condition));
+        } else if (std::holds_alternative<std::function<bool()>>(ch.condition)) {
+          const auto& func = std::get<std::function<bool()>>(ch.condition);
+          if (func) shouldGrab = func();
         }
 
         if (shouldGrab && !ch.currentlyGrabbed) {
@@ -505,6 +509,11 @@ void ConditionalHotkeyManager::UpdateLoop() {
     }
 
     if (!updateLoopRunning.load()) break;
+
+    // Update modes first (may trigger enter/exit callbacks)
+    if (auto mgr = modeManager.lock()) {
+      mgr->update();
+    }
 
     BatchUpdateConditionalHotkeys();
   }

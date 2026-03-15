@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ConditionalHotkeyManager.hpp"
+#include "ModeManager.hpp"
 #include "core/CallbackTypes.hpp"
 #include "core/MouseGestureTypes.hpp"
 #include "core/io/MouseGestureEngine.hpp"
@@ -90,6 +91,10 @@ public:
   std::string getMode() const;  // Get current mode
   std::mutex &getHotkeyMutex();
 
+  // ModeManager access
+  std::shared_ptr<ModeManager>& getModeManager() { return modeManager; }
+  const std::shared_ptr<ModeManager>& getModeManager() const { return modeManager; }
+
   void loadDebugSettings();
   void applyDebugSettings();
   void cleanup();
@@ -116,6 +121,7 @@ private:
 
   std::shared_ptr<IO> io;  // Shared ownership to ensure IO stays alive
   ConditionalHotkeyManager conditionalManager;
+  std::shared_ptr<ModeManager> modeManager;  // Shared ownership for mode management
   std::unordered_map<std::string, std::function<void()>> simpleHotkeys;
   std::unordered_map<std::string, bool> simpleHotkeyEnabled;
   mutable std::mutex simpleHotkeysMutex;

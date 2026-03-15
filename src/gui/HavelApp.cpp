@@ -3,6 +3,7 @@
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
+#include "core/ModeManager.hpp"
 #include "core/io/EventListener.hpp" // Include EventListener for access to its members
 #include "core/io/KeyTap.hpp"
 #include "gui/GUIManager.hpp"
@@ -183,6 +184,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.io = io;  // Share ownership
   ctx.windowManager = windowManager.get();
   ctx.hotkeyManager = nullptr;  // Will be set after HotkeyManager creation
+  ctx.modeManager = nullptr;  // Will be set after HotkeyManager creation
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
@@ -194,12 +196,12 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!interpreter) {
     throw std::runtime_error("Failed to create Interpreter");
   }
-  
+
   std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
 
   // Get screenshot manager with null guard (nullptr in REPL mode)
   auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
-  
+
   // Create HotkeyManager - needs interpreter reference
   hotkeyManager = std::make_shared<HotkeyManager>(
       io, *windowManager, *mpv, *audioManager, *interpreter,
@@ -216,10 +218,11 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Initialize hotkey manager
   hotkeyManager->loadDebugSettings();
   hotkeyManager->applyDebugSettings();
-  
-  // Update interpreter's hostContext with hotkeyManager
+
+  // Update interpreter's hostContext with hotkeyManager and modeManager
   interpreter->getHostContext().hotkeyManager = hotkeyManager;
-  
+  interpreter->getHostContext().modeManager = hotkeyManager->getModeManager();
+
   // Update HostAPI with hotkeyManager (HostAPI was created with nullptr)
   if (interpreter->getHostAPI()) {
     interpreter->getHostAPI()->SetHotkeyManager(hotkeyManager.get());

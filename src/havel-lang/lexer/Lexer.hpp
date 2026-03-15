@@ -103,6 +103,7 @@ enum class TokenType {
   And,
   Or,
   Not,
+  Matches,    // regex match operator
   True,        // boolean literal true
   False,       // boolean literal false
   Assign,

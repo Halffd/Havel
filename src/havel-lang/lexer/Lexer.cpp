@@ -320,6 +320,30 @@ Token Lexer::scanBacktick() {
   return makeToken(value, TokenType::Backtick, raw);
 }
 
+Token Lexer::scanRegexLiteral() {
+  std::string value;
+  std::string raw;
+
+  // Consume characters until closing slash
+  while (!isAtEnd() && peek() != '/') {
+    char c = advance();
+    // Handle escape sequences
+    if (c == '\\' && !isAtEnd()) {
+      value += c;
+      c = advance();
+    }
+    value += c;
+    raw += c;
+  }
+
+  // Consume closing slash
+  if (!isAtEnd()) {
+    advance();
+  }
+
+  return makeToken(value, TokenType::RegexLiteral, "/" + raw + "/");
+}
+
 Token Lexer::scanShellCommand(bool captureOutput) {
   // $ already consumed, just return the $ as a token
   // The parser will handle the expression that follows
@@ -490,6 +514,39 @@ std::vector<Token> Lexer::tokenize() {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
       }
       continue;
+    }
+
+    // Handle regex literals: /pattern/
+    // Only if not followed by '/' (which would be // comment) or '*' (/* comment)
+    // and not preceded by something that would make it division
+    if (c == '/' && peek() != '/' && peek() != '*' && peek() != '=') {
+      // Check if this looks like a regex (not division)
+      // Simple heuristic: if previous non-whitespace token suggests expression context
+      bool isRegexContext = tokens.empty() || 
+          tokens.back().type == TokenType::OpenParen ||
+          tokens.back().type == TokenType::OpenBracket ||
+          tokens.back().type == TokenType::Comma ||
+          tokens.back().type == TokenType::Assign ||
+          tokens.back().type == TokenType::Arrow ||
+          tokens.back().type == TokenType::And ||
+          tokens.back().type == TokenType::Or ||
+          tokens.back().type == TokenType::Not ||
+          tokens.back().type == TokenType::In ||
+          tokens.back().type == TokenType::Matches ||
+          tokens.back().type == TokenType::Tilde ||
+          tokens.back().type == TokenType::Colon ||
+          tokens.back().type == TokenType::Question ||
+          tokens.back().type == TokenType::Pipe ||
+          tokens.back().type == TokenType::NewLine ||
+          tokens.back().type == TokenType::Semicolon;
+      
+      if (isRegexContext && !isDigit(peek())) {
+        tokens.push_back(scanRegexLiteral());
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
     }
 
     // Handle return type arrow ->

@@ -2822,6 +2822,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     return std::make_unique<havel::ast::BacktickExpression>(tk.value);
   }
 
+  case havel::TokenType::RegexLiteral: {
+    advance();
+    return std::make_unique<havel::ast::StringLiteral>(tk.value);  // Store regex as string for now
+  }
+
   case havel::TokenType::ShellCommand:
   case havel::TokenType::ShellCommandCapture: {
     // Shell command in expression context: $! ["date"] or $ (cmd) or $! var

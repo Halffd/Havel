@@ -73,6 +73,7 @@ enum class TokenType {
   String,
   InterpolatedString,
   Backtick,      // `command` for shell output
+  RegexLiteral,  // /pattern/ for regex
   ShellCommand,  // $ command for shell execution
   ShellCommandCapture,  // $! command (capture output)
   Hotkey,
@@ -198,6 +199,7 @@ private:
   Token scanNumber();
   Token scanString();
   Token scanBacktick();
+  Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);
   Token scanIdentifier();
   Token scanHotkey();

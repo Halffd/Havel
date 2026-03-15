@@ -9,24 +9,24 @@
 namespace havel {
 
 class IO;
-class DynamicConditionEvaluator;
+
+// Forward declare - complete type needed only in .cpp
+namespace ast { struct Expression; }
 
 /**
  * ModeManager - Dynamic mode system for Havel
  * 
  * Supports script-defined modes with:
- * - Dynamic conditions (exe, class, title, time, battery, cpu, etc.)
+ * - Dynamic conditions (AST expressions, evaluated directly)
  * - Enter/exit callbacks
  * - Mode transitions with previous mode tracking
  * 
  * Usage in Havel script:
  * ```havel
- * modes {
- *     gaming {
- *         condition = exe == "steam.exe" || class in ["steam", "lutris"]
- *         enter { brightness(50); volume(80) }
- *         exit { brightness(100); volume(50) }
- *     }
+ * mode gaming {
+ *     condition = exe == "steam.exe" || class in ["steam", "lutris"]
+ *     enter { brightness(50); volume(80) }
+ *     exit { brightness(100); volume(50) }
  * }
  * 
  * when mode gaming {
@@ -36,16 +36,17 @@ class DynamicConditionEvaluator;
  */
 class ModeManager {
 public:
-    ModeManager(std::shared_ptr<IO> io);
+    ModeManager() = default;
     ~ModeManager();
 
-    // Mode definition
+    // Mode definition - stores AST directly, no reparsing
+    // Note: conditionExpr is owned by the ModesBlock AST node
+    // ModeManager just holds a non-owning pointer
     struct ModeDefinition {
         std::string name;
-        std::string conditionStr;     // Original condition string
-        std::function<bool()> condition;  // Dynamic condition evaluator
-        std::function<void()> onEnter;    // Called when mode activates
-        std::function<void()> onExit;     // Called when mode deactivates
+        ast::Expression* conditionExpr = nullptr;  // Non-owning pointer to AST
+        std::function<void()> onEnter;
+        std::function<void()> onExit;
         bool isActive = false;
     };
 
@@ -62,17 +63,14 @@ public:
     void setMode(const std::string& modeName);
 
     // Update all mode conditions (called periodically)
-    void update();
+    // Pass evaluator function that evaluates AST expressions
+    using ExprEvaluator = std::function<bool(const ast::Expression&)>;
+    void update(ExprEvaluator evaluator);
 
     // Get all defined modes
     const std::vector<ModeDefinition>& getModes() const { return modes; }
 
-    // Evaluate a condition string
-    bool evaluateCondition(const std::string& condition);
-
 private:
-    std::shared_ptr<IO> io;
-    std::unique_ptr<DynamicConditionEvaluator> evaluator;
     std::vector<ModeDefinition> modes;
     std::string currentMode;
     std::string previousMode;

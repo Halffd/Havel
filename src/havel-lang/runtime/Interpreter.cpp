@@ -2624,15 +2624,11 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {
 }
 
 void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
-  // Process mode definitions
-  for (const auto& modeDef : node.modes) {
-    // Evaluate condition expression
-    std::string conditionStr;
-    if (modeDef.condition) {
-      // Convert condition expression to string for DynamicConditionEvaluator
-      conditionStr = modeDef.condition->toString();
-    }
-    
+  // Process mode definitions (const_cast safe - we're consuming the AST during initialization)
+  for (auto& modeDef : const_cast<ast::ModesBlock&>(node).modes) {
+    // Store pointer to condition expression (owned by AST node)
+    ast::Expression* conditionExpr = modeDef.condition.get();
+
     // Create enter callback
     std::function<void()> enterCallback;
     if (modeDef.enterBlock) {
@@ -2650,7 +2646,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
         lastResult = oldResult;
       };
     }
-    
+
     // Create exit callback
     std::function<void()> exitCallback;
     if (modeDef.exitBlock) {
@@ -2668,21 +2664,12 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
         lastResult = oldResult;
       };
     }
-    
-    // Create condition function using DynamicConditionEvaluator
-    std::function<bool()> conditionFunc;
-    if (!conditionStr.empty() && hostContext.modeManager) {
-      conditionFunc = [conditionStr, modeManager = hostContext.modeManager]() {
-        return modeManager->evaluateCondition(conditionStr);
-      };
-    }
-    
-    // Register mode with ModeManager
+
+    // Register mode with ModeManager - store AST pointer!
     if (hostContext.modeManager) {
       ModeManager::ModeDefinition modeDefn;
       modeDefn.name = modeDef.name;
-      modeDefn.conditionStr = conditionStr;
-      modeDefn.condition = conditionFunc;
+      modeDefn.conditionExpr = conditionExpr;  // Non-owning pointer to AST
       modeDefn.onEnter = enterCallback;
       modeDefn.onExit = exitCallback;
       hostContext.modeManager->defineMode(std::move(modeDefn));

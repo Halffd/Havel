@@ -1,20 +1,9 @@
 #include "ModeManager.hpp"
-#include "DynamicConditionEvaluator.hpp"
-#include "core/IO.hpp"
+#include "havel-lang/ast/AST.h"
 #include <chrono>
 #include <algorithm>
 
 namespace havel {
-
-ModeManager::ModeManager(std::shared_ptr<IO> io)
-    : io(io), 
-      evaluator(std::make_unique<DynamicConditionEvaluator>(io)),
-      currentMode("default"), 
-      previousMode("default") {
-    // Set up mode getters for condition evaluator
-    evaluator->setModeGetter([this]() { return getCurrentMode(); });
-    evaluator->setPreviousModeGetter([this]() { return getPreviousMode(); });
-}
 
 ModeManager::~ModeManager() = default;
 
@@ -84,12 +73,7 @@ void ModeManager::triggerExit(ModeDefinition& mode) {
     }
 }
 
-bool ModeManager::evaluateCondition(const std::string& condition) {
-    if (!evaluator) return false;
-    return evaluator->evaluate(condition);
-}
-
-void ModeManager::update() {
+void ModeManager::update(ExprEvaluator evaluator) {
     std::lock_guard<std::mutex> lock(modeMutex);
     
     std::string newActiveMode = currentMode;
@@ -97,8 +81,8 @@ void ModeManager::update() {
     
     // Check all mode conditions
     for (auto& mode : modes) {
-        if (mode.condition) {
-            bool shouldActivate = mode.condition();
+        if (mode.conditionExpr && evaluator) {
+            bool shouldActivate = evaluator(*mode.conditionExpr);
             
             if (shouldActivate && !mode.isActive) {
                 // Mode condition met, activate it

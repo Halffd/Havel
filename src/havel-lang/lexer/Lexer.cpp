@@ -747,9 +747,9 @@ std::vector<Token> Lexer::tokenize() {
     // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
     // as Plus. EXCEPTION: + after expression context should be Plus operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-      // Special case for + and ! : check context to distinguish operator from hotkey
+      // Special case for +, !, and ~: check context to distinguish operator from hotkey
       // Note: CloseBrace is NOT in expression context - after } we're at statement level
-      if ((c == '+' || c == '!') && !tokens.empty()) {
+      if ((c == '+' || c == '!' || c == '~') && !tokens.empty()) {
         TokenType prevType = tokens.back().type;
         // If previous token suggests expression context, treat as operator
         // Exclude CloseBrace - after } we're at statement level (could be hotkey)
@@ -765,8 +765,11 @@ std::vector<Token> Lexer::tokenize() {
             prevType == TokenType::Assign ||
             prevType == TokenType::If ||
             prevType == TokenType::While ||
-            prevType == TokenType::For) {
-          // Fall through to SINGLE_CHAR_TOKENS to get Plus or Not
+            prevType == TokenType::For ||
+            prevType == TokenType::In ||
+            prevType == TokenType::Matches ||
+            prevType == TokenType::Tilde) {
+          // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
         } else {
           tokens.push_back(scanHotkey());
           continue;

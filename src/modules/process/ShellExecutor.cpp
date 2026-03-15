@@ -66,6 +66,49 @@ ShellResult ShellExecutor::executeChain(const std::vector<std::string>& commands
     return result;
 }
 
+std::vector<std::string> ShellExecutor::splitPipes(const std::string& command) {
+    std::vector<std::string> parts;
+    std::string current;
+    bool inQuotes = false;
+    char quoteChar = 0;
+    
+    for (size_t i = 0; i < command.size(); ++i) {
+        char c = command[i];
+        
+        // Handle quotes
+        if ((c == '"' || c == '\'') && !inQuotes) {
+            inQuotes = true;
+            quoteChar = c;
+            current += c;
+            continue;
+        }
+        
+        if (inQuotes && c == quoteChar) {
+            inQuotes = false;
+            quoteChar = 0;
+            current += c;
+            continue;
+        }
+        
+        // Handle pipe (only outside quotes)
+        if (c == '|' && !inQuotes) {
+            if (!current.empty()) {
+                parts.push_back(current);
+                current.clear();
+            }
+            continue;
+        }
+        
+        current += c;
+    }
+    
+    if (!current.empty()) {
+        parts.push_back(current);
+    }
+    
+    return parts;
+}
+
 ShellResult ShellExecutor::executeSingle(const std::string& command, bool useShell) {
     ShellResult result;
     

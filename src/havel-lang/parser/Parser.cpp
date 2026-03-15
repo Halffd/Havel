@@ -2563,6 +2563,36 @@ std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
 std::unique_ptr<havel::ast::Expression> Parser::parseComparison() {
   auto left = parseRange();
 
+  // Membership operators: in, not in
+  // Check for "not in" first (two-token operator)
+  if (at().type == havel::TokenType::Not) {
+    if (at(1).type == havel::TokenType::In) {
+      auto notTok = at();  // Save location of 'not'
+      advance();  // consume 'not'
+      advance();  // consume 'in'
+      auto right = parseRange();
+      auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), 
+                                                                havel::ast::BinaryOperator::NotIn,
+                                                                std::move(right));
+      bin->line = notTok.line;
+      bin->column = notTok.column;
+      left = std::move(bin);
+    }
+  }
+  
+  // Check for "in" operator
+  if (at().type == havel::TokenType::In) {
+    auto inTok = at();  // Save location of 'in'
+    advance();  // consume 'in'
+    auto right = parseRange();
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), 
+                                                              havel::ast::BinaryOperator::In,
+                                                              std::move(right));
+    bin->line = inTok.line;
+    bin->column = inTok.column;
+    left = std::move(bin);
+  }
+
   // Comparison operators: < > <= >=
   // Left-associative: a < b < c parses as ((a < b) < c)
   // Note: Python-style chaining (a < b && b < c) is NOT supported.

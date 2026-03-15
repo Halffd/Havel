@@ -70,6 +70,13 @@ public:
     return constVars.find(name) != constVars.end();
   }
 
+  // Clear all variables (call on shutdown to free memory)
+  void clear() {
+    values.clear();
+    constVars.clear();
+    parent.reset();
+  }
+
 private:
   std::shared_ptr<Environment> parent;
   std::unordered_map<std::string, HavelValue> values;

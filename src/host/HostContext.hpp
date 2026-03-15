@@ -75,6 +75,41 @@ struct HostContext {
     FileManager* fileManager = nullptr;
     ProcessManager* processManager = nullptr;
 
+    // Network
+    std::shared_ptr<net::NetworkManager> networkManager;
+
+    // Clear all components (call before destruction to stop threads)
+    void clear() {
+        // Stop window monitor first (has a thread)
+        if (windowMonitor) {
+            windowMonitor->Stop();
+        }
+        windowMonitor.reset();
+        
+        // Clear hotkey manager (stops its threads)
+        if (hotkeyManager) {
+            hotkeyManager->cleanup();
+        }
+        hotkeyManager.reset();
+        
+        // Clear other shared resources
+        modeManager.reset();
+        networkManager.reset();
+        io.reset();
+        
+        // Raw pointers don't need cleanup (owned elsewhere)
+        windowManager = nullptr;
+        brightnessManager = nullptr;
+        audioManager = nullptr;
+        guiManager = nullptr;
+        screenshotManager = nullptr;
+        clipboardManager = nullptr;
+        pixelAutomation = nullptr;
+        automationManager = nullptr;
+        fileManager = nullptr;
+        processManager = nullptr;
+    }
+
     // Validation helper
     bool isValid() const {
         return io != nullptr;

@@ -426,8 +426,17 @@ public:
 
   ~Interpreter() {
     if (m_destroyed) m_destroyed->store(true);
+    
+    // Clear in reverse order of dependency
+    if (environment) {
+      environment->clear();  // Free all variables
+    }
     environment.reset();
     lastResult = HavelValue(nullptr);
+    
+    // Clear HostContext components (stops threads, frees resources)
+    hostContext.clear();
+    
     // Clear global interpreter reference to prevent dangling pointer
     havel::modules::SetHotkeyInterpreter(std::weak_ptr<Interpreter>());
   }

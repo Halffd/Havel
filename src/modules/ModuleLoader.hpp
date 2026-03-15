@@ -4,7 +4,7 @@
 
 #pragma once
 #include <string>
-
+#include <memory>
 namespace havel {
 
 class Environment;

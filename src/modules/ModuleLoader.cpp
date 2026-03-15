@@ -8,6 +8,7 @@
 #include "havel-lang/runtime/Environment.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include <sstream>
+#include <memory>
 
 namespace havel::modules {
 

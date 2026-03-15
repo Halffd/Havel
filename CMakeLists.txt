@@ -693,6 +693,8 @@ endif()
 if(ALSA_FOUND)
     target_compile_definitions(havel PRIVATE HAVE_ALSA)
 endif()
-target_include_directories(havel_lang PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/havel-lang
-)
+if(TARGET havel_lang)
+    target_include_directories(havel_lang PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+    )
+endif()

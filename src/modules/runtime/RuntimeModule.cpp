@@ -64,7 +64,7 @@ void registerRuntimeModule(Environment& env, Interpreter* interpreter) {
     // Note: hasRunOnce/markRunOnce not yet implemented in Interpreter
     // =========================================================================
 
-    env.Define("runOnce", HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>& args) -> HavelResult {
+    env.Define("runOnce", HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
             return HavelRuntimeError("runOnce requires an id and a command string");
         }

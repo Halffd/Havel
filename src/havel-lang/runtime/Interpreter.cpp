@@ -11,7 +11,7 @@
 #include "core/io/MapManager.hpp"
 #include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
-#include "core/process/ShellExecutor.hpp"
+#include "modules/process/ShellExecutor.hpp"
 #include "fs/FileManager.hpp"
 #include "gui/AltTab.hpp"
 #include "gui/GUIManager.hpp"

@@ -325,7 +325,7 @@ std::string Window::Title(wID win) {
     return "";
   }
 
-  // X11 fallback
+  // X11 - USE THE CACHED DISPLAY!
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return "";
@@ -400,7 +400,7 @@ std::string Window::Class(wID win) {
     return "";
   }
 
-  // X11: Get WM_CLASS property
+  // X11 - USE THE CACHED DISPLAY!
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return "";
@@ -448,7 +448,7 @@ pID Window::PID(wID win) {
     return 0;
   }
 
-  // X11: Get _NET_WM_PID property
+  // X11 - USE THE CACHED DISPLAY!
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return 0;
@@ -521,13 +521,14 @@ void Window::Activate(wID win) {
   if (WindowManager::get().IsX11()) {
     if (!win)
       return;
-    // X11 implementation
-    Display *localDisplay = XOpenDisplay(nullptr);
-    if (!localDisplay)
+    // X11 implementation - USE CACHED DISPLAY!
+    if (!display) {
+      error("X11 display not initialized");
       return;
+    }
 
     Atom activeAtom =
-        XInternAtom(localDisplay, "_NET_ACTIVE_WINDOW", x11::XTrue);
+        XInternAtom(display.get(), "_NET_ACTIVE_WINDOW", x11::XTrue);
     if (activeAtom != x11::XNone) {
       XEvent event = {};
       event.xclient.type = x11::XClientMessage;
@@ -537,13 +538,12 @@ void Window::Activate(wID win) {
       event.xclient.data.l[0] = 1; // Source indication: 1 (application)
       event.xclient.data.l[1] = CurrentTime;
 
-      XSendEvent(localDisplay, DefaultRootWindow(localDisplay), x11::XFalse,
+      XSendEvent(display.get(), DefaultRootWindow(display.get()), x11::XFalse,
                  SubstructureRedirectMask | SubstructureNotifyMask, &event);
-      XFlush(localDisplay);
+      XFlush(display.get());
     } else {
       error("Failed to find _NET_ACTIVE_WINDOW atom.");
     }
-    XCloseDisplay(localDisplay);
   } else if (WindowManager::get().IsWayland()) {
     // Wayland implementation using `wmctrl`
     if (win) {
@@ -578,11 +578,13 @@ void Window::Close(wID win) {
 #elif defined(__linux__)
   if (!win)
     return;
-  Display *localDisplay = XOpenDisplay(nullptr);
-  if (!localDisplay)
+  // USE CACHED DISPLAY!
+  if (!display) {
+    error("X11 display not initialized");
     return;
+  }
 
-  Atom wmDelete = XInternAtom(localDisplay, "WM_DELETE_WINDOW", x11::XTrue);
+  Atom wmDelete = XInternAtom(display.get(), "WM_DELETE_WINDOW", x11::XTrue);
   if (wmDelete != x11::XNone) {
     XEvent event = {};
     event.xclient.type = x11::XClientMessage;
@@ -590,10 +592,9 @@ void Window::Close(wID win) {
     event.xclient.format = 32;
     event.xclient.data.l[0] = CurrentTime;
 
-    XSendEvent(localDisplay, win, x11::XFalse, NoEventMask, &event);
-    XFlush(localDisplay);
+    XSendEvent(display.get(), win, x11::XFalse, NoEventMask, &event);
+    XFlush(display.get());
   }
-  XCloseDisplay(localDisplay);
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for closing windows.
   error("Window closing in Wayland is not implemented.");
@@ -610,15 +611,14 @@ void Window::Min(wID win) {
 #elif defined(__linux__)
   if (!win)
     return;
-  Display *localDisplay = XOpenDisplay(nullptr);
-  if (!localDisplay) {
-    std::cerr << "Failed to open X display" << std::endl;
+  // USE CACHED DISPLAY!
+  if (!display) {
+    std::cerr << "X11 display not initialized" << std::endl;
     return;
   }
   // XIconifyWindow takes (Display*, Window, int screen_number)
-  XIconifyWindow(localDisplay, win, DefaultScreen(localDisplay));
-  XFlush(localDisplay); // Ensure the command is sent to the server
-  XCloseDisplay(localDisplay);
+  XIconifyWindow(display.get(), win, DefaultScreen(display.get()));
+  XFlush(display.get()); // Ensure the command is sent to the server
 #elif defined(__linux__) && defined(__WAYLAND__)
   std::cerr << "Window minimization in Wayland is not implemented."
             << std::endl;
@@ -636,15 +636,17 @@ void Window::Max(wID win) {
 #elif defined(__linux__)
   if (!win)
     return;
-  Display *localDisplay = XOpenDisplay(nullptr);
-  if (!localDisplay)
+  // USE CACHED DISPLAY!
+  if (!display) {
+    error("X11 display not initialized");
     return;
+  }
 
-  Atom wmState = XInternAtom(localDisplay, "_NET_WM_STATE", x11::XTrue);
+  Atom wmState = XInternAtom(display.get(), "_NET_WM_STATE", x11::XTrue);
   Atom wmMaxVert =
-      XInternAtom(localDisplay, "_NET_WM_STATE_MAXIMIZED_VERT", x11::XTrue);
+      XInternAtom(display.get(), "_NET_WM_STATE_MAXIMIZED_VERT", x11::XTrue);
   Atom wmMaxHorz =
-      XInternAtom(localDisplay, "_NET_WM_STATE_MAXIMIZED_HORZ", x11::XTrue);
+      XInternAtom(display.get(), "_NET_WM_STATE_MAXIMIZED_HORZ", x11::XTrue);
   if (wmState != x11::XNone && wmMaxVert != x11::XNone &&
       wmMaxHorz != x11::XNone) {
     XEvent event = {};
@@ -656,11 +658,10 @@ void Window::Max(wID win) {
     event.xclient.data.l[1] = wmMaxVert;
     event.xclient.data.l[2] = wmMaxHorz;
 
-    XSendEvent(localDisplay, DefaultRootWindow(localDisplay), x11::XFalse,
+    XSendEvent(display.get(), DefaultRootWindow(display.get()), x11::XFalse,
                SubstructureRedirectMask | SubstructureNotifyMask, &event);
-    XFlush(localDisplay);
+    XFlush(display.get());
   }
-  XCloseDisplay(localDisplay);
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for maximizing windows.
   std::cerr << "Window maximization in Wayland is not implemented."
@@ -682,21 +683,22 @@ void Window::Transparency(wID win, int alpha) {
 #elif defined(__linux__)
   if (!win)
     return;
-  Display *localDisplay = XOpenDisplay(nullptr);
-  if (!localDisplay)
+  // USE CACHED DISPLAY!
+  if (!display) {
+    error("X11 display not initialized");
     return;
+  }
 
   Atom opacityAtom =
-      XInternAtom(localDisplay, "_NET_WM_WINDOW_OPACITY", x11::XFalse);
+      XInternAtom(display.get(), "_NET_WM_WINDOW_OPACITY", x11::XFalse);
   if (opacityAtom != x11::XNone) {
     unsigned long opacity =
         static_cast<unsigned long>((alpha / 255.0) * 0xFFFFFFFF);
-    XChangeProperty(localDisplay, win, opacityAtom, XA_CARDINAL, 32,
+    XChangeProperty(display.get(), win, opacityAtom, XA_CARDINAL, 32,
                     PropModeReplace,
                     reinterpret_cast<unsigned char *>(&opacity), 1);
   }
-  XFlush(localDisplay);
-  XCloseDisplay(localDisplay);
+  XFlush(display.get());
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for setting transparency.
   std::cerr << "Transparency control in Wayland is not implemented."
@@ -713,12 +715,14 @@ void Window::AlwaysOnTop(wID win, bool top) {
 #elif defined(__linux__)
   if (!win)
     return;
-  Display *localDisplay = XOpenDisplay(nullptr);
-  if (!localDisplay)
+  // USE CACHED DISPLAY!
+  if (!display) {
+    error("X11 display not initialized");
     return;
+  }
 
-  Atom wmState = XInternAtom(localDisplay, "_NET_WM_STATE", x11::XTrue);
-  Atom wmAbove = XInternAtom(localDisplay, "_NET_WM_STATE_ABOVE", x11::XTrue);
+  Atom wmState = XInternAtom(display.get(), "_NET_WM_STATE", x11::XTrue);
+  Atom wmAbove = XInternAtom(display.get(), "_NET_WM_STATE_ABOVE", x11::XTrue);
   if (wmState != x11::XNone && wmAbove != x11::XNone) {
     XEvent event = {};
     event.xclient.type = x11::XClientMessage;
@@ -728,11 +732,10 @@ void Window::AlwaysOnTop(wID win, bool top) {
     event.xclient.data.l[0] = top ? 1 : 0; // Add or Remove
     event.xclient.data.l[1] = wmAbove;
 
-    XSendEvent(localDisplay, DefaultRootWindow(localDisplay), x11::XFalse,
+    XSendEvent(display.get(), DefaultRootWindow(display.get()), x11::XFalse,
                SubstructureRedirectMask | SubstructureNotifyMask, &event);
-    XFlush(localDisplay);
+    XFlush(display.get());
   }
-  XCloseDisplay(localDisplay);
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for setting windows on top.
   std::cerr << "AlwaysOnTop in Wayland is not implemented." << std::endl;

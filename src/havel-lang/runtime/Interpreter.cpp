@@ -1127,6 +1127,13 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
     lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");
     return;
   }
+  
+  // Shell commands only accept string or array - prevent weird implicit conversions
+  if (!cmdValue.is<std::string>() && !cmdValue.isArray()) {
+    lastResult = HavelRuntimeError("Shell command must be a string or array, got " + 
+                                   cmdValue.typeName());
+    return;
+  }
 
   std::string command;
   

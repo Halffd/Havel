@@ -27,6 +27,7 @@ class AutomationManager;
 class FileManager;
 class ProcessManager;
 class IO;
+class ModeManager;
 
 /**
  * HostContext - Bridge between language runtime and host system
@@ -43,6 +44,9 @@ struct HostContext {
 
     // Input handling - use shared_ptr to ensure lifetime
     std::shared_ptr<HotkeyManager> hotkeyManager;
+
+    // Mode management - use shared_ptr to ensure lifetime
+    std::shared_ptr<ModeManager> modeManager;
 
     // Display
     BrightnessManager* brightnessManager = nullptr;
@@ -62,11 +66,11 @@ struct HostContext {
     // Automation
     PixelAutomation* pixelAutomation = nullptr;
     AutomationManager* automationManager = nullptr;
-    
+
     // File/Process
     FileManager* fileManager = nullptr;
     ProcessManager* processManager = nullptr;
-    
+
     // Validation helper
     bool isValid() const {
         return io != nullptr;

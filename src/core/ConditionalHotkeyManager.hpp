@@ -117,6 +117,9 @@ public:
     isGamingModeActive = checker;
   }
 
+  // Set mode manager for automatic mode updates
+  void setModeManager(std::weak_ptr<class ModeManager> mgr) { modeManager = mgr; }
+
   // Debug options
   bool verboseConditionLogging = false;
   bool verboseLogging = false;
@@ -153,6 +156,9 @@ private:
   
   // Gaming mode checker
   std::function<bool()> isGamingModeActive;
+
+  // Mode manager (weak reference to avoid circular dependency)
+  std::weak_ptr<class ModeManager> modeManager;
 
   // Mode management
   static std::mutex modeMutex;

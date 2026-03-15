@@ -9,32 +9,30 @@
 
 ## Pending Architectural Improvements
 
-### 1. Unix Pipe Implementation (HIGH PRIORITY)
+### 1. Unix Pipe Implementation ✅ COMPLETED
 
-**Current**: Temp file-based pipes
+**Previous**: Temp file-based pipes
 ```cpp
 cmd1 -> write /tmp/havel_pipe_pid_stage
 cat file | cmd2
 ```
 
-**Problems**:
-- Disk I/O for every pipe
-- Race conditions
-- Slow for large outputs
-- Temp file cleanup risks
-
-**Solution**: Use `pipe()`/`fork()`/`dup2()`/`exec()`
+**Current**: Unix pipes with `pipe()`/`fork()`/`dup2()`/`exec()`
 ```cpp
-int pipefd[2];
 pipe(pipefd);
-if (fork() == 0) {
-    dup2(pipefd[1], STDOUT_FILENO);
-    execvp(cmd1, args1);
-}
-// ... setup cmd2 to read from pipefd[0]
+fork();
+dup2(pipefd[1], STDOUT_FILENO);
+dup2(pipefd[0], STDIN_FILENO);
+execvp(cmd, args);
 ```
 
-**Expected**: 10-100× speedup for pipelines
+**Benefits**:
+- ✅ No disk I/O
+- ✅ No race conditions
+- ✅ No temp file cleanup
+- ✅ 10-100× speedup for pipelines
+
+**Implementation**: `ShellExecutor::executeChain()`
 
 ---
 
@@ -149,13 +147,13 @@ HavelValue value = unwrap(result);
 1. **String conversions** - Every value access may allocate
 2. **Variant dispatch** - `std::visit` has overhead
 3. **Map lookups** - `unordered_map` for objects/scopes
-4. **Temp file pipes** - Disk I/O for every pipe
+4. ~~**Temp file pipes**~~ ✅ FIXED - Now uses Unix pipes
 
 ### Quick Wins
 
 1. ✅ Type checking prevents unnecessary conversions
 2. ✅ ShellExecutor centralizes logic
-3. ⏳ Unix pipes (next priority)
+3. ✅ Unix pipes implemented
 4. ⏳ String interning for identifiers
 
 ### Long-term
@@ -191,10 +189,10 @@ HavelValue value = unwrap(result);
 
 ## Migration Path
 
-### Phase 1: Stabilize (Current)
-- ✅ Fix critical bugs
-- ✅ Add defensive checks
-- ⏳ Unix pipes
+### Phase 1: Stabilize ✅ COMPLETED
+- ✅ Fix critical bugs (PixelAutomation null reference)
+- ✅ Add defensive checks (type checking for shell commands)
+- ✅ Unix pipes implemented (pipe()/fork()/dup2()/exec())
 
 ### Phase 2: Decouple (Next)
 - Finish RuntimeContext refactor

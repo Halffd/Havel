@@ -432,6 +432,12 @@ public:
   // Evaluate condition expression (for mode detection)
   bool evaluateCondition(const ast::Expression& expr);
 
+  // Get window info via WindowMonitor (for condition evaluation)
+  std::string getActiveWindowExe() const;
+  std::string getActiveWindowClass() const;
+  std::string getActiveWindowTitle() const;
+  pid_t getActiveWindowPid() const;
+
   // Get HostAPI for updating manager pointers
   std::shared_ptr<IHostAPI> getHostAPI() { return hostAPI; }
 

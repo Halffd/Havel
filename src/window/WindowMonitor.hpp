@@ -20,7 +20,8 @@ class WindowMonitorError : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-struct WindowInfo {
+// Window information structure for monitoring (renamed to avoid conflicts)
+struct MonitorWindowInfo {
     std::string title;
     std::string windowClass;
     std::string processName;
@@ -28,9 +29,9 @@ struct WindowInfo {
     unsigned long windowId{0};
     std::chrono::steady_clock::time_point lastUpdate;
     bool isValid{false}; // Validity flag
-    
+
     // Thread-safe copy constructor
-    WindowInfo(const WindowInfo& other) {
+    MonitorWindowInfo(const MonitorWindowInfo& other) {
         std::atomic_thread_fence(std::memory_order_acquire);
         title = other.title;
         windowClass = other.windowClass;
@@ -41,22 +42,22 @@ struct WindowInfo {
         isValid = other.isValid;
         std::atomic_thread_fence(std::memory_order_release);
     }
-    
-    WindowInfo& operator=(const WindowInfo& other) {
+
+    MonitorWindowInfo& operator=(const MonitorWindowInfo& other) {
         if (this != &other) {
-            WindowInfo temp(other);
+            MonitorWindowInfo temp(other);
             std::swap(*this, temp);
         }
         return *this;
     }
-    
-    WindowInfo() = default;
-    WindowInfo(WindowInfo&&) noexcept = default;
-    WindowInfo& operator=(WindowInfo&&) noexcept = default;
+
+    MonitorWindowInfo() = default;
+    MonitorWindowInfo(MonitorWindowInfo&&) noexcept = default;
+    MonitorWindowInfo& operator=(MonitorWindowInfo&&) noexcept = default;
 };
 
-// Add operator== for WindowInfo
-inline bool operator==(const WindowInfo& lhs, const WindowInfo& rhs) {
+// Add operator== for MonitorWindowInfo
+inline bool operator==(const MonitorWindowInfo& lhs, const MonitorWindowInfo& rhs) {
     return lhs.windowId == rhs.windowId &&
            lhs.pid == rhs.pid &&
            lhs.title == rhs.title &&
@@ -67,7 +68,7 @@ inline bool operator==(const WindowInfo& lhs, const WindowInfo& rhs) {
 class WindowMonitor {
 public:
     // Define callback type before using it
-    using WindowCallback = std::function<void(const WindowInfo&)>;
+    using WindowCallback = std::function<void(const MonitorWindowInfo&)>;
 
     explicit WindowMonitor(std::chrono::milliseconds pollInterval = std::chrono::milliseconds(100));
     ~WindowMonitor();
@@ -82,12 +83,12 @@ public:
     void Stop();
     
     // Getters with shared mutex for better performance
-    std::optional<WindowInfo> GetActiveWindowInfo() const {
+    std::optional<MonitorWindowInfo> GetActiveWindowInfo() const {
         std::shared_lock<std::shared_mutex> lock(windowsMutex);
         return activeWindow;
     }
-    
-    std::unordered_map<wID, WindowInfo> GetAllWindows() const {
+
+    std::unordered_map<wID, MonitorWindowInfo> GetAllWindows() const {
         std::shared_lock<std::shared_mutex> lock(windowsMutex);
         return windows;
     }
@@ -111,6 +112,12 @@ public:
     // Settings
     void SetPollInterval(std::chrono::milliseconds interval);
     bool IsRunning() const noexcept { return running.load(std::memory_order_acquire); }
+
+    // Convenience methods for window info access
+    std::string GetActiveWindowExe() const;
+    std::string GetActiveWindowClass() const;
+    std::string GetActiveWindowTitle() const;
+    pid_t GetActiveWindowPid() const;
     
     // Performance monitoring
     struct Stats {
@@ -133,21 +140,21 @@ public:
 
 private:
     void MonitorLoop();
-    WindowInfo GetWindowInfo(wID windowId) const;
+    MonitorWindowInfo GetWindowInfo(wID windowId) const;
     void UpdateWindowMap();
     void CheckForWindowChanges();
-    
+
     // Thread synchronization
     mutable std::shared_mutex windowsMutex;
     mutable std::mutex callbackMutex;
     std::atomic<bool> running{false};
     std::atomic<bool> stopRequested{false};
     std::chrono::milliseconds interval;
-    
+
     // Resource management
     std::unique_ptr<std::thread> monitorThread;
-    std::unordered_map<wID, WindowInfo> windows;
-    WindowInfo activeWindow;
+    std::unordered_map<wID, MonitorWindowInfo> windows;
+    MonitorWindowInfo activeWindow;
     Stats stats;
     
     // Callbacks stored as shared_ptr instead of weak_ptr

@@ -581,7 +581,7 @@ bool ConditionalHotkeyManager::EvaluateCondition(const std::string& condition) {
 bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& condition) {
   // Check for mode conditions
   std::string currentModeVal = GetMode();
-  
+
   if (condition.find("mode == 'gaming'") != std::string::npos) {
     return (currentModeVal == "gaming");
   } else if (condition.find("mode != 'gaming'") != std::string::npos) {
@@ -595,10 +595,21 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
       return (currentModeVal == modeVal);
     }
   }
+
+  // Get window info - prefer WindowMonitor, fallback to IO
+  std::string currentTitle;
+  std::string currentClass;
+  std::string currentExe;
   
-  // Check for window title conditions (multiple syntaxes)
-  std::string currentTitle = io->GetActiveWindowTitle();
-  
+  if (interpreter) {
+    currentTitle = interpreter->getActiveWindowTitle();
+    currentClass = interpreter->getActiveWindowClass();
+    currentExe = interpreter->getActiveWindowExe();
+  } else {
+    currentTitle = io->GetActiveWindowTitle();
+    currentClass = io->GetActiveWindowClass();
+  }
+
   // Syntax: window.title == '' or window.title==''
   if (condition.find("window.title ==") != std::string::npos ||
       condition.find("window.title==") != std::string::npos) {
@@ -611,7 +622,7 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
       }
     }
   }
-  
+
   // Syntax: title == 'Chatterino' or title=='Chatterino'
   if (condition.find("title ==") != std::string::npos ||
       condition.find("title==") != std::string::npos) {
@@ -624,10 +635,8 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
       }
     }
   }
-  
+
   // Check for window class conditions
-  std::string currentClass = io->GetActiveWindowClass();
-  
   // Syntax: window.class == 'Firefox' or window.class=='Firefox'
   if (condition.find("window.class ==") != std::string::npos ||
       condition.find("window.class==") != std::string::npos) {
@@ -640,7 +649,7 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
       }
     }
   }
-  
+
   // Syntax: class == 'Firefox' or class=='Firefox'
   if (condition.find("class ==") != std::string::npos ||
       condition.find("class==") != std::string::npos) {
@@ -653,7 +662,20 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
       }
     }
   }
-  
+
+  // Syntax: exe == 'firefox' or exe=='steam'
+  if (!currentExe.empty() && (condition.find("exe ==") != std::string::npos ||
+      condition.find("exe==") != std::string::npos)) {
+    size_t start = condition.find("'");
+    if (start != std::string::npos) {
+      size_t end = condition.find("'", start + 1);
+      if (end != std::string::npos) {
+        std::string exeVal = condition.substr(start + 1, end - start - 1);
+        return (currentExe.find(exeVal) != std::string::npos);
+      }
+    }
+  }
+
   // Default: return false if no evaluator and condition is not recognized
   return false;
 }

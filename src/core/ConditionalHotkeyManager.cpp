@@ -511,10 +511,9 @@ void ConditionalHotkeyManager::UpdateLoop() {
     if (!updateLoopRunning.load()) break;
 
     // Update modes first (may trigger enter/exit callbacks)
-    if (auto mgr = modeManager.lock()) {
-      mgr->update();
-    }
-
+    // Note: Mode evaluation happens in interpreter context where expressions can be evaluated
+    // For now, modes are updated via mode.set() or when conditions change
+    
     BatchUpdateConditionalHotkeys();
   }
 

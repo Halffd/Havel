@@ -864,27 +864,13 @@ void StatementEvaluator::visitModesBlock(const ast::ModesBlock& node) {
 
     auto &config = Configs::Get();
 
-    // Process mode definitions
-    for (const auto& modeDef : node.modes) {
-        // Register mode with ModeManager if available
+    // Process mode definitions (const_cast safe - we're consuming the AST during initialization)
+    for (auto& modeDef : const_cast<ast::ModesBlock&>(node).modes) {
+        // Register mode with ModeManager if available - store AST pointer!
         if (interpreter->hostContext.modeManager) {
-            std::string conditionStr;
-            if (modeDef.condition) {
-                conditionStr = modeDef.condition->toString();
-            }
-            
-            // Create condition function
-            std::function<bool()> conditionFunc;
-            if (!conditionStr.empty()) {
-                conditionFunc = [conditionStr, modeManager = interpreter->hostContext.modeManager]() {
-                    return modeManager->evaluateCondition(conditionStr);
-                };
-            }
-            
             ModeManager::ModeDefinition modeDefn;
             modeDefn.name = modeDef.name;
-            modeDefn.conditionStr = conditionStr;
-            modeDefn.condition = conditionFunc;
+            modeDefn.conditionExpr = modeDef.condition.get();  // Non-owning pointer to AST
             interpreter->hostContext.modeManager->defineMode(std::move(modeDefn));
         }
     }
@@ -895,7 +881,7 @@ void StatementEvaluator::visitModesBlock(const ast::ModesBlock& node) {
         interpreter->environment->Define("__current_mode__", HavelValue(initialMode));
         interpreter->environment->Define("current_mode", HavelValue(initialMode));
         interpreter->environment->Define("__previous_mode__", HavelValue(std::string("default")));
-        
+
         // Store in config
         config.Set("Mode.Current", initialMode);
     } else {

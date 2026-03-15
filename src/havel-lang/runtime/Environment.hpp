@@ -71,11 +71,8 @@ public:
   }
 
   // Clear all variables (call on shutdown to free memory)
-  void clear() {
-    values.clear();
-    constVars.clear();
-    parent.reset();
-  }
+  // Note: Implementation in Environment.cpp to avoid circular includes
+  void clear();
 
 private:
   std::shared_ptr<Environment> parent;

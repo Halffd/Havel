@@ -357,7 +357,7 @@ void HotkeyManager::cleanup() {
     debug("HotkeyManager::cleanup() - stopping EventListener");
     io->StopEventListener();
   }
-  
+
   // Clear callbacks in IO to prevent dangling this pointers
   if (io) {
     debug("HotkeyManager::cleanup() - clearing IO callbacks");
@@ -366,11 +366,15 @@ void HotkeyManager::cleanup() {
     io->SetInputBlockCallback(nullptr);
   }
   inputCallbacksInitialized = false;
-  
+
+  // Stop ConditionalHotkeyManager update loop BEFORE disabling
+  debug("HotkeyManager::cleanup() - stopping ConditionalHotkeyManager");
+  conditionalManager.Cleanup();
+
   // Original cleanup
   conditionalHotkeysEnabled = false;
   conditionalManager.SetEnabled(false);
-  
+
   debug("HotkeyManager::cleanup() - cleanup complete");
 }
 

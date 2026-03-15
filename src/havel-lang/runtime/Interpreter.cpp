@@ -2767,10 +2767,13 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {
 }
 
 void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
-  // Process mode definitions (const_cast safe - we're consuming the AST during initialization)
+  // Process mode definitions - convert unique_ptr to shared_ptr for safe ownership
   for (auto& modeDef : const_cast<ast::ModesBlock&>(node).modes) {
-    // Store pointer to condition expression (owned by AST node)
-    ast::Expression* conditionExpr = modeDef.condition.get();
+    // Convert unique_ptr to shared_ptr to keep AST alive
+    std::shared_ptr<ast::Expression> conditionExpr;
+    if (modeDef.condition) {
+      conditionExpr = std::shared_ptr<ast::Expression>(modeDef.condition.release());
+    }
 
     // Create enter callback
     std::function<void()> enterCallback;
@@ -2808,11 +2811,11 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
       };
     }
 
-    // Register mode with ModeManager - store AST pointer!
+    // Register mode with ModeManager - store shared_ptr!
     if (hostContext.modeManager) {
       ModeManager::ModeDefinition modeDefn;
       modeDefn.name = modeDef.name;
-      modeDefn.conditionExpr = conditionExpr;  // Non-owning pointer to AST
+      modeDefn.conditionExpr = conditionExpr;  // shared_ptr keeps AST alive
       modeDefn.onEnter = enterCallback;
       modeDefn.onExit = exitCallback;
       hostContext.modeManager->defineMode(std::move(modeDefn));

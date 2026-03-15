@@ -89,6 +89,9 @@ public:
   // Resume all conditional hotkeys (restore state)
   bool Resume();
 
+  // Cleanup (stop update loop and release resources)
+  void Cleanup();
+
   // Get/set enabled state
   bool IsEnabled() const { return enabled; }
   void SetEnabled(bool e) { enabled = e; }
@@ -184,7 +187,6 @@ private:
   void BatchUpdateConditionalHotkeys();
   bool EvaluateConditionInternal(const std::string& condition);
   void InvalidateConditionalHotkeys();
-  void Cleanup();
 };
 
 } // namespace havel

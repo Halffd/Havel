@@ -864,13 +864,16 @@ void StatementEvaluator::visitModesBlock(const ast::ModesBlock& node) {
 
     auto &config = Configs::Get();
 
-    // Process mode definitions (const_cast safe - we're consuming the AST during initialization)
+    // Process mode definitions - convert unique_ptr to shared_ptr for safe ownership
     for (auto& modeDef : const_cast<ast::ModesBlock&>(node).modes) {
-        // Register mode with ModeManager if available - store AST pointer!
+        // Register mode with ModeManager if available - store shared_ptr!
         if (interpreter->hostContext.modeManager) {
             ModeManager::ModeDefinition modeDefn;
             modeDefn.name = modeDef.name;
-            modeDefn.conditionExpr = modeDef.condition.get();  // Non-owning pointer to AST
+            // Convert unique_ptr to shared_ptr
+            if (modeDef.condition) {
+                modeDefn.conditionExpr = std::shared_ptr<ast::Expression>(modeDef.condition.release());
+            }
             interpreter->hostContext.modeManager->defineMode(std::move(modeDefn));
         }
     }

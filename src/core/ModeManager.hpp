@@ -39,12 +39,10 @@ public:
     ModeManager() = default;
     ~ModeManager();
 
-    // Mode definition - stores AST directly, no reparsing
-    // Note: conditionExpr is owned by the ModesBlock AST node
-    // ModeManager just holds a non-owning pointer
+    // Mode definition - stores AST via shared_ptr to prevent use-after-free
     struct ModeDefinition {
         std::string name;
-        ast::Expression* conditionExpr = nullptr;  // Non-owning pointer to AST
+        std::shared_ptr<ast::Expression> conditionExpr;  // shared_ptr!
         std::function<void()> onEnter;
         std::function<void()> onExit;
         bool isActive = false;

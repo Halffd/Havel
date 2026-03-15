@@ -502,24 +502,24 @@ void ConditionalHotkeyManager::InvalidateConditionalHotkeys() {
 void ConditionalHotkeyManager::UpdateLoop() {
   info("ConditionalHotkeyManager: Starting update loop");
 
-  while (updateLoopRunning.load()) {
+  while (updateLoopRunning.load() && !inCleanupMode.load()) {
     {
       std::unique_lock<std::mutex> lock(updateLoopMutex);
       // Check every 200ms to reduce CPU usage and prevent rapid grab/ungrab cycles
       updateLoopCv.wait_for(lock, std::chrono::milliseconds(200));
     }
 
-    if (!updateLoopRunning.load()) break;
+    if (!updateLoopRunning.load() || inCleanupMode.load()) break;
 
     // Update modes first (may trigger enter/exit callbacks)
     if (auto modeMgr = modeManager.lock()) {
       // Create evaluator that uses interpreter to evaluate expressions
       ModeManager::ExprEvaluator evaluator = [this](const ast::Expression& expr) -> bool {
         // Evaluate condition using interpreter
-        if (interpreter) {
-          return interpreter->evaluateCondition(expr);
+        if (inCleanupMode.load() || !interpreter) {
+          return false;  // Don't evaluate during cleanup
         }
-        return false;
+        return interpreter->evaluateCondition(expr);
       };
       modeMgr->update(evaluator);
     }

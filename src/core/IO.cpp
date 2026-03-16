@@ -2,13 +2,13 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
-#include "core/io/KeyTap.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
 static std::vector<std::unique_ptr<KeyTap>> g_keyTapStorage;
 
+#include "core/io/KeyTap.hpp"
 #include "include/x11_includes.h"
 #include "io/EventListener.hpp"
 #include "io/HotkeyExecutor.hpp"
@@ -1551,12 +1551,6 @@ void IO::Send(cstr keys) {
   }
   activeModifiers.clear();
 #endif
-}
-
-void IO::StopEventListener() {
-  if (eventListener) {
-    eventListener->Stop();
-  }
 }
 
 bool IO::Suspend() {

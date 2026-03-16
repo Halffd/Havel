@@ -353,9 +353,9 @@ void HotkeyManager::applyDebugSettings() {}
 
 void HotkeyManager::cleanup() {
   // Stop EventListener FIRST to prevent callbacks during cleanup
-  if (io) {
+  if (io && io->GetEventListener()) {
     debug("HotkeyManager::cleanup() - stopping EventListener");
-    io->StopEventListener();
+    io->GetEventListener()->Stop();
   }
 
   // Clear callbacks in IO to prevent dangling this pointers

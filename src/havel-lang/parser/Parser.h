@@ -109,6 +109,7 @@ private:
   std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::Statement> parseImplicitInputStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
+  std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::BlockStatement> parseBlockStatement(bool inputContext = false);
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();

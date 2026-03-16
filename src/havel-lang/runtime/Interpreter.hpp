@@ -540,6 +540,8 @@ public:
   void visitOffModeStatement(const ast::OffModeStatement &node) override;
   void visitOnReloadStatement(const ast::OnReloadStatement &node) override;
   void visitOnStartStatement(const ast::OnStartStatement &node) override;
+  void visitOnTapStatement(const ast::OnTapStatement &node) override;
+  void visitOnComboStatement(const ast::OnComboStatement &node) override;
 
   // Type system - struct/enum support
   void visitStructFieldDef(const ast::StructFieldDef &node) override;

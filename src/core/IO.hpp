@@ -35,6 +35,7 @@ namespace havel {
 
 // Forward declarations
 class EventListener; // Add forward declaration for EventListener
+class KeyTap;        // Forward declaration for KeyTap
 struct HavelValue;   // Forward declaration for HavelValue
 class HotkeyManager;
 

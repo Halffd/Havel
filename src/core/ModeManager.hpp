@@ -115,9 +115,6 @@ public:
     // Get all defined modes
     const std::vector<ModeDefinition>& getModes() const { return modes; }
 
-    // Get all signals
-    const std::vector<Signal>& getSignals() const { return signals; }
-
     // Get mode statistics
     std::chrono::milliseconds getModeTime(const std::string& modeName) const;
     int getModeTransitions(const std::string& modeName) const;
@@ -136,12 +133,6 @@ private:
     void triggerEnter(ModeDefinition& mode);
     void triggerExit(ModeDefinition& mode);
     void triggerTransition(const std::string& fromMode, const std::string& toMode);
-
-public:
-    // Signal access
-    void defineSignal(Signal signal);
-    const std::vector<Signal>& getSignals() const { return signalList; }
-    bool isSignalActive(const std::string& signalName) const;
 };
 
 } // namespace havel

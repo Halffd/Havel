@@ -5,10 +5,10 @@
  */
 #pragma once
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../IHostAPI.hpp"
+#include "../../havel-lang/runtime/HostAPI.hpp"
 
 namespace havel::modules {
 
-void registerConfigModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
+void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI);
 
 } // namespace havel::modules

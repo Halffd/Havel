@@ -2483,6 +2483,8 @@ mode == "gaming" => {
 
 ## New Features (Latest)
 
+> **⚠️ Implementation Note**: Some features documented below have **runtime support** but **parser support is in progress**. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for details on what requires workarounds.
+
 ### Script Imports
 
 Import and reuse Havel scripts as modules:
@@ -2532,6 +2534,8 @@ export fn toggle() {
 ---
 
 ### Enhanced Mode System
+
+> **⚠️ Parser Status**: Mode priority and transition hooks have runtime support but parser integration is pending. Use workarounds noted in IMPLEMENTATION_STATUS.md.
 
 #### Signals
 
@@ -2642,6 +2646,8 @@ mode.isSignal("steam")    // Check if signal active (boolean)
 ---
 
 ### Window Query API
+
+> **⚠️ Usage Note**: Window query methods require function arguments. See IMPLEMENTATION_STATUS.md for expression syntax status.
 
 Query windows with powerful filters:
 

@@ -6,7 +6,7 @@
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
-static std::vector<std::unique_ptr<KeyTap>> g_keyTapStorage;
+static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 
 #include "core/io/KeyTap.hpp"
 #include "include/x11_includes.h"
@@ -1914,7 +1914,7 @@ void IO::KeyTap(const std::string& key, std::function<void()> tapAction) {
   }
   
   // Create KeyTap with tap action only
-  auto keyTap = std::make_unique<KeyTap>(
+  auto keyTap = std::make_unique<havel::KeyTap>(
     hotkeyManager,
     key,
     tapAction,
@@ -1924,7 +1924,7 @@ void IO::KeyTap(const std::string& key, std::function<void()> tapAction) {
     true,  // grab down
     true   // grab up
   );
-  
+
   // Store in global storage to keep alive
   std::lock_guard<std::mutex> lock(g_keyTapMutex);
   g_keyTapStorage.push_back(std::move(keyTap));
@@ -1936,9 +1936,9 @@ void IO::KeyCombo(const std::string& key, std::function<void()> comboAction) {
     error("KeyCombo: hotkeyManager not initialized");
     return;
   }
-  
+
   // Create KeyTap with combo action only
-  auto keyTap = std::make_unique<KeyTap>(
+  auto keyTap = std::make_unique<havel::KeyTap>(
     hotkeyManager,
     key,
     nullptr,  // tap action
@@ -1948,7 +1948,7 @@ void IO::KeyCombo(const std::string& key, std::function<void()> comboAction) {
     true,  // grab down
     true   // grab up
   );
-  
+
   // Store in global storage to keep alive
   std::lock_guard<std::mutex> lock(g_keyTapMutex);
   g_keyTapStorage.push_back(std::move(keyTap));

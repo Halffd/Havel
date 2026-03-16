@@ -6,6 +6,7 @@
 #include "core/io/KeyMap.hpp"
 #include "core/io/MouseController.hpp"
 #include "runtime/HostAPI.hpp"
+#include "runtime/ImportManager.hpp"
 #include "types.hpp"
 #include "x11.h"
 #include <X11/extensions/XInput2.h>
@@ -218,6 +219,7 @@ class IO {
   // New unified event listener
   std::unique_ptr<EventListener> eventListener;
   std::shared_ptr<HotkeyManager> hotkeyManager = nullptr;
+  std::shared_ptr<ImportManager> importManager = nullptr;
 
   // Mouse controller for mouse operations
   std::unique_ptr<MouseController> mouseController;
@@ -233,6 +235,8 @@ public:
 
   // Public access methods for EventListener
   EventListener *GetEventListener() { return eventListener.get(); }
+  ImportManager *GetImportManager() { return importManager.get(); }
+  std::shared_ptr<ImportManager> getImportManagerShared() { return importManager; }
   std::vector<std::string> GetInputDevices(); // We'll implement this method
   void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
     this->hotkeyManager = hotkeyManager;

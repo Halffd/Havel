@@ -662,6 +662,28 @@ void StatementEvaluator::visitImportStatement(const ast::ImportStatement& node) 
 }
 
 void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
+    // Handle file imports: use "file.hv" as alias
+    if (node.isFileImport) {
+        if (interpreter->hostContext.io && interpreter->hostContext.io->importManager) {
+            bool success = interpreter->hostContext.io->importManager->importScript(
+                node.filePath, node.alias);
+            
+            if (!success) {
+                interpreter->lastResult = HavelRuntimeError("Failed to import: " + node.filePath);
+                return;
+            }
+            
+            // Create module object in current environment with exported values
+            auto moduleObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            interpreter->environment->Define(node.alias, HavelValue(moduleObj));
+        } else {
+            interpreter->lastResult = HavelRuntimeError("ImportManager not available");
+            return;
+        }
+        interpreter->lastResult = nullptr;
+        return;
+    }
+    
     // Implementation of use statement for module flattening
     // For each module name, flatten all its functions into the current scope
 

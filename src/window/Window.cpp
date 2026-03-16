@@ -32,30 +32,30 @@ struct DisplayDeleter {
 
 namespace havel {
 
-// Constructor
-Window::Window(cstr title, wID id) : m_title(title), m_id(id) {
+// Initialize X11 display if needed
+static void EnsureDisplayInitialized() {
 #ifdef __linux__
-  if (!display) {
+  if (!Window::display) {
     Display *rawDisplay = XOpenDisplay(nullptr);
     if (!rawDisplay) {
       std::cerr << "Failed to open X11 display" << std::endl;
       return;
     }
-    display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
+    Window::display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
   }
+#endif
+}
+
+// Constructor
+Window::Window(cstr title, wID id) : m_title(title), m_id(id) {
+#ifdef __linux__
+  EnsureDisplayInitialized();
 #endif
 }
 
 Window::Window(wID id) : m_id(id) {
 #ifdef __linux__
-  if (!display) {
-    Display *rawDisplay = XOpenDisplay(nullptr);
-    if (!rawDisplay) {
-      std::cerr << "Failed to open X11 display" << std::endl;
-      return;
-    }
-    display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
-  }
+  EnsureDisplayInitialized();
 #endif
   m_id = id;
   m_title = Title(id); // Populate title
@@ -98,6 +98,7 @@ Rect Window::GetPositionWindows(wID win) {
 
 // X11 implementation of GetPosition
 Rect Window::GetPositionX11(wID win) {
+  EnsureDisplayInitialized();
   if (!display)
     return {};
 
@@ -180,6 +181,7 @@ wID Window::Find(cstr identifier) {
 // Find a window by its title
 wID Window::FindByTitle(cstr title) {
 #ifdef __linux__
+  EnsureDisplayInitialized();
   if (!display)
     return 0;
 
@@ -242,6 +244,7 @@ wID Window::FindByTitle(cstr title) {
 // Find a window by its class
 wID Window::FindByClass(cstr className) {
 #ifdef __linux__
+  EnsureDisplayInitialized();
   if (!display)
     return 0;
 
@@ -325,7 +328,9 @@ std::string Window::Title(wID win) {
     return "";
   }
 
-  // X11 - USE THE CACHED DISPLAY!
+  // X11 - Initialize display if needed
+  EnsureDisplayInitialized();
+  
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return "";
@@ -400,7 +405,9 @@ std::string Window::Class(wID win) {
     return "";
   }
 
-  // X11 - USE THE CACHED DISPLAY!
+  // X11 - Initialize display if needed
+  EnsureDisplayInitialized();
+  
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return "";
@@ -448,7 +455,9 @@ pID Window::PID(wID win) {
     return 0;
   }
 
-  // X11 - USE THE CACHED DISPLAY!
+  // X11 - Initialize display if needed
+  EnsureDisplayInitialized();
+  
   if (!display) {
     std::cerr << "Failed to open X11 display." << std::endl;
     return 0;
@@ -766,6 +775,7 @@ void Window::SetAlwaysOnTopX11(wID win, bool top) {
 
 // Find a window by its process ID
 wID Window::GetwIDByPID(pID pid) {
+  EnsureDisplayInitialized();
   if (!display)
     return 0;
 

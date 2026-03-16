@@ -109,7 +109,6 @@ private:
   std::unique_ptr<ast::Statement> parseInputStatement();
   std::unique_ptr<ast::Statement> parseImplicitInputStatement();
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
-  bool containsSuspendCall(const ast::ASTNode* node);  // Check for suspend/resume calls
   std::unique_ptr<ast::BlockStatement> parseBlockStatement(bool inputContext = false);
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();

@@ -1569,6 +1569,7 @@ bool IO::Suspend() {
 
       if (hotkeyManager) {
         hotkeyManager->conditionalHotkeysEnabled = true;
+        hotkeyManager->setMode("default");  // Switch to default mode
 
         // Restore conditional hotkeys to their original state before suspension
         if (!suspendedConditionalHotkeyStates.empty()) {
@@ -1618,6 +1619,8 @@ bool IO::Suspend() {
         // Track the original state of conditional hotkeys before suspension and
         // update their states
         hotkeyManager->conditionalHotkeysEnabled = false;
+        hotkeyManager->setMode("suspend");  // Switch to suspend mode
+        
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
         for (auto &ch : *hotkeyManager->activeConditionalHotkeys) {

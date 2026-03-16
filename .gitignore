@@ -9,7 +9,8 @@ file
 src/out
 log
 logs
-config
+*.cfg
+/config
 build
 build-debug
 build-release

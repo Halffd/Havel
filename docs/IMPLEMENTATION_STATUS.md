@@ -4,7 +4,11 @@
 
 ### Core Language
 - [x] Script imports: `use "file.hv" as alias`
+- [x] Signal definitions: `signal name = expression` ✅ NEW
 - [x] Mode definitions: `mode name { condition = ... }`
+- [x] Mode priority: `mode name priority N` ✅ NEW
+- [x] Mode transition hooks: `on enter from "mode"`, `on exit to "mode"` ✅ NEW
+- [x] Mode groups: `group name { modes: [...] }` ✅ NEW
 - [x] Mode API: `mode.current`, `mode.time()`, `mode.transitions()`, `mode.set()`
 - [x] Concurrency: `thread { }`, `interval ms { }`, `timeout ms { }`
 - [x] Range type: `start..end`
@@ -22,6 +26,7 @@
 - [x] `window.count(condition)` - Count matching windows (requires function arg)
 - [x] `window.filter(condition)` - Filter windows (requires function arg)
 - [x] `mode.list()` - List all modes
+- [x] `mode.count()` - Count modes ✅ NEW
 - [x] `mode.signals()` - List all signals
 - [x] `mode.isSignal(name)` - Check if signal active
 
@@ -37,53 +42,7 @@
 
 These features have **runtime scaffolding** but **no parser support yet**:
 
-### 1. Signal Definitions
-```havel
-// ❌ NOT IMPLEMENTED - Parser doesn't recognize this syntax
-signal steam_running = window.any(exe == "steam.exe")
-signal gaming_focus = active.exe == "steam.exe"
-```
-
-**Status**: Runtime has `Signal` struct in ModeManager, but parser doesn't support `signal name = expression` syntax.
-
-**Workaround**: Use signals indirectly via mode conditions.
-
----
-
-### 2. Mode Priority
-```havel
-// ❌ NOT IMPLEMENTED - Parser doesn't recognize priority keyword
-mode gaming priority 10 {
-    condition = gaming_focus
-}
-```
-
-**Status**: Runtime has `priority` field in ModeDefinition, but parser doesn't support `priority N` syntax.
-
-**Workaround**: Modes are checked in definition order (first match wins).
-
----
-
-### 3. Mode Transition Hooks
-```havel
-// ❌ NOT IMPLEMENTED - Parser doesn't recognize these hooks
-mode gaming {
-    on enter from "coding" { 
-        notify("leaving code")
-    }
-    on exit to "default" {
-        run("killall steam")
-    }
-}
-```
-
-**Status**: Runtime has `onEnterFrom` and `onExitTo` function fields, but parser doesn't support these hooks.
-
-**Workaround**: Use `enter` and `exit` blocks without specific from/to targeting.
-
----
-
-### 4. Window Query Expressions
+### 1. Window Query Expressions
 ```havel
 // ❌ NOT IMPLEMENTED - These are module functions, not expressions
 if window.any(exe == "steam.exe") { ... }
@@ -97,7 +56,7 @@ let wins = window.filter(title ~ ".*YouTube.*")
 
 ---
 
-### 5. Advanced Imports
+### 2. Advanced Imports
 ```havel
 // ❌ NOT IMPLEMENTED - Only 'use "file.hv" as alias' works
 use gaming from "gaming.hv"
@@ -118,7 +77,7 @@ module.toggle()
 
 ---
 
-### 6. Nested Config Access
+### 3. Nested Config Access
 ```havel
 // ❌ NOT IMPLEMENTED - Parser doesn't support nested access
 config.gaming.classes
@@ -131,7 +90,7 @@ config.get("gaming.classes")
 
 ---
 
-### 7. Window Groups
+### 4. Window Groups
 ```havel
 // ❌ NOT IMPLEMENTED
 window.getGroups()
@@ -142,32 +101,18 @@ window.getGroupWindows(group)
 
 ---
 
-### 8. Mode Groups
-```havel
-// ❌ NOT IMPLEMENTED
-group "productivity" {
-    modes: ["coding", "terminal", "typing"]
-}
-```
-
-**Status**: Runtime has `ModeGroup` struct, but parser doesn't support `group name { }` syntax.
-
----
-
-### 9. Collection Methods
+### 5. Collection Methods
 ```havel
 // ❌ NOT IMPLEMENTED - These methods don't exist
 window.list()
 window.map()
 window.forEach()
-mode.list()         // ✅ EXISTS
-mode.count()        // ❌ NOT IMPLEMENTED
 mode.forEach()      // ❌ NOT IMPLEMENTED
 mode.map()          // ❌ NOT IMPLEMENTED
 mode.filter()       // ❌ NOT IMPLEMENTED
 ```
 
-**Status**: Only `mode.list()` is implemented. Other collection methods are not implemented.
+**Status**: Only `mode.list()` and `mode.count()` are implemented. Other collection methods are not implemented.
 
 ---
 

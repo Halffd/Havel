@@ -75,7 +75,9 @@ void HavelApp::cleanup() noexcept {
   // 1. Stop EventListener FIRST to prevent callbacks during cleanup
   if (io) {
     debug("HavelApp::cleanup() - stopping EventListener");
-    io->StopEventListener();
+    if (io->GetEventListener()) {
+      io->GetEventListener()->Stop();
+    }
   }
   
   // 2. Destroy hotkeyManager (this will clear callbacks)

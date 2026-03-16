@@ -42,7 +42,7 @@ namespace havel {
  * These modules require IHostAPI
  */
 void registerHostModules(ModuleLoader& loader) {
-    loader.addHost("window", modules::registerWindowModule);
+    loader.addHost("window", modules::registerWindowQueryModule);
     loader.addHost("brightness", modules::registerBrightnessModule);
     loader.addHost("audio", modules::registerAudioModule);
     loader.addHost("screenshot", modules::registerScreenshotModule);

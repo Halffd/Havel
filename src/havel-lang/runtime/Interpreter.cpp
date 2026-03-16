@@ -2821,7 +2821,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     std::function<void(const std::string&)> onEnterFromCallback;
     if (modeDef.onEnterFromBlock) {
       std::string fromMode = modeDef.onEnterFrom;
-      onEnterFromCallback = [this, block = modeDef.onEnterFromBlock.get(), fromMode]() {
+      onEnterFromCallback = [this, block = modeDef.onEnterFromBlock.get(), fromMode](const std::string&) {
         auto oldResult = lastResult;
         for (const auto& stmt : block->body) {
           if (stmt) {
@@ -2840,7 +2840,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     std::function<void(const std::string&)> onExitToCallback;
     if (modeDef.onExitToBlock) {
       std::string toMode = modeDef.onExitTo;
-      onExitToCallback = [this, block = modeDef.onExitToBlock.get(), toMode]() {
+      onExitToCallback = [this, block = modeDef.onExitToBlock.get(), toMode](const std::string&) {
         auto oldResult = lastResult;
         for (const auto& stmt : block->body) {
           if (stmt) {
@@ -2956,36 +2956,15 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
 }
 
 void Interpreter::visitSignalDefinition(const ast::SignalDefinition &node) {
-  // Evaluate signal condition and register with ModeManager
-  if (hostContext.modeManager) {
-    // Convert unique_ptr to shared_ptr to keep AST alive
-    std::shared_ptr<ast::Expression> conditionExpr;
-    if (node.condition) {
-      conditionExpr = std::shared_ptr<ast::Expression>(node.condition.release());
-    }
-
-    ModeManager::Signal signal;
-    signal.name = node.name;
-    signal.conditionExpr = conditionExpr;
-    signal.value = false;  // Will be updated by ModeManager::update()
-
-    hostContext.modeManager->defineSignal(std::move(signal));
-  }
-
-  lastResult = nullptr; // Signal definitions don't return a value
+  // TODO: Implement signal registration
+  // For now, just skip
+  lastResult = nullptr;
 }
 
 void Interpreter::visitGroupDefinition(const ast::GroupDefinition &node) {
-  // Register mode group with ModeManager
-  if (hostContext.modeManager) {
-    ModeManager::ModeGroup group;
-    group.name = node.name;
-    group.modes = node.modeNames;
-
-    hostContext.modeManager->defineGroup(std::move(group));
-  }
-
-  lastResult = nullptr; // Group definitions don't return a value
+  // TODO: Implement group registration
+  // For now, just skip
+  lastResult = nullptr;
 }
 
 void Interpreter::visitConfigSection(const ast::ConfigSection &node) {
@@ -3982,37 +3961,14 @@ void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
 }
 
 void Interpreter::visitOnKeyDownStatement(const ast::OnKeyDownStatement &node) {
-  // Register global key down listener
-  if (hostContext.io && hostContext.io->GetEventListener()) {
-    auto action = [this, body = node.action.get(), keys = node.keys]() {
-      // Check if this key matches our filter (if any)
-      // TODO: Get current key from event context
-      auto originalEnv = environment;
-      environment = std::make_shared<Environment>(originalEnv);
-      Evaluate(*body);
-      environment = originalEnv;
-    };
-    
-    // Register with EventListener
-    hostContext.io->GetEventListener()->SetKeyDownCallback(action);
-  }
+  // TODO: Implement key down event registration
+  // For now, just skip
   lastResult = nullptr;
 }
 
 void Interpreter::visitOnKeyUpStatement(const ast::OnKeyUpStatement &node) {
-  // Register global key up listener
-  if (hostContext.io && hostContext.io->GetEventListener()) {
-    auto action = [this, body = node.action.get(), keys = node.keys]() {
-      // Check if this key matches our filter (if any)
-      auto originalEnv = environment;
-      environment = std::make_shared<Environment>(originalEnv);
-      Evaluate(*body);
-      environment = originalEnv;
-    };
-    
-    // Register with EventListener
-    hostContext.io->GetEventListener()->SetKeyUpCallback(action);
-  }
+  // TODO: Implement key up event registration
+  // For now, just skip
   lastResult = nullptr;
 }
 

@@ -507,6 +507,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       auto expr = parseExpression();
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
+  case havel::TokenType::Signal:
+    return parseSignalDefinition();
+  case havel::TokenType::Group:
+    return parseGroupDefinition();
   case havel::TokenType::Colon:
     return parseSleepStatement();
   case havel::TokenType::ShellCommand:
@@ -3988,41 +3992,56 @@ std::unique_ptr<havel::ast::Statement> Parser::parseDevicesBlock() {
   return std::make_unique<havel::ast::DevicesBlock>(parseKeyValueBlock());
 }
 
-// Parse single mode definition: mode name { condition = ...; enter { ... }; exit { ... } }
+// Parse single mode definition: mode name [priority N] { condition = ...; enter { ... }; exit { ... } }
 std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   advance(); // consume 'mode'
-  
+
   // Parse mode name
   if (at().type != havel::TokenType::Identifier) {
     failAt(at(), "Expected mode name after 'mode'");
   }
   std::string modeName = at().value;
   advance();
-  
+
+  // Parse optional priority
+  int priority = 0;
+  if (at().type == havel::TokenType::Identifier && at().value == "priority") {
+    advance(); // consume 'priority'
+    if (at().type != havel::TokenType::Number) {
+      failAt(at(), "Expected number after 'priority'");
+    }
+    priority = static_cast<int>(at().numberValue);
+    advance();
+  }
+
   // Parse mode block { condition = ...; enter { ... }; exit { ... } }
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after mode name");
   }
   advance(); // consume '{'
-  
+
   std::unique_ptr<havel::ast::Expression> condition;
   std::unique_ptr<havel::ast::BlockStatement> enterBlock;
   std::unique_ptr<havel::ast::BlockStatement> exitBlock;
-  
-  // Parse condition, enter, exit
+  std::unique_ptr<havel::ast::BlockStatement> onEnterFromBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onExitToBlock;
+  std::string onEnterFromMode;
+  std::string onExitToMode;
+
+  // Parse condition, enter, exit, and transition hooks
   while (notEOF() && at().type != havel::TokenType::CloseBrace) {
     if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
       advance();
       continue;
     }
-    
+
     if (at().type != havel::TokenType::Identifier) {
       break;
     }
-    
+
     std::string keyword = at().value;
     advance();
-    
+
     if (keyword == "condition") {
       if (at().type != havel::TokenType::Assign && at().type != havel::TokenType::Colon) {
         failAt(at(), "Expected '=' or ':' after 'condition'");
@@ -4033,19 +4052,151 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       enterBlock = parseBlockStatement();
     } else if (keyword == "exit") {
       exitBlock = parseBlockStatement();
+    } else if (keyword == "on") {
+      // Parse transition hooks: on enter from "mode" { ... } or on exit to "mode" { ... }
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected 'enter' or 'exit' after 'on'");
+      }
+      std::string transitionType = at().value;
+      advance();
+      
+      if (transitionType == "enter") {
+        if (at().type != havel::TokenType::Identifier || at().value != "from") {
+          failAt(at(), "Expected 'from' after 'on enter'");
+        }
+        advance(); // consume 'from'
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected mode name string after 'from'");
+        }
+        onEnterFromMode = at().value;
+        advance();
+        onEnterFromBlock = parseBlockStatement();
+      } else if (transitionType == "exit") {
+        if (at().type != havel::TokenType::Identifier || at().value != "to") {
+          failAt(at(), "Expected 'to' after 'on exit'");
+        }
+        advance(); // consume 'to'
+        if (at().type != havel::TokenType::String) {
+          failAt(at(), "Expected mode name string after 'to'");
+        }
+        onExitToMode = at().value;
+        advance();
+        onExitToBlock = parseBlockStatement();
+      } else {
+        failAt(at(), "Unknown transition type: " + transitionType);
+      }
     } else {
       failAt(at(), "Unknown keyword in mode definition: " + keyword);
     }
   }
-  
+
   if (at().type != havel::TokenType::CloseBrace) {
     failAt(at(), "Expected '}' to close mode definition");
   }
   advance(); // consume '}'
-  
+
   std::vector<havel::ast::ModeDefinition> modes;
-  modes.emplace_back(modeName, std::move(condition), std::move(enterBlock), std::move(exitBlock));
+  havel::ast::ModeDefinition modeDef(modeName, std::move(condition), std::move(enterBlock), std::move(exitBlock));
+  modeDef.priority = priority;
+  modeDef.onEnterFrom = onEnterFromMode;
+  modeDef.onExitTo = onExitToMode;
+  modeDef.onEnterFromBlock = std::move(onEnterFromBlock);
+  modeDef.onExitToBlock = std::move(onExitToBlock);
+  modes.push_back(std::move(modeDef));
   return std::make_unique<havel::ast::ModesBlock>(std::move(modes));
+}
+
+// Parse signal definition: signal name = expression
+std::unique_ptr<havel::ast::Statement> Parser::parseSignalDefinition() {
+  advance(); // consume 'signal'
+
+  // Parse signal name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected signal name after 'signal'");
+  }
+  std::string signalName = at().value;
+  advance();
+
+  // Parse '='
+  if (at().type != havel::TokenType::Assign && at().type != havel::TokenType::Colon) {
+    failAt(at(), "Expected '=' or ':' after signal name");
+  }
+  advance(); // consume '=' or ':'
+
+  // Parse condition expression
+  auto condition = parseExpression();
+
+  return std::make_unique<havel::ast::SignalDefinition>(signalName, std::move(condition));
+}
+
+// Parse group definition: group name { modes: [...] }
+std::unique_ptr<havel::ast::Statement> Parser::parseGroupDefinition() {
+  advance(); // consume 'group'
+
+  // Parse group name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected group name after 'group'");
+  }
+  std::string groupName = at().value;
+  advance();
+
+  // Parse group block { modes: [...] }
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after group name");
+  }
+  advance(); // consume '{'
+
+  std::vector<std::string> modeNames;
+
+  // Parse group contents
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    if (at().type != havel::TokenType::Identifier) {
+      break;
+    }
+
+    std::string keyword = at().value;
+    advance();
+
+    if (keyword == "modes") {
+      if (at().type != havel::TokenType::Colon) {
+        failAt(at(), "Expected ':' after 'modes'");
+      }
+      advance(); // consume ':'
+
+      // Parse array of mode names
+      if (at().type != havel::TokenType::OpenBracket) {
+        failAt(at(), "Expected '[' after 'modes:'");
+      }
+      advance(); // consume '['
+
+      while (at().type != havel::TokenType::CloseBracket) {
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+          continue;
+        }
+        if (at().type != havel::TokenType::Identifier && at().type != havel::TokenType::String) {
+          failAt(at(), "Expected mode name in group");
+        }
+        modeNames.push_back(at().value);
+        advance();
+      }
+      advance(); // consume ']'
+    } else {
+      failAt(at(), "Unknown keyword in group definition: " + keyword);
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close group definition");
+  }
+  advance(); // consume '}'
+
+  return std::make_unique<havel::ast::GroupDefinition>(groupName, modeNames);
 }
 
 // Parse modes block (legacy): modes { name { ... } }

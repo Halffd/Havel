@@ -72,6 +72,8 @@ enum class NodeType {
   OffModeStatement,     // off mode gaming { ... }
   OnReloadStatement,    // on reload { ... }
   OnStartStatement,     // on start { ... }
+  OnTapStatement,       // on tap(key) => { ... }
+  OnComboStatement,     // on combo(key) => { ... }
   WhenModeExpression,   // when mode gaming
   // Conditional hotkeys
   ConditionalHotkey,  // hotkey "Ctrl+A" if mode == foo then ...
@@ -1363,6 +1365,40 @@ struct OnStartStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On Tap Statement (on tap(key) => { ... })
+struct OnTapStatement : public Statement {
+  std::string key;
+  std::unique_ptr<Statement> action;
+
+  OnTapStatement(const std::string& k, std::unique_ptr<Statement> act)
+      : key(k), action(std::move(act)) {
+    kind = NodeType::OnTapStatement;
+  }
+
+  std::string toString() const override {
+    return "OnTapStatement{key: " + key + ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On Combo Statement (on combo(key) => { ... })
+struct OnComboStatement : public Statement {
+  std::string key;
+  std::unique_ptr<Statement> action;
+
+  OnComboStatement(const std::string& k, std::unique_ptr<Statement> act)
+      : key(k), action(std::move(act)) {
+    kind = NodeType::OnComboStatement;
+  }
+
+  std::string toString() const override {
+    return "OnComboStatement{key: " + key + ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Function Declaration with optional return type annotation
 struct FunctionDeclaration : public Statement {
   std::unique_ptr<Identifier> name;
@@ -2179,6 +2215,8 @@ public:
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;
   virtual void visitOnStartStatement(const OnStartStatement &node) = 0;
+  virtual void visitOnTapStatement(const OnTapStatement &node) = 0;
+  virtual void visitOnComboStatement(const OnComboStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
 
@@ -2418,6 +2456,14 @@ inline void OnReloadStatement::accept(ASTVisitor &visitor) const {
 
 inline void OnStartStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOnStartStatement(*this);
+}
+
+inline void OnTapStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnTapStatement(*this);
+}
+
+inline void OnComboStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnComboStatement(*this);
 }
 
 inline void TypeDeclaration::accept(ASTVisitor &visitor) const {

@@ -268,6 +268,10 @@ public:
   HotKey AddMouseHotkey(const std::string &hotkeyStr,
                         std::function<void()> action, int id = 0);
 
+  // KeyTap methods for on tap/combo syntax
+  void KeyTap(const std::string& key, std::function<void()> tapAction);
+  void KeyCombo(const std::string& key, std::function<void()> comboAction);
+
   HotKey AddHotkey(const std::string &rawInput, std::function<void()> action,
                    int id = 0);
 

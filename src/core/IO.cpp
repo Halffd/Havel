@@ -2,7 +2,13 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/io/KeyTap.hpp"
 #include "havel-lang/runtime/Interpreter.hpp"
+
+// Global storage for KeyTap instances
+static std::mutex g_keyTapMutex;
+static std::vector<std::unique_ptr<KeyTap>> g_keyTapStorage;
+
 #include "include/x11_includes.h"
 #include "io/EventListener.hpp"
 #include "io/HotkeyExecutor.hpp"
@@ -1904,6 +1910,54 @@ KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
   // Handle X11 names
   std::string keyLower = toLower(keyPart);
   return GetKeyCode(keyLower);
+}
+
+// KeyTap method for on tap syntax
+void IO::KeyTap(const std::string& key, std::function<void()> tapAction) {
+  if (!hotkeyManager) {
+    error("KeyTap: hotkeyManager not initialized");
+    return;
+  }
+  
+  // Create KeyTap with tap action only
+  auto keyTap = std::make_unique<KeyTap>(
+    hotkeyManager,
+    key,
+    tapAction,
+    "",  // tap condition (empty = always)
+    "",  // combo condition (empty = always)
+    nullptr,  // combo action
+    true,  // grab down
+    true   // grab up
+  );
+  
+  // Store in global storage to keep alive
+  std::lock_guard<std::mutex> lock(g_keyTapMutex);
+  g_keyTapStorage.push_back(std::move(keyTap));
+}
+
+// KeyCombo method for on combo syntax
+void IO::KeyCombo(const std::string& key, std::function<void()> comboAction) {
+  if (!hotkeyManager) {
+    error("KeyCombo: hotkeyManager not initialized");
+    return;
+  }
+  
+  // Create KeyTap with combo action only
+  auto keyTap = std::make_unique<KeyTap>(
+    hotkeyManager,
+    key,
+    nullptr,  // tap action
+    "",  // tap condition (empty = always)
+    "",  // combo condition (empty = always)
+    comboAction,  // combo action
+    true,  // grab down
+    true   // grab up
+  );
+  
+  // Store in global storage to keep alive
+  std::lock_guard<std::mutex> lock(g_keyTapMutex);
+  g_keyTapStorage.push_back(std::move(keyTap));
 }
 
 HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,

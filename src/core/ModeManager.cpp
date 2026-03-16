@@ -106,7 +106,7 @@ int ModeManager::getModeTransitions(const std::string& modeName) const {
 
 bool ModeManager::isSignalActive(const std::string& signalName) const {
     std::lock_guard<std::mutex> lock(modeMutex);
-    for (const auto& signal : signals) {
+    for (const auto& signal : signalList) {
         if (signal.name == signalName) {
             return signal.value;
         }

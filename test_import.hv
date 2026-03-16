@@ -1,0 +1,38 @@
+// test_import.hv - Test script imports
+
+// Import gaming module
+use "test_gaming.hv" as game
+
+print("Imported gaming module as 'game'")
+
+// Use imported functions
+F1 => {
+    game.start()
+}
+
+F2 => {
+    game.stop()
+}
+
+F3 => {
+    game.toggle()
+}
+
+// Test window queries
+F4 => {
+    let active = window.active
+    if active {
+        print("Active window: " + active.title)
+        print("Class: " + active.class)
+        print("EXE: " + active.exe)
+    }
+}
+
+// Test mode API
+F5 => {
+    print("Current mode: " + mode.current)
+    print("Previous mode: " + mode.previous)
+    print("Time in mode: " + mode.time() + " seconds")
+}
+
+print("Test import script loaded successfully")

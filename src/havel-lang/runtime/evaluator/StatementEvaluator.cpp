@@ -664,8 +664,8 @@ void StatementEvaluator::visitImportStatement(const ast::ImportStatement& node) 
 void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
     // Handle file imports: use "file.hv" as alias OR use x, y from "file.hv"
     if (node.isFileImport) {
-        if (interpreter->hostContext.io && interpreter->hostContext.io->importManager) {
-            bool success = interpreter->hostContext.io->importManager->importScript(
+        if (interpreter->hostContext.io && interpreter->hostContext.io->GetImportManager()) {
+            bool success = interpreter->hostContext.io->GetImportManager()->importScript(
                 node.filePath, node.alias);
             
             if (!success) {
@@ -676,11 +676,11 @@ void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
             // Handle named imports (use x, y from "file.hv")
             if (node.isNamedImport && !node.importNames.empty()) {
                 // Get the imported module
-                auto* module = interpreter->hostContext.io->importManager->getModule(node.alias);
+                auto* module = interpreter->hostContext.io->GetImportManager()->getModule(node.alias);
                 if (module) {
                     // Import only specified names into current scope
                     for (const auto& name : node.importNames) {
-                        auto exportedValue = interpreter->hostContext.io->importManager->getExportedValue(node.alias, name);
+                        auto exportedValue = interpreter->hostContext.io->GetImportManager()->getExportedValue(node.alias, name);
                         if (!exportedValue.isNull()) {
                             interpreter->environment->Define(name, exportedValue);
                         }

@@ -193,9 +193,9 @@ void MPVController::Cycle(const std::string& property) {
 }
 
 std::string MPVController::CopyCurrentSubtitle() {
-    // Get current subtitle text
-    auto result = SendCommand({"get", "sub-text"});
-    return result;
+    // TODO: Implement subtitle text retrieval
+    // Requires JSON parsing of mpv's response
+    return "";
 }
 
 void MPVController::SetIPC(const std::string& socketPath) {
@@ -208,7 +208,9 @@ void MPVController::IPCRestart() {
 }
 
 std::string MPVController::GetProperty(const std::string& prop) {
-    return SendCommand({"get", prop});
+    // TODO: Implement property retrieval
+    // Requires JSON parsing of mpv's response
+    return "";
 }
 
 void MPVController::SetProperty(const std::string& prop, const std::string& value) {

@@ -647,6 +647,9 @@ struct HotkeyBinding : public Statement {
   // Direct key mapping support (e.g., Left => A)
   bool isKeyMapping = false;
   std::string mappedKey; // Target key for mapping
+  
+  // Suspend exemption - hotkey works even when suspended
+  bool suspend = false;  // Automatically set if action contains suspend()/io.suspend() calls
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
   HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,
@@ -674,6 +677,9 @@ struct HotkeyBinding : public Statement {
     }
     if (isKeyMapping) {
       result += ", mapping to: " + mappedKey;
+    }
+    if (suspend) {
+      result += ", suspend_exempt: true";
     }
     result += "}";
     return result;

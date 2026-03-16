@@ -275,14 +275,12 @@ public:
               const std::string &condition = "", int id = 0);
   bool Suspend();
   bool Suspend(int id);
+  bool Resume();
+  bool Resume(int id);
+  bool IsSuspended() const { return isSuspended; }
 
   // Public cleanup method for safe shutdown
   void cleanup();
-  
-  // Stop EventListener thread
-  void StopEventListener();
-
-  bool Resume(int id);
 
   // Static method for application exit
   static void ExitApp();

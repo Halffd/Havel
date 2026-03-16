@@ -1946,6 +1946,58 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
                                                       isConst);
 }
 
+// Helper: Check if an AST node contains a call to suspend/resume functions
+bool Parser::containsSuspendCall(const ast::ASTNode* node) {
+  if (!node) return false;
+  
+  // Check if this is a call expression
+  if (auto* call = dynamic_cast<const ast::CallExpression*>(node)) {
+    if (auto* callee = dynamic_cast<const ast::Identifier*>(call->callee.get())) {
+      std::string name = callee->symbol;
+      // Check for: suspend(), io.suspend(), io.resume(), io.isSuspended
+      if (name == "suspend" || name == "resume" || name == "isSuspended") {
+        return true;
+      }
+    }
+    // Check for member calls like io.suspend()
+    if (auto* member = dynamic_cast<const ast::MemberExpression*>(call->callee.get())) {
+      if (auto* obj = dynamic_cast<const ast::Identifier*>(member->object.get())) {
+        if (obj->symbol == "io") {
+          std::string prop = member->property->value;
+          if (prop == "suspend" || prop == "resume" || prop == "isSuspended") {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  
+  // Recursively check child nodes
+  if (auto* block = dynamic_cast<const ast::BlockStatement*>(node)) {
+    for (const auto& stmt : block->body) {
+      if (containsSuspendCall(stmt.get())) {
+        return true;
+      }
+    }
+  }
+  
+  if (auto* exprStmt = dynamic_cast<const ast::ExpressionStatement*>(node)) {
+    if (containsSuspendCall(exprStmt->expression.get())) {
+      return true;
+    }
+  }
+  
+  if (auto* call = dynamic_cast<const ast::CallExpression*>(node)) {
+    for (const auto& arg : call->arguments) {
+      if (containsSuspendCall(arg.get())) {
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
 std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
   // Create the hotkey binding AST node
   auto binding = std::make_unique<havel::ast::HotkeyBinding>();
@@ -2038,6 +2090,11 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
     auto exprStmt = std::make_unique<havel::ast::ExpressionStatement>();
     exprStmt->expression = std::move(expr);
     binding->action = std::move(exprStmt);
+  }
+
+  // Check if this hotkey calls suspend/resume functions - mark as exempt
+  if (binding->action && containsSuspendCall(binding->action.get())) {
+    binding->suspend = true;  // This hotkey works even when suspended
   }
 
   // Validate that we successfully created the binding

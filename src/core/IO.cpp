@@ -1665,6 +1665,11 @@ bool IO::Resume(int id) {
   return false;
 }
 
+// Method to resume all hotkeys (alias for Suspend() when already suspended)
+bool IO::Resume() {
+  return Suspend();  // Suspend() toggles, so call it again to resume
+}
+
 // Static method to exit the application
 void IO::ExitApp() {
   info("Static ExitApp called - initiating emergency shutdown sequence");

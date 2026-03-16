@@ -188,6 +188,10 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
     }));
 
+    (*ioObj)["isSuspended"] = HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
+        return HavelValue(io->IsSuspended());
+    }));
+
     (*ioObj)["grab"] = HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
         io->EmergencyReleaseAllKeys();
         return HavelValue(nullptr);
@@ -519,7 +523,22 @@ void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     env.Define("exe", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>&) -> HavelResult {
         return HavelValue(WindowManager::getProcessName(io->GetActiveWindowPID()));
     })));
-    
+
+    // Global suspend/resume aliases (AHK-style)
+    env.Define("suspend", HavelValue(BuiltinFunction([io](const std::vector<HavelValue>& args) -> HavelResult {
+        if (args.empty()) {
+            // suspend() with no args = toggle
+            return HavelValue(io->Suspend());
+        }
+        // suspend(true/false) = explicit suspend/resume
+        bool shouldSuspend = args[0].isBool() ? args[0].asBool() : (args[0].asNumber() != 0);
+        if (shouldSuspend) {
+            return HavelValue(io->Suspend());
+        } else {
+            return HavelValue(io->Resume());
+        }
+    })));
+
     // Note: process module provides process.find(), process.exists(), etc.
     // Use process.name(pid) to get process name by PID
 }

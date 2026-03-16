@@ -2480,3 +2480,689 @@ mode == "gaming" => {
 ```
 
 ---
+
+## New Features (Latest)
+
+### Script Imports
+
+Import and reuse Havel scripts as modules:
+
+```havel
+// Import script file with alias
+use "gaming.hv" as game
+use "work.hv" as work
+
+// Use exported functions
+game.start()
+work.active
+
+// Access exported variables
+if game.active {
+    print("Gaming mode is active")
+}
+```
+
+**Exporting from modules:**
+```havel
+// gaming.hv
+export fn start() {
+    brightness(50)
+    volume(80)
+}
+
+export fn stop() {
+    brightness(100)
+    volume(50)
+}
+
+export let active = false
+
+export fn toggle() {
+    active = !active
+    if active { start() } else { stop() }
+}
+```
+
+**Features:**
+- Scripts run in isolated environments
+- Exports create module object properties
+- Multiple imports supported
+- Circular import detection
+
+---
+
+### Enhanced Mode System
+
+#### Signals
+
+Define system facts that can be monitored:
+
+```havel
+// Signals are boolean facts about system state
+signal steam_running = window.any(exe == "steam.exe")
+signal gaming_focus = active.exe == "steam.exe"
+signal many_windows = window.count() > 6
+signal youtube_open = window.any(title ~ ".*YouTube.*")
+```
+
+**Check signals:**
+```havel
+when steam_running {
+    notify("Steam launched")
+}
+
+when mode == "gaming" && !steam_running {
+    notify("Steam not running in gaming mode")
+}
+```
+
+#### Mode Priority
+
+Higher priority modes override lower priority:
+
+```havel
+mode gaming priority 10 {
+    condition = gaming_focus
+    enter { brightness(50); volume(80) }
+    exit { brightness(100); volume(50) }
+}
+
+mode multitask priority 5 {
+    condition = many_windows
+    enter { workspace.set(2) }
+}
+
+// gaming mode will override multitask when both conditions are true
+```
+
+#### Mode Transition Hooks
+
+Execute code on specific mode transitions:
+
+```havel
+mode gaming {
+    condition = isGame()
+    enter { 
+        brightness(50)
+        volume(80)
+    }
+    exit { 
+        brightness(100)
+        volume(50)
+    }
+    
+    // Called when entering from specific mode
+    on enter from "coding" { 
+        notify("leaving code for games, respect")
+    }
+    
+    // Called when exiting to specific mode
+    on exit to "default" {
+        run("killall -9 steam") // rage quit
+    }
+}
+```
+
+#### Mode Statistics
+
+Track time spent and transitions:
+
+```havel
+stats {
+    // Get time spent in mode (seconds)
+    let gamingTime = mode.time("gaming")
+    print("Gaming time: " + gamingTime + " seconds")
+    
+    // Get transition count
+    let switches = mode.transitions()
+    print("Mode switches: " + switches)
+    
+    // Monitor mode duration
+    on mode.change {
+        if mode.duration > 3600 {  // 1 hour
+            notify("been in " + mode.current + " for over an hour")
+        }
+    }
+}
+```
+
+#### Mode API Reference
+
+```havel
+mode.current              // Current mode name (string)
+mode.previous             // Previous mode name (string)
+mode.time("gaming")       // Time in mode (seconds, number)
+mode.transitions("gaming") // Transition count (number)
+mode.set("gaming")        // Set mode explicitly
+mode.list()               // List all modes (array)
+mode.signals()            // List all signals (array)
+mode.isSignal("steam")    // Check if signal active (boolean)
+```
+
+---
+
+### Window Query API
+
+Query windows with powerful filters:
+
+```havel
+// Get active window info
+let win = window.active
+print("Title: " + win.title)
+print("Class: " + win.class)
+print("EXE: " + win.exe)
+print("PID: " + win.pid)
+
+// Check if any window matches condition
+if window.any(exe == "steam.exe") {
+    print("Steam is running")
+}
+
+// Count matching windows
+let chromeCount = window.count(class == "chrome")
+print("Chrome windows: " + chromeCount)
+
+// Filter windows
+let youtubeWindows = window.filter(title ~ ".*YouTube.*")
+for win in youtubeWindows {
+    print("YouTube: " + win.title)
+}
+
+// Find first matching window
+let steamWin = window.find(exe == "steam.exe")
+if steamWin {
+    print("Steam window: " + steamWin.title)
+}
+```
+
+**Window Info Object:**
+```havel
+{
+    id: 12345,        // Window ID
+    title: "Steam",   // Window title
+    class: "steam",   // Window class
+    exe: "steam.exe", // Executable name
+    pid: 1234         // Process ID
+}
+```
+
+---
+
+### Concurrency Primitives
+
+#### Thread (Actor-Based)
+
+Lightweight concurrent execution with message passing:
+
+```havel
+// Create thread with message handler
+let worker = thread {
+    on message(msg) {
+        print("Received: " + msg)
+    }
+}
+
+// Send messages
+worker.send("hello")
+worker.send("world")
+
+// Control execution
+worker.pause()   // Pause processing
+worker.resume()  // Resume processing
+worker.stop()    // Stop permanently
+
+// Check status
+if worker.running {
+    print("Worker is running")
+}
+```
+
+#### Interval
+
+Repeating timer with full control:
+
+```havel
+// Create repeating timer
+let timer = interval 1000 {
+    print("Tick: " + time.now())
+    
+    if title ~ "YouTube" {
+        audio.unmute()
+    }
+}
+
+// Control timer
+timer.pause()   // Pause ticking
+timer.resume()  // Resume ticking
+timer.stop()    // Stop permanently
+```
+
+#### Timeout
+
+One-shot delayed execution:
+
+```havel
+// Execute after delay
+timeout 5000 {
+    print("5 seconds later")
+    notify("Reminder: Take a break!")
+}
+
+// Can be cancelled
+let t = timeout 10000 {
+    print("This might not print")
+}
+t.cancel()  // Cancel before execution
+```
+
+#### Range
+
+First-class range type:
+
+```havel
+// Create range
+let workHours = 8..18  // 8 to 18
+
+// Check membership
+if time.hour in workHours {
+    print("Working hours")
+}
+
+// Range methods
+if workHours.contains(time.hour) {
+    print("Still working")
+}
+
+// Inline range check
+if time.hour in (21..24) {
+    print("Night hours")
+    brightness(0.2)
+}
+```
+
+---
+
+### MPV Controller Functions
+
+Complete media player control:
+
+```havel
+// Volume control
+mpv.volumeUp()           // Increase volume +5
+mpv.volumeDown()         // Decrease volume -5
+mpv.toggleMute()         // Toggle mute
+
+// Playback control
+mpv.stop()               // Stop playback
+mpv.next()               // Next track
+mpv.previous()           // Previous track
+
+// Speed control
+mpv.addSpeed(0.1)        // Increase speed by 0.1
+mpv.addSpeed(-0.1)       // Decrease speed by 0.1
+
+// Subtitle control
+mpv.addSubScale(0.1)     // Increase subtitle scale
+mpv.addSubScale(-0.1)    // Decrease subtitle scale
+mpv.addSubDelay(0.1)     // Delay subtitles +0.1s
+mpv.addSubDelay(-0.1)    // Advance subtitles -0.1s
+mpv.subSeek(1)           // Seek to next subtitle
+mpv.subSeek(-1)          // Seek to previous subtitle
+
+// Property cycling
+mpv.cycle("sub-visibility")           // Toggle subtitle visibility
+mpv.cycle("secondary-sub-visibility") // Toggle secondary subtitles
+
+// Subtitle text
+let subtitle = mpv.copyCurrentSubtitle()
+print("Current: " + subtitle)
+
+// IPC control
+mpv.ipcSet("/tmp/mpvsocket2")  // Set IPC socket path
+mpv.ipcRestart()                // Restart IPC connection
+
+// Picture-in-picture
+let pip = mpv.pic  // Get PiP status
+```
+
+---
+
+### KeyTap and KeyCombo
+
+Tap and combo key detection:
+
+```havel
+// Tap detection (quick press/release)
+on tap(lwin) => {
+    if xfce { run("/bin/xfce4-popup-whiskermenu") }
+    else { $ ["rofi", "-show", "drun"] }
+}
+
+// Combo detection (hold + other keys)
+on combo(lwin) => {
+    print("LWin held with another key")
+}
+
+// Specific key tap
+on tap(escape) => {
+    print("Escape tapped")
+}
+```
+
+**Features:**
+- Tap: Quick press and release
+- Combo: Hold key + press other keys
+- Mode-aware (works inside mode blocks)
+- Automatic key filtering
+
+---
+
+### KeyDown and KeyUp
+
+Raw key event handling:
+
+```havel
+// Catch ALL key down events
+on keyDown {
+    print("Key pressed: " + this.key)
+}
+
+// Catch ALL key up events
+on keyUp {
+    print("Key released: " + this.key)
+}
+
+// Catch specific keys only
+on keyDown(lctrl, rctrl, lshift, rshift, esc) {
+    mod = true
+    print("Modifier pressed")
+}
+
+on keyUp(lctrl, rctrl, lshift, rshift, esc) {
+    mod = false
+    print("Modifier released")
+}
+```
+
+**Features:**
+- Fires on every key event
+- Optional key filtering
+- `this.key` contains key code
+- Works with mode system
+
+---
+
+### File Fallback Helper
+
+Clean file path fallback:
+
+```havel
+// Instead of confusing ?. ?? operators
+audio.play(firstExisting(
+    "~/Music/night-theme.mp3",
+    "~/Music/default-night.mp3", 
+    "~/Music/fallback-night.mp3"
+))
+
+// Returns first existing file path
+```
+
+---
+
+### Configuration Enhancements
+
+#### Nested Config Blocks
+
+```havel
+config {
+    debug = true
+    logKeys = true
+    
+    // Nested blocks create hierarchical keys
+    window {
+        monitoring = true
+        printWindows = false
+        opacity = 0.9
+    }
+    
+    hotkeys {
+        enableGlobal = true
+        prefix = "ctrl+alt"
+    }
+    
+    gaming {
+        classes = ["steam", "lutris", "heroic"]
+        exclude = ["browser", "discord"]
+    }
+}
+
+// Access nested config
+let debug = config.get("Havel.debug")
+let monitoring = config.get("Havel.window.monitoring")
+let gamingClasses = config.list("Havel.gaming.classes")
+```
+
+#### Config List Helper
+
+```havel
+// Better than split()
+condition = class in config.list("Gaming.Classes")
+
+// Supports comma-separated values
+config {
+    gaming {
+        classes = "steam,lutris,heroic"
+    }
+}
+```
+
+---
+
+### Reusable Condition Functions
+
+Define conditions once, reuse everywhere:
+
+```havel
+// Define reusable conditions
+let isGame = (class in config.gaming.classes || title in config.gaming.titles) 
+          && !(class in config.gaming.exclude)
+
+let isTerminal = exe in ["kitty", "alacritty", "wezterm", 
+                         "gnome-terminal", "tilix", "xterm"]
+
+// Use in modes
+mode gaming {
+    condition = isGame()
+    enter { ... }
+}
+
+mode terminal {
+    condition = isTerminal()
+    enter { ... }
+}
+```
+
+---
+
+### Mode Groups
+
+Batch operations on multiple modes:
+
+```havel
+group "productivity" {
+    modes: ["coding", "terminal", "typing"]
+    
+    on enter {
+        brightness(80)
+        workspace.set(2)
+    }
+}
+
+// Apply to all modes in group
+for mode in group.productivity {
+    mode.enter { 
+        do_not_disturb(true) 
+    }
+}
+```
+
+---
+
+### Temporary Mode Overrides
+
+High-priority temporary modes:
+
+```havel
+// Higher priority overrides other modes
+mode meeting {
+    condition = exe == "zoom" || exe == "teams"
+    priority = 10  // Higher than normal modes
+    
+    enter {
+        notify("Meeting mode: muted notifications")
+        do_not_disturb(true)
+    }
+}
+```
+
+---
+
+### Mode as Functions
+
+Programmatic mode definition:
+
+```havel
+let GamingMode = Mode({
+    condition = isGame()
+    enter = fn() { 
+        brightness(50)
+        volume(80)
+    }
+    exit = fn() { 
+        brightness(100)
+        volume(50)
+    }
+})
+
+register(GamingMode)
+
+// Or inline
+register(Mode({
+    name = "coding"
+    condition = active.class in ["code", "vim", "nvim"]
+    enter = fn() { workspace.set(1) }
+}))
+```
+
+---
+
+### Complete Example
+
+```havel
+// Import modules
+use "gaming.hv" as game
+use "work.hv" as work
+
+// Define signals
+signal steam_running = window.any(exe == "steam.exe")
+signal coding_focus = active.class in ["code", "vim", "nvim"]
+
+// Define modes with priority
+mode gaming priority 10 {
+    condition = active.exe == "steam.exe"
+    enter { 
+        brightness(50)
+        volume(80)
+        game.start()
+    }
+    exit { 
+        brightness(100)
+        volume(50)
+        game.stop()
+    }
+    on enter from "coding" {
+        notify("Leaving code for games!")
+    }
+}
+
+mode coding priority 5 {
+    condition = coding_focus
+    enter {
+        brightness(80)
+        workspace.set(1)
+    }
+}
+
+// Reactions
+when steam_running && mode != "gaming" {
+    notify("Steam running in background")
+}
+
+// Hotkeys
+F1 => game.toggle()
+F2 => work.toggle()
+F3 => {
+    print("Current mode: " + mode.current)
+    print("Time in mode: " + mode.time() + "s")
+}
+
+// Key events
+on keyDown(esc) {
+    if mode.current == "gaming" {
+        notify("Quitting game?")
+    }
+}
+
+// Interval timer
+interval 60000 {
+    if mode.duration > 3600 {
+        notify("Take a break!")
+    }
+}
+```
+
+---
+
+## Quick Reference Card
+
+```havel
+// Imports
+use "file.hv" as alias    // Import script
+alias.function()           // Use imported function
+
+// Modes
+mode name priority N { }   // Define mode with priority
+signal name = expr         // Define signal
+mode.current               // Get current mode
+mode.time()                // Get time in mode
+mode.transitions()         // Get transition count
+
+// Windows
+window.active              // Active window info
+window.any(condition)      // Boolean: any match?
+window.count(condition)    // Integer: count matches
+window.filter(condition)   // Array: filter matches
+
+// Concurrency
+thread { on message(m) {} } // Actor thread
+interval ms { }            // Repeating timer
+timeout ms { }             // One-shot delay
+start..end                 // Range literal
+
+// Key Events
+on tap(key) { }            // Tap detection
+on combo(key) { }          // Combo detection
+on keyDown { }             // Raw key down
+on keyUp { }               // Raw key up
+
+// MPV
+mpv.addSpeed(delta)        // Change playback speed
+mpv.addSubScale(delta)     // Change subtitle scale
+mpv.subSeek(index)         // Seek subtitle
+mpv.cycle(property)        // Cycle property
+mpv.ipcSet(path)           // Set IPC socket
+```
+
+---
+
+---

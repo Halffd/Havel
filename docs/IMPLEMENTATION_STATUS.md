@@ -4,11 +4,13 @@
 
 ### Core Language
 - [x] Script imports: `use "file.hv" as alias`
+- [x] Named imports: `use x, y from "file.hv"` ✅ NEW
 - [x] Signal definitions: `signal name = expression` ✅ NEW
 - [x] Mode definitions: `mode name { condition = ... }`
 - [x] Mode priority: `mode name priority N` ✅ NEW
 - [x] Mode transition hooks: `on enter from "mode"`, `on exit to "mode"` ✅ NEW
 - [x] Mode groups: `group name { modes: [...] }` ✅ NEW
+- [x] Window event hooks: `on close`, `on minimize`, `on maximize`, `on open` ✅ NEW
 - [x] Mode API: `mode.current`, `mode.time()`, `mode.transitions()`, `mode.set()`
 - [x] Concurrency: `thread { }`, `interval ms { }`, `timeout ms { }`
 - [x] Range type: `start..end`
@@ -56,28 +58,7 @@ let wins = window.filter(title ~ ".*YouTube.*")
 
 ---
 
-### 2. Advanced Imports
-```havel
-// ❌ NOT IMPLEMENTED - Only 'use "file.hv" as alias' works
-use gaming from "gaming.hv"
-use {start, stop} from "gaming.hv"
-
-// ❌ NOT IMPLEMENTED
-module.list()
-module.help()
-module.remove()
-module.disable()
-module.enable()
-module.toggle()
-```
-
-**Status**: Only `use "file.hv" as alias` is implemented. Named exports and module management functions are not implemented.
-
-**Workaround**: Use `use "file.hv" as alias` and access via `alias.function()`.
-
----
-
-### 3. Nested Config Access
+### 2. Nested Config Access
 ```havel
 // ❌ NOT IMPLEMENTED - Parser doesn't support nested access
 config.gaming.classes
@@ -90,7 +71,7 @@ config.get("gaming.classes")
 
 ---
 
-### 4. Window Groups
+### 3. Window Groups
 ```havel
 // ❌ NOT IMPLEMENTED
 window.getGroups()
@@ -101,7 +82,7 @@ window.getGroupWindows(group)
 
 ---
 
-### 5. Collection Methods
+### 4. Collection Methods
 ```havel
 // ❌ NOT IMPLEMENTED - These methods don't exist
 window.list()
@@ -113,6 +94,21 @@ mode.filter()       // ❌ NOT IMPLEMENTED
 ```
 
 **Status**: Only `mode.list()` and `mode.count()` are implemented. Other collection methods are not implemented.
+
+---
+
+### 5. Module Management Functions
+```havel
+// ❌ NOT IMPLEMENTED
+module.list()
+module.help()
+module.remove()
+module.disable()
+module.enable()
+module.toggle()
+```
+
+**Status**: Not implemented.
 
 ---
 

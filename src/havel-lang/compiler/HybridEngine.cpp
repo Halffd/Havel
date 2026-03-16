@@ -2,26 +2,11 @@
 #include "../runtime/Interpreter.hpp"
 #include "Bytecode.h"
 #include "BytecodeCompiler.hpp"
+#include "BytecodeInterpreter.hpp"
 #include <iostream>
 #include <unordered_map>
 
 namespace havel::compiler {
-
-// Simple bytecode interpreter (placeholder implementation)
-class HavelBytecodeInterpreter : public BytecodeInterpreter {
-private:
-  bool debug_mode = false;
-
-public:
-  HavelBytecodeInterpreter() = default;
-  BytecodeValue execute(const BytecodeChunk &chunk,
-                        const std::string &function_name,
-                        const std::vector<BytecodeValue> &args = {}) override {
-    // Placeholder: return null for now
-    return BytecodeValue{std::in_place_index<0>};
-  }
-  void setDebugMode(bool enabled) override { debug_mode = enabled; }
-};
 
 // Simple JIT compiler (placeholder implementation)
 class HavelJITCompiler : public JITCompiler {

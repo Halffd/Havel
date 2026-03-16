@@ -662,7 +662,7 @@ void StatementEvaluator::visitImportStatement(const ast::ImportStatement& node) 
 }
 
 void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
-    // Handle file imports: use "file.hv" as alias
+    // Handle file imports: use "file.hv" as alias OR use x, y from "file.hv"
     if (node.isFileImport) {
         if (interpreter->hostContext.io && interpreter->hostContext.io->importManager) {
             bool success = interpreter->hostContext.io->importManager->importScript(
@@ -673,9 +673,24 @@ void StatementEvaluator::visitUseStatement(const ast::UseStatement& node) {
                 return;
             }
             
-            // Create module object in current environment with exported values
-            auto moduleObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-            interpreter->environment->Define(node.alias, HavelValue(moduleObj));
+            // Handle named imports (use x, y from "file.hv")
+            if (node.isNamedImport && !node.importNames.empty()) {
+                // Get the imported module
+                auto* module = interpreter->hostContext.io->importManager->getModule(node.alias);
+                if (module) {
+                    // Import only specified names into current scope
+                    for (const auto& name : node.importNames) {
+                        auto exportedValue = interpreter->hostContext.io->importManager->getExportedValue(node.alias, name);
+                        if (!exportedValue.isNull()) {
+                            interpreter->environment->Define(name, exportedValue);
+                        }
+                    }
+                }
+            } else {
+                // Create module object in current environment with exported values
+                auto moduleObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+                interpreter->environment->Define(node.alias, HavelValue(moduleObj));
+            }
         } else {
             interpreter->lastResult = HavelRuntimeError("ImportManager not available");
             return;

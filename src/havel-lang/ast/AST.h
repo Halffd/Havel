@@ -2162,24 +2162,41 @@ struct ImportStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Use Statement (use io, use media) OR (use "file.hv" as alias)
+// Use Statement (use io, use media) OR (use "file.hv" as alias) OR (use x, y from "file.hv")
 struct UseStatement : public Statement {
   std::vector<std::string> moduleNames; // List of module names to flatten (old syntax)
   std::string filePath;  // File path for script import (new syntax)
   std::string alias;     // Alias for imported script (new syntax)
+  std::vector<std::string> importNames;  // Named imports from file (use x, y from "file.hv")
   bool isFileImport = false;  // True if importing file, false if importing module
+  bool isNamedImport = false; // True if using named imports (use x, y from "file.hv")
 
   UseStatement(std::vector<std::string> modules = {})
       : moduleNames(std::move(modules)), isFileImport(false) {
     kind = NodeType::UseStatement;
   }
-  
+
   UseStatement(const std::string& path, const std::string& aliasName)
       : filePath(path), alias(aliasName), isFileImport(true) {
     kind = NodeType::UseStatement;
   }
+  
+  UseStatement(const std::string& path, std::vector<std::string> names)
+      : filePath(path), importNames(std::move(names)), isFileImport(true), isNamedImport(true) {
+    kind = NodeType::UseStatement;
+  }
 
   std::string toString() const override {
+    if (isNamedImport) {
+      std::string result = "UseStatement{from " + filePath + " import: [";
+      for (size_t i = 0; i < importNames.size(); ++i) {
+        result += importNames[i];
+        if (i < importNames.size() - 1)
+          result += ", ";
+      }
+      result += "]}";
+      return result;
+    }
     if (isFileImport) {
       return "UseStatement{file: " + filePath + ", as: " + alias + "}";
     }

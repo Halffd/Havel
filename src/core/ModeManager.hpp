@@ -71,6 +71,10 @@ public:
         std::function<void()> onExit;
         std::function<void(const std::string& fromMode)> onEnterFrom;  // Called when entering from specific mode
         std::function<void(const std::string& toMode)> onExitTo;      // Called when exiting to specific mode
+        std::function<void()> onClose;    // Called when active window closes
+        std::function<void()> onMinimize; // Called when active window minimizes
+        std::function<void()> onMaximize; // Called when active window maximizes
+        std::function<void()> onOpen;     // Called when new window opens
         int priority = 0;
         bool isActive = false;
         std::chrono::steady_clock::time_point enterTime;

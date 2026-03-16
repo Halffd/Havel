@@ -4025,6 +4025,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   std::unique_ptr<havel::ast::BlockStatement> exitBlock;
   std::unique_ptr<havel::ast::BlockStatement> onEnterFromBlock;
   std::unique_ptr<havel::ast::BlockStatement> onExitToBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onCloseBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onMinimizeBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onMaximizeBlock;
+  std::unique_ptr<havel::ast::BlockStatement> onOpenBlock;
   std::string onEnterFromMode;
   std::string onExitToMode;
 
@@ -4054,13 +4058,14 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
       exitBlock = parseBlockStatement();
     } else if (keyword == "on") {
       // Parse transition hooks: on enter from "mode" { ... } or on exit to "mode" { ... }
+      // Or window events: on close { ... }, on minimize { ... }, etc.
       if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected 'enter' or 'exit' after 'on'");
+        failAt(at(), "Expected 'enter', 'exit', 'close', 'minimize', 'maximize', or 'open' after 'on'");
       }
-      std::string transitionType = at().value;
+      std::string eventType = at().value;
       advance();
       
-      if (transitionType == "enter") {
+      if (eventType == "enter") {
         if (at().type != havel::TokenType::Identifier || at().value != "from") {
           failAt(at(), "Expected 'from' after 'on enter'");
         }
@@ -4071,7 +4076,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
         onEnterFromMode = at().value;
         advance();
         onEnterFromBlock = parseBlockStatement();
-      } else if (transitionType == "exit") {
+      } else if (eventType == "exit") {
         if (at().type != havel::TokenType::Identifier || at().value != "to") {
           failAt(at(), "Expected 'to' after 'on exit'");
         }
@@ -4082,8 +4087,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
         onExitToMode = at().value;
         advance();
         onExitToBlock = parseBlockStatement();
+      } else if (eventType == "close") {
+        onCloseBlock = parseBlockStatement();
+      } else if (eventType == "minimize") {
+        onMinimizeBlock = parseBlockStatement();
+      } else if (eventType == "maximize") {
+        onMaximizeBlock = parseBlockStatement();
+      } else if (eventType == "open") {
+        onOpenBlock = parseBlockStatement();
       } else {
-        failAt(at(), "Unknown transition type: " + transitionType);
+        failAt(at(), "Unknown event type: " + eventType);
       }
     } else {
       failAt(at(), "Unknown keyword in mode definition: " + keyword);
@@ -4102,6 +4115,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   modeDef.onExitTo = onExitToMode;
   modeDef.onEnterFromBlock = std::move(onEnterFromBlock);
   modeDef.onExitToBlock = std::move(onExitToBlock);
+  modeDef.onCloseBlock = std::move(onCloseBlock);
+  modeDef.onMinimizeBlock = std::move(onMinimizeBlock);
+  modeDef.onMaximizeBlock = std::move(onMaximizeBlock);
+  modeDef.onOpenBlock = std::move(onOpenBlock);
   modes.push_back(std::move(modeDef));
   return std::make_unique<havel::ast::ModesBlock>(std::move(modes));
 }

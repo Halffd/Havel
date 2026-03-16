@@ -649,7 +649,9 @@ struct HotkeyBinding : public Statement {
   std::string mappedKey; // Target key for mapping
   
   // Suspend exemption - hotkey works even when suspended
-  bool suspend = false;  // Automatically set if action contains suspend()/io.suspend() calls
+  // Set to true for hotkeys that should work during suspend mode
+  // (typically defined in "when mode suspend" blocks)
+  bool suspend = false;
 
   HotkeyBinding() { kind = NodeType::HotkeyBinding; }
   HotkeyBinding(std::vector<std::unique_ptr<Expression>> hks,

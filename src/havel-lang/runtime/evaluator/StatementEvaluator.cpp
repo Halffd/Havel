@@ -1142,6 +1142,14 @@ void StatementEvaluator::visitOnStartStatement(const ast::OnStartStatement& node
     interpreter->visitOnStartStatement(node);
 }
 
+void StatementEvaluator::visitOnKeyDownStatement(const ast::OnKeyDownStatement& node) {
+    interpreter->visitOnKeyDownStatement(node);
+}
+
+void StatementEvaluator::visitOnKeyUpStatement(const ast::OnKeyUpStatement& node) {
+    interpreter->visitOnKeyUpStatement(node);
+}
+
 void StatementEvaluator::visitOnTapStatement(const ast::OnTapStatement& node) {
     interpreter->visitOnTapStatement(node);
 }

@@ -540,6 +540,8 @@ public:
   void visitOffModeStatement(const ast::OffModeStatement &node) override;
   void visitOnReloadStatement(const ast::OnReloadStatement &node) override;
   void visitOnStartStatement(const ast::OnStartStatement &node) override;
+  void visitOnKeyDownStatement(const ast::OnKeyDownStatement &node) override;
+  void visitOnKeyUpStatement(const ast::OnKeyUpStatement &node) override;
   void visitOnTapStatement(const ast::OnTapStatement &node) override;
   void visitOnComboStatement(const ast::OnComboStatement &node) override;
 

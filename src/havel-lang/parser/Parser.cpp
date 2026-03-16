@@ -1744,10 +1744,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
     } else if (keyword == "tap" || keyword == "combo") {
       // on tap(key) => { ... } or on combo(key) => { ... }
       return parseOnTapOrComboStatement();
+    } else if (keyword == "keydown" || keyword == "keyup") {
+      // on keyDown { ... } or on keyDown(keys...) { ... }
+      return parseOnKeyDownOrKeyUpStatement();
     }
   }
 
-  failAt(at(), "Expected 'mode', 'reload', 'start', 'tap', or 'combo' after 'on'");
+  failAt(at(), "Expected 'mode', 'reload', 'start', 'tap', 'combo', 'keydown', or 'keyup' after 'on'");
   return nullptr;
 }
 
@@ -1954,6 +1957,73 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnTapOrComboStatement() {
     return std::make_unique<havel::ast::OnTapStatement>(keyName, std::move(actionBlock));
   } else {
     return std::make_unique<havel::ast::OnComboStatement>(keyName, std::move(actionBlock));
+  }
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnKeyDownOrKeyUpStatement() {
+  // We've consumed "on" and identified "keydown" or "keyup"
+  bool isKeyDown = (at().value == "keydown");
+  advance(); // consume "keydown" or "keyup"
+  
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // Check if there's a key list in parentheses
+  std::vector<std::string> keys;
+  if (at().type == havel::TokenType::OpenParen) {
+    advance(); // consume '('
+    
+    // Parse comma-separated key names
+    while (true) {
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      
+      // Parse key (Hotkey token or Identifier)
+      if (at().type == havel::TokenType::Hotkey) {
+        keys.push_back(advance().value);
+      } else if (at().type == havel::TokenType::Identifier) {
+        keys.push_back(advance().value);
+      } else {
+        failAt(at(), "Expected key name in key list");
+      }
+      
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      
+      // Check for comma or closing paren
+      if (at().type == havel::TokenType::CloseParen) {
+        advance(); // consume ')'
+        break;
+      } else if (at().type == havel::TokenType::Comma) {
+        advance(); // consume ','
+      } else {
+        failAt(at(), "Expected ',' or ')' in key list");
+      }
+    }
+  }
+  
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // Expect action block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' to start action block");
+  }
+  auto actionBlock = parseBlockStatement();
+  
+  // Create the statement
+  if (isKeyDown) {
+    return std::make_unique<havel::ast::OnKeyDownStatement>(keys, std::move(actionBlock));
+  } else {
+    return std::make_unique<havel::ast::OnKeyUpStatement>(keys, std::move(actionBlock));
   }
 }
 

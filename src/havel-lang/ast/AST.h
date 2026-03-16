@@ -72,6 +72,8 @@ enum class NodeType {
   OffModeStatement,     // off mode gaming { ... }
   OnReloadStatement,    // on reload { ... }
   OnStartStatement,     // on start { ... }
+  OnKeyDownStatement,   // on keyDown { ... } or on keyDown(keys...) { ... }
+  OnKeyUpStatement,     // on keyUp { ... } or on keyUp(keys...) { ... }
   OnTapStatement,       // on tap(key) => { ... }
   OnComboStatement,     // on combo(key) => { ... }
   WhenModeExpression,   // when mode gaming
@@ -1365,6 +1367,50 @@ struct OnStartStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// On KeyDown Statement (on keyDown { ... } or on keyDown(keys...) { ... })
+struct OnKeyDownStatement : public Statement {
+  std::vector<std::string> keys;  // Empty = all keys
+  std::unique_ptr<Statement> action;
+
+  OnKeyDownStatement(std::vector<std::string> k, std::unique_ptr<Statement> act)
+      : keys(std::move(k)), action(std::move(act)) {
+    kind = NodeType::OnKeyDownStatement;
+  }
+
+  std::string toString() const override {
+    std::string keysStr = keys.empty() ? "all" : "";
+    for (size_t i = 0; i < keys.size(); ++i) {
+      if (i > 0) keysStr += ", ";
+      keysStr += keys[i];
+    }
+    return "OnKeyDownStatement{keys: " + keysStr + ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// On KeyUp Statement (on keyUp { ... } or on keyUp(keys...) { ... })
+struct OnKeyUpStatement : public Statement {
+  std::vector<std::string> keys;  // Empty = all keys
+  std::unique_ptr<Statement> action;
+
+  OnKeyUpStatement(std::vector<std::string> k, std::unique_ptr<Statement> act)
+      : keys(std::move(k)), action(std::move(act)) {
+    kind = NodeType::OnKeyUpStatement;
+  }
+
+  std::string toString() const override {
+    std::string keysStr = keys.empty() ? "all" : "";
+    for (size_t i = 0; i < keys.size(); ++i) {
+      if (i > 0) keysStr += ", ";
+      keysStr += keys[i];
+    }
+    return "OnKeyUpStatement{keys: " + keysStr + ", action: " + (action ? action->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // On Tap Statement (on tap(key) => { ... })
 struct OnTapStatement : public Statement {
   std::string key;
@@ -2215,6 +2261,8 @@ public:
   virtual void visitOffModeStatement(const OffModeStatement &node) = 0;
   virtual void visitOnReloadStatement(const OnReloadStatement &node) = 0;
   virtual void visitOnStartStatement(const OnStartStatement &node) = 0;
+  virtual void visitOnKeyDownStatement(const OnKeyDownStatement &node) = 0;
+  virtual void visitOnKeyUpStatement(const OnKeyUpStatement &node) = 0;
   virtual void visitOnTapStatement(const OnTapStatement &node) = 0;
   virtual void visitOnComboStatement(const OnComboStatement &node) = 0;
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
@@ -2456,6 +2504,14 @@ inline void OnReloadStatement::accept(ASTVisitor &visitor) const {
 
 inline void OnStartStatement::accept(ASTVisitor &visitor) const {
   visitor.visitOnStartStatement(*this);
+}
+
+inline void OnKeyDownStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnKeyDownStatement(*this);
+}
+
+inline void OnKeyUpStatement::accept(ASTVisitor &visitor) const {
+  visitor.visitOnKeyUpStatement(*this);
 }
 
 inline void OnTapStatement::accept(ASTVisitor &visitor) const {

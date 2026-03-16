@@ -3836,6 +3836,41 @@ void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
   lastResult = nullptr;
 }
 
+void Interpreter::visitOnKeyDownStatement(const ast::OnKeyDownStatement &node) {
+  // Register global key down listener
+  if (hostContext.io && hostContext.io->GetEventListener()) {
+    auto action = [this, body = node.action.get(), keys = node.keys]() {
+      // Check if this key matches our filter (if any)
+      // TODO: Get current key from event context
+      auto originalEnv = environment;
+      environment = std::make_shared<Environment>(originalEnv);
+      Evaluate(*body);
+      environment = originalEnv;
+    };
+    
+    // Register with EventListener
+    hostContext.io->GetEventListener()->SetKeyDownCallback(action);
+  }
+  lastResult = nullptr;
+}
+
+void Interpreter::visitOnKeyUpStatement(const ast::OnKeyUpStatement &node) {
+  // Register global key up listener
+  if (hostContext.io && hostContext.io->GetEventListener()) {
+    auto action = [this, body = node.action.get(), keys = node.keys]() {
+      // Check if this key matches our filter (if any)
+      auto originalEnv = environment;
+      environment = std::make_shared<Environment>(originalEnv);
+      Evaluate(*body);
+      environment = originalEnv;
+    };
+    
+    // Register with EventListener
+    hostContext.io->GetEventListener()->SetKeyUpCallback(action);
+  }
+  lastResult = nullptr;
+}
+
 void Interpreter::visitOnTapStatement(const ast::OnTapStatement &node) {
   // Create a KeyTap for tap behavior
   // The KeyTap will be mode-aware through the closure

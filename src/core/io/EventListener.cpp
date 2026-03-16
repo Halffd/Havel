@@ -583,6 +583,13 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     }
   }
 
+  // Call raw key callbacks if registered
+  if (down && keyDownCallback) {
+    keyDownCallback(originalCode);
+  } else if (!down && keyUpCallback) {
+    keyUpCallback(originalCode);
+  }
+
   if (down && emergencyShutdownKey != 0 && originalCode == emergencyShutdownKey) {
     error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
     running.store(false);

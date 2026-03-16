@@ -156,6 +156,17 @@ public:
     inputBlockCallback = std::move(callback);
   }
 
+  // Callback for raw key down events
+  using KeyCallback = std::function<void(int keyCode)>;
+  void SetKeyDownCallback(KeyCallback callback) {
+    keyDownCallback = std::move(callback);
+  }
+  
+  // Callback for raw key up events
+  void SetKeyUpCallback(KeyCallback callback) {
+    keyUpCallback = std::move(callback);
+  }
+
   // Set HotkeyExecutor for thread-safe callback execution
   void SetHotkeyExecutor(HotkeyExecutor *executor) {
     hotkeyExecutor = executor;
@@ -168,6 +179,10 @@ public:
 
   // Callback for any key press
   std::function<void(const std::string &key)> anyKeyPressCallback = nullptr;
+
+  // Raw key down/up callbacks
+  KeyCallback keyDownCallback = nullptr;
+  KeyCallback keyUpCallback = nullptr;
 
   // Raw input events emitted before internal matching.
   InputEventCallback inputEventCallback = nullptr;

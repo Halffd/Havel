@@ -2817,6 +2817,44 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
       };
     }
 
+    // Create onEnterFrom callback
+    std::function<void(const std::string&)> onEnterFromCallback;
+    if (modeDef.onEnterFromBlock) {
+      std::string fromMode = modeDef.onEnterFrom;
+      onEnterFromCallback = [this, block = modeDef.onEnterFromBlock.get(), fromMode]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onEnterFrom block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
+    // Create onExitTo callback
+    std::function<void(const std::string&)> onExitToCallback;
+    if (modeDef.onExitToBlock) {
+      std::string toMode = modeDef.onExitTo;
+      onExitToCallback = [this, block = modeDef.onExitToBlock.get(), toMode]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onExitTo block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
     // Register mode with ModeManager - store shared_ptr!
     if (hostContext.modeManager) {
       ModeManager::ModeDefinition modeDefn;
@@ -2824,6 +2862,9 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
       modeDefn.conditionExpr = conditionExpr;  // shared_ptr keeps AST alive
       modeDefn.onEnter = enterCallback;
       modeDefn.onExit = exitCallback;
+      modeDefn.onEnterFrom = onEnterFromCallback;
+      modeDefn.onExitTo = onExitToCallback;
+      modeDefn.priority = modeDef.priority;
       hostContext.modeManager->defineMode(std::move(modeDefn));
     }
   }
@@ -2841,6 +2882,39 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
   }
 
   lastResult = nullptr; // Modes blocks don't return a value
+}
+
+void Interpreter::visitSignalDefinition(const ast::SignalDefinition &node) {
+  // Evaluate signal condition and register with ModeManager
+  if (hostContext.modeManager) {
+    // Convert unique_ptr to shared_ptr to keep AST alive
+    std::shared_ptr<ast::Expression> conditionExpr;
+    if (node.condition) {
+      conditionExpr = std::shared_ptr<ast::Expression>(node.condition.release());
+    }
+
+    ModeManager::Signal signal;
+    signal.name = node.name;
+    signal.conditionExpr = conditionExpr;
+    signal.value = false;  // Will be updated by ModeManager::update()
+
+    hostContext.modeManager->defineSignal(std::move(signal));
+  }
+
+  lastResult = nullptr; // Signal definitions don't return a value
+}
+
+void Interpreter::visitGroupDefinition(const ast::GroupDefinition &node) {
+  // Register mode group with ModeManager
+  if (hostContext.modeManager) {
+    ModeManager::ModeGroup group;
+    group.name = node.name;
+    group.modes = node.modeNames;
+
+    hostContext.modeManager->defineGroup(std::move(group));
+  }
+
+  lastResult = nullptr; // Group definitions don't return a value
 }
 
 void Interpreter::visitConfigSection(const ast::ConfigSection &node) {

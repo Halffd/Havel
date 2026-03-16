@@ -527,6 +527,8 @@ public:
   
   void visitDevicesBlock(const ast::DevicesBlock &node) override;
   void visitModesBlock(const ast::ModesBlock &node) override;
+  void visitSignalDefinition(const ast::SignalDefinition &node) override;
+  void visitGroupDefinition(const ast::GroupDefinition &node) override;
   void visitConfigSection(const ast::ConfigSection &node) override;
   void visitIndexExpression(const ast::IndexExpression &node) override;
   void visitTernaryExpression(const ast::TernaryExpression &node) override;

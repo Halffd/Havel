@@ -59,6 +59,8 @@ enum class TokenType {
   Config,
   Devices,
   Modes,
+  Signal,
+  Group,
   Struct,     // struct
   Enum,       // enum
   Trait,      // trait

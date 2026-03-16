@@ -88,6 +88,8 @@ enum class NodeType {
   ConfigBlock,      // config { ... }
   DevicesBlock,     // devices { ... }
   ModesBlock,       // modes { ... }
+  SignalDefinition, // signal name = expression
+  GroupDefinition,  // group name { modes: [...] }
   ConfigSection,    // any_identifier { ... }
   IndexExpression,  // arr[0] or obj["key"]
   TupleExpression,  // (1, "hello", true)
@@ -1787,19 +1789,24 @@ struct DevicesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Mode Definition (mode name { condition = ...; enter { ... }; exit { ... } })
+// Mode Definition (mode name [priority N] { condition = ...; enter { ... }; exit { ... }; on enter from "mode" { ... }; on exit to "mode" { ... } })
 struct ModeDefinition {
   std::string name;
   std::unique_ptr<Expression> condition;
   std::unique_ptr<BlockStatement> enterBlock;
   std::unique_ptr<BlockStatement> exitBlock;
+  int priority = 0;
+  std::string onEnterFrom;  // Mode name for on enter from hook
+  std::string onExitTo;     // Mode name for on exit to hook
+  std::unique_ptr<BlockStatement> onEnterFromBlock;  // Block for on enter from
+  std::unique_ptr<BlockStatement> onExitToBlock;     // Block for on exit to
 
   ModeDefinition() = default;
   ModeDefinition(const std::string& n,
                  std::unique_ptr<Expression> cond,
                  std::unique_ptr<BlockStatement> enter,
                  std::unique_ptr<BlockStatement> exit)
-      : name(n), condition(std::move(cond)), 
+      : name(n), condition(std::move(cond)),
         enterBlock(std::move(enter)), exitBlock(std::move(exit)) {}
 };
 
@@ -1814,6 +1821,40 @@ struct ModesBlock : public Statement {
 
   std::string toString() const override {
     return "ModesBlock{" + std::to_string(modes.size()) + " modes}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Signal Definition (signal name = expression)
+struct SignalDefinition : public Statement {
+  std::string name;
+  std::unique_ptr<Expression> condition;
+
+  SignalDefinition(const std::string& n, std::unique_ptr<Expression> cond)
+      : name(n), condition(std::move(cond)) {
+    kind = NodeType::SignalDefinition;
+  }
+
+  std::string toString() const override {
+    return "SignalDefinition{" + name + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Group Definition (group name { modes: [...] })
+struct GroupDefinition : public Statement {
+  std::string name;
+  std::vector<std::string> modeNames;
+
+  GroupDefinition(const std::string& n, std::vector<std::string> modes)
+      : name(n), modeNames(std::move(modes)) {
+    kind = NodeType::GroupDefinition;
+  }
+
+  std::string toString() const override {
+    return "GroupDefinition{" + name + ", " + std::to_string(modeNames.size()) + " modes}";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2254,6 +2295,8 @@ public:
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
+  virtual void visitSignalDefinition(const SignalDefinition &node) = 0;
+  virtual void visitGroupDefinition(const GroupDefinition &node) = 0;
   virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
@@ -2447,6 +2490,14 @@ inline void DevicesBlock::accept(ASTVisitor &visitor) const {
 
 inline void ModesBlock::accept(ASTVisitor &visitor) const {
   visitor.visitModesBlock(*this);
+}
+
+inline void SignalDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitSignalDefinition(*this);
+}
+
+inline void GroupDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitGroupDefinition(*this);
 }
 
 inline void ConfigSection::accept(ASTVisitor &visitor) const {

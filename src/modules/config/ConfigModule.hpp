@@ -1,20 +1,14 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * ConfigModule.hpp
- * 
- * Configuration module for Havel language.
+ *
+ * Config module for Havel language.
  */
 #pragma once
+#include "../../havel-lang/runtime/Environment.hpp"
+#include "../IHostAPI.hpp"
 
-#include "../../host/HostContext.hpp"
-
-namespace havel {
-
-class Environment;
-
-namespace modules {
+namespace havel::modules {
 
 void registerConfigModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

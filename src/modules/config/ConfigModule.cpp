@@ -1,155 +1,151 @@
 /*
  * ConfigModule.cpp
- * 
- * Configuration module for Havel language.
- * Provides access to ConfigManager for reading/writing configuration.
+ *
+ * Config module for Havel language.
+ * Exposes config.* API for scripts with nested access support.
  */
 #include "ConfigModule.hpp"
-#include "../../havel-lang/runtime/Environment.hpp"
-#include "core/ConfigManager.hpp"
+#include <memory>
 
 namespace havel::modules {
 
-void registerConfigModule(Environment& env, std::shared_ptr<IHostAPI>) {
-    // Create config object with proper namespace
+void registerConfigModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
     auto configObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    
-    // Helper to convert value to string
-    auto valueToString = [](const HavelValue& v) -> std::string {
-        if (v.isString()) return v.asString();
-        if (v.isNumber()) {
-            double val = v.asNumber();
-            if (val == std::floor(val) && std::abs(val) < 1e15) {
-                return std::to_string(static_cast<long long>(val));
-            } else {
-                std::ostringstream oss;
-                oss.precision(15);
-                oss << val;
-                std::string s = oss.str();
-                if (s.find('.') != std::string::npos) {
-                    size_t last = s.find_last_not_of('0');
-                    if (last != std::string::npos && s[last] == '.') {
-                        s = s.substr(0, last);
-                    } else if (last != std::string::npos) {
-                        s = s.substr(0, last + 1);
-                    }
-                }
-                return s;
-            }
+
+    // config.get(key) - Get config value
+    (*configObj)["get"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI) {
+            return HavelRuntimeError("HostAPI not available");
         }
-        if (v.isBool()) return v.asBool() ? "true" : "false";
-        return "";
-    };
-    
-    // =========================================================================
-    // config.get(key, [default]) - Get configuration value
-    // =========================================================================
-    
-    (*configObj)["get"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
         if (args.empty()) {
-            return HavelRuntimeError("config.get() requires key");
+            return HavelRuntimeError("config.get() requires a key");
         }
-        
-        std::string key = valueToString(args[0]);
-        std::string def = args.size() >= 2 ? valueToString(args[1]) : std::string("");
-        
-        auto& config = Configs::Get();
-        return HavelValue(config.Get<std::string>(key, def));
+
+        std::string key = args[0].asString();
+        auto& config = hostAPI->GetConfig();
+
+        // Try to get the value
+        auto value = config.Get(key);
+        if (value.has_value()) {
+            return HavelValue(value.value());
+        }
+
+        return HavelValue(nullptr);
     }));
-    
-    // =========================================================================
-    // config.set(key, value) - Set configuration value
-    // =========================================================================
-    
-    (*configObj)["set"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
+
+    // config.set(key, value) - Set config value
+    (*configObj)["set"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI) {
+            return HavelRuntimeError("HostAPI not available");
+        }
         if (args.size() < 2) {
-            return HavelRuntimeError("config.set() requires (key, value)");
+            return HavelRuntimeError("config.set() requires key and value");
         }
 
-        std::string key = args[0].isString() ? args[0].asString() :
-            std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string key = args[0].asString();
+        HavelValue value = args[1];
+        auto& config = hostAPI->GetConfig();
 
-        auto& config = Configs::Get();
-        const HavelValue& value = args[1];
-
-        if (value.is<bool>()) {
-            config.Set(key, value.get<bool>(), true);  // Save to disk
-        } else if (value.is<int>()) {
-            config.Set(key, value.get<int>(), true);  // Save to disk
-        } else if (value.is<double>()) {
-            config.Set(key, value.get<double>(), true);  // Save to disk
-        } else {
-            config.Set(key, value.isString() ? value.asString() :
-                std::to_string(static_cast<int>(value.asNumber())), true);  // Save to disk
-        }
+        config.Set(key, value);
         return HavelValue(true);
     }));
-    
-    // =========================================================================
-    // config.setPath(path) - Set configuration file path
-    // =========================================================================
-    
-    (*configObj)["setPath"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
-        if (args.size() < 1) {
-            return HavelRuntimeError("config.setPath() requires (path)");
+
+    // config.list(pattern) - List config keys matching pattern
+    (*configObj)["list"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI) {
+            return HavelRuntimeError("HostAPI not available");
         }
-        
-        std::string path = valueToString(args[0]);
-        auto& config = Configs::Get();
-        config.SetPath(path);
+
+        std::string pattern = args.empty() ? "" : args[0].asString();
+        auto& config = hostAPI->GetConfig();
+
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+        auto keys = config.ListKeys(pattern);
+        for (const auto& key : keys) {
+            resultArray->push_back(HavelValue(key));
+        }
+
+        return HavelValue(resultArray);
+    }));
+
+    // config.load(path) - Load config from file
+    (*configObj)["load"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI) {
+            return HavelRuntimeError("HostAPI not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("config.load() requires a path");
+        }
+
+        std::string path = args[0].asString();
+        auto& config = hostAPI->GetConfig();
+
+        config.Load(path);
         return HavelValue(true);
     }));
-    
-    // =========================================================================
-    // config.load([path]) - Load configuration from file
-    // =========================================================================
-    
-    (*configObj)["load"] = HavelValue(BuiltinFunction([valueToString](const std::vector<HavelValue>& args) -> HavelResult {
-        try {
-            auto& config = Configs::Get();
-            if (args.empty()) {
-                config.Reload();
-            } else {
-                config.Load(valueToString(args[0]));
+
+    // config.save(path) - Save config to file
+    (*configObj)["save"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI) {
+            return HavelRuntimeError("HostAPI not available");
+        }
+        std::string path = args.empty() ? "" : args[0].asString();
+        auto& config = hostAPI->GetConfig();
+
+        config.Save(path);
+        return HavelValue(true);
+    }));
+
+    // config.gaming, config.window, etc. - Nested config access
+    // This creates proxy objects for nested access
+    auto createNestedConfig = [hostAPI](const std::string& prefix) -> HavelValue {
+        auto nestedObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+        (*nestedObj)["get"] = HavelValue(BuiltinFunction([hostAPI, prefix](const std::vector<HavelValue>& args) -> HavelResult {
+            if (!hostAPI || args.empty()) {
+                return HavelRuntimeError("config." + prefix + ".get() requires a key");
             }
-            std::cout << "[INFO] Configuration loaded successfully" << std::endl;
+            std::string key = prefix + "." + args[0].asString();
+            auto& config = hostAPI->GetConfig();
+            auto value = config.Get(key);
+            return value.has_value() ? HavelValue(value.value()) : HavelValue(nullptr);
+        }));
+
+        (*nestedObj)["set"] = HavelValue(BuiltinFunction([hostAPI, prefix](const std::vector<HavelValue>& args) -> HavelResult {
+            if (!hostAPI || args.size() < 2) {
+                return HavelRuntimeError("config." + prefix + ".set() requires key and value");
+            }
+            std::string key = prefix + "." + args[0].asString();
+            auto& config = hostAPI->GetConfig();
+            config.Set(key, args[1]);
             return HavelValue(true);
-        } catch (const std::exception& e) {
-            return HavelRuntimeError("Failed to load configuration: " + std::string(e.what()));
-        }
-    }));
-    
-    // =========================================================================
-    // config.reload() - Reload configuration from current path
-    // =========================================================================
+        }));
 
-    (*configObj)["reload"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-        try {
-            auto& config = Configs::Get();
-            config.Reload();
-            std::cout << "[INFO] Configuration reloaded successfully" << std::endl;
-            return HavelValue(true);
-        } catch (const std::exception& e) {
-            return HavelRuntimeError("Failed to reload configuration: " + std::string(e.what()));
-        }
-    }));
+        (*nestedObj)["list"] = HavelValue(BuiltinFunction([hostAPI, prefix](const std::vector<HavelValue>& args) -> HavelResult {
+            if (!hostAPI) {
+                return HavelRuntimeError("HostAPI not available");
+            }
+            auto& config = hostAPI->GetConfig();
+            auto resultArray = std::make_shared<std::vector<HavelValue>>();
+            auto keys = config.ListKeys(prefix + ".");
+            for (const auto& key : keys) {
+                // Remove prefix from key name
+                std::string shortKey = key.substr(prefix.length() + 1);
+                resultArray->push_back(HavelValue(shortKey));
+            }
+            return HavelValue(resultArray);
+        }));
 
-    // =========================================================================
-    // config.save() - Save configuration to disk
-    // =========================================================================
+        return HavelValue(nestedObj);
+    };
 
-    (*configObj)["save"] = HavelValue(BuiltinFunction([](const std::vector<HavelValue>&) -> HavelResult {
-        try {
-            auto& config = Configs::Get();
-            config.Save();
-            std::cout << "[INFO] Configuration saved successfully" << std::endl;
-            return HavelValue(true);
-        } catch (const std::exception& e) {
-            return HavelRuntimeError("Failed to save configuration: " + std::string(e.what()));
-        }
-    }));
+    // Create common nested config objects
+    (*configObj)["gaming"] = createNestedConfig("Havel.gaming");
+    (*configObj)["window"] = createNestedConfig("Havel.window");
+    (*configObj)["hotkeys"] = createNestedConfig("Havel.hotkeys");
+    (*configObj)["display"] = createNestedConfig("Havel.display");
+    (*configObj)["audio"] = createNestedConfig("Havel.audio");
 
-    // Register config module
     env.Define("config", HavelValue(configObj));
 }
 

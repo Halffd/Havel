@@ -33,6 +33,7 @@
 #include "process/ProcessModule.hpp"
 #include "concurrency/ConcurrencyModule.hpp"
 #include "window/WindowModule.hpp"
+#include "config/ConfigModule.hpp"
 
 namespace havel {
 
@@ -70,6 +71,7 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("browser", modules::registerBrowserModule);
     loader.addHost("concurrency", modules::registerConcurrencyModule);
     loader.addHost("window", modules::registerWindowQueryModule);
+    loader.addHost("config", modules::registerConfigModule);
     // loader.addHost("ffi", modules::ffi::registerFFIModule);  // No IHostAPI
 }
 
@@ -107,6 +109,7 @@ void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHo
     loader.load(env, "browser", hostAPI);
     loader.load(env, "concurrency", hostAPI);
     loader.load(env, "window", hostAPI);
+    loader.load(env, "config", hostAPI);
     // loader.load(env, "ffi", hostAPI);  // Not registered
 }
 

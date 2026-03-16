@@ -4033,7 +4033,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
     if (at().type != havel::TokenType::Number) {
       failAt(at(), "Expected number after 'priority'");
     }
-    priority = static_cast<int>(at().numberValue);
+    priority = std::stoi(at().value);
     advance();
   }
 

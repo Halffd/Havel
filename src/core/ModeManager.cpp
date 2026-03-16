@@ -10,7 +10,7 @@ ModeManager::~ModeManager() = default;
 
 void ModeManager::defineSignal(Signal signal) {
     std::lock_guard<std::mutex> lock(modeMutex);
-    signals.push_back(std::move(signal));
+    signalList.push_back(std::move(signal));
 }
 
 void ModeManager::defineMode(ModeDefinition mode) {
@@ -164,7 +164,7 @@ void ModeManager::update(ExprEvaluator evaluator) {
     std::lock_guard<std::mutex> lock(modeMutex);
 
     // First, update all signals
-    for (auto& signal : signals) {
+    for (auto& signal : signalList) {
         if (signal.conditionExpr && evaluator) {
             signal.value = evaluator(*signal.conditionExpr);
         }

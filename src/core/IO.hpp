@@ -5,8 +5,8 @@
 #include "core/io/HotkeyExecutor.hpp"
 #include "core/io/KeyMap.hpp"
 #include "core/io/MouseController.hpp"
-#include "runtime/HostAPI.hpp"
-#include "runtime/ImportManager.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
+#include "havel-lang/runtime/ImportManager.hpp"
 #include "types.hpp"
 #include "x11.h"
 #include <X11/extensions/XInput2.h>

@@ -126,7 +126,7 @@ public:
     bool isSignalActive(const std::string& signalName) const;
 
 private:
-    std::vector<Signal> signals;
+    std::vector<Signal> signalList;
     std::vector<ModeDefinition> modes;
     std::vector<ModeGroup> groups;
     std::string currentMode;
@@ -136,6 +136,12 @@ private:
     void triggerEnter(ModeDefinition& mode);
     void triggerExit(ModeDefinition& mode);
     void triggerTransition(const std::string& fromMode, const std::string& toMode);
+
+public:
+    // Signal access
+    void defineSignal(Signal signal);
+    const std::vector<Signal>& getSignals() const { return signalList; }
+    bool isSignalActive(const std::string& signalName) const;
 };
 
 } // namespace havel

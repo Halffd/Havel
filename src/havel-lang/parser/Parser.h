@@ -120,6 +120,8 @@ private:
   std::unique_ptr<ast::Statement> parseDevicesBlock();
   std::unique_ptr<ast::Statement> parseModeDefinition();  // mode name { ... }
   std::unique_ptr<ast::Statement> parseModesBlock();      // modes { ... }
+  std::unique_ptr<ast::Statement> parseSignalDefinition(); // signal name = expression
+  std::unique_ptr<ast::Statement> parseGroupDefinition();  // group name { modes: [...] }
   std::unique_ptr<ast::Statement> parseConfigSection();
 
   // Type system parsers

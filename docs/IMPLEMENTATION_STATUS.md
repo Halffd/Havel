@@ -24,9 +24,18 @@
 
 ### Runtime APIs (Module Functions)
 - [x] `window.active` - Get active window info
-- [x] `window.any(condition)` - Check if any window matches (requires function arg)
-- [x] `window.count(condition)` - Count matching windows (requires function arg)
-- [x] `window.filter(condition)` - Filter windows (requires function arg)
+- [x] `window.list()` - List all windows ✅ NEW
+- [x] `window.any(condition)` - Check if any window matches (function arg) ✅ ENHANCED
+- [x] `window.count(condition)` - Count matching windows (function arg) ✅ ENHANCED
+- [x] `window.filter(condition)` - Filter windows (function arg) ✅ ENHANCED
+- [x] `window.map(callback)` - Transform windows ✅ NEW
+- [x] `window.forEach(callback)` - Iterate over windows ✅ NEW
+- [x] `config.get(key)` - Get config value
+- [x] `config.set(key, value)` - Set config value
+- [x] `config.gaming.get(key)` - Nested config access ✅ NEW
+- [x] `config.gaming.set(key, value)` - Nested config set ✅ NEW
+- [x] `config.window.get(key)` - Window config access ✅ NEW
+- [x] `config.hotkeys.get(key)` - Hotkeys config access ✅ NEW
 - [x] `mode.list()` - List all modes
 - [x] `mode.count()` - Count modes ✅ NEW
 - [x] `mode.signals()` - List all signals
@@ -54,24 +63,16 @@ let wins = window.filter(title ~ ".*YouTube.*")
 
 **Status**: Runtime has `WindowQuery::any()`, `WindowQuery::count()`, `WindowQuery::filter()` but they require function arguments, not expressions.
 
-**Workaround**: Use module functions with explicit function arguments (advanced).
-
----
-
-### 2. Nested Config Access
+**Workaround**: Use module functions with explicit function arguments:
 ```havel
-// ❌ NOT IMPLEMENTED - Parser doesn't support nested access
-config.gaming.classes
-config.get("gaming.classes")
+if window.any(win => win.exe == "steam.exe") { ... }
+let count = window.count(win => win.class == "discord")
+let wins = window.filter(win => win.title ~ ".*YouTube.*")
 ```
 
-**Status**: Config supports nested blocks, but dot notation access is not implemented.
-
-**Workaround**: Use `config.get("Havel.gaming.classes")` with full path.
-
 ---
 
-### 3. Window Groups
+### 2. Window Groups
 ```havel
 // ❌ NOT IMPLEMENTED
 window.getGroups()
@@ -82,22 +83,7 @@ window.getGroupWindows(group)
 
 ---
 
-### 4. Collection Methods
-```havel
-// ❌ NOT IMPLEMENTED - These methods don't exist
-window.list()
-window.map()
-window.forEach()
-mode.forEach()      // ❌ NOT IMPLEMENTED
-mode.map()          // ❌ NOT IMPLEMENTED
-mode.filter()       // ❌ NOT IMPLEMENTED
-```
-
-**Status**: Only `mode.list()` and `mode.count()` are implemented. Other collection methods are not implemented.
-
----
-
-### 5. Module Management Functions
+### 3. Module Management Functions
 ```havel
 // ❌ NOT IMPLEMENTED
 module.list()

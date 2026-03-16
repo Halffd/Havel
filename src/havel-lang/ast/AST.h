@@ -1800,6 +1800,12 @@ struct ModeDefinition {
   std::string onExitTo;     // Mode name for on exit to hook
   std::unique_ptr<BlockStatement> onEnterFromBlock;  // Block for on enter from
   std::unique_ptr<BlockStatement> onExitToBlock;     // Block for on exit to
+  
+  // Window event hooks
+  std::unique_ptr<BlockStatement> onCloseBlock;
+  std::unique_ptr<BlockStatement> onMinimizeBlock;
+  std::unique_ptr<BlockStatement> onMaximizeBlock;
+  std::unique_ptr<BlockStatement> onOpenBlock;
 
   ModeDefinition() = default;
   ModeDefinition(const std::string& n,

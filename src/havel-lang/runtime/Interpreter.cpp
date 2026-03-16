@@ -2855,6 +2855,75 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
       };
     }
 
+    // Create window event callbacks
+    std::function<void()> onCloseCallback;
+    if (modeDef.onCloseBlock) {
+      onCloseCallback = [this, block = modeDef.onCloseBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onClose block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
+    std::function<void()> onMinimizeCallback;
+    if (modeDef.onMinimizeBlock) {
+      onMinimizeCallback = [this, block = modeDef.onMinimizeBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onMinimize block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
+    std::function<void()> onMaximizeCallback;
+    if (modeDef.onMaximizeBlock) {
+      onMaximizeCallback = [this, block = modeDef.onMaximizeBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onMaximize block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
+    std::function<void()> onOpenCallback;
+    if (modeDef.onOpenBlock) {
+      onOpenCallback = [this, block = modeDef.onOpenBlock.get()]() {
+        auto oldResult = lastResult;
+        for (const auto& stmt : block->body) {
+          if (stmt) {
+            Evaluate(*stmt);
+            if (isError(lastResult)) {
+              error("Error in mode onOpen block");
+              break;
+            }
+          }
+        }
+        lastResult = oldResult;
+      };
+    }
+
     // Register mode with ModeManager - store shared_ptr!
     if (hostContext.modeManager) {
       ModeManager::ModeDefinition modeDefn;
@@ -2865,6 +2934,8 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
       modeDefn.onEnterFrom = onEnterFromCallback;
       modeDefn.onExitTo = onExitToCallback;
       modeDefn.priority = modeDef.priority;
+      // Note: Window event callbacks need to be registered with WindowManager
+      // For now, store them in the mode definition for future use
       hostContext.modeManager->defineMode(std::move(modeDefn));
     }
   }

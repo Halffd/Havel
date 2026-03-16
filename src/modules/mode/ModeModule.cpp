@@ -1,130 +1,110 @@
 /*
  * ModeModule.cpp
- *
+ * 
  * Mode system module for Havel language.
- * Provides mode switching for conditional hotkeys.
+ * Exposes mode.* API for scripts.
  */
 #include "ModeModule.hpp"
-#include "../../havel-lang/runtime/Environment.hpp"
-#include "core/HotkeyManager.hpp"
+#include "../../core/ModeManager.hpp"
+#include <memory>
 
 namespace havel::modules {
 
 void registerModeModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI) {
-    // Create mode object
     auto modeObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-    // =========================================================================
-    // mode.get() - Get current mode
-    // =========================================================================
-
-    (*modeObj)["get"] = HavelValue(BuiltinFunction([&env](const std::vector<HavelValue>&) -> HavelResult {
-        auto currentModeOpt = env.Get("__current_mode__");
-
-        if (currentModeOpt && currentModeOpt->is<std::string>()) {
-            return HavelValue(currentModeOpt->get<std::string>());
+    // mode.current - Get current mode name
+    (*modeObj)["current"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (hostAPI && hostAPI->modeManager) {
+            return HavelValue(hostAPI->modeManager->getCurrentMode());
         }
-
-        return HavelValue(std::string("default"));
+        return HavelValue("default");
     }));
 
-    // =========================================================================
-    // mode.set(newMode) - Set current mode and update conditional hotkeys
-    // =========================================================================
+    // mode.previous - Get previous mode name
+    (*modeObj)["previous"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (hostAPI && hostAPI->modeManager) {
+            return HavelValue(hostAPI->modeManager->getPreviousMode());
+        }
+        return HavelValue("default");
+    }));
 
-    (*modeObj)["set"] = HavelValue(BuiltinFunction([hostAPI, &env](const std::vector<HavelValue>& args) -> HavelResult {
+    // mode.time(name) - Get time spent in mode
+    (*modeObj)["time"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
+        }
+        if (args.empty()) {
+            // Return time in current mode
+            auto ms = hostAPI->modeManager->getModeTime(hostAPI->modeManager->getCurrentMode());
+            return HavelValue(static_cast<double>(ms.count()) / 1000.0);  // Return seconds
+        }
+        std::string modeName = args[0].asString();
+        auto ms = hostAPI->modeManager->getModeTime(modeName);
+        return HavelValue(static_cast<double>(ms.count()) / 1000.0);  // Return seconds
+    }));
+
+    // mode.transitions(name) - Get number of transitions
+    (*modeObj)["transitions"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
+        }
+        if (args.empty()) {
+            return HavelValue(hostAPI->modeManager->getModeTransitions(hostAPI->modeManager->getCurrentMode()));
+        }
+        std::string modeName = args[0].asString();
+        return HavelValue(static_cast<double>(hostAPI->modeManager->getModeTransitions(modeName)));
+    }));
+
+    // mode.set(name) - Set mode explicitly
+    (*modeObj)["set"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
+        }
         if (args.empty()) {
             return HavelRuntimeError("mode.set() requires mode name");
         }
-
-        std::string newMode = args[0].is<std::string>() ?
-            args[0].get<std::string>() : "default";
-
-        // Get previous mode
-        auto currentModeOpt = env.Get("__current_mode__");
-        std::string currentMode = "default";
-
-        if (currentModeOpt && currentModeOpt->is<std::string>()) {
-            currentMode = currentModeOpt->get<std::string>();
-        }
-
-        // Store previous mode
-        env.Define("__previous_mode__", HavelValue(currentMode));
-
-        // Set new mode in environment
-        env.Define("__current_mode__", HavelValue(newMode));
-
-        // Set new mode in ConditionalHotkeyManager
-        if (auto* hm = hostAPI->GetHotkeyManager()) {
-            hm->setMode(newMode);
-        }
-
-        // Update conditional hotkeys to reflect mode change
-        if (auto* hm = hostAPI->GetHotkeyManager()) {
-            hm->updateAllConditionalHotkeys();
-        }
-
-        return HavelValue(nullptr);
+        std::string modeName = args[0].asString();
+        hostAPI->modeManager->setMode(modeName);
+        return HavelValue(true);
     }));
 
-    // =========================================================================
-    // mode.previous() - Switch to previous mode and update conditional hotkeys
-    // =========================================================================
-
-    (*modeObj)["previous"] = HavelValue(BuiltinFunction([hostAPI, &env](const std::vector<HavelValue>&) -> HavelResult {
-        auto currentModeOpt = env.Get("__current_mode__");
-        auto previousModeOpt = env.Get("__previous_mode__");
-
-        std::string currentMode = "default";
-        std::string previousMode = "default";
-
-        if (currentModeOpt && currentModeOpt->is<std::string>()) {
-            currentMode = currentModeOpt->get<std::string>();
+    // mode.list() - List all defined modes
+    (*modeObj)["list"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
         }
-        if (previousModeOpt && previousModeOpt->is<std::string>()) {
-            previousMode = previousModeOpt->get<std::string>();
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& mode : hostAPI->modeManager->getModes()) {
+            resultArray->push_back(HavelValue(mode.name));
         }
-
-        // Swap modes
-        env.Define("__previous_mode__", HavelValue(currentMode));
-        env.Define("__current_mode__", HavelValue(previousMode));
-
-        // Set mode in ConditionalHotkeyManager
-        if (auto* hm = hostAPI->GetHotkeyManager()) {
-            hm->setMode(previousMode);
-        }
-
-        // Update conditional hotkeys to reflect mode change
-        if (auto* hm = hostAPI->GetHotkeyManager()) {
-            hm->updateAllConditionalHotkeys();
-        }
-
-        return HavelValue(nullptr);
+        return HavelValue(resultArray);
     }));
 
-    // =========================================================================
-    // mode.is(modeName) - Check if in specific mode
-    // =========================================================================
+    // mode.signals() - List all signals
+    (*modeObj)["signals"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>&) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
+        }
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& signal : hostAPI->modeManager->getSignals()) {
+            resultArray->push_back(HavelValue(signal.name));
+        }
+        return HavelValue(resultArray);
+    }));
 
-    (*modeObj)["is"] = HavelValue(BuiltinFunction([&env](const std::vector<HavelValue>& args) -> HavelResult {
+    // mode.isSignal(name) - Check if signal is active
+    (*modeObj)["isSignal"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!hostAPI || !hostAPI->modeManager) {
+            return HavelRuntimeError("ModeManager not available");
+        }
         if (args.empty()) {
-            return HavelRuntimeError("mode.is() requires mode name");
+            return HavelRuntimeError("mode.isSignal() requires signal name");
         }
-
-        std::string checkMode = args[0].is<std::string>() ?
-            args[0].get<std::string>() : "";
-
-        auto currentModeOpt = env.Get("__current_mode__");
-
-        if (currentModeOpt && currentModeOpt->is<std::string>()) {
-            std::string currentMode = currentModeOpt->get<std::string>();
-            return HavelValue(currentMode == checkMode);
-        }
-
-        return HavelValue(checkMode == "default");
+        std::string signalName = args[0].asString();
+        return HavelValue(hostAPI->modeManager->isSignalActive(signalName));
     }));
 
-    // Register mode module
     env.Define("mode", HavelValue(modeObj));
 }
 

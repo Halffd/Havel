@@ -1,20 +1,14 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * WindowModule.hpp
  * 
- * Window management module for Havel language.
+ * Window query module for Havel language.
  */
 #pragma once
+#include "../../havel-lang/runtime/Environment.hpp"
+#include "../IHostAPI.hpp"
 
-#include "../../host/HostContext.hpp"
+namespace havel::modules {
 
-namespace havel {
+void registerWindowQueryModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
-class Environment;
-
-namespace modules {
-
-void registerWindowModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
-
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

@@ -1,21 +1,15 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
  * ModeModule.hpp
  * 
  * Mode system module for Havel language.
- * Provides mode switching for conditional hotkeys.
+ * Exposes mode.* API for scripts.
  */
 #pragma once
+#include "../../havel-lang/runtime/Environment.hpp"
+#include "../IHostAPI.hpp"
 
-#include "../../host/HostContext.hpp"
-
-namespace havel {
-
-class Environment;
-
-namespace modules {
+namespace havel::modules {
 
 void registerModeModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
 
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

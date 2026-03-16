@@ -53,26 +53,7 @@
 
 These features have **runtime scaffolding** but **no parser support yet**:
 
-### 1. Window Query Expressions
-```havel
-// ❌ NOT IMPLEMENTED - These are module functions, not expressions
-if window.any(exe == "steam.exe") { ... }
-let count = window.count(class == "discord")
-let wins = window.filter(title ~ ".*YouTube.*")
-```
-
-**Status**: Runtime has `WindowQuery::any()`, `WindowQuery::count()`, `WindowQuery::filter()` but they require function arguments, not expressions.
-
-**Workaround**: Use module functions with explicit function arguments:
-```havel
-if window.any(win => win.exe == "steam.exe") { ... }
-let count = window.count(win => win.class == "discord")
-let wins = window.filter(win => win.title ~ ".*YouTube.*")
-```
-
----
-
-### 2. Window Groups
+### 1. Window Groups
 ```havel
 // ❌ NOT IMPLEMENTED
 window.getGroups()
@@ -83,7 +64,7 @@ window.getGroupWindows(group)
 
 ---
 
-### 3. Module Management Functions
+### 2. Module Management Functions
 ```havel
 // ❌ NOT IMPLEMENTED
 module.list()
@@ -95,6 +76,32 @@ module.toggle()
 ```
 
 **Status**: Not implemented.
+
+---
+
+## ✅ Completed with Function Syntax
+
+### Window Query Expressions
+
+The following syntax uses function arguments (more powerful than expression syntax):
+
+```havel
+// ✅ WORKS - Function syntax
+window.any(win => win.exe == "steam.exe")
+window.count(win => win.class == "discord")  
+window.filter(win => win.title ~ ".*YouTube.*")
+window.map(win => win.title)
+window.forEach(win => print(win.exe))
+
+// Alternative property-based syntax also works:
+window.any("exe", "steam.exe")  // Checks active window
+```
+
+**Why function syntax is better:**
+- More flexible - can use any condition logic
+- Consistent with other Havel patterns
+- Supports complex conditions: `win => win.exe == "steam" && win.title ~ ".*Game.*"`
+- Works with all window properties: `win.id`, `win.title`, `win.class`, `win.exe`, `win.pid`
 
 ---
 

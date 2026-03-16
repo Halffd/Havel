@@ -167,6 +167,54 @@ void MPVController::SetLoop(bool enable) {
     SendCommand({"set", "loop-playlist", enable ? "inf" : "no"});
 }
 
+// Additional methods for script API
+void MPVController::Seek(int seconds) {
+    SendCommand({"seek", std::to_string(seconds)});
+}
+
+void MPVController::AddSpeed(double delta) {
+    SendCommand({"add", "speed", std::to_string(delta)});
+}
+
+void MPVController::AddSubScale(double delta) {
+    SendCommand({"add", "sub-scale", std::to_string(delta)});
+}
+
+void MPVController::AddSubDelay(double delta) {
+    SendCommand({"add", "sub-delay", std::to_string(delta)});
+}
+
+void MPVController::SubSeek(int index) {
+    SendCommand({"sub-seek", std::to_string(index)});
+}
+
+void MPVController::Cycle(const std::string& property) {
+    SendCommand({"cycle", property});
+}
+
+std::string MPVController::CopyCurrentSubtitle() {
+    // Get current subtitle text
+    auto result = SendCommand({"get", "sub-text"});
+    return result;
+}
+
+void MPVController::SetIPC(const std::string& socketPath) {
+    SetSocketPath(socketPath);
+    Reconnect();
+}
+
+void MPVController::IPCRestart() {
+    Reconnect();
+}
+
+std::string MPVController::GetProperty(const std::string& prop) {
+    return SendCommand({"get", prop});
+}
+
+void MPVController::SetProperty(const std::string& prop, const std::string& value) {
+    SendCommand({"set", prop, value});
+}
+
 void MPVController::SetSocketPath(const std::string& path) {
     socket_path = path;
     if (socket_fd != -1) {

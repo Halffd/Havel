@@ -154,7 +154,136 @@ void registerMediaModule(Environment& env, std::shared_ptr<IHostAPI>) {
         app->mpv->SendRaw("{\"command\":[\"loadfile\",\"" + path + "\"]}");
         return HavelValue(true);
     }));
-    
+
+    // Additional MPV functions
+    (*mpvObj)["toggleMute"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (checkMpv()) {
+            app->mpv->ToggleMute();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("MPVController not available");
+    }));
+
+    (*mpvObj)["stop"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (checkMpv()) {
+            app->mpv->Stop();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("MPVController not available");
+    }));
+
+    (*mpvObj)["next"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (checkMpv()) {
+            app->mpv->Next();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("MPVController not available");
+    }));
+
+    (*mpvObj)["previous"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (checkMpv()) {
+            app->mpv->Previous();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("MPVController not available");
+    }));
+
+    (*mpvObj)["addSpeed"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("addSpeed() requires delta value");
+        }
+        double delta = args[0].asNumber();
+        app->mpv->AddSpeed(delta);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["addSubScale"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("addSubScale() requires delta value");
+        }
+        double delta = args[0].asNumber();
+        app->mpv->AddSubScale(delta);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["addSubDelay"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("addSubDelay() requires delta value");
+        }
+        double delta = args[0].asNumber();
+        app->mpv->AddSubDelay(delta);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["subSeek"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("subSeek() requires index");
+        }
+        int index = static_cast<int>(args[0].asNumber());
+        app->mpv->SubSeek(index);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["cycle"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("cycle() requires property name");
+        }
+        std::string prop = args[0].asString();
+        app->mpv->Cycle(prop);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["copyCurrentSubtitle"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        return HavelValue(app->mpv->CopyCurrentSubtitle());
+    }));
+
+    (*mpvObj)["ipcSet"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>& args) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        if (args.empty()) {
+            return HavelRuntimeError("ipcSet() requires socket path");
+        }
+        std::string path = args[0].asString();
+        app->mpv->SetIPC(path);
+        return HavelValue(true);
+    }));
+
+    (*mpvObj)["ipcRestart"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (checkMpv()) {
+            app->mpv->IPCRestart();
+            return HavelValue(true);
+        }
+        return HavelRuntimeError("MPVController not available");
+    }));
+
+    // pic property - returns picture-in-picture status
+    (*mpvObj)["pic"] = HavelValue(BuiltinFunction([checkMpv, app](const std::vector<HavelValue>&) -> HavelResult {
+        if (!checkMpv()) {
+            return HavelRuntimeError("MPVController not available");
+        }
+        // Get picture-in-picture status
+        return HavelValue(app->mpv->GetProperty("ontop"));
+    }));
+
     // Register modules
     env.Define("media", HavelValue(mediaObj));
     env.Define("mpvcontroller", HavelValue(mpvObj));

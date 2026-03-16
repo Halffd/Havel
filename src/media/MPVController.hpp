@@ -39,6 +39,19 @@ namespace havel {
         void SetLoop(bool enable);
         void SendRaw(const std::string& data);
 
+        // Additional methods for script API
+        void Seek(int seconds);
+        void AddSpeed(double delta);
+        void AddSubScale(double delta);
+        void AddSubDelay(double delta);
+        void SubSeek(int index);
+        void Cycle(const std::string& property);
+        std::string CopyCurrentSubtitle();
+        void SetIPC(const std::string& socketPath);
+        void IPCRestart();
+        std::string GetProperty(const std::string& prop);
+        void SetProperty(const std::string& prop, const std::string& value);
+
         void SetSocketPath(const std::string& path);
         bool Reconnect();
         void SendCommand(const std::vector<std::string>& cmd);

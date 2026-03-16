@@ -3836,6 +3836,39 @@ void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
   lastResult = nullptr;
 }
 
+void Interpreter::visitOnTapStatement(const ast::OnTapStatement &node) {
+  // Create a KeyTap for tap behavior
+  // The KeyTap will be mode-aware through the closure
+  if (hostContext.io) {
+    auto tapAction = [this, body = node.action.get()]() {
+      auto originalEnv = environment;
+      environment = std::make_shared<Environment>(originalEnv);
+      Evaluate(*body);
+      environment = originalEnv;
+    };
+    
+    // Create KeyTap with tap action only (no combo)
+    hostContext.io->KeyTap(node.key, tapAction);
+  }
+  lastResult = nullptr;
+}
+
+void Interpreter::visitOnComboStatement(const ast::OnComboStatement &node) {
+  // Create a KeyTap for combo behavior
+  if (hostContext.io) {
+    auto comboAction = [this, body = node.action.get()]() {
+      auto originalEnv = environment;
+      environment = std::make_shared<Environment>(originalEnv);
+      Evaluate(*body);
+      environment = originalEnv;
+    };
+    
+    // Create KeyTap with combo action only (no tap)
+    hostContext.io->KeyCombo(node.key, comboAction);
+  }
+  lastResult = nullptr;
+}
+
 // ============================================================================
 // Type System Implementation
 // ============================================================================

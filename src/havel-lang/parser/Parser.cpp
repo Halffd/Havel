@@ -1741,10 +1741,13 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStatement() {
     } else if (keyword == "start") {
       advance(); // consume "start"
       return parseOnStartStatement();
+    } else if (keyword == "tap" || keyword == "combo") {
+      // on tap(key) => { ... } or on combo(key) => { ... }
+      return parseOnTapOrComboStatement();
     }
   }
-  
-  failAt(at(), "Expected 'mode', 'reload', or 'start' after 'on'");
+
+  failAt(at(), "Expected 'mode', 'reload', 'start', 'tap', or 'combo' after 'on'");
   return nullptr;
 }
 
@@ -1895,6 +1898,63 @@ std::unique_ptr<havel::ast::Statement> Parser::parseOnStartStatement() {
   auto body = parseBlockStatement();
 
   return std::make_unique<havel::ast::OnStartStatement>(std::move(body));
+}
+
+std::unique_ptr<havel::ast::Statement> Parser::parseOnTapOrComboStatement() {
+  // We've consumed "on" and identified "tap" or "combo"
+  bool isTap = (at().value == "tap");
+  advance(); // consume "tap" or "combo"
+  
+  // Expect opening parenthesis
+  if (at().type != havel::TokenType::OpenParen) {
+    failAt(at(), "Expected '(' after 'on " + std::string(isTap ? "tap" : "combo") + "'");
+  }
+  advance(); // consume '('
+  
+  // Parse key (Hotkey token or Identifier)
+  std::string keyName;
+  if (at().type == havel::TokenType::Hotkey) {
+    keyName = advance().value;
+  } else if (at().type == havel::TokenType::Identifier) {
+    keyName = advance().value;
+  } else {
+    failAt(at(), "Expected key name (e.g., 'lwin', 'f1', 'escape')");
+  }
+  
+  // Expect closing parenthesis
+  if (at().type != havel::TokenType::CloseParen) {
+    failAt(at(), "Expected ')' after key name");
+  }
+  advance(); // consume ')'
+  
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // Expect arrow operator
+  if (at().type != havel::TokenType::Arrow) {
+    failAt(at(), "Expected '=>' after key specification");
+  }
+  advance(); // consume '=>'
+  
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // Parse action block
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' to start action block");
+  }
+  auto actionBlock = parseBlockStatement();
+  
+  // Create the statement
+  if (isTap) {
+    return std::make_unique<havel::ast::OnTapStatement>(keyName, std::move(actionBlock));
+  } else {
+    return std::make_unique<havel::ast::OnComboStatement>(keyName, std::move(actionBlock));
+  }
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {

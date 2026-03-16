@@ -1142,6 +1142,14 @@ void StatementEvaluator::visitOnStartStatement(const ast::OnStartStatement& node
     interpreter->visitOnStartStatement(node);
 }
 
+void StatementEvaluator::visitOnTapStatement(const ast::OnTapStatement& node) {
+    interpreter->visitOnTapStatement(node);
+}
+
+void StatementEvaluator::visitOnComboStatement(const ast::OnComboStatement& node) {
+    interpreter->visitOnComboStatement(node);
+}
+
 void StatementEvaluator::visitTypeDeclaration(const ast::TypeDeclaration& node) {
     interpreter->visitTypeDeclaration(node);
 }

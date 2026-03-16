@@ -68,6 +68,8 @@ public:
     void visitIdentifier(const ast::Identifier& node);
     void visitOnReloadStatement(const ast::OnReloadStatement& node);
     void visitOnStartStatement(const ast::OnStartStatement& node);
+    void visitOnTapStatement(const ast::OnTapStatement& node);
+    void visitOnComboStatement(const ast::OnComboStatement& node);
     void visitTypeDeclaration(const ast::TypeDeclaration& node);
     void visitTypeAnnotation(const ast::TypeAnnotation& node);
     void visitUnionType(const ast::UnionType& node);

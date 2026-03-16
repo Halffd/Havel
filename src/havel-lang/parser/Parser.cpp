@@ -2387,64 +2387,87 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
 
 std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
   advance(); // consume 'use'
-  
+
   // Skip newlines
   while (at().type == havel::TokenType::NewLine) {
     advance();
   }
-  
+
   // Check if this is 'use "file.hv" as alias' syntax
   if (at().type == havel::TokenType::String) {
     std::string filePath = advance().value;
-    
+
     // Skip newlines
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    
+
     // Expect 'as' keyword
     if (at().type != havel::TokenType::As) {
       failAt(at(), "Expected 'as' after file path");
     }
     advance(); // consume 'as'
-    
+
     // Skip newlines
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    
+
     // Expect alias name (Identifier)
     if (at().type != havel::TokenType::Identifier) {
       failAt(at(), "Expected alias name after 'as'");
     }
     std::string alias = advance().value;
-    
+
     return std::make_unique<havel::ast::UseStatement>(filePath, alias);
   }
 
-  std::vector<std::string> moduleNames;
+  // Check if this is 'use x, y from "file.hv"' syntax (named imports)
+  std::vector<std::string> importNames;
 
-  // Parse module names separated by commas
-  while (notEOF() && at().type != havel::TokenType::NewLine) {
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected module name after 'use'");
+  // Parse import names (comma-separated)
+  while (at().type == havel::TokenType::Identifier) {
+    importNames.push_back(at().value);
+    advance();
+
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
     }
 
-    moduleNames.push_back(advance().value);
-
-    // Check for comma
+    // Check for comma or 'from'
     if (at().type == havel::TokenType::Comma) {
       advance(); // consume ','
+      // Skip newlines
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+    } else if (at().type == havel::TokenType::Identifier && at().value == "from") {
+      break; // Found 'from' keyword
     } else {
-      break; // No more modules
+      failAt(at(), "Expected ',' or 'from' after import name");
     }
   }
 
-  if (moduleNames.empty()) {
-    failAt(at(), "Expected at least one module name after 'use'");
+  // Expect 'from' keyword
+  if (at().type != havel::TokenType::Identifier || at().value != "from") {
+    failAt(at(), "Expected 'from' after import names");
+  }
+  advance(); // consume 'from'
+
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
   }
 
-  return std::make_unique<havel::ast::UseStatement>(std::move(moduleNames));
+  // Expect file path (string)
+  if (at().type != havel::TokenType::String) {
+    failAt(at(), "Expected file path after 'from'");
+  }
+  std::string filePath = at().value;
+  advance();
+
+  return std::make_unique<havel::ast::UseStatement>(filePath, std::move(importNames));
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {

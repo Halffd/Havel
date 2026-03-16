@@ -1,0 +1,4 @@
+// Test shell commands
+$ firefox
+let out = $! ls
+print(out)

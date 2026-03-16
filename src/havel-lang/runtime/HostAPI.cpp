@@ -17,6 +17,7 @@
 #include "fs/FileManager.hpp"
 #include "core/process/ProcessManager.hpp"
 #include "core/io/MapManager.hpp"
+#include "ImportManager.hpp"
 #include <QGuiApplication>
 #include <QClipboard>
 
@@ -172,6 +173,9 @@ AutomationManager* HostAPI::GetAutomationManager() { return automationManager; }
 FileManager* HostAPI::GetFileManager() { return fileManager; }
 ProcessManager* HostAPI::GetProcessManager() { return processManager; }
 MapManager* HostAPI::GetMapManager() { return mapManager; }
+ImportManager* HostAPI::GetImportManager() { 
+    return io ? io->GetImportManager() : nullptr; 
+}
 
 // Update manager pointers (called after managers are created)
 void HostAPI::SetHotkeyManager(HotkeyManager* hm) {

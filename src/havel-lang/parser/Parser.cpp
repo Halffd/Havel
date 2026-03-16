@@ -2383,6 +2383,40 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImportStatement() {
 
 std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
   advance(); // consume 'use'
+  
+  // Skip newlines
+  while (at().type == havel::TokenType::NewLine) {
+    advance();
+  }
+  
+  // Check if this is 'use "file.hv" as alias' syntax
+  if (at().type == havel::TokenType::String) {
+    std::string filePath = advance().value;
+    
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
+    // Expect 'as' keyword
+    if (at().type != havel::TokenType::As) {
+      failAt(at(), "Expected 'as' after file path");
+    }
+    advance(); // consume 'as'
+    
+    // Skip newlines
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+    
+    // Expect alias name (Identifier)
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected alias name after 'as'");
+    }
+    std::string alias = advance().value;
+    
+    return std::make_unique<havel::ast::UseStatement>(filePath, alias);
+  }
 
   std::vector<std::string> moduleNames;
 

@@ -107,6 +107,9 @@ public:
     virtual class ProcessManager* GetProcessManager() = 0;
     virtual class MapManager* GetMapManager() = 0;
     
+    // Import manager for script imports
+    virtual class ImportManager* GetImportManager() = 0;
+
     // Update manager pointers (called after managers are created)
     virtual void SetHotkeyManager(class HotkeyManager* hm) = 0;
     virtual void SetIO(class IO* io) = 0;

@@ -400,6 +400,9 @@ IO::IO() {
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
+  
+  // Initialize ImportManager
+  importManager = std::make_shared<ImportManager>();
 
   // Initialize KeyMap
   KeyMap::Initialize();

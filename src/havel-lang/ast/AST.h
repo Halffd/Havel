@@ -2115,16 +2115,27 @@ struct ImportStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Use Statement (use io, use media)
+// Use Statement (use io, use media) OR (use "file.hv" as alias)
 struct UseStatement : public Statement {
-  std::vector<std::string> moduleNames; // List of module names to flatten
+  std::vector<std::string> moduleNames; // List of module names to flatten (old syntax)
+  std::string filePath;  // File path for script import (new syntax)
+  std::string alias;     // Alias for imported script (new syntax)
+  bool isFileImport = false;  // True if importing file, false if importing module
 
   UseStatement(std::vector<std::string> modules = {})
-      : moduleNames(std::move(modules)) {
+      : moduleNames(std::move(modules)), isFileImport(false) {
+    kind = NodeType::UseStatement;
+  }
+  
+  UseStatement(const std::string& path, const std::string& aliasName)
+      : filePath(path), alias(aliasName), isFileImport(true) {
     kind = NodeType::UseStatement;
   }
 
   std::string toString() const override {
+    if (isFileImport) {
+      return "UseStatement{file: " + filePath + ", as: " + alias + "}";
+    }
     std::string result = "UseStatement{modules: [";
     for (size_t i = 0; i < moduleNames.size(); ++i) {
       result += moduleNames[i];

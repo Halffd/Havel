@@ -538,8 +538,8 @@ double BrightnessManager::getShadowLift() {
   return getShadowLift(primaryMonitor);
 }
 double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
-  Display *getX11Display() = getX11Display();
-  if (!getX11Display())
+  Display *x11_display = getX11Display();
+  if (!x11_display)
     return 1.0;
 
   DisplayManager::MonitorInfo monitorInfo =
@@ -625,8 +625,8 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
  */
 double
 BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
-  Display *getX11Display() = getX11Display();
-  if (!getX11Display()) {
+  Display *x11_display = getX11Display();
+  if (!x11_display) {
     error("X11 display not initialized");
     return -1.0;
   }
@@ -679,8 +679,8 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
         XInternAtom(getX11Display(), property_names[prop_idx], x11::XFalse);
 
     if (brightness_atom != x11::XNone) {
-      XRRPropertyInfo *prop_info =
-          XRRQueryOutputProperty(getX11Display(), monitorInfo.id, brightness_atom);
+      XRRPropertyInfo *prop_info = XRRQueryOutputProperty(
+          getX11Display(), monitorInfo.id, brightness_atom);
 
       if (prop_info) {
         if (prop_info->num_values >= 2) {
@@ -689,9 +689,9 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
               brightness * (prop_info->values[1] - prop_info->values[0]) +
               prop_info->values[0]);
 
-          XRRChangeOutputProperty(getX11Display(), monitorInfo.id, brightness_atom,
-                                  XA_INTEGER, 32, PropModeReplace,
-                                  (unsigned char *)&brightness_value, 1);
+          XRRChangeOutputProperty(
+              getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER, 32,
+              PropModeReplace, (unsigned char *)&brightness_value, 1);
         } else {
           // No range - assume it's a float value
           if (strcmp(property_names[prop_idx], "Brightness") == 0) {
@@ -699,8 +699,8 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
             float float_brightness = (float)brightness;
             int32_t int_bits = *((int32_t *)&float_brightness);
             XRRChangeOutputProperty(
-                getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER, 32,
-                PropModeReplace, (unsigned char *)&int_bits, 1);
+                getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER,
+                32, PropModeReplace, (unsigned char *)&int_bits, 1);
           }
         }
 

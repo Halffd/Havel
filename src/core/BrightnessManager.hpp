@@ -192,8 +192,8 @@ public:
   static constexpr int MAX_TEMPERATURE = 25000; // Maximum color temperature
 
 private:
-  Display *x11_display;
-  Window x11_root;
+  // Backend detection
+  std::string displayMethod = "x11"; // "x11" or "wayland"
 
 // Wayland specific members
 #ifdef __WAYLAND__
@@ -208,6 +208,9 @@ private:
 
   double getBrightnessGamma(const std::string &monitor);
   bool setBrightnessGamma(const std::string &monitor, double brightness);
+
+  // Helper to get X11 display safely
+  Display *getX11Display() const;
   // Debug logging helpers
   static void debug(const std::string &message) {
     Logger::getInstance().debug("[BrightnessManager] " + message);
@@ -282,7 +285,6 @@ private:
   DayNightSettings dayNightSettings;
 
   vector<string> cached_monitors;
-  string displayMethod;
 
   // Threading for day/night
   atomic<bool> stopDayNightThread{false};

@@ -132,15 +132,11 @@ BrightnessManager::BrightnessManager() {
 #endif
     } catch (const std::exception &e) {
       error("Failed to initialize Wayland backend: " + std::string(e.what()));
-      // Fall back to X11
-      x11_display = DisplayManager::GetDisplay();
-      x11_root = DisplayManager::GetRootWindow();
+      // Fall back to X11 - don't store pointers as they can become invalid
       displayMethod = "x11";
     }
   } else {
-    // Default to X11
-    x11_display = DisplayManager::GetDisplay();
-    x11_root = DisplayManager::GetRootWindow();
+    // Default to X11 - don't store display pointers as they can become invalid
     displayMethod = "x11";
   }
 
@@ -542,7 +538,8 @@ double BrightnessManager::getShadowLift() {
   return getShadowLift(primaryMonitor);
 }
 double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
-  if (!x11_display)
+  Display *getX11Display() = getX11Display();
+  if (!getX11Display())
     return 1.0;
 
   DisplayManager::MonitorInfo monitorInfo =
@@ -553,10 +550,10 @@ double BrightnessManager::getBrightnessGamma(const std::string &monitor) {
     return 1.0;
   }
 
-  int gamma_size = XRRGetCrtcGammaSize(x11_display, monitorInfo.crtc_id);
+  int gamma_size = XRRGetCrtcGammaSize(getX11Display(), monitorInfo.crtc_id);
   if (gamma_size > 0) {
     XRRCrtcGamma *crtc_gamma =
-        XRRGetCrtcGamma(x11_display, monitorInfo.crtc_id);
+        XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
     if (crtc_gamma) {
       // Calculate average of all gamma values for a more accurate brightness
       unsigned long long total = 0;
@@ -628,7 +625,8 @@ double BrightnessManager::extractBrightnessFromGammaRamp(
  */
 double
 BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
-  if (!x11_display) {
+  Display *getX11Display() = getX11Display();
+  if (!getX11Display()) {
     error("X11 display not initialized");
     return -1.0;
   }
@@ -642,7 +640,7 @@ BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
     return -1.0;
   }
 
-  XRRCrtcGamma *gamma = XRRGetCrtcGamma(x11_display, monitorInfo.crtc_id);
+  XRRCrtcGamma *gamma = XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
   if (!gamma) {
     error("Failed to get gamma ramp for monitor '{}'", monitor_name);
     return -1.0;
@@ -660,7 +658,7 @@ BrightnessManager::getCurrentBrightnessX11(const std::string &monitor_name) {
 }
 bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
                                             double brightness) {
-  if (!x11_display)
+  if (!getX11Display())
     return false;
 
   brightness = std::clamp(brightness, 0.0, 1.0);
@@ -678,11 +676,11 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
 
   for (int prop_idx = 0; property_names[prop_idx] != nullptr; prop_idx++) {
     Atom brightness_atom =
-        XInternAtom(x11_display, property_names[prop_idx], x11::XFalse);
+        XInternAtom(getX11Display(), property_names[prop_idx], x11::XFalse);
 
     if (brightness_atom != x11::XNone) {
       XRRPropertyInfo *prop_info =
-          XRRQueryOutputProperty(x11_display, monitorInfo.id, brightness_atom);
+          XRRQueryOutputProperty(getX11Display(), monitorInfo.id, brightness_atom);
 
       if (prop_info) {
         if (prop_info->num_values >= 2) {
@@ -691,7 +689,7 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
               brightness * (prop_info->values[1] - prop_info->values[0]) +
               prop_info->values[0]);
 
-          XRRChangeOutputProperty(x11_display, monitorInfo.id, brightness_atom,
+          XRRChangeOutputProperty(getX11Display(), monitorInfo.id, brightness_atom,
                                   XA_INTEGER, 32, PropModeReplace,
                                   (unsigned char *)&brightness_value, 1);
         } else {
@@ -701,12 +699,12 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
             float float_brightness = (float)brightness;
             int32_t int_bits = *((int32_t *)&float_brightness);
             XRRChangeOutputProperty(
-                x11_display, monitorInfo.id, brightness_atom, XA_INTEGER, 32,
+                getX11Display(), monitorInfo.id, brightness_atom, XA_INTEGER, 32,
                 PropModeReplace, (unsigned char *)&int_bits, 1);
           }
         }
 
-        XFlush(x11_display);
+        XFlush(getX11Display());
         XFree(prop_info);
         return true;
       }
@@ -717,7 +715,7 @@ bool BrightnessManager::setBrightnessXrandr(const std::string &monitor,
 }
 bool BrightnessManager::setBrightnessGamma(const std::string &monitor,
                                            double brightness) {
-  if (!x11_display)
+  if (!getX11Display())
     return false;
 
   brightness = std::clamp(brightness, 0.0, 2.0);
@@ -731,7 +729,7 @@ bool BrightnessManager::setBrightnessGamma(const std::string &monitor,
 bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor,
                                           double red, double green,
                                           double blue) {
-  if (!x11_display)
+  if (!getX11Display())
     return false;
 
   red = std::clamp(red, 0.1, 10.0);
@@ -745,7 +743,7 @@ bool BrightnessManager::setGammaXrandrRGB(const std::string &monitor,
 }
 
 bool BrightnessManager::applyAllSettings(const std::string &monitor) {
-  if (!x11_display)
+  if (!getX11Display())
     return false;
 
   DisplayManager::MonitorInfo monitorInfo =
@@ -780,7 +778,7 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
         monitor, currentBrightness, currentShadowLift, currentGamma.red,
         currentGamma.green, currentGamma.blue);
 
-  int gamma_size = XRRGetCrtcGammaSize(x11_display, monitorInfo.crtc_id);
+  int gamma_size = XRRGetCrtcGammaSize(getX11Display(), monitorInfo.crtc_id);
   if (gamma_size > 0) {
     XRRCrtcGamma *gamma = XRRAllocGamma(gamma_size);
     if (gamma) {
@@ -815,8 +813,8 @@ bool BrightnessManager::applyAllSettings(const std::string &monitor) {
             (unsigned short)std::clamp(blueValue * 65535.0, 0.0, 65535.0);
       }
 
-      XRRSetCrtcGamma(x11_display, monitorInfo.crtc_id, gamma);
-      XFlush(x11_display);
+      XRRSetCrtcGamma(getX11Display(), monitorInfo.crtc_id, gamma);
+      XFlush(getX11Display());
       XRRFreeGamma(gamma);
       debug("applyAllSettings('{}'): gamma ramp set successfully", monitor);
       return true;
@@ -1319,7 +1317,7 @@ double BrightnessManager::getBrightnessSysfs(const std::string &monitor) {
 
 // === X11 GAMMA GETTER ===
 double BrightnessManager::getGammaXrandr(const std::string &monitor) {
-  if (!x11_display)
+  if (!getX11Display())
     return 1.0;
 
   DisplayManager::MonitorInfo monitorInfo =
@@ -1330,10 +1328,10 @@ double BrightnessManager::getGammaXrandr(const std::string &monitor) {
     return 1.0;
   }
 
-  int gamma_size = XRRGetCrtcGammaSize(x11_display, monitorInfo.crtc_id);
+  int gamma_size = XRRGetCrtcGammaSize(getX11Display(), monitorInfo.crtc_id);
   if (gamma_size > 0) {
     XRRCrtcGamma *crtc_gamma =
-        XRRGetCrtcGamma(x11_display, monitorInfo.crtc_id);
+        XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
     if (crtc_gamma) {
       // Calculate average gamma from the ramp (simplified)
       // In reality, you'd want to analyze the curve more carefully
@@ -1403,7 +1401,7 @@ BrightnessManager::getGammaRGB(const std::string &monitor) {
 
 BrightnessManager::RGBColor
 BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
-  if (!x11_display)
+  if (!getX11Display())
     return {1.0, 1.0, 1.0};
 
   DisplayManager::MonitorInfo monitorInfo =
@@ -1414,10 +1412,10 @@ BrightnessManager::getGammaXrandrRGB(const std::string &monitor) {
     return {1.0, 1.0, 1.0};
   }
 
-  int gamma_size = XRRGetCrtcGammaSize(x11_display, monitorInfo.crtc_id);
+  int gamma_size = XRRGetCrtcGammaSize(getX11Display(), monitorInfo.crtc_id);
   if (gamma_size > 0) {
     XRRCrtcGamma *crtc_gamma =
-        XRRGetCrtcGamma(x11_display, monitorInfo.crtc_id);
+        XRRGetCrtcGamma(getX11Display(), monitorInfo.crtc_id);
     if (crtc_gamma) {
       // Get RGB values from middle of gamma ramp
       int mid = gamma_size / 2;
@@ -1822,6 +1820,13 @@ bool BrightnessManager::setGammaWaylandRGB(const std::string &output, double r,
                                            double g, double b) {
   // This is a stub implementation - will be filled in later
   return true; // Return success for now
+}
+
+Display *BrightnessManager::getX11Display() const {
+  if (displayMethod != "x11") {
+    return nullptr;
+  }
+  return DisplayManager::GetDisplay();
 }
 
 } // namespace havel

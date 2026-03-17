@@ -447,8 +447,28 @@ void HavelApp::setupTimers() {
 void HavelApp::setupSignalHandling() {
   try {
     blockAllSignals();
-    // signalWatcher.start(); // DISABLED - EventListener handles signals
-    info("Signal handling initialized - EventListener manages signals");
+
+    // Set up fallback signal handlers for REPL mode when EventListener might
+    // not be running
+    if (!gui) {
+      struct sigaction sa;
+      sa.sa_flags = 0;
+      sigemptyset(&sa.sa_mask);
+      sa.sa_handler = [](int sig) {
+        std::exit(sig); // Simple exit for REPL mode
+      };
+
+      sigaction(SIGINT, &sa, nullptr);
+      sigaction(SIGTERM, &sa, nullptr);
+      sigaction(SIGABRT, &sa, nullptr);
+      sigaction(SIGSEGV, &sa, nullptr);
+      sigaction(SIGQUIT, &sa, nullptr);
+
+      info("Signal handling initialized - fallback handlers for REPL mode");
+    } else {
+      // signalWatcher.start(); // DISABLED - EventListener handles signals
+      info("Signal handling initialized - EventListener manages signals");
+    }
 
     // Set up immediate cleanup on signal reception - prioritize evdev
     // ungrabbing

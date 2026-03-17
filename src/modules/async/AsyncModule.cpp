@@ -6,10 +6,86 @@
  */
 #include "AsyncModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../havel-lang/runtime/Interpreter.hpp"
-#include <chrono>
-#include <future>
-#include <thread>
+#include "../../host/HostContext.hpp"
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <queue>
+
+namespace havel {
+namespace modules {
+
+// Real Channel implementation for async communication
+class Channel {
+private:
+  std::queue<HavelValue> queue;
+  mutable std::mutex mtx;
+  std::condition_variable cv;
+  bool closed = false;
+
+public:
+  // Send a value to the channel
+  void send(const HavelValue &value) {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (closed) {
+      throw std::runtime_error("Cannot send to closed channel");
+    }
+    queue.push(value);
+    cv.notify_one();
+  }
+
+  // Receive a value from the channel (blocking)
+  HavelValue receive() {
+    std::unique_lock<std::mutex> lock(mtx);
+    cv.wait(lock, [this] { return !queue.empty() || closed; });
+
+    if (closed && queue.empty()) {
+      return HavelValue(); // Return default value for closed channel
+    }
+
+    HavelValue value = queue.front();
+    queue.pop();
+    return value;
+  }
+
+  // Try to receive a value (non-blocking)
+  HavelValue tryReceive() {
+    std::lock_guard<std::mutex> lock(mtx);
+    if (queue.empty()) {
+      return HavelValue(); // Return default value if empty
+    }
+
+    HavelValue value = queue.front();
+    queue.pop();
+    return value;
+  }
+
+  // Close the channel
+  void close() {
+    std::lock_guard<std::mutex> lock(mtx);
+    closed = true;
+    cv.notify_all();
+  }
+
+  // Check if channel is closed
+  bool isClosed() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return closed;
+  }
+
+  // Get queue size
+  size_t size() const {
+    std::lock_guard<std::mutex> lock(mtx);
+    return queue.size();
+  }
+};
+
+// Global channel registry to keep channels alive
+static std::unordered_map<std::string, std::shared_ptr<Channel>> channels;
+static std::mutex channelsMutex;
+
+} // namespace modules
+} // namespace havel
 
 namespace havel::modules {
 
@@ -46,12 +122,12 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                      return HavelRuntimeError(
                          "await requires a task ID string");
                    }
-                   // Improved stub - returns completion status instead of null
-                   return HavelValue("completed");
+                   // Minimal stub - returns null
+                   return HavelValue(nullptr);
                  })));
 
   // =========================================================================
-  // Channel functions - Stub implementation
+  // Channel functions - Minimal stub implementation
   // =========================================================================
 
   env.Define(
@@ -61,7 +137,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             if (args.size() != 0) {
               return HavelRuntimeError("channel takes no arguments");
             }
-            // Return a simple object as a stub channel
+            // Minimal stub - returns "stub": true
             auto channelObj =
                 std::make_shared<std::unordered_map<std::string, HavelValue>>();
             (*channelObj)["stub"] = HavelValue(true);

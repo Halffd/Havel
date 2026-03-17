@@ -118,6 +118,9 @@ public:
   // Import manager for script imports
   virtual class ImportManager *GetImportManager() = 0;
 
+  // Command line arguments access
+  virtual const std::vector<std::string> &GetCommandLineArgs() = 0;
+
   // Update manager pointers (called after managers are created)
   virtual void SetHotkeyManager(class HotkeyManager *hm) = 0;
   virtual void SetIO(class IO *io) = 0;
@@ -141,7 +144,8 @@ public:
           class FileManager *fileManager = nullptr,
           class ProcessManager *processManager = nullptr,
           class MapManager *mapManager = nullptr,
-          class ModeManager *modeManager = nullptr);
+          class ModeManager *modeManager = nullptr,
+          const std::vector<std::string> &commandLineArgs = {});
 
   // IWindowAPI implementation
   std::string GetActiveWindowTitle() override;
@@ -201,6 +205,9 @@ public:
     return nullptr;
   } // TODO: implement
 
+  // Command line arguments access
+  const std::vector<std::string> &GetCommandLineArgs() override;
+
   // Update manager pointers (called after managers are created)
   void SetHotkeyManager(class HotkeyManager *hm) override;
   void SetIO(class IO *io) override;
@@ -221,6 +228,9 @@ private:
   class ProcessManager *processManager;
   class MapManager *mapManager;
   class ModeManager *modeManager;
+
+  // Command line arguments
+  std::vector<std::string> commandLineArgs;
 };
 
 } // namespace havel

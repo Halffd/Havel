@@ -32,14 +32,16 @@ HostAPI::HostAPI(IO *io, HotkeyManager *hotkeyManager, Configs &config,
                  PixelAutomation *pixelAutomation,
                  AutomationManager *automationManager, FileManager *fileManager,
                  ProcessManager *processManager, MapManager *mapManager,
-                 ModeManager *modeManager)
+                 ModeManager *modeManager,
+                 const std::vector<std::string> &commandLineArgs)
     : io(io), hotkeyManager(hotkeyManager), config(config),
       windowManager(windowManager), brightnessManager(brightnessManager),
       audioManager(audioManager), guiManager(guiManager),
       screenshotManager(screenshotManager), clipboardManager(clipboardManager),
       pixelAutomation(pixelAutomation), automationManager(automationManager),
       fileManager(fileManager), processManager(processManager),
-      mapManager(mapManager), modeManager(modeManager) {}
+      mapManager(mapManager), modeManager(modeManager),
+      commandLineArgs(commandLineArgs) {}
 
 // IWindowAPI implementation
 std::string HostAPI::GetActiveWindowTitle() {
@@ -165,5 +167,10 @@ ModeManager *HostAPI::GetModeManager() { return modeManager; }
 void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
+
+// Command line arguments access
+const std::vector<std::string> &HostAPI::GetCommandLineArgs() {
+  return commandLineArgs;
+}
 
 } // namespace havel

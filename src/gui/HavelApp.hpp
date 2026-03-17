@@ -2,9 +2,9 @@
 
 #include "core/BrightnessManager.hpp"
 #include "core/automation/AutomationManager.hpp"
+#include "gui/SettingsWindow.hpp"
 #include "media/AudioManager.hpp"
 #include "media/MPVController.hpp"
-#include "gui/SettingsWindow.hpp"
 #include "qt.hpp"
 #include <QIcon>
 #include <QMenu>
@@ -13,6 +13,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <vector>
 
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
@@ -45,6 +46,7 @@ public:
 
   explicit HavelApp(bool isStartup, std::string scriptFile = "",
                     bool repl = false, bool gui = true,
+                    const std::vector<std::string> &args = {},
                     QObject *parent = nullptr);
   ~HavelApp();
 
@@ -68,13 +70,13 @@ public:
   bool gui = true;
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
-  ClipboardManager* getClipboardManager() { 
-    auto* suite = AutomationSuite::Instance();
-    return suite ? suite->getClipboardManager() : nullptr; 
+  ClipboardManager *getClipboardManager() {
+    auto *suite = AutomationSuite::Instance();
+    return suite ? suite->getClipboardManager() : nullptr;
   }
 #else
   Interpreter *getInterpreter() { return nullptr; }
-  ClipboardManager* getClipboardManager() { return nullptr; }
+  ClipboardManager *getClipboardManager() { return nullptr; }
 #endif
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;
@@ -110,6 +112,9 @@ private:
   // State
   bool initialized = false;
   std::atomic<bool> shutdownRequested{false};
+
+  // Command line arguments
+  std::vector<std::string> commandLineArgs;
 
   static constexpr int PERIODIC_INTERVAL_MS = 50;
   static constexpr int WINDOW_CHECK_INTERVAL_MS = 100;

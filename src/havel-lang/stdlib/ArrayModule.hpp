@@ -7,9 +7,14 @@
 
 #include "../runtime/Environment.hpp"
 
-namespace havel::stdlib {
+namespace havel {
+
+class Interpreter;
+
+namespace stdlib {
 
 // Module registration function (auto-registered via STD_MODULE_DESC macro)
-void registerArrayModule(Environment& env);
+void registerArrayModule(Environment &env, Interpreter *interpreter = nullptr);
 
-} // namespace havel::stdlib
+} // namespace stdlib
+} // namespace havel

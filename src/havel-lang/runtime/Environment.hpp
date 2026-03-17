@@ -1,8 +1,8 @@
 /*
  * Environment.hpp
- * 
+ *
  * Variable scoping and environment management for Havel interpreter.
- * 
+ *
  * Note: This header includes Interpreter.hpp because Environment needs
  * the full HavelValue definition. This is a stepping stone toward
  * better organization - in the future, HavelValue should be moved to
@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include "Interpreter.hpp"  // For HavelValue
+#include "Interpreter.hpp" // For HavelValue
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -20,7 +20,7 @@ namespace havel {
 
 /**
  * Environment - Variable scoping for interpreter
- * 
+ *
  * Supports:
  * - Nested scopes via parent references
  * - Const variable tracking
@@ -31,7 +31,8 @@ public:
   Environment(std::shared_ptr<Environment> parentEnv = nullptr)
       : parent(parentEnv) {}
 
-  void Define(const std::string &name, const HavelValue &value, bool isConst = false) {
+  void Define(const std::string &name, const HavelValue &value,
+              bool isConst = false) {
     values[name] = value;
     if (isConst) {
       constVars.insert(name);
@@ -43,8 +44,8 @@ public:
     if (it != values.end()) {
       return it->second;
     }
-    if (parent) {
-      return parent->Get(name);
+    if (auto parentPtr = parent.lock()) {
+      return parentPtr->Get(name);
     }
     return std::nullopt;
   }
@@ -60,8 +61,8 @@ public:
       values[name] = value;
       return true;
     }
-    if (parent) {
-      return parent->Assign(name, value);
+    if (auto parentPtr = parent.lock()) {
+      return parentPtr->Assign(name, value);
     }
     return false; // Variable not found
   }
@@ -75,7 +76,7 @@ public:
   void clear();
 
 private:
-  std::shared_ptr<Environment> parent;
+  std::weak_ptr<Environment> parent;
   std::unordered_map<std::string, HavelValue> values;
   std::unordered_set<std::string> constVars;
 };
@@ -86,7 +87,8 @@ private:
 struct TraitImpl {
   std::string traitName;
   std::string typeName;
-  std::unordered_map<std::string, HavelValue> methods;  // method name -> bound function
+  std::unordered_map<std::string, HavelValue>
+      methods; // method name -> bound function
 };
 
 /**
@@ -94,24 +96,27 @@ struct TraitImpl {
  */
 class TraitRegistry {
 public:
-  static TraitRegistry& getInstance() {
+  static TraitRegistry &getInstance() {
     static TraitRegistry instance;
     return instance;
   }
 
   // Register an impl block - injects methods into type's method map
-  void registerImpl(const std::string& traitName, const std::string& typeName,
+  void registerImpl(const std::string &traitName, const std::string &typeName,
                     std::unordered_map<std::string, HavelValue> methods);
 
   // Check if a type implements a trait
-  bool implements(const std::string& typeName, const std::string& traitName) const;
+  bool implements(const std::string &typeName,
+                  const std::string &traitName) const;
 
   // Get all trait impls for a type
-  std::vector<const TraitImpl*> getImplsForType(const std::string& typeName) const;
+  std::vector<const TraitImpl *>
+  getImplsForType(const std::string &typeName) const;
 
   // Get a trait method for a type
-  HavelValue getMethod(const std::string& typeName, const std::string& traitName,
-                       const std::string& methodName) const;
+  HavelValue getMethod(const std::string &typeName,
+                       const std::string &traitName,
+                       const std::string &methodName) const;
 
 private:
   TraitRegistry() = default;
@@ -120,7 +125,8 @@ private:
   std::unordered_map<std::string, std::vector<TraitImpl>> typeImpls;
 
   // (typeName, traitName) -> impl for quick lookup
-  std::unordered_map<std::string, std::unordered_map<std::string, TraitImpl>> implMap;
+  std::unordered_map<std::string, std::unordered_map<std::string, TraitImpl>>
+      implMap;
 };
 
 } // namespace havel

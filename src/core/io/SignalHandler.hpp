@@ -17,6 +17,7 @@ public:
   void Shutdown();
 
   int GetSignalFd() const { return signalFd; }
+  static int GetSignalFlag();
 
 private:
   static SignalHandler *instance;

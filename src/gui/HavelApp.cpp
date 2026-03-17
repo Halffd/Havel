@@ -17,8 +17,8 @@
 #include <QPixmap>
 #include <QSystemTrayIcon>
 #include <QTimer>
-#include <cstdlib>
 #include <csignal>
+#include <cstdlib>
 #include <fstream>
 #include <stdexcept>
 #include <system_error>
@@ -71,7 +71,7 @@ HavelApp::~HavelApp() {
 
 void HavelApp::cleanup() noexcept {
   debug("HavelApp::cleanup() - starting cleanup");
-  
+
   // 1. Stop EventListener FIRST to prevent callbacks during cleanup
   if (io) {
     debug("HavelApp::cleanup() - stopping EventListener");
@@ -79,52 +79,52 @@ void HavelApp::cleanup() noexcept {
       io->GetEventListener()->Stop();
     }
   }
-  
+
   // 2. Destroy hotkeyManager (this will clear callbacks)
   if (hotkeyManager) {
     debug("HavelApp::cleanup() - destroying HotkeyManager");
     hotkeyManager->cleanup();
     hotkeyManager.reset();
   }
-  
+
   // 3. Destroy interpreter (which holds HostAPI)
   if (interpreter) {
     debug("HavelApp::cleanup() - destroying Interpreter");
     interpreter.reset();
   }
-  
+
   // 4. Destroy other components
   if (automationManager) {
     debug("HavelApp::cleanup() - destroying AutomationManager");
     automationManager.reset();
   }
-  
+
   if (brightnessManager) {
     debug("HavelApp::cleanup() - destroying BrightnessManager");
     brightnessManager.reset();
   }
-  
+
   if (audioManager) {
     debug("HavelApp::cleanup() - destroying AudioManager");
     audioManager.reset();
   }
-  
+
   if (mpv) {
     debug("HavelApp::cleanup() - destroying MPVController");
     mpv.reset();
   }
-  
+
   if (windowManager) {
     debug("HavelApp::cleanup() - destroying WindowManager");
     windowManager.reset();
   }
-  
+
   // 5. Destroy IO LAST (after all callbacks are cleared)
   if (io) {
     debug("HavelApp::cleanup() - destroying IO");
     io.reset();
   }
-  
+
   debug("HavelApp::cleanup() - cleanup complete");
 }
 
@@ -159,6 +159,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!brightnessManager) {
     throw std::runtime_error("Failed to create BrightnessManager");
   }
+  brightnessManager->init(); // Initialize monitors after X11 is ready
 
   automationManager = std::make_shared<automation::AutomationManager>(io);
   if (!automationManager) {
@@ -174,24 +175,26 @@ void HavelApp::initializeComponents(bool isStartup) {
   info("NetworkManager initialized successfully");
 
 #ifdef ENABLE_HAVEL_LANG
-  std::cerr << "[DEBUG] Creating interpreter (without HotkeyManager)..." << std::endl;
+  std::cerr << "[DEBUG] Creating interpreter (without HotkeyManager)..."
+            << std::endl;
 
   // Get AutomationSuite components with null guards
-  auto* suite = AutomationSuite::Instance();
-  auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
-  auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
-  auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+  auto *suite = AutomationSuite::Instance();
+  auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+  auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+  auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
   // Create WindowMonitor for efficient window info caching
-  auto windowMonitor = std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
+  auto windowMonitor =
+      std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
 
   // Build HostContext from managers (hotkeyManager will be set later)
   HostContext ctx;
-  ctx.io = io;  // Share ownership
+  ctx.io = io; // Share ownership
   ctx.windowManager = windowManager.get();
-  ctx.hotkeyManager = nullptr;  // Will be set after HotkeyManager creation
-  ctx.modeManager = nullptr;  // Will be set after HotkeyManager creation
-  ctx.windowMonitor = windowMonitor;  // Window monitoring
+  ctx.hotkeyManager = nullptr;       // Will be set after HotkeyManager creation
+  ctx.modeManager = nullptr;         // Will be set after HotkeyManager creation
+  ctx.windowMonitor = windowMonitor; // Window monitoring
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
@@ -207,13 +210,13 @@ void HavelApp::initializeComponents(bool isStartup) {
   std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
 
   // Get screenshot manager with null guard (nullptr in REPL mode)
-  auto* screenshotMgrForHotkey = suite ? suite->getScreenshotManager() : nullptr;
+  auto *screenshotMgrForHotkey =
+      suite ? suite->getScreenshotManager() : nullptr;
 
   // Create HotkeyManager - needs interpreter reference
   hotkeyManager = std::make_shared<HotkeyManager>(
       io, *windowManager, *mpv, *audioManager, *interpreter,
-      screenshotMgrForHotkey, *brightnessManager,
-      networkManager);
+      screenshotMgrForHotkey, *brightnessManager, networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }
@@ -358,12 +361,12 @@ void HavelApp::initializeComponents(bool isStartup) {
           Qt::QueuedConnection);
     });
     AutomationSuite::Instance(io.get());
-    
+
     // Create tray icon only in GUI mode (not REPL)
     if (!repl) {
-        if (auto* suite = AutomationSuite::Instance()) {
-            suite->ensureTrayIcon();
-        }
+      if (auto *suite = AutomationSuite::Instance()) {
+        suite->ensureTrayIcon();
+      }
     }
 
     // ClipboardManager is now lazy-initialized in AutomationSuite
@@ -371,33 +374,33 @@ void HavelApp::initializeComponents(bool isStartup) {
 #ifdef ENABLE_HAVEL_LANG
     // Only create interpreter if it doesn't already exist
     if (!interpreter) {
-        guiManager = std::make_unique<GUIManager>(*windowManager);
-        std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
+      guiManager = std::make_unique<GUIManager>(*windowManager);
+      std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
 
-        // Get AutomationSuite components with null guards
-        auto* suite = AutomationSuite::Instance();
-        auto* screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
-        auto* clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
-        auto* pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+      // Get AutomationSuite components with null guards
+      auto *suite = AutomationSuite::Instance();
+      auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+      auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+      auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
-        // Build HostContext from managers
-        HostContext ctx;
-        ctx.io = io;  // Share ownership
-        ctx.windowManager = windowManager.get();
-        ctx.hotkeyManager = hotkeyManager;
-        ctx.brightnessManager = brightnessManager.get();
-        ctx.audioManager = audioManager.get();
-        ctx.guiManager = guiManager.get();
-        ctx.screenshotManager = screenshotMgr;
-        ctx.clipboardManager = clipboardMgr;
-        ctx.pixelAutomation = pixelAuto;
+      // Build HostContext from managers
+      HostContext ctx;
+      ctx.io = io; // Share ownership
+      ctx.windowManager = windowManager.get();
+      ctx.hotkeyManager = hotkeyManager;
+      ctx.brightnessManager = brightnessManager.get();
+      ctx.audioManager = audioManager.get();
+      ctx.guiManager = guiManager.get();
+      ctx.screenshotManager = screenshotMgr;
+      ctx.clipboardManager = clipboardMgr;
+      ctx.pixelAutomation = pixelAuto;
 
-        interpreter = std::make_shared<Interpreter>(ctx);
-        // Register interpreter for hotkey callbacks (must be after construction)
-        interpreter->RegisterForHotkeys();
-        std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+      interpreter = std::make_shared<Interpreter>(ctx);
+      // Register interpreter for hotkey callbacks (must be after construction)
+      interpreter->RegisterForHotkeys();
+      std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
     } else {
-        std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;
+      std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;
     }
 #else
     interpreter = nullptr;

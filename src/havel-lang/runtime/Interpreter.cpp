@@ -1,5 +1,9 @@
 #include "Interpreter.hpp"
-#include "evaluator/ExprEvaluator.hpp"
+#include "../../modules/ModuleLoader.hpp" // For havel::modules::loadAllModules
+#include "../../modules/hotkey/HotkeyModule.hpp" // For SetHotkeyInterpreter
+#include "Environment.hpp"   // For Environment and TraitRegistry
+#include "HostAPI.hpp"       // For HostAPI wrapper
+#include "StdLibModules.hpp" // For registerStdLibModules, loadStdLibModules
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/ModeManager.hpp"
@@ -11,7 +15,7 @@
 #include "core/io/MapManager.hpp"
 #include "core/net/HttpModule.hpp"
 #include "core/process/ProcessManager.hpp"
-#include "modules/process/ShellExecutor.hpp"
+#include "evaluator/ExprEvaluator.hpp"
 #include "fs/FileManager.hpp"
 #include "gui/AltTab.hpp"
 #include "gui/GUIManager.hpp"
@@ -19,23 +23,19 @@
 #include "gui/MapManagerWindow.hpp"
 #include "gui/ScreenshotManager.hpp"
 #include "media/AudioManager.hpp"
+#include "modules/process/ShellExecutor.hpp"
 #include "process/Launcher.hpp"
 #include "qt.hpp"
+#include "semantic/SemanticAnalyzer.hpp" // For semantic analysis
+#include "stdlib/ArrayModule.hpp"        // For registerArrayModule
+#include "stdlib/FileModule.hpp"         // For registerFileModule
+#include "stdlib/MathModule.hpp"         // For registerMathModule
+#include "stdlib/ProcessModule.hpp"      // For registerProcessModule
+#include "stdlib/RegexModule.hpp"        // For registerRegexModule
+#include "stdlib/StringModule.hpp"       // For registerStringModule
+#include "stdlib/TypeModule.hpp"         // For registerTypeModule
 #include "window/WindowManagerDetector.hpp"
 #include "window/WindowMonitor.hpp"
-#include "Environment.hpp"  // For Environment and TraitRegistry
-#include "stdlib/MathModule.hpp"  // For registerMathModule
-#include "stdlib/TypeModule.hpp"  // For registerTypeModule
-#include "stdlib/StringModule.hpp"  // For registerStringModule
-#include "stdlib/ArrayModule.hpp"  // For registerArrayModule
-#include "stdlib/FileModule.hpp"  // For registerFileModule
-#include "stdlib/RegexModule.hpp"  // For registerRegexModule
-#include "stdlib/ProcessModule.hpp"  // For registerProcessModule
-#include "../../modules/hotkey/HotkeyModule.hpp"  // For SetHotkeyInterpreter
-#include "../../modules/ModuleLoader.hpp"  // For havel::modules::loadAllModules
-#include "StdLibModules.hpp"  // For registerStdLibModules, loadStdLibModules
-#include "HostAPI.hpp"  // For HostAPI wrapper
-#include "semantic/SemanticAnalyzer.hpp"  // For semantic analysis
 #include <QBuffer>
 #include <QClipboard>
 #include <QGuiApplication>
@@ -48,16 +48,16 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <random>
 #include <regex>
 #include <signal.h>
 #include <sstream>
-#include <iomanip>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <thread>
-#include <fstream>
 #include <unistd.h>
 namespace havel {
 
@@ -96,15 +96,15 @@ std::string Interpreter::ValueToString(const HavelValue &value) {
   auto formatNumber = [](double d) -> std::string {
     // Use ostringstream with high precision
     std::ostringstream oss;
-    oss.precision(17);  // Max precision for double
+    oss.precision(17); // Max precision for double
     oss << d;
     std::string s = oss.str();
-    
+
     // Remove trailing zeros after decimal point
     if (s.find('.') != std::string::npos) {
       size_t last = s.find_last_not_of('0');
       if (last != std::string::npos && s[last] == '.') {
-        s = s.substr(0, last);  // Remove decimal point too if no decimals
+        s = s.substr(0, last); // Remove decimal point too if no decimals
       } else if (last != std::string::npos) {
         s = s.substr(0, last + 1);
       }
@@ -301,8 +301,10 @@ double Interpreter::ValueToNumber(const HavelValue &value) {
 }
 
 // Constructor with HostContext
-Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_args)
-    : hostContext(std::move(ctx)), lastResult(HavelValue(nullptr)), cliArgs(cli_args),
+Interpreter::Interpreter(HostContext ctx,
+                         const std::vector<std::string> &cli_args)
+    : hostContext(std::move(ctx)), lastResult(HavelValue(nullptr)),
+      cliArgs(cli_args),
       m_destroyed(std::make_shared<std::atomic<bool>>(false)) {
   info("Interpreter constructor called");
   environment = std::make_shared<Environment>();
@@ -313,23 +315,17 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
   services.createCallDispatcher(this);
   services.createMemberResolver(this);
 
-  // Create HostAPI wrapper (composes IO, HotkeyManager, Config and other managers)
-  // Store as member to keep it alive for module lambdas
+  // Create HostAPI wrapper (composes IO, HotkeyManager, Config and other
+  // managers) Store as member to keep it alive for module lambdas
   this->hostAPI = std::make_shared<HostAPI>(
-      hostContext.io.get(),
-      hostContext.hotkeyManager.get(),
-      Configs::Get(),
-      hostContext.windowManager,
-      hostContext.brightnessManager,
-      hostContext.audioManager,
-      hostContext.guiManager,
-      hostContext.screenshotManager,
-      hostContext.clipboardManager,
-      nullptr,  // pixelAutomation - not in HostContext
-      hostContext.automationManager,
-      hostContext.fileManager,
+      hostContext.io.get(), hostContext.hotkeyManager.get(), Configs::Get(),
+      hostContext.windowManager, hostContext.brightnessManager,
+      hostContext.audioManager, hostContext.guiManager,
+      hostContext.screenshotManager, hostContext.clipboardManager,
+      nullptr, // pixelAutomation - not in HostContext
+      hostContext.automationManager, hostContext.fileManager,
       hostContext.processManager,
-      nullptr   // mapManager - not in HostContext
+      nullptr // mapManager - not in HostContext
   );
 
   // Load all modules (stdlib + host)
@@ -342,7 +338,7 @@ Interpreter::Interpreter(HostContext ctx, const std::vector<std::string> &cli_ar
 void Interpreter::RegisterForHotkeys() {
   auto self = shared_from_this();
   havel::modules::SetHotkeyInterpreter(self);
-  info("Registered interpreter {} for hotkey callbacks", (void*)this);
+  info("Registered interpreter {} for hotkey callbacks", (void *)this);
 }
 
 // Minimal interpreter for pure script execution (no IO/hotkeys/display)
@@ -362,7 +358,7 @@ Interpreter::Interpreter(const std::vector<std::string> &cli_args)
   // Load only stdlib modules in pure mode (no host APIs)
   havel::ModuleLoader loader;
   havel::registerStdLibModules(loader);
-  havel::loadStdLibModules(*environment, loader);
+  havel::loadStdLibModules(*environment, loader, this);
 }
 
 HavelResult Interpreter::Execute(const std::string &sourceCode) {
@@ -379,11 +375,14 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     if (parser.hasErrors()) {
       // Print all errors with source context
       std::ostringstream oss;
-      oss << "\n  ╭─ Compilation Errors (" << parser.getErrors().size() << " errors found)\n";
+      oss << "\n  ╭─ Compilation Errors (" << parser.getErrors().size()
+          << " errors found)\n";
       oss << "  │\n";
-      for (const auto& err : parser.getErrors()) {
-        std::string sev = (err.severity == ErrorSeverity::Warning) ? "WARNING" : "ERROR";
-        oss << "  │ [" << sev << " line " << err.line << ":" << err.column << "] " << err.message << "\n";
+      for (const auto &err : parser.getErrors()) {
+        std::string sev =
+            (err.severity == ErrorSeverity::Warning) ? "WARNING" : "ERROR";
+        oss << "  │ [" << sev << " line " << err.line << ":" << err.column
+            << "] " << err.message << "\n";
         if (!err.sourceLine.empty()) {
           oss << "  │   " << err.sourceLine << "\n";
           oss << "  │   " << std::string(err.column - 1, ' ') << "↑\n";
@@ -392,7 +391,9 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
       }
       oss << "  ╰─ Compilation failed\n";
       havel::error(oss.str());
-      return HavelRuntimeError("Compilation failed with " + std::to_string(parser.getErrors().size()) + " errors");
+      return HavelRuntimeError("Compilation failed with " +
+                               std::to_string(parser.getErrors().size()) +
+                               " errors");
     }
 
     auto *programPtr = program.get();
@@ -416,7 +417,8 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     bool shouldResetSymbols = isFirstRun.load();
 
     // Use Basic mode by default - checks variables/functions but allows globals
-    // to resolve at runtime (avoid false positives for dynamically-loaded modules)
+    // to resolve at runtime (avoid false positives for dynamically-loaded
+    // modules)
     semanticAnalyzer.setMode(semantic::SemanticMode::Basic);
 
     havel::info("Running semantic analysis (mode: Basic)...");
@@ -425,20 +427,25 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
     if (!semanticOk) {
       // Print semantic errors
       std::ostringstream oss;
-      oss << "\n  ╭─ Semantic Analysis Errors (" << semanticAnalyzer.getErrors().size() << " errors found)\n";
+      oss << "\n  ╭─ Semantic Analysis Errors ("
+          << semanticAnalyzer.getErrors().size() << " errors found)\n";
       oss << "  │\n";
-      for (const auto& err : semanticAnalyzer.getErrors()) {
-        oss << "  │ [ERROR line " << err.line << ":" << err.column << "] " << err.message << "\n";
+      for (const auto &err : semanticAnalyzer.getErrors()) {
+        oss << "  │ [ERROR line " << err.line << ":" << err.column << "] "
+            << err.message << "\n";
         oss << "  │\n";
       }
       oss << "  ╰─ Semantic analysis failed\n";
       havel::error(oss.str());
-      return HavelRuntimeError("Semantic analysis failed with " +
-                               std::to_string(semanticAnalyzer.getErrors().size()) + " errors");
+      return HavelRuntimeError(
+          "Semantic analysis failed with " +
+          std::to_string(semanticAnalyzer.getErrors().size()) + " errors");
     }
 
-    havel::info("Semantic analysis passed! Symbol table has " +
-                std::to_string(semanticAnalyzer.getSymbolTable().getSymbolCount()) + " symbols");
+    havel::info(
+        "Semantic analysis passed! Symbol table has " +
+        std::to_string(semanticAnalyzer.getSymbolTable().getSymbolCount()) +
+        " symbols");
 
     // =========================================================================
     bool wasFirstRun = isFirstRun.load();
@@ -451,7 +458,7 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
 
     return result;
   } catch (const HavelRuntimeError &e) {
-    auto& err = const_cast<HavelRuntimeError&>(e);
+    auto &err = const_cast<HavelRuntimeError &>(e);
     if (err.hasLocation) {
       printError(err, sourceCode);
     } else {
@@ -470,13 +477,13 @@ HavelResult Interpreter::Execute(const std::string &sourceCode) {
 }
 
 // Evaluate condition expression and return boolean result (for mode detection)
-bool Interpreter::evaluateCondition(const ast::Expression& expr) {
+bool Interpreter::evaluateCondition(const ast::Expression &expr) {
   // Save current result state
   auto savedResult = lastResult;
-  
+
   // Evaluate the expression
   Evaluate(expr);
-  
+
   // Convert result to boolean
   bool result = false;
   if (!isError(lastResult)) {
@@ -486,13 +493,13 @@ bool Interpreter::evaluateCondition(const ast::Expression& expr) {
     } else if (value.isNumber()) {
       result = (value.asNumber() != 0);
     } else {
-      result = true;  // Non-boolean, non-number values are truthy
+      result = true; // Non-boolean, non-number values are truthy
     }
   }
-  
+
   // Restore previous result state
   lastResult = savedResult;
-  
+
   return result;
 }
 
@@ -503,7 +510,8 @@ std::string Interpreter::getActiveWindowExe() const {
   }
   // Fallback to WindowManager
   if (hostContext.windowManager) {
-    return hostContext.windowManager->getProcessName(hostContext.windowManager->GetActiveWindowPID());
+    return hostContext.windowManager->getProcessName(
+        hostContext.windowManager->GetActiveWindowPID());
   }
   return "";
 }
@@ -538,40 +546,39 @@ pid_t Interpreter::getActiveWindowPid() const {
   return 0;
 }
 
-void Interpreter::printSourceWithContext(const std::string& sourceCode, size_t errorLine) {
+void Interpreter::printSourceWithContext(const std::string &sourceCode,
+                                         size_t errorLine) {
   std::istringstream iss(sourceCode);
   std::string line;
   std::vector<std::string> lines;
-  
+
   while (std::getline(iss, line)) {
     lines.push_back(line);
   }
-  
-  if (lines.empty()) return;
-  
+
+  if (lines.empty())
+    return;
+
   // Calculate line number width
   size_t lineNumWidth = std::to_string(lines.size()).length();
-  
+
   // Show context around error line (or all lines if no specific line)
-  size_t startLine = (errorLine > 2 && errorLine <= lines.size()) ? errorLine - 2 : 0;
-  size_t endLine = (errorLine > 0 && errorLine < lines.size()) ? errorLine + 2 : lines.size();
-  
+  size_t startLine =
+      (errorLine > 2 && errorLine <= lines.size()) ? errorLine - 2 : 0;
+  size_t endLine = (errorLine > 0 && errorLine < lines.size()) ? errorLine + 2
+                                                               : lines.size();
+
   havel::info("");
   havel::info("  ╭─ Source Code Context");
   for (size_t i = startLine; i < endLine && i < lines.size(); i++) {
     size_t displayLine = i + 1;
     std::string marker = (displayLine == errorLine) ? " >> " : "    ";
     std::string lineIndicator = (displayLine == errorLine) ? "│" : "│";
-    
-    havel::info("  {}{} {} │ {}", 
-                marker, 
-                lineIndicator,
-                displayLine,
-                lines[i]);
-    
+
+    havel::info("  {}{} {} │ {}", marker, lineIndicator, displayLine, lines[i]);
+
     if (displayLine == errorLine) {
-      havel::info("  │   {} │ {}", 
-                  std::string(lineNumWidth, ' '),
+      havel::info("  │   {} │ {}", std::string(lineNumWidth, ' '),
                   std::string(lines[i].length(), '^'));
     }
   }
@@ -579,50 +586,53 @@ void Interpreter::printSourceWithContext(const std::string& sourceCode, size_t e
   havel::info("");
 }
 
-std::string Interpreter::formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode) {
+std::string
+Interpreter::formatErrorWithLocation(const std::string &message, size_t line,
+                                     size_t column,
+                                     const std::string &sourceCode) {
   std::ostringstream oss;
-  
+
   // Split source into lines
   std::istringstream iss(sourceCode);
   std::string currentLine;
   std::vector<std::string> lines;
-  
+
   while (std::getline(iss, currentLine)) {
     lines.push_back(currentLine);
   }
-  
+
   // Handle edge cases
   if (line == 0 || line > lines.size()) {
     oss << "Error at unknown location: " << message;
     return oss.str();
   }
-  
+
   size_t lineIndex = line - 1; // Convert to 0-based index
-  const std::string& errorLine = lines[lineIndex];
-  
+  const std::string &errorLine = lines[lineIndex];
+
   // Calculate display line number (handle large line numbers)
   size_t startLine = line > 2 ? line - 2 : 0;
   size_t endLine = std::min(line + 1, lines.size());
-  
+
   // Calculate width for line numbers
   size_t lineNumWidth = std::to_string(endLine).length();
-  
+
   oss << "\n";
   oss << "  ╭─ Error: " << message << "\n";
   oss << "  │\n";
-  
+
   // Print context lines
   for (size_t i = startLine; i < endLine; i++) {
     size_t displayLineNum = i + 1;
     oss << "  │ " << std::setw(lineNumWidth) << displayLineNum << " │ ";
-    
+
     // Show the line content (truncate if too long)
     std::string lineContent = errorLine;
     if (lineContent.length() > 100) {
       lineContent = lineContent.substr(0, 100) + "...";
     }
     oss << lineContent << "\n";
-    
+
     // Add arrow pointer for error line
     if (i == lineIndex) {
       oss << "  │ " << std::string(lineNumWidth, ' ') << "   │ ";
@@ -634,17 +644,19 @@ std::string Interpreter::formatErrorWithLocation(const std::string& message, siz
       oss << "\n";
     }
   }
-  
+
   oss << "  │\n";
   oss << "  ╰─ at line " << line << ", column " << column << "\n";
-  
+
   return oss.str();
 }
 
-void Interpreter::printError(const HavelResult& error, const std::string& sourceCode) {
-  if (auto* err = std::get_if<HavelRuntimeError>(&error)) {
+void Interpreter::printError(const HavelResult &error,
+                             const std::string &sourceCode) {
+  if (auto *err = std::get_if<HavelRuntimeError>(&error)) {
     if (err->hasLocation && err->line > 0) {
-      std::string formatted = formatErrorWithLocation(err->what(), err->line, err->column, sourceCode);
+      std::string formatted = formatErrorWithLocation(err->what(), err->line,
+                                                      err->column, sourceCode);
       std::cerr << formatted << std::endl;
     } else {
       havel::error("Runtime error: {}", err->what());
@@ -832,8 +844,7 @@ void Interpreter::visitBlockExpression(const ast::BlockExpression &node) {
   // Execute statements
   for (const auto &stmt : node.body) {
     auto result = Evaluate(*stmt);
-    if (isError(result) ||
-        std::holds_alternative<ReturnValue>(result) ||
+    if (isError(result) || std::holds_alternative<ReturnValue>(result) ||
         std::holds_alternative<BreakValue>(result) ||
         std::holds_alternative<ContinueValue>(result)) {
       this->environment = originalEnv;
@@ -867,7 +878,7 @@ void Interpreter::visitIfExpression(const ast::IfExpression &node) {
   } else if (node.elseBranch) {
     lastResult = Evaluate(*node.elseBranch);
   } else {
-    lastResult = HavelValue(nullptr);  // No else branch, return null
+    lastResult = HavelValue(nullptr); // No else branch, return null
   }
 }
 
@@ -901,12 +912,14 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
         });
       } else if (condType == "title") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeTitle = hostContext.windowManager->GetActiveWindowTitle();
+          std::string activeTitle =
+              hostContext.windowManager->GetActiveWindowTitle();
           return activeTitle.find(condValue) != std::string::npos;
         });
       } else if (condType == "class") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeClass = hostContext.windowManager->GetActiveWindowClass();
+          std::string activeClass =
+              hostContext.windowManager->GetActiveWindowClass();
           return activeClass.find(condValue) != std::string::npos;
         });
       } else if (condType == "process") {
@@ -917,8 +930,10 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
         });
       } else if (condType == "group") {
         contextChecks.push_back([this, condValue]() {
-          std::string activeTitle = hostContext.windowManager->GetActiveWindowTitle();
-          return WindowManager::IsWindowInGroup(activeTitle.c_str(), condValue.c_str());
+          std::string activeTitle =
+              hostContext.windowManager->GetActiveWindowTitle();
+          return WindowManager::IsWindowInGroup(activeTitle.c_str(),
+                                                condValue.c_str());
         });
       }
     }
@@ -936,26 +951,27 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
     if (action) {
       // Lock interpreter mutex to protect environment and lastResult
       std::lock_guard<std::mutex> lock(this->interpreterMutex);
-      
+
       // Evaluate the action (lambda or expression)
       auto actionResult = this->Evaluate(*action);
       if (isError(actionResult)) {
-        std::cerr << "Runtime error in hotkey: " << getErrorMessage(actionResult)
-                  << std::endl;
+        std::cerr << "Runtime error in hotkey: "
+                  << getErrorMessage(actionResult) << std::endl;
         return;
       }
-      
+
       HavelValue funcValue = unwrap(actionResult);
-      
+
       // If the result is a function, CALL it
       if (funcValue.isFunction()) {
         auto callResult = this->CallFunction(funcValue, {});
         if (isError(callResult)) {
-          std::cerr << "Runtime error in hotkey: " << getErrorMessage(callResult)
-                    << std::endl;
+          std::cerr << "Runtime error in hotkey: "
+                    << getErrorMessage(callResult) << std::endl;
         }
       }
-      // If not a function, the action was an expression - result is already computed
+      // If not a function, the action was an expression - result is already
+      // computed
     }
   };
 
@@ -974,7 +990,8 @@ void Interpreter::visitHotkeyBinding(const ast::HotkeyBinding &node) {
       hostContext.io->Hotkey(hotkey, actionHandler);
     } else {
       // In pure mode, hotkeys cannot be registered
-      std::cerr << "Warning: Hotkey '" << hotkey << "' registered but IO not available (pure mode)\n";
+      std::cerr << "Warning: Hotkey '" << hotkey
+                << "' registered but IO not available (pure mode)\n";
     }
   }
 
@@ -989,14 +1006,14 @@ void Interpreter::visitExpressionStatement(
 void Interpreter::visitSleepStatement(const ast::SleepStatement &node) {
   // Parse duration using the same logic as sleep() builtin
   long long ms = 0;
-  
+
   // Try to parse as number first
   try {
     ms = std::stoll(node.duration);
   } catch (...) {
     // Use the duration string parser
     ms = 0;
-    
+
     // Try HH:MM:SS.mmm format
     std::regex timeRegex(R"((\d+):(\d+):(\d+)(?:\.(\d+))?)");
     std::smatch timeMatch;
@@ -1007,31 +1024,39 @@ void Interpreter::visitSleepStatement(const ast::SleepStatement &node) {
       long long millis = 0;
       if (timeMatch[4].matched) {
         std::string msStr = timeMatch[4].str();
-        while (msStr.length() < 3) msStr += "0";
+        while (msStr.length() < 3)
+          msStr += "0";
         millis = std::stoll(msStr.substr(0, 3));
       }
       ms = ((hours * 3600 + minutes * 60 + seconds) * 1000) + millis;
     } else {
       // Try unit-based format
       std::regex unitRegex(R"((\d+)(ms|s|m|h|d|w))", std::regex::icase);
-      auto begin = std::sregex_iterator(node.duration.begin(), node.duration.end(), unitRegex);
+      auto begin = std::sregex_iterator(node.duration.begin(),
+                                        node.duration.end(), unitRegex);
       auto end = std::sregex_iterator();
-      
+
       for (auto it = begin; it != end; ++it) {
         long long value = std::stoll((*it)[1].str());
         std::string unit = (*it)[2].str();
         std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
-        
-        if (unit == "ms") ms += value;
-        else if (unit == "s") ms += value * 1000;
-        else if (unit == "m" || unit == "min") ms += value * 60 * 1000;
-        else if (unit == "h") ms += value * 3600 * 1000;
-        else if (unit == "d") ms += value * 24 * 3600 * 1000;
-        else if (unit == "w") ms += value * 7 * 24 * 3600 * 1000;
+
+        if (unit == "ms")
+          ms += value;
+        else if (unit == "s")
+          ms += value * 1000;
+        else if (unit == "m" || unit == "min")
+          ms += value * 60 * 1000;
+        else if (unit == "h")
+          ms += value * 3600 * 1000;
+        else if (unit == "d")
+          ms += value * 24 * 3600 * 1000;
+        else if (unit == "w")
+          ms += value * 7 * 24 * 3600 * 1000;
       }
     }
   }
-  
+
   if (ms > 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
   }
@@ -1046,7 +1071,7 @@ void Interpreter::visitRepeatStatement(const ast::RepeatStatement &node) {
     return;
   }
   int count = static_cast<int>(ValueToNumber(unwrap(countResult)));
-  
+
   // Execute body 'count' times
   for (int i = 0; i < count; i++) {
     if (node.body) {
@@ -1061,7 +1086,8 @@ void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
   havel::ProcessResult result = havel::Launcher::runShell(node.command);
 
   // Return structured ProcessResult as an object
-  auto resultObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  auto resultObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
   (*resultObj)["stdout"] = HavelValue(result.stdout);
   (*resultObj)["stderr"] = HavelValue(result.stderr);
   (*resultObj)["exitCode"] = HavelValue(static_cast<double>(result.exitCode));
@@ -1071,7 +1097,8 @@ void Interpreter::visitBacktickExpression(const ast::BacktickExpression &node) {
   lastResult = HavelValue(resultObj);
 }
 
-void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression &node) {
+void Interpreter::visitShellCommandExpression(
+    const ast::ShellCommandExpression &node) {
   // Evaluate command expression to support variables, arrays, etc.
   auto cmdResult = Evaluate(*node.commandExpr);
   if (isError(cmdResult)) {
@@ -1091,7 +1118,8 @@ void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression 
       for (size_t i = 0; i < argsArray->size(); ++i) {
         args.push_back(ValueToString((*argsArray)[i]));
       }
-      result = havel::Launcher::run(args[0], std::vector<std::string>(args.begin() + 1, args.end()));
+      result = havel::Launcher::run(
+          args[0], std::vector<std::string>(args.begin() + 1, args.end()));
     } else {
       lastResult = HavelRuntimeError("Shell command array is empty");
       return;
@@ -1106,7 +1134,8 @@ void Interpreter::visitShellCommandExpression(const ast::ShellCommandExpression 
   lastResult = HavelValue(result.stdout);
 }
 
-void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &node) {
+void Interpreter::visitShellCommandStatement(
+    const ast::ShellCommandStatement &node) {
   // Build command string from expression
   auto cmdResult = Evaluate(*node.commandExpr);
   if (isError(cmdResult)) {
@@ -1118,7 +1147,8 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
 
   // Defensive check: ensure result is valid
   if (!std::holds_alternative<HavelValue>(cmdResult)) {
-    lastResult = HavelRuntimeError("Shell command must be a value, not control flow");
+    lastResult =
+        HavelRuntimeError("Shell command must be a value, not control flow");
     return;
   }
 
@@ -1127,29 +1157,33 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
   havel::printStackTrace(100);
   havel::debug("cmdValue: {}", cmdValue.typeName());
   havel::debug("node at line {}: {}", node.line, node.toString());
-  havel::debug("commandExpr at line {}: {}", node.commandExpr->line, node.commandExpr->toString());
+  havel::debug("commandExpr at line {}: {}", node.commandExpr->line,
+               node.commandExpr->toString());
   // Defensive check: ensure the value itself is valid
   if (cmdValue.is<BuiltinFunction>()) {
-    lastResult = HavelRuntimeError("Shell command cannot be a function. Did you forget ()?");
+    lastResult = HavelRuntimeError(
+        "Shell command cannot be a function. Did you forget ()?");
     return;
   }
-  
-  // Shell commands only accept string or array - prevent weird implicit conversions
+
+  // Shell commands only accept string or array - prevent weird implicit
+  // conversions
   if (!cmdValue.is<std::string>() && !cmdValue.isArray()) {
-    lastResult = HavelRuntimeError("Shell command must be a string or array, got " + 
-                                   cmdValue.typeName());
+    lastResult = HavelRuntimeError(
+        "Shell command must be a string or array, got " + cmdValue.typeName());
     return;
   }
 
   std::string command;
-  
+
   // Check if command is an array (argument vector) or string
   if (cmdValue.isArray()) {
     // Array mode: ["cmd", "arg1", "arg2"] - join into single command
     auto argsArray = cmdValue.asArray();
     if (argsArray && !argsArray->empty()) {
       for (size_t i = 0; i < argsArray->size(); ++i) {
-        if (i > 0) command += " ";
+        if (i > 0)
+          command += " ";
         command += ValueToString((*argsArray)[i]);
       }
     } else {
@@ -1182,135 +1216,193 @@ void Interpreter::visitShellCommandStatement(const ast::ShellCommandStatement &n
 void Interpreter::visitInputStatement(const ast::InputStatement &node) {
   for (const auto &cmd : node.commands) {
     switch (cmd.type) {
-      case ast::InputCommand::SendText:
-        hostContext.io->Send(cmd.text.c_str());
-        break;
+    case ast::InputCommand::SendText:
+      hostContext.io->Send(cmd.text.c_str());
+      break;
 
-      case ast::InputCommand::SendKey:
-        hostContext.io->Send(("{ " + cmd.key + " }").c_str());
-        break;
+    case ast::InputCommand::SendKey:
+      hostContext.io->Send(("{ " + cmd.key + " }").c_str());
+      break;
 
-      case ast::InputCommand::MouseClick:
-        if (cmd.text == "left" || cmd.text == "lmb") {
-          hostContext.io->MouseClick(1);
-        } else if (cmd.text == "right" || cmd.text == "rmb") {
-          hostContext.io->MouseClick(2);
-        } else if (cmd.text == "middle" || cmd.text == "mmb") {
-          hostContext.io->MouseClick(3);
-        } else if (cmd.text == "side1" || cmd.text == "btn4") {
-          hostContext.io->MouseClick(4);
-        } else if (cmd.text == "side2" || cmd.text == "btn5") {
-          hostContext.io->MouseClick(5);
-        }
-        break;
-
-      case ast::InputCommand::MouseMove: {
-        double x = 0, y = 0, speed = 1.0, accel = 1.0;
-        if (!cmd.xExprStr.empty()) {
-          try { x = std::stod(cmd.xExprStr); } catch (...) {}
-        }
-        if (!cmd.yExprStr.empty()) {
-          try { y = std::stod(cmd.yExprStr); } catch (...) {}
-        }
-        if (!cmd.speedExprStr.empty()) {
-          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
-        }
-        if (!cmd.accelExprStr.empty()) {
-          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
-        }
-        hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
-        break;
+    case ast::InputCommand::MouseClick:
+      if (cmd.text == "left" || cmd.text == "lmb") {
+        hostContext.io->MouseClick(1);
+      } else if (cmd.text == "right" || cmd.text == "rmb") {
+        hostContext.io->MouseClick(2);
+      } else if (cmd.text == "middle" || cmd.text == "mmb") {
+        hostContext.io->MouseClick(3);
+      } else if (cmd.text == "side1" || cmd.text == "btn4") {
+        hostContext.io->MouseClick(4);
+      } else if (cmd.text == "side2" || cmd.text == "btn5") {
+        hostContext.io->MouseClick(5);
       }
+      break;
 
-      case ast::InputCommand::MouseRelative: {
-        double x = 0, y = 0, speed = 1.0, accel = 1.0;
-        if (!cmd.xExprStr.empty()) {
-          try { x = std::stod(cmd.xExprStr); } catch (...) {}
-        }
-        if (!cmd.yExprStr.empty()) {
-          try { y = std::stod(cmd.yExprStr); } catch (...) {}
-        }
-        if (!cmd.speedExprStr.empty()) {
-          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
-        }
-        if (!cmd.accelExprStr.empty()) {
-          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
-        }
-        hostContext.io->MouseMove(static_cast<int>(x), static_cast<int>(y), speed, accel);
-        break;
-      }
-
-      case ast::InputCommand::MouseWheel: {
-        double x = 0, y = 0;
-        if (!cmd.xExprStr.empty()) {
-          try { x = std::stod(cmd.xExprStr); } catch (...) {}
-        }
-        if (!cmd.yExprStr.empty()) {
-          try { y = std::stod(cmd.yExprStr); } catch (...) {}
-        }
-        // Use IO::Scroll for wheel events (dy, dx)
-        hostContext.io->Scroll(y, x);
-        break;
-      }
-
-      case ast::InputCommand::MouseClickAt: {
-        double x = 0, y = 0, speed = 1.0, accel = 1.0;
-        int button = 1; // Default to left click
-        if (!cmd.xExprStr.empty()) {
-          try { x = std::stod(cmd.xExprStr); } catch (...) {}
-        }
-        if (!cmd.yExprStr.empty()) {
-          try { y = std::stod(cmd.yExprStr); } catch (...) {}
-        }
-        if (!cmd.speedExprStr.empty()) {
-          try { speed = std::stod(cmd.speedExprStr); } catch (...) {}
-        }
-        if (!cmd.accelExprStr.empty()) {
-          try { accel = std::stod(cmd.accelExprStr); } catch (...) {}
-        }
-        // Parse button string
-        if (!cmd.buttonExprStr.empty()) {
-          std::string btn = cmd.buttonExprStr;
-          if (btn == "left" || btn == "lmb" || btn == "1") button = 1;
-          else if (btn == "right" || btn == "rmb" || btn == "2") button = 2;
-          else if (btn == "middle" || btn == "mmb" || btn == "3") button = 3;
-          else if (btn == "side1" || btn == "btn4" || btn == "4") button = 4;
-          else if (btn == "side2" || btn == "btn5" || btn == "5") button = 5;
-          else {
-            try { button = std::stoi(btn); } catch (...) {}
-          }
-        }
-        // Move to position and click
-        hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y), speed, accel);
-        hostContext.io->MouseClick(button);
-        break;
-      }
-
-      case ast::InputCommand::Sleep: {
-        long long ms = 0;
+    case ast::InputCommand::MouseMove: {
+      double x = 0, y = 0, speed = 1.0, accel = 1.0;
+      if (!cmd.xExprStr.empty()) {
         try {
-          ms = std::stoll(cmd.duration);
+          x = std::stod(cmd.xExprStr);
         } catch (...) {
-          // Use duration parser (simplified)
-          ms = 0;
-          std::regex unitRegex(R"((\d+)(ms|s|m|h))", std::regex::icase);
-          auto begin = std::sregex_iterator(cmd.duration.begin(), cmd.duration.end(), unitRegex);
-          auto end = std::sregex_iterator();
-          for (auto it = begin; it != end; ++it) {
-            long long value = std::stoll((*it)[1].str());
-            std::string unit = (*it)[2].str();
-            std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
-            if (unit == "ms") ms += value;
-            else if (unit == "s") ms += value * 1000;
-            else if (unit == "m" || unit == "min") ms += value * 60 * 1000;
-            else if (unit == "h") ms += value * 3600 * 1000;
+        }
+      }
+      if (!cmd.yExprStr.empty()) {
+        try {
+          y = std::stod(cmd.yExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.speedExprStr.empty()) {
+        try {
+          speed = std::stod(cmd.speedExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.accelExprStr.empty()) {
+        try {
+          accel = std::stod(cmd.accelExprStr);
+        } catch (...) {
+        }
+      }
+      hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y),
+                                  speed, accel);
+      break;
+    }
+
+    case ast::InputCommand::MouseRelative: {
+      double x = 0, y = 0, speed = 1.0, accel = 1.0;
+      if (!cmd.xExprStr.empty()) {
+        try {
+          x = std::stod(cmd.xExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.yExprStr.empty()) {
+        try {
+          y = std::stod(cmd.yExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.speedExprStr.empty()) {
+        try {
+          speed = std::stod(cmd.speedExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.accelExprStr.empty()) {
+        try {
+          accel = std::stod(cmd.accelExprStr);
+        } catch (...) {
+        }
+      }
+      hostContext.io->MouseMove(static_cast<int>(x), static_cast<int>(y), speed,
+                                accel);
+      break;
+    }
+
+    case ast::InputCommand::MouseWheel: {
+      double x = 0, y = 0;
+      if (!cmd.xExprStr.empty()) {
+        try {
+          x = std::stod(cmd.xExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.yExprStr.empty()) {
+        try {
+          y = std::stod(cmd.yExprStr);
+        } catch (...) {
+        }
+      }
+      // Use IO::Scroll for wheel events (dy, dx)
+      hostContext.io->Scroll(y, x);
+      break;
+    }
+
+    case ast::InputCommand::MouseClickAt: {
+      double x = 0, y = 0, speed = 1.0, accel = 1.0;
+      int button = 1; // Default to left click
+      if (!cmd.xExprStr.empty()) {
+        try {
+          x = std::stod(cmd.xExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.yExprStr.empty()) {
+        try {
+          y = std::stod(cmd.yExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.speedExprStr.empty()) {
+        try {
+          speed = std::stod(cmd.speedExprStr);
+        } catch (...) {
+        }
+      }
+      if (!cmd.accelExprStr.empty()) {
+        try {
+          accel = std::stod(cmd.accelExprStr);
+        } catch (...) {
+        }
+      }
+      // Parse button string
+      if (!cmd.buttonExprStr.empty()) {
+        std::string btn = cmd.buttonExprStr;
+        if (btn == "left" || btn == "lmb" || btn == "1")
+          button = 1;
+        else if (btn == "right" || btn == "rmb" || btn == "2")
+          button = 2;
+        else if (btn == "middle" || btn == "mmb" || btn == "3")
+          button = 3;
+        else if (btn == "side1" || btn == "btn4" || btn == "4")
+          button = 4;
+        else if (btn == "side2" || btn == "btn5" || btn == "5")
+          button = 5;
+        else {
+          try {
+            button = std::stoi(btn);
+          } catch (...) {
           }
         }
-        if (ms > 0) {
-          std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        }
-        break;
       }
+      // Move to position and click
+      hostContext.io->MouseMoveTo(static_cast<int>(x), static_cast<int>(y),
+                                  speed, accel);
+      hostContext.io->MouseClick(button);
+      break;
+    }
+
+    case ast::InputCommand::Sleep: {
+      long long ms = 0;
+      try {
+        ms = std::stoll(cmd.duration);
+      } catch (...) {
+        // Use duration parser (simplified)
+        ms = 0;
+        std::regex unitRegex(R"((\d+)(ms|s|m|h))", std::regex::icase);
+        auto begin = std::sregex_iterator(cmd.duration.begin(),
+                                          cmd.duration.end(), unitRegex);
+        auto end = std::sregex_iterator();
+        for (auto it = begin; it != end; ++it) {
+          long long value = std::stoll((*it)[1].str());
+          std::string unit = (*it)[2].str();
+          std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+          if (unit == "ms")
+            ms += value;
+          else if (unit == "s")
+            ms += value * 1000;
+          else if (unit == "m" || unit == "min")
+            ms += value * 60 * 1000;
+          else if (unit == "h")
+            ms += value * 3600 * 1000;
+        }
+      }
+      if (ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+      }
+      break;
+    }
     }
   }
   lastResult = HavelValue(nullptr);
@@ -1337,20 +1429,44 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     if (structInst.structType) {
       std::string opName;
       switch (node.operator_) {
-        case ast::BinaryOperator::Add: opName = "op_add"; break;
-        case ast::BinaryOperator::Sub: opName = "op_sub"; break;
-        case ast::BinaryOperator::Mul: opName = "op_mul"; break;
-        case ast::BinaryOperator::Div: opName = "op_div"; break;
-        case ast::BinaryOperator::Mod: opName = "op_mod"; break;
-        case ast::BinaryOperator::Equal: opName = "op_eq"; break;
-        case ast::BinaryOperator::NotEqual: opName = "op_ne"; break;
-        case ast::BinaryOperator::Less: opName = "op_lt"; break;
-        case ast::BinaryOperator::Greater: opName = "op_gt"; break;
-        case ast::BinaryOperator::LessEqual: opName = "op_le"; break;
-        case ast::BinaryOperator::GreaterEqual: opName = "op_ge"; break;
-        default: opName = ""; break;
+      case ast::BinaryOperator::Add:
+        opName = "op_add";
+        break;
+      case ast::BinaryOperator::Sub:
+        opName = "op_sub";
+        break;
+      case ast::BinaryOperator::Mul:
+        opName = "op_mul";
+        break;
+      case ast::BinaryOperator::Div:
+        opName = "op_div";
+        break;
+      case ast::BinaryOperator::Mod:
+        opName = "op_mod";
+        break;
+      case ast::BinaryOperator::Equal:
+        opName = "op_eq";
+        break;
+      case ast::BinaryOperator::NotEqual:
+        opName = "op_ne";
+        break;
+      case ast::BinaryOperator::Less:
+        opName = "op_lt";
+        break;
+      case ast::BinaryOperator::Greater:
+        opName = "op_gt";
+        break;
+      case ast::BinaryOperator::LessEqual:
+        opName = "op_le";
+        break;
+      case ast::BinaryOperator::GreaterEqual:
+        opName = "op_ge";
+        break;
+      default:
+        opName = "";
+        break;
       }
-      
+
       if (!opName.empty() && structInst.structType->hasOperator(opName)) {
         auto opMethod = structInst.structType->getOperator(opName);
         if (opMethod && opMethod->body) {
@@ -1358,13 +1474,13 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
           auto methodEnv = std::make_shared<Environment>(this->environment);
           methodEnv->Define("this", left);
           methodEnv->Define("other", right);
-          
+
           // Execute operator body
           auto originalEnv = this->environment;
           this->environment = methodEnv;
           auto result = Evaluate(*opMethod->body);
           this->environment = originalEnv;
-          
+
           if (std::holds_alternative<ReturnValue>(result)) {
             auto ret = std::get<ReturnValue>(result);
             lastResult = ret.value ? *ret.value : HavelValue();
@@ -1397,7 +1513,9 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
       std::string str = left.asString();
       int count = static_cast<int>(right.asNumber());
       if (count < 0) {
-        lastResult = HavelRuntimeError("String repetition count must be non-negative", node.line, node.column);
+        lastResult =
+            HavelRuntimeError("String repetition count must be non-negative",
+                              node.line, node.column);
         return;
       }
       std::string result;
@@ -1410,7 +1528,9 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
       int count = static_cast<int>(left.asNumber());
       std::string str = right.asString();
       if (count < 0) {
-        lastResult = HavelRuntimeError("String repetition count must be non-negative", node.line, node.column);
+        lastResult =
+            HavelRuntimeError("String repetition count must be non-negative",
+                              node.line, node.column);
         return;
       }
       std::string result;
@@ -1425,7 +1545,8 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     break;
   case ast::BinaryOperator::Div:
     if (ValueToNumber(right) == 0.0) {
-      lastResult = HavelRuntimeError("Division by zero", node.line, node.column);
+      lastResult =
+          HavelRuntimeError("Division by zero", node.line, node.column);
       return;
     }
     lastResult = ValueToNumber(left) / ValueToNumber(right);
@@ -1465,11 +1586,11 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
   case ast::BinaryOperator::In: {
     // Membership operator: left in right
     bool found = false;
-    
+
     if (right.isArray()) {
       // Check if left exists in array
-      auto& arr = *right.asArray();
-      for (const auto& elem : arr) {
+      auto &arr = *right.asArray();
+      for (const auto &elem : arr) {
         if (ValueToString(elem) == ValueToString(left)) {
           found = true;
           break;
@@ -1477,43 +1598,47 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
       }
     } else if (right.isObject()) {
       // Check if object has key equal to left
-      auto& obj = *right.asObject();
+      auto &obj = *right.asObject();
       std::string key = ValueToString(left);
       found = (obj.find(key) != obj.end());
     } else if (right.isString() && left.isString()) {
       // Substring check: left in right
       found = (right.asString().find(left.asString()) != std::string::npos);
     } else {
-      lastResult = HavelRuntimeError("'in' operator requires array, object, or string on right side", node.line, node.column);
+      lastResult = HavelRuntimeError(
+          "'in' operator requires array, object, or string on right side",
+          node.line, node.column);
       return;
     }
-    
+
     lastResult = HavelValue(found);
     break;
   }
   case ast::BinaryOperator::NotIn: {
     // Negated membership: left not in right
     bool found = false;
-    
+
     if (right.isArray()) {
-      auto& arr = *right.asArray();
-      for (const auto& elem : arr) {
+      auto &arr = *right.asArray();
+      for (const auto &elem : arr) {
         if (ValueToString(elem) == ValueToString(left)) {
           found = true;
           break;
         }
       }
     } else if (right.isObject()) {
-      auto& obj = *right.asObject();
+      auto &obj = *right.asObject();
       std::string key = ValueToString(left);
       found = (obj.find(key) != obj.end());
     } else if (right.isString() && left.isString()) {
       found = (right.asString().find(left.asString()) != std::string::npos);
     } else {
-      lastResult = HavelRuntimeError("'not in' operator requires array, object, or string on right side", node.line, node.column);
+      lastResult = HavelRuntimeError(
+          "'not in' operator requires array, object, or string on right side",
+          node.line, node.column);
       return;
     }
-    
+
     lastResult = HavelValue(!found);
     break;
   }
@@ -1521,16 +1646,19 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     // Regex match operator: left matches right
     // right should be a regex pattern string
     if (!left.isString() || !right.isString()) {
-      lastResult = HavelRuntimeError("'matches' operator requires strings on both sides", node.line, node.column);
+      lastResult =
+          HavelRuntimeError("'matches' operator requires strings on both sides",
+                            node.line, node.column);
       return;
     }
-    
+
     try {
       std::regex pattern(right.asString());
       bool matched = std::regex_search(left.asString(), pattern);
       lastResult = HavelValue(matched);
-    } catch (const std::regex_error& e) {
-      lastResult = HavelRuntimeError("Invalid regex pattern: " + right.asString(), node.line, node.column);
+    } catch (const std::regex_error &e) {
+      lastResult = HavelRuntimeError(
+          "Invalid regex pattern: " + right.asString(), node.line, node.column);
       return;
     }
     break;
@@ -1540,13 +1668,13 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
     // value >> config.path - SET config value
     // config.path >> variable - GET config value
     // { block } >> config - SET config from object
-    auto& config = Configs::Get();
+    auto &config = Configs::Get();
 
     if (right.isObject()) {
       // value >> {config} - merge object into config
       auto rightObj = right.asObject();
       if (rightObj) {
-        for (const auto& [key, val] : *rightObj) {
+        for (const auto &[key, val] : *rightObj) {
           if (val.isString()) {
             config.Set("General." + key, val.asString(), false);
           } else if (val.isNumber()) {
@@ -1555,7 +1683,7 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
             config.Set("General." + key, val.asBool(), false);
           }
         }
-        config.EndBatch();  // Save all changes
+        config.EndBatch(); // Save all changes
         lastResult = right;
       } else {
         lastResult = HavelRuntimeError("Config append requires valid object");
@@ -1577,8 +1705,9 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
         // Object >> "config" - merge object into config
         auto leftObj = left.asObject();
         if (leftObj) {
-          for (const auto& [key, val] : *leftObj) {
-            std::string fullKey = configKey.empty() ? key : configKey + "." + key;
+          for (const auto &[key, val] : *leftObj) {
+            std::string fullKey =
+                configKey.empty() ? key : configKey + "." + key;
             if (val.isString()) {
               config.Set(fullKey, val.asString(), false);
             } else if (val.isNumber()) {
@@ -1591,7 +1720,8 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
         }
         lastResult = left;
       } else {
-        lastResult = HavelRuntimeError("Config value must be string, number, bool, or object");
+        lastResult = HavelRuntimeError(
+            "Config value must be string, number, bool, or object");
       }
     } else {
       // config.path >> variable - GET config value (reverse direction)
@@ -1600,7 +1730,8 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
       if (right.isString()) {
         configKey = right.asString();
       } else {
-        lastResult = HavelRuntimeError("Config get requires string key on right side");
+        lastResult =
+            HavelRuntimeError("Config get requires string key on right side");
         break;
       }
 
@@ -1613,7 +1744,7 @@ void Interpreter::visitBinaryExpression(const ast::BinaryExpression &node) {
         if (configNum != 0.0) {
           lastResult = HavelValue(configNum);
         } else {
-          lastResult = HavelValue(nullptr);  // Config key not found
+          lastResult = HavelValue(nullptr); // Config key not found
         }
       }
     }
@@ -1638,25 +1769,33 @@ void Interpreter::visitUnaryExpression(const ast::UnaryExpression &node) {
     if (structInst.structType) {
       std::string opName;
       switch (node.operator_) {
-        case ast::UnaryExpression::UnaryOperator::Not: opName = "op_not"; break;
-        case ast::UnaryExpression::UnaryOperator::Minus: opName = "op_neg"; break;
-        case ast::UnaryExpression::UnaryOperator::Plus: opName = "op_pos"; break;
-        default: opName = ""; break;
+      case ast::UnaryExpression::UnaryOperator::Not:
+        opName = "op_not";
+        break;
+      case ast::UnaryExpression::UnaryOperator::Minus:
+        opName = "op_neg";
+        break;
+      case ast::UnaryExpression::UnaryOperator::Plus:
+        opName = "op_pos";
+        break;
+      default:
+        opName = "";
+        break;
       }
-      
+
       if (!opName.empty() && structInst.structType->hasOperator(opName)) {
         auto opMethod = structInst.structType->getOperator(opName);
         if (opMethod && opMethod->body) {
           // Create method environment with 'this' bound to operand
           auto methodEnv = std::make_shared<Environment>(this->environment);
           methodEnv->Define("this", operand);
-          
+
           // Execute operator body
           auto originalEnv = this->environment;
           this->environment = methodEnv;
           auto result = Evaluate(*opMethod->body);
           this->environment = originalEnv;
-          
+
           if (std::holds_alternative<ReturnValue>(result)) {
             auto ret = std::get<ReturnValue>(result);
             lastResult = ret.value ? *ret.value : HavelValue();
@@ -1691,7 +1830,8 @@ void Interpreter::visitUpdateExpression(const ast::UpdateExpression &node) {
   if (auto *id = dynamic_cast<const ast::Identifier *>(node.argument.get())) {
     auto currentValOpt = environment->Get(id->symbol);
     if (!currentValOpt) {
-      lastResult = HavelRuntimeError("Undefined variable: " + id->symbol, node.line, node.column);
+      lastResult = HavelRuntimeError("Undefined variable: " + id->symbol,
+                                     node.line, node.column);
       return;
     }
 
@@ -1783,15 +1923,16 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       else if (auto *objPtr = value.get_if<HavelObject>()) {
         if (*objPtr) {
           // Sort keys to ensure consistent order (x before y, etc.)
-          std::vector<std::pair<std::string, HavelValue>> sortedPairs((*objPtr)->begin(), (*objPtr)->end());
-          std::sort(sortedPairs.begin(), sortedPairs.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
+          std::vector<std::pair<std::string, HavelValue>> sortedPairs(
+              (*objPtr)->begin(), (*objPtr)->end());
+          std::sort(
+              sortedPairs.begin(), sortedPairs.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
           for (const auto &pair : sortedPairs) {
             args.push_back(pair.second);
           }
         }
-      }
-      else {
+      } else {
         // Non-array/object spread - add as single arg
         args.push_back(value);
       }
@@ -1803,24 +1944,27 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
   // Check for struct call operator: obj()
   if (callee.isStructInstance()) {
     auto structInst = callee.asStructInstance();
-    if (structInst.structType && structInst.structType->hasOperator("op_call")) {
+    if (structInst.structType &&
+        structInst.structType->hasOperator("op_call")) {
       auto opMethod = structInst.structType->getOperator("op_call");
       if (opMethod && opMethod->body) {
         // Create method environment with 'this' bound to callee
         auto methodEnv = std::make_shared<Environment>(this->environment);
         methodEnv->Define("this", callee);
-        
+
         // Bind arguments to parameters
-        for (size_t i = 0; i < opMethod->parameters.size() && i < args.size(); ++i) {
-          methodEnv->Define(opMethod->parameters[i]->paramName->symbol, args[i]);
+        for (size_t i = 0; i < opMethod->parameters.size() && i < args.size();
+             ++i) {
+          methodEnv->Define(opMethod->parameters[i]->paramName->symbol,
+                            args[i]);
         }
-        
+
         // Execute operator body
         auto originalEnv = this->environment;
         this->environment = methodEnv;
         auto result = Evaluate(*opMethod->body);
         this->environment = originalEnv;
-        
+
         if (std::holds_alternative<ReturnValue>(result)) {
           auto ret = std::get<ReturnValue>(result);
           lastResult = ret.value ? *ret.value : HavelValue();
@@ -1844,7 +1988,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     }
   } else if (auto *userFunc = callee.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
-    
+
     // Check argument count (allow fewer args if defaults exist)
     if (args.size() > func->declaration->parameters.size()) {
       lastResult = HavelRuntimeError("Too many arguments for function " +
@@ -1853,7 +1997,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
     }
 
     auto funcEnv = std::make_shared<Environment>(func->closure);
-    
+
     // Bind arguments and apply defaults
     for (size_t i = 0; i < func->declaration->parameters.size(); ++i) {
       HavelValue value;
@@ -1862,7 +2006,8 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
         value = args[i];
       } else if (func->declaration->parameters[i]->defaultValue) {
         // Use default value (evaluated at call time)
-        auto defaultRes = Evaluate(*func->declaration->parameters[i]->defaultValue->get());
+        auto defaultRes =
+            Evaluate(*func->declaration->parameters[i]->defaultValue->get());
         if (isError(defaultRes)) {
           lastResult = defaultRes;
           return;
@@ -1870,11 +2015,13 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
         value = unwrap(defaultRes);
       } else {
         // No default and no argument
-        lastResult = HavelRuntimeError("Missing argument for parameter '" +
-                                       func->declaration->parameters[i]->paramName->symbol + "'");
+        lastResult = HavelRuntimeError(
+            "Missing argument for parameter '" +
+            func->declaration->parameters[i]->paramName->symbol + "'");
         return;
       }
-      funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, value);
+      funcEnv->Define(func->declaration->parameters[i]->paramName->symbol,
+                      value);
     }
 
     auto originalEnv = this->environment;
@@ -1901,50 +2048,53 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       }
     }
     lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
-                                   ValueToString(callee),
+                                       ValueToString(callee),
                                    node.line, node.column);
   } else {
     lastResult = HavelRuntimeError("Attempted to call a non-callable value: " +
-                                   ValueToString(callee),
+                                       ValueToString(callee),
                                    node.line, node.column);
   }
 }
 
 // CallFunction - Execute a function value (for hotkey callbacks)
-HavelResult Interpreter::CallFunction(const HavelValue& func, const std::vector<HavelValue>& args) {
-    if (auto* builtin = func.get_if<BuiltinFunction>()) {
-        return (*builtin)(args);
-    } else if (auto* userFunc = func.get_if<std::shared_ptr<HavelFunction>>()) {
-        auto& f = **userFunc;
-        
-        // Create new environment with function's closure
-        auto funcEnv = std::make_shared<Environment>(f.closure);
-        for (size_t i = 0; i < args.size() && i < f.declaration->parameters.size(); ++i) {
-            funcEnv->Define(f.declaration->parameters[i]->paramName->symbol, args[i]);
-        }
-        
-        // Save and switch environment
-        auto originalEnv = this->environment;
-        this->environment = funcEnv;
-        
-        // Execute function body
-        auto bodyResult = Evaluate(*f.declaration->body);
-        
-        // Restore environment
-        this->environment = originalEnv;
-        
-        // Handle return value
-        if (std::holds_alternative<ReturnValue>(bodyResult)) {
-            auto ret = std::get<ReturnValue>(bodyResult);
-            return ret.value ? *ret.value : HavelValue();
-        } else if (isError(bodyResult)) {
-            return bodyResult;
-        } else {
-            return unwrap(bodyResult); // Implicit return
-        }
-    } else {
-        return HavelRuntimeError("Attempted to call a non-callable value: " + ValueToString(func));
+HavelResult Interpreter::CallFunction(const HavelValue &func,
+                                      const std::vector<HavelValue> &args) {
+  if (auto *builtin = func.get_if<BuiltinFunction>()) {
+    return (*builtin)(args);
+  } else if (auto *userFunc = func.get_if<std::shared_ptr<HavelFunction>>()) {
+    auto &f = **userFunc;
+
+    // Create new environment with function's closure
+    auto funcEnv = std::make_shared<Environment>(f.closure);
+    for (size_t i = 0; i < args.size() && i < f.declaration->parameters.size();
+         ++i) {
+      funcEnv->Define(f.declaration->parameters[i]->paramName->symbol, args[i]);
     }
+
+    // Save and switch environment
+    auto originalEnv = this->environment;
+    this->environment = funcEnv;
+
+    // Execute function body
+    auto bodyResult = Evaluate(*f.declaration->body);
+
+    // Restore environment
+    this->environment = originalEnv;
+
+    // Handle return value
+    if (std::holds_alternative<ReturnValue>(bodyResult)) {
+      auto ret = std::get<ReturnValue>(bodyResult);
+      return ret.value ? *ret.value : HavelValue();
+    } else if (isError(bodyResult)) {
+      return bodyResult;
+    } else {
+      return unwrap(bodyResult); // Implicit return
+    }
+  } else {
+    return HavelRuntimeError("Attempted to call a non-callable value: " +
+                             ValueToString(func));
+  }
 }
 
 void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
@@ -1964,19 +2114,22 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
 
   // Handle null/undefined
   if (objectValue.is<std::nullptr_t>()) {
-    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on null");
+    lastResult =
+        HavelRuntimeError("Cannot access member '" + propName + "' on null");
     return;
   }
-  
+
   // Handle numbers
   if (objectValue.isNumber()) {
-    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on number");
+    lastResult =
+        HavelRuntimeError("Cannot access member '" + propName + "' on number");
     return;
   }
-  
+
   // Handle booleans
   if (objectValue.isBool()) {
-    lastResult = HavelRuntimeError("Cannot access member '" + propName + "' on boolean");
+    lastResult =
+        HavelRuntimeError("Cannot access member '" + propName + "' on boolean");
     return;
   }
 
@@ -2000,13 +2153,14 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the string as first argument
-      auto str = *strPtr;  // Capture the string value
-      lastResult = HavelValue(BuiltinFunction([str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
-        std::vector<HavelValue> boundArgs;
-        boundArgs.push_back(HavelValue(str));
-        boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-        return builtin(boundArgs);
-      }));
+      auto str = *strPtr; // Capture the string value
+      lastResult = HavelValue(BuiltinFunction(
+          [str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
+            std::vector<HavelValue> boundArgs;
+            boundArgs.push_back(HavelValue(str));
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            return builtin(boundArgs);
+          }));
       return;
     }
   }
@@ -2022,13 +2176,14 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
     if (methodValOpt && methodValOpt->is<BuiltinFunction>()) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the array as first argument
-      auto array = objectValue;  // Capture the array value
-      lastResult = HavelValue(BuiltinFunction([array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
-        std::vector<HavelValue> boundArgs;
-        boundArgs.push_back(array);
-        boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-        return builtin(boundArgs);
-      }));
+      auto array = objectValue; // Capture the array value
+      lastResult = HavelValue(BuiltinFunction(
+          [array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
+            std::vector<HavelValue> boundArgs;
+            boundArgs.push_back(array);
+            boundArgs.insert(boundArgs.end(), args.begin(), args.end());
+            return builtin(boundArgs);
+          }));
       return;
     }
   }
@@ -2049,73 +2204,85 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
       if (method) {
         // Create a bound method that captures the struct instance as 'this'
         auto instance = objectValue;
-        const ast::StructMethodDef* methodPtr = method;  // Capture raw pointer
-        lastResult = HavelValue(BuiltinFunction([this, instance, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
-          // Check argument count
-          if (args.size() != methodPtr->parameters.size()) {
-            return HavelRuntimeError("Method expects " + std::to_string(methodPtr->parameters.size()) + " args but got " + std::to_string(args.size()));
-          }
-          // Create method environment with 'this' bound
-          auto methodEnv = std::make_shared<Environment>(this->environment);
-          methodEnv->Define("this", instance);
-          // Bind parameters
-          for (size_t i = 0; i < methodPtr->parameters.size() && i < args.size(); ++i) {
-            methodEnv->Define(methodPtr->parameters[i]->paramName->symbol, args[i]);
-          }
-          // Execute method body
-          auto originalEnv = this->environment;
-          this->environment = methodEnv;
-          auto res = Evaluate(*methodPtr->body);
-          this->environment = originalEnv;
-          if (std::holds_alternative<ReturnValue>(res)) {
-            auto ret = std::get<ReturnValue>(res);
-            return ret.value ? *ret.value : HavelValue();
-          }
-          return res;
-        }));
+        const ast::StructMethodDef *methodPtr = method; // Capture raw pointer
+        lastResult = HavelValue(BuiltinFunction(
+            [this, instance,
+             methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
+              // Check argument count
+              if (args.size() != methodPtr->parameters.size()) {
+                return HavelRuntimeError(
+                    "Method expects " +
+                    std::to_string(methodPtr->parameters.size()) +
+                    " args but got " + std::to_string(args.size()));
+              }
+              // Create method environment with 'this' bound
+              auto methodEnv = std::make_shared<Environment>(this->environment);
+              methodEnv->Define("this", instance);
+              // Bind parameters
+              for (size_t i = 0;
+                   i < methodPtr->parameters.size() && i < args.size(); ++i) {
+                methodEnv->Define(methodPtr->parameters[i]->paramName->symbol,
+                                  args[i]);
+              }
+              // Execute method body
+              auto originalEnv = this->environment;
+              this->environment = methodEnv;
+              auto res = Evaluate(*methodPtr->body);
+              this->environment = originalEnv;
+              if (std::holds_alternative<ReturnValue>(res)) {
+                auto ret = std::get<ReturnValue>(res);
+                return ret.value ? *ret.value : HavelValue();
+              }
+              return res;
+            }));
         return;
       }
-      
+
       // Default toString() method for all structs
       if (propName == "toString") {
         auto structInst = objectValue.asStructInstance();
-        lastResult = HavelValue(BuiltinFunction([structInst](const std::vector<HavelValue>&) -> HavelResult {
-          std::string result = structInst.typeName + "{";
-          bool first = true;
-          if (structInst.fields) {
-            for (const auto& [name, value] : *structInst.fields) {
-              if (!first) result += ", ";
-              result += name + "=" + ValueToString(value);
-              first = false;
-            }
-          }
-          result += "}";
-          return HavelValue(result);
-        }));
+        lastResult = HavelValue(BuiltinFunction(
+            [structInst](const std::vector<HavelValue> &) -> HavelResult {
+              std::string result = structInst.typeName + "{";
+              bool first = true;
+              if (structInst.fields) {
+                for (const auto &[name, value] : *structInst.fields) {
+                  if (!first)
+                    result += ", ";
+                  result += name + "=" + ValueToString(value);
+                  first = false;
+                }
+              }
+              result += "}";
+              return HavelValue(result);
+            }));
         return;
       }
-      
+
       // Check trait impls for this type
       auto typeName = structPtr->typeName;
       auto traitImpls = TraitRegistry::getInstance().getImplsForType(typeName);
-      for (const auto* impl : traitImpls) {
+      for (const auto *impl : traitImpls) {
         auto methodIt = impl->methods.find(propName);
         if (methodIt != impl->methods.end()) {
           // Found trait method - create bound version
           auto instance = objectValue;
           auto traitMethod = methodIt->second.get<BuiltinFunction>();
-          lastResult = HavelValue(BuiltinFunction([this, instance, traitMethod](const std::vector<HavelValue> &args) -> HavelResult {
-            // Create method environment with 'this' bound
-            auto methodEnv = std::make_shared<Environment>(this->environment);
-            methodEnv->Define("this", instance);
-            auto originalEnv = this->environment;
-            this->environment = methodEnv;
-            // Call the trait method with instance as first arg
-            std::vector<HavelValue> callArgs = args;
-            auto res = traitMethod(callArgs);
-            this->environment = originalEnv;
-            return res;
-          }));
+          lastResult = HavelValue(BuiltinFunction(
+              [this, instance, traitMethod](
+                  const std::vector<HavelValue> &args) -> HavelResult {
+                // Create method environment with 'this' bound
+                auto methodEnv =
+                    std::make_shared<Environment>(this->environment);
+                methodEnv->Define("this", instance);
+                auto originalEnv = this->environment;
+                this->environment = methodEnv;
+                // Call the trait method with instance as first arg
+                std::vector<HavelValue> callArgs = args;
+                auto res = traitMethod(callArgs);
+                this->environment = originalEnv;
+                return res;
+              }));
           return;
         }
       }
@@ -2134,29 +2301,31 @@ void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
   // Store parameter info (names and default values)
   struct ParamInfo {
     std::string name;
-    const ast::Expression* defaultValue;
+    const ast::Expression *defaultValue;
   };
   std::vector<ParamInfo> paramInfos;
-  for (const auto& param : node.parameters) {
+  for (const auto &param : node.parameters) {
     ParamInfo info;
     info.name = param->paramName->symbol;
-    info.defaultValue = param->defaultValue ? param->defaultValue->get() : nullptr;
+    info.defaultValue =
+        param->defaultValue ? param->defaultValue->get() : nullptr;
     paramInfos.push_back(info);
   }
 
   // Store raw pointer to body - AST lives for entire script execution
-  const ast::Statement* bodyPtr = node.body.get();
+  const ast::Statement *bodyPtr = node.body.get();
 
   // Build a callable that binds args to parameter names and evaluates body
   BuiltinFunction lambda =
-      [this, closureEnv, paramInfos, bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
+      [this, closureEnv, paramInfos,
+       bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
     // Check argument count (allow fewer args if defaults exist)
     if (args.size() > paramInfos.size()) {
       return HavelRuntimeError("Too many arguments for lambda");
     }
-    
+
     auto funcEnv = std::make_shared<Environment>(closureEnv);
-    
+
     // Bind arguments and apply defaults
     for (size_t i = 0; i < paramInfos.size(); ++i) {
       HavelValue value;
@@ -2172,11 +2341,12 @@ void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
         value = unwrap(defaultRes);
       } else {
         // No default and no argument
-        return HavelRuntimeError("Missing argument for parameter '" + paramInfos[i].name + "'");
+        return HavelRuntimeError("Missing argument for parameter '" +
+                                 paramInfos[i].name + "'");
       }
       funcEnv->Define(paramInfos[i].name, value);
     }
-    
+
     auto originalEnv = this->environment;
     this->environment = funcEnv;
     auto res = Evaluate(*bodyPtr);
@@ -2254,36 +2424,39 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
     } else if (auto *userFunc =
                    callee.get_if<std::shared_ptr<HavelFunction>>()) {
       auto &func = *userFunc;
-      
+
       // Check argument count (allow fewer args if defaults exist)
       if (args.size() > func->declaration->parameters.size()) {
-        lastResult = HavelRuntimeError(
-            "Too many arguments for function in pipeline");
+        lastResult =
+            HavelRuntimeError("Too many arguments for function in pipeline");
         return;
       }
-      
+
       auto funcEnv = std::make_shared<Environment>(func->closure);
-      
+
       // Bind arguments and apply defaults
       for (size_t i = 0; i < func->declaration->parameters.size(); ++i) {
         HavelValue value;
         if (i < args.size()) {
           value = args[i];
         } else if (func->declaration->parameters[i]->defaultValue) {
-          auto defaultRes = this->Evaluate(*func->declaration->parameters[i]->defaultValue->get());
+          auto defaultRes = this->Evaluate(
+              *func->declaration->parameters[i]->defaultValue->get());
           if (isError(defaultRes)) {
             lastResult = defaultRes;
             return;
           }
           value = unwrap(defaultRes);
         } else {
-          lastResult = HavelRuntimeError("Missing argument for parameter '" +
-                                         func->declaration->parameters[i]->paramName->symbol + "'");
+          lastResult = HavelRuntimeError(
+              "Missing argument for parameter '" +
+              func->declaration->parameters[i]->paramName->symbol + "'");
           return;
         }
-        funcEnv->Define(func->declaration->parameters[i]->paramName->symbol, value);
+        funcEnv->Define(func->declaration->parameters[i]->paramName->symbol,
+                        value);
       }
-      
+
       auto originalEnv = this->environment;
       this->environment = funcEnv;
       currentResult = Evaluate(*func->declaration->body);
@@ -2553,15 +2726,17 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
 
     // Defensive check: ensure result is valid
     if (!std::holds_alternative<HavelValue>(result)) {
-      lastResult = HavelRuntimeError("Array element must be a value, not control flow");
+      lastResult =
+          HavelRuntimeError("Array element must be a value, not control flow");
       return;
     }
-    
+
     HavelValue value = unwrap(result);
-    
+
     // Defensive check: skip corrupted values
     if (value.is<BuiltinFunction>()) {
-      lastResult = HavelRuntimeError("Array cannot contain functions. Did you forget ()?");
+      lastResult = HavelRuntimeError(
+          "Array cannot contain functions. Did you forget ()?");
       return;
     }
 
@@ -2578,8 +2753,7 @@ void Interpreter::visitArrayLiteral(const ast::ArrayLiteral &node) {
       // Spread objects in array context - just add the object
       else if (auto *objPtr = value.get_if<HavelObject>()) {
         array->push_back(value);
-      }
-      else {
+      } else {
         // Non-array, non-object spread - add as-is
         array->push_back(value);
       }
@@ -2627,7 +2801,7 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral &node) {
       lastResult = result;
       return;
     }
-    
+
     // Check if this is a spread expression (marked with "__spread__" key)
     if (key == "__spread__") {
       auto value = unwrap(result);
@@ -2635,7 +2809,7 @@ void Interpreter::visitObjectLiteral(const ast::ObjectLiteral &node) {
       if (auto *objPtr = value.get_if<HavelObject>()) {
         if (*objPtr) {
           for (const auto &[k, v] : **objPtr) {
-            (*object)[k] = v;  // Later keys override earlier ones
+            (*object)[k] = v; // Later keys override earlier ones
           }
         }
       }
@@ -2682,16 +2856,18 @@ void Interpreter::visitConfigBlock(const ast::ConfigBlock &node) {
 
 // Helper to process config pairs recursively
 void Interpreter::processConfigPairs(
-    const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
-    Configs& config,
-    const std::string& prefix) {
+    const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>
+        &pairs,
+    Configs &config, const std::string &prefix) {
 
   for (const auto &[key, valueExpr] : pairs) {
     // Skip "file" key (already processed)
-    if (key == "file") continue;
+    if (key == "file")
+      continue;
 
     // Check if value is a nested ObjectLiteral (nested config block)
-    if (auto* objLit = dynamic_cast<const ast::ObjectLiteral*>(valueExpr.get())) {
+    if (auto *objLit =
+            dynamic_cast<const ast::ObjectLiteral *>(valueExpr.get())) {
       // Recursively process nested block with updated prefix
       processConfigPairs(objLit->pairs, config, prefix + key + ".");
     } else {
@@ -2773,12 +2949,14 @@ void Interpreter::visitDevicesBlock(const ast::DevicesBlock &node) {
 }
 
 void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
-  // Process mode definitions - convert unique_ptr to shared_ptr for safe ownership
-  for (auto& modeDef : const_cast<ast::ModesBlock&>(node).modes) {
+  // Process mode definitions - convert unique_ptr to shared_ptr for safe
+  // ownership
+  for (auto &modeDef : const_cast<ast::ModesBlock &>(node).modes) {
     // Convert unique_ptr to shared_ptr to keep AST alive
     std::shared_ptr<ast::Expression> conditionExpr;
     if (modeDef.condition) {
-      conditionExpr = std::shared_ptr<ast::Expression>(modeDef.condition.release());
+      conditionExpr =
+          std::shared_ptr<ast::Expression>(modeDef.condition.release());
     }
 
     // Create enter callback
@@ -2786,7 +2964,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.enterBlock) {
       enterCallback = [this, block = modeDef.enterBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2804,7 +2982,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.exitBlock) {
       exitCallback = [this, block = modeDef.exitBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2818,12 +2996,13 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     }
 
     // Create onEnterFrom callback
-    std::function<void(const std::string&)> onEnterFromCallback;
+    std::function<void(const std::string &)> onEnterFromCallback;
     if (modeDef.onEnterFromBlock) {
       std::string fromMode = modeDef.onEnterFrom;
-      onEnterFromCallback = [this, block = modeDef.onEnterFromBlock.get(), fromMode](const std::string&) {
+      onEnterFromCallback = [this, block = modeDef.onEnterFromBlock.get(),
+                             fromMode](const std::string &) {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2837,12 +3016,13 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     }
 
     // Create onExitTo callback
-    std::function<void(const std::string&)> onExitToCallback;
+    std::function<void(const std::string &)> onExitToCallback;
     if (modeDef.onExitToBlock) {
       std::string toMode = modeDef.onExitTo;
-      onExitToCallback = [this, block = modeDef.onExitToBlock.get(), toMode](const std::string&) {
+      onExitToCallback = [this, block = modeDef.onExitToBlock.get(),
+                          toMode](const std::string &) {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2860,7 +3040,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.onCloseBlock) {
       onCloseCallback = [this, block = modeDef.onCloseBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2877,7 +3057,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.onMinimizeBlock) {
       onMinimizeCallback = [this, block = modeDef.onMinimizeBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2894,7 +3074,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.onMaximizeBlock) {
       onMaximizeCallback = [this, block = modeDef.onMaximizeBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2911,7 +3091,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (modeDef.onOpenBlock) {
       onOpenCallback = [this, block = modeDef.onOpenBlock.get()]() {
         auto oldResult = lastResult;
-        for (const auto& stmt : block->body) {
+        for (const auto &stmt : block->body) {
           if (stmt) {
             Evaluate(*stmt);
             if (isError(lastResult)) {
@@ -2928,7 +3108,7 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     if (hostContext.modeManager) {
       ModeManager::ModeDefinition modeDefn;
       modeDefn.name = modeDef.name;
-      modeDefn.conditionExpr = conditionExpr;  // shared_ptr keeps AST alive
+      modeDefn.conditionExpr = conditionExpr; // shared_ptr keeps AST alive
       modeDefn.onEnter = enterCallback;
       modeDefn.onExit = exitCallback;
       modeDefn.onEnterFrom = onEnterFromCallback;
@@ -2945,11 +3125,13 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
     std::string initialMode = node.modes[0].name;
     environment->Define("__current_mode__", HavelValue(initialMode));
     environment->Define("current_mode", HavelValue(initialMode));
-    environment->Define("__previous_mode__", HavelValue(std::string("default")));
+    environment->Define("__previous_mode__",
+                        HavelValue(std::string("default")));
   } else {
     environment->Define("__current_mode__", HavelValue(std::string("default")));
     environment->Define("current_mode", HavelValue(std::string("default")));
-    environment->Define("__previous_mode__", HavelValue(std::string("default")));
+    environment->Define("__previous_mode__",
+                        HavelValue(std::string("default")));
   }
 
   lastResult = nullptr; // Modes blocks don't return a value
@@ -2985,13 +3167,13 @@ void Interpreter::visitConfigSection(const ast::ConfigSection &node) {
   // Store under config namespace: config.sectionName
   auto configContainer = environment->Get("config");
   std::shared_ptr<std::unordered_map<std::string, HavelValue>> container;
-  
+
   if (configContainer && configContainer->isObject()) {
     container = configContainer->asObject();
   } else {
     container = std::make_shared<std::unordered_map<std::string, HavelValue>>();
   }
-  
+
   (*container)[node.name] = HavelValue(configObject);
   environment->Define("config", HavelValue(container));
   lastResult = HavelValue(nullptr);
@@ -3016,20 +3198,21 @@ void Interpreter::visitIndexExpression(const ast::IndexExpression &node) {
   // Check for struct index operator overload: obj[index]
   if (objectValue.isStructInstance()) {
     auto structInst = objectValue.asStructInstance();
-    if (structInst.structType && structInst.structType->hasOperator("op_index")) {
+    if (structInst.structType &&
+        structInst.structType->hasOperator("op_index")) {
       auto opMethod = structInst.structType->getOperator("op_index");
       if (opMethod && opMethod->body) {
         // Create method environment with 'this' bound to object
         auto methodEnv = std::make_shared<Environment>(this->environment);
         methodEnv->Define("this", objectValue);
         methodEnv->Define("key", indexValue);
-        
+
         // Execute operator body
         auto originalEnv = this->environment;
         this->environment = methodEnv;
         auto result = Evaluate(*opMethod->body);
         this->environment = originalEnv;
-        
+
         if (std::holds_alternative<ReturnValue>(result)) {
           auto ret = std::get<ReturnValue>(result);
           lastResult = ret.value ? *ret.value : HavelValue();
@@ -3298,7 +3481,7 @@ void Interpreter::visitRangeExpression(const ast::RangeExpression &node) {
 
   int start = static_cast<int>(ValueToNumber(unwrap(startResult)));
   int end = static_cast<int>(ValueToNumber(unwrap(endResult)));
-  
+
   // Handle optional step value
   int step = 1;
   if (node.step) {
@@ -3309,7 +3492,8 @@ void Interpreter::visitRangeExpression(const ast::RangeExpression &node) {
     }
     step = static_cast<int>(ValueToNumber(unwrap(stepResult)));
     if (step == 0) {
-      lastResult = HavelRuntimeError("Range step cannot be zero", node.line, node.column);
+      lastResult = HavelRuntimeError("Range step cannot be zero", node.line,
+                                     node.column);
       return;
     }
   }
@@ -3369,21 +3553,24 @@ void Interpreter::visitAssignmentExpression(
     auto current = environment->Get(identifier->symbol);
     if (!current.has_value()) {
       lastResult =
-          HavelRuntimeError("Undefined variable: " + identifier->symbol, identifier->line, identifier->column);
+          HavelRuntimeError("Undefined variable: " + identifier->symbol,
+                            identifier->line, identifier->column);
       return;
     }
-    
+
     // Check if this is a const variable
     if (environment->IsConst(identifier->symbol)) {
-      lastResult = HavelRuntimeError("Cannot assign to const variable: " + identifier->symbol,
+      lastResult = HavelRuntimeError("Cannot assign to const variable: " +
+                                         identifier->symbol,
                                      identifier->line, identifier->column);
       return;
     }
-    
+
     HavelValue newValue = applyCompound(op, *current, value);
     if (!environment->Assign(identifier->symbol, newValue)) {
       lastResult =
-          HavelRuntimeError("Undefined variable: " + identifier->symbol, identifier->line, identifier->column);
+          HavelRuntimeError("Undefined variable: " + identifier->symbol,
+                            identifier->line, identifier->column);
       return;
     }
     value = newValue;
@@ -3445,41 +3632,46 @@ void Interpreter::visitAssignmentExpression(
       return;
     }
     HavelValue objectValue = unwrap(objectResult);
-    
+
     // Get property name
     std::string propName;
-    if (auto *propId = dynamic_cast<const ast::Identifier *>(member->property.get())) {
+    if (auto *propId =
+            dynamic_cast<const ast::Identifier *>(member->property.get())) {
       propName = propId->symbol;
     } else {
-      lastResult = HavelRuntimeError("Invalid property name", node.line, node.column);
+      lastResult =
+          HavelRuntimeError("Invalid property name", node.line, node.column);
       return;
     }
-    
+
     // Check if object supports property assignment
     if (auto *objectPtr = objectValue.get_if<HavelObject>()) {
       if (!*objectPtr) {
-        *objectPtr = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        *objectPtr =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
       }
       (**objectPtr)[propName] = value;
     } else {
-      lastResult = HavelRuntimeError("Cannot set property on non-object value", node.line, node.column);
+      lastResult = HavelRuntimeError("Cannot set property on non-object value",
+                                     node.line, node.column);
       return;
     }
   } else {
-    lastResult = HavelRuntimeError("Invalid assignment target", node.line, node.column);
+    lastResult =
+        HavelRuntimeError("Invalid assignment target", node.line, node.column);
     return;
   }
 
   lastResult = value; // Assignment expressions return the assigned value
 }
 
-void Interpreter::visitCastExpression(const ast::CastExpression& node) {
+void Interpreter::visitCastExpression(const ast::CastExpression &node) {
   // Delegate to ExprEvaluator
   ExprEvaluator eval(this);
   eval.visitCastExpression(node);
 }
 
-void Interpreter::visitMatchExpression(const ast::MatchExpression& node) {
+void Interpreter::visitMatchExpression(const ast::MatchExpression &node) {
   // Delegate to ExprEvaluator
   ExprEvaluator eval(this);
   eval.visitMatchExpression(node);
@@ -3512,7 +3704,7 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
       auto catchEnv = std::make_shared<Environment>(environment);
       auto originalEnv = environment;
       environment = catchEnv;
-      
+
       // If catch variable is specified, create it in catch scope
       if (node.catchVariable) {
         // Store the error message as string in the catch variable
@@ -3521,10 +3713,10 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
       }
 
       auto catchResult = Evaluate(*node.catchBody);
-      
+
       // Restore original environment
       environment = originalEnv;
-      
+
       // Execute finally block if present (always runs, even after catch)
       if (node.finallyBlock) {
         auto finallyResult = Evaluate(*node.finallyBlock);
@@ -3533,7 +3725,7 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
           return;
         }
       }
-      
+
       if (isError(catchResult)) {
         lastResult = catchResult;
         return;
@@ -3550,7 +3742,7 @@ void Interpreter::visitTryExpression(const ast::TryExpression &node) {
         return;
       }
     }
-    
+
     // Re-throw the original error
     lastResult = *err;
     return;
@@ -3582,7 +3774,7 @@ void Interpreter::visitThrowStatement(const ast::ThrowStatement &node) {
   }
 
   HavelValue thrownValue = unwrap(valueResult);
-  
+
   // Store the thrown value - preserve the original type
   // If it's a string, use it directly; otherwise convert to string
   if (thrownValue.isString()) {
@@ -3609,7 +3801,7 @@ void Interpreter::visitStructDefinition(const ast::StructDefinition &node) {
 void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
   // Register struct type in TypeRegistry
   auto structType = std::make_shared<HavelStructType>(node.name);
-  for (const auto& field : node.definition.fields) {
+  for (const auto &field : node.definition.fields) {
     // Convert ast::StructFieldDef to StructField
     StructField havelField;
     havelField.name = field.name;
@@ -3617,7 +3809,7 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
     structType->addField(havelField);
   }
   // Store methods and operators in the struct type
-  for (const auto& method : node.definition.methods) {
+  for (const auto &method : node.definition.methods) {
     if (method) {
       if (method->isOperator) {
         // Register as operator (op_add, op_sub, op_eq, etc.)
@@ -3635,39 +3827,42 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
   auto structTypeName = node.name;
 
   // Create MousePos.new function
-  auto newFunc = BuiltinFunction([this, structType](const std::vector<HavelValue> &args) -> HavelResult {
-    // Create new struct instance
-    HavelStructInstance instance(structType->getName(), structType);
+  auto newFunc = BuiltinFunction(
+      [this, structType](const std::vector<HavelValue> &args) -> HavelResult {
+        // Create new struct instance
+        HavelStructInstance instance(structType->getName(), structType);
 
-    // Initialize fields from arguments (positional or named)
-    size_t argIdx = 0;
-    for (const auto& field : structType->getFields()) {
-      if (argIdx < args.size()) {
-        instance.fields->insert({field.name, args[argIdx]});
-        argIdx++;
-      } else {
-        instance.fields->insert({field.name, HavelValue(nullptr)});
-      }
-    }
+        // Initialize fields from arguments (positional or named)
+        size_t argIdx = 0;
+        for (const auto &field : structType->getFields()) {
+          if (argIdx < args.size()) {
+            instance.fields->insert({field.name, args[argIdx]});
+            argIdx++;
+          } else {
+            instance.fields->insert({field.name, HavelValue(nullptr)});
+          }
+        }
 
-    // Call init method if it exists
-    auto initMethod = structType->getMethod("init");
-    if (initMethod && initMethod->body) {
-      auto initEnv = std::make_shared<Environment>(this->environment);
-      initEnv->Define("this", HavelValue(instance));
-      auto originalEnv = this->environment;
-      this->environment = initEnv;
-      Evaluate(*initMethod->body);
-      this->environment = originalEnv;
-    }
+        // Call init method if it exists
+        auto initMethod = structType->getMethod("init");
+        if (initMethod && initMethod->body) {
+          auto initEnv = std::make_shared<Environment>(this->environment);
+          initEnv->Define("this", HavelValue(instance));
+          auto originalEnv = this->environment;
+          this->environment = initEnv;
+          Evaluate(*initMethod->body);
+          this->environment = originalEnv;
+        }
 
-    return HavelValue(instance);
-  });
+        return HavelValue(instance);
+      });
 
   // Create MousePos object with .new method and __call__ for direct invocation
-  auto structObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  auto structObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
   (*structObj)["new"] = HavelValue(newFunc);
-  (*structObj)["__call__"] = HavelValue(newFunc);  // Enable MousePos(100, 200) syntax
+  (*structObj)["__call__"] =
+      HavelValue(newFunc); // Enable MousePos(100, 200) syntax
   environment->Define(structTypeName, HavelValue(structObj));
 
   lastResult = nullptr;
@@ -3684,7 +3879,7 @@ void Interpreter::visitEnumDefinition(const ast::EnumDefinition &node) {
 void Interpreter::visitEnumDeclaration(const ast::EnumDeclaration &node) {
   // Register enum type in TypeRegistry
   auto enumType = std::make_shared<HavelEnumType>(node.name);
-  for (const auto& variant : node.definition.variants) {
+  for (const auto &variant : node.definition.variants) {
     // Convert ast::EnumVariantDef to EnumVariant
     EnumVariant havelVariant;
     havelVariant.name = variant.name;
@@ -3711,48 +3906,51 @@ void Interpreter::visitImplDeclaration(const ast::ImplDeclaration &node) {
   // Register impl for trait - inject methods into type
   std::string traitName = node.traitName ? node.traitName->symbol : "";
   std::string typeName = node.typeName ? node.typeName->symbol : "";
-  
+
   // Build method map for this impl
   std::unordered_map<std::string, HavelValue> methodMap;
 
-  for (const auto& methodDecl : node.funcs) {
+  for (const auto &methodDecl : node.funcs) {
     // Capture raw pointer for lambda (AST lives for program lifetime)
-    const ast::FunctionDeclaration* methodPtr = methodDecl.get();
-    
+    const ast::FunctionDeclaration *methodPtr = methodDecl.get();
+
     // Create a bound function for this method
-    auto methodFunc = BuiltinFunction([this, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
-      // Create method environment
-      auto methodEnv = std::make_shared<Environment>(this->environment);
+    auto methodFunc = BuiltinFunction(
+        [this, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
+          // Create method environment
+          auto methodEnv = std::make_shared<Environment>(this->environment);
 
-      // Bind parameters (first arg is 'this' if method expects it)
-      size_t paramIdx = 0;
-      for (size_t i = 0; i < methodPtr->parameters.size() && paramIdx < args.size(); ++i) {
-        methodEnv->Define(methodPtr->parameters[i]->paramName->symbol, args[paramIdx]);
-        paramIdx++;
-      }
+          // Bind parameters (first arg is 'this' if method expects it)
+          size_t paramIdx = 0;
+          for (size_t i = 0;
+               i < methodPtr->parameters.size() && paramIdx < args.size();
+               ++i) {
+            methodEnv->Define(methodPtr->parameters[i]->paramName->symbol,
+                              args[paramIdx]);
+            paramIdx++;
+          }
 
-      auto originalEnv = this->environment;
-      this->environment = methodEnv;
-      auto res = Evaluate(*methodPtr->body);
-      this->environment = originalEnv;
+          auto originalEnv = this->environment;
+          this->environment = methodEnv;
+          auto res = Evaluate(*methodPtr->body);
+          this->environment = originalEnv;
 
-      if (std::holds_alternative<ReturnValue>(res)) {
-        auto ret = std::get<ReturnValue>(res);
-        return ret.value ? *ret.value : HavelValue();
-      }
-      return res;
-    });
+          if (std::holds_alternative<ReturnValue>(res)) {
+            auto ret = std::get<ReturnValue>(res);
+            return ret.value ? *ret.value : HavelValue();
+          }
+          return res;
+        });
 
     methodMap[methodDecl->name->symbol] = HavelValue(methodFunc);
   }
-  
+
   // Register with trait registry
   TraitRegistry::getInstance().registerImpl(traitName, typeName, methodMap);
-  
+
   info("Impl registered: " + traitName + " for " + typeName);
   lastResult = nullptr;
 }
-
 
 void Interpreter::visitForStatement(const ast::ForStatement &node) {
   // Evaluate the iterable expression
@@ -3852,7 +4050,7 @@ void Interpreter::visitLoopStatement(const ast::LoopStatement &node) {
         return;
       }
       if (!ExecResultToBool(condResult)) {
-        break;  // Condition is false, exit loop
+        break; // Condition is false, exit loop
       }
     }
 
@@ -3982,7 +4180,7 @@ void Interpreter::visitOnTapStatement(const ast::OnTapStatement &node) {
       Evaluate(*body);
       environment = originalEnv;
     };
-    
+
     // Create KeyTap with tap action only (no combo)
     hostContext.io->KeyTap(node.key, tapAction);
   }
@@ -3998,7 +4196,7 @@ void Interpreter::visitOnComboStatement(const ast::OnComboStatement &node) {
       Evaluate(*body);
       environment = originalEnv;
     };
-    
+
     // Create KeyTap with combo action only (no tap)
     hostContext.io->KeyCombo(node.key, comboAction);
   }
@@ -4010,288 +4208,282 @@ void Interpreter::visitOnComboStatement(const ast::OnComboStatement &node) {
 // ============================================================================
 
 // Helper to resolve AST TypeDefinition to HavelType
-std::shared_ptr<HavelType> Interpreter::resolveType(const ast::TypeDefinition& typeDef) {
-    switch (typeDef.kind) {
-        case ast::NodeType::TypeAnnotation: {
-            const auto& typeRef = static_cast<const ast::TypeReference&>(typeDef);
-            const std::string& name = typeRef.name;
-            
-            // Check builtin types
-            if (name == "Num" || name == "Number") return HavelType::num();
-            if (name == "Str" || name == "String") return HavelType::str();
-            if (name == "Bool" || name == "Boolean") return HavelType::boolean();
-            if (name == "Any") return HavelType::any();
-            if (name == "Null") return HavelType::null();
-            
-            // Check registered types
-            auto& registry = TypeRegistry::getInstance();
-            if (auto structType = registry.getStructType(name)) return structType;
-            if (auto enumType = registry.getEnumType(name)) return enumType;
-            if (auto aliasType = registry.getTypeAlias(name)) return aliasType;
-            
-            // Unknown type - return Any
-            return HavelType::any();
-        }
-        
-        case ast::NodeType::UnionType: {
-            const auto& unionType = static_cast<const ast::UnionType&>(typeDef);
-            // For now, just return Any - full union type support needs more work
-            return HavelType::any();
-        }
-        
-        case ast::NodeType::RecordExpression: {
-            const auto& recordType = static_cast<const ast::RecordType&>(typeDef);
-            auto havelRecord = std::make_shared<HavelRecordType>();
-            for (const auto& [name, typeDefPtr] : recordType.fields) {
-                if (typeDefPtr) {
-                    havelRecord->addField(name, resolveType(*typeDefPtr));
-                }
-            }
-            return havelRecord;
-        }
-        
-        case ast::NodeType::FunctionDeclaration: {
-            const auto& funcType = static_cast<const ast::FunctionType&>(typeDef);
-            std::vector<std::shared_ptr<HavelType>> paramTypes;
-            for (const auto& paramDef : funcType.paramTypes) {
-                if (paramDef) {
-                    paramTypes.push_back(resolveType(*paramDef));
-                }
-            }
-            std::optional<std::shared_ptr<HavelType>> returnType;
-            if (funcType.returnType) {
-                returnType = resolveType(*funcType.returnType);
-            }
-            return std::make_shared<HavelFunctionType>(paramTypes, returnType);
-        }
-        
-        default:
-            return HavelType::any();
+std::shared_ptr<HavelType>
+Interpreter::resolveType(const ast::TypeDefinition &typeDef) {
+  switch (typeDef.kind) {
+  case ast::NodeType::TypeAnnotation: {
+    const auto &typeRef = static_cast<const ast::TypeReference &>(typeDef);
+    const std::string &name = typeRef.name;
+
+    // Check builtin types
+    if (name == "Num" || name == "Number")
+      return HavelType::num();
+    if (name == "Str" || name == "String")
+      return HavelType::str();
+    if (name == "Bool" || name == "Boolean")
+      return HavelType::boolean();
+    if (name == "Any")
+      return HavelType::any();
+    if (name == "Null")
+      return HavelType::null();
+
+    // Check registered types
+    auto &registry = TypeRegistry::getInstance();
+    if (auto structType = registry.getStructType(name))
+      return structType;
+    if (auto enumType = registry.getEnumType(name))
+      return enumType;
+    if (auto aliasType = registry.getTypeAlias(name))
+      return aliasType;
+
+    // Unknown type - return Any
+    return HavelType::any();
+  }
+
+  case ast::NodeType::UnionType: {
+    const auto &unionType = static_cast<const ast::UnionType &>(typeDef);
+    // For now, just return Any - full union type support needs more work
+    return HavelType::any();
+  }
+
+  case ast::NodeType::RecordExpression: {
+    const auto &recordType = static_cast<const ast::RecordType &>(typeDef);
+    auto havelRecord = std::make_shared<HavelRecordType>();
+    for (const auto &[name, typeDefPtr] : recordType.fields) {
+      if (typeDefPtr) {
+        havelRecord->addField(name, resolveType(*typeDefPtr));
+      }
     }
+    return havelRecord;
+  }
+
+  case ast::NodeType::FunctionDeclaration: {
+    const auto &funcType = static_cast<const ast::FunctionType &>(typeDef);
+    std::vector<std::shared_ptr<HavelType>> paramTypes;
+    for (const auto &paramDef : funcType.paramTypes) {
+      if (paramDef) {
+        paramTypes.push_back(resolveType(*paramDef));
+      }
+    }
+    std::optional<std::shared_ptr<HavelType>> returnType;
+    if (funcType.returnType) {
+      returnType = resolveType(*funcType.returnType);
+    }
+    return std::make_shared<HavelFunctionType>(paramTypes, returnType);
+  }
+
+  default:
+    return HavelType::any();
+  }
 }
 
 void Interpreter::visitTypeDeclaration(const ast::TypeDeclaration &node) {
-    // type Name = Definition
-    auto typeDef = resolveType(*node.definition);
-    
-    // Register as type alias
-    TypeRegistry::getInstance().registerTypeAlias(node.name, typeDef);
-    
-    lastResult = HavelValue(nullptr);
+  // type Name = Definition
+  auto typeDef = resolveType(*node.definition);
+
+  // Register as type alias
+  TypeRegistry::getInstance().registerTypeAlias(node.name, typeDef);
+
+  lastResult = HavelValue(nullptr);
 }
 
 void Interpreter::visitTypeAnnotation(const ast::TypeAnnotation &node) {
-    // Type annotations are handled during variable/function declaration
-    // This is called when annotation is used standalone
-    if (node.type) {
-        auto type = resolveType(*node.type);
-        // Store in lastResult for potential use
-        lastResult = HavelValue(nullptr);  // Type annotations don't produce values
-    } else {
-        lastResult = HavelValue(nullptr);
-    }
+  // Type annotations are handled during variable/function declaration
+  // This is called when annotation is used standalone
+  if (node.type) {
+    auto type = resolveType(*node.type);
+    // Store in lastResult for potential use
+    lastResult = HavelValue(nullptr); // Type annotations don't produce values
+  } else {
+    lastResult = HavelValue(nullptr);
+  }
 }
 
 void Interpreter::visitUnionType(const ast::UnionType &node) {
-    // Union types are resolved in resolveType()
-    // This visitor is for when UnionType appears in expression context
-    lastResult = HavelValue(nullptr);
+  // Union types are resolved in resolveType()
+  // This visitor is for when UnionType appears in expression context
+  lastResult = HavelValue(nullptr);
 }
 
 void Interpreter::visitRecordType(const ast::RecordType &node) {
-    // Record types are resolved in resolveType()
-    lastResult = HavelValue(nullptr);
+  // Record types are resolved in resolveType()
+  lastResult = HavelValue(nullptr);
 }
 
 void Interpreter::visitFunctionType(const ast::FunctionType &node) {
-    // Function types are resolved in resolveType()
-    lastResult = HavelValue(nullptr);
+  // Function types are resolved in resolveType()
+  lastResult = HavelValue(nullptr);
 }
 
 void Interpreter::visitTypeReference(const ast::TypeReference &node) {
-    // Type references are resolved in resolveType()
-    auto type = resolveType(node);
-    lastResult = HavelValue(nullptr);
+  // Type references are resolved in resolveType()
+  auto type = resolveType(node);
+  lastResult = HavelValue(nullptr);
 }
-
-
 
 // Reload and debug helper methods (stub implementations)
-void Interpreter::enableReload() {
-    reloadEnabled.store(true);
-}
+void Interpreter::enableReload() { reloadEnabled.store(true); }
 
-void Interpreter::disableReload() {
-    reloadEnabled.store(false);
-}
+void Interpreter::disableReload() { reloadEnabled.store(false); }
 
-void Interpreter::toggleReload() {
-    reloadEnabled.store(!reloadEnabled.load());
-}
+void Interpreter::toggleReload() { reloadEnabled.store(!reloadEnabled.load()); }
 
-void Interpreter::setShowAST(bool show) {
-    showASTOnParse = show;
-}
+void Interpreter::setShowAST(bool show) { showASTOnParse = show; }
 
-void Interpreter::setStopOnError(bool stop) {
-    stopOnError = stop;
-}
+void Interpreter::setStopOnError(bool stop) { stopOnError = stop; }
 
 std::string Interpreter::getInterpreterState() const {
-    return "Interpreter running";
+  return "Interpreter running";
 }
 
 // ============================================================================
 // Conditional Hotkey Implementation
 // ============================================================================
 
-void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey& node) {
-    // Need HotkeyManager to register conditional hotkey
-    if (!hostContext.hotkeyManager) {
-        lastResult = HavelRuntimeError("Conditional hotkeys require HotkeyManager", 
-                                       node.line, node.column);
-        return;
-    }
-    
-    // Evaluate the binding to get the hotkey details
-    if (!node.binding) {
-        lastResult = HavelRuntimeError("Conditional hotkey requires a binding",
-                                       node.line, node.column);
-        return;
-    }
-    
-    // Extract key string from binding
-    std::string keyStr;
-    if (!node.binding->hotkeys.empty()) {
-        // Get first hotkey as string
-        auto& hkExpr = node.binding->hotkeys[0];
-        if (hkExpr && hkExpr->kind == ast::NodeType::HotkeyLiteral) {
-            const auto& hkLit = static_cast<const ast::HotkeyLiteral&>(*hkExpr);
-            keyStr = hkLit.combination;
-        }
-    }
-    
-    if (keyStr.empty()) {
-        lastResult = HavelRuntimeError("Conditional hotkey requires a valid key",
-                                       node.line, node.column);
-        return;
-    }
-    
-    // Evaluate condition expression to get a function
-    if (!node.condition) {
-        lastResult = HavelRuntimeError("Conditional hotkey requires a condition",
-                                       node.line, node.column);
-        return;
-    }
-    
-    // Create condition function that evaluates the condition expression
-    auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
-        auto result = Evaluate(*condExpr);
-        if (isError(result)) {
-            return false;
-        }
-        HavelValue condValue = unwrap(result);
-        
-        // Check if true (bool or non-zero number)
-        if (condValue.isBool()) {
-            return condValue.get<bool>();
-        } else if (condValue.isNumber()) {
-            return (condValue.asNumber() != 0);
-        }
-        return true;
-    };
-    
-    // Create action function from binding
-    auto actionFunc = [this, binding = node.binding.get()]() {
-        // Execute the binding's action
-        if (binding->action) {
-            Evaluate(*binding->action);
-        }
-    };
-    
-    // Register with HotkeyManager using AddContextualHotkey
-    int id = hostContext.hotkeyManager->AddContextualHotkey(
-        keyStr, 
-        std::move(conditionFunc),
-        std::move(actionFunc)
-    );
-    
-    if (id > 0) {
-        lastResult = HavelValue(static_cast<double>(id));
-    } else {
-        lastResult = HavelRuntimeError("Failed to register conditional hotkey",
-                                       node.line, node.column);
-    }
-}
+void Interpreter::visitConditionalHotkey(const ast::ConditionalHotkey &node) {
+  // Need HotkeyManager to register conditional hotkey
+  if (!hostContext.hotkeyManager) {
+    lastResult = HavelRuntimeError("Conditional hotkeys require HotkeyManager",
+                                   node.line, node.column);
+    return;
+  }
 
-void Interpreter::visitWhenBlock(const ast::WhenBlock& node) {
-    // Evaluate the condition
-    if (!node.condition) {
-        lastResult = HavelRuntimeError("When block requires a condition",
-                                       node.line, node.column);
-        return;
+  // Evaluate the binding to get the hotkey details
+  if (!node.binding) {
+    lastResult = HavelRuntimeError("Conditional hotkey requires a binding",
+                                   node.line, node.column);
+    return;
+  }
+
+  // Extract key string from binding
+  std::string keyStr;
+  if (!node.binding->hotkeys.empty()) {
+    // Get first hotkey as string
+    auto &hkExpr = node.binding->hotkeys[0];
+    if (hkExpr && hkExpr->kind == ast::NodeType::HotkeyLiteral) {
+      const auto &hkLit = static_cast<const ast::HotkeyLiteral &>(*hkExpr);
+      keyStr = hkLit.combination;
     }
-    
-    auto condResult = Evaluate(*node.condition);
-    if (isError(condResult)) {
-        lastResult = condResult;
-        return;
+  }
+
+  if (keyStr.empty()) {
+    lastResult = HavelRuntimeError("Conditional hotkey requires a valid key",
+                                   node.line, node.column);
+    return;
+  }
+
+  // Evaluate condition expression to get a function
+  if (!node.condition) {
+    lastResult = HavelRuntimeError("Conditional hotkey requires a condition",
+                                   node.line, node.column);
+    return;
+  }
+
+  // Create condition function that evaluates the condition expression
+  auto conditionFunc = [this, condExpr = node.condition.get()]() -> bool {
+    auto result = Evaluate(*condExpr);
+    if (isError(result)) {
+      return false;
     }
-    
-    HavelValue condValue = unwrap(condResult);
-    
-    // Check if condition is true
-    bool isTrue = false;
+    HavelValue condValue = unwrap(result);
+
+    // Check if true (bool or non-zero number)
     if (condValue.isBool()) {
-        isTrue = condValue.get<bool>();
+      return condValue.get<bool>();
     } else if (condValue.isNumber()) {
-        isTrue = (condValue.asNumber() != 0);
-    } else {
-        isTrue = true;
+      return (condValue.asNumber() != 0);
     }
-    
-    if (isTrue) {
-        // Execute all statements in the when block
-        for (const auto& stmt : node.statements) {
-            if (stmt) {
-                Evaluate(*stmt);
-                if (isError(lastResult)) {
-                    return;
-                }
-            }
-        }
+    return true;
+  };
+
+  // Create action function from binding
+  auto actionFunc = [this, binding = node.binding.get()]() {
+    // Execute the binding's action
+    if (binding->action) {
+      Evaluate(*binding->action);
     }
-    
-    lastResult = HavelValue(nullptr);
+  };
+
+  // Register with HotkeyManager using AddContextualHotkey
+  int id = hostContext.hotkeyManager->AddContextualHotkey(
+      keyStr, std::move(conditionFunc), std::move(actionFunc));
+
+  if (id > 0) {
+    lastResult = HavelValue(static_cast<double>(id));
+  } else {
+    lastResult = HavelRuntimeError("Failed to register conditional hotkey",
+                                   node.line, node.column);
+  }
 }
 
+void Interpreter::visitWhenBlock(const ast::WhenBlock &node) {
+  // Evaluate the condition
+  if (!node.condition) {
+    lastResult = HavelRuntimeError("When block requires a condition", node.line,
+                                   node.column);
+    return;
+  }
+
+  auto condResult = Evaluate(*node.condition);
+  if (isError(condResult)) {
+    lastResult = condResult;
+    return;
+  }
+
+  HavelValue condValue = unwrap(condResult);
+
+  // Check if condition is true
+  bool isTrue = false;
+  if (condValue.isBool()) {
+    isTrue = condValue.get<bool>();
+  } else if (condValue.isNumber()) {
+    isTrue = (condValue.asNumber() != 0);
+  } else {
+    isTrue = true;
+  }
+
+  if (isTrue) {
+    // Execute all statements in the when block
+    for (const auto &stmt : node.statements) {
+      if (stmt) {
+        Evaluate(*stmt);
+        if (isError(lastResult)) {
+          return;
+        }
+      }
+    }
+  }
+
+  lastResult = HavelValue(nullptr);
+}
 
 // Delegate implementations for visitors moved to evaluators
-void Interpreter::visitIdentifier(const ast::Identifier& node) {
-    // Special identifiers for active window info
-    if (node.symbol == "exe") {
-        lastResult = HavelValue(getActiveWindowExe());
-        return;
-    }
-    if (node.symbol == "class") {
-        lastResult = HavelValue(getActiveWindowClass());
-        return;
-    }
-    if (node.symbol == "title") {
-        lastResult = HavelValue(getActiveWindowTitle());
-        return;
-    }
-    if (node.symbol == "pid") {
-        lastResult = HavelValue(static_cast<double>(getActiveWindowPid()));
-        return;
-    }
-    
-    // Normal variable lookup
-    if (auto val = environment->Get(node.symbol)) {
-        lastResult = *val;
-    } else {
-        lastResult = HavelRuntimeError("Undefined variable: " + node.symbol, node.line, node.column);
-    }
+void Interpreter::visitIdentifier(const ast::Identifier &node) {
+  // Special identifiers for active window info
+  if (node.symbol == "exe") {
+    lastResult = HavelValue(getActiveWindowExe());
+    return;
+  }
+  if (node.symbol == "class") {
+    lastResult = HavelValue(getActiveWindowClass());
+    return;
+  }
+  if (node.symbol == "title") {
+    lastResult = HavelValue(getActiveWindowTitle());
+    return;
+  }
+  if (node.symbol == "pid") {
+    lastResult = HavelValue(static_cast<double>(getActiveWindowPid()));
+    return;
+  }
+
+  // Normal variable lookup
+  if (auto val = environment->Get(node.symbol)) {
+    lastResult = *val;
+  } else {
+    lastResult = HavelRuntimeError("Undefined variable: " + node.symbol,
+                                   node.line, node.column);
+  }
 }
 
 } // namespace havel

@@ -112,7 +112,11 @@ struct TcpServer::Impl {
   std::mutex clientMutex;
   std::atomic<int> nextClientId{1};
 
-  explicit Impl(const NetworkConfig &cfg) : config(cfg) {}
+  explicit Impl(const NetworkConfig &cfg) : config(cfg) {
+    // Initialize mutex
+    // Note: std::mutex doesn't need explicit initialization, but we ensure it's
+    // constructed
+  }
 
   void acceptLoop() {
     while (running.load()) {
@@ -767,6 +771,11 @@ void HttpClient::setTimeout(int timeoutMs) {
 // NetworkManager Implementation
 NetworkManager &NetworkManager::getInstance() {
   static NetworkManager instance;
+  static bool initialized = false;
+  if (!initialized) {
+    instance.pImpl = std::make_unique<Impl>();
+    initialized = true;
+  }
   return instance;
 }
 

@@ -36,7 +36,7 @@ void blockAllSignals() {
 }
 
 HavelApp::HavelApp(bool isStartup, std::string scriptFile, bool repl, bool gui,
-                   QObject *parent)
+                   const std::vector<std::string> &args, QObject *parent)
     : QObject(parent), lastCheck(std::chrono::steady_clock::now()),
       lastWindowCheck(std::chrono::steady_clock::now()) {
 
@@ -47,6 +47,7 @@ HavelApp::HavelApp(bool isStartup, std::string scriptFile, bool repl, bool gui,
   this->scriptFile = scriptFile;
   this->repl = repl;
   this->gui = gui;
+  this->commandLineArgs = args;
 
   try {
     setupSignalHandling();
@@ -190,7 +191,8 @@ void HavelApp::initializeComponents(bool isStartup) {
 
   // Build HostContext from managers (hotkeyManager will be set later)
   HostContext ctx;
-  ctx.io = io; // Share ownership
+  ctx.commandLineArgs = commandLineArgs; // Store command line arguments
+  ctx.io = io;                           // Share ownership
   ctx.windowManager = windowManager.get();
   ctx.hotkeyManager = nullptr;       // Will be set after HotkeyManager creation
   ctx.modeManager = nullptr;         // Will be set after HotkeyManager creation

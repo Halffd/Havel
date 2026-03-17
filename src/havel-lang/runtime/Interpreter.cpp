@@ -325,7 +325,9 @@ Interpreter::Interpreter(HostContext ctx,
       nullptr, // pixelAutomation - not in HostContext
       hostContext.automationManager, hostContext.fileManager,
       hostContext.processManager,
-      nullptr // mapManager - not in HostContext
+      nullptr,                    // mapManager - not in HostContext
+      nullptr,                    // modeManager - not in HostContext
+      hostContext.commandLineArgs // Command line arguments
   );
 
   // Load all modules (stdlib + host)

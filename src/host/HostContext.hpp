@@ -30,7 +30,9 @@ class IO;
 class ModeManager;
 class WindowMonitor;
 
-namespace net { class NetworkManager; }
+namespace net {
+class NetworkManager;
+}
 
 /**
  * HostContext - Bridge between language runtime and host system
@@ -39,55 +41,56 @@ namespace net { class NetworkManager; }
  * The interpreter never sees this - it's purely for module registration.
  */
 struct HostContext {
-    // Core IO - use shared_ptr to ensure IO stays alive
-    std::shared_ptr<IO> io;
+  // Command line arguments
+  std::vector<std::string> commandLineArgs;
 
-    // Window management
-    WindowManager* windowManager = nullptr;
+  // Core IO - use shared_ptr to ensure IO stays alive
+  std::shared_ptr<IO> io;
 
-    // Input handling - use shared_ptr to ensure lifetime
-    std::shared_ptr<HotkeyManager> hotkeyManager;
+  // Window management
+  WindowManager *windowManager = nullptr;
 
-    // Mode management - use shared_ptr to ensure lifetime
-    std::shared_ptr<ModeManager> modeManager;
+  // Input handling - use shared_ptr to ensure lifetime
+  std::shared_ptr<HotkeyManager> hotkeyManager;
 
-    // Window monitoring - use shared_ptr to ensure lifetime
-    std::shared_ptr<WindowMonitor> windowMonitor;
+  // Mode management - use shared_ptr to ensure lifetime
+  std::shared_ptr<ModeManager> modeManager;
 
-    // Display
-    BrightnessManager* brightnessManager = nullptr;
+  // Window monitoring - use shared_ptr to ensure lifetime
+  std::shared_ptr<WindowMonitor> windowMonitor;
 
-    // Audio
-    AudioManager* audioManager = nullptr;
+  // Display
+  BrightnessManager *brightnessManager = nullptr;
 
-    // GUI
-    GUIManager* guiManager = nullptr;
+  // Audio
+  AudioManager *audioManager = nullptr;
 
-    // Screenshot
-    ScreenshotManager* screenshotManager = nullptr;
+  // GUI
+  GUIManager *guiManager = nullptr;
 
-    // Clipboard
-    ClipboardManager* clipboardManager = nullptr;
+  // Screenshot
+  ScreenshotManager *screenshotManager = nullptr;
 
-    // Automation
-    PixelAutomation* pixelAutomation = nullptr;
-    AutomationManager* automationManager = nullptr;
+  // Clipboard
+  ClipboardManager *clipboardManager = nullptr;
 
-    // File/Process
-    FileManager* fileManager = nullptr;
-    ProcessManager* processManager = nullptr;
+  // Automation
+  PixelAutomation *pixelAutomation = nullptr;
+  AutomationManager *automationManager = nullptr;
 
-    // Network
-    std::shared_ptr<net::NetworkManager> networkManager;
+  // File/Process
+  FileManager *fileManager = nullptr;
+  ProcessManager *processManager = nullptr;
 
-    // Clear all components (call before destruction to stop threads)
-    // Note: Implementation in HostContext.cpp to avoid circular includes
-    void clear();
+  // Network
+  std::shared_ptr<net::NetworkManager> networkManager;
 
-    // Validation helper
-    bool isValid() const {
-        return io != nullptr;
-    }
+  // Clear all components (call before destruction to stop threads)
+  // Note: Implementation in HostContext.cpp to avoid circular includes
+  void clear();
+
+  // Validation helper
+  bool isValid() const { return io != nullptr; }
 };
 
 } // namespace havel

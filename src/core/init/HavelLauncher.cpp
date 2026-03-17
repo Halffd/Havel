@@ -5,8 +5,8 @@
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "utils/Logger.hpp"
-#include <QProcess>
 #include <QApplication>
+#include <QProcess>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -112,7 +112,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.mode = Mode::SCRIPT;
     }
   }
-  
+
   // Determine mode based on flags and script file
   if (repl && !cfg.scriptFile.empty()) {
     // Script + REPL mode - full features
@@ -128,7 +128,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     cfg.mode = Mode::DAEMON;
   }
   // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
-  
+
   return cfg;
 }
 
@@ -141,7 +141,13 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     app.setOrganizationName("havel");
     app.setQuitOnLastWindowClosed(false);
 
-    HavelApp havelApp(cfg.isStartup);
+    // Convert argc/argv to vector<string> for HavelApp
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) {
+      args.emplace_back(argv[i]);
+    }
+
+    HavelApp havelApp(cfg.isStartup, "", false, true, args);
 
     if (!havelApp.isInitialized()) {
       error("Failed to initialize HavelApp");
@@ -155,16 +161,17 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
         std::stringstream buffer;
         buffer << file.rdbuf();
         std::string code = buffer.str();
-        
-        auto* interpreter = havelApp.getInterpreter();
+
+        auto *interpreter = havelApp.getInterpreter();
         if (interpreter) {
           info("Loading startup script: {}", cfg.scriptFile);
           auto result = interpreter->Execute(code);
-          
+
           if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            const auto &err = std::get<havel::HavelRuntimeError>(result);
             if (err.hasLocation && err.line > 0) {
-              error("Startup script error at line {}: {}", err.line, err.what());
+              error("Startup script error at line {}: {}", err.line,
+                    err.what());
             } else {
               error("Startup script error: {}", err.what());
             }
@@ -181,10 +188,10 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
     // Handle restart exit code - loop back to restart
     if (exitCode == 42) {
       info("Restart requested - relaunching application");
-      continue;  // Loop back and restart
+      continue; // Loop back and restart
     }
 
-    return exitCode;  // Normal exit
+    return exitCode; // Normal exit
   }
 }
 
@@ -195,7 +202,13 @@ int HavelLauncher::runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]) {
     app.setApplicationName("Havel GUI");
     app.setQuitOnLastWindowClosed(false);
 
-    HavelApp havelApp(cfg.isStartup);
+    // Convert argc/argv to vector<string> for HavelApp
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) {
+      args.emplace_back(argv[i]);
+    }
+
+    HavelApp havelApp(cfg.isStartup, "", false, true, args);
 
     if (!havelApp.isInitialized()) {
       error("Failed to initialize HavelApp");
@@ -209,16 +222,17 @@ int HavelLauncher::runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]) {
         std::stringstream buffer;
         buffer << file.rdbuf();
         std::string code = buffer.str();
-        
-        auto* interpreter = havelApp.getInterpreter();
+
+        auto *interpreter = havelApp.getInterpreter();
         if (interpreter) {
           info("Loading startup script: {}", cfg.scriptFile);
           auto result = interpreter->Execute(code);
-          
+
           if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            const auto &err = std::get<havel::HavelRuntimeError>(result);
             if (err.hasLocation && err.line > 0) {
-              error("Startup script error at line {}: {}", err.line, err.what());
+              error("Startup script error at line {}: {}", err.line,
+                    err.what());
             } else {
               error("Startup script error: {}", err.what());
             }
@@ -282,7 +296,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
       auto result = interpreter.Execute(code);
 
       if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-        const auto& err = std::get<havel::HavelRuntimeError>(result);
+        const auto &err = std::get<havel::HavelRuntimeError>(result);
         havel::error("Runtime Error: {}", err.what());
         if (err.hasLocation && err.line > 0) {
           havel::error("  At line {}, column {}", err.line, err.column);
@@ -292,7 +306,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
       }
 
       // Print result if any
-      if (auto* value = std::get_if<havel::HavelValue>(&result)) {
+      if (auto *value = std::get_if<havel::HavelValue>(&result)) {
         if (value->isString()) {
           std::cout << value->asString() << std::endl;
         } else if (value->isNumber()) {
@@ -303,7 +317,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
       }
 
       info("Script executed successfully");
-      return 0;  // No restart in headless mode
+      return 0; // No restart in headless mode
     }
 
     // Hotkeys or GUI operations detected - need Qt event loop
@@ -314,7 +328,14 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     char *dummy_argv[] = {dummy_name, nullptr};
     QApplication app(dummy_argc, dummy_argv);
 
-    HavelApp havelApp(false, cfg.scriptFile); // Don't show GUI
+    // Convert argc/argv to vector<string> for HavelApp
+    std::vector<std::string> args;
+    for (int i = 0; i < argc; ++i) {
+      args.emplace_back(argv[i]);
+    }
+
+    HavelApp havelApp(false, cfg.scriptFile, false, false,
+                      args); // Don't show GUI
 
     if (!havelApp.isInitialized()) {
       error("Failed to initialize HavelApp");
@@ -322,68 +343,71 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
     }
 
     // Use HavelApp's interpreter
-  auto *interpreter = havelApp.getInterpreter();
-  if (!interpreter) {
-    error("Interpreter is not available");
-    return 1;
-  }
-
-  auto result = interpreter->Execute(code);
-
-  if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    const auto& err = std::get<havel::HavelRuntimeError>(result);
-
-    // Print detailed error information
-    havel::error("╔═══════════════════════════════════════════════════════════╗");
-    havel::error("║         RUNTIME ERROR IN STARTUP SCRIPT                   ║");
-    havel::error("╚═══════════════════════════════════════════════════════════╝");
-    havel::error("");
-    havel::error("  Error: {}", err.what());
-
-    // Use structured location data if available
-    if (err.hasLocation && err.line > 0) {
-      havel::error("");
-      havel::error("  At line {}, column {}", err.line, err.column);
-
-      // Print source code context
-      interpreter->printSourceWithContext(code, err.line);
-    } else {
-      // No location info - print full source context
-      havel::error("");
-      havel::error("  (No location information available)");
-      interpreter->printSourceWithContext(code, 0);
+    auto *interpreter = havelApp.getInterpreter();
+    if (!interpreter) {
+      error("Interpreter is not available");
+      return 1;
     }
 
-    havel::error("");
-    havel::error("  Script file: {}", cfg.scriptFile);
-    havel::error("");
+    auto result = interpreter->Execute(code);
 
-    return 1;
-  }
+    if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+      const auto &err = std::get<havel::HavelRuntimeError>(result);
 
-  if (hasHotkeys) {
-    havelApp.hotkeyManager->printHotkeys();
-    havelApp.hotkeyManager->updateAllConditionalHotkeys();
-    info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
-    int exitCode = app.exec();
-    
-    // Handle restart
-    if (exitCode == 42) {
-      info("Restart requested - relaunching");
-      continue;  // Loop back and restart
+      // Print detailed error information
+      havel::error(
+          "╔═══════════════════════════════════════════════════════════╗");
+      havel::error(
+          "║         RUNTIME ERROR IN STARTUP SCRIPT                   ║");
+      havel::error(
+          "╚═══════════════════════════════════════════════════════════╝");
+      havel::error("");
+      havel::error("  Error: {}", err.what());
+
+      // Use structured location data if available
+      if (err.hasLocation && err.line > 0) {
+        havel::error("");
+        havel::error("  At line {}, column {}", err.line, err.column);
+
+        // Print source code context
+        interpreter->printSourceWithContext(code, err.line);
+      } else {
+        // No location info - print full source context
+        havel::error("");
+        havel::error("  (No location information available)");
+        interpreter->printSourceWithContext(code, 0);
+      }
+
+      havel::error("");
+      havel::error("  Script file: {}", cfg.scriptFile);
+      havel::error("");
+
+      return 1;
     }
-    
-    return exitCode;  // Normal exit
-  }
 
-  return 0;  // No restart in headless mode
-  }  // End of restart loop
+    if (hasHotkeys) {
+      havelApp.hotkeyManager->printHotkeys();
+      havelApp.hotkeyManager->updateAllConditionalHotkeys();
+      info("Script loaded. Hotkeys registered. Press Ctrl+C to exit.");
+      int exitCode = app.exec();
+
+      // Handle restart
+      if (exitCode == 42) {
+        info("Restart requested - relaunching");
+        continue; // Loop back and restart
+      }
+
+      return exitCode; // Normal exit
+    }
+
+    return 0; // No restart in headless mode
+  } // End of restart loop
 }
 
 int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   // Pure script execution without IO, hotkeys, display, or GUI
   // Useful for testing scripts that auto-exit or don't need input
-  
+
   info("Running Havel script (pure mode): {}", cfg.scriptFile);
 
   // Read script file
@@ -412,7 +436,7 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   auto result = interpreter.Execute(code);
 
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    const auto& err = std::get<havel::HavelRuntimeError>(result);
+    const auto &err = std::get<havel::HavelRuntimeError>(result);
     if (err.hasLocation && err.line > 0) {
       error("Runtime Error at line {}: {}", err.line, err.what());
     } else {
@@ -422,7 +446,7 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
   }
 
   // Print result if any
-  if (auto* value = std::get_if<havel::HavelValue>(&result)) {
+  if (auto *value = std::get_if<havel::HavelValue>(&result)) {
     // Print value based on type using semantic helpers
     if (value->isString()) {
       std::cout << value->asString() << std::endl;
@@ -439,11 +463,17 @@ int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
 
 int HavelLauncher::runRepl(const LaunchConfig &cfg) {
   info("Starting Havel REPL...");
-  
+
   // Don't create QApplication for REPL - it's not needed for script execution
   // Qt will be lazily initialized only if GUI/clipboard functions are called
-  
-  HavelApp havelApp(false, cfg.scriptFile, true);
+
+  // Convert argc/argv to vector<string> for HavelApp
+  std::vector<std::string> args;
+  for (int i = 0; i < argc; ++i) {
+    args.emplace_back(argv[i]);
+  }
+
+  HavelApp havelApp(false, cfg.scriptFile, true, false, args);
 
   if (!havelApp.isInitialized()) {
     error("Failed to initialize HavelApp");
@@ -457,7 +487,7 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
     return 1;
   }
   info("Script file: {}", cfg.scriptFile);
-  if(!cfg.scriptFile.empty() && std::filesystem::exists(cfg.scriptFile)) {
+  if (!cfg.scriptFile.empty() && std::filesystem::exists(cfg.scriptFile)) {
     // Read script file
     std::ifstream file(cfg.scriptFile);
     if (!file) {
@@ -471,9 +501,10 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
 
     auto result = interpreter->Execute(code);
     if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-      const auto& err = std::get<havel::HavelRuntimeError>(result);
+      const auto &err = std::get<havel::HavelRuntimeError>(result);
       if (err.hasLocation && err.line > 0) {
-        error("Runtime Error at line {} in startup script: {}", err.line, err.what());
+        error("Runtime Error at line {} in startup script: {}", err.line,
+              err.what());
       } else {
         error("Runtime Error in startup script: {}", err.what());
       }
@@ -501,7 +532,10 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
     rl_catch_sigwinch = 0;
 
     char *input = readline(prompt.c_str());
-    if (!input) { std::cout << "\nGoodbye!\n"; break; }
+    if (!input) {
+      std::cout << "\nGoodbye!\n";
+      break;
+    }
 
     line = std::string(input);
     free(input);
@@ -591,9 +625,10 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
                         << "\n";
             }
           } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-            const auto& err = std::get<havel::HavelRuntimeError>(result);
+            const auto &err = std::get<havel::HavelRuntimeError>(result);
             if (err.hasLocation && err.line > 0) {
-              std::cerr << "Error at line " << err.line << ": " << err.what() << "\n";
+              std::cerr << "Error at line " << err.line << ": " << err.what()
+                        << "\n";
             } else {
               std::cerr << "Error: " << err.what() << "\n";
             }
@@ -626,18 +661,6 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
   buffer << file.rdbuf();
   std::string code = buffer.str();
 
-  int dummy_argc = 1;
-  char dummy_name[] = "havel-script";
-  char *dummy_argv[] = {dummy_name, nullptr};
-  QApplication app(dummy_argc, dummy_argv);
-
-  HavelApp havelApp(false, cfg.scriptFile); // Don't show GUI
-
-  if (!havelApp.isInitialized()) {
-    error("Failed to initialize HavelApp");
-    return 1;
-  }
-
   // Use HavelApp's interpreter
   auto *interpreter = havelApp.getInterpreter();
   if (!interpreter) {
@@ -648,7 +671,7 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
   // Execute the script first
   auto result = interpreter->Execute(code);
   if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    const auto& err = std::get<havel::HavelRuntimeError>(result);
+    const auto &err = std::get<havel::HavelRuntimeError>(result);
     if (err.hasLocation && err.line > 0) {
       error("Script runtime error at line {}: {}", err.line, err.what());
     } else {
@@ -683,7 +706,10 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
     rl_catch_sigwinch = 0;
 
     char *input = readline(prompt.c_str());
-    if (!input) { std::cout << "\nGoodbye!\n"; break; }
+    if (!input) {
+      std::cout << "\nGoodbye!\n";
+      break;
+    }
 
     line = std::string(input);
     free(input);
@@ -756,9 +782,10 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
                       << "\n";
           }
         } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-          const auto& err = std::get<havel::HavelRuntimeError>(result);
+          const auto &err = std::get<havel::HavelRuntimeError>(result);
           if (err.hasLocation && err.line > 0) {
-            std::cerr << "Error at line " << err.line << ": " << err.what() << "\n";
+            std::cerr << "Error at line " << err.line << ": " << err.what()
+                      << "\n";
           } else {
             std::cerr << "Error: " << err.what() << "\n";
           }
@@ -891,15 +918,14 @@ int HavelLauncher::runCli(int argc, char *argv[]) {
 
     for (const auto &tok : tokens) {
       if (tok.type == havel::TokenType::EOF_TOKEN)
-  
 
-      if (tok.type == havel::TokenType::NewLine) {
-        while (!out.empty() && out.back() == ' ')
-          out.pop_back();
-        out += "\n";
-        prev = tok.type;
-        continue;
-      }
+        if (tok.type == havel::TokenType::NewLine) {
+          while (!out.empty() && out.back() == ' ')
+            out.pop_back();
+          out += "\n";
+          prev = tok.type;
+          continue;
+        }
 
       if (tok.type == havel::TokenType::Comma) {
         while (!out.empty() && out.back() == ' ')
@@ -999,20 +1025,25 @@ void HavelLauncher::showHelp() {
   std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";
   std::cout << "  --repl, -r          Start interactive REPL (minimal mode)\n";
-  std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, GUI, etc.)\n";
+  std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
+               "GUI, etc.)\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
-  std::cout << "  --run               Run script without IO/hotkeys (pure mode)\n";
+  std::cout
+      << "  --run               Run script without IO/hotkeys (pure mode)\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no script is provided, the GUI tray application starts.\n";
   std::cout << "\nModes:\n";
   std::cout << "  havel script.hv           - Run script with full features\n";
-  std::cout << "  havel --repl script.hv    - Run script then enter REPL (full features)\n";
+  std::cout << "  havel --repl script.hv    - Run script then enter REPL (full "
+               "features)\n";
   std::cout << "  havel --full-repl         - Start REPL with all features\n";
-  std::cout << "  havel --run script.hv     - Run script in minimal mode (no hotkeys)\n";
+  std::cout << "  havel --run script.hv     - Run script in minimal mode (no "
+               "hotkeys)\n";
   std::cout << "\nPure mode (--run):\n";
   std::cout << "  Executes scripts without IO, hotkeys, display, or GUI.\n";
-  std::cout << "  Useful for testing scripts that auto-exit or don't need input.\n";
+  std::cout
+      << "  Useful for testing scripts that auto-exit or don't need input.\n";
   std::cout << "  Example: havel --run scripts/test_types.hv\n";
 }
 

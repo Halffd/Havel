@@ -2077,7 +2077,11 @@ void EventListener::SignalSafeShutdown(int sig, bool exitAfter) {
     write(shutdownFd, &val, sizeof(val));
   }
   if (exitAfter) {
-    _exit(sig);
+    // Use proper exit codes: 0 for graceful shutdown, signal number + 128 for
+    // signal termination
+    int exitCode =
+        (sig == SIGINT || sig == SIGTERM || sig == SIGQUIT) ? 0 : sig + 128;
+    _exit(exitCode);
   }
 }
 

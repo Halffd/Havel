@@ -3,9 +3,9 @@
 #include "../utils/Logger.hpp"
 #include <curl/curl.h>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <regex>
 #include <sstream>
-#include <nlohmann/json.hpp>
 
 namespace havel {
 
@@ -55,17 +55,17 @@ bool BrowserModule::connect(const std::string &url) {
 
     // Parse and cache tabs immediately
     // Chrome returns string IDs, so we use index-based IDs (0, 1, 2, ...)
-    listTabs();  // Cache the tabs
-    
+    listTabs(); // Cache the tabs
+
     // Try to find the focused/active tab
     int focusedTabId = findFocusedTab();
     if (focusedTabId >= 0) {
       currentTabId = focusedTabId;
-      info("BrowserModule: Using focused tab {} - {}", 
-           currentTabId, cachedTabs[currentTabId].title);
+      info("BrowserModule: Using focused tab {} - {}", currentTabId,
+           cachedTabs[currentTabId].title);
     } else {
-      currentTabId = 0;  // Fallback to first tab
-      info("BrowserModule: No focused tab found, using first tab: {}", 
+      currentTabId = 0; // Fallback to first tab
+      info("BrowserModule: No focused tab found, using first tab: {}",
            cachedTabs.empty() ? "N/A" : cachedTabs[0].title);
     }
 
@@ -93,7 +93,7 @@ std::string BrowserModule::httpGet(const std::string &url) {
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 5L);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT, 2L);
 
   CURLcode res = curl_easy_perform(curl);
   curl_easy_cleanup(curl);
@@ -148,17 +148,16 @@ std::string BrowserModule::sendCdpCommandToTab(int tabId,
   return sendCdpCommandWebSocket(wsUrl, method, params);
 }
 
-std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl,
-                                                    const std::string& method,
-                                                    const std::string& params) {
+std::string BrowserModule::sendCdpCommandWebSocket(const std::string &wsUrl,
+                                                   const std::string &method,
+                                                   const std::string &params) {
   // Generate unique message ID
   static std::atomic<int> nextId{1};
   int msgId = nextId++;
 
   // Build JSON-RPC message
-  std::string message = "{\"id\":" + std::to_string(msgId) +
-                        ",\"method\":\"" + method +
-                        "\",\"params\":" + params + "}";
+  std::string message = "{\"id\":" + std::to_string(msgId) + ",\"method\":\"" +
+                        method + "\",\"params\":" + params + "}";
 
   debug("CDP WebSocket: Sending to {}: {}", wsUrl, message);
 
@@ -175,9 +174,10 @@ std::string BrowserModule::sendCdpCommandWebSocket(const std::string& wsUrl,
 
   // Use websocat with --one-message for proper request/response
   // Read from file to avoid shell injection issues
-  std::string cmd = "websocat --one-message '" + wsUrl + "' < '" + tempFile + "' 2>/dev/null";
+  std::string cmd =
+      "websocat --one-message '" + wsUrl + "' < '" + tempFile + "' 2>/dev/null";
   auto result = Launcher::runShell(cmd);
-  
+
   // Clean up temp file
   std::remove(tempFile.c_str());
 
@@ -194,20 +194,23 @@ std::string BrowserModule::getWebSocketUrl(int tabId) {
   // Refresh cache if it's empty or stale (older than 5 seconds)
   auto now = std::chrono::steady_clock::now();
   if (cachedTabs.empty() ||
-      std::chrono::duration_cast<std::chrono::seconds>(now - lastTabListUpdate).count() > 5) {
+      std::chrono::duration_cast<std::chrono::seconds>(now - lastTabListUpdate)
+              .count() > 5) {
     listTabs();
   }
 
   // For tabId 0 or -1 (default), return the first tab's WebSocket URL
-  if ((tabId == 0 || tabId == -1) && !cachedTabs.empty() && !cachedTabs[0].webSocketUrl.empty()) {
+  if ((tabId == 0 || tabId == -1) && !cachedTabs.empty() &&
+      !cachedTabs[0].webSocketUrl.empty()) {
     return cachedTabs[0].webSocketUrl;
   }
 
   // First check if we have a cached WebSocket URL for this tab
-  for (const auto& tab : cachedTabs) {
+  for (const auto &tab : cachedTabs) {
     // Match by numeric ID or string ID
-    if ((tab.id == tabId || (tabId != 0 && tabId != -1 && tab.idStr == std::to_string(tabId)))
-        && !tab.webSocketUrl.empty()) {
+    if ((tab.id == tabId ||
+         (tabId != 0 && tabId != -1 && tab.idStr == std::to_string(tabId))) &&
+        !tab.webSocketUrl.empty()) {
       return tab.webSocketUrl;
     }
   }
@@ -221,7 +224,7 @@ std::string BrowserModule::getWebSocketUrl(int tabId) {
   // Parse WebSocket URL from response using nlohmann/json
   try {
     auto tabsJson = json::parse(response);
-    for (const auto& tabJson : tabsJson) {
+    for (const auto &tabJson : tabsJson) {
       std::string wsUrl;
       if (tabJson.contains("webSocketDebuggerUrl")) {
         wsUrl = tabJson["webSocketDebuggerUrl"].get<std::string>();
@@ -345,44 +348,45 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
   // Parse JSON response using nlohmann/json
   try {
     auto tabsJson = json::parse(response);
-    
-    for (const auto& tabJson : tabsJson) {
+
+    for (const auto &tabJson : tabsJson) {
       BrowserTab tab;
-      
+
       // Extract id (string)
       if (tabJson.contains("id") && tabJson["id"].is_string()) {
         tab.idStr = tabJson["id"].get<std::string>();
-        tab.id = 0;  // Chrome uses string IDs, not numeric
+        tab.id = 0; // Chrome uses string IDs, not numeric
       }
-      
+
       // Extract title
       if (tabJson.contains("title") && tabJson["title"].is_string()) {
         tab.title = tabJson["title"].get<std::string>();
       }
-      
+
       // Extract url
       if (tabJson.contains("url") && tabJson["url"].is_string()) {
         tab.url = tabJson["url"].get<std::string>();
       }
-      
+
       // Extract type
       if (tabJson.contains("type") && tabJson["type"].is_string()) {
         tab.type = tabJson["type"].get<std::string>();
       }
-      
+
       // Extract webSocketDebuggerUrl (or construct from ID if not present)
-      if (tabJson.contains("webSocketDebuggerUrl") && tabJson["webSocketDebuggerUrl"].is_string()) {
+      if (tabJson.contains("webSocketDebuggerUrl") &&
+          tabJson["webSocketDebuggerUrl"].is_string()) {
         tab.webSocketUrl = tabJson["webSocketDebuggerUrl"].get<std::string>();
       } else if (!tab.idStr.empty()) {
         // Construct WebSocket URL from tab ID
         tab.webSocketUrl = "ws://localhost:9222/devtools/page/" + tab.idStr;
       }
-      
+
       if (!tab.idStr.empty()) {
         tabs.push_back(tab);
       }
     }
-  } catch (const json::exception& e) {
+  } catch (const json::exception &e) {
     error("BrowserModule: Failed to parse tab list JSON: {}", e.what());
     return tabs;
   }
@@ -392,7 +396,7 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
 
   // If tabs have id=0 (string ID parsing failed), assign index-based IDs
   bool allZero = true;
-  for (const auto& tab : tabs) {
+  for (const auto &tab : tabs) {
     if (tab.id != 0) {
       allZero = false;
       break;
@@ -411,19 +415,20 @@ std::vector<BrowserTab> BrowserModule::listTabs() {
 int BrowserModule::findFocusedTab() {
   // Try to find which tab has focus by checking document.hasFocus()
   // Chrome typically returns tabs in order of recent activity
-  for (size_t i = 0; i < cachedTabs.size() && i < 5; i++) {  // Check first 5 tabs
+  for (size_t i = 0; i < cachedTabs.size() && i < 5;
+       i++) { // Check first 5 tabs
     if (!cachedTabs[i].webSocketUrl.empty()) {
       std::string response = sendCdpCommandWebSocket(
-          cachedTabs[i].webSocketUrl,
-          "Runtime.evaluate",
+          cachedTabs[i].webSocketUrl, "Runtime.evaluate",
           "{\"expression\":\"document.hasFocus()\",\"returnByValue\":true}");
-      
-      if (!response.empty() && response.find("\"value\":true") != std::string::npos) {
+
+      if (!response.empty() &&
+          response.find("\"value\":true") != std::string::npos) {
         return static_cast<int>(i);
       }
     }
   }
-  
+
   // Fallback: return tab with "chrome://" or most common title patterns
   // as it's likely the active one
   for (size_t i = 0; i < cachedTabs.size(); i++) {
@@ -432,8 +437,8 @@ int BrowserModule::findFocusedTab() {
       return static_cast<int>(i);
     }
   }
-  
-  return -1;  // No focused tab found
+
+  return -1; // No focused tab found
 }
 
 BrowserTab BrowserModule::getActiveTab() const {
@@ -453,8 +458,8 @@ std::string BrowserModule::getActiveTabInfo() const {
   if (tab.title.empty()) {
     return "No active tab selected";
   }
-  return "Tab " + std::to_string(currentTabId) + ": " + 
-         tab.title + " - " + tab.url;
+  return "Tab " + std::to_string(currentTabId) + ": " + tab.title + " - " +
+         tab.url;
 }
 
 bool BrowserModule::activate(int tabId) {
@@ -534,7 +539,8 @@ bool BrowserModule::click(const std::string &selector) {
       sendCdpCommand("Runtime.evaluate",
                      "{\"expression\":\"" + js + "\",\"returnByValue\":true}");
 
-  return !response.empty() && response.find("\"success\":true") != std::string::npos;
+  return !response.empty() &&
+         response.find("\"success\":true") != std::string::npos;
 }
 
 bool BrowserModule::type(const std::string &selector, const std::string &text) {
@@ -699,7 +705,7 @@ std::string BrowserModule::eval(const std::string &js) {
 
   // Use JSON.stringify to get a proper string representation
   std::string fullJs = "JSON.stringify(" + escapedJs + ")";
-  
+
   std::string response =
       sendCdpCommand("Runtime.evaluate", "{\"expression\":\"" + fullJs +
                                              "\",\"returnByValue\":true}");
@@ -708,10 +714,11 @@ std::string BrowserModule::eval(const std::string &js) {
   if (!response.empty()) {
     try {
       auto jsonResponse = json::parse(response);
-      if (jsonResponse.contains("result") && 
+      if (jsonResponse.contains("result") &&
           jsonResponse["result"].contains("result") &&
           jsonResponse["result"]["result"].contains("value")) {
-        std::string resultValue = jsonResponse["result"]["result"]["value"].get<std::string>();
+        std::string resultValue =
+            jsonResponse["result"]["result"]["value"].get<std::string>();
         // The result is already JSON-stringified, so parse it
         auto parsedResult = json::parse(resultValue);
         if (parsedResult.is_string()) {
@@ -1074,7 +1081,7 @@ bool BrowserModule::disableExtension(const std::string &extensionId) {
 
 // Old window functions removed - use new versions with windowId parameter
 // setWindowSize(int, int) - REMOVED
-// setWindowPosition(int, int) - REMOVED  
+// setWindowPosition(int, int) - REMOVED
 // maximizeWindow() - REMOVED
 // minimizeWindow() - REMOVED
 // fullscreenWindow() - REMOVED
@@ -1089,11 +1096,11 @@ bool BrowserModule::setWindowSize(int windowId, int width, int height) {
   if (targetId < 0)
     return false;
 
-  std::string response = sendCdpCommand(
-      "Browser.setWindowBounds",
-      "{\"windowId\":" + std::to_string(targetId) +
-          ",\"bounds\":{\"width\":" + std::to_string(width) +
-          ",\"height\":" + std::to_string(height) + "}}");
+  std::string response =
+      sendCdpCommand("Browser.setWindowBounds",
+                     "{\"windowId\":" + std::to_string(targetId) +
+                         ",\"bounds\":{\"width\":" + std::to_string(width) +
+                         ",\"height\":" + std::to_string(height) + "}}");
 
   if (!response.empty()) {
     info("BrowserModule: Set window {} size to {}x{}", targetId, width, height);
@@ -1112,11 +1119,11 @@ bool BrowserModule::setWindowPosition(int windowId, int x, int y) {
   if (targetId < 0)
     return false;
 
-  std::string response = sendCdpCommand(
-      "Browser.setWindowBounds",
-      "{\"windowId\":" + std::to_string(targetId) +
-          ",\"bounds\":{\"left\":" + std::to_string(x) +
-          ",\"top\":" + std::to_string(y) + "}}");
+  std::string response =
+      sendCdpCommand("Browser.setWindowBounds",
+                     "{\"windowId\":" + std::to_string(targetId) +
+                         ",\"bounds\":{\"left\":" + std::to_string(x) +
+                         ",\"top\":" + std::to_string(y) + "}}");
 
   if (!response.empty()) {
     info("BrowserModule: Set window {} position to ({}, {})", targetId, x, y);
@@ -1135,10 +1142,10 @@ bool BrowserModule::maximizeWindow(int windowId) {
   if (targetId < 0)
     return false;
 
-  std::string response = sendCdpCommand(
-      "Browser.setWindowBounds",
-      "{\"windowId\":" + std::to_string(targetId) +
-          ",\"bounds\":{\"windowState\":\"maximized\"}}");
+  std::string response =
+      sendCdpCommand("Browser.setWindowBounds",
+                     "{\"windowId\":" + std::to_string(targetId) +
+                         ",\"bounds\":{\"windowState\":\"maximized\"}}");
 
   if (!response.empty()) {
     info("BrowserModule: Maximized window {}", targetId);
@@ -1157,10 +1164,10 @@ bool BrowserModule::minimizeWindow(int windowId) {
   if (targetId < 0)
     return false;
 
-  std::string response = sendCdpCommand(
-      "Browser.setWindowBounds",
-      "{\"windowId\":" + std::to_string(targetId) +
-          ",\"bounds\":{\"windowState\":\"minimized\"}}");
+  std::string response =
+      sendCdpCommand("Browser.setWindowBounds",
+                     "{\"windowId\":" + std::to_string(targetId) +
+                         ",\"bounds\":{\"windowState\":\"minimized\"}}");
 
   if (!response.empty()) {
     info("BrowserModule: Minimized window {}", targetId);
@@ -1179,10 +1186,10 @@ bool BrowserModule::fullscreenWindow(int windowId) {
   if (targetId < 0)
     return false;
 
-  std::string response = sendCdpCommand(
-      "Browser.setWindowBounds",
-      "{\"windowId\":" + std::to_string(targetId) +
-          ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
+  std::string response =
+      sendCdpCommand("Browser.setWindowBounds",
+                     "{\"windowId\":" + std::to_string(targetId) +
+                         ",\"bounds\":{\"windowState\":\"fullscreen\"}}");
 
   if (!response.empty()) {
     info("BrowserModule: Fullscreened window {}", targetId);

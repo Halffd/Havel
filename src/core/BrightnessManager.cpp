@@ -1826,7 +1826,12 @@ Display *BrightnessManager::getX11Display() const {
   if (displayMethod != "x11") {
     return nullptr;
   }
-  return DisplayManager::GetDisplay();
+  Display *display = DisplayManager::GetDisplay();
+  if (!display || display == (Display *)0xbebebebebebebebe) {
+    error("X11 display is invalid or corrupted");
+    return nullptr;
+  }
+  return display;
 }
 
 } // namespace havel

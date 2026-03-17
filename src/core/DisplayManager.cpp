@@ -27,15 +27,15 @@ void DisplayManager::Initialize() {
       root = DefaultRootWindow(display);
       // Register cleanup on exit
       static struct {
-        void operator()() const {
+        static void cleanup() {
           if (DisplayManager::display) {
             XCloseDisplay(DisplayManager::display);
           }
         }
-      } cleanup;
+      } cleanup_helper;
       static bool cleanup_registered = false;
       if (!cleanup_registered) {
-        std::atexit([] { cleanup(); });
+        std::atexit(cleanup_helper.cleanup);
         cleanup_registered = true;
       }
       XSetErrorHandler(X11ErrorHandler);

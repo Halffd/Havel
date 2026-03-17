@@ -455,7 +455,33 @@ void HavelApp::setupSignalHandling() {
       sa.sa_flags = 0;
       sigemptyset(&sa.sa_mask);
       sa.sa_handler = [](int sig) {
-        std::exit(sig); // Simple exit for REPL mode
+        switch (sig) {
+        case SIGINT:
+          info("Received SIGINT (Ctrl+C) - shutting down gracefully");
+          break;
+        case SIGTERM:
+          info("Received SIGTERM - shutting down gracefully");
+          break;
+        case SIGQUIT:
+          info("Received SIGQUIT - shutting down gracefully");
+          break;
+        case SIGABRT:
+          info("Received SIGABRT - aborting");
+          break;
+        case SIGSEGV:
+          info("Received SIGSEGV - segmentation fault");
+          break;
+        default:
+          info("Received signal {} - shutting down", sig);
+          break;
+        }
+
+        // Perform cleanup if possible
+        // Note: In signal handlers, only async-signal-safe functions should be
+        // called std::exit is async-signal-safe and will trigger cleanup via
+        // atexit handlers
+
+        std::exit(0); // Exit with success code for graceful shutdown
       };
 
       sigaction(SIGINT, &sa, nullptr);

@@ -30,13 +30,13 @@ int HavelLauncher::run(int argc, char *argv[]) {
     case Mode::GUI_ONLY:
       return runGuiOnly(cfg, argc, argv);
     case Mode::SCRIPT:
-      return runScript(cfg);
+      return runScript(cfg, argc, argv);
     case Mode::SCRIPT_ONLY:
-      return runScriptOnly(cfg);
+      return runScriptOnly(cfg, argc, argv);
     case Mode::REPL:
       return runRepl(cfg);
     case Mode::SCRIPT_AND_REPL:
-      return runScriptAndRepl(cfg);
+      return runScriptAndRepl(cfg, argc, argv);
     case Mode::CLI:
       return runCli(argc, argv);
     default:
@@ -256,7 +256,7 @@ int HavelLauncher::runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]) {
   }
 }
 
-int HavelLauncher::runScript(const LaunchConfig &cfg) {
+int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
   // Restart loop
   while (true) {
     info("Running Havel script: {}", cfg.scriptFile);
@@ -404,7 +404,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg) {
   } // End of restart loop
 }
 
-int HavelLauncher::runScriptOnly(const LaunchConfig &cfg) {
+int HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
+                                 char *argv[]) {
   // Pure script execution without IO, hotkeys, display, or GUI
   // Useful for testing scripts that auto-exit or don't need input
 
@@ -467,11 +468,8 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
   // Don't create QApplication for REPL - it's not needed for script execution
   // Qt will be lazily initialized only if GUI/clipboard functions are called
 
-  // Convert argc/argv to vector<string> for HavelApp
+  // Use empty args for REPL (no command line arguments needed)
   std::vector<std::string> args;
-  for (int i = 0; i < argc; ++i) {
-    args.emplace_back(argv[i]);
-  }
 
   HavelApp havelApp(false, cfg.scriptFile, true, false, args);
 
@@ -647,7 +645,8 @@ int HavelLauncher::runRepl(const LaunchConfig &cfg) {
   return 0;
 }
 
-int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
+int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int argc,
+                                    char *argv[]) {
   info("Running Havel script and entering REPL: {}", cfg.scriptFile);
 
   // Read script file
@@ -660,6 +659,15 @@ int HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg) {
   std::stringstream buffer;
   buffer << file.rdbuf();
   std::string code = buffer.str();
+
+  // Convert argc/argv to vector<string> for HavelApp
+  std::vector<std::string> args;
+  for (int i = 0; i < argc; ++i) {
+    args.emplace_back(argv[i]);
+  }
+
+  // Create HavelApp instance
+  HavelApp havelApp(false, cfg.scriptFile, false, false, args);
 
   // Use HavelApp's interpreter
   auto *interpreter = havelApp.getInterpreter();

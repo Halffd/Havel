@@ -27,16 +27,17 @@ private:
     bool debugParser = false;
     bool debugAst = false;
     bool debugLexer = false;
-    bool stopOnError = false;  // Stop on first error/warning
-    bool fullRepl = false;     // Full REPL with all features (hotkeys, GUI, etc.)
+    bool stopOnError = false; // Stop on first error/warning
+    bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);
   int runDaemon(const LaunchConfig &cfg, int argc, char *argv[]);
   int runGuiOnly(const LaunchConfig &cfg, int argc, char *argv[]);
-  int runScript(const LaunchConfig &cfg);
-  int runScriptOnly(const LaunchConfig &cfg);  // Pure script execution without IO
-  int runScriptAndRepl(const LaunchConfig &cfg);
+  int runScript(const LaunchConfig &cfg, int argc, char *argv[]);
+  int runScriptOnly(const LaunchConfig &cfg, int argc,
+                    char *argv[]); // Pure script execution without IO
+  int runScriptAndRepl(const LaunchConfig &cfg, int argc, char *argv[]);
   int runRepl(const LaunchConfig &cfg);
   int runCli(int argc, char *argv[]);
   void showHelp();

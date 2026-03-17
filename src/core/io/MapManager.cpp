@@ -1,4 +1,5 @@
 #include "MapManager.hpp"
+#include "../DisplayManager.hpp"
 #include <algorithm>
 #include <fstream>
 #include <nlohmann/json.hpp>

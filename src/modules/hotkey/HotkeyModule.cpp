@@ -123,7 +123,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
             (*hotkeyObj)["id"] = HavelValue(static_cast<double>(hotkey.id));
             (*hotkeyObj)["key"] = HavelValue(hotkey.key);
             (*hotkeyObj)["condition"] = HavelValue(hotkey.condition);
-            (*hotkeyObj)["enabled"] = HavelValue(hotkey.monitoringEnabled);
+            (*hotkeyObj)["enabled"] = HavelValue(hotkey.enabled);
             (*hotkeyObj)["type"] = HavelValue("conditional");
             arr->push_back(HavelValue(hotkeyObj));
           }

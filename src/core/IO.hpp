@@ -236,12 +236,14 @@ public:
   // Public access methods for EventListener
   EventListener *GetEventListener() { return eventListener.get(); }
   ImportManager *GetImportManager() { return importManager.get(); }
-  std::shared_ptr<ImportManager> getImportManagerShared() { return importManager; }
+  std::shared_ptr<ImportManager> getImportManagerShared() {
+    return importManager;
+  }
   std::vector<std::string> GetInputDevices(); // We'll implement this method
   void setHotkeyManager(std::shared_ptr<HotkeyManager> hotkeyManager) {
     this->hotkeyManager = hotkeyManager;
   }
-  
+
   // Window information methods
   std::string GetActiveWindowTitle();
   std::string GetActiveWindowClass();
@@ -274,8 +276,8 @@ public:
                         std::function<void()> action, int id = 0);
 
   // KeyTap methods for on tap/combo syntax
-  void KeyTap(const std::string& key, std::function<void()> tapAction);
-  void KeyCombo(const std::string& key, std::function<void()> comboAction);
+  void KeyTap(const std::string &key, std::function<void()> tapAction);
+  void KeyCombo(const std::string &key, std::function<void()> comboAction);
 
   HotKey AddHotkey(const std::string &rawInput, std::function<void()> action,
                    int id = 0);
@@ -361,15 +363,11 @@ public:
   bool MouseDown(MouseButton button) {
     return Click(button, MouseAction::Hold);
   }
-  bool MouseDown(int button) {
-    return Click(button, MouseAction::Hold);
-  }
+  bool MouseDown(int button) { return Click(button, MouseAction::Hold); }
   bool MouseUp(MouseButton button) {
     return Click(button, MouseAction::Release);
   }
-  bool MouseUp(int button) {
-    return Click(button, MouseAction::Release);
-  }
+  bool MouseUp(int button) { return Click(button, MouseAction::Release); }
 
   static void PressKey(const std::string &keyName, bool press);
 
@@ -422,11 +420,11 @@ public:
   void UngrabAll();
 
   // Mouse button code conversion - multiple overloads for different types
-  int GetMouseButtonCode(const HavelValue& arg);
+  int GetMouseButtonCode(const HavelValue &arg);
   int GetMouseButtonCode(MouseButton btn) { return static_cast<int>(btn); }
   int GetMouseButtonCode(int idx);
-  
-  MouseAction GetMouseAction(const HavelValue& action);
+
+  MouseAction GetMouseAction(const HavelValue &action);
   MouseAction GetMouseAction(MouseAction action) { return action; }
   MouseAction GetMouseAction(int idx);
   template <typename T, typename S> bool Click(T button, S action) {
@@ -506,9 +504,9 @@ public:
   // Track mouse button state for combos
   std::map<int, bool> evdevMouseButtonState;
   std::unique_ptr<HotkeyExecutor> hotkeyExecutor;
-  std::map<std::string, HotKey> instanceHotkeys;
+  std::unordered_map<std::string, HotKey> instanceHotkeys;
   // Renamed to avoid conflict
-  std::map<std::string, bool> hotkeyStates;
+  std::unordered_map<std::string, bool> hotkeyStates;
   std::thread timerThread;
   bool timerRunning = false;
   std::set<int> blockedKeys;

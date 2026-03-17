@@ -11,9 +11,12 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 // Forward declarations - HostContext doesn't own these
 namespace havel {
+
+using std::vector;
 
 class WindowManager;
 class HotkeyManager;

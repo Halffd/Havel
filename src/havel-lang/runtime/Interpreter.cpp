@@ -3140,14 +3140,40 @@ void Interpreter::visitModesBlock(const ast::ModesBlock &node) {
 }
 
 void Interpreter::visitSignalDefinition(const ast::SignalDefinition &node) {
-  // TODO: Implement signal registration
-  // For now, just skip
+  // Register signal with ModeManager
+  if (hostContext.modeManager) {
+    ModeManager::Signal signal;
+    signal.name = node.name;
+    signal.conditionExpr = std::shared_ptr<ast::Expression>(
+        node.condition.get(), [](ast::Expression *) {
+          // Don't delete - the AST owns this expression
+        });
+    signal.value = false; // Default to false
+
+    hostContext.modeManager->defineSignal(signal);
+    info("Registered signal: {}", node.name);
+  } else {
+    error("ModeManager not available for signal registration");
+  }
+
   lastResult = nullptr;
 }
 
 void Interpreter::visitGroupDefinition(const ast::GroupDefinition &node) {
-  // TODO: Implement group registration
-  // For now, just skip
+  // Register group with ModeManager
+  if (hostContext.modeManager) {
+    ModeManager::ModeGroup group;
+    group.name = node.name;
+    group.modes = node.modeNames;
+    group.onEnter = nullptr; // No onEnter callback for basic groups
+
+    hostContext.modeManager->defineGroup(group);
+    info("Registered group: {} with {} modes", node.name,
+         node.modeNames.size());
+  } else {
+    error("ModeManager not available for group registration");
+  }
+
   lastResult = nullptr;
 }
 
@@ -4161,14 +4187,89 @@ void Interpreter::visitOnStartStatement(const ast::OnStartStatement &node) {
 }
 
 void Interpreter::visitOnKeyDownStatement(const ast::OnKeyDownStatement &node) {
-  // TODO: Implement key down event registration
-  // For now, just skip
+  // Register key down hotkeys
+  if (!hostContext.io) {
+    error("IO not available for key event registration");
+    lastResult = nullptr;
+    return;
+  }
+
+  // Store the action for execution when hotkey is triggered
+  auto action = node.action.get();
+
+  if (node.keys.empty()) {
+    // Register for all keys - this is more complex, for now warn
+    warn("Global key down handler not fully implemented - specific keys only");
+    lastResult = nullptr;
+    return;
+  }
+
+  // Register each key as a hotkey
+  for (const auto &key : node.keys) {
+    // Create a lambda that executes the action
+    auto hotkeyCallback = [this, action]() {
+      try {
+        // Execute the action statement
+        Evaluate(*action);
+      } catch (const std::exception &e) {
+        error("Error executing key down action: {}", e.what());
+      }
+    };
+
+    // Register the hotkey
+    bool registered = hostContext.io->Hotkey(key, hotkeyCallback);
+    if (registered) {
+      info("Registered key down handler: {}", key);
+    } else {
+      error("Failed to register key down handler: {}", key);
+    }
+  }
+
   lastResult = nullptr;
 }
 
 void Interpreter::visitOnKeyUpStatement(const ast::OnKeyUpStatement &node) {
-  // TODO: Implement key up event registration
-  // For now, just skip
+  // Register key up hotkeys
+  if (!hostContext.io) {
+    error("IO not available for key event registration");
+    lastResult = nullptr;
+    return;
+  }
+
+  // Store the action for execution when hotkey is triggered
+  auto action = node.action.get();
+
+  if (node.keys.empty()) {
+    // Register for all keys - this is more complex, for now warn
+    warn("Global key up handler not fully implemented - specific keys only");
+    lastResult = nullptr;
+    return;
+  }
+
+  // Register each key as a hotkey with "up" modifier
+  for (const auto &key : node.keys) {
+    // Create a key up hotkey string (add "up" modifier)
+    std::string keyUpHotkey = key + ":up";
+
+    // Create a lambda that executes the action
+    auto hotkeyCallback = [this, action]() {
+      try {
+        // Execute the action statement
+        Evaluate(*action);
+      } catch (const std::exception &e) {
+        error("Error executing key up action: {}", e.what());
+      }
+    };
+
+    // Register the hotkey
+    bool registered = hostContext.io->Hotkey(keyUpHotkey, hotkeyCallback);
+    if (registered) {
+      info("Registered key up handler: {}", keyUpHotkey);
+    } else {
+      error("Failed to register key up handler: {}", keyUpHotkey);
+    }
+  }
+
   lastResult = nullptr;
 }
 

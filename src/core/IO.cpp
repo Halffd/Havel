@@ -400,7 +400,7 @@ IO::IO() {
   XSetErrorHandler(IO::XErrorHandler);
   DisplayManager::Initialize();
   display = DisplayManager::GetDisplay();
-  
+
   // Initialize ImportManager
   importManager = std::make_shared<ImportManager>();
 
@@ -419,19 +419,22 @@ IO::IO() {
   }
 
   // Read process priority and thread count from config
-  int processPriority = Configs::Get().Get<int>("Advanced.ProcessPriority", 0);  // -20 (highest) to 19 (lowest)
-  int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads", 4);  // Number of worker threads
-  
+  int processPriority = Configs::Get().Get<int>(
+      "Advanced.ProcessPriority", 0); // -20 (highest) to 19 (lowest)
+  int workerThreads = Configs::Get().Get<int>("Advanced.WorkerThreads",
+                                              4); // Number of worker threads
+
   // Set process priority (nice value)
   if (processPriority != 0) {
     processPriority = std::clamp(processPriority, -20, 19);
     if (setpriority(PRIO_PROCESS, 0, processPriority) == 0) {
       info("Process priority set to nice {}", processPriority);
     } else {
-      warning("Failed to set process priority to {}: {}", processPriority, strerror(errno));
+      warning("Failed to set process priority to {}: {}", processPriority,
+              strerror(errno));
     }
   }
-  
+
   // Clamp worker threads to reasonable range
   workerThreads = std::clamp(workerThreads, 1, 32);
 
@@ -445,80 +448,81 @@ IO::IO() {
 #ifdef __linux__
   if (display) {
     UpdateNumLockMask();
-      // Use new unified EventListener
-      info("Using new unified EventListener");
+    // Use new unified EventListener
+    info("Using new unified EventListener");
 
-      std::vector<std::string> devices;
+    std::vector<std::string> devices;
 
-      // Get all keyboard devices (including auxiliary keyboards)
-      auto keyboardDevices = Device::findKeyboards();
-      for (const auto &kb : keyboardDevices) {
-        devices.push_back(kb.eventPath);
-        info("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)",
-             kb.name, kb.eventPath, kb.confidence * 100);
-      }
+    // Get all keyboard devices (including auxiliary keyboards)
+    auto keyboardDevices = Device::findKeyboards();
+    for (const auto &kb : keyboardDevices) {
+      devices.push_back(kb.eventPath);
+      info("Adding keyboard device: '{}' -> {} (confidence: {:.1f}%)", kb.name,
+           kb.eventPath, kb.confidence * 100);
+    }
 
-      std::string mouseDevice = getMouseDevice();
-      std::string gamepadDevice;
+    std::string mouseDevice = getMouseDevice();
+    std::string gamepadDevice;
 
-      if (!mouseDevice.empty() &&
-          !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
-        // Only add mouse device if it's not already in the keyboard devices
-        // list
-        bool alreadyAdded = false;
-        for (const auto &kb_device : keyboardDevices) {
-          if (kb_device.eventPath == mouseDevice) {
-            alreadyAdded = true;
-            break;
-          }
-        }
-        if (!alreadyAdded) {
-          devices.push_back(mouseDevice);
-          info("Adding mouse device: {}", mouseDevice);
+    if (!mouseDevice.empty() &&
+        !Configs::Get().Get<bool>("Device.IgnoreMouse", false)) {
+      // Only add mouse device if it's not already in the keyboard devices
+      // list
+      bool alreadyAdded = false;
+      for (const auto &kb_device : keyboardDevices) {
+        if (kb_device.eventPath == mouseDevice) {
+          alreadyAdded = true;
+          break;
         }
       }
-
-      bool enableGamepad =
-          Configs::Get().Get<bool>("Device.EnableGamepad", false);
-      if (enableGamepad) {
-        gamepadDevice = getGamepadDevice();
-        if (!gamepadDevice.empty()) {
-          devices.push_back(gamepadDevice);
-          info("Adding gamepad device: {}", gamepadDevice);
-        }
+      if (!alreadyAdded) {
+        devices.push_back(mouseDevice);
+        info("Adding mouse device: {}", mouseDevice);
       }
+    }
 
-      if (!devices.empty()) {
-        try {
-          eventListener = std::make_unique<EventListener>();
-          eventListener->SetupUinput();
+    bool enableGamepad =
+        Configs::Get().Get<bool>("Device.EnableGamepad", false);
+    if (enableGamepad) {
+      gamepadDevice = getGamepadDevice();
+      if (!gamepadDevice.empty()) {
+        devices.push_back(gamepadDevice);
+        info("Adding gamepad device: {}", gamepadDevice);
+      }
+    }
 
-          // Initialize MouseController
-          mouseController = std::make_unique<MouseController>(eventListener.get());
-          mouseController->SetSensitivity(mouseSensitivity);
-          mouseController->SetScrollSpeed(
-              Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+    if (!devices.empty()) {
+      try {
+        eventListener = std::make_unique<EventListener>();
+        eventListener->SetupUinput();
 
-          // Pass HotkeyExecutor to EventListener for thread-safe execution
-          eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
+        // Initialize MouseController
+        mouseController =
+            std::make_unique<MouseController>(eventListener.get());
+        mouseController->SetSensitivity(mouseSensitivity);
+        mouseController->SetScrollSpeed(
+            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
 
-          // Set mouse and scroll sensitivity on EventListener (for internal use)
-          eventListener->SetMouseSensitivity(mouseSensitivity);
-          eventListener->SetScrollSpeed(
-              Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+        // Pass HotkeyExecutor to EventListener for thread-safe execution
+        eventListener->SetHotkeyExecutor(hotkeyExecutor.get());
 
-          globalEvdev = true;
-          eventListener->Start(devices, true);
-          info("Successfully started unified EventListener with {} devices",
-               devices.size());
-        } catch (const std::exception &e) {
-          error("Failed to start unified EventListener: {}", e.what());
-          globalEvdev = false;
-        }
-      } else {
+        // Set mouse and scroll sensitivity on EventListener (for internal use)
+        eventListener->SetMouseSensitivity(mouseSensitivity);
+        eventListener->SetScrollSpeed(
+            Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
+
+        globalEvdev = true;
+        eventListener->Start(devices, true);
+        info("Successfully started unified EventListener with {} devices",
+             devices.size());
+      } catch (const std::exception &e) {
+        error("Failed to start unified EventListener: {}", e.what());
         globalEvdev = false;
-        error("No input devices found for EventListener");
       }
+    } else {
+      globalEvdev = false;
+      error("No input devices found for EventListener");
+    }
 
     // Debug output - show what we detected
     if (Configs::Get().Get<bool>("Device.ShowDetectionResults", false)) {
@@ -1091,69 +1095,73 @@ bool IO::MouseMove(int dx, int dy, int speed, float accel) {
   return false;
 }
 bool IO::MouseMoveTo(int targetX, int targetY, int speed, float accel) {
-    if (!eventListener) {
-        error("MouseMoveTo: EventListener not available");
-        return false;
+  if (!eventListener) {
+    error("MouseMoveTo: EventListener not available");
+    return false;
+  }
+
+  // For X11, use XTestFakeMotionEvent for pixel-perfect positioning
+  if (WindowManagerDetector::IsX11()) {
+    Display *display = DisplayManager::GetDisplay();
+    if (!display) {
+      error("MouseMoveTo: No X11 display available");
+      return false;
     }
 
-    // For X11, use XTestFakeMotionEvent for pixel-perfect positioning
-    if (WindowManagerDetector::IsX11()) {
-        Display* display = DisplayManager::GetDisplay();
-        if (!display) {
-            error("MouseMoveTo: No X11 display available");
-            return false;
-        }
+    // Get current position for smooth animation
+    auto currentPos = GetMousePositionX11();
+    int currentX = currentPos.first;
+    int currentY = currentPos.second;
 
-        // Get current position for smooth animation
-        auto currentPos = GetMousePositionX11();
-        int currentX = currentPos.first;
-        int currentY = currentPos.second;
+    // Calculate distance
+    int dx = targetX - currentX;
+    int dy = targetY - currentY;
+    int distance = std::abs(dx) + std::abs(dy);
 
-        // Calculate distance
-        int dx = targetX - currentX;
-        int dy = targetY - currentY;
-        int distance = std::abs(dx) + std::abs(dy);
-        
-        if (distance < 3) {
-            // Already close enough, just jump directly
-            XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY, CurrentTime);
-            XFlush(display);
-            return true;
-        }
-        
-        // Calculate steps for smooth movement
-        if (speed <= 0) speed = 5;
-        int steps = std::min(30, std::max(5, distance / (speed * 10)));
-
-        // Smooth animation using XTest
-        for (int i = 0; i <= steps; ++i) {
-            double progress = static_cast<double>(i) / steps;
-            
-            // Calculate intermediate position
-            int stepX = currentX + static_cast<int>(dx * progress);
-            int stepY = currentY + static_cast<int>(dy * progress);
-
-            // Use XTest for exact positioning
-            XTestFakeMotionEvent(display, DefaultScreen(display), stepX, stepY, CurrentTime);
-            XFlush(display);
-
-            // Minimal sleep for smooth movement
-            int sleepMs = std::max(1, 5 / std::max(1, speed));
-            std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
-        }
-
-        // Ensure final position is exact
-        XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY, CurrentTime);
-        XFlush(display);
-        
-        return true;
+    if (distance < 3) {
+      // Already close enough, just jump directly
+      XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY,
+                           CurrentTime);
+      XFlush(display);
+      return true;
     }
 
-	    // For Wayland, fall back to REL with feedback loop
-	    int currentX = 0, currentY = 0;
-	    (void)currentX;
-	    (void)currentY;
-	    return false;
+    // Calculate steps for smooth movement
+    if (speed <= 0)
+      speed = 5;
+    int steps = std::min(30, std::max(5, distance / (speed * 10)));
+
+    // Smooth animation using XTest
+    for (int i = 0; i <= steps; ++i) {
+      double progress = static_cast<double>(i) / steps;
+
+      // Calculate intermediate position
+      int stepX = currentX + static_cast<int>(dx * progress);
+      int stepY = currentY + static_cast<int>(dy * progress);
+
+      // Use XTest for exact positioning
+      XTestFakeMotionEvent(display, DefaultScreen(display), stepX, stepY,
+                           CurrentTime);
+      XFlush(display);
+
+      // Minimal sleep for smooth movement
+      int sleepMs = std::max(1, 5 / std::max(1, speed));
+      std::this_thread::sleep_for(std::chrono::milliseconds(sleepMs));
+    }
+
+    // Ensure final position is exact
+    XTestFakeMotionEvent(display, DefaultScreen(display), targetX, targetY,
+                         CurrentTime);
+    XFlush(display);
+
+    return true;
+  }
+
+  // For Wayland, fall back to REL with feedback loop
+  int currentX = 0, currentY = 0;
+  (void)currentX;
+  (void)currentY;
+  return false;
 }
 
 bool IO::ClickAt(int x, int y, int button, int speed, float accel) {
@@ -1572,7 +1580,7 @@ bool IO::Suspend() {
 
       if (hotkeyManager) {
         hotkeyManager->conditionalHotkeysEnabled = true;
-        hotkeyManager->setMode("default");  // Switch to default mode
+        hotkeyManager->setMode("default"); // Switch to default mode
 
         // Restore conditional hotkeys to their original state before suspension
         if (!suspendedConditionalHotkeyStates.empty()) {
@@ -1622,8 +1630,8 @@ bool IO::Suspend() {
         // Track the original state of conditional hotkeys before suspension and
         // update their states
         hotkeyManager->conditionalHotkeysEnabled = false;
-        hotkeyManager->setMode("suspend");  // Switch to suspend mode
-        
+        hotkeyManager->setMode("suspend"); // Switch to suspend mode
+
         std::lock_guard<std::mutex> lock(hotkeyManager->getHotkeyMutex());
         suspendedConditionalHotkeyStates.clear();
         for (auto &ch : *hotkeyManager->activeConditionalHotkeys) {
@@ -1673,7 +1681,7 @@ bool IO::Resume(int id) {
 
 // Method to resume all hotkeys (alias for Suspend() when already suspended)
 bool IO::Resume() {
-  return Suspend();  // Suspend() toggles, so call it again to resume
+  return Suspend(); // Suspend() toggles, so call it again to resume
 }
 
 // Static method to exit the application
@@ -1910,23 +1918,21 @@ KeyCode IO::ParseKeyPart(const std::string &keyPart, bool isEvdev) {
 }
 
 // KeyTap method for on tap syntax
-void IO::KeyTap(const std::string& key, std::function<void()> tapAction) {
+void IO::KeyTap(const std::string &key, std::function<void()> tapAction) {
   if (!hotkeyManager) {
     error("KeyTap: hotkeyManager not initialized");
     return;
   }
-  
+
   // Create KeyTap with tap action only
-  auto keyTap = std::make_unique<havel::KeyTap>(
-    hotkeyManager,
-    key,
-    tapAction,
-    "",  // tap condition (empty = always)
-    "",  // combo condition (empty = always)
-    nullptr,  // combo action
-    true,  // grab down
-    true   // grab up
-  );
+  auto keyTap =
+      std::make_unique<havel::KeyTap>(hotkeyManager, key, tapAction,
+                                      "", // tap condition (empty = always)
+                                      "", // combo condition (empty = always)
+                                      nullptr, // combo action
+                                      true,    // grab down
+                                      true     // grab up
+      );
 
   // Store in global storage to keep alive
   std::lock_guard<std::mutex> lock(g_keyTapMutex);
@@ -1934,23 +1940,22 @@ void IO::KeyTap(const std::string& key, std::function<void()> tapAction) {
 }
 
 // KeyCombo method for on combo syntax
-void IO::KeyCombo(const std::string& key, std::function<void()> comboAction) {
+void IO::KeyCombo(const std::string &key, std::function<void()> comboAction) {
   if (!hotkeyManager) {
     error("KeyCombo: hotkeyManager not initialized");
     return;
   }
 
   // Create KeyTap with combo action only
-  auto keyTap = std::make_unique<havel::KeyTap>(
-    hotkeyManager,
-    key,
-    nullptr,  // tap action
-    "",  // tap condition (empty = always)
-    "",  // combo condition (empty = always)
-    comboAction,  // combo action
-    true,  // grab down
-    true   // grab up
-  );
+  auto keyTap =
+      std::make_unique<havel::KeyTap>(hotkeyManager, key,
+                                      nullptr, // tap action
+                                      "",      // tap condition (empty = always)
+                                      "", // combo condition (empty = always)
+                                      comboAction, // combo action
+                                      true,        // grab down
+                                      true         // grab up
+      );
 
   // Store in global storage to keep alive
   std::lock_guard<std::mutex> lock(g_keyTapMutex);
@@ -2132,7 +2137,8 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
           // Preserve the @evdev flag for combo parts
           // If the original hotkey had @, the parts should too
           std::string partWithPrefix = parsed.isEvdev ? "@" + part : part;
-          auto subHotkey = AddHotkey(partWithPrefix, std::function<void()>{}, 0);
+          auto subHotkey =
+              AddHotkey(partWithPrefix, std::function<void()>{}, 0);
           hotkey.comboSequence.push_back(subHotkey);
 
           // Track specific physical keys for precise modifier matching
@@ -2149,11 +2155,9 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
         }
         hotkey.success = !hotkey.comboSequence.empty();
         // Mark this combo as requiring a wheel event if any part is a wheel
-        hotkey.requiresWheel = std::any_of(hotkey.comboSequence.begin(),
-                                    hotkey.comboSequence.end(),
-                                    [](const HotKey& k) {
-                                      return k.type == HotkeyType::MouseWheel;
-                                    });
+        hotkey.requiresWheel = std::any_of(
+            hotkey.comboSequence.begin(), hotkey.comboSequence.end(),
+            [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
       } else {
         // Regular keyboard hotkey
         KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
@@ -2195,7 +2199,6 @@ HotKey IO::AddHotkey(const std::string &rawInput, std::function<void()> action,
       x11Hotkeys.insert(id);
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
-
   }
 
   return hotkey;
@@ -2324,11 +2327,9 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       }
       hotkey.success = !hotkey.comboSequence.empty();
       // Mark this combo as requiring a wheel event if any part is a wheel
-      hotkey.requiresWheel = std::any_of(hotkey.comboSequence.begin(),
-                                  hotkey.comboSequence.end(),
-                                  [](const HotKey& k) {
-                                    return k.type == HotkeyType::MouseWheel;
-                                  });
+      hotkey.requiresWheel = std::any_of(
+          hotkey.comboSequence.begin(), hotkey.comboSequence.end(),
+          [](const HotKey &k) { return k.type == HotkeyType::MouseWheel; });
     } else {
       // Not a mouse button/wheel, not a combo - try to parse as keyboard key
       KeyCode keycode = ParseKeyPart(parsed.keyPart, parsed.isEvdev);
@@ -2370,7 +2371,6 @@ HotKey IO::AddMouseHotkey(const std::string &hotkeyStr,
       x11Hotkeys.insert(id);
     if (hotkey.evdev)
       evdevHotkeys.insert(id);
-
   }
 
   return hotkey;
@@ -2590,9 +2590,9 @@ LRESULT CALLBACK IO::KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
 int IO::GetKeyboard() {
   if (!display) {
-    display = XOpenDisplay(nullptr);
+    display = havel::DisplayManager::GetDisplay();
     if (!display) {
-      std::cerr << "Unable to open X display!" << std::endl;
+      error("Unable to open X display!");
       return EXIT_FAILURE;
     }
   }
@@ -2953,11 +2953,15 @@ bool IO::UngrabHotkey(int hotkeyId) {
 }
 
 void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
-  debug("IO::SetAnyKeyPressCallback called, eventListener={}", (void*)eventListener.get());
+  debug("IO::SetAnyKeyPressCallback called, eventListener={}",
+        (void *)eventListener.get());
   if (!eventListener) {
-    warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will not be registered");
-    warn("  This usually means no input devices were found or EventListener failed to start");
-    warn("  Check if /dev/input/event* devices are accessible and grabDevices is enabled");
+    warn("IO::SetAnyKeyPressCallback: eventListener is null - callback will "
+         "not be registered");
+    warn("  This usually means no input devices were found or EventListener "
+         "failed to start");
+    warn("  Check if /dev/input/event* devices are accessible and grabDevices "
+         "is enabled");
     return;
   }
   try {
@@ -2965,7 +2969,7 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
     debug("Calling eventListener->SetAnyKeyPressCallback");
     eventListener->SetAnyKeyPressCallback(callback);
     debug("SetAnyKeyPressCallback completed successfully");
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     error("IO::SetAnyKeyPressCallback failed: {}", e.what());
   } catch (...) {
     error("IO::SetAnyKeyPressCallback failed with unknown exception");
@@ -2974,26 +2978,29 @@ void IO::SetAnyKeyPressCallback(AnyKeyPressCallback callback) {
 
 void IO::SetInputEventCallback(InputEventCallback callback) {
   if (!eventListener) {
-    warn("IO::SetInputEventCallback: eventListener is null - callback will not be registered");
+    warn("IO::SetInputEventCallback: eventListener is null - callback will not "
+         "be registered");
     return;
   }
   try {
     eventListener->SetInputEventCallback(std::move(callback));
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     error("IO::SetInputEventCallback failed: {}", e.what());
   } catch (...) {
     error("IO::SetInputEventCallback failed with unknown exception");
   }
 }
 
-void IO::SetInputBlockCallback(std::function<bool(const InputEvent &)> callback) {
+void IO::SetInputBlockCallback(
+    std::function<bool(const InputEvent &)> callback) {
   if (!eventListener) {
-    warn("IO::SetInputBlockCallback: eventListener is null - callback will not be registered");
+    warn("IO::SetInputBlockCallback: eventListener is null - callback will not "
+         "be registered");
     return;
   }
   try {
     eventListener->SetInputBlockCallback(std::move(callback));
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     error("IO::SetInputBlockCallback failed: {}", e.what());
   } catch (...) {
     error("IO::SetInputBlockCallback failed with unknown exception");
@@ -4318,83 +4325,117 @@ void IO::executeComboAction(const std::string &action) {
 // (removed - now inline in header)
 
 // Mouse button code conversion implementations
-int IO::GetMouseButtonCode(const HavelValue& arg) {
+int IO::GetMouseButtonCode(const HavelValue &arg) {
   if (arg.isString()) {
-      std::string s = toLower(arg.asString());
-      if (s == "right") return BTN_RIGHT;
-      if (s == "middle") return BTN_MIDDLE;
-      if (s == "side1" || s == "xbutton1") return BTN_SIDE;
-      if (s == "side2" || s == "xbutton2") return BTN_EXTRA;
-      if (s == "side3" || s == "forward") return BTN_FORWARD;
-      if (s == "side4" || s == "back") return BTN_BACK;
-      if (s == "left") return BTN_LEFT;
-      try {
-        if(std::stoi(s) > 0) {
-          return GetMouseButtonCode(std::stoi(s));
-        }
-      } catch (...) {
-        // not a number, continue
+    std::string s = toLower(arg.asString());
+    if (s == "right")
+      return BTN_RIGHT;
+    if (s == "middle")
+      return BTN_MIDDLE;
+    if (s == "side1" || s == "xbutton1")
+      return BTN_SIDE;
+    if (s == "side2" || s == "xbutton2")
+      return BTN_EXTRA;
+    if (s == "side3" || s == "forward")
+      return BTN_FORWARD;
+    if (s == "side4" || s == "back")
+      return BTN_BACK;
+    if (s == "left")
+      return BTN_LEFT;
+    try {
+      if (std::stoi(s) > 0) {
+        return GetMouseButtonCode(std::stoi(s));
       }
-      return BTN_LEFT; // fallback
+    } catch (...) {
+      // not a number, continue
+    }
+    return BTN_LEFT; // fallback
   }
   // numeric argument: treat 1=left, 2=right, 3=middle, etc.
   int idx = static_cast<int>(Interpreter::ValueToNumber(arg));
   switch (idx) {
-      case 1: return BTN_LEFT;
-      case 2: return BTN_RIGHT;
-      case 3: return BTN_MIDDLE;
-      case 4: return BTN_SIDE;
-      case 5: return BTN_EXTRA;
-      case 6: return BTN_FORWARD;
-      case 7: return BTN_BACK;
-      default: return BTN_LEFT;
+  case 1:
+    return BTN_LEFT;
+  case 2:
+    return BTN_RIGHT;
+  case 3:
+    return BTN_MIDDLE;
+  case 4:
+    return BTN_SIDE;
+  case 5:
+    return BTN_EXTRA;
+  case 6:
+    return BTN_FORWARD;
+  case 7:
+    return BTN_BACK;
+  default:
+    return BTN_LEFT;
   }
 }
 
 int IO::GetMouseButtonCode(int idx) {
   switch (idx) {
-      case 1: return BTN_LEFT;
-      case 2: return BTN_RIGHT;
-      case 3: return BTN_MIDDLE;
-      case 4: return BTN_SIDE;
-      case 5: return BTN_EXTRA;
-      case 6: return BTN_FORWARD;
-      case 7: return BTN_BACK;
-      default: return BTN_LEFT;
+  case 1:
+    return BTN_LEFT;
+  case 2:
+    return BTN_RIGHT;
+  case 3:
+    return BTN_MIDDLE;
+  case 4:
+    return BTN_SIDE;
+  case 5:
+    return BTN_EXTRA;
+  case 6:
+    return BTN_FORWARD;
+  case 7:
+    return BTN_BACK;
+  default:
+    return BTN_LEFT;
   }
 }
 
-MouseAction IO::GetMouseAction(const HavelValue& action) {
+MouseAction IO::GetMouseAction(const HavelValue &action) {
   if (action.isString()) {
-      std::string s = toLower(action.asString());
-      if (s == "press" || s == "hold") return MouseAction::Hold;
-      if (s == "release") return MouseAction::Release;
-      if (s == "click") return MouseAction::Click;
-      try {
-        if(std::stoi(s) > 0) {
-          return GetMouseAction(std::stoi(s));
-        }
-      } catch (...) {
-        // not a number, continue
+    std::string s = toLower(action.asString());
+    if (s == "press" || s == "hold")
+      return MouseAction::Hold;
+    if (s == "release")
+      return MouseAction::Release;
+    if (s == "click")
+      return MouseAction::Click;
+    try {
+      if (std::stoi(s) > 0) {
+        return GetMouseAction(std::stoi(s));
       }
-      return MouseAction::Click; // fallback
+    } catch (...) {
+      // not a number, continue
+    }
+    return MouseAction::Click; // fallback
   }
   // numeric argument: treat 0=hold, 1=release, 2=click
   int idx = static_cast<int>(Interpreter::ValueToNumber(action));
   switch (idx) {
-      case 0: return MouseAction::Hold;
-      case 1: return MouseAction::Release;
-      case 2: return MouseAction::Click;
-      default: return MouseAction::Click;
+  case 0:
+    return MouseAction::Hold;
+  case 1:
+    return MouseAction::Release;
+  case 2:
+    return MouseAction::Click;
+  default:
+    return MouseAction::Click;
   }
 }
 
 MouseAction IO::GetMouseAction(int idx) {
   switch (idx) {
-      case 0: return MouseAction::Hold;
-      case 1: return MouseAction::Release;
-      case 2: return MouseAction::Click;
-      default: return MouseAction::Click;
+  case 0:
+    return MouseAction::Hold;
+  case 1:
+    return MouseAction::Release;
+  case 2:
+    return MouseAction::Click;
+  default:
+    return MouseAction::Click;
   }
 }
 

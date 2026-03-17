@@ -1,4 +1,5 @@
 #include "WindowManagerDetector.hpp"
+#include "../core/DisplayManager.hpp"
 #include <array>
 #include <cstdlib>
 #include <cstring>
@@ -181,22 +182,22 @@ bool WindowManagerDetector::IsWayland() noexcept {
     // Primary check: WAYLAND_DISPLAY environment variable
     const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
     if (waylandDisplay && std::strlen(waylandDisplay) > 0) {
-      return true;  // Any WAYLAND_DISPLAY set indicates Wayland session
+      return true; // Any WAYLAND_DISPLAY set indicates Wayland session
     }
-    
+
     // Secondary: Check for running Wayland compositors
     if (CheckProcess("Hyprland") || CheckProcess("sway") ||
         CheckProcess("wayfire") || CheckProcess("river") ||
         CheckProcess("weston") || CheckProcess("kwin_wayland")) {
       return true;
     }
-    
+
     // Tertiary: XDG_SESSION_TYPE (only reliable with display managers)
     const char *sessionType = std::getenv("XDG_SESSION_TYPE");
     if (sessionType && std::string(sessionType) == "wayland") {
       return true;
     }
-    
+
     return false;
   } catch (...) {
     return false;
@@ -208,23 +209,25 @@ bool WindowManagerDetector::IsX11() noexcept {
     // Check for Wayland first - if present, we're NOT on pure X11
     const char *waylandDisplay = std::getenv("WAYLAND_DISPLAY");
     if (waylandDisplay && std::strlen(waylandDisplay) > 0) {
-      return false;  // Wayland session (may have Xwayland, but not native X11)
+      return false; // Wayland session (may have Xwayland, but not native X11)
     }
-    
+
     // Check for X11 DISPLAY
     const char *display = std::getenv("DISPLAY");
     if (display && std::strlen(display) > 0) {
-      return true;  // X11 session (including startx)
+      return true; // X11 session (including startx)
     }
-    
+
     // Fallback: XDG_SESSION_TYPE (unreliable with startx)
     const char *sessionType = std::getenv("XDG_SESSION_TYPE");
     if (sessionType) {
       std::string type(sessionType);
-      if (type == "x11") return true;
-      if (type == "wayland") return false;
+      if (type == "x11")
+        return true;
+      if (type == "wayland")
+        return false;
     }
-    
+
     // Unknown: default to non-X11 (safer than assuming X11)
     return false;
   } catch (...) {
@@ -288,7 +291,7 @@ bool WindowManagerDetector::CheckEnvironmentVar(
 bool WindowManagerDetector::CheckXProperty(
     const std::string &property) noexcept {
   try {
-    Display *display = XOpenDisplay(nullptr);
+    Display *display = havel::DisplayManager::GetDisplay();
     if (!display)
       return false;
 
@@ -296,17 +299,15 @@ bool WindowManagerDetector::CheckXProperty(
     Window root = RootWindow(display, screen);
     XWindowAttributes attributes;
     if (XGetWindowAttributes(display, root, &attributes) == 0) {
-      XCloseDisplay(display);
       return false;
     }
 
     Atom atom = XInternAtom(display, property.c_str(), x11::XFalse);
     if (atom == x11::XNone) {
-      XCloseDisplay(display);
       return false;
     }
 
-    XCloseDisplay(display);
+    // Check if property exists on root window
     return true;
   } catch (...) {
     return false;

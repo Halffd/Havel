@@ -36,12 +36,14 @@ namespace havel {
 static void EnsureDisplayInitialized() {
 #ifdef __linux__
   if (!Window::display) {
-    Display *rawDisplay = XOpenDisplay(nullptr);
+    Display *rawDisplay = DisplayManager::GetDisplay();
     if (!rawDisplay) {
-      std::cerr << "Failed to open X11 display" << std::endl;
+      error("Failed to open X11 display");
       return;
     }
-    Window::display = std::shared_ptr<Display>(rawDisplay, DisplayDeleter());
+    Window::display = std::shared_ptr<Display>(rawDisplay, [](Display *) {
+      // Don't close - DisplayManager handles cleanup
+    });
   }
 #endif
 }
@@ -328,7 +330,7 @@ std::string Window::Title(wID win) {
 
   // X11 - Initialize display if needed
   EnsureDisplayInitialized();
-  
+
   if (!display) {
     error("Failed to open X11 display.");
     return "";
@@ -386,7 +388,8 @@ std::string Window::Class(wID win) {
 #ifdef WINDOWS
   // Windows: Get window class name
   char className[256];
-  if (GetClassNameA(reinterpret_cast<HWND>(win), className, sizeof(className))) {
+  if (GetClassNameA(reinterpret_cast<HWND>(win), className,
+                    sizeof(className))) {
     return std::string(className);
   }
   return "";
@@ -405,7 +408,7 @@ std::string Window::Class(wID win) {
 
   // X11 - Initialize display if needed
   EnsureDisplayInitialized();
-  
+
   if (!display) {
     error("Failed to open X11 display.");
     return "";
@@ -455,7 +458,7 @@ pID Window::PID(wID win) {
 
   // X11 - Initialize display if needed
   EnsureDisplayInitialized();
-  
+
   if (!display) {
     error("Failed to open X11 display.");
     return 0;
@@ -473,9 +476,10 @@ pID Window::PID(wID win) {
 
   if (XGetWindowProperty(display.get(), win, pidAtom, 0, 1, x11::XFalse,
                          XA_CARDINAL, &actualType, &actualFormat, &nitems,
-                         &bytesAfter, &prop) == x11::XSuccess && prop) {
+                         &bytesAfter, &prop) == x11::XSuccess &&
+      prop) {
     if (nitems > 0) {
-      pID pid = *reinterpret_cast<pID*>(prop);
+      pID pid = *reinterpret_cast<pID *>(prop);
       XFree(prop);
       return pid;
     }

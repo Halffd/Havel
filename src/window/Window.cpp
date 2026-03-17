@@ -140,9 +140,9 @@ wID Window::Find2(cstr identifier, cstr type) {
     win = GetwIDByPID(pid);
   }
   if (win) {
-    std::cout << "Found window ID: " << win << std::endl;
+    debug("Found window ID: " + std::to_string(win));
   } else {
-    std::cerr << "Window not found!" << std::endl;
+    debug("Window not found!");
   }
   return win;
 }
@@ -167,7 +167,7 @@ wID Window::Find(cstr identifier) {
       pID pid = std::stoi(identifier.substr(4));
       win = GetwIDByPID(pid);
     } catch (const std::exception &) {
-      std::cerr << "Invalid PID format" << std::endl;
+      error("Invalid PID format");
     }
   }
   // Assume it's a title if no prefix is given
@@ -272,12 +272,11 @@ wID Window::FindByClass(cstr className) {
 
           // Debug logging
           if (match) {
-            std::cout << "Found window with class matching '" << className
-                      << "': res_name='"
-                      << (classHint.res_name ? classHint.res_name : "NULL")
-                      << "', res_class='"
-                      << (classHint.res_class ? classHint.res_class : "NULL")
-                      << "'" << std::endl;
+            debug("Found window with class matching '" + className +
+                  "': res_name='" +
+                  (classHint.res_name ? classHint.res_name : "NULL") +
+                  "', res_class='" +
+                  (classHint.res_class ? classHint.res_class : "NULL") + "'");
           }
 
           if (classHint.res_name)
@@ -305,7 +304,6 @@ wID Window::FindByClass(cstr className) {
 
 // Title retrieval
 std::string Window::Title(wID win) {
-  std::cout << "Window::Title() called with win=" << win << std::endl;
   if (!win)
     return "";
 
@@ -332,7 +330,7 @@ std::string Window::Title(wID win) {
   EnsureDisplayInitialized();
   
   if (!display) {
-    std::cerr << "Failed to open X11 display." << std::endl;
+    error("Failed to open X11 display.");
     return "";
   }
 
@@ -409,7 +407,7 @@ std::string Window::Class(wID win) {
   EnsureDisplayInitialized();
   
   if (!display) {
-    std::cerr << "Failed to open X11 display." << std::endl;
+    error("Failed to open X11 display.");
     return "";
   }
 
@@ -459,7 +457,7 @@ pID Window::PID(wID win) {
   EnsureDisplayInitialized();
   
   if (!display) {
-    std::cerr << "Failed to open X11 display." << std::endl;
+    error("Failed to open X11 display.");
     return 0;
   }
 
@@ -508,8 +506,10 @@ bool Window::Exists(wID win) {
 #ifdef WINDOWS
   return IsWindow(reinterpret_cast<HWND>(win)) != 0;
 #elif defined(__linux__)
-  if (!display)
+  if (!display) {
+    error("X11 display not initialized");
     return false;
+  }
   XWindowAttributes attr;
   return XGetWindowAttributes(display.get(), win, &attr) != 0;
 #else
@@ -524,7 +524,6 @@ void Window::Activate(wID win) {
   // Windows implementation
   if (win) {
     SetForegroundWindow(reinterpret_cast<HWND>(win));
-    std::cout << "Activated: " << win << std::endl;
   }
 #elif defined(__linux__)
   if (WindowManager::get().IsX11()) {
@@ -582,7 +581,6 @@ void Window::Close(wID win) {
 #ifdef WINDOWS
   if (win) {
     SendMessage(reinterpret_cast<HWND>(win), WM_CLOSE, 0, 0);
-    std::cout << "Closed: " << win << std::endl;
   }
 #elif defined(__linux__)
   if (!win)
@@ -615,22 +613,20 @@ void Window::Min(wID win) {
 #ifdef WINDOWS
   if (win) {
     ShowWindow(reinterpret_cast<HWND>(win), SW_MINIMIZE);
-    std::cout << "Minimized: " << win << std::endl;
   }
 #elif defined(__linux__)
   if (!win)
     return;
   // USE CACHED DISPLAY!
   if (!display) {
-    std::cerr << "X11 display not initialized" << std::endl;
+    error("X11 display not initialized");
     return;
   }
   // XIconifyWindow takes (Display*, Window, int screen_number)
   XIconifyWindow(display.get(), win, DefaultScreen(display.get()));
   XFlush(display.get()); // Ensure the command is sent to the server
 #elif defined(__linux__) && defined(__WAYLAND__)
-  std::cerr << "Window minimization in Wayland is not implemented."
-            << std::endl;
+  error("Window minimization in Wayland is not implemented.");
 #endif
 }
 
@@ -640,7 +636,6 @@ void Window::Max(wID win) {
 #ifdef WINDOWS
   if (win) {
     ShowWindow(reinterpret_cast<HWND>(win), SW_MAXIMIZE);
-    std::cout << "Maximized: " << win << std::endl;
   }
 #elif defined(__linux__)
   if (!win)
@@ -673,8 +668,7 @@ void Window::Max(wID win) {
   }
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for maximizing windows.
-  std::cerr << "Window maximization in Wayland is not implemented."
-            << std::endl;
+  error("Window maximization in Wayland is not implemented.");
 #endif
 }
 
@@ -710,8 +704,7 @@ void Window::Transparency(wID win, int alpha) {
   XFlush(display.get());
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for setting transparency.
-  std::cerr << "Transparency control in Wayland is not implemented."
-            << std::endl;
+  error("Transparency control in Wayland is not implemented.");
 #endif
 }
 
@@ -747,13 +740,15 @@ void Window::AlwaysOnTop(wID win, bool top) {
   }
 #elif defined(__linux__) && defined(__WAYLAND__)
   // Wayland does not provide a universal API for setting windows on top.
-  std::cerr << "AlwaysOnTop in Wayland is not implemented." << std::endl;
+  error("AlwaysOnTop in Wayland is not implemented.");
 #endif
 }
 
 void Window::SetAlwaysOnTopX11(wID win, bool top) {
-  if (!display)
+  if (!display) {
+    error("X11 display not initialized");
     return;
+  }
 
   Atom wmState = XInternAtom(display.get(), "_NET_WM_STATE", x11::XTrue);
   Atom wmAbove = XInternAtom(display.get(), "_NET_WM_STATE_ABOVE", x11::XTrue);
@@ -776,8 +771,10 @@ void Window::SetAlwaysOnTopX11(wID win, bool top) {
 // Find a window by its process ID
 wID Window::GetwIDByPID(pID pid) {
   EnsureDisplayInitialized();
-  if (!display)
+  if (!display) {
+    error("X11 display not initialized");
     return 0;
+  }
 
   ::Window rootWindow = DefaultRootWindow(display.get());
   ::Window parent;
@@ -825,50 +822,66 @@ wID Window::GetwIDByPID(pID pid) {
 // === New Instance Methods for Window Manipulation ===
 
 bool Window::Move(int x, int y, bool centerOnScreen) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::Move(m_id, x, y, centerOnScreen);
 }
 
 bool Window::Resize(int width, int height, bool fullscreen) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::Resize(m_id, width, height, fullscreen);
 }
 
 bool Window::MoveResize(int x, int y, int width, int height) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::MoveResize(m_id, x, y, width, height);
 }
 
 bool Window::Center() {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::Center(m_id);
 }
 
 bool Window::MoveToCorner(const std::string &corner) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::MoveToCorner(m_id, corner);
 }
 
 bool Window::MoveToMonitor(int monitorIndex) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return false;
+  }
   return WindowManager::MoveToMonitor(m_id, monitorIndex);
 }
 
 void Window::Snap(int position) {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return;
+  }
   WindowManager::SnapWindow(m_id, position);
 }
 
 void Window::ToggleFullscreen() {
-  if (!m_id)
+  if (!m_id) {
+    error("Window ID is invalid");
     return;
+  }
   WindowManager::ToggleFullscreen(m_id);
 }
 

@@ -5,6 +5,7 @@
  * Exposes window.* API for scripts.
  */
 #include "WindowModule.hpp"
+#include "../../core/DisplayManager.hpp"
 #include "../../window/WindowQuery.hpp"
 #include <memory>
 
@@ -50,6 +51,32 @@ void registerWindowQueryModule(Environment &env, std::shared_ptr<IHostAPI>) {
       BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
         // TODO: Implement window enumeration
+        return HavelValue(resultArray);
+      }));
+
+  // window.getMonitors() - Get list of all monitors
+  (*windowObj)["getMonitors"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+        auto monitors = DisplayManager::GetMonitors();
+        auto resultArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto &monitor : monitors) {
+          auto monitorObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
+          (*monitorObj)["name"] = HavelValue(monitor.name);
+          (*monitorObj)["x"] = HavelValue(static_cast<double>(monitor.x));
+          (*monitorObj)["y"] = HavelValue(static_cast<double>(monitor.y));
+          (*monitorObj)["width"] =
+              HavelValue(static_cast<double>(monitor.width));
+          (*monitorObj)["height"] =
+              HavelValue(static_cast<double>(monitor.height));
+          (*monitorObj)["isPrimary"] = HavelValue(monitor.isPrimary);
+          (*monitorObj)["id"] = HavelValue(static_cast<double>(monitor.id));
+          (*monitorObj)["crtc_id"] =
+              HavelValue(static_cast<double>(monitor.crtc_id));
+          resultArray->push_back(HavelValue(monitorObj));
+        }
+
         return HavelValue(resultArray);
       }));
 

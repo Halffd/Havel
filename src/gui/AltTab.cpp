@@ -1,4 +1,5 @@
 #include "AltTab.hpp"
+#include "../core/DisplayManager.hpp"
 #include <QApplication>
 #include <QCursor>
 #include <QGuiApplication>
@@ -98,7 +99,7 @@ void AltTabWindow::setupUI() {
 }
 
 void AltTabWindow::setupX11() {
-  display = XOpenDisplay(nullptr);
+  display = havel::DisplayManager::GetDisplay();
   if (!display) {
     return;
   }

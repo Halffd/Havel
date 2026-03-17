@@ -1,6 +1,6 @@
 #include "EventListener.hpp"
-#include "KeyMap.hpp"
 #include "HotkeyExecutor.hpp"
+#include "KeyMap.hpp"
 #include "SignalHandler.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/HotkeyManager.hpp"
@@ -10,8 +10,8 @@
 #include <fcntl.h>
 #include <fmt/format.h>
 #include <linux/uinput.h>
-#include <signal.h>
 #include <shared_mutex>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <unistd.h>
@@ -61,7 +61,7 @@ EventListener::EventListener() {
   signalHandler = std::make_unique<SignalHandler>(this);
   signalHandler->InstallAsyncHandlers();
   shutdownFd = eventfd(0, EFD_NONBLOCK);
-  
+
   // Register atexit handler for emergency cleanup
   static bool atexitRegistered = false;
   if (!atexitRegistered) {
@@ -78,14 +78,14 @@ EventListener::EventListener() {
 EventListener::~EventListener() {
   // Force ungrab all devices FIRST (critical for evdev cleanup)
   ForceUngrabAllDevices();
-  
+
   // Stop the event loop and join thread
   Stop();
 
   if (shutdownFd >= 0) {
     close(shutdownFd);
   }
-  
+
   debug("EventListener destructor completed - all devices ungrabbed");
 }
 
@@ -361,6 +361,14 @@ void EventListener::EventLoop() {
   // No need to call SetupSignalHandling() here
 
   while (running.load() && !shutdown.load()) {
+    // Check for signal from atomic flag
+    int signalFlag = SignalHandler::GetSignalFlag();
+    if (signalFlag != 0) {
+      debug("Signal detected via atomic flag: {}", signalFlag);
+      RequestShutdownFromSignal(signalFlag);
+      break;
+    }
+
     fd_set readfds;
     FD_ZERO(&readfds);
 
@@ -590,7 +598,8 @@ void EventListener::ProcessKeyboardEvent(const input_event &ev) {
     keyUpCallback(originalCode);
   }
 
-  if (down && emergencyShutdownKey != 0 && originalCode == emergencyShutdownKey) {
+  if (down && emergencyShutdownKey != 0 &&
+      originalCode == emergencyShutdownKey) {
     error("🚨 EMERGENCY HOTKEY TRIGGERED! Shutting down...");
     running.store(false);
     shutdown.store(true);
@@ -656,22 +665,22 @@ void EventListener::ExecuteHotkeyCallback(const HotKey &hotkey) {
 
   // Use HotkeyExecutor if available for thread-safe execution
   if (hotkeyExecutor) {
-    auto result = hotkeyExecutor->submit([callback = callback_copy,
-                                          hotkeyAlias = alias_copy, this]() {
-      try {
-        callback();
-      } catch (const std::exception &e) {
-        error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
-      } catch (...) {
-        error("Hotkey '{}' threw unknown exception", hotkeyAlias);
-      }
+    auto result = hotkeyExecutor->submit(
+        [callback = callback_copy, hotkeyAlias = alias_copy, this]() {
+          try {
+            callback();
+          } catch (const std::exception &e) {
+            error("Hotkey '{}' threw: {}", hotkeyAlias, e.what());
+          } catch (...) {
+            error("Hotkey '{}' threw unknown exception", hotkeyAlias);
+          }
 
-      // Remove from executing set when done
-      {
-        std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
-        executingHotkeys.erase(hotkeyAlias);
-      }
-    });
+          // Remove from executing set when done
+          {
+            std::lock_guard<std::mutex> execLock(hotkeyExecMutex);
+            executingHotkeys.erase(hotkeyAlias);
+          }
+        });
 
     if (!result.accepted) {
       warn("Hotkey task queue full, dropping callback: {}", alias_copy);
@@ -715,13 +724,14 @@ bool EventListener::EvaluateWheelCombo(const HotKey &hotkey,
   // for infinite)
   if (comboTimeWindow > 0) {
     auto wheelTime = (wheelDirection > 0) ? lastWheelUpTime : lastWheelDownTime;
-    
+
     // Skip if wheelTime is zero-initialized (not yet set)
     if (wheelTime.time_since_epoch().count() == 0) {
-      debug("❌ Wheel combo '{}' failed: wheel time not initialized", hotkey.alias);
+      debug("❌ Wheel combo '{}' failed: wheel time not initialized",
+            hotkey.alias);
       return false;
     }
-    
+
     auto wheelAge =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - wheelTime)
             .count();
@@ -858,7 +868,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       std::unique_lock<std::shared_mutex> hotkeyLock(hotkeyMutex);
       std::unique_lock<std::shared_mutex> stateLock(stateMutex);
 
-      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+      std::lock_guard<std::mutex> ioLock(
+          HotkeyManager::RegisteredHotkeysMutex());
       for (auto &[id, hotkey] : HotkeyManager::RegisteredHotkeys()) {
         if (!hotkey.enabled)
           continue;
@@ -918,7 +929,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
         // Hotkey matched!
         if (Conf().GetVerboseKeyLogging()) {
           info("Mouse button hotkey: '{}' button={} down={}", hotkey.alias,
-             ev.code, down);
+               ev.code, down);
         }
         matchedHotkeyIds.push_back(id); // Just store ID
         if (hotkey.grab)
@@ -931,8 +942,10 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
-      if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
+      std::lock_guard<std::mutex> ioLock(
+          HotkeyManager::RegisteredHotkeysMutex());
+      if (it != HotkeyManager::RegisteredHotkeys().end() &&
+          it->second.enabled) {
         auto callback = it->second.callback; // Copy just the callback
         lock.unlock();                       // Release before executing
 
@@ -941,7 +954,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           hotkeyExecutor->submit([callback]() {
             try {
               callback();
-            } catch (const std::exception& e) {
+            } catch (const std::exception &e) {
               error("Callback exception: {}", e.what());
             } catch (...) {
               error("Callback unknown exception");
@@ -1077,7 +1090,8 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           if (!hotkey.enabled)
             continue;
           if (hotkey.type == HotkeyType::Combo) {
-        std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+            std::lock_guard<std::mutex> ioLock(
+                HotkeyManager::RegisteredHotkeysMutex());
             // Check if this combo involves a wheel
             bool hasWheel =
                 std::any_of(hotkey.comboSequence.begin(),
@@ -1090,7 +1104,7 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
             // evaluated anyway due to the gate in EvaluateCombo
             if (hasWheel && EvaluateWheelCombo(hotkey, wheelDirection)) {
               if (Conf().GetVerboseKeyLogging()) {
-                  info("Wheel combo: '{}'", hotkey.alias);
+                info("Wheel combo: '{}'", hotkey.alias);
               }
               wheelHotkeyIds.push_back(id); // Store ID
               if (hotkey.grab)
@@ -1155,10 +1169,12 @@ void EventListener::ProcessMouseEvent(const input_event &ev) {
           std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
           auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-          if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
+          if (it != HotkeyManager::RegisteredHotkeys().end() &&
+              it->second.enabled) {
             hotkeyCopy = it->second; // Copy just for execution
             found = true;
-          std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+            std::lock_guard<std::mutex> ioLock(
+                HotkeyManager::RegisteredHotkeysMutex());
           }
         }
 
@@ -1230,7 +1246,8 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
 
       // Only match keyboard and mouse movement hotkeys with our virtual
       // movement keys
-    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+      std::lock_guard<std::mutex> ioLock(
+          HotkeyManager::RegisteredHotkeysMutex());
       if (hotkey.type != HotkeyType::Keyboard &&
           hotkey.type != HotkeyType::MouseMove)
         continue;
@@ -1273,14 +1290,15 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
         hotkeyExecutor->submit([callback]() {
           try {
             callback();
-          } catch (const std::exception& e) {
+          } catch (const std::exception &e) {
             error("Callback exception: {}", e.what());
           } catch (...) {
             error("Callback unknown exception");
           }
         });
       } else {
-        std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+        std::lock_guard<std::mutex> ioLock(
+            HotkeyManager::RegisteredHotkeysMutex());
         std::thread([callback]() { callback(); }).detach();
       }
     }
@@ -1290,13 +1308,13 @@ void EventListener::EvaluateMouseMovementHotkeys(int virtualKey) {
 void EventListener::QueueMouseMovementHotkey(int virtualKey) {
   // Check rate limiting to avoid flooding the queue
   auto now = std::chrono::steady_clock::now();
-  
+
   // Skip if lastMovementHotkeyTime is zero-initialized (not yet set)
   if (lastMovementHotkeyTime.time_since_epoch().count() == 0) {
     lastMovementHotkeyTime = now;
     return;
   }
-  
+
   auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                      now - lastMovementHotkeyTime)
                      .count();
@@ -1322,7 +1340,7 @@ void EventListener::QueueMouseMovementHotkey(int virtualKey) {
       hotkeyExecutor->submit([this]() {
         try {
           ProcessQueuedMouseMovementHotkeys();
-        } catch (const std::exception& e) {
+        } catch (const std::exception &e) {
           error("Mouse movement callback exception: {}", e.what());
         } catch (...) {
           error("Mouse movement callback unknown exception");
@@ -1488,7 +1506,8 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
         try {
           if (EvaluateCombo(hotkey)) {
             // Combo matched, collect for execution outside locks
-    std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+            std::lock_guard<std::mutex> ioLock(
+                HotkeyManager::RegisteredHotkeysMutex());
             matchedHotkeyIds.push_back(id);
             if (hotkey.grab) {
               shouldBlock = true;
@@ -1636,7 +1655,8 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
       std::shared_lock<std::shared_mutex> lock(hotkeyMutex);
       auto it = HotkeyManager::RegisteredHotkeys().find(hotkeyId);
 
-      if (it != HotkeyManager::RegisteredHotkeys().end() && it->second.enabled) {
+      if (it != HotkeyManager::RegisteredHotkeys().end() &&
+          it->second.enabled) {
         hotkeyCopy = it->second; // Copy just for execution
         found = true;
       }
@@ -1647,7 +1667,7 @@ bool EventListener::EvaluateHotkeys(int evdevCode, bool down, bool repeat) {
     }
   }
 
-      std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
+  std::lock_guard<std::mutex> ioLock(HotkeyManager::RegisteredHotkeysMutex());
   return shouldBlock;
 }
 
@@ -1810,8 +1830,7 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
         return false;
       }
 
-      if (hasLastTimestamp &&
-          it->second.timestamp < lastTimestamp) {
+      if (hasLastTimestamp && it->second.timestamp < lastTimestamp) {
         debug("❌ Combo '{}' rejected: key {} order mismatch", hotkey.alias,
               requiredKey);
         return false;
@@ -1838,8 +1857,8 @@ bool EventListener::EvaluateCombo(const HotKey &hotkey) {
     // modifier handling - BUT NOT if we have specific physical key requirements
     // (e.g., @RShift requires Right Shift specifically)
     bool isPureModifierWheelCombo =
-        hotkey.requiresWheel && requiredKeys.empty() && requiredModifiers != 0 &&
-        hotkey.requiredPhysicalKeys.empty();
+        hotkey.requiresWheel && requiredKeys.empty() &&
+        requiredModifiers != 0 && hotkey.requiredPhysicalKeys.empty();
 
     if (!isPureModifierWheelCombo && !hotkey.requiredPhysicalKeys.empty()) {
       if (!ArePhysicalKeysPressed(hotkey.requiredPhysicalKeys)) {
@@ -1950,7 +1969,7 @@ void EventListener::ForceUngrabAllDevices() {
   // CRITICAL: This method is called from signal handlers
   // Do NOT use: malloc, free, printf, cerr, logging, mutexes, etc.
   // Only use: ioctl, close, _exit, and simple memory operations
-  
+
   // Ungrab all input devices - this is the MOST IMPORTANT operation
   for (auto &device : devices) {
     if (device.fd >= 0) {
@@ -1959,7 +1978,7 @@ void EventListener::ForceUngrabAllDevices() {
       ioctl(device.fd, EVIOCGRAB, 0);
     }
   }
-  
+
   // Also destroy uinput device if active
   if (uinputDevice) {
     const int uinputFd = uinputDevice->GetFd();
@@ -1987,9 +2006,7 @@ bool EventListener::IsGestureValid(
   return mouseGestureEngine.IsGestureValid(pattern, minDistance);
 }
 
-void EventListener::ResetMouseGesture() {
-  mouseGestureEngine.Reset();
-}
+void EventListener::ResetMouseGesture() { mouseGestureEngine.Reset(); }
 
 void EventListener::ResetInputState() {
   std::unique_lock<std::shared_mutex> lock(stateMutex);
@@ -2022,15 +2039,22 @@ void EventListener::HandleSignal(int sig) {
   switch (sig) {
   case SIGTERM:
   case SIGINT:
+    if (!shutdown.load()) {
+      RequestShutdownFromSignal(sig);
+    }
+    break;
   case SIGHUP:
   case SIGQUIT:
-    debug("Emergency shutdown: Ungrabbing all devices immediately in "
-         "EventListener thread");
+    if (!shutdown.load()) {
+      SignalSafeShutdown(sig, true);
+    }
+    break;
+  case SIGSEGV:
+    error("Segmentation fault - attempting graceful shutdown");
     SignalSafeShutdown(sig, true);
-    debug("Emergency shutdown complete in EventListener thread");
     break;
   default:
-    debug("Received unhandled signal: {}", sig);
+    debug("Unknown signal received: {}", sig);
     break;
   }
 }

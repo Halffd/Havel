@@ -1,6 +1,6 @@
 #pragma once
-#include "ConfigManager.hpp"
 #include "../utils/Logger.hpp"
+#include "ConfigManager.hpp"
 #include <X11/Xlib.h>
 #include <cstdlib>
 #include <iostream>
@@ -37,245 +37,264 @@ struct zxdg_output_v1;
 #pragma GCC diagnostic pop
 #endif
 #endif
-#include <sstream>
-#include <memory>
 #include <array>
-#include <cmath>
-#include <regex>
-#include <string>
-#include <vector>
-#include <thread>
 #include <atomic>
 #include <chrono>
-#include <mutex>
+#include <cmath>
 #include <functional>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <regex>
+#include <sstream>
+#include <string>
+#include <thread>
 #include <unordered_map>
+#include <vector>
 
 using namespace std;
 namespace havel {
 class BrightnessManager {
 public:
-    struct RGBColor {
-        double red, green, blue;
-    };
-    struct DayNightSettings {
-        double dayBrightness = 1.0;
-        double nightBrightness = 0.3;
-        int dayTemperature = 6500;    // Kelvin
-        int nightTemperature = 3000;  // Kelvin
-        
-        // Timing (24h format)
-        int dayStartHour = 7;    // 7:00 AM
-        int nightStartHour = 20; // 8:00 PM
-        
-        bool autoAdjust = false;
-        chrono::minutes checkInterval{5}; // Check every 5 minutes
-    };
+  struct RGBColor {
+    double red, green, blue;
+  };
+  struct DayNightSettings {
+    double dayBrightness = 1.0;
+    double nightBrightness = 0.3;
+    int dayTemperature = 6500;   // Kelvin
+    int nightTemperature = 3000; // Kelvin
 
-    BrightnessManager();
-    ~BrightnessManager();
-    string getMonitor(int index);
-    // === BRIGHTNESS OVERLOADS ===
-    bool setBrightness(double brightness);  // All monitors
-    bool setBrightness(const string& monitor, double brightness);
-    bool setBrightness(int monitorIndex, double brightness);
-    double getBrightness();
-    double getBrightness(const string& monitor);
-    double getBrightness(int monitorIndex);
-    // === RGB GAMMA OVERLOADS ===
-    bool setGammaRGB(double red, double green, double blue);  // All monitors
-    bool setGammaRGB(const string& monitor, double red, double green, double blue);
-    bool setGammaRGB(int monitorIndex, double red, double green, double blue);
-    RGBColor getGammaRGB();
-    RGBColor getGammaRGB(const string& monitor);
+    // Timing (24h format)
+    int dayStartHour = 7;    // 7:00 AM
+    int nightStartHour = 20; // 8:00 PM
 
-    // === KELVIN TEMPERATURE OVERLOADS ===
-    bool setTemperature(int kelvin);  // All monitors
-    bool setTemperature(const string& monitor, int kelvin);
-    bool setTemperature(int monitorIndex, int kelvin);
-    int getTemperature();
-    int getTemperature(int monitorIndex);
-    int getTemperature(const string& monitor);
+    bool autoAdjust = false;
+    chrono::minutes checkInterval{5}; // Check every 5 minutes
+  };
 
-    // === GAMMA ADJUSTMENT OVERLOADS ===
-    bool decreaseGamma(int amount);
-    bool increaseGamma(int amount);
-    bool decreaseGamma(const string& monitor, int amount);
-    bool increaseGamma(const string& monitor, int amount);
-    bool decreaseGamma(int monitorIndex, int amount);
-    bool increaseGamma(int monitorIndex, int amount);
-    bool increaseShadowLift(int amount);
-    bool increaseShadowLift(const string& monitor, int amount);
-    bool increaseShadowLift(int monitorIndex, int amount);
-    bool decreaseShadowLift(int amount);
-    bool decreaseShadowLift(const string& monitor, int amount);
-    bool decreaseShadowLift(int monitorIndex, int amount);
-    
-    // === SHADOW LIFT OVERLOADS ===
-    bool setShadowLift(double lift);  // All monitors, 0.0-4.0
-    bool setShadowLift(const string& monitor, double lift);
-    bool setShadowLift(int monitorIndex, double lift);
-    double getShadowLift();
-    double getShadowLift(const string& monitor);
-    double getShadowLift(int monitorIndex);
+  BrightnessManager();
+  ~BrightnessManager();
+  void init(); // Initialize monitors after X11 is ready
+  string getMonitor(int index);
+  // === BRIGHTNESS OVERLOADS ===
+  bool setBrightness(double brightness); // All monitors
+  bool setBrightness(const string &monitor, double brightness);
+  bool setBrightness(int monitorIndex, double brightness);
+  double getBrightness();
+  double getBrightness(const string &monitor);
+  double getBrightness(int monitorIndex);
+  // === RGB GAMMA OVERLOADS ===
+  bool setGammaRGB(double red, double green, double blue); // All monitors
+  bool setGammaRGB(const string &monitor, double red, double green,
+                   double blue);
+  bool setGammaRGB(int monitorIndex, double red, double green, double blue);
+  RGBColor getGammaRGB();
+  RGBColor getGammaRGB(const string &monitor);
 
-    // === X11 SPECIFIC METHODS ===
-    double getCurrentBrightnessX11(const std::string& monitor_name);
-    double extractBrightnessFromGammaRamp(XRRCrtcGamma* gamma, const std::string& monitor_name) const;
+  // === KELVIN TEMPERATURE OVERLOADS ===
+  bool setTemperature(int kelvin); // All monitors
+  bool setTemperature(const string &monitor, int kelvin);
+  bool setTemperature(int monitorIndex, int kelvin);
+  int getTemperature();
+  int getTemperature(int monitorIndex);
+  int getTemperature(const string &monitor);
 
-    // === COMBINED OPERATIONS ===
-    bool setBrightnessAndRGB(double brightness, double red, double green, double blue);
-    bool setBrightnessAndRGB(const string& monitor, double brightness, double red, double green, double blue);
-    bool setBrightnessAndRGB(int monitorIndex, double brightness, double red, double green, double blue);
-    
-    bool setBrightnessAndTemperature(double brightness, int kelvin);
-    bool setBrightnessAndTemperature(const string& monitor, double brightness, int kelvin);
-    bool setBrightnessAndTemperature(int monitorIndex, double brightness, int kelvin);
+  // === GAMMA ADJUSTMENT OVERLOADS ===
+  bool decreaseGamma(int amount);
+  bool increaseGamma(int amount);
+  bool decreaseGamma(const string &monitor, int amount);
+  bool increaseGamma(const string &monitor, int amount);
+  bool decreaseGamma(int monitorIndex, int amount);
+  bool increaseGamma(int monitorIndex, int amount);
+  bool increaseShadowLift(int amount);
+  bool increaseShadowLift(const string &monitor, int amount);
+  bool increaseShadowLift(int monitorIndex, int amount);
+  bool decreaseShadowLift(int amount);
+  bool decreaseShadowLift(const string &monitor, int amount);
+  bool decreaseShadowLift(int monitorIndex, int amount);
 
-    bool setBrightnessAndShadowLift(double brightness, double shadowLift);
-    bool setBrightnessAndShadowLift(const string& monitor, double brightness, double shadowLift);
-    bool setBrightnessAndShadowLift(int monitorIndex, double brightness, double shadowLift);
+  // === SHADOW LIFT OVERLOADS ===
+  bool setShadowLift(double lift); // All monitors, 0.0-4.0
+  bool setShadowLift(const string &monitor, double lift);
+  bool setShadowLift(int monitorIndex, double lift);
+  double getShadowLift();
+  double getShadowLift(const string &monitor);
+  double getShadowLift(int monitorIndex);
 
-    // === INCREMENT OPERATIONS ===
-    bool increaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
-    bool increaseBrightness(const string& monitor, double amount = DEFAULT_BRIGHTNESS_AMOUNT);
-    bool increaseBrightness(int monitorIndex, double amount);
-    bool decreaseBrightness(double amount);
-    bool decreaseBrightness(const string& monitor, double amount);
-    bool decreaseBrightness(int monitorIndex, double amount);
+  // === X11 SPECIFIC METHODS ===
+  double getCurrentBrightnessX11(const std::string &monitor_name);
+  double extractBrightnessFromGammaRamp(XRRCrtcGamma *gamma,
+                                        const std::string &monitor_name) const;
 
-    bool increaseTemperature(int amount);
-    bool increaseTemperature(const string& monitor, int amount);
-    bool increaseTemperature(int monitorIndex, int amount);
-    bool decreaseTemperature(int amount);
-    bool decreaseTemperature(const string& monitor, int amount);
-    bool decreaseTemperature(int monitorIndex, int amount);
+  // === COMBINED OPERATIONS ===
+  bool setBrightnessAndRGB(double brightness, double red, double green,
+                           double blue);
+  bool setBrightnessAndRGB(const string &monitor, double brightness, double red,
+                           double green, double blue);
+  bool setBrightnessAndRGB(int monitorIndex, double brightness, double red,
+                           double green, double blue);
 
-    // === DAY/NIGHT AUTOMATION ===
-    void enableDayNightMode(const DayNightSettings& settings);
-    void disableDayNightMode();
-    bool isDayNightModeEnabled() const { return dayNightSettings.autoAdjust; }
-    
-    void setDaySettings(double brightness, int temperature);
-    void setNightSettings(double brightness, int temperature);
-    void setDayNightTiming(int dayStart, int nightStart);
-    
-    // Manual day/night switching
-    bool switchToDay();   // All monitors
-    bool switchToNight(); // All monitors
-    bool switchToDay(const string& monitor);
-    bool switchToNight(const string& monitor);
-    bool switchToDay(int monitorIndex);
-    bool switchToNight(int monitorIndex);
+  bool setBrightnessAndTemperature(double brightness, int kelvin);
+  bool setBrightnessAndTemperature(const string &monitor, double brightness,
+                                   int kelvin);
+  bool setBrightnessAndTemperature(int monitorIndex, double brightness,
+                                   int kelvin);
 
-    // === UTILITY ===
-    vector<string> getConnectedMonitors();
-    bool isDay();  // Based on current time and settings
-    string primaryMonitor;
-    // Constants
-    static constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.02;
-    static constexpr int DEFAULT_TEMP_AMOUNT = 200;
-    static constexpr int MIN_TEMPERATURE = 1000;  // Minimum practical color temperature
-    static constexpr int MAX_TEMPERATURE = 25000; // Maximum color temperature
-    
-    private:
-    Display* x11_display;
-    Window x11_root;
-    
-    // Wayland specific members
-    #ifdef __WAYLAND__
-    struct wl_display *wl_display = nullptr;
-    struct wl_registry *wl_registry = nullptr;
-    struct zwlr_gamma_control_manager_v1 *gamma_control_manager = nullptr;
-    struct zxdg_output_manager_v1 *xdg_output_manager = nullptr;
+  bool setBrightnessAndShadowLift(double brightness, double shadowLift);
+  bool setBrightnessAndShadowLift(const string &monitor, double brightness,
+                                  double shadowLift);
+  bool setBrightnessAndShadowLift(int monitorIndex, double brightness,
+                                  double shadowLift);
 
-    // Backend initialization
-    void initializeWayland();
-    #endif
-    
-    double getBrightnessGamma(const std::string &monitor);
-    bool setBrightnessGamma(const std::string &monitor, double brightness);
-    // Debug logging helpers
-    static void debug(const std::string& message) {
-        Logger::getInstance().debug("[BrightnessManager] " + message);
-    }
-    
-    static void error(const std::string& message) {
-        Logger::getInstance().error("[BrightnessManager] " + message);
-    }
-       /**
-     * Debug logging with automatic [BrightnessManager] prefix
-     * Usage: debug("Monitor {} brightness: {:.3f}", monitor_name, brightness);
-     */
-    template<typename... Args>
-    static void debug(const std::string& format, Args&&... args) {
-        Logger::getInstance().debug("[BrightnessManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void info(const std::string& format, Args&&... args) {
-        Logger::getInstance().info("[BrightnessManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void warning(const std::string& format, Args&&... args) {
-        Logger::getInstance().warning("[BrightnessManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void error(const std::string& format, Args&&... args) {
-        Logger::getInstance().error("[BrightnessManager] " + format, std::forward<Args>(args)...);
-    }
-    
-    template<typename... Args>
-    static void fatal(const std::string& format, Args&&... args) {
-        Logger::getInstance().fatal("[BrightnessManager] " + format, std::forward<Args>(args)...);
-    }
-    // === KELVIN TO RGB CONVERSION ===
+  // === INCREMENT OPERATIONS ===
+  bool increaseBrightness(double amount = DEFAULT_BRIGHTNESS_AMOUNT);
+  bool increaseBrightness(const string &monitor,
+                          double amount = DEFAULT_BRIGHTNESS_AMOUNT);
+  bool increaseBrightness(int monitorIndex, double amount);
+  bool decreaseBrightness(double amount);
+  bool decreaseBrightness(const string &monitor, double amount);
+  bool decreaseBrightness(int monitorIndex, double amount);
 
-    RGBColor kelvinToRGB(int kelvin) const;
-    int rgbToKelvin(const RGBColor& rgb) const;
-    
-    // === BACKEND IMPLEMENTATIONS ===
-    bool setBrightnessXrandr(const string& monitor, double brightness);
-    bool setBrightnessXrandr(double brightness);
-    double getBrightnessXrandr(const string& monitor);
-    double getBrightnessSysfs(const string& monitor);
-    
-    bool setGammaXrandrRGB(const string& monitor, double red, double green, double blue);
-    bool setGammaXrandrRGB(double red, double green, double blue);
-    double getGammaXrandr(const string& monitor);
-    RGBColor getGammaXrandrRGB(const string& monitor);
-    
-    bool setBrightnessWayland(const string& monitor, double brightness);
-    bool setBrightnessWayland(double brightness);
-    
-    bool setGammaWaylandRGB(const string& monitor, double red, double green, double blue);
-    bool setGammaWaylandRGB(double red, double green, double blue);
+  bool increaseTemperature(int amount);
+  bool increaseTemperature(const string &monitor, int amount);
+  bool increaseTemperature(int monitorIndex, int amount);
+  bool decreaseTemperature(int amount);
+  bool decreaseTemperature(const string &monitor, int amount);
+  bool decreaseTemperature(int monitorIndex, int amount);
 
-    // === DAY/NIGHT AUTOMATION ===
-    void dayNightWorkerThread();
-    void applyCurrentTimeSettings();
-    RGBColor applyShadowLift(const RGBColor& input, double lift);
-    bool applyAllSettings(const string &monitor);
-    // === STATE ===
-    DayNightSettings dayNightSettings;
-    
-    vector<string> cached_monitors;
-    string displayMethod;
-    
-    // Threading for day/night
-    atomic<bool> stopDayNightThread{false};
-    unique_ptr<thread> dayNightThread;
-    mutex settingsMutex;
-    
-    // Current state tracking
-    std::map<string, double> brightness;
-    std::map<string, int> temperature;
-    vector<string> monitors;
-    std::map<string, RGBColor> gammaRGB;
-    std::map<string, double> shadowLift;
+  // === DAY/NIGHT AUTOMATION ===
+  void enableDayNightMode(const DayNightSettings &settings);
+  void disableDayNightMode();
+  bool isDayNightModeEnabled() const { return dayNightSettings.autoAdjust; }
+
+  void setDaySettings(double brightness, int temperature);
+  void setNightSettings(double brightness, int temperature);
+  void setDayNightTiming(int dayStart, int nightStart);
+
+  // Manual day/night switching
+  bool switchToDay();   // All monitors
+  bool switchToNight(); // All monitors
+  bool switchToDay(const string &monitor);
+  bool switchToNight(const string &monitor);
+  bool switchToDay(int monitorIndex);
+  bool switchToNight(int monitorIndex);
+
+  // === UTILITY ===
+  vector<string> getConnectedMonitors();
+  bool isDay(); // Based on current time and settings
+  string primaryMonitor;
+  // Constants
+  static constexpr double DEFAULT_BRIGHTNESS_AMOUNT = 0.02;
+  static constexpr int DEFAULT_TEMP_AMOUNT = 200;
+  static constexpr int MIN_TEMPERATURE =
+      1000; // Minimum practical color temperature
+  static constexpr int MAX_TEMPERATURE = 25000; // Maximum color temperature
+
+private:
+  Display *x11_display;
+  Window x11_root;
+
+// Wayland specific members
+#ifdef __WAYLAND__
+  struct wl_display *wl_display = nullptr;
+  struct wl_registry *wl_registry = nullptr;
+  struct zwlr_gamma_control_manager_v1 *gamma_control_manager = nullptr;
+  struct zxdg_output_manager_v1 *xdg_output_manager = nullptr;
+
+  // Backend initialization
+  void initializeWayland();
+#endif
+
+  double getBrightnessGamma(const std::string &monitor);
+  bool setBrightnessGamma(const std::string &monitor, double brightness);
+  // Debug logging helpers
+  static void debug(const std::string &message) {
+    Logger::getInstance().debug("[BrightnessManager] " + message);
+  }
+
+  static void error(const std::string &message) {
+    Logger::getInstance().error("[BrightnessManager] " + message);
+  }
+  /**
+   * Debug logging with automatic [BrightnessManager] prefix
+   * Usage: debug("Monitor {} brightness: {:.3f}", monitor_name, brightness);
+   */
+  template <typename... Args>
+  static void debug(const std::string &format, Args &&...args) {
+    Logger::getInstance().debug("[BrightnessManager] " + format,
+                                std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static void info(const std::string &format, Args &&...args) {
+    Logger::getInstance().info("[BrightnessManager] " + format,
+                               std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static void warning(const std::string &format, Args &&...args) {
+    Logger::getInstance().warning("[BrightnessManager] " + format,
+                                  std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static void error(const std::string &format, Args &&...args) {
+    Logger::getInstance().error("[BrightnessManager] " + format,
+                                std::forward<Args>(args)...);
+  }
+
+  template <typename... Args>
+  static void fatal(const std::string &format, Args &&...args) {
+    Logger::getInstance().fatal("[BrightnessManager] " + format,
+                                std::forward<Args>(args)...);
+  }
+  // === KELVIN TO RGB CONVERSION ===
+
+  RGBColor kelvinToRGB(int kelvin) const;
+  int rgbToKelvin(const RGBColor &rgb) const;
+
+  // === BACKEND IMPLEMENTATIONS ===
+  bool setBrightnessXrandr(const string &monitor, double brightness);
+  bool setBrightnessXrandr(double brightness);
+  double getBrightnessXrandr(const string &monitor);
+  double getBrightnessSysfs(const string &monitor);
+
+  bool setGammaXrandrRGB(const string &monitor, double red, double green,
+                         double blue);
+  bool setGammaXrandrRGB(double red, double green, double blue);
+  double getGammaXrandr(const string &monitor);
+  RGBColor getGammaXrandrRGB(const string &monitor);
+
+  bool setBrightnessWayland(const string &monitor, double brightness);
+  bool setBrightnessWayland(double brightness);
+
+  bool setGammaWaylandRGB(const string &monitor, double red, double green,
+                          double blue);
+  bool setGammaWaylandRGB(double red, double green, double blue);
+
+  // === DAY/NIGHT AUTOMATION ===
+  void dayNightWorkerThread();
+  void applyCurrentTimeSettings();
+  RGBColor applyShadowLift(const RGBColor &input, double lift);
+  bool applyAllSettings(const string &monitor);
+  // === STATE ===
+  DayNightSettings dayNightSettings;
+
+  vector<string> cached_monitors;
+  string displayMethod;
+
+  // Threading for day/night
+  atomic<bool> stopDayNightThread{false};
+  unique_ptr<thread> dayNightThread;
+  mutex settingsMutex;
+
+  // Current state tracking
+  std::map<string, double> brightness;
+  std::map<string, int> temperature;
+  vector<string> monitors;
+  std::map<string, RGBColor> gammaRGB;
+  std::map<string, double> shadowLift;
 };
 
 } // namespace havel

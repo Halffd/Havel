@@ -23,10 +23,16 @@ SignalHandler::~SignalHandler() {
   }
 }
 
+// Atomic flag for signal handling
+static std::atomic<int> gSignalFlag{0};
+
 void SignalHandler::SignalCleanupHandler(int sig) {
-  if (instance && instance->listener) {
-    instance->listener->RequestShutdownFromSignal(sig);
-  }
+  // Only set flag - don't do heavy operations in signal handler
+  gSignalFlag.store(sig, std::memory_order_relaxed);
+}
+
+int SignalHandler::GetSignalFlag() {
+  return gSignalFlag.load(std::memory_order_relaxed);
 }
 
 void SignalHandler::InstallAsyncHandlers() {
@@ -41,9 +47,8 @@ void SignalHandler::InstallAsyncHandlers() {
   sigaction(SIGSEGV, &sa, nullptr);
   sigaction(SIGQUIT, &sa, nullptr);
 
-  debug(
-      "Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, "
-      "SIGSEGV, SIGQUIT");
+  debug("Traditional signal handlers installed for SIGINT, SIGTERM, SIGABRT, "
+        "SIGSEGV, SIGQUIT");
 }
 
 bool SignalHandler::SetupSignalfd() {
@@ -64,7 +69,8 @@ bool SignalHandler::SetupSignalfd() {
     return false;
   }
 
-  debug("Signal handling: signalfd created (traditional handlers are primary defense)");
+  debug("Signal handling: signalfd created (traditional handlers are primary "
+        "defense)");
   return true;
 }
 

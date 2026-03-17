@@ -789,7 +789,8 @@ void IO::MonitorHotkeys() {
 
       if (pendingEvents == 0) {
         // No events, sleep briefly to avoid busy waiting
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // Optimized: reduced from 10ms to 1ms for better responsiveness
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
         continue;
       }
 
@@ -3764,7 +3765,8 @@ bool IO::StartEvdevMouseListener(const std::string &mouseDevicePath) {
         ssize_t n = read(mouseDeviceFd, &ev, sizeof(ev));
         if (n < 0) {
           if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // Optimized: reduced from 10ms to 1ms for better responsiveness
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             continue;
           }
           error("mouse evdev: read error: {}", strerror(errno));

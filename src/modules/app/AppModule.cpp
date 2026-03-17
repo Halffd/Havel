@@ -27,12 +27,8 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         info("Quit requested - performing hard exit");
 
-        // Stop EventListener FIRST to prevent use-after-free in KeyMap access
-        if (nullptr) {
-          info("Stopping EventListener before exit...");
-          nullptr;
-          info("EventListener stopped");
-        }
+        // TODO: Stop EventListener before exit when implemented
+        // For now, perform hard exit immediately
 
         std::exit(0);
         return HavelValue(nullptr); // Never reached
@@ -46,12 +42,8 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         info("Restart requested");
 
-        // Stop EventListener FIRST to prevent use-after-free in KeyMap access
-        if (nullptr) {
-          info("Stopping EventListener before restart...");
-          nullptr;
-          info("EventListener stopped");
-        }
+        // TODO: Stop EventListener before restart when implemented
+        // For now, restart immediately
 
         if (QApplication::instance()) {
           // Use Qt's proper restart mechanism - exit code 42 signals restart

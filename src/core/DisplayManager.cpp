@@ -26,23 +26,21 @@ void DisplayManager::Initialize() {
     if (display) {
       root = DefaultRootWindow(display);
       // Register cleanup on exit
+      static struct Cleanup {
+        ~Cleanup() {
+          if (DisplayManager::display) {
+            XCloseDisplay(DisplayManager::display);
+          }
+        }
+      };
       static Cleanup cleanup;
       XSetErrorHandler(X11ErrorHandler);
       XSetIOErrorHandler([](Display *display) -> int {
         (void)display; // Mark as unused
         std::cerr << "X11 I/O Error - Display connection lost\n";
         std::exit(EXIT_FAILURE);
-        return 0;
       });
-
-      // Initialize XRandR extension
-      int xrandr_event_base, xrandr_error_base;
-      if (!XRRQueryExtension(display, &xrandr_event_base, &xrandr_error_base)) {
-        std::cerr << "Warning: XRandR extension not available\n";
-      }
-
       initialized = true;
-      RefreshMonitorCache(); // Cache monitor info on init
     }
   }
 }
@@ -58,6 +56,10 @@ void DisplayManager::Close() {
 
 Display *DisplayManager::GetDisplay() {
   Initialize();
+  if (!display || display == (Display *)0xbebebebebebebebe) {
+    std::cerr << "X11 display is invalid or corrupted" << std::endl;
+    return nullptr;
+  }
   return display;
 }
 

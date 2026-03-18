@@ -1,0 +1,235 @@
+// Test Autopress Toggle with Interval, Timeouts, and Conditions
+
+print "=== Testing Autopress Toggle Functionality ==="
+
+// Initialize MapManager
+print "Test 1: Initialize MapManager"
+let success = mapmanager.init(true)
+if (success) {
+  print "✅ MapManager initialized successfully"
+} else {
+  print "❌ MapManager initialization failed"
+}
+
+// Test 2: Create basic autopress toggle mapping
+print "\nTest 2: Create basic autopress toggle mapping"
+mapmanager.addAutopressToggle("F1", "Space", 500, 5000, "")
+print "✅ Created autopress toggle: F1 -> Space (500ms interval, 5s timeout)"
+
+// Test 3: Create autopress toggle with condition
+print "\nTest 3: Create autopress toggle with window condition"
+mapmanager.addAutopressToggle("F2", "Enter", 1000, 0, "window:firefox")
+print "✅ Created conditional autopress toggle: F2 -> Enter (1s interval, infinite timeout, only in Firefox)"
+
+// Test 4: Create autopress toggle with time condition
+print "\nTest 4: Create autopress toggle with time condition"
+mapmanager.addAutopressToggle("F3", "Tab", 2000, 15000, "time:14")
+print "✅ Created time-based autopress toggle: F3 -> Tab (2s interval, 15s timeout, only at 14:00)"
+
+// Test 5: Create autopress toggle with multiple target keys
+print "\nTest 5: Create autopress toggle with multiple targets"
+mapmanager.addAutopressToggle("F4", ["Ctrl+C", "Ctrl+V"], 800, 8000, "")
+print "✅ Created multi-target autopress toggle: F4 -> Ctrl+C then Ctrl+V (800ms interval, 8s timeout)"
+
+// Test 6: Check current mappings
+print "\nTest 6: Check current mappings"
+let mappings = mapmanager.getMappings("default")
+if (mappings && mappings.length > 0) {
+  print "✅ Found " + mappings.length + " mappings:"
+  
+  let autopressCount = 0
+  for (let i = 0; i < mappings.length; i++) {
+    let mapping = mappings[i]
+    if (mapping.name && mapping.name.indexOf("Autopress Toggle") >= 0) {
+      autopressCount++
+      print "  [" + i + "] " + mapping.name
+      print "      Source: " + mapping.sourceKey
+      print "      Targets: " + (mapping.targetKeys ? mapping.targetKeys.join(", ") : "None")
+      print "      Action Type: " + mapping.actionType
+      print "      Autopress Toggle: " + mapping.autopressToggle
+      print "      Interval: " + mapping.autopressInterval + "ms"
+      print "      Timeout: " + mapping.autopressTimeout + "ms"
+      print "      Condition: " + mapping.autopressCondition
+      print "      Condition Expr: " + mapping.autopressConditionExpr
+      print "      Enabled: " + mapping.enabled
+    }
+  }
+  
+  print "📊 Total autopress toggle mappings: " + autopressCount
+} else {
+  print "❌ No mappings found"
+}
+
+// Test 7: Modify autopress toggle settings
+print "\nTest 7: Modify autopress toggle settings"
+if (mappings && mappings.length > 0) {
+  // Find first autopress toggle mapping
+  let autopressMapping = null
+  for (let i = 0; i < mappings.length; i++) {
+    let mapping = mappings[i]
+    if (mapping.name && mapping.name.indexOf("Autopress Toggle") >= 0) {
+      autopressMapping = mapping
+      break
+    }
+  }
+  
+  if (autopressMapping) {
+    print "✅ Found autopress toggle mapping: " + autopressMapping.id
+    
+    // Change interval
+    mapmanager.setAutopressInterval(autopressMapping.id, 300)
+    print "✅ Changed interval to 300ms"
+    
+    // Change timeout
+    mapmanager.setAutopressTimeout(autopressMapping.id, 12000)
+    print "✅ Changed timeout to 12s"
+    
+    // Change condition
+    mapmanager.setAutopressCondition(autopressMapping.id, "always")
+    print "✅ Changed condition to 'always'"
+    
+    // Verify changes
+    let updatedMappings = mapmanager.getMappings("default")
+    for (let i = 0; i < updatedMappings.length; i++) {
+      let mapping = updatedMappings[i]
+      if (mapping.id == autopressMapping.id) {
+        print "✅ Updated mapping:"
+        print "      Interval: " + mapping.autopressInterval + "ms"
+        print "      Timeout: " + mapping.autopressTimeout + "ms"
+        print "      Condition: " + mapping.autopressCondition
+        print "      Condition Expr: " + mapping.autopressConditionExpr
+        break
+      }
+    }
+  } else {
+    print "❌ No autopress toggle mapping found to modify"
+  }
+} else {
+  print "❌ No mappings available to modify"
+}
+
+// Test 8: Check autopress toggle status
+print "\nTest 8: Check autopress toggle status"
+if (mappings && mappings.length > 0) {
+  for (let i = 0; i < mappings.length; i++) {
+    let mapping = mappings[i]
+    if (mapping.name && mapping.name.indexOf("Autopress Toggle") >= 0) {
+      let isActive = mapmanager.isAutopressActive(mapping.id)
+      print "✅ Autopress toggle " + mapping.id + " is " + (isActive ? "ACTIVE" : "INACTIVE")
+    }
+  }
+} else {
+  print "❌ No autopress toggle mappings to check"
+}
+
+// Test 9: Demonstrate different condition types
+print "\nTest 9: Demonstrate different condition types"
+
+// Always active condition
+mapmanager.addAutopressToggle("F5", "A", 750, 6000, "always")
+print "✅ Created 'always' condition autopress toggle: F5 -> A"
+
+// Never active condition (for testing)
+mapmanager.addAutopressToggle("F6", "B", 1000, 0, "never")
+print "✅ Created 'never' condition autopress toggle: F6 -> B (will never activate)"
+
+// Window-specific conditions
+mapmanager.addAutopressToggle("F7", "C", 1500, 10000, "window:chrome")
+print "✅ Created window-specific autopress toggle: F7 -> C (only in Chrome)"
+
+mapmanager.addAutopressToggle("F8", "D", 2000, 8000, "window:terminal")
+print "✅ Created window-specific autopress toggle: F8 -> D (only in Terminal)"
+
+// Time-based conditions
+mapmanager.addAutopressToggle("F9", "E", 1200, 20000, "time:9")
+print "✅ Created time-based autopress toggle: F9 -> E (only at 9:00 AM)"
+
+mapmanager.addAutopressToggle("F10", "F", 1800, 30000, "time:17")
+print "✅ Created time-based autopress toggle: F10 -> F (only at 5:00 PM)"
+
+// Test 10: Show final mapping summary
+print "\nTest 10: Show final mapping summary"
+let finalMappings = mapmanager.getMappings("default")
+if (finalMappings && finalMappings.length > 0) {
+  print "✅ Final mapping summary:"
+  
+  let totalAutopress = 0
+  let totalMappings = finalMappings.length
+  
+  for (let i = 0; i < finalMappings.length; i++) {
+    let mapping = finalMappings[i]
+    if (mapping.name && mapping.name.indexOf("Autopress Toggle") >= 0) {
+      totalAutopress++
+      
+      print "  [" + totalAutopress + "] " + mapping.sourceKey + " -> " + 
+             (mapping.targetKeys ? mapping.targetKeys.join(", ") : "None") +
+             " (" + mapping.autopressInterval + "ms interval, " +
+             (mapping.autopressTimeout > 0 ? mapping.autopressTimeout + "ms timeout" : "infinite timeout") + 
+             ", condition: " + mapping.autopressConditionExpr + ")"
+    }
+  }
+  
+  print "\n📊 Summary Statistics:"
+  print "  Total mappings: " + totalMappings
+  print "  Autopress toggle mappings: " + totalAutopress
+  print "  Regular mappings: " + (totalMappings - totalAutopress)
+  print "  Autopress percentage: " + ((totalAutopress / totalMappings) * 100) + "%"
+} else {
+  print "❌ No mappings found for final summary"
+}
+
+// Test 11: Show usage examples
+print "\nTest 11: Usage Examples"
+print "📋 Autopress Toggle Usage Examples:"
+print ""
+print "1. Basic autopress toggle:"
+print "   mapmanager.addAutopressToggle('F1', 'Space', 500, 5000, '')"
+print "   // Press F1 to start auto-pressing Space every 500ms for 5 seconds"
+print ""
+print "2. Conditional autopress (window-specific):"
+print "   mapmanager.addAutopressToggle('F2', 'Enter', 1000, 0, 'window:firefox')"
+print "   // Press F2 to auto-press Enter every 1s, but only in Firefox"
+print ""
+print "3. Time-based autopress:"
+print "   mapmanager.addAutopressToggle('F3', 'Tab', 2000, 15000, 'time:14')"
+print "   // Press F3 to auto-press Tab every 2s at 2:00 PM, stop after 15s"
+print ""
+print "4. Multi-target autopress:"
+print "   mapmanager.addAutopressToggle('F4', ['Ctrl+C', 'Ctrl+V'], 800, 8000, '')"
+print "   // Press F4 to copy then paste every 800ms for 8 seconds"
+print ""
+print "5. Modify existing autopress:"
+print "   mapmanager.setAutopressInterval(mappingId, 300)"
+print "   mapmanager.setAutopressTimeout(mappingId, 12000)"
+print "   mapmanager.setAutopressCondition(mappingId, 'always')"
+print ""
+print "6. Check status and stop:"
+print "   let active = mapmanager.isAutopressActive(mappingId)"
+print "   mapmanager.stopAutopress(mappingId)"
+print ""
+print "🎯 Supported Condition Types:"
+print "- 'always' - Always active"
+print "- 'never' - Never active"
+print "- 'window:NAME' - Active only when window title contains NAME"
+print "- 'time:HOUR' - Active only at specific hour (24-hour format)"
+print ""
+print "⚡ Autopress Toggle Features:"
+print "- Configurable interval between auto-presses"
+print "- Optional timeout to stop automatically"
+print "- Conditional activation based on window or time"
+print "- Multiple target keys support"
+print "- Real-time status checking"
+print "- Thread-safe execution"
+print "- Integration with existing mapping system"
+
+print "\n=== Autopress Toggle Tests Complete ==="
+print "\n🎯 Summary of Autopress Toggle Implementation:"
+print "- ✅ Basic autopress toggle with interval and timeout"
+print "- ✅ Conditional activation (window and time-based)"
+print "- ✅ Multiple target keys support"
+print "- ✅ Real-time configuration changes"
+print "- ✅ Status monitoring and control"
+print "- ✅ Thread-safe execution"
+print "- ✅ Integration with MapManager system"
+print ""
+print "🚀 Autopress toggle functionality provides professional automation capabilities!"

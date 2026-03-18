@@ -1,12 +1,14 @@
 #include "MapManager.hpp"
 #include "../DisplayManager.hpp"
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <random>
 #include <regex>
 #include <spdlog/spdlog.h>
 #include <sstream>
+#include <thread>
 
 #ifdef __linux__
 #include <X11/Xlib.h>
@@ -527,6 +529,20 @@ void MapManager::ExecuteMapping(Mapping &mapping, bool down) {
   case ActionType::Macro:
     if (down) {
       ExecuteMacro(mapping);
+    }
+    break;
+
+  case ActionType::AutopressToggle:
+    if (down) {
+      // Find the profile ID for this mapping
+      for (const auto &[profileId, profile] : profiles) {
+        for (const auto &[mappingId, profileMapping] : profile.mappings) {
+          if (profileMapping.id == mapping.id) {
+            ExecuteAutopressToggle(profileId, mapping);
+            return;
+          }
+        }
+      }
     }
     break;
 
@@ -1066,6 +1082,245 @@ void MapManager::RecordMouseWheelEvent(int wheelCode, int value) {
 
   spdlog::info("MapManager: Recorded mouse wheel: {} (code: {}, value: {})",
                lastRecordedKey.keyName, lastRecordedKey.keyCode, value);
+}
+
+// ============================================================================
+// Autopress Toggle Implementation
+// ============================================================================
+
+void MapManager::AddAutopressToggleMapping(
+    const std::string &profileId, const std::string &sourceKey,
+    const std::vector<std::string> &targetKeys, int intervalMs, int timeoutMs,
+    const std::string &condition) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  Mapping mapping;
+  mapping.id = GenerateId();
+  mapping.name = "Autopress Toggle: " + sourceKey;
+  mapping.enabled = true;
+  mapping.sourceKey = sourceKey;
+  mapping.sourceCode = KeyMap::GetKeyCode(sourceKey);
+  mapping.actionType = ActionType::Press;
+  mapping.targetKeys = targetKeys;
+  mapping.targetCodes = KeyMap::GetKeyCodes(targetKeys);
+
+  // Autopress toggle settings
+  mapping.autopressToggle = true;
+  mapping.autopressInterval = intervalMs;
+  mapping.autopressTimeout = timeoutMs;
+  mapping.autopressCondition = !condition.empty();
+  mapping.autopressConditionExpr = condition;
+
+  // Add to profile
+  auto &profile = profiles[profileId];
+  profile.mappings[mapping.id] = mapping;
+
+  // Register with IO system
+  RegisterMapping(profileId, mapping);
+
+  spdlog::info("MapManager: Added autopress toggle mapping: {} -> {} "
+               "(interval: {}ms, timeout: {}ms)",
+               sourceKey, targetKeys[0], intervalMs, timeoutMs);
+}
+
+void MapManager::SetAutopressToggleInterval(const std::string &profileId,
+                                            const std::string &mappingId,
+                                            int intervalMs) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autopressInterval = intervalMs;
+    spdlog::info("MapManager: Set autopress interval to {}ms for mapping {}",
+                 intervalMs, mappingId);
+  }
+}
+
+void MapManager::SetAutopressToggleTimeout(const std::string &profileId,
+                                           const std::string &mappingId,
+                                           int timeoutMs) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autopressTimeout = timeoutMs;
+    spdlog::info("MapManager: Set autopress timeout to {}ms for mapping {}",
+                 timeoutMs, mappingId);
+  }
+}
+
+void MapManager::SetAutopressToggleCondition(const std::string &profileId,
+                                             const std::string &mappingId,
+                                             const std::string &condition) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autopressCondition = !condition.empty();
+    mappingIt->second.autopressConditionExpr = condition;
+    spdlog::info("MapManager: Set autopress condition for mapping {}: {}",
+                 mappingId, condition);
+  }
+}
+
+bool MapManager::IsAutopressToggleActive(const std::string &profileId,
+                                         const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = autopressToggleActive.find(profileId);
+  if (profileIt == autopressToggleActive.end()) {
+    return false;
+  }
+
+  auto mappingIt = profileIt->second.find(mappingId);
+  return mappingIt != profileIt->second.end() && mappingIt->second.load();
+}
+
+void MapManager::StopAutopressToggle(const std::string &profileId,
+                                     const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  // Stop the autopress thread
+  auto profileIt = autopressToggleThreads.find(profileId);
+  if (profileIt != autopressToggleThreads.end()) {
+    auto mappingIt = profileIt->second.find(mappingId);
+    if (mappingIt != profileIt->second.end()) {
+      // Set active flag to false
+      auto activeIt = autopressToggleActive.find(profileId);
+      if (activeIt != autopressToggleActive.end()) {
+        auto activeMappingIt = activeIt->second.find(mappingId);
+        if (activeMappingIt != activeIt->second.end()) {
+          activeMappingIt->second.store(false);
+        }
+      }
+
+      // Join and remove thread
+      if (mappingIt->second.joinable()) {
+        mappingIt->second.join();
+      }
+      profileIt->second.erase(mappingIt);
+    }
+  }
+
+  spdlog::info("MapManager: Stopped autopress toggle for mapping {}",
+               mappingId);
+}
+
+void MapManager::ExecuteAutopressToggle(const std::string &profileId,
+                                        Mapping &mapping) {
+  if (!mapping.autopressToggle) {
+    return;
+  }
+
+  // Check conditions
+  if (mapping.autopressCondition && !EvaluateAutopressCondition(mapping)) {
+    return;
+  }
+
+  // Initialize active flag
+  auto &activeFlag = autopressToggleActive[profileId][mapping.id];
+  activeFlag.store(true);
+
+  // Record start time
+  auto startTime = std::chrono::steady_clock::now();
+  autopressToggleStartTimes[profileId][mapping.id] = startTime;
+
+  // Start autopress thread
+  autopressToggleThreads[profileId][mapping.id] =
+      std::thread([this, profileId, &mapping, startTime]() {
+        auto interval = std::chrono::milliseconds(mapping.autopressInterval);
+        auto timeout = std::chrono::milliseconds(mapping.autopressTimeout);
+
+        while (activeFlag.load()) {
+          // Check timeout
+          if (mapping.autopressTimeout > 0) {
+            auto elapsed = std::chrono::steady_clock::now() - startTime;
+            if (elapsed >= timeout) {
+              break;
+            }
+          }
+
+          // Check conditions
+          if (mapping.autopressCondition &&
+              !EvaluateAutopressCondition(mapping)) {
+            std::this_thread::sleep_for(interval);
+            continue;
+          }
+
+          // Execute the target keys
+          for (const auto &targetKey : mapping.targetKeys) {
+            int targetCode = KeyMap::GetKeyCode(targetKey);
+            if (targetCode >= 0) {
+              // Send key down
+              if (io) {
+                io->SendKeyEvent(targetCode, 1);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                // Send key up
+                io->SendKeyEvent(targetCode, 0);
+              }
+            }
+          }
+
+          // Update statistics
+          UpdateMappingStats(profileId, mapping.id, true);
+
+          // Sleep for interval
+          std::this_thread::sleep_for(interval);
+        }
+
+        // Clean up
+        activeFlag.store(false);
+        spdlog::info("MapManager: Autopress toggle stopped for mapping {}",
+                     mapping.id);
+      });
+}
+
+bool MapManager::EvaluateAutopressCondition(const Mapping &mapping) {
+  if (!mapping.autopressCondition || mapping.autopressConditionExpr.empty()) {
+    return true;
+  }
+
+  // Simple condition evaluation (can be extended)
+  const std::string &condition = mapping.autopressConditionExpr;
+
+  // Basic condition checks
+  if (condition == "always") {
+    return true;
+  } else if (condition == "never") {
+    return false;
+  } else if (condition.find("window:") == 0) {
+    // Window-specific condition
+    std::string windowName = condition.substr(7);
+    if (io) {
+      std::string currentWindow = io->GetActiveWindow();
+      return currentWindow.find(windowName) != std::string::npos;
+    }
+  } else if (condition.find("time:") == 0) {
+    // Time-based condition
+    std::string timeStr = condition.substr(5);
+    int targetHour = std::stoi(timeStr);
+    auto now = std::chrono::system_clock::now();
+    auto timeInfo = std::chrono::system_clock::to_time_t(now);
+    auto localTime = std::localtime(&timeInfo);
+    return localTime->tm_hour == targetHour;
+  }
+
+  return true; // Default to true for unknown conditions
 }
 
 } // namespace havel

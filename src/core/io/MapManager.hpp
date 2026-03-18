@@ -47,14 +47,15 @@ enum class MappingType {
 
 // Action types
 enum class ActionType {
-  Press,      // Single press
-  Hold,       // Hold while source is held
-  Toggle,     // Toggle on/off
-  Autofire,   // Rapid fire while held
-  Turbo,      // Turbo mode (faster autofire)
-  Macro,      // Execute macro
-  MouseMove,  // Move mouse
-  MouseScroll // Scroll wheel
+  Press,          // Single press
+  Hold,           // Hold while source is held
+  Toggle,         // Toggle on/off
+  Autofire,       // Rapid fire while held
+  Turbo,          // Turbo mode (faster autofire)
+  Macro,          // Execute macro
+  MouseMove,      // Move mouse
+  MouseScroll,    // Scroll wheel
+  AutopressToggle // Auto-press with interval and timeout
 };
 
 // Condition types for conditional mappings
@@ -124,6 +125,14 @@ struct Mapping {
   bool toggleMode = false;
   bool toggleState = false;
 
+  // Autopress toggle settings
+  bool autopressToggle = false; // Enable autopress toggle mode
+  int autopressInterval = 1000; // Milliseconds between auto-presses
+  int autopressTimeout =
+      10000; // Timeout to stop auto-pressing (ms, 0 = infinite)
+  bool autopressCondition = false;    // Enable conditional auto-pressing
+  std::string autopressConditionExpr; // Condition expression for auto-pressing
+
   // Macro settings
   std::vector<std::pair<std::string, int>> macroSequence; // (key, delay_ms)
 
@@ -148,6 +157,11 @@ struct Mapping {
         mouseMovement(other.mouseMovement), sensitivity(other.sensitivity),
         deadzone(other.deadzone), acceleration(other.acceleration),
         toggleMode(other.toggleMode), toggleState(other.toggleState),
+        autopressToggle(other.autopressToggle),
+        autopressInterval(other.autopressInterval),
+        autopressTimeout(other.autopressTimeout),
+        autopressCondition(other.autopressCondition),
+        autopressConditionExpr(other.autopressConditionExpr),
         macroSequence(other.macroSequence), conditions(other.conditions),
         lastFireTime(other.lastFireTime), active(other.active.load()) {}
 
@@ -173,6 +187,11 @@ struct Mapping {
       acceleration = other.acceleration;
       toggleMode = other.toggleMode;
       toggleState = other.toggleState;
+      autopressToggle = other.autopressToggle;
+      autopressInterval = other.autopressInterval;
+      autopressTimeout = other.autopressTimeout;
+      autopressCondition = other.autopressCondition;
+      autopressConditionExpr = other.autopressConditionExpr;
       macroSequence = other.macroSequence;
       conditions = other.conditions;
       lastFireTime = other.lastFireTime;
@@ -296,6 +315,24 @@ public:
   std::string KeyCodeToString(int keyCode, const std::string &source);
   RecordedKey RecordCurrentInput();
 
+  // Autopress toggle functionality
+  void AddAutopressToggleMapping(const std::string &profileId,
+                                 const std::string &sourceKey,
+                                 const std::vector<std::string> &targetKeys,
+                                 int intervalMs = 1000, int timeoutMs = 10000,
+                                 const std::string &condition = "");
+  void SetAutopressToggleInterval(const std::string &profileId,
+                                  const std::string &mappingId, int intervalMs);
+  void SetAutopressToggleTimeout(const std::string &profileId,
+                                 const std::string &mappingId, int timeoutMs);
+  void SetAutopressToggleCondition(const std::string &profileId,
+                                   const std::string &mappingId,
+                                   const std::string &condition);
+  bool IsAutopressToggleActive(const std::string &profileId,
+                               const std::string &mappingId);
+  void StopAutopressToggle(const std::string &profileId,
+                           const std::string &mappingId);
+
 private:
   IO *io;
 
@@ -318,6 +355,15 @@ private:
   RecordedKey lastRecordedKey;
   std::chrono::steady_clock::time_point recordingStartTime;
 
+  // Autopress toggle state
+  std::map<std::string,
+           std::map<std::string, std::chrono::steady_clock::time_point>>
+      autopressToggleStartTimes;
+  std::map<std::string, std::map<std::string, std::thread>>
+      autopressToggleThreads;
+  std::map<std::string, std::map<std::string, std::atomic<bool>>>
+      autopressToggleActive;
+
   // Statistics
   std::map<std::string, std::map<std::string, MappingStats>> stats;
 
@@ -338,6 +384,10 @@ private:
   // Key recording helpers
   void RecordKeyEvent(int keyCode, bool isDown);
   void RecordMouseWheelEvent(int wheelCode, int value);
+
+  // Autopress toggle helper
+  void ExecuteAutopressToggle(const std::string &profileId, Mapping &mapping);
+  bool EvaluateAutopressCondition(const Mapping &mapping);
 
   std::string GenerateId() const;
 };

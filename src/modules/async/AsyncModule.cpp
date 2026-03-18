@@ -91,55 +91,68 @@ static std::mutex channelsMutex;
 
 namespace havel::modules {
 
+// Helper function for spawn implementation
+static HavelResult executeSpawnFunction(const HavelValue &funcValue,
+                                        const std::string &taskId) {
+  try {
+    if (funcValue.is<std::shared_ptr<HavelFunction>>()) {
+      auto func = std::get<std::shared_ptr<HavelFunction>>(funcValue.data);
+      auto result = (*func)({});
+      channels[taskId]->send(HavelValue(result));
+    } else if (funcValue.is<BuiltinFunction>()) {
+      auto func = std::get<BuiltinFunction>(funcValue.data);
+      auto result = func({});
+      channels[taskId]->send(HavelValue(result));
+    } else {
+      channels[taskId]->send(HavelValue(std::string("Error: Not a function")));
+    }
+  } catch (const std::exception &e) {
+    channels[taskId]->send(HavelValue(std::string("Error: ") + e.what()));
+  }
+  return HavelValue(taskId);
+}
+
+// Helper function for await implementation
+static HavelResult awaitTaskResult(const std::string &taskId) {
+  std::lock_guard<std::mutex> lock(channelsMutex);
+  auto it = channels.find(taskId);
+  if (it == channels.end()) {
+    return HavelRuntimeError("Task not found: " + taskId);
+  }
+
+  auto result = it->second->receive();
+  channels.erase(it);
+  return result;
+}
+
 void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
   // Async task functions - Simplified stub implementation
   // Full implementation requires interpreter context
   // =========================================================================
 
-  env.Define(
-      "spawn",
-      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
-                                     -> HavelResult {
-        if (args.size() != 1) {
-          return HavelRuntimeError("spawn requires 1 argument");
-        }
-        if (!args[0].isFunction()) {
-          return HavelRuntimeError("spawn requires a function");
-        }
+  env.Define("spawn",
+             HavelValue(BuiltinFunction(
+                 [](const std::vector<HavelValue> &args) -> HavelResult {
+                   if (args.size() != 1) {
+                     return HavelRuntimeError("spawn requires 1 argument");
+                   }
+                   if (!args[0].isFunction()) {
+                     return HavelRuntimeError("spawn requires a function");
+                   }
 
-        // Create a new task ID
-        static uint64_t task_counter = 1;
-        std::string taskId = "task_" + std::to_string(task_counter++);
+                   // Create a new task ID
+                   static uint64_t task_counter = 1;
+                   std::string taskId =
+                       "task_" + std::to_string(task_counter++);
 
-        // Store the function for later execution
-        std::lock_guard<std::mutex> lock(channelsMutex);
-        channels[taskId] = std::make_shared<Channel>();
+                   // Store the function for later execution
+                   std::lock_guard<std::mutex> lock(channelsMutex);
+                   channels[taskId] = std::make_shared<Channel>();
 
-        // In a real implementation, this would spawn a thread
-        // For now, we'll execute immediately and put result in
-        // channel
-        try {
-          // Execute the function (simplified - no args support yet)
-          if (args[0].is<std::shared_ptr<HavelFunction>>()) {
-            auto func = std::get<std::shared_ptr<HavelFunction>>(args[0].data);
-            auto result = (*func)({});
-            channels[taskId]->send(HavelValue(result));
-          } else if (args[0].is<BuiltinFunction>()) {
-            auto func = std::get<BuiltinFunction>(args[0].data);
-            auto result = func({});
-            channels[taskId]->send(HavelValue(result));
-          } else {
-            channels[taskId]->send(
-                HavelValue(std::string("Error: Not a function")));
-          }
-        } catch (const std::exception &e) {
-          // Put error in the channel
-          channels[taskId]->send(HavelValue(std::string("Error: ") + e.what()));
-        }
-
-        return HavelValue(taskId);
-      })));
+                   // Execute function using helper
+                   return executeSpawnFunction(args[0], taskId);
+                 })));
 
   env.Define("await",
              HavelValue(BuiltinFunction(
@@ -154,20 +167,8 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
                    std::string taskId = args[0].asString();
 
-                   // Look up the task's channel
-                   std::lock_guard<std::mutex> lock(channelsMutex);
-                   auto it = channels.find(taskId);
-                   if (it == channels.end()) {
-                     return HavelRuntimeError("Task not found: " + taskId);
-                   }
-
-                   // Receive the result from the channel (blocking)
-                   auto result = it->second->receive();
-
-                   // Clean up the task channel
-                   channels.erase(it);
-
-                   return HavelResult(result); // Return HavelResult properly
+                   // Use helper function for await implementation
+                   return awaitTaskResult(taskId);
                  })));
 
   // =========================================================================

@@ -1274,6 +1274,163 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(mouseMappings);
       }));
 
+  // =========================================================================
+  // Key Recording Features
+  // =========================================================================
+
+  (*mapManagerObj)["startKeyRecording"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        coreMapManager->StartKeyRecording();
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["stopKeyRecording"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        coreMapManager->StopKeyRecording();
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["isKeyRecording"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        return HavelValue(coreMapManager->IsKeyRecording());
+      }));
+
+  (*mapManagerObj)["getLastRecordedKey"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto recordedKey = coreMapManager->GetLastRecordedKey();
+        auto keyObj = std::make_shared<HavelObject>();
+
+        (*keyObj)["keyName"] = HavelValue(recordedKey.keyName);
+        (*keyObj)["keyCode"] =
+            HavelValue(static_cast<double>(recordedKey.keyCode));
+        (*keyObj)["source"] = HavelValue(recordedKey.source);
+        (*keyObj)["modifiers"] = HavelValue(recordedKey.modifiers);
+        (*keyObj)["isMouse"] = HavelValue(recordedKey.isMouse);
+        (*keyObj)["isJoystick"] = HavelValue(recordedKey.isJoystick);
+
+        return HavelValue(keyObj);
+      }));
+
+  (*mapManagerObj)["clearRecordedKey"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        coreMapManager->ClearRecordedKey();
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["recordAndSetKey"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.recordAndSetKey() requires (profileId, mappingId)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        // Start recording
+        coreMapManager->StartKeyRecording();
+
+        // In a real implementation, this would wait for user input
+        // For now, simulate recording a key
+        auto simulatedKey = coreMapManager->RecordCurrentInput();
+        coreMapManager->StopKeyRecording();
+
+        // Update the mapping with the recorded key
+        auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+        if (mapping) {
+          mapping->sourceKey = simulatedKey.keyName;
+          mapping->sourceCode = simulatedKey.keyCode;
+
+          // If it's a mouse binding, update mouse properties
+          if (simulatedKey.isMouse) {
+            mapping->mouseBinding = true;
+            if (simulatedKey.keyName.find("Mouse") == 0) {
+              int buttonNum = 0;
+              sscanf(simulatedKey.keyName.c_str(), "Mouse%d", &buttonNum);
+              mapping->mouseButton = buttonNum;
+            }
+          }
+
+          return HavelValue("Recorded and set: " + simulatedKey.keyName);
+        }
+
+        return HavelValue("Failed to update mapping");
+      }));
+
+  (*mapManagerObj)["detectInputSource"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.detectInputSource() requires (keyCode)");
+        }
+
+        int keyCode = static_cast<int>(args[0].asNumber());
+        std::string source = coreMapManager->DetectInputSource(keyCode);
+
+        return HavelValue(source);
+      }));
+
+  (*mapManagerObj)["keyCodeToString"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.keyCodeToString() requires (keyCode, source)");
+        }
+
+        int keyCode = static_cast<int>(args[0].asNumber());
+        std::string source =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        std::string keyString =
+            coreMapManager->KeyCodeToString(keyCode, source);
+        return HavelValue(keyString);
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

@@ -133,6 +133,12 @@ struct Mapping {
   std::chrono::steady_clock::time_point lastFireTime;
   std::atomic<bool> active{false};
 
+  // Key recording state
+  static bool isRecordingKey = false;
+  static std::string recordedKey = "";
+  static int recordedCode = 0;
+  static std::string recordedSource = ""; // "evdev", "x11", "mouse", "joystick"
+
   // Default constructor
   Mapping() = default;
 
@@ -274,6 +280,27 @@ public:
                                       const std::string &mappingId) const;
   void ResetStats();
 
+  // Key recording for dynamic mapping
+  struct RecordedKey {
+    std::string keyName;     // "A", "Ctrl+A", "Mouse1", etc.
+    int keyCode;             // Evdev/X11 code
+    std::string source;      // "evdev", "x11", "mouse", "joystick"
+    std::string modifiers;   // "Ctrl+Shift+", etc.
+    bool isMouse = false;    // True for mouse events
+    bool isJoystick = false; // True for joystick events
+  };
+
+  void StartKeyRecording();
+  void StopKeyRecording();
+  bool IsKeyRecording() const { return keyRecording; }
+  RecordedKey GetLastRecordedKey() const;
+  void ClearRecordedKey();
+
+  // Input source detection
+  std::string DetectInputSource(int keyCode);
+  std::string KeyCodeToString(int keyCode, const std::string &source);
+  RecordedKey RecordCurrentInput();
+
 private:
   IO *io;
 
@@ -290,6 +317,11 @@ private:
   std::string currentMacroName;
   std::vector<std::pair<std::string, int>> recordedMacro;
   std::chrono::steady_clock::time_point lastMacroEvent;
+
+  // Key recording state
+  bool keyRecording = false;
+  RecordedKey lastRecordedKey;
+  std::chrono::steady_clock::time_point recordingStartTime;
 
   // Statistics
   std::map<std::string, std::map<std::string, MappingStats>> stats;

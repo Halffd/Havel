@@ -1784,6 +1784,199 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autopress toggle stopped");
       }));
 
+  // =========================================================================
+  // Configurable Autofire Functions
+  // =========================================================================
+
+  (*mapManagerObj)["setAutofireRate"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.setAutofireRate() requires (mappingId, rateMs)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int rate = static_cast<int>(args[1].asNumber());
+
+        coreMapManager->SetAutofireRate("default", mappingId, rate);
+        return HavelValue("Autofire rate updated");
+      }));
+
+  (*mapManagerObj)["setAutofireBurstCount"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutofireBurstCount() "
+                                   "requires (mappingId, burstCount)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int burstCount = static_cast<int>(args[1].asNumber());
+
+        coreMapManager->SetAutofireBurstCount("default", mappingId, burstCount);
+        return HavelValue("Autofire burst count updated");
+      }));
+
+  (*mapManagerObj)["setAutofireBurstDelay"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutofireBurstDelay() "
+                                   "requires (mappingId, burstDelayMs)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int burstDelay = static_cast<int>(args[1].asNumber());
+
+        coreMapManager->SetAutofireBurstDelay("default", mappingId, burstDelay);
+        return HavelValue("Autofire burst delay updated");
+      }));
+
+  (*mapManagerObj)["setAutofireMode"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.setAutofireMode() requires (mappingId, mode)");
+        }
+
+        std::string mappingId = args[0].asString();
+        std::string mode = args[1].asString();
+
+        coreMapManager->SetAutofireMode("default", mappingId, mode);
+        return HavelValue("Autofire mode updated");
+      }));
+
+  (*mapManagerObj)["setAutofireCondition"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutofireCondition() requires "
+                                   "(mappingId, condition)");
+        }
+
+        std::string mappingId = args[0].asString();
+        std::string condition = args[1].asString();
+
+        coreMapManager->SetAutofireCondition("default", mappingId, condition);
+        return HavelValue("Autofire condition updated");
+      }));
+
+  (*mapManagerObj)["getAutofireRate"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getAutofireRate() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int rate = coreMapManager->GetAutofireRate("default", mappingId);
+        return HavelValue(rate);
+      }));
+
+  (*mapManagerObj)["getAutofireBurstCount"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getAutofireBurstCount() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int burstCount =
+            coreMapManager->GetAutofireBurstCount("default", mappingId);
+        return HavelValue(burstCount);
+      }));
+
+  (*mapManagerObj)["getAutofireBurstDelay"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getAutofireBurstDelay() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int burstDelay =
+            coreMapManager->GetAutofireBurstDelay("default", mappingId);
+        return HavelValue(burstDelay);
+      }));
+
+  (*mapManagerObj)["getAutofireMode"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getAutofireMode() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        std::string mode =
+            coreMapManager->GetAutofireMode("default", mappingId);
+        return HavelValue(mode);
+      }));
+
+  (*mapManagerObj)["isAutofireActive"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.isAutofireActive() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        bool isActive = coreMapManager->IsAutofireActive("default", mappingId);
+        return HavelValue(isActive);
+      }));
+
+  (*mapManagerObj)["stopAutofire"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.stopAutofire() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        coreMapManager->StopAutofire("default", mappingId);
+        return HavelValue("Autofire stopped");
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

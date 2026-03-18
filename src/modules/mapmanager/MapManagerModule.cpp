@@ -996,6 +996,284 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("No script callback found");
       }));
 
+  // =========================================================================
+  // Mouse Binding Features
+  // =========================================================================
+
+  (*mapManagerObj)["addMouseButtonMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 4) {
+          return HavelRuntimeError(
+              "mapmanager.addMouseButtonMapping() requires (profileId, "
+              "mouseButton, actionType, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        int mouseButton = static_cast<int>(args[1].asNumber());
+        std::string actionType =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+        std::string targetKey =
+            args[3].isString()
+                ? args[3].asString()
+                : std::to_string(static_cast<int>(args[3].asNumber()));
+
+        Mapping mapping;
+        mapping.id = "mouse_" + std::to_string(mouseButton) + "_" +
+                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name =
+            "Mouse" + std::to_string(mouseButton) + " -> " + targetKey;
+        mapping.sourceKey = "Mouse" + std::to_string(mouseButton);
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Press;
+        mapping.mouseBinding = true;
+        mapping.mouseButton = mouseButton;
+        mapping.mouseAction = actionType;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addMouseWheelMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 4) {
+          return HavelRuntimeError(
+              "mapmanager.addMouseWheelMapping() requires (profileId, "
+              "direction, actionType, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string direction =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string actionType =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+        std::string targetKey =
+            args[3].isString()
+                ? args[3].asString()
+                : std::to_string(static_cast<int>(args[3].asNumber()));
+
+        Mapping mapping;
+        mapping.id = "wheel_" + direction + "_" +
+                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name = "MouseWheel" + direction + " -> " + targetKey;
+        mapping.sourceKey = "MouseWheel" + direction;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Press;
+        mapping.mouseBinding = true;
+
+        // Convert direction to wheel direction code
+        if (direction == "up")
+          mapping.mouseWheelDirection = 1;
+        else if (direction == "down")
+          mapping.mouseWheelDirection = 2;
+        else if (direction == "left")
+          mapping.mouseWheelDirection = 3;
+        else if (direction == "right")
+          mapping.mouseWheelDirection = 4;
+
+        mapping.mouseAction = actionType;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addMouseMoveMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 5) {
+          return HavelRuntimeError(
+              "mapmanager.addMouseMoveMapping() requires (profileId, axis, "
+              "sensitivity, threshold, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string axis =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        float sensitivity = static_cast<float>(args[2].asNumber());
+        float threshold = static_cast<float>(args[3].asNumber());
+        std::string targetKey =
+            args[4].isString()
+                ? args[4].asString()
+                : std::to_string(static_cast<int>(args[4].asNumber()));
+
+        Mapping mapping;
+        mapping.id = "move_" + axis + "_" +
+                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name = "MouseMove" + axis + " -> " + targetKey;
+        mapping.sourceKey = "MouseMove" + axis;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::MouseMove;
+        mapping.actionType = ActionType::MouseMove;
+        mapping.mouseBinding = true;
+        mapping.mouseMovement = true;
+        mapping.sensitivity = sensitivity;
+        mapping.mouseThreshold = threshold;
+        mapping.mouseAction = axis;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addMouseGestureMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 4) {
+          return HavelRuntimeError(
+              "mapmanager.addMouseGestureMapping() requires (profileId, "
+              "gestureName, gesturePoints, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string gestureName =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string targetKey =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        // Extract gesture points (simplified - in real implementation would be
+        // more complex)
+        std::vector<std::pair<int, int>> points;
+        if (args.size() > 3 &&
+            args[3].is<std::shared_ptr<std::vector<HavelValue>>>()) {
+          auto pointsArray =
+              args[3].as<std::shared_ptr<std::vector<HavelValue>>>();
+          for (size_t i = 0; i < pointsArray->size(); i += 2) {
+            if (i + 1 < pointsArray->size()) {
+              int x = static_cast<int>((*pointsArray)[i].asNumber());
+              int y = static_cast<int>((*pointsArray)[i + 1].asNumber());
+              points.push_back({x, y});
+            }
+          }
+        }
+
+        Mapping mapping;
+        mapping.id = "gesture_" + gestureName + "_" +
+                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name = "Gesture" + gestureName + " -> " + targetKey;
+        mapping.sourceKey = "Gesture" + gestureName;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::Macro;
+        mapping.actionType = ActionType::Macro;
+        mapping.mouseBinding = true;
+        mapping.mouseGesture = true;
+        mapping.gesturePoints = points;
+        mapping.mouseAction = gestureName;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["setMouseSensitivity"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError("mapmanager.setMouseSensitivity() requires "
+                                   "(profileId, mappingId, sensitivity)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        float sensitivity = static_cast<float>(args[2].asNumber());
+
+        auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+        if (mapping && mapping->mouseBinding) {
+          mapping->sensitivity = sensitivity;
+          return HavelValue(true);
+        }
+
+        return HavelValue(false);
+      }));
+
+  (*mapManagerObj)["getMouseBindings"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getMouseBindings() requires (profileId)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+
+        auto mappings = coreMapManager->GetMappings(profileId);
+        auto mouseMappings = std::make_shared<std::vector<HavelValue>>();
+
+        for (auto *mapping : mappings) {
+          if (mapping->mouseBinding) {
+            auto mappingObj = std::make_shared<HavelObject>();
+            (*mappingObj)["id"] = HavelValue(mapping->id);
+            (*mappingObj)["name"] = HavelValue(mapping->name);
+            (*mappingObj)["sourceKey"] = HavelValue(mapping->sourceKey);
+            (*mappingObj)["mouseAction"] = HavelValue(mapping->mouseAction);
+            (*mappingObj)["mouseButton"] = HavelValue(mapping->mouseButton);
+            (*mappingObj)["mouseWheelDirection"] =
+                HavelValue(mapping->mouseWheelDirection);
+            (*mappingObj)["sensitivity"] = HavelValue(mapping->sensitivity);
+            (*mappingObj)["mouseGesture"] = HavelValue(mapping->mouseGesture);
+
+            if (!mapping->targetKeys.empty()) {
+              (*mappingObj)["targetKey"] = HavelValue(mapping->targetKeys[0]);
+            }
+
+            mouseMappings->push_back(HavelValue(mappingObj));
+          }
+        }
+
+        return HavelValue(mouseMappings);
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

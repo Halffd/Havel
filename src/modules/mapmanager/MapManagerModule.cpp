@@ -372,6 +372,201 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(profileObj);
       }));
 
+  // =========================================================================
+  // List, Query, and Filter Functions
+  // =========================================================================
+
+  (*mapManagerObj)["listProfiles"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto profileIds = coreMapManager->GetProfileIds();
+        auto profilesArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto &profileId : profileIds) {
+          auto profile = coreMapManager->GetProfile(profileId);
+          if (profile) {
+            auto profileObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*profileObj)["id"] = HavelValue(profile->id);
+            (*profileObj)["name"] = HavelValue(profile->name);
+            (*profileObj)["description"] = HavelValue(profile->description);
+            (*profileObj)["enabled"] = HavelValue(profile->enabled);
+            (*profileObj)["mappingCount"] =
+                HavelValue(static_cast<double>(profile->mappings.size()));
+            profilesArray->push_back(HavelValue(profileObj));
+          }
+        }
+
+        return HavelValue(profilesArray);
+      }));
+
+  (*mapManagerObj)["getMappings"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.empty()) {
+          return HavelRuntimeError(
+              "mapmanager.getMappings() requires profileId");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        auto mappings = coreMapManager->GetMappings(profileId);
+        auto mappingsArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto *mapping : mappings) {
+          if (mapping) {
+            auto mappingObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*mappingObj)["id"] = HavelValue(mapping->id);
+            (*mappingObj)["name"] = HavelValue(mapping->name);
+            (*mappingObj)["enabled"] = HavelValue(mapping->enabled);
+            (*mappingObj)["sourceKey"] = HavelValue(mapping->sourceKey);
+            (*mappingObj)["targetKeys"] = HavelValue([&]() -> HavelValue {
+              auto targetArray = std::make_shared<std::vector<HavelValue>>();
+              for (const auto &key : mapping->targetKeys) {
+                targetArray->push_back(HavelValue(key));
+              }
+              return HavelValue(targetArray);
+            }());
+            (*mappingObj)["actionType"] = HavelValue(
+                static_cast<double>(static_cast<int>(mapping->actionType)));
+            (*mappingObj)["autofire"] = HavelValue(mapping->autofire);
+            (*mappingObj)["turbo"] = HavelValue(mapping->turbo);
+            mappingsArray->push_back(HavelValue(mappingObj));
+          }
+        }
+
+        return HavelValue(mappingsArray);
+      }));
+
+  (*mapManagerObj)["findMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.findMapping() requires (profileId, sourceKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string sourceKey =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        auto mapping = coreMapManager->GetMapping(profileId, sourceKey);
+        if (!mapping) {
+          return HavelValue(nullptr);
+        }
+
+        auto mappingObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*mappingObj)["id"] = HavelValue(mapping->id);
+        (*mappingObj)["name"] = HavelValue(mapping->name);
+        (*mappingObj)["enabled"] = HavelValue(mapping->enabled);
+        (*mappingObj)["sourceKey"] = HavelValue(mapping->sourceKey);
+        (*mappingObj)["targetKeys"] = HavelValue([&]() -> HavelValue {
+          auto targetArray = std::make_shared<std::vector<HavelValue>>();
+          for (const auto &key : mapping->targetKeys) {
+            targetArray->push_back(HavelValue(key));
+          }
+          return HavelValue(targetArray);
+        }());
+        (*mappingObj)["actionType"] = HavelValue(
+            static_cast<double>(static_cast<int>(mapping->actionType)));
+        (*mappingObj)["autofire"] = HavelValue(mapping->autofire);
+        (*mappingObj)["turbo"] = HavelValue(mapping->turbo);
+
+        return HavelValue(mappingObj);
+      }));
+
+  (*mapmanagerObj)["filterMappings"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError("mapmanager.filterMappings() requires "
+                                   "(profileId, filterField, filterValue)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string filterField =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string filterValue =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        auto mappings = coreMapManager->GetMappings(profileId);
+        auto filteredArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto *mapping : mappings) {
+          if (!mapping)
+            continue;
+
+          bool matches = false;
+          if (filterField == "enabled") {
+            matches = (filterValue == "true" && mapping->enabled) ||
+                      (filterValue == "false" && !mapping->enabled);
+          } else if (filterField == "sourceKey") {
+            matches = mapping->sourceKey.find(filterValue) != std::string::npos;
+          } else if (filterField == "actionType") {
+            matches =
+                static_cast<int>(mapping->actionType) == std::stoi(filterValue);
+          } else if (filterField == "autofire") {
+            matches = (filterValue == "true" && mapping->autofire) ||
+                      (filterValue == "false" && !mapping->autofire);
+          } else if (filterField == "turbo") {
+            matches = (filterValue == "true" && mapping->turbo) ||
+                      (filterValue == "false" && !mapping->turbo);
+          }
+
+          if (matches) {
+            auto mappingObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+            (*mappingObj)["id"] = HavelValue(mapping->id);
+            (*mappingObj)["name"] = HavelValue(mapping->name);
+            (*mappingObj)["enabled"] = HavelValue(mapping->enabled);
+            (*mappingObj)["sourceKey"] = HavelValue(mapping->sourceKey);
+            (*mappingObj)["targetKeys"] = HavelValue([&]() -> HavelValue {
+              auto targetArray = std::make_shared<std::vector<HavelValue>>();
+              for (const auto &key : mapping->targetKeys) {
+                targetArray->push_back(HavelValue(key));
+              }
+              return HavelValue(targetArray);
+            }());
+            (*mappingObj)["actionType"] = HavelValue(
+                static_cast<double>(static_cast<int>(mapping->actionType)));
+            (*mappingObj)["autofire"] = HavelValue(mapping->autofire);
+            (*mappingObj)["turbo"] = HavelValue(mapping->turbo);
+            filteredArray->push_back(HavelValue(mappingObj));
+          }
+        }
+
+        return HavelValue(filteredArray);
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

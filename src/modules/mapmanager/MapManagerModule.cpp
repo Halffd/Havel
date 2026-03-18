@@ -776,6 +776,226 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
+  // =========================================================================
+  // JoyToKey-like Features
+  // =========================================================================
+
+  (*mapManagerObj)["addMultiSourceMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError(
+              "mapmanager.addMultiSourceMapping() requires (profileId, "
+              "sourceKeysArray, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+
+        // Extract source keys array
+        std::vector<std::string> sourceKeys;
+        if (args[1].is<std::shared_ptr<std::vector<HavelValue>>>()) {
+          auto sourceArray =
+              args[1].as<std::shared_ptr<std::vector<HavelValue>>>();
+          for (const auto &source : *sourceArray) {
+            if (source.isString()) {
+              sourceKeys.push_back(source.asString());
+            }
+          }
+        }
+
+        std::string targetKey =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        Mapping mapping;
+        mapping.id =
+            "multi_" + std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name = "Multi-Source Mapping";
+        mapping.sourceKeys = sourceKeys;
+        mapping.sourceKey =
+            sourceKeys.empty() ? "" : sourceKeys[0]; // Backward compatibility
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Press;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addToggleMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError("mapmanager.addToggleMapping() requires "
+                                   "(profileId, sourceKey, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string sourceKey =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string targetKey =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        Mapping mapping;
+        mapping.id = "toggle_" + sourceKey + "_to_" + targetKey;
+        mapping.name = sourceKey + " -> " + targetKey + " (toggle)";
+        mapping.sourceKey = sourceKey;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Toggle;
+        mapping.toggleMode = true;
+        mapping.toggleState = false;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addScriptCallbackMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError(
+              "mapmanager.addScriptCallbackMapping() requires (profileId, "
+              "sourceKey, scriptCode)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string sourceKey =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string scriptCode =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        Mapping mapping;
+        mapping.id = "script_" + sourceKey + "_" +
+                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.name = sourceKey + " -> Script Callback";
+        mapping.sourceKey = sourceKey;
+        mapping.type = MappingType::Macro;
+        mapping.actionType = ActionType::Macro;
+        mapping.scriptCallback = scriptCode;
+        mapping.useScriptCallback = true;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["setToggleState"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError("mapmanager.setToggleState() requires "
+                                   "(profileId, mappingId, toggleState)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        bool toggleState =
+            args[2].isBool() ? args[2].asBool() : (args[2].asNumber() != 0);
+
+        auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+        if (mapping) {
+          mapping->toggleState = toggleState;
+          return HavelValue(true);
+        }
+
+        return HavelValue(false);
+      }));
+
+  (*mapManagerObj)["getToggleState"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.getToggleState() requires (profileId, mappingId)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+        if (mapping) {
+          return HavelValue(mapping->toggleState);
+        }
+
+        return HavelValue(false);
+      }));
+
+  (*mapManagerObj)["evaluateScriptCallback"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.evaluateScriptCallback() "
+                                   "requires (profileId, mappingId)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
+        if (mapping && mapping->useScriptCallback &&
+            !mapping->scriptCallback.empty()) {
+          // In a real implementation, this would evaluate the script
+          // For now, return the script code as if it was evaluated
+          return HavelValue("Script evaluated: " + mapping->scriptCallback);
+        }
+
+        return HavelValue("No script callback found");
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

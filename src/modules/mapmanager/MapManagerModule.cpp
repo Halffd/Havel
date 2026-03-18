@@ -56,38 +56,56 @@ void registerMapManagerModule(Environment &env,
   // =========================================================================
 
   (*mapManagerObj)["init"] = HavelValue(BuiltinFunction(
-      [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
+      [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager && hostAPI->GetIO()) {
           coreMapManager = std::make_unique<MapManager>(hostAPI->GetIO());
         }
 
-        // Auto-create and activate "default" profile on initialization
-        if (coreMapManager) {
-          // Check if default profile exists
-          auto profileIds = coreMapManager->GetProfileIds();
-          bool hasDefault = std::find(profileIds.begin(), profileIds.end(),
-                                      "default") != profileIds.end();
-
-          if (!hasDefault) {
-            // Create default profile
-            Profile defaultProfile;
-            defaultProfile.id = "default";
-            defaultProfile.name = "Default Profile";
-            defaultProfile.description =
-                "Automatically created default profile for general use";
-            defaultProfile.enabled = true;
-
-            coreMapManager->AddProfile(defaultProfile);
-            spdlog::info("Created default MapManager profile");
+        // Check if auto-activation should be prevented (for script
+        // initialization)
+        bool preventAutoActivation = false;
+        if (args.size() > 0) {
+          // If first argument is true or false, control auto-activation
+          if (args[0].isBool()) {
+            preventAutoActivation = !args[0].asBool();
           }
+        }
 
-          // Activate default profile
-          coreMapManager->SetActiveProfile("default");
-          spdlog::info("Activated default MapManager profile on startup");
+        if (!preventAutoActivation) {
+          // Auto-create and activate "default" profile on initialization
+          if (coreMapManager) {
+            // Check if default profile exists
+            auto profileIds = coreMapManager->GetProfileIds();
+            bool hasDefault = std::find(profileIds.begin(), profileIds.end(),
+                                        "default") != profileIds.end();
 
-          // Ensure hotkeys are registered to active profile
-          coreMapManager->ApplyActiveProfile();
-          spdlog::info("Applied hotkeys to active MapManager profile");
+            if (!hasDefault) {
+              // Create default profile
+              Profile defaultProfile;
+              defaultProfile.id = "default";
+              defaultProfile.name = "Default Profile";
+              defaultProfile.description =
+                  "Automatically created default profile for general use";
+              defaultProfile.enabled = true;
+
+              coreMapManager->AddProfile(defaultProfile);
+              spdlog::info("Created default MapManager profile");
+            }
+
+            // Activate default profile
+            coreMapManager->SetActiveProfile("default");
+            spdlog::info("Activated default MapManager profile on startup");
+
+            // Ensure hotkeys are registered to active profile
+            coreMapManager->ApplyActiveProfile();
+            spdlog::info("Applied hotkeys to active MapManager profile");
+          }
+        } else {
+          // Manual initialization - don't auto-activate or apply hotkeys
+          if (coreMapManager) {
+            spdlog::info(
+                "MapManager initialized without auto-activation (manual mode)");
+          }
         }
 
         return HavelValue(coreMapManager != nullptr);

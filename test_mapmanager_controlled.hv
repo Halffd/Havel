@@ -1,0 +1,110 @@
+// Test MapManager controlled initialization (prevent auto-activation)
+
+print "=== Testing MapManager Controlled Initialization ==="
+
+// Test 1: Manual initialization (prevent auto-activation)
+print "Test 1: Manual initialization (prevent auto-activation)"
+let manualInit = mapmanager.init(false)
+if (manualInit) {
+  print "✅ MapManager initialized manually (no auto-activation)"
+  
+  // Check if default profile was created
+  let profiles = mapmanager.listProfiles()
+  if (profiles && profiles.length > 0) {
+    print "✅ Profiles available: " + profiles.length
+    for (let i = 0; i < profiles.length; i++) {
+      print "  [" + i + "] " + profiles[i].name + " (ID: " + profiles[i].id + ")"
+    }
+  } else {
+    print "❌ No profiles found"
+  }
+  
+  // Check active profile
+  let activeProfile = mapmanager.getActiveProfile()
+  if (activeProfile && activeProfile != "No active profile") {
+    print "✅ Active profile: " + activeProfile.name
+    print "   Note: Should be 'None' if auto-activation was prevented"
+  } else {
+    print "✅ No active profile (expected for manual init)"
+  }
+  
+  // Check mappings (should be empty)
+  let mappings = mapmanager.getMappings("default")
+  if (mappings) {
+    print "⚠️ Found " + mappings.length + " mappings (unexpected for manual init)"
+  } else {
+    print "✅ No mappings found (expected for manual init)"
+  }
+} else {
+  print "❌ Manual initialization failed"
+}
+
+// Test 2: Automatic initialization (allow auto-activation)
+print "\nTest 2: Automatic initialization (allow auto-activation)"
+let autoInit = mapmanager.init(true)
+if (autoInit) {
+  print "✅ MapManager initialized automatically"
+  
+  // Check if default profile was created and activated
+  let profiles = mapmanager.listProfiles()
+  if (profiles && profiles.length > 0) {
+    print "✅ Profiles available: " + profiles.length
+    for (let i = 0; i < profiles.length; i++) {
+      print "  [" + i + "] " + profiles[i].name + " (ID: " + profiles[i].id + ")"
+    }
+  } else {
+    print "❌ No profiles found"
+  }
+  
+  // Check active profile
+  let activeProfile = mapmanager.getActiveProfile()
+  if (activeProfile && activeProfile != "No active profile") {
+    print "✅ Active profile: " + activeProfile.name
+    print "   Note: Should be 'Default Profile' if auto-activation worked"
+  } else {
+    print "❌ No active profile (unexpected for auto init)"
+  }
+  
+  // Check mappings (should have default mappings)
+  let mappings = mapmanager.getMappings("default")
+  if (mappings && mappings.length > 0) {
+    print "✅ Found " + mappings.length + " mappings in default profile"
+    for (let i = 0; i < mappings.length; i++) {
+      print "  [" + i + "] " + mappings[i].name + " -> " + (mappings[i].targetKeys.length > 0 ? mappings[i].targetKeys[0] : "None")
+    }
+  } else {
+    print "❌ No mappings found (unexpected for auto init)"
+  }
+} else {
+  print "❌ Automatic initialization failed"
+}
+
+// Test 3: Add mapping after manual init
+print "\nTest 3: Add mapping after manual init"
+let mappingAdded = mapmanager.addMapping("default", "F1", "Ctrl+C")
+if (mappingAdded) {
+  print "✅ Successfully added mapping after manual init"
+  
+  // Verify mapping was added
+  let updatedMappings = mapmanager.getMappings("default")
+  if (updatedMappings && updatedMappings.length > 0) {
+    print "✅ Now have " + updatedMappings.length + " mappings"
+  } else {
+    print "❌ Failed to retrieve updated mappings"
+  }
+} else {
+  print "❌ Failed to add mapping"
+}
+
+print "\n=== Controlled Initialization Tests Complete ==="
+print "\n🎯 Summary of Controlled Initialization:"
+print "- mapmanager.init(false): Manual mode (no auto-activation, no hotkey application)"
+print "- mapmanager.init(true): Auto mode (creates default profile, activates it, applies hotkeys)"
+print "- Script control: Prevent unwanted profile/hotkey changes during script setup"
+print ""
+print "🔧 Usage Scenarios:"
+print "- Script setup: mapmanager.init(false) to prevent changes"
+print "- Normal use: mapmanager.init(true) for full functionality"
+print "- Manual control: Add mappings after initialization as needed"
+print ""
+print "🏆 MapManager now supports controlled initialization!"

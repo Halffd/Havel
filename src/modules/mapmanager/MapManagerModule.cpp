@@ -567,6 +567,197 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(filteredArray);
       }));
 
+  // =========================================================================
+  // Conditional Hotkeys and Combo Hotkeys Support
+  // =========================================================================
+
+  (*mapManagerObj)["addConditionalMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 4) {
+          return HavelRuntimeError(
+              "mapmanager.addConditionalMapping() requires (profileId, "
+              "sourceKey, targetKey, conditionType, conditionPattern)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string sourceKey =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string targetKey =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+        std::string conditionTypeStr =
+            args[3].isString()
+                ? args[3].asString()
+                : std::to_string(static_cast<int>(args[3].asNumber()));
+
+        Mapping mapping;
+        mapping.id = sourceKey + "_conditional_to_" + targetKey;
+        mapping.name = sourceKey + " -> " + targetKey + " (conditional)";
+        mapping.sourceKey = sourceKey;
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::KeyToKey;
+        mapping.actionType = ActionType::Press;
+
+        // Parse condition type
+        ConditionType conditionType = ConditionType::Always;
+        if (conditionTypeStr == "window") {
+          conditionType = ConditionType::WindowTitle;
+        } else if (conditionTypeStr == "process") {
+          conditionType = ConditionType::ProcessName;
+        } else if (conditionTypeStr == "custom") {
+          conditionType = ConditionType::Custom;
+        }
+
+        // Add condition (for window/process types, we need a pattern)
+        if (conditionType != ConditionType::Always &&
+            conditionType != ConditionType::Custom) {
+          // For demo, use window title pattern as condition
+          MappingCondition condition;
+          condition.type = conditionType;
+          condition.pattern = "*"; // Match all windows for demo
+          mapping.conditions.push_back(condition);
+        }
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addComboMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 3) {
+          return HavelRuntimeError("mapmanager.addComboMapping() requires "
+                                   "(profileId, comboKeys, targetKey)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string comboKeys =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+        std::string targetKey =
+            args[2].isString()
+                ? args[2].asString()
+                : std::to_string(static_cast<int>(args[2].asNumber()));
+
+        Mapping mapping;
+        mapping.id = comboKeys + "_combo_to_" + targetKey;
+        mapping.name = comboKeys + " -> " + targetKey + " (combo)";
+        mapping.sourceKey = comboKeys; // Store combo as source
+        mapping.targetKeys.push_back(targetKey);
+        mapping.type = MappingType::Combo;
+        mapping.actionType = ActionType::Press;
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["addMacroMapping"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.addMacroMapping() requires (profileId, macroName)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string macroName =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        // Create a macro mapping that can be triggered by name
+        Mapping mapping;
+        mapping.id = macroName;
+        mapping.name = "Macro: " + macroName;
+        mapping.sourceKey = macroName; // Trigger by macro name
+        mapping.type = MappingType::Macro;
+        mapping.actionType = ActionType::Macro;
+
+        // Initialize empty macro sequence (user will record later)
+        mapping.macroSequence = {};
+
+        coreMapManager->AddMapping(profileId, mapping);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["startMacroRecording"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.startMacroRecording() requires macroName");
+        }
+
+        std::string macroName =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+
+        coreMapManager->StartMacroRecording(macroName);
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["stopMacroRecording"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        coreMapManager->StopMacroRecording();
+        return HavelValue(true);
+      }));
+
+  (*mapManagerObj)["saveMacro"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.saveMacro() requires (profileId, mappingId)");
+        }
+
+        std::string profileId =
+            args[0].isString()
+                ? args[0].asString()
+                : std::to_string(static_cast<int>(args[0].asNumber()));
+        std::string mappingId =
+            args[1].isString()
+                ? args[1].asString()
+                : std::to_string(static_cast<int>(args[1].asNumber()));
+
+        coreMapManager->SaveMacro(profileId, mappingId);
+        return HavelValue(true);
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

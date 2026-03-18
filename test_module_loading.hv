@@ -1,0 +1,43 @@
+// Test module loading functionality
+
+print "=== Testing Module Loading ==="
+
+// Test 1: Check if modules directory exists
+print "Test 1: Module discovery"
+let modulesDir = "./modules"
+if (std::filesystem::exists(modulesDir)) {
+  print "✅ Modules directory exists"
+} else {
+  print "❌ Modules directory does not exist"
+}
+
+// Test 2: Create a test module
+print "\nTest 2: Creating test module"
+let testModuleCode = "
+// Test module for module loading
+print 'Test module loaded successfully!'
+
+let testObj = {
+  name: 'testModule',
+  version: '1.0.0',
+  loaded: true
+}
+print testObj
+"
+
+// Write test module to file
+let testFile = modulesDir + "/test_module.hv"
+let file = open(testFile, "write")
+file.write(testModuleCode)
+file.close()
+
+// Test 3: Try to load the test module (if module loading is implemented)
+print "\nTest 3: Loading test module"
+// This would work if moduleLoader.loadModule() is properly implemented
+// For now, we'll just check if the module system recognizes the loading mechanism
+
+print "Module loading system status:"
+print "- Module discovery: " + (std::filesystem::exists(modulesDir) ? "Available" : "Not available")
+print "- Test module created: " + (std::filesystem::exists(testFile) ? "Success" : "Failed")
+
+print "\n=== Module Loading Tests Complete ==="

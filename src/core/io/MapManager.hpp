@@ -103,11 +103,21 @@ struct Mapping {
   bool turbo = false;
   int turboInterval = 50; // Faster interval for turbo
 
-  // Mouse movement settings (for joystick axis)
+  // Mouse movement settings (for joystick axis and mouse bindings)
   bool mouseMovement = false;
   float sensitivity = 1.0f;
   float deadzone = 0.15f; // Ignore small movements
   bool acceleration = false;
+
+  // Mouse-specific settings
+  bool mouseBinding = false; // This is a mouse binding
+  std::string mouseAction;   // Mouse action type
+  int mouseButton = 0; // Mouse button number (0=none, 1=left, 2=right, etc.)
+  int mouseWheelDirection = 0; // 0=none, 1=up, 2=down, 3=left, 4=right
+  float mouseThreshold = 0.0f; // Threshold for mouse movement
+  bool mouseGesture = false;   // Mouse gesture support
+  std::vector<std::pair<int, int>>
+      gesturePoints; // Gesture points for recognition
 
   // Toggle mode
   bool toggleMode = false;

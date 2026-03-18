@@ -7,6 +7,7 @@
 #include "MapManagerModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "core/IO.hpp"
+#include "core/io/Device.hpp"
 #include "core/io/MapManager.hpp"
 #include <algorithm>
 #include <spdlog/spdlog.h>
@@ -1429,6 +1430,219 @@ void registerMapManagerModule(Environment &env,
         std::string keyString =
             coreMapManager->KeyCodeToString(keyCode, source);
         return HavelValue(keyString);
+      }));
+
+  // =========================================================================
+  // Joystick/Gamepad Device Detection
+  // =========================================================================
+
+  (*mapManagerObj)["detectJoystickDevices"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto gamepads = Device::findGamepads();
+        auto deviceArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto &gamepad : gamepads) {
+          auto deviceObj = std::make_shared<HavelObject>();
+          (*deviceObj)["name"] = HavelValue(gamepad.name);
+          (*deviceObj)["path"] = HavelValue(gamepad.eventPath);
+          (*deviceObj)["type"] = HavelValue(static_cast<int>(gamepad.type));
+          (*deviceObj)["confidence"] = HavelValue(gamepad.confidence);
+
+          // Add capabilities
+          auto capsObj = std::make_shared<HavelObject>();
+          (*capsObj)["totalKeys"] =
+              HavelValue(static_cast<double>(gamepad.capabilities.totalKeys));
+          (*capsObj)["gamepadButtons"] = HavelValue(
+              static_cast<double>(gamepad.capabilities.gamepadButtons));
+          (*capsObj)["joystickButtons"] = HavelValue(
+              static_cast<double>(gamepad.capabilities.joystickButtons));
+          (*capsObj)["mouseButtons"] = HavelValue(
+              static_cast<double>(gamepad.capabilities.mouseButtons));
+          (*capsObj)["letterKeys"] =
+              HavelValue(static_cast<double>(gamepad.capabilities.letterKeys));
+          (*capsObj)["numberKeys"] =
+              HavelValue(static_cast<double>(gamepad.capabilities.numberKeys));
+          (*capsObj)["modifierKeys"] = HavelValue(
+              static_cast<double>(gamepad.capabilities.modifierKeys));
+          (*capsObj)["hasAnalogSticks"] =
+              HavelValue(gamepad.capabilities.hasAnalogSticks);
+          (*capsObj)["hasDPad"] = HavelValue(gamepad.capabilities.hasDPad);
+          (*capsObj)["hasMovement"] =
+              HavelValue(gamepad.capabilities.hasMovement);
+          (*capsObj)["hasAbsoluteAxes"] =
+              HavelValue(gamepad.capabilities.hasAbsoluteAxes);
+          (*capsObj)["hasRelativeAxes"] =
+              HavelValue(gamepad.capabilities.hasRelativeAxes);
+
+          (*deviceObj)["capabilities"] = HavelValue(capsObj);
+          deviceArray->push_back(HavelValue(deviceObj));
+        }
+
+        return HavelValue(deviceArray);
+      }));
+
+  (*mapManagerObj)["getAllInputDevices"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto allDevices = Device::getAllDevices();
+        auto deviceArray = std::make_shared<std::vector<HavelValue>>();
+
+        for (const auto &device : allDevices) {
+          auto deviceObj = std::make_shared<HavelObject>();
+          (*deviceObj)["name"] = HavelValue(device.name);
+          (*deviceObj)["path"] = HavelValue(device.eventPath);
+          (*deviceObj)["type"] = HavelValue(static_cast<int>(device.type));
+          (*deviceObj)["confidence"] = HavelValue(device.confidence);
+          (*deviceObj)["classificationReason"] =
+              HavelValue(device.classificationReason);
+
+          // Add capabilities
+          auto capsObj = std::make_shared<HavelObject>();
+          (*capsObj)["totalKeys"] =
+              HavelValue(static_cast<double>(device.caps.totalKeys));
+          (*capsObj)["gamepadButtons"] =
+              HavelValue(static_cast<double>(device.caps.gamepadButtons));
+          (*capsObj)["joystickButtons"] =
+              HavelValue(static_cast<double>(device.caps.joystickButtons));
+          (*capsObj)["mouseButtons"] =
+              HavelValue(static_cast<double>(device.caps.mouseButtons));
+          (*capsObj)["letterKeys"] =
+              HavelValue(static_cast<double>(device.caps.letterKeys));
+          (*capsObj)["numberKeys"] =
+              HavelValue(static_cast<double>(device.caps.numberKeys));
+          (*capsObj)["modifierKeys"] =
+              HavelValue(static_cast<double>(device.caps.modifierKeys));
+          (*capsObj)["hasAnalogSticks"] =
+              HavelValue(device.caps.hasAnalogSticks);
+          (*capsObj)["hasDPad"] = HavelValue(device.caps.hasDPad);
+          (*capsObj)["hasMovement"] = HavelValue(device.caps.hasMovement);
+          (*capsObj)["hasAbsoluteAxes"] =
+              HavelValue(device.caps.hasAbsoluteAxes);
+            (*capsObj)["hasRelativeAxes"] = HavelValue(device.caps.hasRelativeAxes));
+
+            (*deviceObj)["capabilities"] = HavelValue(capsObj);
+            deviceArray->push_back(HavelValue(deviceObj));
+        }
+
+        return HavelValue(deviceArray);
+      }));
+
+  (*mapManagerObj)["getJoystickCount"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto gamepads = Device::findGamepads();
+        return HavelValue(static_cast<double>(gamepads.size()));
+      }));
+
+  (*mapManagerObj)["isJoystickConnected"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+
+        auto gamepads = Device::findGamepads();
+        return HavelValue(!gamepads.empty());
+      }));
+
+  (*mapManagerObj)["getJoystickInfo"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.getJoystickInfo() requires (index) or (name)");
+        }
+
+        auto gamepads = Device::findGamepads();
+        if (gamepads.empty()) {
+          return HavelValue("No joystick/gamepad devices found");
+        }
+
+        DeviceInfo selectedGamepad;
+        bool found = false;
+
+        if (args[0].isNumber()) {
+          // Search by index
+          int index = static_cast<int>(args[0].asNumber());
+          if (index >= 0 && index < gamepads.size()) {
+            selectedGamepad = gamepads[index];
+            found = true;
+          }
+        } else if (args[0].isString()) {
+          // Search by name
+          std::string searchName = args[0].asString();
+          std::transform(searchName.begin(), searchName.end(),
+                         searchName.begin(), ::tolower);
+
+          for (const auto &gamepad : gamepads) {
+            std::string gamepadName = gamepad.name;
+            std::transform(gamepadName.begin(), gamepadName.end(),
+                           gamepadName.begin(), ::tolower);
+
+            if (gamepadName.find(searchName) != std::string::npos) {
+              selectedGamepad = gamepad;
+              found = true;
+              break;
+            }
+          }
+        }
+
+        if (!found) {
+          return HavelValue("Joystick/gamepad not found");
+        }
+
+        auto infoObj = std::make_shared<HavelObject>();
+        (*infoObj)["name"] = HavelValue(selectedGamepad.name);
+        (*infoObj)["path"] = HavelValue(selectedGamepad.eventPath);
+        (*infoObj)["type"] = HavelValue(static_cast<int>(selectedGamepad.type));
+        (*infoObj)["confidence"] = HavelValue(selectedGamepad.confidence);
+
+        // Add capabilities
+        auto capsObj = std::make_shared<HavelObject>();
+        (*capsObj)["totalKeys"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.totalKeys));
+        (*capsObj)["gamepadButtons"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.gamepadButtons));
+        (*capsObj)["joystickButtons"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.joystickButtons));
+        (*capsObj)["mouseButtons"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.mouseButtons));
+        (*capsObj)["letterKeys"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.letterKeys));
+        (*capsObj)["numberKeys"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.numberKeys));
+        (*capsObj)["modifierKeys"] = HavelValue(
+            static_cast<double>(selectedGamepad.capabilities.modifierKeys));
+        (*capsObj)["hasAnalogSticks"] =
+            HavelValue(selectedGamepad.capabilities.hasAnalogSticks);
+        (*capsObj)["hasDPad"] =
+            HavelValue(selectedGamepad.capabilities.hasDPad);
+        (*capsObj)["hasMovement"] =
+            HavelValue(selectedGamepad.capabilities.hasMovement);
+        (*capsObj)["hasAbsoluteAxes"] =
+            HavelValue(selectedGamepad.capabilities.hasAbsoluteAxes);
+        (*capsObj)["hasRelativeAxes"] =
+            HavelValue(selectedGamepad.capabilities.hasRelativeAxes);
+
+        (*infoObj)["capabilities"] = HavelValue(capsObj);
+
+        return HavelValue(infoObj);
       }));
 
   // Register mapmanager module

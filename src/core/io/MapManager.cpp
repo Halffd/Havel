@@ -557,19 +557,33 @@ void MapManager::ExecuteMapping(Mapping &mapping, bool down) {
 }
 
 void MapManager::ExecuteAutofire(Mapping &mapping) {
-  auto now = std::chrono::steady_clock::now();
-  int interval =
-      mapping.turbo ? mapping.turboInterval : mapping.autofireInterval;
+  if (mapping.autofireMode.empty() || mapping.autofireMode == "normal") {
+    // Use legacy autofire for backward compatibility
+    auto now = std::chrono::steady_clock::now();
+    int interval =
+        mapping.turbo ? mapping.turboInterval : mapping.autofireInterval;
 
-  auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                     now - mapping.lastFireTime)
-                     .count();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now - mapping.lastFireTime)
+                       .count();
 
-  if (elapsed >= interval) {
-    for (const auto &key : mapping.targetKeys) {
-      io->Send(key);
+    if (elapsed >= interval) {
+      for (const auto &key : mapping.targetKeys) {
+        io->Send(key);
+      }
+      mapping.lastFireTime = now;
     }
-    mapping.lastFireTime = now;
+  } else {
+    // Use configurable autofire system
+    for (const auto &[profileId, profile] : profiles) {
+      for (const auto &[mappingId, profileMapping] : profile.mappings) {
+        if (profileMapping.id == mapping.id) {
+          ExecuteConfigurableAutofire(profileId,
+                                      const_cast<Mapping &>(profileMapping));
+          return;
+        }
+      }
+    }
   }
 }
 
@@ -1312,6 +1326,356 @@ bool MapManager::EvaluateAutopressCondition(const Mapping &mapping) {
     }
   } else if (condition.find("time:") == 0) {
     // Time-based condition
+    std::string timeStr = condition.substr(5);
+    int targetHour = std::stoi(timeStr);
+    auto now = std::chrono::system_clock::now();
+    auto timeInfo = std::chrono::system_clock::to_time_t(now);
+    auto localTime = std::localtime(&timeInfo);
+    return localTime->tm_hour == targetHour;
+  }
+
+  return true; // Default to true for unknown conditions
+}
+
+// ============================================================================
+// Configurable Autofire Implementation
+// ============================================================================
+
+void MapManager::SetAutofireRate(const std::string &profileId,
+                                 const std::string &mappingId, int rateMs) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autofireRate = rateMs;
+    spdlog::info("MapManager: Set autofire rate to {}ms for mapping {}", rateMs,
+                 mappingId);
+  }
+}
+
+void MapManager::SetAutofireBurstCount(const std::string &profileId,
+                                       const std::string &mappingId,
+                                       int burstCount) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autofireBurstCount = burstCount;
+    spdlog::info("MapManager: Set autofire burst count to {} for mapping {}",
+                 burstCount, mappingId);
+  }
+}
+
+void MapManager::SetAutofireBurstDelay(const std::string &profileId,
+                                       const std::string &mappingId,
+                                       int burstDelayMs) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autofireBurstDelay = burstDelayMs;
+    spdlog::info("MapManager: Set autofire burst delay to {}ms for mapping {}",
+                 burstDelayMs, mappingId);
+  }
+}
+
+void MapManager::SetAutofireMode(const std::string &profileId,
+                                 const std::string &mappingId,
+                                 const std::string &mode) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autofireMode = mode;
+    spdlog::info("MapManager: Set autofire mode to '{}' for mapping {}", mode,
+                 mappingId);
+  }
+}
+
+void MapManager::SetAutofireCondition(const std::string &profileId,
+                                      const std::string &mappingId,
+                                      const std::string &condition) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    mappingIt->second.autofireCondition = condition;
+    spdlog::info("MapManager: Set autofire condition for mapping {}: {}",
+                 mappingId, condition);
+  }
+}
+
+int MapManager::GetAutofireRate(const std::string &profileId,
+                                const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return 0;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    return mappingIt->second.autofireRate;
+  }
+
+  return 0;
+}
+
+int MapManager::GetAutofireBurstCount(const std::string &profileId,
+                                      const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return 0;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    return mappingIt->second.autofireBurstCount;
+  }
+
+  return 0;
+}
+
+int MapManager::GetAutofireBurstDelay(const std::string &profileId,
+                                      const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return 0;
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    return mappingIt->second.autofireBurstDelay;
+  }
+
+  return 0;
+}
+
+std::string MapManager::GetAutofireMode(const std::string &profileId,
+                                        const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = profiles.find(profileId);
+  if (profileIt == profiles.end()) {
+    return "";
+  }
+
+  auto mappingIt = profileIt->second.mappings.find(mappingId);
+  if (mappingIt != profileIt->second.mappings.end()) {
+    return mappingIt->second.autofireMode;
+  }
+
+  return "";
+}
+
+bool MapManager::IsAutofireActive(const std::string &profileId,
+                                  const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  auto profileIt = autofireActive.find(profileId);
+  if (profileIt == autofireActive.end()) {
+    return false;
+  }
+
+  auto mappingIt = profileIt->second.find(mappingId);
+  return mappingIt != profileIt->second.end() && mappingIt->second.load();
+}
+
+void MapManager::StopAutofire(const std::string &profileId,
+                              const std::string &mappingId) {
+  std::lock_guard<std::mutex> lock(profileMutex);
+
+  // Stop the autofire thread
+  auto profileIt = autofireThreads.find(profileId);
+  if (profileIt != autofireThreads.end()) {
+    auto mappingIt = profileIt->second.find(mappingId);
+    if (mappingIt != profileIt->second.end()) {
+      // Set active flag to false
+      auto activeIt = autofireActive.find(profileId);
+      if (activeIt != autofireActive.end()) {
+        auto activeMappingIt = activeIt->second.find(mappingId);
+        if (activeMappingIt != activeIt->second.end()) {
+          activeMappingIt->second.store(false);
+        }
+      }
+
+      // Join and remove thread
+      if (mappingIt->second.joinable()) {
+        mappingIt->second.join();
+      }
+      profileIt->second.erase(mappingIt);
+    }
+  }
+
+  spdlog::info("MapManager: Stopped autofire for mapping {}", mappingId);
+}
+
+void MapManager::ExecuteConfigurableAutofire(const std::string &profileId,
+                                             Mapping &mapping) {
+  if (!mapping.autofire) {
+    return;
+  }
+
+  // Check conditions
+  if (!mapping.autofireCondition.empty() &&
+      !EvaluateAutofireCondition(mapping)) {
+    return;
+  }
+
+  // Initialize active flag and burst counter
+  auto &activeFlag = autofireActive[profileId][mapping.id];
+  auto &burstCounter = autofireBurstCounters[profileId][mapping.id];
+  activeFlag.store(true);
+  burstCounter = 0;
+
+  // Determine effective rate based on mode
+  int effectiveRate = mapping.autofireRate;
+  if (mapping.autofireMode == "burst" && mapping.autofireBurstCount > 0) {
+    effectiveRate =
+        mapping.autofireBurstDelay; // Use burst delay for burst mode
+  }
+
+  // Start autofire thread
+  autofireThreads[profileId][mapping.id] =
+      std::thread([this, profileId, &mapping, effectiveRate]() {
+        auto interval = std::chrono::milliseconds(effectiveRate);
+        auto burstDelay = std::chrono::milliseconds(mapping.autofireBurstDelay);
+
+        while (activeFlag.load()) {
+          // Check conditions
+          if (!mapping.autofireCondition.empty() &&
+              !EvaluateAutofireCondition(mapping)) {
+            std::this_thread::sleep_for(interval);
+            continue;
+          }
+
+          // Handle different autofire modes
+          if (mapping.autofireMode == "normal") {
+            // Normal continuous autofire
+            for (const auto &key : mapping.targetKeys) {
+              int targetCode = KeyMap::GetKeyCode(key);
+              if (targetCode >= 0 && io) {
+                io->SendKeyEvent(targetCode, 1); // Key down
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                io->SendKeyEvent(targetCode, 0); // Key up
+              }
+            }
+          } else if (mapping.autofireMode == "burst") {
+            // Burst mode: fire N shots, then pause
+            if (burstCounter < mapping.autofireBurstCount ||
+                mapping.autofireBurstCount == 0) {
+              for (const auto &key : mapping.targetKeys) {
+                int targetCode = KeyMap::GetKeyCode(key);
+                if (targetCode >= 0 && io) {
+                  io->SendKeyEvent(targetCode, 1); // Key down
+                  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                  io->SendKeyEvent(targetCode, 0); // Key up
+                }
+              }
+              burstCounter++;
+
+              // Update statistics
+              UpdateMappingStats(profileId, mapping.id, true);
+            } else {
+              // Burst completed, wait for burst delay
+              std::this_thread::sleep_for(burstDelay);
+              burstCounter = 0;
+            }
+          } else if (mapping.autofireMode == "hold") {
+            // Hold mode: keep keys held while trigger is pressed
+            for (const auto &key : mapping.targetKeys) {
+              int targetCode = KeyMap::GetKeyCode(key);
+              if (targetCode >= 0 && io) {
+                io->SendKeyEvent(targetCode, 1); // Key down
+              }
+            }
+          } else if (mapping.autofireMode == "smart") {
+            // Smart mode: adaptive rate based on key usage patterns
+            auto adaptiveInterval = interval;
+            // Simple adaptive logic: faster rate if key hasn't been used
+            // recently
+            auto timeSinceLastFire =
+                std::chrono::steady_clock::now() - mapping.lastFireTime;
+            if (timeSinceLastFire < std::chrono::seconds(1)) {
+              adaptiveInterval =
+                  std::chrono::milliseconds(effectiveRate / 2); // Faster rate
+            }
+
+            for (const auto &key : mapping.targetKeys) {
+              int targetCode = KeyMap::GetKeyCode(key);
+              if (targetCode >= 0 && io) {
+                io->SendKeyEvent(targetCode, 1); // Key down
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                io->SendKeyEvent(targetCode, 0); // Key up
+              }
+            }
+
+            std::this_thread::sleep_for(adaptiveInterval);
+          }
+
+          // Update last fire time
+          mapping.lastFireTime = std::chrono::steady_clock::now();
+
+          // Sleep for base interval
+          std::this_thread::sleep_for(interval);
+        }
+
+        // Clean up
+        activeFlag.store(false);
+        spdlog::info("MapManager: Configurable autofire stopped for mapping {}",
+                     mapping.id);
+      });
+}
+
+bool MapManager::EvaluateAutofireCondition(const Mapping &mapping) {
+  if (mapping.autofireCondition.empty()) {
+    return true;
+  }
+
+  // Use same condition evaluation as autopress toggle
+  const std::string &condition = mapping.autofireCondition;
+
+  if (condition == "always") {
+    return true;
+  } else if (condition == "never") {
+    return false;
+  } else if (condition.find("window:") == 0) {
+    std::string windowName = condition.substr(7);
+    if (io) {
+      std::string currentWindow = io->GetActiveWindow();
+      return currentWindow.find(windowName) != std::string::npos;
+    }
+  } else if (condition.find("time:") == 0) {
     std::string timeStr = condition.substr(5);
     int targetHour = std::stoi(timeStr);
     auto now = std::chrono::system_clock::now();

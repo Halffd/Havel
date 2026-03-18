@@ -105,6 +105,14 @@ struct Mapping {
   bool turbo = false;
   int turboInterval = 50; // Faster interval for turbo
 
+  // Configurable autofire settings
+  int autofireRate = 100;      // Current rate (ms between shots)
+  int autofireBurstCount = 1;  // Shots per burst (0 = continuous)
+  int autofireBurstDelay = 50; // Delay between bursts (ms)
+  std::string autofireMode =
+      std::string("normal"); // "normal", "burst", "hold", "smart"
+  std::string autofireCondition = std::string(""); // Condition for activation
+
   // Mouse movement settings (for joystick axis and mouse bindings)
   bool mouseMovement = false;
   float sensitivity = 1.0f;
@@ -162,6 +170,11 @@ struct Mapping {
         autopressTimeout(other.autopressTimeout),
         autopressCondition(other.autopressCondition),
         autopressConditionExpr(other.autopressConditionExpr),
+        autofireRate(other.autofireRate),
+        autofireBurstCount(other.autofireBurstCount),
+        autofireBurstDelay(other.autofireBurstDelay),
+        autofireMode(other.autofireMode),
+        autofireCondition(other.autofireCondition),
         macroSequence(other.macroSequence), conditions(other.conditions),
         lastFireTime(other.lastFireTime), active(other.active.load()) {}
 
@@ -192,6 +205,11 @@ struct Mapping {
       autopressTimeout = other.autopressTimeout;
       autopressCondition = other.autopressCondition;
       autopressConditionExpr = other.autopressConditionExpr;
+      autofireRate = other.autofireRate;
+      autofireBurstCount = other.autofireBurstCount;
+      autofireBurstDelay = other.autofireBurstDelay;
+      autofireMode = other.autofireMode;
+      autofireCondition = other.autofireCondition;
       macroSequence = other.macroSequence;
       conditions = other.conditions;
       lastFireTime = other.lastFireTime;
@@ -333,6 +351,30 @@ public:
   void StopAutopressToggle(const std::string &profileId,
                            const std::string &mappingId);
 
+  // Configurable autofire functionality
+  void SetAutofireRate(const std::string &profileId,
+                       const std::string &mappingId, int rateMs);
+  void SetAutofireBurstCount(const std::string &profileId,
+                             const std::string &mappingId, int burstCount);
+  void SetAutofireBurstDelay(const std::string &profileId,
+                             const std::string &mappingId, int burstDelayMs);
+  void SetAutofireMode(const std::string &profileId,
+                       const std::string &mappingId, const std::string &mode);
+  void SetAutofireCondition(const std::string &profileId,
+                            const std::string &mappingId,
+                            const std::string &condition);
+  int GetAutofireRate(const std::string &profileId,
+                      const std::string &mappingId);
+  int GetAutofireBurstCount(const std::string &profileId,
+                            const std::string &mappingId);
+  int GetAutofireBurstDelay(const std::string &profileId,
+                            const std::string &mappingId);
+  std::string GetAutofireMode(const std::string &profileId,
+                              const std::string &mappingId);
+  bool IsAutofireActive(const std::string &profileId,
+                        const std::string &mappingId);
+  void StopAutofire(const std::string &profileId, const std::string &mappingId);
+
 private:
   IO *io;
 
@@ -364,6 +406,12 @@ private:
   std::map<std::string, std::map<std::string, std::atomic<bool>>>
       autopressToggleActive;
 
+  // Configurable autofire state
+  std::map<std::string, std::map<std::string, std::atomic<bool>>>
+      autofireActive;
+  std::map<std::string, std::map<std::string, std::thread>> autofireThreads;
+  std::map<std::string, std::map<std::string, int>> autofireBurstCounters;
+
   // Statistics
   std::map<std::string, std::map<std::string, MappingStats>> stats;
 
@@ -388,6 +436,11 @@ private:
   // Autopress toggle helper
   void ExecuteAutopressToggle(const std::string &profileId, Mapping &mapping);
   bool EvaluateAutopressCondition(const Mapping &mapping);
+
+  // Configurable autofire helpers
+  void ExecuteConfigurableAutofire(const std::string &profileId,
+                                   Mapping &mapping);
+  bool EvaluateAutofireCondition(const Mapping &mapping);
 
   std::string GenerateId() const;
 };

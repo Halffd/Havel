@@ -93,6 +93,7 @@ struct Mapping {
   int sourceCode = 0;    // Evdev code
 
   // Target action
+  MappingType mappingType;
   ActionType actionType;
   std::vector<std::string> targetKeys; // Target key(s) for action
   std::vector<int> targetCodes;        // Evdev codes
@@ -133,19 +134,13 @@ struct Mapping {
   std::chrono::steady_clock::time_point lastFireTime;
   std::atomic<bool> active{false};
 
-  // Key recording state
-  static bool isRecordingKey = false;
-  static std::string recordedKey = "";
-  static int recordedCode = 0;
-  static std::string recordedSource = ""; // "evdev", "x11", "mouse", "joystick"
-
   // Default constructor
   Mapping() = default;
 
   // Copy constructor
   Mapping(const Mapping &other)
       : id(other.id), name(other.name), enabled(other.enabled),
-        type(other.type), sourceKey(other.sourceKey),
+        mappingType(other.mappingType), sourceKey(other.sourceKey),
         sourceCode(other.sourceCode), actionType(other.actionType),
         targetKeys(other.targetKeys), targetCodes(other.targetCodes),
         autofire(other.autofire), autofireInterval(other.autofireInterval),
@@ -162,7 +157,7 @@ struct Mapping {
       id = other.id;
       name = other.name;
       enabled = other.enabled;
-      type = other.type;
+      mappingType = other.mappingType;
       sourceKey = other.sourceKey;
       sourceCode = other.sourceCode;
       actionType = other.actionType;

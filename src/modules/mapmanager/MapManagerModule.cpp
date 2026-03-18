@@ -1645,6 +1645,145 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(infoObj);
       }));
 
+  // =========================================================================
+  // Autopress Toggle Functions
+  // =========================================================================
+
+  (*mapManagerObj)["addAutopressToggle"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "mapmanager.addAutopressToggle() requires (sourceKey, "
+              "targetKeys, [interval], [timeout], [condition])");
+        }
+
+        std::string sourceKey = args[0].asString();
+        std::vector<std::string> targetKeys;
+        if (args[1].isString()) {
+          targetKeys.push_back(args[1].asString());
+        } else if (args[1].isObject()) {
+          auto targetArray = args[1].asObject();
+          for (const auto &[key, value] : *targetArray) {
+            if (value.isString()) {
+              targetKeys.push_back(value.asString());
+            }
+          }
+        }
+
+        int interval = 1000; // Default 1 second
+        if (args.size() > 2 && args[2].isNumber()) {
+          interval = static_cast<int>(args[2].asNumber());
+        }
+
+        int timeout = 10000; // Default 10 seconds
+        if (args.size() > 3 && args[3].isNumber()) {
+          timeout = static_cast<int>(args[3].asNumber());
+        }
+
+        std::string condition = "";
+        if (args.size() > 4 && args[4].isString()) {
+          condition = args[4].asString();
+        }
+
+        coreMapManager->AddAutopressToggleMapping(
+            "default", sourceKey, targetKeys, interval, timeout, condition);
+        return HavelValue("Autopress toggle mapping added");
+      }));
+
+  (*mapManagerObj)["setAutopressInterval"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutopressInterval() requires "
+                                   "(mappingId, intervalMs)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int interval = static_cast<int>(args[1].asNumber());
+
+        coreMapManager->SetAutopressToggleInterval("default", mappingId,
+                                                   interval);
+        return HavelValue("Autopress interval updated");
+      }));
+
+  (*mapManagerObj)["setAutopressTimeout"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutopressTimeout() requires "
+                                   "(mappingId, timeoutMs)");
+        }
+
+        std::string mappingId = args[0].asString();
+        int timeout = static_cast<int>(args[1].asNumber());
+
+        coreMapManager->SetAutopressToggleTimeout("default", mappingId,
+                                                  timeout);
+        return HavelValue("Autopress timeout updated");
+      }));
+
+  (*mapManagerObj)["setAutopressCondition"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 2) {
+          return HavelRuntimeError("mapmanager.setAutopressCondition() "
+                                   "requires (mappingId, condition)");
+        }
+
+        std::string mappingId = args[0].asString();
+        std::string condition = args[1].asString();
+
+        coreMapManager->SetAutopressToggleCondition("default", mappingId,
+                                                    condition);
+        return HavelValue("Autopress condition updated");
+      }));
+
+  (*mapManagerObj)["isAutopressActive"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.isAutopressActive() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        bool isActive =
+            coreMapManager->IsAutopressToggleActive("default", mappingId);
+        return HavelValue(isActive);
+      }));
+
+  (*mapManagerObj)["stopAutopress"] = HavelValue(
+      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+        if (!coreMapManager) {
+          return HavelRuntimeError(
+              "MapManager not initialized. Call mapmanager.init() first");
+        }
+        if (args.size() < 1) {
+          return HavelRuntimeError(
+              "mapmanager.stopAutopress() requires (mappingId)");
+        }
+
+        std::string mappingId = args[0].asString();
+        coreMapManager->StopAutopressToggle("default", mappingId);
+        return HavelValue("Autopress toggle stopped");
+      }));
+
   // Register mapmanager module
   env.Define("mapmanager", HavelValue(mapManagerObj));
 }

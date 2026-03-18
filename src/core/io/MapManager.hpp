@@ -326,8 +326,7 @@ private:
 
   // Internal helpers
   void RegisterMapping(const std::string &profileId, Mapping &mapping);
-  void UnregisterMapping(const std::string &profileId,
-                         const std::string &mappingId);
+  void UnregisterMapping(const std::string &profileId, const Mapping &mapping);
 
   void ExecuteMapping(Mapping &mapping, bool down);
   void ExecuteAutofire(Mapping &mapping);
@@ -335,6 +334,10 @@ private:
   void ExecuteMouseMovement(const Mapping &mapping, float axisValue);
 
   void RecordMacroEvent(const std::string &key);
+
+  // Key recording helpers
+  void RecordKeyEvent(int keyCode, bool isDown);
+  void RecordMouseWheelEvent(int wheelCode, int value);
 
   std::string GenerateId() const;
 };

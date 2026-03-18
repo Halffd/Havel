@@ -1,0 +1,140 @@
+// Test MapManager conditional hotkeys and combo hotkeys support
+
+print "=== Testing MapManager Conditional & Combo Hotkeys ==="
+
+// Initialize MapManager
+print "Test 1: Initialize MapManager"
+let success = mapmanager.init()
+if (success) {
+  print "✅ MapManager initialized successfully"
+} else {
+  print "❌ MapManager initialization failed"
+}
+
+// Test 2: Add conditional hotkey (only active in specific windows)
+print "\nTest 2: Add conditional hotkey"
+let conditionalAdded = mapmanager.addConditionalMapping("default", "F1", "Ctrl+C", "window", "Chrome|Firefox")
+if (conditionalAdded) {
+  print "✅ Added conditional hotkey: F1 -> Ctrl+C (only in Chrome/Firefox)"
+} else {
+  print "❌ Failed to add conditional hotkey"
+}
+
+// Test 3: Add process-based conditional hotkey
+print "\nTest 3: Add process-based conditional hotkey"
+let processConditionalAdded = mapmanager.addConditionalMapping("default", "F2", "Ctrl+V", "process", "code")
+if (processConditionalAdded) {
+  print "✅ Added process conditional hotkey: F2 -> Ctrl+V (only when VS Code is running)"
+} else {
+  print "❌ Failed to add process conditional hotkey"
+}
+
+// Test 4: Add combo hotkey (multi-key sequence)
+print "\nTest 4: Add combo hotkey"
+let comboAdded = mapmanager.addComboMapping("default", "Ctrl+Alt+F", "Delete", "Ctrl+Alt")
+if (comboAdded) {
+  print "✅ Added combo hotkey: Ctrl+Alt+F -> Delete"
+} else {
+  print "❌ Failed to add combo hotkey"
+}
+
+// Test 5: Add macro mapping
+print "\nTest 5: Add macro mapping"
+let macroAdded = mapmanager.addMacroMapping("default", "testMacro")
+if (macroAdded) {
+  print "✅ Added macro mapping: testMacro"
+} else {
+  print "❌ Failed to add macro mapping"
+}
+
+// Test 6: Start macro recording
+print "\nTest 6: Start macro recording"
+let recordingStarted = mapmanager.startMacroRecording("recordedMacro")
+if (recordingStarted) {
+  print "✅ Started recording macro: recordedMacro"
+  print "   Press keys to record, then call stopMacroRecording()"
+} else {
+  print "❌ Failed to start macro recording"
+}
+
+// Test 7: Stop macro recording (simulate)
+print "\nTest 7: Stop macro recording (simulated)"
+let recordingStopped = mapmanager.stopMacroRecording()
+if (recordingStopped) {
+  print "✅ Stopped macro recording"
+} else {
+  print "❌ Failed to stop macro recording"
+}
+
+// Test 8: Save recorded macro
+print "\nTest 8: Save recorded macro"
+let macroSaved = mapmanager.saveMacro("default", "testMacro")
+if (macroSaved) {
+  print "✅ Saved macro: testMacro"
+} else {
+  print "❌ Failed to save macro"
+}
+
+// Test 9: Check all mappings including new types
+print "\nTest 9: Check all mappings including new types"
+let allMappings = mapmanager.getMappings("default")
+if (allMappings && allMappings.length > 0) {
+  print "✅ Found " + allMappings.length + " total mappings:"
+  for (let i = 0; i < allMappings.length; i++) {
+    let mapping = allMappings[i]
+    let mappingType = "Unknown"
+    if (mapping.actionType == 0) mappingType = "Press"
+    else if (mapping.actionType == 1) mappingType = "Hold"
+    else if (mapping.actionType == 2) mappingType = "Toggle"
+    else if (mapping.actionType == 3) mappingType = "Autofire"
+    else if (mapping.actionType == 4) mappingType = "Turbo"
+    else if (mapping.actionType == 5) mappingType = "Macro"
+    else if (mapping.actionType == 6) mappingType = "MouseMove"
+    else if (mapping.actionType == 7) mappingType = "MouseScroll"
+    
+    let hasConditions = mapping.conditions && mapping.conditions.length > 0
+    let conditionInfo = hasConditions ? " (conditional)" : ""
+    
+    print "  [" + i + "] " + mapping.name + " -> " + (mapping.targetKeys.length > 0 ? mapping.targetKeys[0] : "None")
+    print "      Type: " + mappingType + conditionInfo
+    print "      Enabled: " + mapping.enabled
+    print "      Source: " + mapping.sourceKey
+  }
+} else {
+  print "❌ No mappings found"
+}
+
+print "\n=== Conditional & Combo Hotkeys Tests Complete ==="
+print "\n🎯 Summary of New Features:"
+print "- addConditionalMapping(profileId, sourceKey, targetKey, conditionType, conditionPattern)"
+print "  - Creates hotkeys that only activate under specific conditions"
+print "  - Condition types: 'window', 'process', 'custom', 'always'"
+print "  - Pattern matching for window/process conditions"
+print ""
+print "- addComboMapping(profileId, comboKeys, targetKey)"
+print "  - Creates hotkeys that activate when multiple keys are pressed together"
+print "  - Combo keys stored as single source identifier"
+print "  - Supports complex multi-key sequences"
+print ""
+print "- addMacroMapping(profileId, macroName)"
+print "  - Creates macro mappings that can record and playback key sequences"
+print "  - Macro recording support with start/stop functionality"
+print ""
+print "- startMacroRecording(macroName)"
+print "  - Begins recording key sequence for macro"
+print "  - Records timing and key press/release events"
+print ""
+print "- stopMacroRecording()"
+print "  - Stops current macro recording"
+print "  - Saves recorded sequence to macro mapping"
+print ""
+print "- saveMacro(profileId, mappingId)"
+print "  - Saves recorded macro to persistent storage"
+print "  - Integrates with MapManager's save/load system"
+print ""
+print "🔍 Advanced Filtering Support:"
+print "- Enhanced filterMappings() supports condition and combo filtering"
+print "- Pattern matching for complex mapping discovery"
+print "- Type-based filtering for mapping management"
+
+print "\n🏆 MapManager now provides enterprise-grade hotkey capabilities!"

@@ -51,7 +51,7 @@ void registerBrowserModule(Environment &env,
   // Connection functions
   // =========================================================================
 
-  (*browserMod)["connect"] = HavelValue(BuiltinFunction(
+  (*browserMod)["connect"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string url =
             args.empty() ? "http://localhost:9222" : valueToString(args[0]);
@@ -59,13 +59,13 @@ void registerBrowserModule(Environment &env,
       }));
 
   (*browserMod)["disconnect"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         getBrowser().disconnect();
         return HavelValue(true);
       }));
 
   (*browserMod)["isConnected"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(getBrowser().isConnected());
       }));
 
@@ -73,7 +73,7 @@ void registerBrowserModule(Environment &env,
   // Navigation functions
   // =========================================================================
 
-  (*browserMod)["open"] = HavelValue(BuiltinFunction(
+  (*browserMod)["open"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("browser.open() requires URL");
@@ -82,13 +82,13 @@ void registerBrowserModule(Environment &env,
         return HavelValue(getBrowser().open(url));
       }));
 
-  (*browserMod)["newTab"] = HavelValue(BuiltinFunction(
+  (*browserMod)["newTab"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string url = args.empty() ? "" : valueToString(args[0]);
         return HavelValue(getBrowser().newTab(url));
       }));
 
-  (*browserMod)["goto"] = HavelValue(BuiltinFunction(
+  (*browserMod)["goto"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("browser.goto() requires URL");
@@ -98,17 +98,17 @@ void registerBrowserModule(Environment &env,
       }));
 
   (*browserMod)["back"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(getBrowser().back());
       }));
 
   (*browserMod)["forward"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(getBrowser().forward());
       }));
 
-  (*browserMod)["reload"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*browserMod)["reload"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         bool ignoreCache = !args.empty() && args[0].asBool();
         return HavelValue(getBrowser().reload(ignoreCache));
       }));
@@ -117,7 +117,7 @@ void registerBrowserModule(Environment &env,
   // Interaction functions
   // =========================================================================
 
-  (*browserMod)["click"] = HavelValue(BuiltinFunction(
+  (*browserMod)["click"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("browser.click() requires selector");
@@ -126,7 +126,7 @@ void registerBrowserModule(Environment &env,
         return HavelValue(getBrowser().click(selector));
       }));
 
-  (*browserMod)["type"] = HavelValue(BuiltinFunction(
+  (*browserMod)["type"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("browser.type() requires (selector, text)");
@@ -138,7 +138,7 @@ void registerBrowserModule(Environment &env,
 
   // Add the missing methods that are available in Browser class
 
-  (*browserMod)["evaluate"] = HavelValue(BuiltinFunction(
+  (*browserMod)["evaluate"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -149,7 +149,7 @@ void registerBrowserModule(Environment &env,
       }));
 
   (*browserMod)["getHtml"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         // Get HTML using JavaScript evaluation
         std::string html =
             getBrowser().eval("document.documentElement.outerHTML");
@@ -157,18 +157,18 @@ void registerBrowserModule(Environment &env,
       }));
 
   (*browserMod)["getUrl"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(getBrowser().getCurrentUrl());
       }));
 
-  (*browserMod)["screenshot"] = HavelValue(BuiltinFunction(
+  (*browserMod)["screenshot"] = HavelValue(makeBuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string path = args.empty() ? "" : valueToString(args[0]);
         return HavelValue(getBrowser().screenshot(path));
       }));
 
   (*browserMod)["getTitle"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(getBrowser().getTitle());
       }));
 

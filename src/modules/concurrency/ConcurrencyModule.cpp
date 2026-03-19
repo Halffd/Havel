@@ -19,7 +19,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // thread { ... } - Create a new thread
   env.Define(
       "thread",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty()) {
               return HavelRuntimeError("thread() requires a callback function");
@@ -42,7 +42,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // interval ms { ... } - Create a repeating timer
   env.Define(
       "interval",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2) {
               return HavelRuntimeError("interval() requires ms and callback");
@@ -69,7 +69,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // timeout ms { ... } - One-shot delayed execution
   env.Define(
       "timeout",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2) {
               return HavelRuntimeError("timeout() requires ms and callback");
@@ -96,7 +96,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Range type: start..end
   env.Define(
       "Range",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2) {
               return HavelRuntimeError("Range() requires start and end");
@@ -116,7 +116,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   // Helper: first_existing file path
   env.Define("firstExisting",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    for (const auto &arg : args) {
                      if (arg.isString()) {

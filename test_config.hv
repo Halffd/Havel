@@ -1,0 +1,6 @@
+// Test config.set functionality
+print("Before: " + config.get("Debug.VerboseKeyLogging"));
+config.set("Debug.VerboseKeyLogging", false);
+print("After set: " + config.get("Debug.VerboseKeyLogging"));
+config.set("Debug.VerboseKeyLogging", true);
+print("After second set: " + config.get("Debug.VerboseKeyLogging"));

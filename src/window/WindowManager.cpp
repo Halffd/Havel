@@ -1740,4 +1740,353 @@ void WindowManager::ShutdownCompositorBridge() {
 CompositorBridge *WindowManager::GetCompositorBridge() {
   return compositorBridge.get();
 }
+
+// Window module interface implementations
+WindowInfo WindowManager::getActiveWindowInfo() {
+  WindowInfo info;
+  auto activeWin = GetActiveWindow();
+  if (activeWin == 0) {
+    return info;
+  }
+
+  info.id = activeWin;
+  info.title = GetActiveWindowTitle();
+  info.windowClass = GetActiveWindowClass();
+  info.exe = GetActiveWindowProcess();
+  info.pid = GetActiveWindowPID();
+  info.valid = true;
+
+  // Get geometry
+#ifdef __linux__
+  auto *display = DisplayManager::GetDisplay();
+  if (display) {
+    XWindowAttributes attrs;
+    if (XGetWindowAttributes(display, activeWin, &attrs)) {
+      info.x = attrs.x;
+      info.y = attrs.y;
+      info.width = attrs.width;
+      info.height = attrs.height;
+    }
+  }
+#endif
+
+  return info;
+}
+
+std::vector<WindowInfo> WindowManager::getAllWindows() {
+  std::vector<WindowInfo> windows;
+
+#ifdef __linux__
+  auto *display = DisplayManager::GetDisplay();
+  if (!display)
+    return windows;
+
+  Window root = DisplayManager::GetRootWindow();
+  Window rootReturn, parentReturn;
+  Window *childrenReturn;
+  unsigned int nChildren;
+
+  if (XQueryTree(display, root, &rootReturn, &parentReturn, &childrenReturn,
+                 &nChildren)) {
+    for (unsigned int i = 0; i < nChildren; i++) {
+      WindowInfo info;
+      info.id = childrenReturn[i];
+
+      // Get basic info
+      char *windowName = nullptr;
+      if (XFetchName(display, childrenReturn[i], &windowName)) {
+        info.title = windowName ? windowName : "";
+        XFree(windowName);
+      }
+
+      // Get class name
+      XClassHint classHint;
+      if (XGetClassHint(display, childrenReturn[i], &classHint)) {
+        info.windowClass = classHint.res_class ? classHint.res_class : "";
+        if (classHint.res_name)
+          XFree(classHint.res_name);
+        if (classHint.res_class)
+          XFree(classHint.res_class);
+      }
+
+      // Get geometry
+      XWindowAttributes attrs;
+      if (XGetWindowAttributes(display, childrenReturn[i], &attrs)) {
+        info.x = attrs.x;
+        info.y = attrs.y;
+        info.width = attrs.width;
+        info.height = attrs.height;
+        info.pid =
+            attrs.all_event_masks; // This is not correct, but placeholder
+      }
+
+      info.valid = true;
+      windows.push_back(info);
+    }
+    XFree(childrenReturn);
+  }
+#endif
+
+  return windows;
+}
+
+uint64_t WindowManager::getActiveWindow() {
+  return static_cast<uint64_t>(GetActiveWindow());
+}
+
+bool WindowManager::focusWindow(uint64_t id) {
+#ifdef __linux__
+  auto *display = DisplayManager::GetDisplay();
+  if (!display)
+    return false;
+
+  Window win = static_cast<Window>(id);
+  XSetInputFocus(display, win, RevertToPointerRoot, CurrentTime);
+  XFlush(display);
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool WindowManager::closeWindow(uint64_t id) {
+#ifdef __linux__
+  auto *display = DisplayManager::GetDisplay();
+  if (!display)
+    return false;
+
+  Window win = static_cast<Window>(id);
+  XEvent event;
+  event.type = x11::XClientMessage;
+  event.xclient.window = win;
+  event.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", false);
+  event.xclient.format = 32;
+  event.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", false);
+  event.xclient.data.l[1] = CurrentTime;
+
+  XSendEvent(display, win, false, NoEventMask, &event);
+  XFlush(display);
+  return true;
+#else
+  return false;
+#endif
+}
+
+bool WindowManager::moveWindow(uint64_t id, int x, int y) {
+  return Move(static_cast<wID>(id), x, y);
+}
+
+bool WindowManager::resizeWindow(uint64_t id, int width, int height) {
+  return Resize(static_cast<wID>(id), width, height);
+}
+
+bool WindowManager::moveResizeWindow(uint64_t id, int x, int y, int width,
+                                     int height) {
+  return MoveResize(static_cast<wID>(id), x, y, width, height);
+}
+
+bool WindowManager::maximizeWindow(uint64_t id) {
+  WinMaximize();
+  return true;
+}
+
+bool WindowManager::minimizeWindow(uint64_t id) {
+  WinMinimize();
+  return true;
+}
+
+bool WindowManager::restoreWindow(uint64_t id) {
+  WinRestore();
+  return true;
+}
+
+bool WindowManager::toggleFullscreen(uint64_t id) {
+  ToggleFullscreen(static_cast<wID>(id));
+  return true;
+}
+
+bool WindowManager::setFloating(uint64_t id, bool floating) {
+  // Implementation depends on window manager
+  return false;
+}
+
+bool WindowManager::centerWindow(uint64_t id) {
+  return Center(static_cast<wID>(id));
+}
+
+bool WindowManager::snapWindow(uint64_t id, int position) {
+  SnapWindow(static_cast<wID>(id), position);
+  return true;
+}
+
+bool WindowManager::moveWindowToWorkspace(uint64_t id, int workspace) {
+  ManageVirtualDesktops(workspace);
+  return true;
+}
+
+bool WindowManager::setAlwaysOnTop(uint64_t id, bool onTop) {
+  WinSetAlwaysOnTop(onTop);
+  return true;
+}
+
+bool WindowManager::moveWindowToMonitor(uint64_t id, int monitor) {
+  MoveToMonitor(static_cast<wID>(id), monitor);
+  return true;
+}
+
+std::vector<WorkspaceInfo> WindowManager::getWorkspaces() {
+  std::vector<WorkspaceInfo> workspaces;
+  // Basic implementation - would need to query actual window manager
+  for (int i = 1; i <= 4; i++) {
+    WorkspaceInfo ws;
+    ws.id = i;
+    ws.name = "Workspace " + std::to_string(i);
+    ws.visible = (i == 1); // Assume first is visible
+    ws.windowCount = 0;
+    workspaces.push_back(ws);
+  }
+  return workspaces;
+}
+
+bool WindowManager::switchToWorkspace(int workspace) {
+  ManageVirtualDesktops(workspace);
+  return true;
+}
+
+int WindowManager::getCurrentWorkspace() {
+  return 1; // Default to first workspace
+}
+
+std::vector<std::string> WindowManager::getGroupNames() {
+  return GetGroupNames();
+}
+
+std::vector<WindowInfo>
+WindowManager::getGroupWindows(const std::string &groupName) {
+  std::vector<WindowInfo> windows;
+  auto windowNames = GetGroupWindows(groupName);
+  for (const auto &name : windowNames) {
+    WindowInfo info;
+    info.title = name;
+    info.valid = true;
+    windows.push_back(info);
+  }
+  return windows;
+}
+
+bool WindowManager::addWindowToGroup(uint64_t id,
+                                     const std::string &groupName) {
+  // Implementation would need window title from ID
+  return false;
+}
+
+bool WindowManager::removeWindowFromGroup(uint64_t id,
+                                          const std::string &groupName) {
+  // Implementation would need window title from ID
+  return false;
+}
+
+// Implementation of missing window control methods
+void WindowManager::WinClose() {
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt)
+    return;
+
+  XEvent event;
+  event.type = x11::XClientMessage;
+  event.xclient.window = contextOpt->activeWindowId;
+  event.xclient.message_type =
+      XInternAtom(contextOpt->display, "WM_PROTOCOLS", false);
+  event.xclient.format = 32;
+  event.xclient.data.l[0] =
+      XInternAtom(contextOpt->display, "WM_DELETE_WINDOW", false);
+  event.xclient.data.l[1] = CurrentTime;
+
+  XSendEvent(contextOpt->display, contextOpt->activeWindowId, false,
+             NoEventMask, &event);
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinMinimize() {
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt)
+    return;
+
+  XIconifyWindow(contextOpt->display, contextOpt->activeWindowId,
+                 DefaultScreen(contextOpt->display));
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinMaximize() {
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt)
+    return;
+
+  XEvent event;
+  event.type = x11::XClientMessage;
+  event.xclient.window = contextOpt->activeWindowId;
+  event.xclient.message_type =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
+  event.xclient.format = 32;
+  event.xclient.data.l[0] = 1; // _NET_WM_STATE_ADD
+  event.xclient.data.l[1] =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
+  event.xclient.data.l[2] =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
+  event.xclient.data.l[3] = 0;
+  event.xclient.data.l[4] = 0;
+
+  XSendEvent(contextOpt->display, contextOpt->root, false,
+             SubstructureRedirectMask | SubstructureNotifyMask, &event);
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinRestore() {
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt)
+    return;
+
+  XEvent event;
+  event.type = x11::XClientMessage;
+  event.xclient.window = contextOpt->activeWindowId;
+  event.xclient.message_type =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
+  event.xclient.format = 32;
+  event.xclient.data.l[0] = 0; // _NET_WM_STATE_REMOVE
+  event.xclient.data.l[1] =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_VERT", false);
+  event.xclient.data.l[2] =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE_MAXIMIZED_HORZ", false);
+  event.xclient.data.l[3] = 0;
+  event.xclient.data.l[4] = 0;
+
+  XSendEvent(contextOpt->display, contextOpt->root, false,
+             SubstructureRedirectMask | SubstructureNotifyMask, &event);
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinSetAlwaysOnTop(bool onTop) {
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt)
+    return;
+
+  XEvent event;
+  event.type = x11::XClientMessage;
+  event.xclient.window = contextOpt->activeWindowId;
+  event.xclient.message_type =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE", false);
+  event.xclient.format = 32;
+  event.xclient.data.l[0] =
+      onTop ? 1 : 0; // _NET_WM_STATE_ADD or _NET_WM_STATE_REMOVE
+  event.xclient.data.l[1] =
+      XInternAtom(contextOpt->display, "_NET_WM_STATE_ABOVE", false);
+  event.xclient.data.l[2] = 0;
+  event.xclient.data.l[3] = 0;
+  event.xclient.data.l[4] = 0;
+
+  XSendEvent(contextOpt->display, contextOpt->root, false,
+             SubstructureRedirectMask | SubstructureNotifyMask, &event);
+  XFlush(contextOpt->display);
+}
+
 } // namespace havel

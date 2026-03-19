@@ -4453,3 +4453,11 @@ void havel::IO::Scroll(int dy, int dx) {
     mouseController->Scroll(dy, dx);
   }
 }
+
+void havel::IO::SendKeyEvent(Key key, bool down) {
+  // Simple implementation using XTest extension
+  if (display) {
+    XTestFakeKeyEvent(display, key, down ? true : false, CurrentTime);
+    XFlush(display);
+  }
+}

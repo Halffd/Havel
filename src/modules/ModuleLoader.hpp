@@ -24,6 +24,7 @@ struct ModuleDescriptor {
   std::shared_ptr<IHostAPI> hostAPI;
   bool isLoaded = false;
 
+  ModuleDescriptor() = default;
   ModuleDescriptor(const std::string &name, const std::string &path,
                    std::shared_ptr<IHostAPI> hostAPI)
       : name(name), path(path), hostAPI(hostAPI) {}
@@ -34,6 +35,10 @@ class ModuleLoader {
 private:
   std::unordered_map<std::string, ModuleDescriptor> modules;
   std::vector<std::string> modulePaths;
+
+  // Grant access to loadAllModules function
+  friend void loadAllModules(Environment &env,
+                             std::shared_ptr<IHostAPI> hostAPI);
 
 public:
   ModuleLoader();
@@ -54,8 +59,19 @@ public:
   // Get list of loaded modules
   std::vector<std::string> getLoadedModules() const;
 
+  // Get discovered modules for external access
+  const std::unordered_map<std::string, ModuleDescriptor> &
+  getDiscoveredModules() const {
+    return modules;
+  }
+
   // Unload a module
   bool unloadModule(const std::string &moduleName);
+
+  // Register a module type
+  void registerModuleType(
+      const std::string &name,
+      std::function<bool(Environment &, std::shared_ptr<IHostAPI>)> loadFunc);
 };
 
 // Define alias to module member (supports dotted paths like "mouse.scroll")

@@ -10,6 +10,7 @@
 #include "core/io/Device.hpp"
 #include "core/io/MapManager.hpp"
 #include <algorithm>
+#include <chrono>
 #include <spdlog/spdlog.h>
 
 namespace havel::modules {
@@ -271,7 +272,7 @@ void registerMapManagerModule(Environment &env,
         mapping.name = sourceKey + " -> " + targetKey;
         mapping.sourceKey = sourceKey;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
 
         coreMapManager->AddMapping(profileId, mapping);
@@ -456,9 +457,10 @@ void registerMapManagerModule(Environment &env,
               }
               return HavelValue(targetArray);
             }());
-            (*mappingObj)["actionType"] = HavelValue(
+            (*mappingObj).operator[]("actionType") = HavelValue(
                 static_cast<double>(static_cast<int>(mapping->actionType)));
-            (*mappingObj)["autofire"] = HavelValue(mapping->autofire);
+            (*mappingObj).operator[]("autofire") =
+                HavelValue(mapping->autofire);
             (*mappingObj)["turbo"] = HavelValue(mapping->turbo);
             mappingsArray->push_back(HavelValue(mappingObj));
           }
@@ -513,7 +515,7 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(mappingObj);
       }));
 
-  (*mapmanagerObj)["filterMappings"] = HavelValue(
+  (*mapManagerObj)["filterMappings"] = HavelValue(
       BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
@@ -575,9 +577,10 @@ void registerMapManagerModule(Environment &env,
               }
               return HavelValue(targetArray);
             }());
-            (*mappingObj)["actionType"] = HavelValue(
+            (*mappingObj).operator[]("actionType") = HavelValue(
                 static_cast<double>(static_cast<int>(mapping->actionType)));
-            (*mappingObj)["autofire"] = HavelValue(mapping->autofire);
+            (*mappingObj).operator[]("autofire") =
+                HavelValue(mapping->autofire);
             (*mappingObj)["turbo"] = HavelValue(mapping->turbo);
             filteredArray->push_back(HavelValue(mappingObj));
           }
@@ -624,7 +627,7 @@ void registerMapManagerModule(Environment &env,
         mapping.name = sourceKey + " -> " + targetKey + " (conditional)";
         mapping.sourceKey = sourceKey;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
 
         // Parse condition type
@@ -680,7 +683,7 @@ void registerMapManagerModule(Environment &env,
         mapping.name = comboKeys + " -> " + targetKey + " (combo)";
         mapping.sourceKey = comboKeys; // Store combo as source
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::Combo;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
 
         coreMapManager->AddMapping(profileId, mapping);
@@ -712,7 +715,7 @@ void registerMapManagerModule(Environment &env,
         mapping.id = macroName;
         mapping.name = "Macro: " + macroName;
         mapping.sourceKey = macroName; // Trigger by macro name
-        mapping.type = MappingType::Macro;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Macro;
 
         // Initialize empty macro sequence (user will record later)
@@ -802,28 +805,32 @@ void registerMapManagerModule(Environment &env,
         std::vector<std::string> sourceKeys;
         if (args[1].is<std::shared_ptr<std::vector<HavelValue>>>()) {
           auto sourceArray =
-              args[1].as<std::shared_ptr<std::vector<HavelValue>>>();
+              args[1].get<std::shared_ptr<std::vector<HavelValue>>>();
           for (const auto &source : *sourceArray) {
-            if (source.isString()) {
+            if (source.is<std::string>()) {
               sourceKeys.push_back(source.asString());
             }
           }
         }
 
         std::string targetKey =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
 
         Mapping mapping;
         mapping.id =
-            "multi_" + std::to_string(QDateTime::currentMSecsSinceEpoch());
+            "multi_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name = "Multi-Source Mapping";
         mapping.sourceKeys = sourceKeys;
         mapping.sourceKey =
             sourceKeys.empty() ? "" : sourceKeys[0]; // Backward compatibility
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
 
         coreMapManager->AddMapping(profileId, mapping);
@@ -842,15 +849,15 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string sourceKey =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         std::string targetKey =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
 
@@ -859,7 +866,7 @@ void registerMapManagerModule(Environment &env,
         mapping.name = sourceKey + " -> " + targetKey + " (toggle)";
         mapping.sourceKey = sourceKey;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Toggle;
         mapping.toggleMode = true;
         mapping.toggleState = false;
@@ -881,24 +888,28 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string sourceKey =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         std::string scriptCode =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
 
         Mapping mapping;
-        mapping.id = "script_" + sourceKey + "_" +
-                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.id =
+            "script_" + sourceKey + "_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name = sourceKey + " -> Script Callback";
         mapping.sourceKey = sourceKey;
-        mapping.type = MappingType::Macro;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Macro;
         mapping.scriptCallback = scriptCode;
         mapping.useScriptCallback = true;
@@ -919,15 +930,15 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string mappingId =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         bool toggleState =
-            args[2].isBool() ? args[2].asBool() : (args[2].asNumber() != 0);
+            args[2].is<bool>() ? args[2].asBool() : (args[2].asNumber() != 0);
 
         auto *mapping = coreMapManager->GetMapping(profileId, mappingId);
         if (mapping) {
@@ -950,11 +961,11 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string mappingId =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
 
@@ -978,11 +989,11 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string mappingId =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
 
@@ -1014,27 +1025,31 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         int mouseButton = static_cast<int>(args[1].asNumber());
         std::string actionType =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
         std::string targetKey =
-            args[3].isString()
+            args[3].is<std::string>()
                 ? args[3].asString()
                 : std::to_string(static_cast<int>(args[3].asNumber()));
 
         Mapping mapping;
-        mapping.id = "mouse_" + std::to_string(mouseButton) + "_" +
-                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.id =
+            "mouse_" + std::to_string(mouseButton) + "_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name =
             "Mouse" + std::to_string(mouseButton) + " -> " + targetKey;
         mapping.sourceKey = "Mouse" + std::to_string(mouseButton);
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
         mapping.mouseBinding = true;
         mapping.mouseButton = mouseButton;
@@ -1057,29 +1072,33 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string direction =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         std::string actionType =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
         std::string targetKey =
-            args[3].isString()
+            args[3].is<std::string>()
                 ? args[3].asString()
                 : std::to_string(static_cast<int>(args[3].asNumber()));
 
         Mapping mapping;
-        mapping.id = "wheel_" + direction + "_" +
-                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.id =
+            "wheel_" + direction + "_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name = "MouseWheel" + direction + " -> " + targetKey;
         mapping.sourceKey = "MouseWheel" + direction;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::KeyToKey;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Press;
         mapping.mouseBinding = true;
 
@@ -1112,27 +1131,31 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string axis =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         float sensitivity = static_cast<float>(args[2].asNumber());
         float threshold = static_cast<float>(args[3].asNumber());
         std::string targetKey =
-            args[4].isString()
+            args[4].is<std::string>()
                 ? args[4].asString()
                 : std::to_string(static_cast<int>(args[4].asNumber()));
 
         Mapping mapping;
-        mapping.id = "move_" + axis + "_" +
-                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.id =
+            "move_" + axis + "_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name = "MouseMove" + axis + " -> " + targetKey;
         mapping.sourceKey = "MouseMove" + axis;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::MouseMove;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::MouseMove;
         mapping.mouseBinding = true;
         mapping.mouseMovement = true;
@@ -1157,15 +1180,15 @@ void registerMapManagerModule(Environment &env,
         }
 
         std::string profileId =
-            args[0].isString()
+            args[0].is<std::string>()
                 ? args[0].asString()
                 : std::to_string(static_cast<int>(args[0].asNumber()));
         std::string gestureName =
-            args[1].isString()
+            args[1].is<std::string>()
                 ? args[1].asString()
                 : std::to_string(static_cast<int>(args[1].asNumber()));
         std::string targetKey =
-            args[2].isString()
+            args[2].is<std::string>()
                 ? args[2].asString()
                 : std::to_string(static_cast<int>(args[2].asNumber()));
 
@@ -1175,7 +1198,7 @@ void registerMapManagerModule(Environment &env,
         if (args.size() > 3 &&
             args[3].is<std::shared_ptr<std::vector<HavelValue>>>()) {
           auto pointsArray =
-              args[3].as<std::shared_ptr<std::vector<HavelValue>>>();
+              args[3].get<std::shared_ptr<std::vector<HavelValue>>>();
           for (size_t i = 0; i < pointsArray->size(); i += 2) {
             if (i + 1 < pointsArray->size()) {
               int x = static_cast<int>((*pointsArray)[i].asNumber());
@@ -1186,12 +1209,16 @@ void registerMapManagerModule(Environment &env,
         }
 
         Mapping mapping;
-        mapping.id = "gesture_" + gestureName + "_" +
-                     std::to_string(QDateTime::currentMSecsSinceEpoch());
+        mapping.id =
+            "gesture_" + gestureName + "_" +
+            std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count());
         mapping.name = "Gesture" + gestureName + " -> " + targetKey;
         mapping.sourceKey = "Gesture" + gestureName;
         mapping.targetKeys.push_back(targetKey);
-        mapping.type = MappingType::Macro;
+        // mapping.type field doesn't exist
         mapping.actionType = ActionType::Macro;
         mapping.mouseBinding = true;
         mapping.mouseGesture = true;
@@ -1253,7 +1280,8 @@ void registerMapManagerModule(Environment &env,
 
         for (auto *mapping : mappings) {
           if (mapping->mouseBinding) {
-            auto mappingObj = std::make_shared<HavelObject>();
+            auto mappingObj =
+                std::make_shared<std::unordered_map<std::string, HavelValue>>();
             (*mappingObj)["id"] = HavelValue(mapping->id);
             (*mappingObj)["name"] = HavelValue(mapping->name);
             (*mappingObj)["sourceKey"] = HavelValue(mapping->sourceKey);
@@ -1319,7 +1347,8 @@ void registerMapManagerModule(Environment &env,
         }
 
         auto recordedKey = coreMapManager->GetLastRecordedKey();
-        auto keyObj = std::make_shared<HavelObject>();
+        auto keyObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
         (*keyObj)["keyName"] = HavelValue(recordedKey.keyName);
         (*keyObj)["keyCode"] =
@@ -1447,14 +1476,16 @@ void registerMapManagerModule(Environment &env,
         auto deviceArray = std::make_shared<std::vector<HavelValue>>();
 
         for (const auto &gamepad : gamepads) {
-          auto deviceObj = std::make_shared<HavelObject>();
+          auto deviceObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*deviceObj)["name"] = HavelValue(gamepad.name);
           (*deviceObj)["path"] = HavelValue(gamepad.eventPath);
           (*deviceObj)["type"] = HavelValue(static_cast<int>(gamepad.type));
           (*deviceObj)["confidence"] = HavelValue(gamepad.confidence);
 
           // Add capabilities
-          auto capsObj = std::make_shared<HavelObject>();
+          auto capsObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*capsObj)["totalKeys"] =
               HavelValue(static_cast<double>(gamepad.capabilities.totalKeys));
           (*capsObj)["gamepadButtons"] = HavelValue(
@@ -1497,7 +1528,8 @@ void registerMapManagerModule(Environment &env,
         auto deviceArray = std::make_shared<std::vector<HavelValue>>();
 
         for (const auto &device : allDevices) {
-          auto deviceObj = std::make_shared<HavelObject>();
+          auto deviceObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*deviceObj)["name"] = HavelValue(device.name);
           (*deviceObj)["path"] = HavelValue(device.eventPath);
           (*deviceObj)["type"] = HavelValue(static_cast<int>(device.type));
@@ -1506,7 +1538,8 @@ void registerMapManagerModule(Environment &env,
               HavelValue(device.classificationReason);
 
           // Add capabilities
-          auto capsObj = std::make_shared<HavelObject>();
+          auto capsObj =
+              std::make_shared<std::unordered_map<std::string, HavelValue>>();
           (*capsObj)["totalKeys"] =
               HavelValue(static_cast<double>(device.caps.totalKeys));
           (*capsObj)["gamepadButtons"] =
@@ -1527,10 +1560,11 @@ void registerMapManagerModule(Environment &env,
           (*capsObj)["hasMovement"] = HavelValue(device.caps.hasMovement);
           (*capsObj)["hasAbsoluteAxes"] =
               HavelValue(device.caps.hasAbsoluteAxes);
-            (*capsObj)["hasRelativeAxes"] = HavelValue(device.caps.hasRelativeAxes));
+          (*capsObj)["hasRelativeAxes"] =
+              HavelValue(device.caps.hasRelativeAxes);
 
-            (*deviceObj)["capabilities"] = HavelValue(capsObj);
-            deviceArray->push_back(HavelValue(deviceObj));
+          (*deviceObj)["capabilities"] = HavelValue(capsObj);
+          deviceArray->push_back(HavelValue(deviceObj));
         }
 
         return HavelValue(deviceArray);
@@ -1607,14 +1641,16 @@ void registerMapManagerModule(Environment &env,
           return HavelValue("Joystick/gamepad not found");
         }
 
-        auto infoObj = std::make_shared<HavelObject>();
+        auto infoObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*infoObj)["name"] = HavelValue(selectedGamepad.name);
         (*infoObj)["path"] = HavelValue(selectedGamepad.eventPath);
         (*infoObj)["type"] = HavelValue(static_cast<int>(selectedGamepad.type));
         (*infoObj)["confidence"] = HavelValue(selectedGamepad.confidence);
 
         // Add capabilities
-        auto capsObj = std::make_shared<HavelObject>();
+        auto capsObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*capsObj)["totalKeys"] = HavelValue(
             static_cast<double>(selectedGamepad.capabilities.totalKeys));
         (*capsObj)["gamepadButtons"] = HavelValue(

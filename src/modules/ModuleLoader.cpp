@@ -3,6 +3,7 @@
 // Simple, explicit, no magic
 
 #include "ModuleLoader.hpp"
+#include "../havel-lang/runtime/ModuleLoader.hpp"
 #include "HostModules.hpp"
 #include "havel-lang/runtime/Environment.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
@@ -32,8 +33,6 @@ ModuleLoader::ModuleLoader() {
   // Discover available modules
   discoverModules();
 }
-
-ModuleLoader::~ModuleLoader() = default;
 
 // Add module search path
 void ModuleLoader::addModulePath(const std::string &path) {
@@ -108,8 +107,8 @@ bool ModuleLoader::loadModule(const std::string &moduleName, Environment &env) {
 
 // Load all discovered modules
 void loadAllModules(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
-  // Create module loader
-  ModuleLoader loader;
+  // Create module loader using havel-lang version
+  havel::ModuleLoader loader;
 
   // Register and load stdlib modules
   registerStdLibModules(loader);
@@ -119,9 +118,10 @@ void loadAllModules(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   registerHostModules(loader);
   loadHostModules(env, loader, hostAPI);
 
-  // Load discovered modules
-  for (const auto &pair : loader.modules) {
-    loader.loadModule(pair.first, env);
+  // Load discovered modules using the modules ModuleLoader
+  modules::ModuleLoader modulesLoader;
+  for (const auto &pair : modulesLoader.getDiscoveredModules()) {
+    modulesLoader.loadModule(pair.first, env);
   }
 
   // =========================================================================

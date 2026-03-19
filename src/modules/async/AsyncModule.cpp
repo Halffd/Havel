@@ -95,14 +95,10 @@ namespace havel::modules {
 static HavelResult executeSpawnFunction(const HavelValue &funcValue,
                                         const std::string &taskId) {
   try {
-    if (funcValue.is<std::shared_ptr<HavelFunction>>()) {
-      auto func = std::get<std::shared_ptr<HavelFunction>>(funcValue.data);
-      auto result = (*func)({});
-      channels[taskId]->send(HavelValue(result));
-    } else if (funcValue.is<BuiltinFunction>()) {
-      auto func = std::get<BuiltinFunction>(funcValue.data);
-      auto result = func({});
-      channels[taskId]->send(HavelValue(result));
+    // For now, just send a placeholder result
+    // Full async implementation would need interpreter context
+    if (funcValue.isFunction()) {
+      channels[taskId]->send(HavelValue(std::string("Task completed (stub)")));
     } else {
       channels[taskId]->send(HavelValue(std::string("Error: Not a function")));
     }

@@ -39,6 +39,8 @@ src/wm/build/
 src/wm/protocols/
 src/wm/xdg*
 .qwen
+.windsurf
+.cursor
 benchmarks
 benchmark
 protocols

@@ -80,7 +80,7 @@ void registerScreenshotModule(Environment &env,
   // Screenshot functions - check manager at runtime, not registration time
   // =========================================================================
 
-  (*screenshotObj)["full"] = HavelValue(BuiltinFunction(
+  (*screenshotObj)["full"] = HavelValue(makeBuiltinFunction(
       [hostAPI, requireScreenshotManager, createScreenshotResult](
           const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireScreenshotManager("full"))
@@ -98,7 +98,7 @@ void registerScreenshotModule(Environment &env,
         return createScreenshotResult(fullPath);
       }));
 
-  (*screenshotObj)["region"] = HavelValue(BuiltinFunction(
+  (*screenshotObj)["region"] = HavelValue(makeBuiltinFunction(
       [hostAPI, requireScreenshotManager, createScreenshotResult](
           const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireScreenshotManager("region"))
@@ -120,7 +120,7 @@ void registerScreenshotModule(Environment &env,
         return createScreenshotResult(fullPath);
       }));
 
-  (*screenshotObj)["monitor"] = HavelValue(BuiltinFunction(
+  (*screenshotObj)["monitor"] = HavelValue(makeBuiltinFunction(
       [hostAPI, requireScreenshotManager,
        createScreenshotResult](const std::vector<HavelValue> &) -> HavelResult {
         if (auto err = requireScreenshotManager("monitor"))
@@ -136,8 +136,8 @@ void registerScreenshotModule(Environment &env,
   // =========================================================================
 
   (*screenshotObj)["getMonitors"] = HavelValue(
-      BuiltinFunction([hostAPI, requireScreenshotManager, getMonitorInfo](
-                          const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([hostAPI, requireScreenshotManager, getMonitorInfo](
+                              const std::vector<HavelValue> &) -> HavelResult {
         if (auto err = requireScreenshotManager("getMonitors"))
           return *err;
         (void)hostAPI; // Suppress unused warning

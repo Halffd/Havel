@@ -1,15 +1,15 @@
 #pragma once
+#include "../../host/HostContext.hpp"
+#include "ModuleLoader.hpp"
+#include "RuntimeServices.hpp"
 #include "ast/AST.h"
+#include "core/io/KeyTap.hpp"
 #include "lexer/Lexer.hpp"
 #include "parser/Parser.h"
+#include "semantic/SemanticAnalyzer.hpp"
 #include "types/HavelType.hpp"
 #include "utils/Logger.hpp"
 #include "utils/Util.hpp"
-#include "../../host/HostContext.hpp"
-#include "RuntimeServices.hpp"
-#include "ModuleLoader.hpp"
-#include "core/io/KeyTap.hpp"
-#include "semantic/SemanticAnalyzer.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -32,11 +32,11 @@ class IO;
 class HotkeyManager;
 class Environment;
 class Configs;
-class Interpreter;  // Forward declare for modules namespace
+class Interpreter; // Forward declare for modules namespace
 
 // HotkeyModule function - declared here to avoid circular dependency
 namespace modules {
-  void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);
+void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);
 }
 
 namespace ast {
@@ -50,12 +50,12 @@ public:
   size_t line = 0;
   size_t column = 0;
   bool hasLocation = false;
-  
-  HavelRuntimeError(const std::string& msg) 
-    : std::runtime_error(msg) {}
-  
-  HavelRuntimeError(const std::string& msg, size_t line, size_t column)
-    : std::runtime_error(msg), line(line), column(column), hasLocation(true) {}
+
+  HavelRuntimeError(const std::string &msg) : std::runtime_error(msg) {}
+
+  HavelRuntimeError(const std::string &msg, size_t line, size_t column)
+      : std::runtime_error(msg), line(line), column(column), hasLocation(true) {
+  }
 };
 
 // Forward declare types
@@ -92,8 +92,11 @@ struct HavelStructInstance {
   std::shared_ptr<std::unordered_map<std::string, HavelValue>> fields;
   std::shared_ptr<HavelStructType> structType;
 
-  HavelStructInstance(const std::string& type, std::shared_ptr<HavelStructType> st)
-      : typeName(type), fields(std::make_shared<std::unordered_map<std::string, HavelValue>>()), structType(st) {}
+  HavelStructInstance(const std::string &type,
+                      std::shared_ptr<HavelStructType> st)
+      : typeName(type),
+        fields(std::make_shared<std::unordered_map<std::string, HavelValue>>()),
+        structType(st) {}
 };
 
 // Return/break/continue value wrappers (must be defined BEFORE HavelResult)
@@ -109,9 +112,18 @@ struct ContinueValue {};
 using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue,
                                  BreakValue, ContinueValue>;
 
-// Function type (now HavelResult is known)
-using BuiltinFunction =
-    std::function<HavelResult(const std::vector<HavelValue> &)>;
+// Function type (now HavelResult is known) - use shared_ptr to prevent memory
+// leaks
+using BuiltinFunction = std::shared_ptr<
+    std::function<HavelResult(const std::vector<HavelValue> &)>>;
+
+// Helper to create BuiltinFunction from lambda (prevents memory leaks)
+template <typename Func>
+inline BuiltinFunction makeBuiltinFunction(Func &&func) {
+  return std::make_shared<
+      std::function<HavelResult(const std::vector<HavelValue> &)>>(
+      std::forward<Func>(func));
+}
 
 // Forward declaration for Promise
 // struct Promise; // Temporarily disabled to fix build
@@ -123,14 +135,15 @@ template <typename T> class Atomic;
 // Value type for interpreter
 using HavelValueBase =
     std::variant<std::nullptr_t, bool, int, double, std::string, HavelArray,
-                 HavelObject, HavelSet, HavelStructInstance, std::shared_ptr<HavelFunction>,
-                 std::shared_ptr<Channel>, BuiltinFunction>;
+                 HavelObject, HavelSet, HavelStructInstance,
+                 std::shared_ptr<HavelFunction>, std::shared_ptr<Channel>,
+                 BuiltinFunction>;
 
 /**
  * HavelValue with optional type annotation for gradual typing
  *
- * Types are metadata only - runtime representation stays dynamic (variant-based).
- * Type checking occurs based on TypeMode:
+ * Types are metadata only - runtime representation stays dynamic
+ * (variant-based). Type checking occurs based on TypeMode:
  * - None: ignore types entirely
  * - Warn: print warnings on mismatch
  * - Strict: runtime error on mismatch
@@ -138,7 +151,7 @@ using HavelValueBase =
 struct HavelValue {
   // The actual value (variant-based) - PRIVATE, use accessors
   HavelValueBase data;
-  
+
   // Optional type annotation for gradual typing
   std::optional<std::shared_ptr<HavelType>> annotatedType;
 
@@ -146,69 +159,81 @@ struct HavelValue {
   HavelValue() : data(nullptr), annotatedType(std::nullopt) {}
 
   // Copy constructor preserves type annotation
-  HavelValue(const HavelValue& other)
-    : data(other.data), annotatedType(other.annotatedType) {}
+  HavelValue(const HavelValue &other)
+      : data(other.data), annotatedType(other.annotatedType) {}
 
   // Move constructor preserves type annotation
-  HavelValue(HavelValue&& other) noexcept
-    : data(std::move(other.data)), annotatedType(std::move(other.annotatedType)) {}
+  HavelValue(HavelValue &&other) noexcept
+      : data(std::move(other.data)),
+        annotatedType(std::move(other.annotatedType)) {}
 
   // Assignment preserves type annotation
-  HavelValue& operator=(const HavelValue& other) {
+  HavelValue &operator=(const HavelValue &other) {
     data = other.data;
     annotatedType = other.annotatedType;
     return *this;
   }
 
   // Construct from base variant
-  HavelValue(HavelValueBase&& base) : data(std::move(base)), annotatedType(std::nullopt) {}
-  HavelValue(const HavelValueBase& base) : data(base), annotatedType(std::nullopt) {}
+  HavelValue(HavelValueBase &&base)
+      : data(std::move(base)), annotatedType(std::nullopt) {}
+  HavelValue(const HavelValueBase &base)
+      : data(base), annotatedType(std::nullopt) {}
 
   // Convenience constructors with optional type
-  HavelValue(std::nullptr_t, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(nullptr), annotatedType(type) {}
-  HavelValue(bool b, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(b), annotatedType(type) {}
-  HavelValue(int i, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(i), annotatedType(type) {}
-  HavelValue(double d, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(d), annotatedType(type) {}
-  HavelValue(const std::string& s, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(s), annotatedType(type) {}
-  HavelValue(HavelArray arr, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(std::move(arr)), annotatedType(type) {}
-  HavelValue(HavelObject obj, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(std::move(obj)), annotatedType(type) {}
-  HavelValue(HavelSet set, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(std::move(set)), annotatedType(type) {}
-  HavelValue(std::shared_ptr<HavelFunction> func, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(std::move(func)), annotatedType(type) {}
-  HavelValue(BuiltinFunction func, std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
-    : data(std::move(func)), annotatedType(type) {}
+  HavelValue(std::nullptr_t,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(nullptr), annotatedType(type) {}
+  HavelValue(bool b,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(b), annotatedType(type) {}
+  HavelValue(int i,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(i), annotatedType(type) {}
+  HavelValue(double d,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(d), annotatedType(type) {}
+  HavelValue(const std::string &s,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(s), annotatedType(type) {}
+  HavelValue(HavelArray arr,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(std::move(arr)), annotatedType(type) {}
+  HavelValue(HavelObject obj,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(std::move(obj)), annotatedType(type) {}
+  HavelValue(HavelSet set,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(std::move(set)), annotatedType(type) {}
+  HavelValue(std::shared_ptr<HavelFunction> func,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(std::move(func)), annotatedType(type) {}
+  HavelValue(BuiltinFunction func,
+             std::optional<std::shared_ptr<HavelType>> type = std::nullopt)
+      : data(std::move(func)), annotatedType(type) {}
 
   // ============================================================================
   // VARIANT ACCESSORS - Never access .data directly outside this class
   // ============================================================================
-  
-  template<typename T>
-  bool is() const { return std::holds_alternative<T>(data); }
-  
-  template<typename T>
-  const T& get() const { return std::get<T>(data); }
-  
-  template<typename T>
-  T& get() { return std::get<T>(data); }
-  
-  template<typename T>
-  const T* get_if() const { return std::get_if<T>(&data); }
-  
-  template<typename T>
-  T* get_if() { return std::get_if<T>(&data); }
+
+  template <typename T> bool is() const {
+    return std::holds_alternative<T>(data);
+  }
+
+  template <typename T> const T &get() const { return std::get<T>(data); }
+
+  template <typename T> T &get() { return std::get<T>(data); }
+
+  template <typename T> const T *get_if() const {
+    return std::get_if<T>(&data);
+  }
+
+  template <typename T> T *get_if() { return std::get_if<T>(&data); }
 
   // ============================================================================
   // SEMANTIC HELPERS - Intent-based access for common operations
   // ============================================================================
-  
+
   bool isNumber() const { return is<int>() || is<double>(); }
   bool isInt() const { return is<int>(); }
   bool isDouble() const { return is<double>(); }
@@ -218,32 +243,46 @@ struct HavelValue {
   bool isArray() const { return is<HavelArray>(); }
   bool isObject() const { return is<HavelObject>(); }
   bool isStructInstance() const { return is<HavelStructInstance>(); }
-  bool isFunction() const { return is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>(); }
-  
+  bool isFunction() const {
+    return is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>();
+  }
+
   // Get type name for error messages
   std::string typeName() const {
-    if (is<std::nullptr_t>()) return "null";
-    if (is<bool>()) return "bool";
-    if (is<int>() || is<double>()) return "number";
-    if (is<std::string>()) return "string";
-    if (is<HavelArray>()) return "array";
-    if (is<HavelObject>()) return "object";
-    if (is<HavelStructInstance>()) return "struct";
-    if (is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>()) return "function";
+    if (is<std::nullptr_t>())
+      return "null";
+    if (is<bool>())
+      return "bool";
+    if (is<int>() || is<double>())
+      return "number";
+    if (is<std::string>())
+      return "string";
+    if (is<HavelArray>())
+      return "array";
+    if (is<HavelObject>())
+      return "object";
+    if (is<HavelStructInstance>())
+      return "struct";
+    if (is<std::shared_ptr<HavelFunction>>() || is<BuiltinFunction>())
+      return "function";
     return "unknown";
   }
 
   double asNumber() const {
-    if (is<double>()) return get<double>();
-    if (is<int>()) return static_cast<double>(get<int>());
+    if (is<double>())
+      return get<double>();
+    if (is<int>())
+      return static_cast<double>(get<int>());
     return 0.0;
   }
 
-  const std::string& asString() const { return get<std::string>(); }
+  const std::string &asString() const { return get<std::string>(); }
   bool asBool() const { return get<bool>(); }
   HavelArray asArray() const { return get<HavelArray>(); }
   HavelObject asObject() const { return get<HavelObject>(); }
-  HavelStructInstance asStructInstance() const { return get<HavelStructInstance>(); }
+  HavelStructInstance asStructInstance() const {
+    return get<HavelStructInstance>();
+  }
 };
 
 // Cooperative async scheduler
@@ -375,7 +414,7 @@ public:
     int attempt = 0;
     while (lock.exchange(true)) {
       if (++attempt > 10) {
-        std::this_thread::yield();  // Yield to other threads
+        std::this_thread::yield(); // Yield to other threads
         attempt = 0;
       }
     }
@@ -389,7 +428,7 @@ public:
     int attempt = 0;
     while (lock.exchange(true)) {
       if (++attempt > 10) {
-        std::this_thread::yield();  // Yield to other threads
+        std::this_thread::yield(); // Yield to other threads
         attempt = 0;
       }
     }
@@ -410,7 +449,8 @@ public:
 // Environment.hpp which will transitively include this file.
 
 // Main Interpreter class implementing the visitor pattern
-class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<Interpreter> {
+class Interpreter : public ast::ASTVisitor,
+                    public std::enable_shared_from_this<Interpreter> {
   // Friend evaluators to access private members
   friend class ExprEvaluator;
   friend class StatementEvaluator;
@@ -419,37 +459,39 @@ class Interpreter : public ast::ASTVisitor, public std::enable_shared_from_this<
 
 public:
   // Full interpreter with HostContext
-  explicit Interpreter(HostContext ctx, const std::vector<std::string> &cli_args = {});
+  explicit Interpreter(HostContext ctx,
+                       const std::vector<std::string> &cli_args = {});
 
   // Minimal interpreter for pure script execution (no IO/hotkeys)
   explicit Interpreter(const std::vector<std::string> &cli_args = {});
 
   ~Interpreter() {
-    if (m_destroyed) m_destroyed->store(true);
-    
+    if (m_destroyed)
+      m_destroyed->store(true);
+
     // Clear in reverse order of dependency
-    environment.reset();           // Free all variables
+    environment.reset(); // Free all variables
     lastResult = HavelValue(nullptr);
-    
+
     // Clear HostContext components (stops threads, frees resources)
     hostContext.clear();
-    
+
     // Clear global interpreter reference to prevent dangling pointer
     havel::modules::SetHotkeyInterpreter(std::weak_ptr<Interpreter>());
   }
-  
+
   // Register this interpreter for hotkey callbacks (call AFTER construction)
   void RegisterForHotkeys();
 
   // Get environment
-  std::shared_ptr<Environment>& getEnvironment() { return environment; }
+  std::shared_ptr<Environment> &getEnvironment() { return environment; }
 
   // Get HostContext for module access
-  HostContext& getHostContext() { return hostContext; }
-  const HostContext& getHostContext() const { return hostContext; }
+  HostContext &getHostContext() { return hostContext; }
+  const HostContext &getHostContext() const { return hostContext; }
 
   // Evaluate condition expression (for mode detection)
-  bool evaluateCondition(const ast::Expression& expr);
+  bool evaluateCondition(const ast::Expression &expr);
 
   // Get window info via WindowMonitor (for condition evaluation)
   std::string getActiveWindowExe() const;
@@ -465,10 +507,11 @@ public:
 
   HavelResult Execute(const std::string &sourceCode);
   void RegisterHotkeys(const std::string &sourceCode);
-  
+
   // Call a function value (for hotkey callbacks)
-  HavelResult CallFunction(const HavelValue& func, const std::vector<HavelValue>& args);
-  
+  HavelResult CallFunction(const HavelValue &func,
+                           const std::vector<HavelValue> &args);
+
   // Debug control methods
   void setStopOnError(bool stop);
   bool getStopOnError() const { return stopOnError; }
@@ -490,8 +533,10 @@ public:
   void visitExpressionStatement(const ast::ExpressionStatement &node) override;
   void visitSleepStatement(const ast::SleepStatement &node) override;
   void visitBacktickExpression(const ast::BacktickExpression &node) override;
-  void visitShellCommandExpression(const ast::ShellCommandExpression &node) override;
-  void visitShellCommandStatement(const ast::ShellCommandStatement &node) override;
+  void
+  visitShellCommandExpression(const ast::ShellCommandExpression &node) override;
+  void
+  visitShellCommandStatement(const ast::ShellCommandStatement &node) override;
   void visitRepeatStatement(const ast::RepeatStatement &node) override;
   void visitInputStatement(const ast::InputStatement &node) override;
   void visitPipelineExpression(const ast::PipelineExpression &node) override;
@@ -518,13 +563,13 @@ public:
   void visitObjectLiteral(const ast::ObjectLiteral &node) override;
   void visitSpreadExpression(const ast::SpreadExpression &node) override;
   void visitConfigBlock(const ast::ConfigBlock &node) override;
-  
+
   // Helper method for nested config processing
   void processConfigPairs(
-      const std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>& pairs,
-      Configs& config,
-      const std::string& prefix);
-  
+      const std::vector<
+          std::pair<std::string, std::unique_ptr<ast::Expression>>> &pairs,
+      Configs &config, const std::string &prefix);
+
   void visitDevicesBlock(const ast::DevicesBlock &node) override;
   void visitModesBlock(const ast::ModesBlock &node) override;
   void visitSignalDefinition(const ast::SignalDefinition &node) override;
@@ -589,14 +634,15 @@ public:
   static bool ExecResultToBool(const HavelResult &result);
 
   // Helper method for format() builtin
-  std::string FormatValue(const HavelValue &value, const std::string &formatSpec);
+  std::string FormatValue(const HavelValue &value,
+                          const std::string &formatSpec);
 
   // Script auto-reload control (public API)
   void enableReload();
   void disableReload();
   void toggleReload();
   bool isReloadEnabled() const { return reloadEnabled.load(); }
-  void setScriptPath(const std::string& path) { scriptPath = path; }
+  void setScriptPath(const std::string &path) { scriptPath = path; }
   std::string getScriptPath() const { return scriptPath; }
   void startReloadWatcher();
   void stopReloadWatcher();
@@ -604,8 +650,8 @@ public:
 
 private:
   std::shared_ptr<Environment> environment;
-  HostContext hostContext;  // All host managers accessed via context
-  std::shared_ptr<IHostAPI> hostAPI;  // Keep HostAPI alive for module lambdas
+  HostContext hostContext;           // All host managers accessed via context
+  std::shared_ptr<IHostAPI> hostAPI; // Keep HostAPI alive for module lambdas
   HavelResult lastResult;
   std::mutex interpreterMutex;
 
@@ -643,25 +689,26 @@ private:
   std::atomic<bool> isFirstRun{true};
   std::filesystem::file_time_type lastModifiedTime;
   std::thread reloadWatcherThread;
-  std::atomic<bool> reloadWatcherRunning{false};  // Watcher thread control
-  std::mutex reloadMutex;  // Protect reload state
-  
+  std::atomic<bool> reloadWatcherRunning{false}; // Watcher thread control
+  std::mutex reloadMutex;                        // Protect reload state
+
   // on reload/on start handlers
   std::function<void()> onReloadHandler;
   std::function<void()> onStartHandler;
-  std::unordered_map<std::string, bool> runOnceExecuted;  // Track runOnce execution
+  std::unordered_map<std::string, bool>
+      runOnceExecuted; // Track runOnce execution
 
   int nextTimerId = 1;
   std::unordered_map<int, std::shared_ptr<std::atomic<bool>>> timers;
   std::mutex timersMutex; // Thread safety for timer operations
 
   HavelResult Evaluate(const ast::ASTNode &node);
-  
+
   // Type system helpers
-  std::shared_ptr<HavelType> resolveType(const ast::TypeDefinition& typeDef);
+  std::shared_ptr<HavelType> resolveType(const ast::TypeDefinition &typeDef);
 
   // KeyTap constructor for advanced hotkey functionality
-  KeyTap* createKeyTap(
+  KeyTap *createKeyTap(
       const std::string &keyName, std::function<void()> onTap,
       std::variant<std::string, std::function<bool()>> tapCondition = {},
       std::variant<std::string, std::function<bool()>> comboCondition = {},
@@ -669,20 +716,24 @@ private:
       bool grabUp = true);
 
   // Get shared pointer to destroyed flag for safe lambda capture
-  std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const { return m_destroyed; }
+  std::shared_ptr<std::atomic<bool>> getDestroyedFlag() const {
+    return m_destroyed;
+  }
 
   // Reload helper methods
   void executeOnStart();
   void executeOnReload();
-  bool hasRunOnce(const std::string& id);
-  void markRunOnce(const std::string& id);
-  void clearRunOnce(const std::string& id);
+  bool hasRunOnce(const std::string &id);
+  void markRunOnce(const std::string &id);
+  void clearRunOnce(const std::string &id);
 
 public:
   // Error formatting helpers - public for use by HavelLauncher
-  std::string formatErrorWithLocation(const std::string& message, size_t line, size_t column, const std::string& sourceCode);
-  void printError(const HavelResult& error, const std::string& sourceCode);
-  void printSourceWithContext(const std::string& sourceCode, size_t errorLine);
+  std::string formatErrorWithLocation(const std::string &message, size_t line,
+                                      size_t column,
+                                      const std::string &sourceCode);
+  void printError(const HavelResult &error, const std::string &sourceCode);
+  void printSourceWithContext(const std::string &sourceCode, size_t errorLine);
 
   // Debug options setter - public for use by HavelLauncher
   void setDebugParser(bool enable) { debug.parser = enable; }

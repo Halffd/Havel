@@ -15,7 +15,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   // mode.current - Get current mode name
-  (*modeObj)["current"] = HavelValue(BuiltinFunction(
+  (*modeObj)["current"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (modeManager) {
@@ -26,7 +26,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.get() - Alias for mode.current
-  (*modeObj)["get"] = HavelValue(BuiltinFunction(
+  (*modeObj)["get"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (modeManager) {
@@ -37,7 +37,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.previous - Get previous mode name
-  (*modeObj)["previous"] = HavelValue(BuiltinFunction(
+  (*modeObj)["previous"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (modeManager) {
@@ -47,7 +47,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.time(name) - Get time spent in mode
-  (*modeObj)["time"] = HavelValue(BuiltinFunction(
+  (*modeObj)["time"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (!modeManager) {
@@ -66,7 +66,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.transitions(name) - Get number of transitions
-  (*modeObj)["transitions"] = HavelValue(BuiltinFunction(
+  (*modeObj)["transitions"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (!modeManager) {
@@ -82,7 +82,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.set(name) - Set mode explicitly
-  (*modeObj)["set"] = HavelValue(BuiltinFunction(
+  (*modeObj)["set"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (!modeManager) {
@@ -97,7 +97,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.list() - List all defined modes
-  (*modeObj)["list"] = HavelValue(BuiltinFunction(
+  (*modeObj)["list"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (!modeManager) {
@@ -111,7 +111,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // mode.isSignal(name) - Check if signal is active
-  (*modeObj)["isSignal"] = HavelValue(BuiltinFunction(
+  (*modeObj)["isSignal"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (!modeManager) {

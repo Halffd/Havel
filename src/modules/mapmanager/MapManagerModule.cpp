@@ -57,7 +57,7 @@ void registerMapManagerModule(Environment &env,
   // Initialize MapManager
   // =========================================================================
 
-  (*mapManagerObj)["init"] = HavelValue(BuiltinFunction(
+  (*mapManagerObj)["init"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager && hostAPI->GetIO()) {
           coreMapManager = std::make_unique<MapManager>(hostAPI->GetIO());
@@ -117,8 +117,8 @@ void registerMapManagerModule(Environment &env,
   // Profile management
   // =========================================================================
 
-  (*mapManagerObj)["addProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addProfile"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -149,8 +149,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["removeProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["removeProfile"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -167,8 +167,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["setActiveProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setActiveProfile"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -186,7 +186,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["getActiveProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -194,7 +194,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["getProfileIds"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         auto arr = std::make_shared<std::vector<HavelValue>>();
         if (coreMapManager) {
           auto ids = coreMapManager->GetProfileIds();
@@ -206,7 +206,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["nextProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (coreMapManager) {
           coreMapManager->NextProfile();
         }
@@ -214,15 +214,15 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["previousProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (coreMapManager) {
           coreMapManager->PreviousProfile();
         }
         return HavelValue(nullptr);
       }));
 
-  (*mapManagerObj)["enableProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["enableProfile"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -244,8 +244,8 @@ void registerMapManagerModule(Environment &env,
   // Mapping management
   // =========================================================================
 
-  (*mapManagerObj)["addMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -279,8 +279,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["removeMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["removeMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -302,7 +302,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["clearAllMappings"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (coreMapManager) {
           coreMapManager->ClearAllMappings();
         }
@@ -313,8 +313,8 @@ void registerMapManagerModule(Environment &env,
   // Save/Load profiles
   // =========================================================================
 
-  (*mapManagerObj)["saveProfiles"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["saveProfiles"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -331,8 +331,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["loadProfiles"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["loadProfiles"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError("MapManager not initialized");
         }
@@ -350,7 +350,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["registerHotkeys"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -363,7 +363,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["getActiveProfile"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -397,7 +397,7 @@ void registerMapManagerModule(Environment &env,
   // =========================================================================
 
   (*mapManagerObj)["listProfiles"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -424,8 +424,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(profilesArray);
       }));
 
-  (*mapManagerObj)["getMappings"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getMappings"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -469,8 +469,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(mappingsArray);
       }));
 
-  (*mapManagerObj)["findMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["findMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -515,8 +515,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(mappingObj);
       }));
 
-  (*mapManagerObj)["filterMappings"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["filterMappings"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -593,8 +593,8 @@ void registerMapManagerModule(Environment &env,
   // Conditional Hotkeys and Combo Hotkeys Support
   // =========================================================================
 
-  (*mapManagerObj)["addConditionalMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addConditionalMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -654,8 +654,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addComboMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addComboMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -690,8 +690,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addMacroMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMacroMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -725,8 +725,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["startMacroRecording"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["startMacroRecording"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -746,7 +746,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   (*mapManagerObj)["stopMacroRecording"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -756,8 +756,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["saveMacro"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["saveMacro"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -784,8 +784,8 @@ void registerMapManagerModule(Environment &env,
   // JoyToKey-like Features
   // =========================================================================
 
-  (*mapManagerObj)["addMultiSourceMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMultiSourceMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -837,8 +837,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addToggleMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addToggleMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -875,8 +875,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addScriptCallbackMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addScriptCallbackMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -918,8 +918,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["setToggleState"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setToggleState"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -949,8 +949,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(false);
       }));
 
-  (*mapManagerObj)["getToggleState"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getToggleState"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -977,8 +977,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(false);
       }));
 
-  (*mapManagerObj)["evaluateScriptCallback"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["evaluateScriptCallback"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1012,8 +1012,8 @@ void registerMapManagerModule(Environment &env,
   // Mouse Binding Features
   // =========================================================================
 
-  (*mapManagerObj)["addMouseButtonMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMouseButtonMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1059,8 +1059,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addMouseWheelMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMouseWheelMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1118,8 +1118,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addMouseMoveMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMouseMoveMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1167,8 +1167,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["addMouseGestureMapping"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addMouseGestureMapping"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1229,8 +1229,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["setMouseSensitivity"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setMouseSensitivity"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1259,8 +1259,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(false);
       }));
 
-  (*mapManagerObj)["getMouseBindings"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getMouseBindings"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1307,8 +1307,8 @@ void registerMapManagerModule(Environment &env,
   // Key Recording Features
   // =========================================================================
 
-  (*mapManagerObj)["startKeyRecording"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["startKeyRecording"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1318,8 +1318,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["stopKeyRecording"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["stopKeyRecording"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1329,8 +1329,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["isKeyRecording"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["isKeyRecording"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1339,8 +1339,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(coreMapManager->IsKeyRecording());
       }));
 
-  (*mapManagerObj)["getLastRecordedKey"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getLastRecordedKey"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1361,8 +1361,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(keyObj);
       }));
 
-  (*mapManagerObj)["clearRecordedKey"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["clearRecordedKey"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1372,8 +1372,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(true);
       }));
 
-  (*mapManagerObj)["recordAndSetKey"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["recordAndSetKey"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1422,8 +1422,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Failed to update mapping");
       }));
 
-  (*mapManagerObj)["detectInputSource"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["detectInputSource"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1439,8 +1439,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(source);
       }));
 
-  (*mapManagerObj)["keyCodeToString"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["keyCodeToString"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1465,8 +1465,8 @@ void registerMapManagerModule(Environment &env,
   // Joystick/Gamepad Device Detection
   // =========================================================================
 
-  (*mapManagerObj)["detectJoystickDevices"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["detectJoystickDevices"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1517,8 +1517,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(deviceArray);
       }));
 
-  (*mapManagerObj)["getAllInputDevices"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getAllInputDevices"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1570,8 +1570,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(deviceArray);
       }));
 
-  (*mapManagerObj)["getJoystickCount"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getJoystickCount"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1581,8 +1581,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(static_cast<double>(gamepads.size()));
       }));
 
-  (*mapManagerObj)["isJoystickConnected"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["isJoystickConnected"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1592,8 +1592,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(!gamepads.empty());
       }));
 
-  (*mapManagerObj)["getJoystickInfo"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getJoystickInfo"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1685,8 +1685,8 @@ void registerMapManagerModule(Environment &env,
   // Autopress Toggle Functions
   // =========================================================================
 
-  (*mapManagerObj)["addAutopressToggle"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["addAutopressToggle"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1730,8 +1730,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autopress toggle mapping added");
       }));
 
-  (*mapManagerObj)["setAutopressInterval"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutopressInterval"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1749,8 +1749,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autopress interval updated");
       }));
 
-  (*mapManagerObj)["setAutopressTimeout"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutopressTimeout"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1768,8 +1768,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autopress timeout updated");
       }));
 
-  (*mapManagerObj)["setAutopressCondition"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutopressCondition"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1787,8 +1787,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autopress condition updated");
       }));
 
-  (*mapManagerObj)["isAutopressActive"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["isAutopressActive"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1804,8 +1804,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(isActive);
       }));
 
-  (*mapManagerObj)["stopAutopress"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["stopAutopress"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1824,8 +1824,8 @@ void registerMapManagerModule(Environment &env,
   // Configurable Autofire Functions
   // =========================================================================
 
-  (*mapManagerObj)["setAutofireRate"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutofireRate"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1842,8 +1842,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autofire rate updated");
       }));
 
-  (*mapManagerObj)["setAutofireBurstCount"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutofireBurstCount"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1860,8 +1860,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autofire burst count updated");
       }));
 
-  (*mapManagerObj)["setAutofireBurstDelay"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutofireBurstDelay"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1878,8 +1878,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autofire burst delay updated");
       }));
 
-  (*mapManagerObj)["setAutofireMode"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutofireMode"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1896,8 +1896,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autofire mode updated");
       }));
 
-  (*mapManagerObj)["setAutofireCondition"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["setAutofireCondition"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1914,8 +1914,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue("Autofire condition updated");
       }));
 
-  (*mapManagerObj)["getAutofireRate"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getAutofireRate"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1930,8 +1930,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(rate);
       }));
 
-  (*mapManagerObj)["getAutofireBurstCount"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getAutofireBurstCount"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1947,8 +1947,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(burstCount);
       }));
 
-  (*mapManagerObj)["getAutofireBurstDelay"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getAutofireBurstDelay"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1964,8 +1964,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(burstDelay);
       }));
 
-  (*mapManagerObj)["getAutofireMode"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["getAutofireMode"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1981,8 +1981,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(mode);
       }));
 
-  (*mapManagerObj)["isAutofireActive"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["isAutofireActive"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");
@@ -1997,8 +1997,8 @@ void registerMapManagerModule(Environment &env,
         return HavelValue(isActive);
       }));
 
-  (*mapManagerObj)["stopAutofire"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mapManagerObj)["stopAutofire"] = HavelValue(makeBuiltinFunction(
+      [](const std::vector<HavelValue> &args) -> HavelResult {
         if (!coreMapManager) {
           return HavelRuntimeError(
               "MapManager not initialized. Call mapmanager.init() first");

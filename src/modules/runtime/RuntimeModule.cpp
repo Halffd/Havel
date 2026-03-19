@@ -12,131 +12,145 @@
 
 namespace havel::modules {
 
-void registerRuntimeModule(Environment& env, Interpreter* interpreter) {
-    if (!interpreter) {
-        return;  // Can't register without interpreter
-    }
+void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
+  if (!interpreter) {
+    return; // Can't register without interpreter
+  }
 
-    // =========================================================================
-    // app.args - CLI arguments (stub - cliArgs is private in Interpreter)
-    // =========================================================================
+  // =========================================================================
+  // app.args - CLI arguments (stub - cliArgs is private in Interpreter)
+  // =========================================================================
 
-    auto argsArray = std::make_shared<std::vector<HavelValue>>();
-    // Note: Would need public accessor in Interpreter for cliArgs
+  auto argsArray = std::make_shared<std::vector<HavelValue>>();
+  // Note: Would need public accessor in Interpreter for cliArgs
 
-    auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
-    (*appObj)["args"] = HavelValue(argsArray);
-    
-    // =========================================================================
-    // app.enableReload/disableReload/toggleReload/reload
-    // =========================================================================
-    
-    (*appObj)["enableReload"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>&) -> HavelResult {
+  auto appObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  (*appObj)["args"] = HavelValue(argsArray);
+
+  // =========================================================================
+  // app.enableReload/disableReload/toggleReload/reload
+  // =========================================================================
+
+  (*appObj)["enableReload"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->enableReload();
         return HavelValue(true);
-    }));
-    
-    (*appObj)["disableReload"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>&) -> HavelResult {
+      }));
+
+  (*appObj)["disableReload"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->disableReload();
         return HavelValue(false);
-    }));
-    
-    (*appObj)["toggleReload"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>&) -> HavelResult {
+      }));
+
+  (*appObj)["toggleReload"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->toggleReload();
         return HavelValue(interpreter->isReloadEnabled());
-    }));
-    
-    (*appObj)["reload"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>& args) -> HavelResult {
+      }));
+
+  (*appObj)["reload"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() >= 1) {
-            if (auto b = args[0].get_if<bool>()) {
-                if (*b) {
-                    interpreter->enableReload();
-                } else {
-                    interpreter->disableReload();
-                }
+          if (auto b = args[0].get_if<bool>()) {
+            if (*b) {
+              interpreter->enableReload();
+            } else {
+              interpreter->disableReload();
             }
+          }
         }
         return HavelValue(interpreter->isReloadEnabled());
-    }));
-    
-    // =========================================================================
-    // runOnce(id, [command]) - Execute command only once per session
-    // Note: hasRunOnce/markRunOnce not yet implemented in Interpreter
-    // =========================================================================
+      }));
 
-    env.Define("runOnce", HavelValue(BuiltinFunction([](const std::vector<HavelValue>& args) -> HavelResult {
-        if (args.empty()) {
-            return HavelRuntimeError("runOnce requires an id and a command string");
-        }
+  // =========================================================================
+  // runOnce(id, [command]) - Execute command only once per session
+  // Note: hasRunOnce/markRunOnce not yet implemented in Interpreter
+  // =========================================================================
 
-        std::string id;
-        if (args[0].isString()) {
-            id = args[0].asString();
-        } else {
-            return HavelRuntimeError("runOnce: first argument must be a string id");
-        }
+  env.Define(
+      "runOnce",
+      HavelValue(makeBuiltinFunction(
+          [](const std::vector<HavelValue> &args) -> HavelResult {
+            if (args.empty()) {
+              return HavelRuntimeError(
+                  "runOnce requires an id and a command string");
+            }
 
-        // Note: Full implementation requires hasRunOnce/markRunOnce in Interpreter
-        // For now, just execute the command if provided
+            std::string id;
+            if (args[0].isString()) {
+              id = args[0].asString();
+            } else {
+              return HavelRuntimeError(
+                  "runOnce: first argument must be a string id");
+            }
 
-        // If there's a command string argument, execute it
-        if (args.size() >= 2) {
-            if (args[1].isString()) {
+            // Note: Full implementation requires hasRunOnce/markRunOnce in
+            // Interpreter For now, just execute the command if provided
+
+            // If there's a command string argument, execute it
+            if (args.size() >= 2) {
+              if (args[1].isString()) {
                 std::string cmd = args[1].asString();
                 auto result = Launcher::runShell(cmd);
                 if (result.success) {
-                    info("runOnce('{}'): Command executed successfully", id);
-                    return HavelValue(true);
+                  info("runOnce('{}'): Command executed successfully", id);
+                  return HavelValue(true);
                 } else {
-                    error("runOnce('{}'): Command failed: {}", id, result.error);
-                    return HavelValue(false);
+                  error("runOnce('{}'): Command failed: {}", id, result.error);
+                  return HavelValue(false);
                 }
-            } else {
-                return HavelRuntimeError("runOnce: second argument must be a command string");
+              } else {
+                return HavelRuntimeError(
+                    "runOnce: second argument must be a command string");
+              }
             }
-        }
 
-        return HavelValue(true);
-    })));
-    
-    // Register app module
-    env.Define("app", HavelValue(appObj));
-    
-    // =========================================================================
-    // Debug control functions
-    // =========================================================================
+            return HavelValue(true);
+          })));
 
-    auto debugObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
+  // Register app module
+  env.Define("app", HavelValue(appObj));
 
-    (*debugObj)["showAST"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>& args) -> HavelValue {
+  // =========================================================================
+  // Debug control functions
+  // =========================================================================
+
+  auto debugObj =
+      std::make_shared<std::unordered_map<std::string, HavelValue>>();
+
+  (*debugObj)["showAST"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-            if (auto b = args[0].get_if<bool>()) {
-                interpreter->setShowAST(*b);
-            }
+          if (auto b = args[0].get_if<bool>()) {
+            interpreter->setShowAST(*b);
+          }
         }
         return HavelValue(interpreter->getShowAST());
-    }));
+      }));
 
-    (*debugObj)["stopOnError"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>& args) -> HavelValue {
+  (*debugObj)["stopOnError"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
-            if (auto b = args[0].get_if<bool>()) {
-                interpreter->setStopOnError(*b);
-            }
+          if (auto b = args[0].get_if<bool>()) {
+            interpreter->setStopOnError(*b);
+          }
         }
         return HavelValue(interpreter->getStopOnError());
-    }));
+      }));
 
-    (*debugObj)["interpreterState"] = HavelValue(BuiltinFunction([interpreter](const std::vector<HavelValue>&) -> HavelValue {
+  (*debugObj)["interpreterState"] = HavelValue(makeBuiltinFunction(
+      [interpreter](const std::vector<HavelValue> &) -> HavelValue {
         return HavelValue(interpreter->getInterpreterState());
-    }));
+      }));
 
-    env.Define("debug", HavelValue(debugObj));
-    
-    // =========================================================================
-    // Register stdlib modules
-    // =========================================================================
-    
-    havel::stdlib::registerTypeModule(env);
+  env.Define("debug", HavelValue(debugObj));
+
+  // =========================================================================
+  // Register stdlib modules
+  // =========================================================================
+
+  havel::stdlib::registerTypeModule(env);
 }
 
 } // namespace havel::modules

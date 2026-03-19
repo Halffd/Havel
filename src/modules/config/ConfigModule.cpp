@@ -15,7 +15,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   // config.get(key) - Get config value
-  (*configObj)["get"] = HavelValue(BuiltinFunction(
+  (*configObj)["get"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!hostAPI) {
           return HavelRuntimeError("HostAPI not available");
@@ -37,7 +37,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // config.set(key, value) - Set config value
-  (*configObj)["set"] = HavelValue(BuiltinFunction(
+  (*configObj)["set"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!hostAPI) {
           return HavelRuntimeError("HostAPI not available");
@@ -63,7 +63,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // config.list(pattern) - List config keys matching pattern
-  (*configObj)["list"] = HavelValue(BuiltinFunction(
+  (*configObj)["list"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!hostAPI) {
           return HavelRuntimeError("HostAPI not available");
@@ -84,7 +84,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // config.load(path) - Load config from file
-  (*configObj)["load"] = HavelValue(BuiltinFunction(
+  (*configObj)["load"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!hostAPI) {
           return HavelRuntimeError("HostAPI not available");
@@ -101,7 +101,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // config.save(path) - Save config to file
-  (*configObj)["save"] = HavelValue(BuiltinFunction(
+  (*configObj)["save"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         if (!hostAPI) {
           return HavelRuntimeError("HostAPI not available");
@@ -119,7 +119,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
     auto nestedObj =
         std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-    (*nestedObj)["get"] = HavelValue(BuiltinFunction(
+    (*nestedObj)["get"] = HavelValue(makeBuiltinFunction(
         [hostAPI, prefix](const std::vector<HavelValue> &args) -> HavelResult {
           if (!hostAPI || args.empty()) {
             return HavelRuntimeError("config." + prefix +
@@ -131,7 +131,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           return !value.empty() ? HavelValue(value) : HavelValue(nullptr);
         }));
 
-    (*nestedObj)["set"] = HavelValue(BuiltinFunction(
+    (*nestedObj)["set"] = HavelValue(makeBuiltinFunction(
         [hostAPI, prefix](const std::vector<HavelValue> &args) -> HavelResult {
           if (!hostAPI || args.size() < 2) {
             return HavelRuntimeError("config." + prefix +
@@ -153,7 +153,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           return HavelValue(true);
         }));
 
-    (*nestedObj)["list"] = HavelValue(BuiltinFunction(
+    (*nestedObj)["list"] = HavelValue(makeBuiltinFunction(
         [hostAPI, prefix](const std::vector<HavelValue> &args) -> HavelResult {
           if (!hostAPI) {
             return HavelRuntimeError("HostAPI not available");

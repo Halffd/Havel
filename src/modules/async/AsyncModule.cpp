@@ -128,7 +128,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   env.Define("spawn",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError("spawn requires 1 argument");
@@ -151,7 +151,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                  })));
 
   env.Define("await",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError("await requires 1 argument");
@@ -173,8 +173,8 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "channel",
-      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
-                                     -> HavelResult {
+      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+                                         -> HavelResult {
         if (args.size() != 0) {
           return HavelRuntimeError("channel takes no arguments");
         }
@@ -192,7 +192,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
         // send(value) - send a value to the channel
-        (*channelObj)["send"] = HavelValue(BuiltinFunction(
+        (*channelObj)["send"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 1) {
                 return HavelRuntimeError("channel.send requires 1 argument");
@@ -214,7 +214,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             }));
 
         // receive() - receive a value from the channel (blocking)
-        (*channelObj)["receive"] = HavelValue(BuiltinFunction(
+        (*channelObj)["receive"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 0) {
                 return HavelRuntimeError("channel.receive takes no arguments");
@@ -230,7 +230,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             }));
 
         // tryReceive() - try to receive a value (non-blocking)
-        (*channelObj)["tryReceive"] = HavelValue(BuiltinFunction(
+        (*channelObj)["tryReceive"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 0) {
                 return HavelRuntimeError(
@@ -247,7 +247,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             }));
 
         // close() - close the channel
-        (*channelObj)["close"] = HavelValue(BuiltinFunction(
+        (*channelObj)["close"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 0) {
                 return HavelRuntimeError("channel.close takes no arguments");
@@ -264,7 +264,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             }));
 
         // isClosed() - check if channel is closed
-        (*channelObj)["isClosed"] = HavelValue(BuiltinFunction(
+        (*channelObj)["isClosed"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 0) {
                 return HavelRuntimeError("channel.isClosed takes no arguments");
@@ -280,7 +280,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             }));
 
         // size() - get queue size
-        (*channelObj)["size"] = HavelValue(BuiltinFunction(
+        (*channelObj)["size"] = HavelValue(makeBuiltinFunction(
             [channelId](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.size() != 0) {
                 return HavelRuntimeError("channel.size takes no arguments");
@@ -302,7 +302,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
       })));
 
   env.Define("yield",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 0) {
                      return HavelRuntimeError("yield takes no arguments");
@@ -328,7 +328,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    * - Rejects immediately when any input promise rejects
    */
   env.Define("Promise.all",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError(
@@ -356,7 +356,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "Promise.race",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() != 1) {
               return HavelRuntimeError(
@@ -382,8 +382,8 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "Promise.allSettled",
-      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
-                                     -> HavelResult {
+      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+                                         -> HavelResult {
         if (args.size() != 1) {
           return HavelRuntimeError(
               "Promise.allSettled requires 1 argument (array of promises)");
@@ -412,7 +412,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
       })));
 
   env.Define("Promise.any",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError(
@@ -438,7 +438,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                  })));
 
   env.Define("Promise.resolve",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError(
@@ -448,7 +448,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                  })));
 
   env.Define("Promise.reject",
-             HavelValue(BuiltinFunction(
+             HavelValue(makeBuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
                      return HavelRuntimeError(
@@ -471,7 +471,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    */
   env.Define(
       "sleep",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() != 1) {
               return HavelRuntimeError(
@@ -506,35 +506,35 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    */
   env.Define(
       "CancellationTokenSource",
-      HavelValue(BuiltinFunction(
-          [](const std::vector<HavelValue> &args) -> HavelResult {
-            // Create a shared state for the cancellation token
-            auto isCancelled = std::make_shared<std::atomic<bool>>(false);
+      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+                                         -> HavelResult {
+        // Create a shared state for the cancellation token
+        auto isCancelled = std::make_shared<std::atomic<bool>>(false);
 
-            // Create the token object
-            auto tokenObj =
-                std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        // Create the token object
+        auto tokenObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-            // isCancellationRequested property (getter)
-            (*tokenObj)["isCancellationRequested"] = HavelValue(BuiltinFunction(
-                [isCancelled](const std::vector<HavelValue> &) -> HavelResult {
-                  return HavelValue(isCancelled->load());
-                }));
+        // isCancellationRequested property (getter)
+        (*tokenObj)["isCancellationRequested"] = HavelValue(makeBuiltinFunction(
+            [isCancelled](const std::vector<HavelValue> &) -> HavelResult {
+              return HavelValue(isCancelled->load());
+            }));
 
-            // Create the source object
-            auto sourceObj =
-                std::make_shared<std::unordered_map<std::string, HavelValue>>();
-            (*sourceObj)["token"] = HavelValue(tokenObj);
+        // Create the source object
+        auto sourceObj =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*sourceObj)["token"] = HavelValue(tokenObj);
 
-            // cancel() method
-            (*sourceObj)["cancel"] = HavelValue(BuiltinFunction(
-                [isCancelled](const std::vector<HavelValue> &) -> HavelResult {
-                  isCancelled->store(true);
-                  return HavelValue(nullptr);
-                }));
+        // cancel() method
+        (*sourceObj)["cancel"] = HavelValue(makeBuiltinFunction(
+            [isCancelled](const std::vector<HavelValue> &) -> HavelResult {
+              isCancelled->store(true);
+              return HavelValue(nullptr);
+            }));
 
-            return HavelValue(sourceObj);
-          })));
+        return HavelValue(sourceObj);
+      })));
 
   /**
    * CancellationToken - Check if cancellation is requested
@@ -543,7 +543,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    */
   env.Define(
       "throwIfCancellationRequested",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() != 1) {
               return HavelRuntimeError(
@@ -568,7 +568,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
             // Call the isCancellationRequested getter
             if (it->second.is<BuiltinFunction>()) {
-              auto result = it->second.get<BuiltinFunction>()({});
+              auto result = (*it->second.get<BuiltinFunction>())({});
               if (std::holds_alternative<HavelValue>(result)) {
                 const auto &value = std::get<HavelValue>(result);
                 if (value.isBool() && value.get<bool>()) {
@@ -582,8 +582,8 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "withTimeout",
-      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
-                                     -> HavelResult {
+      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+                                         -> HavelResult {
         if (args.size() != 2) {
           return HavelRuntimeError(
               "withTimeout requires 2 arguments (timeoutMs, operation)");
@@ -606,7 +606,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
         // For now, just execute the operation synchronously
         if (args[1].is<BuiltinFunction>()) {
           auto func = args[1].get<BuiltinFunction>();
-          return func({});
+          return (*func)({});
         }
 
         return HavelValue(nullptr);
@@ -614,7 +614,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "withCancellation",
-      HavelValue(BuiltinFunction(
+      HavelValue(makeBuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() != 2) {
               return HavelRuntimeError(
@@ -640,7 +640,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             auto it = tokenObj->find("isCancellationRequested");
             if (it != tokenObj->end() && it->second.isFunction()) {
               if (it->second.is<BuiltinFunction>()) {
-                auto result = it->second.get<BuiltinFunction>()({});
+                auto result = (*it->second.get<BuiltinFunction>())({});
                 if (std::holds_alternative<HavelValue>(result)) {
                   const auto &value = std::get<HavelValue>(result);
                   if (value.isBool() && value.get<bool>()) {
@@ -653,7 +653,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             // Execute the operation
             if (args[1].is<BuiltinFunction>()) {
               auto func = args[1].get<BuiltinFunction>();
-              return func({});
+              return (*func)({});
             }
 
             return HavelValue(nullptr);

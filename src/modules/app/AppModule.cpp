@@ -24,7 +24,7 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // =========================================================================
 
   (*appObj)["quit"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         info("Quit requested - performing hard exit");
 
         // TODO: Stop EventListener before exit when implemented
@@ -39,7 +39,7 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // =========================================================================
 
   (*appObj)["restart"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         info("Restart requested");
 
         // TODO: Stop EventListener before restart when implemented
@@ -60,7 +60,7 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // =========================================================================
 
   (*appObj)["info"] = HavelValue(
-      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         auto infoObj =
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
@@ -80,7 +80,7 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // app.args - Get command line arguments
   // =========================================================================
 
-  (*appObj)["args"] = HavelValue(BuiltinFunction(
+  (*appObj)["args"] = HavelValue(makeBuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         // Get command line arguments from HostAPI
         if (!hostAPI) {

@@ -235,9 +235,12 @@ void HavelApp::initializeComponents(bool isStartup) {
   interpreter->getHostContext().hotkeyManager = hotkeyManager;
   interpreter->getHostContext().modeManager = hotkeyManager->getModeManager();
 
-  // Update HostAPI with hotkeyManager (HostAPI was created with nullptr)
+  // Update HostAPI with hotkeyManager and modeManager (HostAPI was created with
+  // nullptr)
   if (interpreter->getHostAPI()) {
     interpreter->getHostAPI()->SetHotkeyManager(hotkeyManager.get());
+    interpreter->getHostAPI()->SetModeManager(
+        hotkeyManager->getModeManager().get());
   }
 
   // Set interpreter in hotkeyManager for condition evaluation

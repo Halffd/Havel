@@ -168,6 +168,8 @@ void HostAPI::SetHotkeyManager(HotkeyManager *hm) { hotkeyManager = hm; }
 
 void HostAPI::SetIO(IO *newIo) { io = newIo; }
 
+void HostAPI::SetModeManager(ModeManager *mm) { modeManager = mm; }
+
 // Command line arguments access
 const std::vector<std::string> &HostAPI::GetCommandLineArgs() {
   return commandLineArgs;

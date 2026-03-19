@@ -37,7 +37,8 @@ extern std::string CONFIG_DIR;
 extern std::string MAIN_CONFIG;
 extern std::string HOTKEYS_DIR;
 
-void SetConfigPath(const std::string &path, const std::string &basename = "havel.cfg");
+void SetConfigPath(const std::string &path,
+                   const std::string &basename = "havel.cfg");
 std::string GetConfigPath();
 std::string GetConfigPath(const std::string &filename);
 void EnsureConfigDir();
@@ -77,32 +78,41 @@ public:
   void EnsureConfigFile(const std::string &filename = "havel.cfg");
 
   // Config access
-  template <typename T> T Get(const std::string &key, const T &defaultVal) const {
+  template <typename T>
+  T Get(const std::string &key, const T &defaultVal) const {
     return config.get<T>(key, defaultVal);
   }
-  
+
   void Set(const std::string &key, const std::string &value, bool save = false);
 
   // Convenience setters for numeric types
-  template <typename T> void Set(const std::string &key, const T &value, bool save = false) {
+  template <typename T>
+  void Set(const std::string &key, const T &value, bool save = false) {
+    std::cerr << "Set template called with type: " << typeid(T).name()
+              << std::endl;
     config.set<T>(key, value);
-    if (save) RequestSave();
+    if (save)
+      RequestSave();
   }
-  
+
   // Batch mode - use RequestSave() for multiple changes
-  void BeginBatch() { savePending = false; }  // Disable auto-save
-  void EndBatch() { RequestSave(); }  // Save all changes at once
+  void BeginBatch() { savePending = false; } // Disable auto-save
+  void EndBatch() { RequestSave(); }         // Save all changes at once
 
   // Get all config keys
-  std::vector<std::string> GetAllKeys() const {
-    return config.keys();
-  }
+  std::vector<std::string> GetAllKeys() const { return config.keys(); }
 
   // Convenience getters
-  bool GetVerboseKeyLogging() const { return Get<bool>("Debug.VerboseKeyLogging", false); }
-  bool GetVerboseWindowLogging() const { return Get<bool>("Debug.VerboseWindowLogging", false); }
-  bool GetVerboseConditionLogging() const { return Get<bool>("Debug.VerboseConditionLogging", false); }
-  
+  bool GetVerboseKeyLogging() const {
+    return Get<bool>("Debug.VerboseKeyLogging", false);
+  }
+  bool GetVerboseWindowLogging() const {
+    return Get<bool>("Debug.VerboseWindowLogging", false);
+  }
+  bool GetVerboseConditionLogging() const {
+    return Get<bool>("Debug.VerboseConditionLogging", false);
+  }
+
   // Gaming apps helpers
   std::vector<std::string> GetGamingApps() const {
     std::string apps = Get<std::string>("General.GamingApps", "");
@@ -110,7 +120,8 @@ public:
     std::stringstream ss(apps);
     std::string item;
     while (std::getline(ss, item, ',')) {
-      if (!item.empty()) result.push_back(item);
+      if (!item.empty())
+        result.push_back(item);
     }
     return result;
   }
@@ -120,7 +131,8 @@ public:
     std::stringstream ss(apps);
     std::string item;
     while (std::getline(ss, item, ',')) {
-      if (!item.empty()) result.push_back(item);
+      if (!item.empty())
+        result.push_back(item);
     }
     return result;
   }
@@ -130,7 +142,8 @@ public:
     std::stringstream ss(apps);
     std::string item;
     while (std::getline(ss, item, ',')) {
-      if (!item.empty()) result.push_back(item);
+      if (!item.empty())
+        result.push_back(item);
     }
     return result;
   }
@@ -140,11 +153,12 @@ public:
     std::stringstream ss(apps);
     std::string item;
     while (std::getline(ss, item, ',')) {
-      if (!item.empty()) result.push_back(item);
+      if (!item.empty())
+        result.push_back(item);
     }
     return result;
   }
-  
+
   // Get all config key-value pairs
   std::vector<std::string> GetConfigs() const {
     std::vector<std::string> configs;
@@ -172,7 +186,7 @@ public:
 
   // Debounced save - call this instead of Save(true) for batch operations
   void RequestSave();
-  void ForceSave();  // Immediate save, cancels pending save
+  void ForceSave(); // Immediate save, cancels pending save
 
   // Debug
   void Print() const;
@@ -182,11 +196,12 @@ public:
 
 private:
   // File system helpers
-  std::filesystem::file_time_type GetLastModified(const std::string &filepath) const;
+  std::filesystem::file_time_type
+  GetLastModified(const std::string &filepath) const;
 
   // Members
   std::string path;
-  ConfigObject config;  // Use ConfigObject instead of raw map
+  ConfigObject config; // Use ConfigObject instead of raw map
   std::map<std::string, WatchCallback> watchers;
 
   // File watching
@@ -198,14 +213,15 @@ private:
   std::atomic<bool> savePending{false};
   std::thread saveThread;
   std::mutex saveMutex;
-  static constexpr int SAVE_DELAY_MS = 500;  // Debounce delay
+  static constexpr int SAVE_DELAY_MS = 500; // Debounce delay
 };
 
 // Inline implementation for Set (needs to call Save which is in cpp)
-inline void Configs::Set(const std::string &key, const std::string &value, bool save) {
+inline void Configs::Set(const std::string &key, const std::string &value,
+                         bool save) {
   config.set(key, value);
   if (save) {
-    RequestSave();  // Use debounced save
+    RequestSave(); // Use debounced save
   }
   // Notify watchers
   for (auto &[watchKey, callback] : watchers) {
@@ -225,7 +241,8 @@ inline void BackupConfig(const std::string &path = "havel.cfg") {
   try {
     fs::path backupPath = configPath + ".bak";
     if (fs::exists(configPath)) {
-      fs::copy_file(configPath, backupPath, fs::copy_options::overwrite_existing);
+      fs::copy_file(configPath, backupPath,
+                    fs::copy_options::overwrite_existing);
     }
   } catch (const fs::filesystem_error &e) {
     std::cerr << "Config backup failed: " << e.what() << "\n";
@@ -238,7 +255,8 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
   try {
     fs::path backupPath = configPath + ".bak";
     if (fs::exists(backupPath)) {
-      fs::copy_file(backupPath, configPath, fs::copy_options::overwrite_existing);
+      fs::copy_file(backupPath, configPath,
+                    fs::copy_options::overwrite_existing);
     }
   } catch (const fs::filesystem_error &e) {
     std::cerr << "Config restore failed: " << e.what() << "\n";
@@ -249,29 +267,30 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
 
 // Global config instance
 namespace havel {
-extern Configs& g_Configs;
+extern Configs &g_Configs;
 } // namespace havel
 
 // Helper function to access config
-inline havel::Configs& Conf() { return havel::g_Configs; }
+inline havel::Configs &Conf() { return havel::g_Configs; }
 
 // Template specializations for Configs::Convert
 namespace havel {
 template <> inline bool Configs::Convert<bool>(const std::string &val) {
-    std::string lower = val;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
+  std::string lower = val;
+  std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+  return (lower == "true" || lower == "yes" || lower == "1" || lower == "on");
 }
 template <> inline int Configs::Convert<int>(const std::string &val) {
-    return std::stoi(val);
+  return std::stoi(val);
 }
 template <> inline double Configs::Convert<double>(const std::string &val) {
-    return std::stod(val);
+  return std::stod(val);
 }
 template <> inline float Configs::Convert<float>(const std::string &val) {
-    return std::stof(val);
+  return std::stof(val);
 }
-template <> inline std::string Configs::Convert<std::string>(const std::string &val) {
-    return val;
+template <>
+inline std::string Configs::Convert<std::string>(const std::string &val) {
+  return val;
 }
 } // namespace havel

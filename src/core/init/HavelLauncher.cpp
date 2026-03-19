@@ -287,7 +287,25 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       // Run without Qt - pure script execution
       info("No hotkeys or GUI operations detected - running in headless mode");
 
-      havel::Interpreter interpreter;
+      // Initialize config for headless mode
+      auto &config = havel::Configs::Get();
+      config.EnsureConfigFile();
+      config.Load();
+
+      // Create minimal host context for headless mode
+      havel::HostContext ctx;
+      ctx.io = nullptr; // No IO in headless mode
+      ctx.windowManager = nullptr;
+      ctx.hotkeyManager = nullptr;
+      ctx.modeManager = nullptr;
+      ctx.brightnessManager = nullptr;
+      ctx.audioManager = nullptr;
+      ctx.guiManager = nullptr;
+      ctx.screenshotManager = nullptr;
+      ctx.clipboardManager = nullptr;
+      ctx.pixelAutomation = nullptr;
+
+      havel::Interpreter interpreter(ctx);
       interpreter.setScriptPath(cfg.scriptFile);
       interpreter.setDebugParser(cfg.debugParser);
       interpreter.setStopOnError(cfg.stopOnError);

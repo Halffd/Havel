@@ -50,7 +50,15 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         HavelValue value = args[1];
         auto &config = hostAPI->GetConfig();
 
-        config.Set(key, value);
+        // Convert HavelValue to appropriate type and set config
+        if (value.isBool()) {
+          config.Set<bool>(key, value.asBool());
+        } else if (value.isNumber()) {
+          config.Set<double>(key, value.asNumber());
+        } else {
+          config.Set<std::string>(key, value.asString());
+        }
+        config.ForceSave();
         return HavelValue(true);
       }));
 
@@ -130,8 +138,18 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
                                      ".set() requires key and value");
           }
           std::string key = prefix + "." + args[0].asString();
+          HavelValue value = args[1];
           auto &config = hostAPI->GetConfig();
-          config.Set(key, args[1]);
+
+          // Convert HavelValue to appropriate type and set config
+          if (value.isBool()) {
+            config.Set<bool>(key, value.asBool());
+          } else if (value.isNumber()) {
+            config.Set<double>(key, value.asNumber());
+          } else {
+            config.Set<std::string>(key, value.asString());
+          }
+          config.ForceSave();
           return HavelValue(true);
         }));
 

@@ -124,6 +124,7 @@ public:
   // Update manager pointers (called after managers are created)
   virtual void SetHotkeyManager(class HotkeyManager *hm) = 0;
   virtual void SetIO(class IO *io) = 0;
+  virtual void SetModeManager(class ModeManager *mm) = 0;
 };
 
 /**
@@ -211,6 +212,7 @@ public:
   // Update manager pointers (called after managers are created)
   void SetHotkeyManager(class HotkeyManager *hm) override;
   void SetIO(class IO *io) override;
+  void SetModeManager(class ModeManager *mm) override;
 
 private:
   class IO *io;

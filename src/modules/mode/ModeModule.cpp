@@ -19,7 +19,19 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
         if (modeManager) {
-          return HavelValue(modeManager->getCurrentMode());
+          std::string currentMode = modeManager->getCurrentMode();
+          return HavelValue(currentMode.empty() ? "default" : currentMode);
+        }
+        return HavelValue("default");
+      }));
+
+  // mode.get() - Alias for mode.current
+  (*modeObj)["get"] = HavelValue(BuiltinFunction(
+      [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
+        auto modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
+        if (modeManager) {
+          std::string currentMode = modeManager->getCurrentMode();
+          return HavelValue(currentMode.empty() ? "default" : currentMode);
         }
         return HavelValue("default");
       }));

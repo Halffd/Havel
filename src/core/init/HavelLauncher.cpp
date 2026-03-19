@@ -7,6 +7,7 @@
 #include "utils/Logger.hpp"
 #include <QApplication>
 #include <QProcess>
+#include <csignal>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -310,6 +311,29 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   std::stringstream buffer;
   buffer << file.rdbuf();
   std::string code = buffer.str();
+
+  // Set up signal handling for headless mode
+  struct sigaction sa;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_handler = [](int sig) {
+    switch (sig) {
+    case SIGINT:
+      info("Received SIGINT (Ctrl+C) - shutting down headless mode");
+      break;
+    case SIGTERM:
+      info("Received SIGTERM - shutting down headless mode");
+      break;
+    default:
+      info("Received signal {} - shutting down headless mode", sig);
+      break;
+    }
+    std::exit(0); // Graceful exit
+  };
+
+  sigaction(SIGINT, &sa, nullptr);
+  sigaction(SIGTERM, &sa, nullptr);
+  info("Signal handling initialized for headless mode");
 
   // Create minimal interpreter without IO/hotkeys
   havel::Interpreter interpreter;

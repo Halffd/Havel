@@ -8,7 +8,6 @@ class HavelLauncher {
 public:
   enum class Mode {
     DAEMON,          // Full system with hotkeys + GUI (default)
-    GUI_ONLY,        // Just GUI tools
     SCRIPT,          // Execute .hv script file with full IO
     SCRIPT_ONLY,     // Execute .hv script without IO/hotkeys (pure testing)
     REPL,            // Interactive REPL

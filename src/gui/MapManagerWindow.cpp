@@ -414,12 +414,12 @@ void MapManagerWindow::onRenameProfile() {
       QString::fromStdString(profile->name), &ok);
 
   if (ok && !newName.isEmpty()) {
-    Profile updatedProfile = *profile;
-    updatedProfile.name = newName.toStdString();
-
-    mapManager->UpdateProfile(currentProfileId, updatedProfile);
-    refreshProfileList();
-    lblStatus->setText("Profile renamed: " + newName);
+    Profile *profile = mapManager->GetProfile(currentProfileId);
+    if (profile) {
+      profile->name = newName.toStdString();
+      refreshProfileList();
+      lblStatus->setText("Profile renamed: " + newName);
+    }
   }
 }
 

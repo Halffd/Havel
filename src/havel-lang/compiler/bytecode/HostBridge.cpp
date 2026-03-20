@@ -3,6 +3,7 @@
 #include "host/io/IOService.hpp"
 #include "host/hotkey/HotkeyService.hpp"
 #include "host/window/WindowService.hpp"
+#include "host/mode/ModeService.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
@@ -518,10 +519,13 @@ BytecodeValue HostBridgeRegistry::handleModeDefine(
 BytecodeValue HostBridgeRegistry::handleModeSet(
     const std::vector<BytecodeValue> &args) {
   const auto mode_name = requireStringArg(args, 0, "mode.set");
-  if (!deps_.mode_manager) {
+  if (deps_.mode_service) {
+    deps_.mode_service->setMode(mode_name);
+  } else if (deps_.mode_manager) {
+    deps_.mode_manager->setMode(mode_name);
+  } else {
     throw std::runtime_error("mode manager unavailable");
   }
-  deps_.mode_manager->setMode(mode_name);
   return BytecodeValue(true);
 }
 

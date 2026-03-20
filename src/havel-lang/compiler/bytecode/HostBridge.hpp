@@ -20,6 +20,7 @@ namespace host {
 class IOService;
 class HotkeyService;
 class WindowService;
+class ModeService;
 } // namespace host
 } // namespace havel
 
@@ -36,6 +37,7 @@ struct HostBridgeDependencies {
   std::shared_ptr<host::IOService> io_service;
   std::shared_ptr<host::HotkeyService> hotkey_service;
   std::shared_ptr<host::WindowService> window_service;
+  std::shared_ptr<host::ModeService> mode_service;
 };
 
 class HostBridgeRegistry

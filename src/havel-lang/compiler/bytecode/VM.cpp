@@ -92,8 +92,15 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
 }
 } // namespace
 
-VM::VM() : current_chunk(nullptr) {
+VM::VM() {
   registerDefaultHostFunctions();
+}
+
+VM::~VM() {
+  if (heap_.externalRootCount() > 0) {
+    std::cerr << "[VM][GC] Warning: " << heap_.externalRootCount()
+              << " external roots still pinned at VM shutdown" << std::endl;
+  }
 }
 
 template <typename T>
@@ -157,13 +164,15 @@ bool VM::hasHostFunction(const std::string &name) const {
 }
 
 uint64_t VM::pinExternalRoot(const BytecodeValue &value) {
-  const uint64_t id = next_external_root_id_++;
-  external_roots_[id] = value;
-  return id;
+  return heap_.pinExternalRoot(value);
 }
 
 bool VM::unpinExternalRoot(uint64_t root_id) {
-  return external_roots_.erase(root_id) > 0;
+  return heap_.unpinExternalRoot(root_id);
+}
+
+std::optional<BytecodeValue> VM::externalRootValue(uint64_t root_id) const {
+  return heap_.externalRoot(root_id);
 }
 
 void VM::registerDefaultHostFunctions() {
@@ -205,7 +214,7 @@ void VM::registerDefaultHostFunctions() {
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,
-                                                           uint32_t arg_count) {
+                                     uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
     throw std::runtime_error("Host function not found: " + name);
@@ -238,18 +247,8 @@ BytecodeValue VM::execute(
   }
   locals.clear();
   frames.clear();
-  closures.clear();
+  heap_.reset();
   open_upvalues.clear();
-  next_closure_id = 1;
-  arrays_.clear();
-  objects_.clear();
-  sets_.clear();
-  next_array_id_ = 1;
-  next_object_id_ = 1;
-  next_set_id_ = 1;
-  gc_allocations_since_last_ = 0;
-  external_roots_.clear();
-  next_external_root_id_ = 1;
   opcode_counts_.fill(0);
   executed_instructions_ = 0;
 
@@ -336,11 +335,11 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
     function_index = std::get<FunctionObject>(callee_value).function_index;
   } else if (std::holds_alternative<ClosureRef>(callee_value)) {
     closure_id = std::get<ClosureRef>(callee_value).id;
-    auto closure_it = closures.find(closure_id);
-    if (closure_it == closures.end()) {
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
       throw std::runtime_error("Closure not found: " + std::to_string(closure_id));
     }
-    function_index = closure_it->second.function_index;
+    function_index = closure->function_index;
   } else {
     throw std::runtime_error("CALL expects function or closure as callee");
   }
@@ -400,149 +399,48 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
   }
 }
 
-void VM::maybeCollectGarbage() {
-  gc_allocations_since_last_++;
-  if (gc_allocations_since_last_ < gc_allocation_budget_) {
-    return;
+std::vector<BytecodeValue> VM::stackValuesForRoots() const {
+  std::vector<BytecodeValue> values;
+  std::stack<BytecodeValue> copy = stack;
+  values.reserve(copy.size());
+  while (!copy.empty()) {
+    values.push_back(copy.top());
+    copy.pop();
   }
-  collectGarbage();
+  return values;
 }
 
-void VM::markValue(const BytecodeValue &value,
-                   std::unordered_set<uint32_t> &marked_arrays,
-                   std::unordered_set<uint32_t> &marked_objects,
-                   std::unordered_set<uint32_t> &marked_sets,
-                   std::unordered_set<uint32_t> &marked_closures) const {
-  if (std::holds_alternative<ArrayRef>(value)) {
-    uint32_t id = std::get<ArrayRef>(value).id;
-    if (!marked_arrays.insert(id).second) {
-      return;
+std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
+  std::vector<uint32_t> closure_ids;
+  closure_ids.reserve(frames.size());
+  for (const auto &frame : frames) {
+    if (frame.closure_id != 0) {
+      closure_ids.push_back(frame.closure_id);
     }
-    auto it = arrays_.find(id);
-    if (it == arrays_.end()) {
-      return;
-    }
-    for (const auto &entry : it->second) {
-      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
-    }
-    return;
   }
+  return closure_ids;
+}
 
-  if (std::holds_alternative<ObjectRef>(value)) {
-    uint32_t id = std::get<ObjectRef>(value).id;
-    if (!marked_objects.insert(id).second) {
-      return;
-    }
-    auto it = objects_.find(id);
-    if (it == objects_.end()) {
-      return;
-    }
-    for (const auto &[_, entry] : it->second) {
-      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
-    }
-    return;
-  }
-
-  if (std::holds_alternative<SetRef>(value)) {
-    uint32_t id = std::get<SetRef>(value).id;
-    if (!marked_sets.insert(id).second) {
-      return;
-    }
-    auto it = sets_.find(id);
-    if (it == sets_.end()) {
-      return;
-    }
-    for (const auto &[_, entry] : it->second) {
-      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
-    }
-    return;
-  }
-
-  if (std::holds_alternative<ClosureRef>(value)) {
-    uint32_t id = std::get<ClosureRef>(value).id;
-    if (!marked_closures.insert(id).second) {
-      return;
-    }
-    auto it = closures.find(id);
-    if (it == closures.end()) {
-      return;
-    }
-    for (const auto &cell : it->second.upvalues) {
-      if (!cell) {
-        continue;
-      }
-      if (cell->is_open) {
-        if (cell->open_index < locals.size()) {
-          markValue(locals[cell->open_index], marked_arrays, marked_objects,
-                    marked_sets, marked_closures);
+void VM::maybeCollectGarbage() {
+  heap_.maybeCollectGarbage(
+      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+      [this](uint32_t index) -> std::optional<BytecodeValue> {
+        if (index >= locals.size()) {
+          return std::nullopt;
         }
-      } else {
-        markValue(cell->closed_value, marked_arrays, marked_objects, marked_sets,
-                  marked_closures);
-      }
-    }
-    return;
-  }
+        return locals[index];
+      });
 }
 
 void VM::collectGarbage() {
-  std::unordered_set<uint32_t> marked_arrays;
-  std::unordered_set<uint32_t> marked_objects;
-  std::unordered_set<uint32_t> marked_sets;
-  std::unordered_set<uint32_t> marked_closures;
-
-  std::stack<BytecodeValue> stack_copy = stack;
-  while (!stack_copy.empty()) {
-    markValue(stack_copy.top(), marked_arrays, marked_objects, marked_sets,
-              marked_closures);
-    stack_copy.pop();
-  }
-  for (const auto &value : locals) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
-  }
-  for (const auto &[_, value] : globals) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
-  }
-  for (const auto &[_, value] : external_roots_) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
-  }
-  for (const auto &frame : frames) {
-    if (frame.closure_id != 0) {
-      markValue(ClosureRef{.id = frame.closure_id}, marked_arrays, marked_objects,
-                marked_sets, marked_closures);
-    }
-  }
-
-  for (auto it = arrays_.begin(); it != arrays_.end();) {
-    if (marked_arrays.find(it->first) == marked_arrays.end()) {
-      it = arrays_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  for (auto it = objects_.begin(); it != objects_.end();) {
-    if (marked_objects.find(it->first) == marked_objects.end()) {
-      it = objects_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  for (auto it = sets_.begin(); it != sets_.end();) {
-    if (marked_sets.find(it->first) == marked_sets.end()) {
-      it = sets_.erase(it);
-    } else {
-      ++it;
-    }
-  }
-  for (auto it = closures.begin(); it != closures.end();) {
-    if (marked_closures.find(it->first) == marked_closures.end()) {
-      it = closures.erase(it);
-    } else {
-      ++it;
-    }
-  }
-
-  gc_allocations_since_last_ = 0;
+  heap_.collectGarbage(
+      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
+      [this](uint32_t index) -> std::optional<BytecodeValue> {
+        if (index >= locals.size()) {
+          return std::nullopt;
+        }
+        return locals[index];
+      });
 }
 
 void VM::executeInstruction(
@@ -623,15 +521,14 @@ void VM::executeInstruction(
     if (closure_id == 0) {
       throw std::runtime_error("LOAD_UPVALUE used without active closure");
     }
-    auto closure_it = closures.find(closure_id);
-    if (closure_it == closures.end()) {
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
       throw std::runtime_error("Closure not found for LOAD_UPVALUE");
     }
-    if (upvalue_index >= closure_it->second.upvalues.size() ||
-        !closure_it->second.upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
       throw std::runtime_error("LOAD_UPVALUE index out of range");
     }
-    const auto &cell = closure_it->second.upvalues[upvalue_index];
+    const auto &cell = closure->upvalues[upvalue_index];
     if (cell->is_open) {
       ensureLocalIndex(cell->open_index);
       push(locals[cell->open_index]);
@@ -647,15 +544,14 @@ void VM::executeInstruction(
     if (closure_id == 0) {
       throw std::runtime_error("STORE_UPVALUE used without active closure");
     }
-    auto closure_it = closures.find(closure_id);
-    if (closure_it == closures.end()) {
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
       throw std::runtime_error("Closure not found for STORE_UPVALUE");
     }
-    if (upvalue_index >= closure_it->second.upvalues.size() ||
-        !closure_it->second.upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
       throw std::runtime_error("STORE_UPVALUE index out of range");
     }
-    auto &cell = closure_it->second.upvalues[upvalue_index];
+    auto &cell = closure->upvalues[upvalue_index];
     BytecodeValue value = pop();
     if (cell->is_open) {
       ensureLocalIndex(cell->open_index);
@@ -931,7 +827,7 @@ void VM::executeInstruction(
         ensureLocalIndex(abs);
         auto open_it = open_upvalues.find(abs);
         if (open_it == open_upvalues.end()) {
-          auto cell = std::make_shared<RuntimeClosure::UpvalueCell>();
+          auto cell = std::make_shared<GCHeap::UpvalueCell>();
           cell->is_open = true;
           cell->open_index = abs;
           open_upvalues.emplace(abs, cell);
@@ -945,36 +841,32 @@ void VM::executeInstruction(
           throw std::runtime_error(
               "CLOSURE tried to capture upvalue without parent closure");
         }
-        auto parent_it = closures.find(parent_closure_id);
-        if (parent_it == closures.end()) {
+        auto *parent_closure = heap_.closure(parent_closure_id);
+        if (!parent_closure) {
           throw std::runtime_error("Parent closure not found for CLOSURE");
         }
-        if (descriptor.index >= parent_it->second.upvalues.size()) {
+        if (descriptor.index >= parent_closure->upvalues.size()) {
           throw std::runtime_error("CLOSURE upvalue index out of range");
         }
-        closure.upvalues.push_back(parent_it->second.upvalues[descriptor.index]);
+        closure.upvalues.push_back(parent_closure->upvalues[descriptor.index]);
       }
     }
 
-    uint32_t closure_id = next_closure_id++;
-    closures.emplace(closure_id, std::move(closure));
-    push(ClosureRef{.id = closure_id});
+    push(heap_.allocateClosure(
+        GCHeap::RuntimeClosure{.function_index = closure.function_index,
+                               .upvalues = std::move(closure.upvalues)}));
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::ARRAY_NEW: {
-    uint32_t id = next_array_id_++;
-    arrays_[id] = {};
-    push(ArrayRef{.id = id});
+    push(heap_.allocateArray());
     maybeCollectGarbage();
     break;
   }
 
   case OpCode::SET_NEW: {
-    uint32_t id = next_set_id_++;
-    sets_[id] = {};
-    push(SetRef{.id = id});
+    push(heap_.allocateSet());
     maybeCollectGarbage();
     break;
   }
@@ -986,11 +878,11 @@ void VM::executeInstruction(
       throw std::runtime_error("ARRAY_PUSH expects array container");
     }
     uint32_t id = std::get<ArrayRef>(container).id;
-    auto it = arrays_.find(id);
-    if (it == arrays_.end()) {
+    auto *array = heap_.array(id);
+    if (!array) {
       throw std::runtime_error("ARRAY_PUSH unknown array id");
     }
-    it->second.push_back(value);
+    array->push_back(value);
     push(container);
     break;
   }
@@ -1004,14 +896,14 @@ void VM::executeInstruction(
       if (!index || *index < 0) {
         throw std::runtime_error("ARRAY_GET expects non-negative integer index");
       }
-      auto it = arrays_.find(std::get<ArrayRef>(container).id);
-      if (it == arrays_.end()) {
+      auto *array = heap_.array(std::get<ArrayRef>(container).id);
+      if (!array) {
         throw std::runtime_error("ARRAY_GET unknown array id");
       }
-      if (static_cast<size_t>(*index) >= it->second.size()) {
+      if (static_cast<size_t>(*index) >= array->size()) {
         push(nullptr);
       } else {
-        push(it->second[static_cast<size_t>(*index)]);
+        push((*array)[static_cast<size_t>(*index)]);
       }
       break;
     }
@@ -1021,11 +913,11 @@ void VM::executeInstruction(
       if (!key) {
         throw std::runtime_error("SET membership expects string/number/bool key");
       }
-      auto it = sets_.find(std::get<SetRef>(container).id);
-      if (it == sets_.end()) {
+      auto *set = heap_.set(std::get<SetRef>(container).id);
+      if (!set) {
         throw std::runtime_error("ARRAY_GET unknown set id");
       }
-      push(it->second.find(*key) != it->second.end());
+      push(set->find(*key) != set->end());
       break;
     }
 
@@ -1034,12 +926,12 @@ void VM::executeInstruction(
       if (!key) {
         throw std::runtime_error("OBJECT index expects string/number/bool key");
       }
-      auto it = objects_.find(std::get<ObjectRef>(container).id);
-      if (it == objects_.end()) {
+      auto *object = heap_.object(std::get<ObjectRef>(container).id);
+      if (!object) {
         throw std::runtime_error("ARRAY_GET unknown object id");
       }
-      auto kv = it->second.find(*key);
-      push(kv == it->second.end() ? BytecodeValue(nullptr) : kv->second);
+      auto kv = object->find(*key);
+      push(kv == object->end() ? BytecodeValue(nullptr) : kv->second);
       break;
     }
 
@@ -1056,15 +948,15 @@ void VM::executeInstruction(
       if (!index || *index < 0) {
         throw std::runtime_error("ARRAY_SET expects non-negative integer index");
       }
-      auto it = arrays_.find(std::get<ArrayRef>(container).id);
-      if (it == arrays_.end()) {
+      auto *array = heap_.array(std::get<ArrayRef>(container).id);
+      if (!array) {
         throw std::runtime_error("ARRAY_SET unknown array id");
       }
       const auto idx = static_cast<size_t>(*index);
-      if (idx >= it->second.size()) {
-        it->second.resize(idx + 1, nullptr);
+      if (idx >= array->size()) {
+        array->resize(idx + 1, nullptr);
       }
-      it->second[idx] = value;
+      (*array)[idx] = value;
       break;
     }
 
@@ -1073,8 +965,8 @@ void VM::executeInstruction(
       if (!key) {
         throw std::runtime_error("SET assignment expects string/number/bool key");
       }
-      auto it = sets_.find(std::get<SetRef>(container).id);
-      if (it == sets_.end()) {
+      auto *set = heap_.set(std::get<SetRef>(container).id);
+      if (!set) {
         throw std::runtime_error("ARRAY_SET unknown set id");
       }
       bool present = false;
@@ -1089,9 +981,9 @@ void VM::executeInstruction(
             "SET assignment value must be bool/number to indicate presence");
       }
       if (present) {
-        it->second[*key] = nullptr;
+        (*set)[*key] = nullptr;
       } else {
-        it->second.erase(*key);
+        set->erase(*key);
       }
       break;
     }
@@ -1101,11 +993,11 @@ void VM::executeInstruction(
       if (!key) {
         throw std::runtime_error("OBJECT index assignment expects valid key");
       }
-      auto it = objects_.find(std::get<ObjectRef>(container).id);
-      if (it == objects_.end()) {
+      auto *object = heap_.object(std::get<ObjectRef>(container).id);
+      if (!object) {
         throw std::runtime_error("ARRAY_SET unknown object id");
       }
-      it->second[*key] = value;
+      (*object)[*key] = value;
       break;
     }
 
@@ -1113,9 +1005,7 @@ void VM::executeInstruction(
   }
 
   case OpCode::OBJECT_NEW: {
-    uint32_t id = next_object_id_++;
-    objects_[id] = {};
-    push(ObjectRef{.id = id});
+    push(heap_.allocateObject());
     maybeCollectGarbage();
     break;
   }
@@ -1130,12 +1020,12 @@ void VM::executeInstruction(
     if (!key) {
       throw std::runtime_error("OBJECT_GET expects string/number/bool key");
     }
-    auto it = objects_.find(std::get<ObjectRef>(object).id);
-    if (it == objects_.end()) {
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
       throw std::runtime_error("OBJECT_GET unknown object id");
     }
-    auto kv = it->second.find(*key);
-    push(kv == it->second.end() ? BytecodeValue(nullptr) : kv->second);
+    auto kv = obj->find(*key);
+    push(kv == obj->end() ? BytecodeValue(nullptr) : kv->second);
     break;
   }
 
@@ -1161,11 +1051,11 @@ void VM::executeInstruction(
     if (!key) {
       throw std::runtime_error("OBJECT_SET expects string/number/bool key");
     }
-    auto it = objects_.find(std::get<ObjectRef>(object).id);
-    if (it == objects_.end()) {
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
       throw std::runtime_error("OBJECT_SET unknown object id");
     }
-    it->second[*key] = value;
+    (*obj)[*key] = value;
     break;
   }
 

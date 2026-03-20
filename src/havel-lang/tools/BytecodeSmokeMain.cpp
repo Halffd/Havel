@@ -1,10 +1,12 @@
 #include "havel-lang/compiler/bytecode/ByteCompiler.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
+#include "havel-lang/compiler/bytecode/VM.hpp"
 #include "havel-lang/parser/Parser.h"
 
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <optional>
 #include <string>
 
 namespace {
@@ -372,6 +374,78 @@ return spin()
   }
 }
 
+int runHostRootLifetimeCase(bool dump_bytecode) {
+  const std::string source = R"havel(
+fn make() {
+    let x = 41
+    fn inner() {
+        return x + 1
+    }
+    return inner
+}
+
+let cb = make()
+sleep_ms(cb)
+cb = 0
+print()
+let loaded = clock_ms()
+return loaded()
+)havel";
+
+  try {
+    if (dump_bytecode) {
+      dumpBytecode("host-root-lifetime", source);
+    }
+
+    auto chunk = compileChunk(source);
+    havel::compiler::VM vm;
+    vm.setGcAllocationBudget(1);
+    std::optional<havel::compiler::VM::GCRoot> stored_closure;
+
+    vm.registerHostFunction(
+        "sleep_ms", 1,
+        [&vm, &stored_closure](const std::vector<BytecodeValue> &args) {
+          stored_closure.emplace(vm.makeRoot(args[0]));
+          return BytecodeValue(nullptr);
+        });
+    vm.registerHostFunction(
+        "clock_ms", 0,
+        [&stored_closure](const std::vector<BytecodeValue> &) {
+          if (!stored_closure.has_value()) {
+            return BytecodeValue(nullptr);
+          }
+          return stored_closure->get().value_or(BytecodeValue(nullptr));
+        });
+    vm.registerHostFunction("print", 0,
+                            [&vm](const std::vector<BytecodeValue> &) {
+                              vm.runGarbageCollection();
+                              return BytecodeValue(nullptr);
+                            });
+
+    const auto result = vm.execute(*chunk, "__main__");
+    if (!equalsInt(result, 42)) {
+      std::cerr
+          << "[FAIL] host-root-lifetime: expected 42 but got non-matching result"
+          << std::endl;
+      return 1;
+    }
+
+    stored_closure.reset();
+    if (vm.externalRootCount() != 0) {
+      std::cerr << "[FAIL] host-root-lifetime: external roots leaked"
+                << std::endl;
+      return 1;
+    }
+
+    std::cout << "[PASS] host-root-lifetime" << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] host-root-lifetime: exception: " << e.what()
+              << std::endl;
+    return 1;
+  }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -563,6 +637,7 @@ return x
 )havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runClosureCase(dump_bytecode, snapshot_dir);
+  failures += runHostRootLifetimeCase(dump_bytecode);
   failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
   failures += runRuntimeLineErrorCase(dump_bytecode, snapshot_dir);
   failures += runStackOverflowCase(dump_bytecode, snapshot_dir);

@@ -1,27 +1,68 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include "GC.hpp"
+
 #include <array>
 #include <memory>
 #include <optional>
 #include <stack>
-#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
 namespace havel::compiler {
 
-// Bytecode interpreter implementation
 class VM : public BytecodeInterpreter {
+public:
+  class GCRoot {
+  public:
+    GCRoot() = default;
+    GCRoot(VM &vm, const BytecodeValue &value) : vm_(&vm) {
+      id_ = vm.pinExternalRoot(value);
+    }
+    GCRoot(const GCRoot &) = delete;
+    GCRoot &operator=(const GCRoot &) = delete;
+    GCRoot(GCRoot &&other) noexcept : vm_(other.vm_), id_(other.id_) {
+      other.vm_ = nullptr;
+      other.id_ = 0;
+    }
+    GCRoot &operator=(GCRoot &&other) noexcept {
+      if (this == &other) {
+        return *this;
+      }
+      reset();
+      vm_ = other.vm_;
+      id_ = other.id_;
+      other.vm_ = nullptr;
+      other.id_ = 0;
+      return *this;
+    }
+    ~GCRoot() { reset(); }
+
+    std::optional<BytecodeValue> get() const {
+      if (!vm_ || id_ == 0) {
+        return std::nullopt;
+      }
+      return vm_->externalRootValue(id_);
+    }
+
+    void reset() {
+      if (vm_ && id_ != 0) {
+        vm_->unpinExternalRoot(id_);
+      }
+      vm_ = nullptr;
+      id_ = 0;
+    }
+
+  private:
+    VM *vm_ = nullptr;
+    uint64_t id_ = 0;
+  };
+
 private:
   struct RuntimeClosure {
     uint32_t function_index = 0;
-    struct UpvalueCell {
-      bool is_open = false;
-      uint32_t open_index = 0;
-      BytecodeValue closed_value = nullptr;
-    };
-    std::vector<std::shared_ptr<UpvalueCell>> upvalues;
+    std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
   };
 
   struct CallFrame {
@@ -34,32 +75,18 @@ private:
   std::stack<BytecodeValue> stack;
   std::vector<BytecodeValue> locals;
   std::vector<CallFrame> frames;
-  std::unordered_map<uint32_t, RuntimeClosure> closures;
-  std::unordered_map<uint32_t, std::shared_ptr<RuntimeClosure::UpvalueCell>>
+  GCHeap heap_;
+  std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
-  uint32_t next_closure_id = 1;
-  std::unordered_map<uint32_t, std::vector<BytecodeValue>> arrays_;
-  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
-      objects_;
-  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
-      sets_;
-  uint32_t next_array_id_ = 1;
-  uint32_t next_object_id_ = 1;
-  uint32_t next_set_id_ = 1;
-  size_t gc_allocation_budget_ = 1024;
-  size_t gc_allocations_since_last_ = 0;
-  std::unordered_map<uint64_t, BytecodeValue> external_roots_;
-  uint64_t next_external_root_id_ = 1;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
-  const BytecodeChunk *current_chunk;
+  const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
   size_t max_call_depth_ = 1024;
   bool profiling_enabled_ = false;
   std::array<uint64_t, 256> opcode_counts_{};
   uint64_t executed_instructions_ = 0;
 
-  // Helper functions
   template <typename T> T getValue(const BytecodeValue &value);
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
@@ -67,11 +94,9 @@ private:
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
+  std::vector<BytecodeValue> stackValuesForRoots() const;
+  std::vector<uint32_t> activeClosureIdsForRoots() const;
   void maybeCollectGarbage();
-  void markValue(const BytecodeValue &value, std::unordered_set<uint32_t> &marked_arrays,
-                 std::unordered_set<uint32_t> &marked_objects,
-                 std::unordered_set<uint32_t> &marked_sets,
-                 std::unordered_set<uint32_t> &marked_closures) const;
   void collectGarbage();
   void registerDefaultHostFunctions();
   BytecodeValue invokeHostFunction(const std::string &name,
@@ -79,6 +104,7 @@ private:
 
 public:
   VM();
+  ~VM() override;
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;
@@ -88,16 +114,23 @@ public:
   void registerHostFunction(const std::string &name, size_t arity,
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
+
   void setMaxCallDepth(size_t value) { max_call_depth_ = value; }
   void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
   uint64_t executedInstructionCount() const { return executed_instructions_; }
   uint64_t opcodeCount(OpCode opcode) const {
     return opcode_counts_[static_cast<uint8_t>(opcode)];
   }
-  void setGcAllocationBudget(size_t value) { gc_allocation_budget_ = value; }
+
+  void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
   void runGarbageCollection() { collectGarbage(); }
+  [[nodiscard]] GCRoot makeRoot(const BytecodeValue &value) {
+    return GCRoot(*this, value);
+  }
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
+  std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;
+  size_t externalRootCount() const { return heap_.externalRootCount(); }
 };
 
 } // namespace havel::compiler

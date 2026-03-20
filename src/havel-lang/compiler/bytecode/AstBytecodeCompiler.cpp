@@ -55,6 +55,24 @@ AstBytecodeCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
 
+  LexicalResolver resolver;
+  lexical_resolution_ = resolver.resolve(program);
+  if (!resolver.errors().empty()) {
+    throw std::runtime_error("Lexical resolution failed: " +
+                             resolver.errors().front());
+  }
+
+  for (const auto &[function, captures] : lexical_resolution_.captured_variables) {
+    if (!function || captures.empty()) {
+      continue;
+    }
+
+    throw std::runtime_error(
+        "Phase 2 boundary: closure capture codegen is not enabled yet for '" +
+        (function->name ? function->name->symbol : std::string("<anonymous>")) +
+        "' (captures: " + captures.front() + ")");
+  }
+
   // Compile user-declared functions first.
   for (const auto &statement : program.body) {
     if (!statement) {
@@ -166,13 +184,6 @@ void AstBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &functi
   }
 
   if (function.body) {
-    // Groundwork boundary: nested functions/closures are intentionally deferred
-    // to the Phase 2 resolver/capture implementation.
-    for (const auto &statement : function.body->body) {
-      if (statement) {
-        enforcePhase2ClosureBoundary(*statement);
-      }
-    }
     compileBlockStatement(*function.body);
   }
 
@@ -237,7 +248,6 @@ void AstBytecodeCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::FunctionDeclaration:
     // Top-level function declarations are handled in a first pass.
-    // Nested functions (closures) are blocked by enforcePhase2ClosureBoundary().
     break;
 
   default:
@@ -381,50 +391,7 @@ void AstBytecodeCompiler::compileBlockStatement(const ast::BlockStatement &block
     if (!statement) {
       continue;
     }
-    enforcePhase2ClosureBoundary(*statement);
     compileStatement(*statement);
-  }
-}
-
-void AstBytecodeCompiler::enforcePhase2ClosureBoundary(
-    const ast::Statement &statement) const {
-  switch (statement.kind) {
-  case ast::NodeType::FunctionDeclaration:
-    throw std::runtime_error(
-        "Nested functions/closures are reserved for Phase 2. "
-        "Keep functions top-level in Phase 1 bytecode.");
-
-  case ast::NodeType::BlockStatement: {
-    const auto &block = static_cast<const ast::BlockStatement &>(statement);
-    for (const auto &nested : block.body) {
-      if (nested) {
-        enforcePhase2ClosureBoundary(*nested);
-      }
-    }
-    break;
-  }
-
-  case ast::NodeType::IfStatement: {
-    const auto &if_stmt = static_cast<const ast::IfStatement &>(statement);
-    if (if_stmt.consequence) {
-      enforcePhase2ClosureBoundary(*if_stmt.consequence);
-    }
-    if (if_stmt.alternative) {
-      enforcePhase2ClosureBoundary(*if_stmt.alternative);
-    }
-    break;
-  }
-
-  case ast::NodeType::WhileStatement: {
-    const auto &while_stmt = static_cast<const ast::WhileStatement &>(statement);
-    if (while_stmt.body) {
-      enforcePhase2ClosureBoundary(*while_stmt.body);
-    }
-    break;
-  }
-
-  default:
-    break;
   }
 }
 

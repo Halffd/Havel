@@ -54,6 +54,7 @@ std::unique_ptr<BytecodeChunk>
 ByteCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
+  function_indices_by_name_.clear();
 
   LexicalResolver resolver;
   lexical_resolution_ = resolver.resolve(program);
@@ -71,6 +72,22 @@ ByteCompiler::compile(const ast::Program &program) {
         "Phase 2 boundary: closure capture codegen is not enabled yet for '" +
         (function->name ? function->name->symbol : std::string("<anonymous>")) +
         "' (captures: " + captures.front() + ")");
+  }
+
+  // Reserve function indices so forward references and recursion emit stable
+  // function objects.
+  uint32_t next_function_index = 0;
+  for (const auto &statement : program.body) {
+    if (!statement ||
+        statement->kind != ast::NodeType::FunctionDeclaration) {
+      continue;
+    }
+    const auto &decl =
+        static_cast<const ast::FunctionDeclaration &>(*statement);
+    if (!decl.name) {
+      throw std::runtime_error("Function declaration missing name");
+    }
+    function_indices_by_name_[decl.name->symbol] = next_function_index++;
   }
 
   // Compile user-declared functions first.
@@ -299,6 +316,16 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_UPVALUE, binding->slot);
       break;
     case ResolvedBindingKind::GlobalFunction:
+      {
+        auto it = function_indices_by_name_.find(binding->name);
+        if (it == function_indices_by_name_.end()) {
+          throw std::runtime_error("Missing function index for: " +
+                                   binding->name);
+        }
+        emit(OpCode::LOAD_CONST,
+             addConstant(FunctionObject{.function_index = it->second}));
+      }
+      break;
     case ResolvedBindingKind::Builtin:
       emit(OpCode::LOAD_CONST, addConstant(binding->name));
       break;
@@ -332,13 +359,6 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     throw std::runtime_error("Call expression missing callee");
   }
 
-  for (const auto &arg : expression.args) {
-    if (!arg) {
-      throw std::runtime_error("Call expression contains null argument");
-    }
-    compileExpression(*arg);
-  }
-
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
 
   if (expression.callee->kind == ast::NodeType::Identifier) {
@@ -351,30 +371,36 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     }
 
     if (binding->kind == ResolvedBindingKind::Builtin) {
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+      }
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{binding->name, arg_count});
       return;
     }
+  }
 
-    if (binding->kind == ResolvedBindingKind::GlobalFunction) {
-      emit(OpCode::LOAD_CONST, addConstant(binding->name));
-      emit(OpCode::CALL, arg_count);
-      return;
+  if (auto callee_name = getCalleeName(*expression.callee);
+      callee_name && isHostBuiltin(*callee_name)) {
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        throw std::runtime_error("Call expression contains null argument");
+      }
+      compileExpression(*arg);
     }
-
-    throw std::runtime_error(
-        "Phase 2 boundary: first-class local/upvalue calls are not emitted yet");
-  }
-
-  auto callee_name = getCalleeName(*expression.callee);
-  if (!callee_name) {
-    throw std::runtime_error("Unsupported callee in call expression");
-  }
-  if (isHostBuiltin(*callee_name)) {
     emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*callee_name, arg_count});
     return;
   }
 
-  emit(OpCode::LOAD_CONST, addConstant(*callee_name));
+  compileExpression(*expression.callee);
+  for (const auto &arg : expression.args) {
+    if (!arg) {
+      throw std::runtime_error("Call expression contains null argument");
+    }
+    compileExpression(*arg);
+  }
   emit(OpCode::CALL, arg_count);
 }
 

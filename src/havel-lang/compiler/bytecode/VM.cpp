@@ -31,6 +31,10 @@ std::string toString(const BytecodeValue &value) {
   if (std::holds_alternative<uint32_t>(value)) {
     return "const[" + std::to_string(std::get<uint32_t>(value)) + "]";
   }
+  if (std::holds_alternative<FunctionObject>(value)) {
+    return "fn[" +
+           std::to_string(std::get<FunctionObject>(value).function_index) + "]";
+  }
   return "unknown";
 }
 } // namespace
@@ -215,38 +219,30 @@ void VM::setDebugMode(bool enabled) {
   debug_mode = enabled;
 }
 
-void VM::doCall(const std::string &function_name,
-                                      uint32_t arg_count) {
-  const auto *callee = current_chunk->getFunction(function_name);
+void VM::doCall(const FunctionObject &callee_ref, std::vector<BytecodeValue> args) {
+  const auto *callee = current_chunk->getFunction(callee_ref.function_index);
   if (!callee) {
-    throw std::runtime_error("Function not found: " + function_name);
+    throw std::runtime_error("Function index not found: " +
+                             std::to_string(callee_ref.function_index));
   }
 
-  if (arg_count != callee->param_count) {
-    throw std::runtime_error("Argument count mismatch calling '" +
-                             function_name + "' (expected " +
+  if (args.size() != callee->param_count) {
+    throw std::runtime_error("Argument count mismatch calling function index " +
+                             std::to_string(callee_ref.function_index) +
+                             " (expected " +
                                std::to_string(callee->param_count) + ", got " +
-                               std::to_string(arg_count) + ")");
+                               std::to_string(args.size()) + ")");
   }
 
   // Advance caller IP now so RETURN resumes at the next instruction.
   currentFrame().ip++;
 
-  std::vector<BytecodeValue> args(arg_count);
-  for (uint32_t i = 0; i < arg_count; i++) {
-    if (stack.empty()) {
-      throw std::runtime_error("Stack underflow while reading call arguments");
-    }
-    args[arg_count - 1 - i] = stack.top();
-    stack.pop();
-  }
-
   size_t base = locals.size();
   locals.resize(base + callee->local_count, nullptr);
   frames.push_back(CallFrame{callee, 0, base});
 
-  for (uint32_t i = 0; i < arg_count; i++) {
-    locals[base + i] = args[i];
+  for (uint32_t i = 0; i < args.size(); i++) {
+    locals[base + i] = std::move(args[i]);
   }
 }
 
@@ -338,6 +334,14 @@ void VM::executeInstruction(
     BytecodeValue value = pop();
     push(value);
     push(value);
+    break;
+  }
+
+  case OpCode::SWAP: {
+    BytecodeValue top = pop();
+    BytecodeValue next = pop();
+    push(top);
+    push(next);
     break;
   }
 
@@ -536,11 +540,20 @@ void VM::executeInstruction(
 
   case OpCode::CALL: {
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
-    BytecodeValue callee_value = pop();
-    if (!std::holds_alternative<std::string>(callee_value)) {
-      throw std::runtime_error("CALL expects callee name as string on stack");
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      throw std::runtime_error("Stack underflow during CALL");
     }
-    doCall(std::get<std::string>(callee_value), arg_count);
+
+    std::vector<BytecodeValue> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+    BytecodeValue callee_value = pop();
+
+    if (!std::holds_alternative<FunctionObject>(callee_value)) {
+      throw std::runtime_error("CALL expects function object as callee");
+    }
+    doCall(std::get<FunctionObject>(callee_value), std::move(args));
     break;
   }
 

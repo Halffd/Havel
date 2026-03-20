@@ -30,7 +30,7 @@ private:
   CallFrame &currentFrame();
   BytecodeValue getConstant(uint32_t index);
   void executeInstruction(const Instruction &instruction);
-  void doCall(const std::string &function_name, uint32_t arg_count);
+  void doCall(const FunctionObject &callee, std::vector<BytecodeValue> args);
   void registerDefaultHostFunctions();
   BytecodeValue invokeHostFunction(const std::string &name,
                                    uint32_t arg_count);

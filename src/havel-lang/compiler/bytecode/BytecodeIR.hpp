@@ -31,6 +31,7 @@ enum class OpCode : uint8_t {
   STORE_UPVALUE,
   POP,
   DUP,
+  SWAP,
 
   // Arithmetic operations
   ADD,
@@ -83,10 +84,14 @@ enum class OpCode : uint8_t {
 };
 
 // Bytecode value type
-using BytecodeValue =
-    std::variant<std::nullptr_t, bool, int64_t, double, std::string,
-                 uint32_t // Index into constant pool
-                 >;
+struct FunctionObject {
+  uint32_t function_index = 0;
+};
+
+using BytecodeValue = std::variant<
+    std::nullptr_t, bool, int64_t, double, std::string,
+    uint32_t, // Index into constant pool
+    FunctionObject>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;
@@ -135,6 +140,13 @@ public:
   const BytecodeFunction *getFunction(const std::string &name) const {
     auto it = function_indices.find(name);
     return it != function_indices.end() ? &functions[it->second] : nullptr;
+  }
+
+  const BytecodeFunction *getFunction(uint32_t index) const {
+    if (index >= functions.size()) {
+      return nullptr;
+    }
+    return &functions[index];
   }
 
   const std::vector<BytecodeFunction> &getAllFunctions() const {

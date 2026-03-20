@@ -427,6 +427,36 @@ if s[3] {
 return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
+  failures += runCase("member-compound-single-eval", R"havel(
+fn run() {
+    let hits = 0
+    let obj = {a: 1}
+    fn getObj() {
+        hits += 1
+        return obj
+    }
+
+    getObj().a += 2
+    return obj.a + hits * 10
+}
+return run()
+)havel", 13, dump_bytecode, snapshot_dir);
+
+  failures += runCase("index-compound-single-eval", R"havel(
+fn run() {
+    let hits = 0
+    let arr = [1, 2]
+    fn getArr() {
+        hits += 1
+        return arr
+    }
+
+    getArr()[1] += 3
+    return arr[1] + hits * 10
+}
+return run()
+)havel", 15, dump_bytecode, snapshot_dir);
+
   failures += runCase("while-loop", R"havel(
 let i = 0
 while i < 1 {

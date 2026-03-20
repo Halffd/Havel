@@ -480,17 +480,6 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_VAR, temp_slot);
     };
 
-    auto emitLoadMember = [&](const ast::MemberExpression &member) {
-      auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
-      if (!member.object || !property) {
-        throw std::runtime_error(
-            "Member assignment expects identifier property target");
-      }
-      compileExpression(*member.object);
-      emit(OpCode::LOAD_CONST, addConstant(property->symbol));
-      emit(OpCode::OBJECT_GET);
-    };
-
     auto emitStoreIndexWithResult = [&](const ast::IndexExpression &index_expr) {
       if (!index_expr.object || !index_expr.index) {
         throw std::runtime_error("Index assignment expects object and index");
@@ -503,15 +492,6 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_VAR, temp_slot);
       emit(OpCode::ARRAY_SET);
       emit(OpCode::LOAD_VAR, temp_slot);
-    };
-
-    auto emitLoadIndex = [&](const ast::IndexExpression &index_expr) {
-      if (!index_expr.object || !index_expr.index) {
-        throw std::runtime_error("Index assignment expects object and index");
-      }
-      compileExpression(*index_expr.object);
-      compileExpression(*index_expr.index);
-      emit(OpCode::ARRAY_GET);
     };
 
     if (assignment.operator_ == "=") {
@@ -552,17 +532,57 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         return;
       }
       if (target_member) {
-        emitLoadMember(*target_member);
+        auto *property =
+            dynamic_cast<const ast::Identifier *>(target_member->property.get());
+        if (!target_member->object || !property) {
+          throw std::runtime_error(
+              "Member assignment expects identifier property target");
+        }
+        uint32_t temp_object = next_local_index;
+        reserveLocalSlot(temp_object);
+        compileExpression(*target_member->object);
+        emit(OpCode::STORE_VAR, temp_object);
+        emit(OpCode::LOAD_VAR, temp_object);
+        emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+        emit(OpCode::OBJECT_GET);
         compileExpression(*assignment.value);
         emit(math_op);
-        emitStoreMemberWithResult(*target_member);
+        uint32_t temp_result = next_local_index;
+        reserveLocalSlot(temp_result);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_VAR, temp_result);
+        emit(OpCode::LOAD_VAR, temp_object);
+        emit(OpCode::LOAD_VAR, temp_result);
+        emit(OpCode::OBJECT_SET, property->symbol);
+        emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
       if (target_index) {
-        emitLoadIndex(*target_index);
+        if (!target_index->object || !target_index->index) {
+          throw std::runtime_error("Index assignment expects object and index");
+        }
+        uint32_t temp_object = next_local_index;
+        reserveLocalSlot(temp_object);
+        uint32_t temp_index = next_local_index;
+        reserveLocalSlot(temp_index);
+        compileExpression(*target_index->object);
+        emit(OpCode::STORE_VAR, temp_object);
+        compileExpression(*target_index->index);
+        emit(OpCode::STORE_VAR, temp_index);
+        emit(OpCode::LOAD_VAR, temp_object);
+        emit(OpCode::LOAD_VAR, temp_index);
+        emit(OpCode::ARRAY_GET);
         compileExpression(*assignment.value);
         emit(math_op);
-        emitStoreIndexWithResult(*target_index);
+        uint32_t temp_result = next_local_index;
+        reserveLocalSlot(temp_result);
+        emit(OpCode::DUP);
+        emit(OpCode::STORE_VAR, temp_result);
+        emit(OpCode::LOAD_VAR, temp_object);
+        emit(OpCode::LOAD_VAR, temp_index);
+        emit(OpCode::LOAD_VAR, temp_result);
+        emit(OpCode::ARRAY_SET);
+        emit(OpCode::LOAD_VAR, temp_result);
         return;
       }
       throw std::runtime_error("Unsupported compound assignment target");

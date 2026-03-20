@@ -215,6 +215,7 @@ public:
     if (std::holds_alternative<double>(value)) return registerType<double>();
     if (std::holds_alternative<std::string>(value)) return registerType<std::string>();
     if (std::holds_alternative<uint32_t>(value)) return registerType<uint32_t>();
+    if (std::holds_alternative<FunctionObject>(value)) return registerType<FunctionObject>();
     return 0;
   }
 };

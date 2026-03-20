@@ -302,6 +302,18 @@ let f = add
 return f(20, 22)
 )havel", 42, dump_bytecode, snapshot_dir);
 
+  failures += runCase("nested-local-function", R"havel(
+fn outer(x) {
+    fn doubleIt(value) {
+        return value * 2
+    }
+    let f = doubleIt
+    return f(x)
+}
+
+return outer(21)
+)havel", 42, dump_bytecode, snapshot_dir);
+
   failures += runCase("while-loop", R"havel(
 let i = 0
 while i < 1 {

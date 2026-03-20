@@ -54,7 +54,8 @@ std::unique_ptr<BytecodeChunk>
 ByteCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
-  function_indices_by_name_.clear();
+  function_indices_by_node_.clear();
+  top_level_function_indices_by_name_.clear();
 
   LexicalResolver resolver;
   lexical_resolution_ = resolver.resolve(program);
@@ -76,6 +77,9 @@ ByteCompiler::compile(const ast::Program &program) {
 
   // Reserve function indices so forward references and recursion emit stable
   // function objects.
+  std::vector<const ast::FunctionDeclaration *> declared_functions;
+  declared_functions.reserve(program.body.size());
+
   uint32_t next_function_index = 0;
   for (const auto &statement : program.body) {
     if (!statement ||
@@ -87,19 +91,33 @@ ByteCompiler::compile(const ast::Program &program) {
     if (!decl.name) {
       throw std::runtime_error("Function declaration missing name");
     }
-    function_indices_by_name_[decl.name->symbol] = next_function_index++;
+    top_level_function_indices_by_name_[decl.name->symbol] = next_function_index;
+    function_indices_by_node_[&decl] = next_function_index++;
   }
 
-  // Compile user-declared functions first.
   for (const auto &statement : program.body) {
     if (!statement) {
       continue;
     }
+    collectFunctionDeclarations(*statement, declared_functions);
+  }
 
-    if (statement->kind == ast::NodeType::FunctionDeclaration) {
-      compileFunction(
-          static_cast<const ast::FunctionDeclaration &>(*statement.get()));
+  for (const auto *decl : declared_functions) {
+    if (!decl) {
+      continue;
     }
+    if (function_indices_by_node_.find(decl) != function_indices_by_node_.end()) {
+      continue;
+    }
+    function_indices_by_node_[decl] = next_function_index++;
+  }
+
+  // Compile all declared functions (top-level + nested) before __main__.
+  for (const auto *decl : declared_functions) {
+    if (!decl) {
+      continue;
+    }
+    compileFunction(*decl);
   }
 
   enterFunction(BytecodeFunction("__main__", 0, 0));
@@ -265,7 +283,27 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
 
   case ast::NodeType::FunctionDeclaration:
-    // Top-level function declarations are handled in a first pass.
+    // Function declarations evaluate to function objects stored in local slots.
+    // Top-level declarations are skipped in __main__ and do not hit this path.
+    {
+      const auto &function =
+          static_cast<const ast::FunctionDeclaration &>(statement);
+      if (!function.name) {
+        throw std::runtime_error("Function declaration missing name");
+      }
+
+      auto index_it = function_indices_by_node_.find(&function);
+      if (index_it == function_indices_by_node_.end()) {
+        throw std::runtime_error("Missing function index for declaration: " +
+                                 function.name->symbol);
+      }
+
+      uint32_t slot = declarationSlot(*function.name);
+      reserveLocalSlot(slot);
+      emit(OpCode::LOAD_CONST,
+           addConstant(FunctionObject{.function_index = index_it->second}));
+      emit(OpCode::STORE_VAR, slot);
+    }
     break;
 
   default:
@@ -317,8 +355,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       break;
     case ResolvedBindingKind::GlobalFunction:
       {
-        auto it = function_indices_by_name_.find(binding->name);
-        if (it == function_indices_by_name_.end()) {
+        auto it = top_level_function_indices_by_name_.find(binding->name);
+        if (it == top_level_function_indices_by_name_.end()) {
           throw std::runtime_error("Missing function index for: " +
                                    binding->name);
         }
@@ -453,6 +491,61 @@ void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
       continue;
     }
     compileStatement(*statement);
+  }
+}
+
+void ByteCompiler::collectFunctionDeclarations(
+    const ast::Statement &statement,
+    std::vector<const ast::FunctionDeclaration *> &out) const {
+  switch (statement.kind) {
+  case ast::NodeType::FunctionDeclaration: {
+    const auto &function =
+        static_cast<const ast::FunctionDeclaration &>(statement);
+    out.push_back(&function);
+    if (function.body) {
+      for (const auto &nested : function.body->body) {
+        if (!nested) {
+          continue;
+        }
+        collectFunctionDeclarations(*nested, out);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block.body) {
+      if (!nested) {
+        continue;
+      }
+      collectFunctionDeclarations(*nested, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::IfStatement: {
+    const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
+    if (if_statement.consequence) {
+      collectFunctionDeclarations(*if_statement.consequence, out);
+    }
+    if (if_statement.alternative) {
+      collectFunctionDeclarations(*if_statement.alternative, out);
+    }
+    break;
+  }
+
+  case ast::NodeType::WhileStatement: {
+    const auto &while_statement =
+        static_cast<const ast::WhileStatement &>(statement);
+    if (while_statement.body) {
+      collectFunctionDeclarations(*while_statement.body, out);
+    }
+    break;
+  }
+
+  default:
+    break;
   }
 }
 

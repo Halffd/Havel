@@ -32,6 +32,8 @@ private:
     void patchJump(uint32_t jump_instruction_index, uint32_t target);
 
     void compileFunction(const ast::FunctionDeclaration& function);
+    void collectFunctionDeclarations(const ast::Statement& statement,
+                                     std::vector<const ast::FunctionDeclaration*>& out) const;
     void compileStatement(const ast::Statement& statement);
     void compileExpression(const ast::Expression& expression);
     void compileCallExpression(const ast::CallExpression& expression);
@@ -50,7 +52,9 @@ private:
     std::unique_ptr<BytecodeChunk> chunk;
     std::unique_ptr<BytecodeFunction> current_function;
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
-    std::unordered_map<std::string, uint32_t> function_indices_by_name_;
+    std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
+        function_indices_by_node_;
+    std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
     uint32_t next_local_index = 0;
     LexicalResolutionResult lexical_resolution_;
 };

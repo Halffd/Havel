@@ -1,5 +1,6 @@
 #pragma once
 
+#include "BytecodeIR.hpp"
 #include "../../ast/AST.h"
 #include <optional>
 #include <string>
@@ -26,9 +27,8 @@ struct ResolvedBinding {
 struct LexicalResolutionResult {
   std::unordered_map<const ast::Identifier *, ResolvedBinding> identifier_bindings;
   std::unordered_map<const ast::Identifier *, uint32_t> declaration_slots;
-  std::unordered_map<const ast::FunctionDeclaration *,
-                     std::vector<std::string>>
-      captured_variables;
+  std::unordered_map<const ast::FunctionDeclaration *, std::vector<UpvalueDescriptor>>
+      function_upvalues;
 };
 
 class LexicalResolver {
@@ -40,6 +40,8 @@ private:
   struct FunctionContext {
     const ast::FunctionDeclaration *owner = nullptr;
     std::vector<std::unordered_map<std::string, uint32_t>> scopes;
+    std::unordered_map<std::string, uint32_t> upvalue_slots;
+    std::vector<UpvalueDescriptor> upvalues;
     uint32_t next_slot = 0;
   };
 
@@ -62,7 +64,11 @@ private:
   void resolveExpression(const ast::Expression &expression);
   void resolveFunctionDeclaration(const ast::FunctionDeclaration &function);
 
-  std::optional<ResolvedBinding> resolveIdentifier(const std::string &name) const;
+  std::optional<ResolvedBinding> resolveIdentifier(const std::string &name);
+  std::optional<ResolvedBinding> resolveIdentifierInFunction(
+      const std::string &name, size_t function_index);
+  uint32_t addUpvalue(size_t function_index, const std::string &name,
+                      uint32_t source_index, bool captures_local);
   void noteIdentifierBinding(const ast::Identifier &identifier,
                              const ResolvedBinding &binding);
 };

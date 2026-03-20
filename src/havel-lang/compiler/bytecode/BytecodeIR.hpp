@@ -88,10 +88,14 @@ struct FunctionObject {
   uint32_t function_index = 0;
 };
 
+struct ClosureRef {
+  uint32_t id = 0;
+};
+
 using BytecodeValue = std::variant<
     std::nullptr_t, bool, int64_t, double, std::string,
     uint32_t, // Index into constant pool
-    FunctionObject>;
+    FunctionObject, ClosureRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

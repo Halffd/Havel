@@ -35,6 +35,9 @@ std::string toString(const BytecodeValue &value) {
     return "fn[" +
            std::to_string(std::get<FunctionObject>(value).function_index) + "]";
   }
+  if (std::holds_alternative<ClosureRef>(value)) {
+    return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
+  }
   return "unknown";
 }
 } // namespace
@@ -158,8 +161,10 @@ BytecodeValue VM::execute(
   }
   locals.clear();
   frames.clear();
+  closures.clear();
+  next_closure_id = 1;
 
-  frames.push_back(CallFrame{entry, 0, 0});
+  frames.push_back(CallFrame{entry, 0, 0, 0});
   locals.resize(entry->local_count);
 
   if (!args.empty()) {
@@ -219,19 +224,34 @@ void VM::setDebugMode(bool enabled) {
   debug_mode = enabled;
 }
 
-void VM::doCall(const FunctionObject &callee_ref, std::vector<BytecodeValue> args) {
-  const auto *callee = current_chunk->getFunction(callee_ref.function_index);
+void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
+  uint32_t function_index = 0;
+  uint32_t closure_id = 0;
+  if (std::holds_alternative<FunctionObject>(callee_value)) {
+    function_index = std::get<FunctionObject>(callee_value).function_index;
+  } else if (std::holds_alternative<ClosureRef>(callee_value)) {
+    closure_id = std::get<ClosureRef>(callee_value).id;
+    auto closure_it = closures.find(closure_id);
+    if (closure_it == closures.end()) {
+      throw std::runtime_error("Closure not found: " + std::to_string(closure_id));
+    }
+    function_index = closure_it->second.function_index;
+  } else {
+    throw std::runtime_error("CALL expects function or closure as callee");
+  }
+
+  const auto *callee = current_chunk->getFunction(function_index);
   if (!callee) {
     throw std::runtime_error("Function index not found: " +
-                             std::to_string(callee_ref.function_index));
+                             std::to_string(function_index));
   }
 
   if (args.size() != callee->param_count) {
     throw std::runtime_error("Argument count mismatch calling function index " +
-                             std::to_string(callee_ref.function_index) +
+                             std::to_string(function_index) +
                              " (expected " +
-                               std::to_string(callee->param_count) + ", got " +
-                               std::to_string(args.size()) + ")");
+                             std::to_string(callee->param_count) + ", got " +
+                             std::to_string(args.size()) + ")");
   }
 
   // Advance caller IP now so RETURN resumes at the next instruction.
@@ -239,7 +259,7 @@ void VM::doCall(const FunctionObject &callee_ref, std::vector<BytecodeValue> arg
 
   size_t base = locals.size();
   locals.resize(base + callee->local_count, nullptr);
-  frames.push_back(CallFrame{callee, 0, base});
+  frames.push_back(CallFrame{callee, 0, base, closure_id});
 
   for (uint32_t i = 0; i < args.size(); i++) {
     locals[base + i] = std::move(args[i]);
@@ -316,13 +336,37 @@ void VM::executeInstruction(
   }
 
   case OpCode::LOAD_UPVALUE: {
-    throw std::runtime_error(
-        "LOAD_UPVALUE reached runtime, but closure storage is not implemented");
+    uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t closure_id = currentFrame().closure_id;
+    if (closure_id == 0) {
+      throw std::runtime_error("LOAD_UPVALUE used without active closure");
+    }
+    auto closure_it = closures.find(closure_id);
+    if (closure_it == closures.end()) {
+      throw std::runtime_error("Closure not found for LOAD_UPVALUE");
+    }
+    if (upvalue_index >= closure_it->second.upvalues.size()) {
+      throw std::runtime_error("LOAD_UPVALUE index out of range");
+    }
+    push(closure_it->second.upvalues[upvalue_index]);
+    break;
   }
 
   case OpCode::STORE_UPVALUE: {
-    throw std::runtime_error(
-        "STORE_UPVALUE reached runtime, but closure storage is not implemented");
+    uint32_t upvalue_index = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t closure_id = currentFrame().closure_id;
+    if (closure_id == 0) {
+      throw std::runtime_error("STORE_UPVALUE used without active closure");
+    }
+    auto closure_it = closures.find(closure_id);
+    if (closure_it == closures.end()) {
+      throw std::runtime_error("Closure not found for STORE_UPVALUE");
+    }
+    if (upvalue_index >= closure_it->second.upvalues.size()) {
+      throw std::runtime_error("STORE_UPVALUE index out of range");
+    }
+    closure_it->second.upvalues[upvalue_index] = pop();
+    break;
   }
 
   case OpCode::POP: {
@@ -550,10 +594,7 @@ void VM::executeInstruction(
     }
     BytecodeValue callee_value = pop();
 
-    if (!std::holds_alternative<FunctionObject>(callee_value)) {
-      throw std::runtime_error("CALL expects function object as callee");
-    }
-    doCall(std::get<FunctionObject>(callee_value), std::move(args));
+    doCall(callee_value, std::move(args));
     break;
   }
 
@@ -577,6 +618,44 @@ void VM::executeInstruction(
     break;
   }
 
+  case OpCode::CLOSURE: {
+    uint32_t function_index = std::get<uint32_t>(instruction.operands[0]);
+    const auto *target = current_chunk->getFunction(function_index);
+    if (!target) {
+      throw std::runtime_error("CLOSURE references unknown function index");
+    }
+
+    RuntimeClosure closure;
+    closure.function_index = function_index;
+    closure.upvalues.reserve(target->upvalues.size());
+    for (const auto &descriptor : target->upvalues) {
+      if (descriptor.captures_local) {
+        uint32_t abs = toAbsoluteLocal(descriptor.index);
+        ensureLocalIndex(abs);
+        closure.upvalues.push_back(locals[abs]);
+      } else {
+        uint32_t parent_closure_id = currentFrame().closure_id;
+        if (parent_closure_id == 0) {
+          throw std::runtime_error(
+              "CLOSURE tried to capture upvalue without parent closure");
+        }
+        auto parent_it = closures.find(parent_closure_id);
+        if (parent_it == closures.end()) {
+          throw std::runtime_error("Parent closure not found for CLOSURE");
+        }
+        if (descriptor.index >= parent_it->second.upvalues.size()) {
+          throw std::runtime_error("CLOSURE upvalue index out of range");
+        }
+        closure.upvalues.push_back(parent_it->second.upvalues[descriptor.index]);
+      }
+    }
+
+    uint32_t closure_id = next_closure_id++;
+    closures.emplace(closure_id, std::move(closure));
+    push(ClosureRef{.id = closure_id});
+    break;
+  }
+
   case OpCode::ARRAY_NEW:
   case OpCode::OBJECT_NEW: {
     push(nullptr);
@@ -597,7 +676,6 @@ void VM::executeInstruction(
 
   case OpCode::NOP:
   case OpCode::DEFINE_FUNC:
-  case OpCode::CLOSURE:
   case OpCode::ARRAY_GET:
   case OpCode::ARRAY_SET:
   case OpCode::ARRAY_PUSH:

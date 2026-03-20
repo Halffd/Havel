@@ -64,17 +64,6 @@ ByteCompiler::compile(const ast::Program &program) {
                              resolver.errors().front());
   }
 
-  for (const auto &[function, captures] : lexical_resolution_.captured_variables) {
-    if (!function || captures.empty()) {
-      continue;
-    }
-
-    throw std::runtime_error(
-        "Phase 2 boundary: closure capture codegen is not enabled yet for '" +
-        (function->name ? function->name->symbol : std::string("<anonymous>")) +
-        "' (captures: " + captures.front() + ")");
-  }
-
   // Reserve function indices so forward references and recursion emit stable
   // function objects.
   std::vector<const ast::FunctionDeclaration *> declared_functions;
@@ -210,6 +199,10 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   enterFunction(BytecodeFunction(function.name->symbol,
                                  static_cast<uint32_t>(function.parameters.size()),
                                  0));
+  auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
+  if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
+    current_function->upvalues = upvalues_it->second;
+  }
 
   for (const auto &param : function.parameters) {
     if (!param || !param->paramName) {
@@ -300,8 +293,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
       uint32_t slot = declarationSlot(*function.name);
       reserveLocalSlot(slot);
-      emit(OpCode::LOAD_CONST,
-           addConstant(FunctionObject{.function_index = index_it->second}));
+      auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
+      if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+          !upvalues_it->second.empty()) {
+        emit(OpCode::CLOSURE, index_it->second);
+      } else {
+        emit(OpCode::LOAD_CONST,
+             addConstant(FunctionObject{.function_index = index_it->second}));
+      }
       emit(OpCode::STORE_VAR, slot);
     }
     break;

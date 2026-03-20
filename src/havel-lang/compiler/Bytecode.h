@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -55,6 +56,7 @@ enum class OpCode : uint8_t {
   JUMP_IF_FALSE,
   JUMP_IF_TRUE,
   CALL,
+  CALL_HOST,
   RETURN,
 
   // Function operations
@@ -83,6 +85,9 @@ using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t // Index into constant pool
                  >;
+
+using BytecodeHostFunction =
+    std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;
 
 // Bytecode instruction
 struct Instruction {
@@ -146,6 +151,15 @@ public:
   execute(const BytecodeChunk &chunk, const std::string &function_name,
           const std::vector<BytecodeValue> &args = {}) = 0;
   virtual void setDebugMode(bool enabled) = 0;
+  virtual void registerHostFunction(const std::string &name,
+                                    BytecodeHostFunction function) {
+    (void)name;
+    (void)function;
+  }
+  virtual bool hasHostFunction(const std::string &name) const {
+    (void)name;
+    return false;
+  }
 };
 
 // JIT compiler interface

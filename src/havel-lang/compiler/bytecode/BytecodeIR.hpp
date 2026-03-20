@@ -27,6 +27,8 @@ enum class OpCode : uint8_t {
   LOAD_CONST,
   LOAD_VAR,
   STORE_VAR,
+  LOAD_UPVALUE,
+  STORE_UPVALUE,
   POP,
   DUP,
 

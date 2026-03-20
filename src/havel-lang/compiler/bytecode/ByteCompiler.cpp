@@ -295,9 +295,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_VAR, binding->slot);
       break;
     case ResolvedBindingKind::Upvalue:
-      throw std::runtime_error(
-          "Phase 2 boundary: upvalue load not emitted yet for '" + id.symbol +
-          "'");
+      // Resolver is now upvalue-aware; runtime support is still pending.
+      emit(OpCode::LOAD_UPVALUE, binding->slot);
+      break;
     case ResolvedBindingKind::GlobalFunction:
     case ResolvedBindingKind::Builtin:
       emit(OpCode::LOAD_CONST, addConstant(binding->name));

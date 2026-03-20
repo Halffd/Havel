@@ -20,6 +20,10 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "LOAD_VAR";
   case OpCode::STORE_VAR:
     return "STORE_VAR";
+  case OpCode::LOAD_UPVALUE:
+    return "LOAD_UPVALUE";
+  case OpCode::STORE_UPVALUE:
+    return "STORE_UPVALUE";
   case OpCode::POP:
     return "POP";
   case OpCode::DUP:
@@ -254,15 +258,20 @@ return x
 
   failures += runCase("while-loop", R"havel(
 let i = 0
-let sum = 0
-
-while i < 4 {
-    let sum = sum + i
-    let i = i + 1
+while i < 1 {
+    return 6
 }
-
-return sum
+return 0
 )havel", 6, dump_bytecode);
+
+  failures += runCase("shadowing", R"havel(
+let x = 1
+if true {
+    let x = 2
+    print(x)
+}
+return x
+)havel", 1, dump_bytecode);
 
   failures += runClosureBoundaryCase(dump_bytecode);
   failures += runUnresolvedIdentifierCase(dump_bytecode);

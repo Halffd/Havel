@@ -504,6 +504,17 @@ if s[3] {
 return 0
 )havel", 1, dump_bytecode, snapshot_dir);
 
+  failures += runCase("gc-allocation-stress", R"havel(
+let i = 0
+while i < 2000 {
+    let arr = [i, i + 1, i + 2]
+    let obj = {v: i}
+    let s = #{i}
+    i += 1
+}
+return i
+)havel", 2000, dump_bytecode, snapshot_dir);
+
   failures += runCase("member-compound-single-eval", R"havel(
 fn run() {
     let hits = 0

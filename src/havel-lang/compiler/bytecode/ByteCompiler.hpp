@@ -20,7 +20,14 @@ namespace havel::compiler {
 class ByteCompiler : public BytecodeCompiler {
 public:
     std::unique_ptr<BytecodeChunk> compile(const ast::Program& program) override;
-    void addHostBuiltin(std::string name) { host_builtin_names_.insert(std::move(name)); }
+    void addHostBuiltin(std::string name) {
+      auto dot = name.find('.');
+      if (dot != std::string::npos && dot > 0) {
+        host_global_names_.insert(name.substr(0, dot));
+      }
+      host_builtin_names_.insert(std::move(name));
+    }
+    void addHostGlobal(std::string name) { host_global_names_.insert(std::move(name)); }
     void setHostBuiltins(std::unordered_set<std::string> names) {
       host_builtin_names_ = std::move(names);
     }
@@ -85,6 +92,8 @@ private:
         "print",      "sleep_ms",        "clock_ms",
         "system.gc",  "system.gcStats",  "system_gc",
         "system_gcStats"};
+    std::unordered_set<std::string> host_global_names_{
+        "window", "io", "system", "hotkey", "mode", "process"};
 };
 
 } // namespace havel::compiler

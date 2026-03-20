@@ -241,27 +241,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::CallExpression: {
     const auto &call = static_cast<const ast::CallExpression &>(expression);
     if (call.callee) {
-      std::optional<std::string> callee_name;
-      if (call.callee->kind == ast::NodeType::Identifier) {
-        callee_name = static_cast<const ast::Identifier &>(*call.callee).symbol;
-      } else if (call.callee->kind == ast::NodeType::MemberExpression) {
-        const auto &member =
-            static_cast<const ast::MemberExpression &>(*call.callee);
-        auto *object = dynamic_cast<const ast::Identifier *>(member.object.get());
-        auto *property =
-            dynamic_cast<const ast::Identifier *>(member.property.get());
-        if (object && property) {
-          callee_name = object->symbol + "." + property->symbol;
-        }
-      }
-
-      const bool is_member_builtin_call =
-          callee_name.has_value() &&
-          builtins_.find(*callee_name) != builtins_.end() &&
-          call.callee->kind == ast::NodeType::MemberExpression;
-      if (!is_member_builtin_call) {
-        resolveExpression(*call.callee);
-      }
+      resolveExpression(*call.callee);
     }
     for (const auto &arg : call.args) {
       if (arg) {
@@ -370,6 +350,10 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
       return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name};
     }
 
+    if (host_globals_.find(name) != host_globals_.end()) {
+      return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name};
+    }
+
     if (builtins_.find(name) != builtins_.end()) {
       return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name};
     }
@@ -383,6 +367,7 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
   }
 
   if (enclosing->kind == ResolvedBindingKind::GlobalFunction ||
+      enclosing->kind == ResolvedBindingKind::HostGlobal ||
       enclosing->kind == ResolvedBindingKind::Builtin) {
     return enclosing;
   }

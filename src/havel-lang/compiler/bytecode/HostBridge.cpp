@@ -7,6 +7,8 @@
 #include "window/WindowManager.hpp"
 
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace havel::compiler {
 
@@ -44,6 +46,9 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
   options.host_functions["send"] = [self](const std::vector<BytecodeValue> &args) {
     return self->handleSend(args);
   };
+  options.host_functions["io.Send"] = [self](const std::vector<BytecodeValue> &args) {
+    return self->handleSend(args);
+  };
 
   options.host_functions["hotkey.register"] =
       [self](const std::vector<BytecodeValue> &args) {
@@ -59,6 +64,25 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleProcessFind(args);
       };
+
+  options.vm_setup = [self](VM &vm) {
+    auto registerObject = [&vm](const std::string &name,
+                                const std::vector<std::pair<std::string, std::string>>
+                                    &methods) {
+      auto object = vm.createHostObject();
+      for (const auto &[prop, host_name] : methods) {
+        vm.setHostObjectField(object, prop, HostFunctionRef{.name = host_name});
+      }
+      vm.setGlobal(name, object);
+    };
+
+    registerObject("window", {{"moveToNextMonitor", "window.moveToNextMonitor"}});
+    registerObject("io", {{"Send", "io.Send"}});
+    registerObject("system", {{"gc", "system.gc"}, {"gcStats", "system.gcStats"}});
+    registerObject("hotkey", {{"register", "hotkey.register"}});
+    registerObject("mode", {{"define", "mode.define"}});
+    registerObject("process", {{"find", "process.find"}});
+  };
 }
 
 void HostBridgeRegistry::clear() {

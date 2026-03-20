@@ -15,6 +15,7 @@ enum class ResolvedBindingKind {
   Local,
   Upvalue,
   GlobalFunction,
+  HostGlobal,
   Builtin
 };
 
@@ -35,8 +36,9 @@ struct LexicalResolutionResult {
 class LexicalResolver {
 public:
   LexicalResolver() = default;
-  explicit LexicalResolver(std::unordered_set<std::string> builtins)
-      : builtins_(std::move(builtins)) {}
+  explicit LexicalResolver(std::unordered_set<std::string> builtins,
+                           std::unordered_set<std::string> host_globals = {})
+      : builtins_(std::move(builtins)), host_globals_(std::move(host_globals)) {}
 
   LexicalResolutionResult resolve(const ast::Program &program);
   const std::vector<std::string> &errors() const { return errors_; }
@@ -58,6 +60,8 @@ private:
       "print",      "sleep_ms",        "clock_ms",
       "system.gc",  "system.gcStats",  "system_gc",
       "system_gcStats"};
+  std::unordered_set<std::string> host_globals_{
+      "window", "io", "system", "hotkey", "mode", "process"};
 
   void collectTopLevelFunctions(const ast::Program &program);
 

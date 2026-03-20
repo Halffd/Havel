@@ -22,6 +22,8 @@ std::string bindingKindName(ResolvedBindingKind kind) {
     return "Upvalue";
   case ResolvedBindingKind::GlobalFunction:
     return "GlobalFunction";
+  case ResolvedBindingKind::HostGlobal:
+    return "HostGlobal";
   case ResolvedBindingKind::Builtin:
     return "Builtin";
   }
@@ -147,6 +149,9 @@ std::string formatValue(const BytecodeValue &value) {
   if (std::holds_alternative<SetRef>(value)) {
     return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
   }
+  if (std::holds_alternative<HostFunctionRef>(value)) {
+    return "hostfn[" + std::get<HostFunctionRef>(value).name + "]";
+  }
   return "<unknown>";
 }
 
@@ -154,6 +159,8 @@ std::string opcodeName(OpCode opcode) {
   switch (opcode) {
   case OpCode::LOAD_CONST:
     return "LOAD_CONST";
+  case OpCode::LOAD_GLOBAL:
+    return "LOAD_GLOBAL";
   case OpCode::LOAD_VAR:
     return "LOAD_VAR";
   case OpCode::STORE_VAR:
@@ -338,6 +345,9 @@ BytecodeSmokeResult runBytecodePipeline(
   VM *vm = options.vm_override ? options.vm_override : &owned_vm;
   for (const auto &[name, fn] : options.host_functions) {
     vm->registerHostFunction(name, fn);
+  }
+  if (options.vm_setup) {
+    options.vm_setup(*vm);
   }
   result.return_value = vm->execute(*chunk, entry_function);
   return result;

@@ -99,6 +99,7 @@ private:
   void maybeCollectGarbage();
   void collectGarbage();
   void registerDefaultHostFunctions();
+  void registerDefaultHostGlobals();
   BytecodeValue invokeHostFunction(const std::string &name,
                                    uint32_t arg_count);
 
@@ -125,6 +126,9 @@ public:
   void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
   void runGarbageCollection() { collectGarbage(); }
   GCHeap::Stats gcStats() const { return heap_.stats(); }
+  void setGlobal(std::string name, BytecodeValue value) {
+    globals[std::move(name)] = std::move(value);
+  }
   [[nodiscard]] GCRoot makeRoot(const BytecodeValue &value) {
     return GCRoot(*this, value);
   }

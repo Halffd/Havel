@@ -19,6 +19,8 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
   switch (opcode) {
   case OpCode::LOAD_CONST:
     return "LOAD_CONST";
+  case OpCode::LOAD_GLOBAL:
+    return "LOAD_GLOBAL";
   case OpCode::LOAD_VAR:
     return "LOAD_VAR";
   case OpCode::STORE_VAR:
@@ -139,6 +141,10 @@ std::string bytecodeValueToString(const BytecodeValue &value) {
   if (std::holds_alternative<havel::compiler::SetRef>(value)) {
     return "set[" +
            std::to_string(std::get<havel::compiler::SetRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<havel::compiler::HostFunctionRef>(value)) {
+    return "hostfn[" +
+           std::get<havel::compiler::HostFunctionRef>(value).name + "]";
   }
   return "<unknown>";
 }

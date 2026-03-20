@@ -53,7 +53,7 @@ ByteCompiler::compile(const ast::Program &program) {
   function_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
 
-  LexicalResolver resolver(host_builtin_names_);
+  LexicalResolver resolver(host_builtin_names_, host_global_names_);
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
     throw std::runtime_error("Lexical resolution failed: " +
@@ -406,6 +406,9 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
              addConstant(FunctionObject{.function_index = it->second}));
       }
       break;
+    case ResolvedBindingKind::HostGlobal:
+      emit(OpCode::LOAD_GLOBAL, binding->name);
+      break;
     case ResolvedBindingKind::Builtin:
       emit(OpCode::LOAD_CONST, addConstant(binding->name));
       break;
@@ -670,16 +673,20 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     }
   }
 
-  if (auto callee_name = getCalleeName(*expression.callee);
-      callee_name && host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
-    for (const auto &arg : expression.args) {
-      if (!arg) {
-        throw std::runtime_error("Call expression contains null argument");
+  if (expression.callee->kind == ast::NodeType::Identifier) {
+    auto callee_name = getCalleeName(*expression.callee);
+    if (callee_name &&
+        host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
       }
-      compileExpression(*arg);
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{*callee_name, arg_count});
+      return;
     }
-    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*callee_name, arg_count});
-    return;
   }
 
   compileExpression(*expression.callee);

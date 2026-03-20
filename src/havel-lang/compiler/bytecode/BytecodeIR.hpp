@@ -25,6 +25,7 @@ class ByteCompiler;
 enum class OpCode : uint8_t {
   // Stack operations
   LOAD_CONST,
+  LOAD_GLOBAL,
   LOAD_VAR,
   STORE_VAR,
   LOAD_UPVALUE,
@@ -105,10 +106,14 @@ struct SetRef {
   uint32_t id = 0;
 };
 
+struct HostFunctionRef {
+  std::string name;
+};
+
 using BytecodeValue = std::variant<
     std::nullptr_t, bool, int64_t, double, std::string,
     uint32_t, // Index into constant pool
-    FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef>;
+    FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef, HostFunctionRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

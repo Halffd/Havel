@@ -14,6 +14,13 @@ namespace havel::compiler {
 
 class GCHeap {
 public:
+  struct Stats {
+    uint64_t heap_size = 0;
+    uint64_t object_count = 0;
+    uint64_t collections = 0;
+    uint64_t last_pause_ns = 0;
+  };
+
   struct UpvalueCell {
     bool is_open = false;
     uint32_t open_index = 0;
@@ -44,6 +51,7 @@ public:
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRoot(uint64_t root_id) const;
   size_t externalRootCount() const { return external_roots_.size(); }
+  Stats stats() const;
 
   void maybeCollectGarbage(
       const std::vector<BytecodeValue> &stack_values,
@@ -83,6 +91,8 @@ private:
   size_t allocations_since_last_ = 0;
   std::unordered_map<uint64_t, BytecodeValue> external_roots_;
   uint64_t next_external_root_id_ = 1;
+  uint64_t collections_ = 0;
+  uint64_t last_pause_ns_ = 0;
 };
 
 } // namespace havel::compiler

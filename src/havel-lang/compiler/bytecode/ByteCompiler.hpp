@@ -82,7 +82,9 @@ private:
     std::optional<SourceLocation> current_source_location_;
     LexicalResolutionResult lexical_resolution_;
     std::unordered_set<std::string> host_builtin_names_{
-        "print", "sleep_ms", "clock_ms"};
+        "print",      "sleep_ms",        "clock_ms",
+        "system.gc",  "system.gcStats",  "system_gc",
+        "system_gcStats"};
 };
 
 } // namespace havel::compiler

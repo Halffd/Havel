@@ -124,9 +124,13 @@ public:
 
   void setGcAllocationBudget(size_t value) { heap_.setAllocationBudget(value); }
   void runGarbageCollection() { collectGarbage(); }
+  GCHeap::Stats gcStats() const { return heap_.stats(); }
   [[nodiscard]] GCRoot makeRoot(const BytecodeValue &value) {
     return GCRoot(*this, value);
   }
+  ObjectRef createHostObject();
+  void setHostObjectField(ObjectRef object_ref, const std::string &key,
+                          BytecodeValue value);
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;

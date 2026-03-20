@@ -180,7 +180,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     if (!param || !param->paramName) {
       throw std::runtime_error("Function parameter missing identifier");
     }
-    declareLocal(param->paramName->symbol);
+    reserveLocalSlot(declarationSlot(*param->paramName));
   }
 
   if (function.body) {
@@ -218,7 +218,8 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       emit(OpCode::LOAD_CONST, addConstant(nullptr));
     }
 
-    uint32_t slot = declareLocal(identifier->symbol);
+    uint32_t slot = declarationSlot(*identifier);
+    reserveLocalSlot(slot);
     emit(OpCode::STORE_VAR, slot);
     break;
   }
@@ -283,13 +284,25 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
-    auto slot = resolveLocal(id.symbol);
-    if (!slot) {
-      throw std::runtime_error(
-          "Unknown local variable: " + id.symbol +
-          ". Non-local captures are a Phase 2 closure feature.");
+    const auto *binding = bindingFor(id);
+    if (!binding) {
+      throw std::runtime_error("Missing lexical binding for identifier: " +
+                               id.symbol);
     }
-    emit(OpCode::LOAD_VAR, *slot);
+
+    switch (binding->kind) {
+    case ResolvedBindingKind::Local:
+      emit(OpCode::LOAD_VAR, binding->slot);
+      break;
+    case ResolvedBindingKind::Upvalue:
+      throw std::runtime_error(
+          "Phase 2 boundary: upvalue load not emitted yet for '" + id.symbol +
+          "'");
+    case ResolvedBindingKind::GlobalFunction:
+    case ResolvedBindingKind::Builtin:
+      emit(OpCode::LOAD_CONST, addConstant(binding->name));
+      break;
+    }
     break;
   }
 
@@ -319,11 +332,6 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     throw std::runtime_error("Call expression missing callee");
   }
 
-  auto callee_name = getCalleeName(*expression.callee);
-  if (!callee_name) {
-    throw std::runtime_error("Unsupported callee in call expression");
-  }
-
   for (const auto &arg : expression.args) {
     if (!arg) {
       throw std::runtime_error("Call expression contains null argument");
@@ -333,9 +341,36 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
 
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
 
+  if (expression.callee->kind == ast::NodeType::Identifier) {
+    const auto &callee_id =
+        static_cast<const ast::Identifier &>(*expression.callee);
+    const auto *binding = bindingFor(callee_id);
+    if (!binding) {
+      throw std::runtime_error("Missing lexical binding for callee: " +
+                               callee_id.symbol);
+    }
+
+    if (binding->kind == ResolvedBindingKind::Builtin) {
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{binding->name, arg_count});
+      return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::GlobalFunction) {
+      emit(OpCode::LOAD_CONST, addConstant(binding->name));
+      emit(OpCode::CALL, arg_count);
+      return;
+    }
+
+    throw std::runtime_error(
+        "Phase 2 boundary: first-class local/upvalue calls are not emitted yet");
+  }
+
+  auto callee_name = getCalleeName(*expression.callee);
+  if (!callee_name) {
+    throw std::runtime_error("Unsupported callee in call expression");
+  }
   if (isHostBuiltin(*callee_name)) {
-    emit(OpCode::CALL_HOST,
-         std::vector<BytecodeValue>{*callee_name, arg_count});
+    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*callee_name, arg_count});
     return;
   }
 
@@ -416,24 +451,26 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   return std::nullopt;
 }
 
-uint32_t ByteCompiler::declareLocal(const std::string &name) {
-  auto existing = locals.find(name);
-  if (existing != locals.end()) {
-    return existing->second;
+const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {
+  auto it = lexical_resolution_.identifier_bindings.find(&id);
+  if (it == lexical_resolution_.identifier_bindings.end()) {
+    return nullptr;
   }
-
-  uint32_t slot = next_local_index++;
-  locals[name] = slot;
-  return slot;
+  return &it->second;
 }
 
-std::optional<uint32_t>
-ByteCompiler::resolveLocal(const std::string &name) const {
-  auto it = locals.find(name);
-  if (it == locals.end()) {
-    return std::nullopt;
+uint32_t ByteCompiler::declarationSlot(const ast::Identifier &id) const {
+  auto it = lexical_resolution_.declaration_slots.find(&id);
+  if (it == lexical_resolution_.declaration_slots.end()) {
+    throw std::runtime_error("Missing declaration slot for: " + id.symbol);
   }
   return it->second;
+}
+
+void ByteCompiler::reserveLocalSlot(uint32_t slot) {
+  if (slot >= next_local_index) {
+    next_local_index = slot + 1;
+  }
 }
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function) {
@@ -456,7 +493,6 @@ void ByteCompiler::leaveFunction() {
 }
 
 void ByteCompiler::resetLocals() {
-  locals.clear();
   next_local_index = 0;
 }
 

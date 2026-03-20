@@ -8,6 +8,8 @@
 
 namespace havel::compiler {
 
+class VM;
+
 struct CompileSnapshot {
   std::string resolver;
   std::string bytecode;
@@ -19,6 +21,7 @@ struct PipelineOptions {
   std::string snapshot_dir;
   bool write_snapshot_artifact = false;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  VM *vm_override = nullptr;
 };
 
 struct BytecodeSmokeResult {

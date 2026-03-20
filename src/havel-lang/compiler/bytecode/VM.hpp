@@ -129,8 +129,10 @@ public:
     return GCRoot(*this, value);
   }
   ObjectRef createHostObject();
+  ArrayRef createHostArray();
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           BytecodeValue value);
+  void pushHostArrayValue(ArrayRef array_ref, BytecodeValue value);
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;

@@ -410,6 +410,7 @@ if(ENABLE_HAVEL_LANG)
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
         src/havel-lang/compiler/bytecode/ByteCompiler.cpp
+        src/havel-lang/compiler/bytecode/GC.cpp
         src/havel-lang/compiler/bytecode/LexicalResolver.cpp
         src/havel-lang/compiler/bytecode/Pipeline.cpp
         src/havel-lang/compiler/bytecode/VM.cpp

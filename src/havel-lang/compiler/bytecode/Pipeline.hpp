@@ -22,6 +22,7 @@ struct PipelineOptions {
   bool write_snapshot_artifact = false;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   VM *vm_override = nullptr;
+  std::function<void(VM &)> vm_setup;
 };
 
 struct BytecodeSmokeResult {

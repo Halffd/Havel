@@ -48,6 +48,9 @@ std::string toString(const BytecodeValue &value) {
   if (std::holds_alternative<SetRef>(value)) {
     return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
   }
+  if (std::holds_alternative<HostFunctionRef>(value)) {
+    return "hostfn[" + std::get<HostFunctionRef>(value).name + "]";
+  }
   return "unknown";
 }
 
@@ -269,6 +272,14 @@ void VM::registerDefaultHostFunctions() {
   registerSystemGcStats("system_gcStats");
 }
 
+void VM::registerDefaultHostGlobals() {
+  auto system_obj = heap_.allocateObject();
+  setHostObjectField(system_obj, "gc", HostFunctionRef{.name = "system.gc"});
+  setHostObjectField(system_obj, "gcStats",
+                     HostFunctionRef{.name = "system.gcStats"});
+  setGlobal("system", system_obj);
+}
+
 BytecodeValue VM::invokeHostFunction(const std::string &name,
                                      uint32_t arg_count) {
   auto it = host_functions.find(name);
@@ -305,6 +316,7 @@ BytecodeValue VM::execute(
   frames.clear();
   heap_.reset();
   open_upvalues.clear();
+  registerDefaultHostGlobals();
   opcode_counts_.fill(0);
   executed_instructions_ = 0;
 
@@ -380,6 +392,16 @@ void VM::setDebugMode(bool enabled) {
 }
 
 void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
+  if (std::holds_alternative<HostFunctionRef>(callee_value)) {
+    const auto &name = std::get<HostFunctionRef>(callee_value).name;
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      throw std::runtime_error("Host function not found: " + name);
+    }
+    stack.push(it->second(args));
+    return;
+  }
+
   if (frames.size() >= max_call_depth_) {
     throw std::runtime_error("Stack overflow: maximum call depth " +
                              std::to_string(max_call_depth_) + " reached");
@@ -552,6 +574,17 @@ void VM::executeInstruction(
   case OpCode::LOAD_CONST: {
     uint32_t const_index = std::get<uint32_t>(instruction.operands[0]);
     push(getConstant(const_index));
+    break;
+  }
+
+  case OpCode::LOAD_GLOBAL: {
+    if (instruction.operands.empty() ||
+        !std::holds_alternative<std::string>(instruction.operands[0])) {
+      throw std::runtime_error("LOAD_GLOBAL expects string operand");
+    }
+    const auto &name = std::get<std::string>(instruction.operands[0]);
+    auto it = globals.find(name);
+    push(it == globals.end() ? BytecodeValue(nullptr) : it->second);
     break;
   }
 

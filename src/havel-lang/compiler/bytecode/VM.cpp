@@ -162,6 +162,7 @@ BytecodeValue VM::execute(
   locals.clear();
   frames.clear();
   closures.clear();
+  open_upvalues.clear();
   next_closure_id = 1;
 
   frames.push_back(CallFrame{entry, 0, 0, 0});
@@ -266,6 +267,35 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   }
 }
 
+void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
+  if (locals_end < locals_base) {
+    return;
+  }
+
+  std::vector<uint32_t> to_close;
+  to_close.reserve(open_upvalues.size());
+  for (const auto &[index, _] : open_upvalues) {
+    if (index >= locals_base && index < locals_end) {
+      to_close.push_back(index);
+    }
+  }
+
+  for (uint32_t index : to_close) {
+    auto it = open_upvalues.find(index);
+    if (it == open_upvalues.end() || !it->second) {
+      continue;
+    }
+    auto &cell = it->second;
+    if (index < locals.size()) {
+      cell->closed_value = locals[index];
+    } else {
+      cell->closed_value = nullptr;
+    }
+    cell->is_open = false;
+    open_upvalues.erase(it);
+  }
+}
+
 void VM::executeInstruction(
     const Instruction &instruction) {
   auto pop = [this]() -> BytecodeValue {
@@ -304,6 +334,9 @@ void VM::executeInstruction(
 
     auto finished = frames.back();
     frames.pop_back();
+
+    closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                       static_cast<uint32_t>(locals.size()));
 
     if (locals.size() >= finished.locals_base) {
       locals.resize(finished.locals_base);
@@ -345,10 +378,17 @@ void VM::executeInstruction(
     if (closure_it == closures.end()) {
       throw std::runtime_error("Closure not found for LOAD_UPVALUE");
     }
-    if (upvalue_index >= closure_it->second.upvalues.size()) {
+    if (upvalue_index >= closure_it->second.upvalues.size() ||
+        !closure_it->second.upvalues[upvalue_index]) {
       throw std::runtime_error("LOAD_UPVALUE index out of range");
     }
-    push(closure_it->second.upvalues[upvalue_index]);
+    const auto &cell = closure_it->second.upvalues[upvalue_index];
+    if (cell->is_open) {
+      ensureLocalIndex(cell->open_index);
+      push(locals[cell->open_index]);
+    } else {
+      push(cell->closed_value);
+    }
     break;
   }
 
@@ -362,10 +402,18 @@ void VM::executeInstruction(
     if (closure_it == closures.end()) {
       throw std::runtime_error("Closure not found for STORE_UPVALUE");
     }
-    if (upvalue_index >= closure_it->second.upvalues.size()) {
+    if (upvalue_index >= closure_it->second.upvalues.size() ||
+        !closure_it->second.upvalues[upvalue_index]) {
       throw std::runtime_error("STORE_UPVALUE index out of range");
     }
-    closure_it->second.upvalues[upvalue_index] = pop();
+    auto &cell = closure_it->second.upvalues[upvalue_index];
+    BytecodeValue value = pop();
+    if (cell->is_open) {
+      ensureLocalIndex(cell->open_index);
+      locals[cell->open_index] = value;
+    } else {
+      cell->closed_value = value;
+    }
     break;
   }
 
@@ -632,7 +680,16 @@ void VM::executeInstruction(
       if (descriptor.captures_local) {
         uint32_t abs = toAbsoluteLocal(descriptor.index);
         ensureLocalIndex(abs);
-        closure.upvalues.push_back(locals[abs]);
+        auto open_it = open_upvalues.find(abs);
+        if (open_it == open_upvalues.end()) {
+          auto cell = std::make_shared<RuntimeClosure::UpvalueCell>();
+          cell->is_open = true;
+          cell->open_index = abs;
+          open_upvalues.emplace(abs, cell);
+          closure.upvalues.push_back(std::move(cell));
+        } else {
+          closure.upvalues.push_back(open_it->second);
+        }
       } else {
         uint32_t parent_closure_id = currentFrame().closure_id;
         if (parent_closure_id == 0) {

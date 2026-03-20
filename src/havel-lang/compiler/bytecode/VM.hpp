@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include <memory>
 #include <stack>
 #include <unordered_map>
 #include <vector>
@@ -12,7 +13,12 @@ class VM : public BytecodeInterpreter {
 private:
   struct RuntimeClosure {
     uint32_t function_index = 0;
-    std::vector<BytecodeValue> upvalues;
+    struct UpvalueCell {
+      bool is_open = false;
+      uint32_t open_index = 0;
+      BytecodeValue closed_value = nullptr;
+    };
+    std::vector<std::shared_ptr<UpvalueCell>> upvalues;
   };
 
   struct CallFrame {
@@ -26,6 +32,8 @@ private:
   std::vector<BytecodeValue> locals;
   std::vector<CallFrame> frames;
   std::unordered_map<uint32_t, RuntimeClosure> closures;
+  std::unordered_map<uint32_t, std::shared_ptr<RuntimeClosure::UpvalueCell>>
+      open_upvalues;
   uint32_t next_closure_id = 1;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
@@ -39,6 +47,7 @@ private:
   BytecodeValue getConstant(uint32_t index);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
+  void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
   void registerDefaultHostFunctions();
   BytecodeValue invokeHostFunction(const std::string &name,
                                    uint32_t arg_count);

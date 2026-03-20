@@ -78,6 +78,18 @@ std::optional<std::string> keyFromValue(const BytecodeValue &value) {
   }
   return std::nullopt;
 }
+
+std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
+  if (ip >= function.instruction_locations.size()) {
+    return "<unknown>";
+  }
+  const auto &location = function.instruction_locations[ip];
+  if (location.line == 0 && location.column == 0) {
+    return "<unknown>";
+  }
+  return std::to_string(location.line) + ":" +
+         std::to_string(location.column);
+}
 } // namespace
 
 VM::VM() : current_chunk(nullptr) {
@@ -125,6 +137,21 @@ void VM::registerHostFunction(
   host_functions[name] = std::move(function);
 }
 
+void VM::registerHostFunction(const std::string &name, size_t arity,
+                              BytecodeHostFunction function) {
+  registerHostFunction(
+      name, [arity, function = std::move(function), name](
+                const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != arity) {
+          throw std::runtime_error("Host function '" + name +
+                                   "' expects " + std::to_string(arity) +
+                                   " arguments, got " +
+                                   std::to_string(args.size()));
+        }
+        return function(args);
+      });
+}
+
 bool VM::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
 }
@@ -141,7 +168,8 @@ void VM::registerDefaultHostFunctions() {
     return BytecodeValue(nullptr);
   });
 
-  registerHostFunction("clock_ms", [](const std::vector<BytecodeValue> &) {
+  registerHostFunction("clock_ms", 0,
+                       [](const std::vector<BytecodeValue> &) {
     const auto now =
         std::chrono::time_point_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now())
@@ -150,8 +178,9 @@ void VM::registerDefaultHostFunctions() {
     return BytecodeValue(static_cast<int64_t>(now));
   });
 
-  registerHostFunction("sleep_ms", [](const std::vector<BytecodeValue> &args) {
-    if (args.size() != 1 || !std::holds_alternative<int64_t>(args[0])) {
+  registerHostFunction("sleep_ms", 1,
+                       [](const std::vector<BytecodeValue> &args) {
+    if (!std::holds_alternative<int64_t>(args[0])) {
       throw std::runtime_error("sleep_ms expects exactly 1 integer argument");
     }
 
@@ -208,6 +237,8 @@ BytecodeValue VM::execute(
   next_array_id_ = 1;
   next_object_id_ = 1;
   next_set_id_ = 1;
+  opcode_counts_.fill(0);
+  executed_instructions_ = 0;
 
   frames.push_back(CallFrame{entry, 0, 0, 0});
   locals.resize(entry->local_count);
@@ -249,7 +280,18 @@ BytecodeValue VM::execute(
                 << std::endl;
     }
 
-    executeInstruction(instruction);
+    try {
+      if (profiling_enabled_) {
+        opcode_counts_[static_cast<uint8_t>(instruction.opcode)]++;
+        executed_instructions_++;
+      }
+      executeInstruction(instruction);
+    } catch (const std::exception &e) {
+      throw std::runtime_error(
+          "Runtime error in function '" + frame.function->name +
+          "' at ip=" + std::to_string(frame.ip) + " (source " +
+          formatSourceLocation(*frame.function, frame.ip) + "): " + e.what());
+    }
     if (!frames.empty() && active_frame == &currentFrame() &&
         currentFrame().ip == previous_ip) {
       currentFrame().ip++;
@@ -270,6 +312,11 @@ void VM::setDebugMode(bool enabled) {
 }
 
 void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
+  if (frames.size() >= max_call_depth_) {
+    throw std::runtime_error("Stack overflow: maximum call depth " +
+                             std::to_string(max_call_depth_) + " reached");
+  }
+
   uint32_t function_index = 0;
   uint32_t closure_id = 0;
   if (std::holds_alternative<FunctionObject>(callee_value)) {

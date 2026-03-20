@@ -147,6 +147,8 @@ void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
     throw std::runtime_error("Attempted to emit bytecode without active function");
   }
   current_function->instructions.emplace_back(op, std::move(operands));
+  current_function->instruction_locations.push_back(
+      current_source_location_.value_or(SourceLocation{}));
 }
 
 uint32_t ByteCompiler::addConstant(const BytecodeValue &value) {
@@ -221,6 +223,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
 }
 
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
+  auto source_scope = atNode(statement);
   switch (statement.kind) {
   case ast::NodeType::ExpressionStatement: {
     const auto &expr_stmt =
@@ -312,6 +315,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 }
 
 void ByteCompiler::compileExpression(const ast::Expression &expression) {
+  auto source_scope = atNode(expression);
   switch (expression.kind) {
   case ast::NodeType::NumberLiteral: {
     const auto &num = static_cast<const ast::NumberLiteral &>(expression);

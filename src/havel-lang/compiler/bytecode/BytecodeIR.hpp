@@ -128,10 +128,16 @@ struct UpvalueDescriptor {
   bool captures_local = false;
 };
 
+struct SourceLocation {
+  uint32_t line = 0;
+  uint32_t column = 0;
+};
+
 // Bytecode function
 struct BytecodeFunction {
   std::string name;
   std::vector<Instruction> instructions;
+  std::vector<SourceLocation> instruction_locations;
   std::vector<BytecodeValue> constants;
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;

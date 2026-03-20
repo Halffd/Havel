@@ -117,7 +117,7 @@ void registerFFIModule(Environment &env) {
   auto ffiObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   // ffi.dl(path) -> library handle
-  (*ffiObj)["dl"] = makeBuiltinFunction(
+  (*ffiObj)["dl"] = BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("ffi.dl() requires library path");
@@ -139,7 +139,7 @@ void registerFFIModule(Environment &env) {
       });
 
   // ffi.sym(lib, name) -> function pointer
-  (*ffiObj)["sym"] = makeBuiltinFunction(
+  (*ffiObj)["sym"] = BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("ffi.sym() requires (library, symbol_name)");
@@ -169,7 +169,7 @@ void registerFFIModule(Environment &env) {
       });
 
   // ffi.call(fn, ...) -> result
-  (*ffiObj)["call"] = makeBuiltinFunction(
+  (*ffiObj)["call"] = BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -184,7 +184,7 @@ void registerFFIModule(Environment &env) {
       });
 
   // ffi.close(lib) - free library handle
-  (*ffiObj)["close"] = makeBuiltinFunction(
+  (*ffiObj)["close"] = BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("ffi.close() requires library handle");

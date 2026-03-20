@@ -25,7 +25,7 @@ void registerClipboardModule(Environment &env,
   // =========================================================================
 
   (*clip)["get"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!QGuiApplication::instance()) {
           return HavelRuntimeError("clipboard.get() requires GUI application");
         }
@@ -34,7 +34,7 @@ void registerClipboardModule(Environment &env,
       }));
 
   (*clip)["in"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!QGuiApplication::instance()) {
           return HavelRuntimeError("clipboard.in() requires GUI application");
         }
@@ -43,7 +43,7 @@ void registerClipboardModule(Environment &env,
       }));
 
   (*clip)["out"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!QGuiApplication::instance()) {
           return HavelRuntimeError("clipboard.out() requires GUI application");
         }
@@ -51,7 +51,7 @@ void registerClipboardModule(Environment &env,
         return HavelValue(clipboard->text().toStdString());
       }));
 
-  (*clip)["set"] = HavelValue(makeBuiltinFunction(
+  (*clip)["set"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("clipboard.set() requires text");
@@ -83,7 +83,7 @@ void registerClipboardModule(Environment &env,
       }));
 
   (*clip)["clear"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!QGuiApplication::instance()) {
           return HavelRuntimeError(
               "clipboard.clear() requires GUI application");
@@ -99,7 +99,7 @@ void registerClipboardModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*clip)["send"] = HavelValue(makeBuiltinFunction(
+  (*clip)["send"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         // Get text from argument or clipboard
         std::string text;
@@ -137,19 +137,19 @@ void registerClipboardModule(Environment &env,
         std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
     // Show/hide clipboard manager window
-    (*clipMgrObj)["show"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["show"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           QMetaObject::invokeMethod(cm, "showAndFocus", Qt::QueuedConnection);
           return HavelValue(nullptr);
         }));
 
-    (*clipMgrObj)["hide"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["hide"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           cm->hide();
           return HavelValue(nullptr);
         }));
 
-    (*clipMgrObj)["toggle"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["toggle"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           QMetaObject::invokeMethod(cm, "toggleVisibility",
                                     Qt::QueuedConnection);
@@ -157,7 +157,7 @@ void registerClipboardModule(Environment &env,
         }));
 
     // Clipboard history operations
-    (*clipMgrObj)["history"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["history"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           auto historyArray = std::make_shared<std::vector<HavelValue>>();
           int count = cm->getHistoryCount();
@@ -168,12 +168,12 @@ void registerClipboardModule(Environment &env,
           return HavelValue(historyArray);
         }));
 
-    (*clipMgrObj)["count"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["count"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           return HavelValue(cm->getHistoryCount());
         }));
 
-    (*clipMgrObj)["getItem"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["getItem"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &args) -> HavelResult {
           if (args.empty()) {
             return HavelRuntimeError(
@@ -184,14 +184,14 @@ void registerClipboardModule(Environment &env,
           return HavelValue(item.toStdString());
         }));
 
-    (*clipMgrObj)["clear"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["clear"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           QMetaObject::invokeMethod(cm, "clearHistoryPublic",
                                     Qt::QueuedConnection);
           return HavelValue(nullptr);
         }));
 
-    (*clipMgrObj)["copy"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["copy"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &args) -> HavelResult {
           if (args.empty()) {
             return HavelRuntimeError("clipboardmanager.copy() requires text");
@@ -210,12 +210,12 @@ void registerClipboardModule(Environment &env,
         }));
 
     (*clipMgrObj)["paste"] = HavelValue(
-        makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+        BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
           QClipboard *clipboard = QGuiApplication::clipboard();
           return HavelValue(clipboard->text().toStdString());
         }));
 
-    (*clipMgrObj)["enableHotkeys"] = HavelValue(makeBuiltinFunction(
+    (*clipMgrObj)["enableHotkeys"] = HavelValue(BuiltinFunction(
         [cm](const std::vector<HavelValue> &) -> HavelResult {
           cm->initializeHotkeys();
           return HavelValue(nullptr);

@@ -53,7 +53,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // GUI initialization functions
   // =========================================================================
 
-  (*guiObj)["initialize"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["initialize"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
         // Check if QApplication already exists
         if (QApplication::instance()) {
@@ -76,7 +76,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*guiObj)["reload"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["reload"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         if (!hostAPI->GetGUIManager()) {
           return HavelRuntimeError(
@@ -90,7 +90,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   (*guiObj)["isInitialized"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(QApplication::instance() != nullptr);
       }));
 
@@ -108,7 +108,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
     return std::nullopt;
   };
 
-  (*guiObj)["showMenu"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["showMenu"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("showMenu"))
@@ -141,7 +141,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Input dialog
   // =========================================================================
 
-  (*guiObj)["input"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["input"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("input"))
@@ -163,7 +163,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Confirm dialog
   // =========================================================================
 
-  (*guiObj)["confirm"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["confirm"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("confirm"))
@@ -183,7 +183,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Notification
   // =========================================================================
 
-  (*guiObj)["notify"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["notify"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("notify"))
@@ -204,7 +204,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // File dialog
   // =========================================================================
 
-  (*guiObj)["fileDialog"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["fileDialog"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("fileDialog"))
@@ -222,7 +222,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Directory dialog
   // =========================================================================
 
-  (*guiObj)["directoryDialog"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["directoryDialog"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("directoryDialog"))
@@ -239,7 +239,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Window transparency
   // =========================================================================
 
-  (*guiObj)["setTransparency"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["setTransparency"] = HavelValue(BuiltinFunction(
       [gm, requireGui](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("setTransparency"))
           return *err;
@@ -257,7 +257,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Password dialog
   // =========================================================================
 
-  (*guiObj)["password"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["password"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("password"))
@@ -278,7 +278,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Color picker
   // =========================================================================
 
-  (*guiObj)["colorPicker"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["colorPicker"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("colorPicker"))
@@ -296,7 +296,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Window transparency (by window ID)
   // =========================================================================
 
-  (*guiObj)["setWindowTransparency"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["setWindowTransparency"] = HavelValue(BuiltinFunction(
       [gm, requireGui](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("setWindowTransparency"))
           return *err;
@@ -315,7 +315,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Window transparency (by title)
   // =========================================================================
 
-  (*guiObj)["setTransparencyByTitle"] = HavelValue(makeBuiltinFunction(
+  (*guiObj)["setTransparencyByTitle"] = HavelValue(BuiltinFunction(
       [gm, requireGui,
        valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (auto err = requireGui("setTransparencyByTitle"))

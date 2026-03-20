@@ -28,7 +28,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Volume control functions
   // =========================================================================
 
-  (*audioObj)["getVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["getVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -36,7 +36,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(am->getVolume());
       }));
 
-  (*audioObj)["setVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["setVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -50,7 +50,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*audioObj)["increaseVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["increaseVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -60,7 +60,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*audioObj)["decreaseVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["decreaseVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -74,7 +74,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Mute control functions
   // =========================================================================
 
-  (*audioObj)["toggleMute"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["toggleMute"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -83,7 +83,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*audioObj)["setMute"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["setMute"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -96,7 +96,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*audioObj)["isMuted"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["isMuted"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -108,7 +108,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Device-specific functions
   // =========================================================================
 
-  (*audioObj)["getDevices"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["getDevices"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -128,7 +128,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(arr);
       }));
 
-  (*audioObj)["setDeviceVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["setDeviceVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -147,7 +147,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(am->setVolume(device, volume));
       }));
 
-  (*audioObj)["getDeviceVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["getDeviceVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -168,7 +168,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Per-application volume control (PipeWire/PulseAudio)
   // =========================================================================
 
-  (*audioObj)["getApplications"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["getApplications"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -189,7 +189,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(arr);
       }));
 
-  (*audioObj)["setAppVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["setAppVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -204,7 +204,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(am->setApplicationVolume(appName, volume));
       }));
 
-  (*audioObj)["getAppVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["getAppVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -217,7 +217,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(am->getApplicationVolume(appName));
       }));
 
-  (*audioObj)["increaseAppVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["increaseAppVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)
@@ -232,7 +232,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(am->increaseApplicationVolume(appName, amount));
       }));
 
-  (*audioObj)["decreaseAppVolume"] = HavelValue(makeBuiltinFunction(
+  (*audioObj)["decreaseAppVolume"] = HavelValue(BuiltinFunction(
       [getAudioManager](const std::vector<HavelValue> &args) -> HavelResult {
         auto *am = getAudioManager();
         if (!am)

@@ -63,7 +63,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Pixel functions
   // =========================================================================
 
-  (*pixelObj)["get"] = HavelValue(makeBuiltinFunction(
+  (*pixelObj)["get"] = HavelValue(BuiltinFunction(
       [pa, io, &valueToString, &checkPixelAutomation](
           const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkPixelAutomation()) {
@@ -98,7 +98,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(colorObj);
       }));
 
-  (*pixelObj)["match"] = HavelValue(makeBuiltinFunction(
+  (*pixelObj)["match"] = HavelValue(BuiltinFunction(
       [pa, io, &valueToString, &checkPixelAutomation](
           const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkPixelAutomation()) {
@@ -145,7 +145,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(pa->pixelMatch(x, y, color, tolerance));
       }));
 
-  (*pixelObj)["wait"] = HavelValue(makeBuiltinFunction(
+  (*pixelObj)["wait"] = HavelValue(BuiltinFunction(
       [pa, &valueToString, &checkPixelAutomation](
           const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkPixelAutomation()) {
@@ -166,7 +166,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(pa->waitPixel(x, y, color, tolerance, timeout));
       }));
 
-  (*pixelObj)["region"] = HavelValue(makeBuiltinFunction(
+  (*pixelObj)["region"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 4) {
           return HavelRuntimeError(
@@ -238,7 +238,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
     return HavelValue(matchObj);
   };
 
-  (*imageObj)["find"] = HavelValue(makeBuiltinFunction(
+  (*imageObj)["find"] = HavelValue(BuiltinFunction(
       [pa, extractRegion,
        createMatchResult](const std::vector<HavelValue> &args) -> HavelResult {
         if (!pa) {
@@ -257,7 +257,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return createMatchResult(match);
       }));
 
-  (*imageObj)["wait"] = HavelValue(makeBuiltinFunction(
+  (*imageObj)["wait"] = HavelValue(BuiltinFunction(
       [pa, extractRegion,
        createMatchResult](const std::vector<HavelValue> &args) -> HavelResult {
         if (!pa) {
@@ -278,7 +278,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return createMatchResult(match);
       }));
 
-  (*imageObj)["exists"] = HavelValue(makeBuiltinFunction(
+  (*imageObj)["exists"] = HavelValue(BuiltinFunction(
       [pa, extractRegion](const std::vector<HavelValue> &args) -> HavelResult {
         if (!pa) {
           return HavelRuntimeError("Pixel automation not available");
@@ -295,7 +295,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(pa->existsImage(imagePath, region, threshold));
       }));
 
-  (*imageObj)["count"] = HavelValue(makeBuiltinFunction(
+  (*imageObj)["count"] = HavelValue(BuiltinFunction(
       [pa, extractRegion](const std::vector<HavelValue> &args) -> HavelResult {
         if (!pa) {
           return HavelRuntimeError("Pixel automation not available");
@@ -313,7 +313,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
             static_cast<double>(pa->countImage(imagePath, region, threshold)));
       }));
 
-  (*imageObj)["findAll"] = HavelValue(makeBuiltinFunction(
+  (*imageObj)["findAll"] = HavelValue(BuiltinFunction(
       [pa, extractRegion](const std::vector<HavelValue> &args) -> HavelResult {
         if (!pa) {
           return HavelRuntimeError("Pixel automation not available");

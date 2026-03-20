@@ -19,7 +19,7 @@ void registerProcessModule(Environment &env,
   // process.list() - Get list of running processes
   // =========================================================================
   (*proc)["list"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         HavelArray processes = std::make_shared<std::vector<HavelValue>>();
 
         try {
@@ -43,7 +43,7 @@ void registerProcessModule(Environment &env,
   // =========================================================================
   // process.find(name) - Find processes by name, returns array of PIDs
   // =========================================================================
-  (*proc)["find"] = HavelValue(makeBuiltinFunction(
+  (*proc)["find"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.find() requires process name");
@@ -82,7 +82,7 @@ void registerProcessModule(Environment &env,
   // =========================================================================
   // process.exists(name) - Check if process is running
   // =========================================================================
-  (*proc)["exists"] = HavelValue(makeBuiltinFunction(
+  (*proc)["exists"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.exists() requires process name");
@@ -117,7 +117,7 @@ void registerProcessModule(Environment &env,
   // =========================================================================
   // process.name(pid) - Get process name by PID
   // =========================================================================
-  (*proc)["name"] = HavelValue(makeBuiltinFunction(
+  (*proc)["name"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.name() requires PID");

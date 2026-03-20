@@ -71,12 +71,12 @@ void MemberResolver::resolveMember(const ast::MemberExpression &node) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the string as first argument
       auto str = objectValue; // Capture the string value
-      interpreter->setLastResult(HavelValue(makeBuiltinFunction(
+      interpreter->setLastResult(HavelValue(BuiltinFunction(
           [str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
             std::vector<HavelValue> boundArgs;
             boundArgs.push_back(str);
             boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            return (*builtin)(boundArgs);
+            return builtin(boundArgs);
           })));
       return;
     }
@@ -101,12 +101,12 @@ void MemberResolver::resolveMember(const ast::MemberExpression &node) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the array as first argument
       auto array = objectValue; // Capture the array value
-      interpreter->setLastResult(HavelValue(makeBuiltinFunction(
+      interpreter->setLastResult(HavelValue(BuiltinFunction(
           [array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
             std::vector<HavelValue> boundArgs;
             boundArgs.push_back(array);
             boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            return (*builtin)(boundArgs);
+            return builtin(boundArgs);
           })));
       return;
     }
@@ -129,7 +129,7 @@ void MemberResolver::resolveMember(const ast::MemberExpression &node) {
         // Create a bound method that captures the struct instance as 'this'
         auto instance = objectValue;
         const ast::StructMethodDef *methodPtr = method; // Capture raw pointer
-        interpreter->setLastResult(HavelValue(makeBuiltinFunction(
+        interpreter->setLastResult(HavelValue(BuiltinFunction(
             [this, instance, methodPtr,
              &eval](const std::vector<HavelValue> &args) -> HavelResult {
               // Check argument count
@@ -172,7 +172,7 @@ void MemberResolver::resolveMember(const ast::MemberExpression &node) {
           // Found trait method - create bound version
           auto instance = objectValue;
           auto traitMethod = methodIt->second.get<BuiltinFunction>();
-          interpreter->setLastResult(HavelValue(makeBuiltinFunction(
+          interpreter->setLastResult(HavelValue(BuiltinFunction(
               [this, instance, traitMethod](
                   const std::vector<HavelValue> &args) -> HavelResult {
                 // Create method environment with 'this' bound
@@ -183,7 +183,7 @@ void MemberResolver::resolveMember(const ast::MemberExpression &node) {
                 interpreter->getEnvironment() = methodEnv;
                 // Call the trait method with instance as first arg
                 std::vector<HavelValue> callArgs = args;
-                auto res = (*traitMethod)(callArgs);
+                auto res = traitMethod(callArgs);
                 interpreter->getEnvironment() = originalEnv;
                 return res;
               })));

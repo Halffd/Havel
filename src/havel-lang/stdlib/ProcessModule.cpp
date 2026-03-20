@@ -56,7 +56,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.list() - List all processes
   // ============================================================================
-  (*processObj)["list"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["list"] = HavelValue(BuiltinFunction(
       [createProcessInfo](const std::vector<HavelValue> &) -> HavelResult {
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
         auto procs = ProcessManager::listProcesses();
@@ -69,7 +69,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.find(name) - Find processes by name
   // ============================================================================
-  (*processObj)["find"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["find"] = HavelValue(BuiltinFunction(
       [valueToString,
        createProcessInfo](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
@@ -88,7 +88,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.info(pid) - Get detailed process information
   // ============================================================================
-  (*processObj)["info"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["info"] = HavelValue(BuiltinFunction(
       [createProcessInfo](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.info() requires a PID");
@@ -107,7 +107,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.exists(pid) - Check if process exists
   // ============================================================================
-  (*processObj)["exists"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["exists"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.exists() requires a PID");
@@ -120,7 +120,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.kill(pid, signal?) - Send signal to process
   // ============================================================================
-  (*processObj)["kill"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["kill"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.kill() requires a PID");
@@ -155,7 +155,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.terminate(pid, timeout?) - Terminate process gracefully
   // ============================================================================
-  (*processObj)["terminate"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["terminate"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.terminate() requires a PID");
@@ -174,7 +174,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.state(pid) - Get process state
   // ============================================================================
-  (*processObj)["state"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["state"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.state() requires a PID");
@@ -211,7 +211,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.isZombie(pid) - Check if process is zombie
   // ============================================================================
-  (*processObj)["isZombie"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["isZombie"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.isZombie() requires a PID");
@@ -224,7 +224,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.cpu(pid) - Get CPU usage
   // ============================================================================
-  (*processObj)["cpu"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["cpu"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.cpu() requires a PID");
@@ -237,7 +237,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.memory(pid) - Get memory usage in bytes
   // ============================================================================
-  (*processObj)["memory"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["memory"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.memory() requires a PID");
@@ -251,7 +251,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.threads(pid) - Get thread count
   // ============================================================================
-  (*processObj)["threads"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["threads"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.threads() requires a PID");
@@ -265,7 +265,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.name(pid) - Get process name
   // ============================================================================
-  (*processObj)["name"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["name"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.name() requires a PID");
@@ -278,7 +278,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.command(pid) - Get full command line
   // ============================================================================
-  (*processObj)["command"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["command"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.command() requires a PID");
@@ -291,7 +291,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.user(pid) - Get process user
   // ============================================================================
-  (*processObj)["user"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["user"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.user() requires a PID");
@@ -304,7 +304,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.cwd(pid) - Get working directory
   // ============================================================================
-  (*processObj)["cwd"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["cwd"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.cwd() requires a PID");
@@ -317,7 +317,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.exe(pid) - Get executable path
   // ============================================================================
-  (*processObj)["exe"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["exe"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.exe() requires a PID");
@@ -330,7 +330,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.env(pid, var) - Get environment variable
   // ============================================================================
-  (*processObj)["env"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["env"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -345,7 +345,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.startTime(pid) - Get process start time
   // ============================================================================
-  (*processObj)["startTime"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["startTime"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.startTime() requires a PID");
@@ -362,7 +362,7 @@ void registerProcessModule(Environment &env) {
   // ============================================================================
   // process.nice(pid, value?) - Get/set nice value
   // ============================================================================
-  (*processObj)["nice"] = HavelValue(makeBuiltinFunction(
+  (*processObj)["nice"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("process.nice() requires a PID");
@@ -384,7 +384,7 @@ void registerProcessModule(Environment &env) {
   // process.pid() - Get current process PID
   // ============================================================================
   (*processObj)["pid"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(ProcessManager::getCurrentPid()));
       }));
 
@@ -392,7 +392,7 @@ void registerProcessModule(Environment &env) {
   // process.ppid() - Get parent process PID
   // ============================================================================
   (*processObj)["ppid"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(ProcessManager::getParentPid()));
       }));
 

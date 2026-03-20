@@ -270,9 +270,9 @@ void ExprEvaluator::visitLambdaExpression(const ast::LambdaExpression &node) {
   const ast::Statement *bodyPtr = node.body.get();
 
   // Build a callable that binds args to parameter names and evaluates body
-  BuiltinFunction lambda = makeBuiltinFunction(
-      [this, closureEnv, paramInfos,
-       bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
+  BuiltinFunction lambda =
+      BuiltinFunction([this, closureEnv, paramInfos, bodyPtr](
+                          const std::vector<HavelValue> &args) -> HavelResult {
         // Check argument count (allow fewer args if defaults exist)
         if (args.size() > paramInfos.size()) {
           return HavelRuntimeError("Too many arguments for lambda");
@@ -371,7 +371,7 @@ void ExprEvaluator::visitPipelineExpression(
 
     HavelValue callee = unwrap(calleeRes);
     if (auto *builtin = callee.get_if<BuiltinFunction>()) {
-      currentResult = (**builtin)(args);
+      currentResult = (*builtin)(args);
     } else if (auto *userFunc =
                    callee.get_if<std::shared_ptr<HavelFunction>>()) {
       // This logic is duplicated from visitCallExpression, could be refactored

@@ -48,7 +48,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // File operations
   // =========================================================================
 
-  (*filemanagerObj)["read"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["read"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -64,7 +64,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["write"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["write"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -82,7 +82,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["append"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["append"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -100,7 +100,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["exists"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["exists"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -116,7 +116,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["delete"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["delete"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -132,7 +132,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["copy"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["copy"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -149,7 +149,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["move"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["move"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -166,7 +166,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["size"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["size"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -182,7 +182,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["wordCount"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["wordCount"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -198,7 +198,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["lineCount"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["lineCount"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -214,7 +214,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["getChecksum"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["getChecksum"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -230,7 +230,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
         }
       }));
 
-  (*filemanagerObj)["getMimeType"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["getMimeType"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -247,7 +247,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // File object constructor
-  (*filemanagerObj)["File"] = HavelValue(makeBuiltinFunction(
+  (*filemanagerObj)["File"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -259,7 +259,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*fileObj)["path"] = HavelValue(path);
 
-        (*fileObj)["read"] = HavelValue(makeBuiltinFunction(
+        (*fileObj)["read"] = HavelValue(BuiltinFunction(
             [path](const std::vector<HavelValue> &) -> HavelResult {
               try {
                 ::FileManager file(path);
@@ -270,7 +270,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
               }
             }));
 
-        (*fileObj)["write"] = HavelValue(makeBuiltinFunction(
+        (*fileObj)["write"] = HavelValue(BuiltinFunction(
             [path](const std::vector<HavelValue> &args) -> HavelResult {
               if (args.empty()) {
                 return HavelRuntimeError(
@@ -290,7 +290,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
               }
             }));
 
-        (*fileObj)["exists"] = HavelValue(makeBuiltinFunction(
+        (*fileObj)["exists"] = HavelValue(BuiltinFunction(
             [path](const std::vector<HavelValue> &) -> HavelResult {
               try {
                 ::FileManager file(path);
@@ -301,7 +301,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
               }
             }));
 
-        (*fileObj)["size"] = HavelValue(makeBuiltinFunction(
+        (*fileObj)["size"] = HavelValue(BuiltinFunction(
             [path](const std::vector<HavelValue> &) -> HavelResult {
               try {
                 ::FileManager file(path);

@@ -15,7 +15,7 @@ void registerHelpModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   env.Define(
       "help",
-      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
         std::ostringstream help;
 

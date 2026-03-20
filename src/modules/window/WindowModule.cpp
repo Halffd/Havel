@@ -61,7 +61,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.active() - Get active window info
   (*windowObj)["active"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         auto info = wm->getActiveWindowInfo();
         if (!info.valid) {
           return HavelValue(nullptr);
@@ -71,7 +71,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.list() - Get list of all windows
   (*windowObj)["list"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         auto windows = wm->getAllWindows();
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -83,7 +83,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.find(condition) - Find first window matching predicate
-  (*windowObj)["find"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["find"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty() || !args[0].is<BuiltinFunction>()) {
           return HavelRuntimeError(
@@ -96,7 +96,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*predicate)(callArgs);
+          auto result = predicate(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result; // Propagate error
@@ -114,7 +114,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.filter(condition) - Filter windows by predicate
-  (*windowObj)["filter"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["filter"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -133,7 +133,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*predicate)(callArgs);
+          auto result = predicate(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result; // Propagate error
@@ -151,7 +151,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.any(condition) - Check if any window matches
-  (*windowObj)["any"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["any"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty() || !args[0].is<BuiltinFunction>()) {
           return HavelRuntimeError(
@@ -164,7 +164,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*predicate)(callArgs);
+          auto result = predicate(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result;
@@ -182,7 +182,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.count() - Count windows (optionally matching condition)
-  (*windowObj)["count"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["count"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         auto windows = wm->getAllWindows();
 
@@ -196,7 +196,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*predicate)(callArgs);
+          auto result = predicate(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result;
@@ -214,7 +214,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.map(callback) - Transform windows
-  (*windowObj)["map"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["map"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -228,7 +228,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*mapper)(callArgs);
+          auto result = mapper(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result;
@@ -243,7 +243,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.forEach(callback) - Iterate over windows
-  (*windowObj)["forEach"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["forEach"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty() || !args[0].is<BuiltinFunction>()) {
           return HavelRuntimeError(
@@ -256,7 +256,7 @@ void registerWindowQueryModule(Environment &env,
         for (const auto &info : windows) {
           auto winObj = windowInfoToObject(info);
           std::vector<HavelValue> callArgs = {HavelValue(winObj)};
-          auto result = (*callback)(callArgs);
+          auto result = callback(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result;
@@ -298,7 +298,7 @@ void registerWindowQueryModule(Environment &env,
   };
 
   // window.focus(id) - Focus window
-  (*windowObj)["focus"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["focus"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -310,7 +310,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.close(id) - Close window
-  (*windowObj)["close"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["close"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -322,7 +322,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.move(id, x, y) - Move window
-  (*windowObj)["move"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["move"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 3) {
           return HavelRuntimeError("window.move() requires id, x, y");
@@ -341,7 +341,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.resize(id, width, height) - Resize window
-  (*windowObj)["resize"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["resize"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 3) {
           return HavelRuntimeError(
@@ -361,7 +361,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.moveResize(id, x, y, width, height) - Move and resize
-  (*windowObj)["moveResize"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["moveResize"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 5) {
           return HavelRuntimeError(
@@ -383,7 +383,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.maximize(id) - Maximize window
-  (*windowObj)["maximize"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["maximize"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -395,7 +395,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.minimize(id) - Minimize window
-  (*windowObj)["minimize"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["minimize"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -407,7 +407,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.restore(id) - Restore minimized window
-  (*windowObj)["restore"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["restore"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -419,7 +419,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.toggleFullscreen(id) - Toggle fullscreen
-  (*windowObj)["toggleFullscreen"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["toggleFullscreen"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -431,7 +431,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.setFloating(id, floating) - Set floating state
-  (*windowObj)["setFloating"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["setFloating"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -449,7 +449,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.center(id) - Center window on screen
-  (*windowObj)["center"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["center"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         uint64_t id = getWindowId(args, wm);
         if (id == 0) {
@@ -461,7 +461,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.snap(id, position) - Snap to edge (0=left,1=right,2=top,3=bottom)
-  (*windowObj)["snap"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["snap"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("window.snap() requires id and position");
@@ -482,7 +482,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.moveToWorkspace(id, workspace) - Move window to workspace
-  (*windowObj)["moveToWorkspace"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["moveToWorkspace"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -500,7 +500,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.setAlwaysOnTop(id, onTop) - Set always on top
-  (*windowObj)["setAlwaysOnTop"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["setAlwaysOnTop"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -523,7 +523,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.getWorkspaces() - Get list of workspaces
   (*windowObj)["getWorkspaces"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         auto workspaces = wm->getWorkspaces();
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -541,7 +541,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.switchWorkspace(id) - Switch to workspace
-  (*windowObj)["switchWorkspace"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["switchWorkspace"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -555,7 +555,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.getCurrentWorkspace() - Get current workspace
   (*windowObj)["getCurrentWorkspace"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         int workspace = wm->getCurrentWorkspace();
         return HavelValue(static_cast<double>(workspace));
       }));
@@ -566,7 +566,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.getMonitors() - Get list of monitors
   (*windowObj)["getMonitors"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         auto monitors = DisplayManager::GetMonitors();
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -591,7 +591,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.moveToMonitor(id, monitorIndex) - Move window to monitor
-  (*windowObj)["moveToMonitor"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["moveToMonitor"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -614,7 +614,7 @@ void registerWindowQueryModule(Environment &env,
 
   // window.getGroups() - Get list of window groups
   (*windowObj)["getGroups"] = HavelValue(
-      makeBuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([wm](const std::vector<HavelValue> &) -> HavelResult {
         auto groups = wm->getGroupNames();
         auto resultArray = std::make_shared<std::vector<HavelValue>>();
 
@@ -626,7 +626,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.getGroupWindows(groupName) - Get windows in group
-  (*windowObj)["getGroupWindows"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["getGroupWindows"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
@@ -645,7 +645,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.addToGroup(id, groupName) - Add window to group
-  (*windowObj)["addToGroup"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["addToGroup"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -663,7 +663,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // window.removeFromGroup(id, groupName) - Remove window from group
-  (*windowObj)["removeFromGroup"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["removeFromGroup"] = HavelValue(BuiltinFunction(
       [wm, getWindowId](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -685,7 +685,7 @@ void registerWindowQueryModule(Environment &env,
   // =========================================================================
 
   // window.wait(condition, timeout) - Wait for condition to be true
-  (*windowObj)["wait"] = HavelValue(makeBuiltinFunction(
+  (*windowObj)["wait"] = HavelValue(BuiltinFunction(
       [wm](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty() || !args[0].is<BuiltinFunction>()) {
           return HavelRuntimeError(
@@ -701,7 +701,7 @@ void registerWindowQueryModule(Environment &env,
         while (elapsed < timeoutMs) {
           // Check condition
           std::vector<HavelValue> callArgs;
-          auto result = (*predicate)(callArgs);
+          auto result = predicate(callArgs);
 
           if (std::holds_alternative<HavelRuntimeError>(result)) {
             return result;

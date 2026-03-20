@@ -48,7 +48,7 @@ void registerRegexModule(Environment &env) {
   // ============================================================================
 
   // regex.match(string, pattern) - returns true if pattern matches
-  (*regexObj)["match"] = makeBuiltinFunction(
+  (*regexObj)["match"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.match() requires string and pattern");
@@ -67,7 +67,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.test(string, pattern) - alias for match
-  (*regexObj)["test"] = makeBuiltinFunction(
+  (*regexObj)["test"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.test() requires string and pattern");
@@ -86,7 +86,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.search(string, pattern) - returns first match object or null
-  (*regexObj)["search"] = makeBuiltinFunction(
+  (*regexObj)["search"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError(
@@ -122,7 +122,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.findall(string, pattern) - returns array of all matches
-  (*regexObj)["findall"] = makeBuiltinFunction(
+  (*regexObj)["findall"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError(
@@ -159,7 +159,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.replace(string, pattern, replacement) - replaces all occurrences
-  (*regexObj)["replace"] = makeBuiltinFunction(
+  (*regexObj)["replace"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 3)
           return HavelRuntimeError(
@@ -180,7 +180,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.split(string, pattern) - splits string by pattern
-  (*regexObj)["split"] = makeBuiltinFunction(
+  (*regexObj)["split"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("regex.split() requires string and pattern");
@@ -216,7 +216,7 @@ void registerRegexModule(Environment &env) {
       });
 
   // regex.compile(pattern) - returns a compiled regex object
-  (*regexObj)["compile"] = makeBuiltinFunction(
+  (*regexObj)["compile"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("regex.compile() requires pattern");
@@ -231,7 +231,7 @@ void registerRegexModule(Environment &env) {
           (*regexInstance)["pattern"] = HavelValue(pattern);
 
           // Match method for compiled regex
-          (*regexInstance)["match"] = makeBuiltinFunction(
+          (*regexInstance)["match"] = BuiltinFunction(
               [re, valueToString](
                   const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
@@ -242,7 +242,7 @@ void registerRegexModule(Environment &env) {
               });
 
           // Search method for compiled regex
-          (*regexInstance)["search"] = makeBuiltinFunction(
+          (*regexInstance)["search"] = BuiltinFunction(
               [re, valueToString](
                   const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())
@@ -262,7 +262,7 @@ void registerRegexModule(Environment &env) {
               });
 
           // Findall method for compiled regex
-          (*regexInstance)["findall"] = makeBuiltinFunction(
+          (*regexInstance)["findall"] = BuiltinFunction(
               [re, valueToString](
                   const std::vector<HavelValue> &args) mutable -> HavelResult {
                 if (args.empty())

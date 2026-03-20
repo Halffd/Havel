@@ -23,7 +23,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["show"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (!altTabWindow) {
           altTabWindow = std::make_unique<AltTabWindow>();
         }
@@ -36,7 +36,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["hide"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (altTabWindow) {
           altTabWindow->hideAltTab();
         }
@@ -48,7 +48,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["next"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (altTabWindow) {
           altTabWindow->nextWindow();
         }
@@ -60,7 +60,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["prev"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (altTabWindow) {
           altTabWindow->prevWindow();
         }
@@ -72,7 +72,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["select"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (altTabWindow) {
           altTabWindow->selectCurrentWindow();
         }
@@ -84,7 +84,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // =========================================================================
 
   (*altTabObj)["refresh"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         if (altTabWindow) {
           altTabWindow->refreshWindows();
         }
@@ -95,7 +95,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Set thumbnail size
   // =========================================================================
 
-  (*altTabObj)["setThumbnailSize"] = HavelValue(makeBuiltinFunction(
+  (*altTabObj)["setThumbnailSize"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(

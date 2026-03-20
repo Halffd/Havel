@@ -23,32 +23,32 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   auto cpuObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   (*cpuObj)["cores"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(CpuInfo::cores()));
       }));
 
   (*cpuObj)["threads"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(CpuInfo::threads()));
       }));
 
   (*cpuObj)["name"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(CpuInfo::name());
       }));
 
   (*cpuObj)["frequency"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(CpuInfo::frequency());
       }));
 
   (*cpuObj)["usage"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(CpuInfo::usage());
       }));
 
   (*cpuObj)["usagePerCore"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         auto usage = CpuInfo::usagePerCore();
         auto arr = std::make_shared<std::vector<HavelValue>>();
         for (double u : usage) {
@@ -66,32 +66,32 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   auto memObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   (*memObj)["total"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::total()));
       }));
 
   (*memObj)["used"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::used()));
       }));
 
   (*memObj)["free"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::free()));
       }));
 
   (*memObj)["swapTotal"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::swapTotal()));
       }));
 
   (*memObj)["swapUsed"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::swapUsed()));
       }));
 
   (*memObj)["swapFree"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(MemoryInfo::swapFree()));
       }));
 
@@ -104,32 +104,32 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   auto osObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   (*osObj)["name"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::name());
       }));
 
   (*osObj)["distro"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::distro());
       }));
 
   (*osObj)["kernel"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::kernel());
       }));
 
   (*osObj)["hostname"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::hostname());
       }));
 
   (*osObj)["arch"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::arch());
       }));
 
   (*osObj)["uptime"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(OSInfo::uptime());
       }));
 
@@ -143,17 +143,17 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   (*tempObj)["cpu"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(Temperature::cpu());
       }));
 
   (*tempObj)["gpu"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(Temperature::gpu());
       }));
 
   (*tempObj)["all"] = HavelValue(
-      makeBuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([](const std::vector<HavelValue> &) -> HavelResult {
         auto sensors = Temperature::all();
         auto arr = std::make_shared<std::vector<HavelValue>>();
 

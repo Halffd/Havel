@@ -27,7 +27,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Media control functions
   // =========================================================================
 
-  (*mediaObj)["play"] = HavelValue(makeBuiltinFunction(
+  (*mediaObj)["play"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->PlayPause();
@@ -36,7 +36,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mediaObj)["pause"] = HavelValue(makeBuiltinFunction(
+  (*mediaObj)["pause"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->PlayPause();
@@ -45,7 +45,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mediaObj)["stop"] = HavelValue(makeBuiltinFunction(
+  (*mediaObj)["stop"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Stop();
@@ -54,7 +54,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mediaObj)["next"] = HavelValue(makeBuiltinFunction(
+  (*mediaObj)["next"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Next();
@@ -63,7 +63,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mediaObj)["previous"] = HavelValue(makeBuiltinFunction(
+  (*mediaObj)["previous"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Previous();
@@ -78,7 +78,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   auto mpvObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  (*mpvObj)["volumeUp"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["volumeUp"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->VolumeUp();
@@ -87,7 +87,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["volumeDown"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["volumeDown"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->VolumeDown();
@@ -96,7 +96,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["setVolume"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["setVolume"] = HavelValue(BuiltinFunction(
       [checkMpv](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -112,7 +112,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["getVolume"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["getVolume"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -129,7 +129,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(100.0); // Default if no response
       }));
 
-  (*mpvObj)["seek"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["seek"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -142,7 +142,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["getPosition"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["getPosition"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -159,7 +159,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(0.0); // Default if no response
       }));
 
-  (*mpvObj)["getDuration"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["getDuration"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -176,7 +176,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(0.0); // Default if no response
       }));
 
-  (*mpvObj)["loadFile"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["loadFile"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -191,7 +191,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Additional MPV functions
-  (*mpvObj)["toggleMute"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["toggleMute"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->ToggleMute();
@@ -200,7 +200,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["stop"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["stop"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Stop();
@@ -209,7 +209,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["next"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["next"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Next();
@@ -218,7 +218,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["previous"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["previous"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->Previous();
@@ -227,7 +227,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelRuntimeError("MPVController not available");
       }));
 
-  (*mpvObj)["addSpeed"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["addSpeed"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -240,7 +240,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["addSubScale"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["addSubScale"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -253,7 +253,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["addSubDelay"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["addSubDelay"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -266,7 +266,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["subSeek"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["subSeek"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -279,7 +279,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["cycle"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["cycle"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -292,7 +292,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["copyCurrentSubtitle"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["copyCurrentSubtitle"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -300,7 +300,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(app->mpv->CopyCurrentSubtitle());
       }));
 
-  (*mpvObj)["ipcSet"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["ipcSet"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &args) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");
@@ -313,7 +313,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(true);
       }));
 
-  (*mpvObj)["ipcRestart"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["ipcRestart"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (checkMpv()) {
           app->mpv->IPCRestart();
@@ -323,7 +323,7 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // pic property - returns picture-in-picture status
-  (*mpvObj)["pic"] = HavelValue(makeBuiltinFunction(
+  (*mpvObj)["pic"] = HavelValue(BuiltinFunction(
       [checkMpv, app](const std::vector<HavelValue> &) -> HavelResult {
         if (!checkMpv()) {
           return HavelRuntimeError("MPVController not available");

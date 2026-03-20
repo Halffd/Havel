@@ -4,6 +4,7 @@
 #include "host/hotkey/HotkeyService.hpp"
 #include "host/window/WindowService.hpp"
 #include "host/mode/ModeService.hpp"
+#include "host/process/ProcessService.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
@@ -573,11 +574,21 @@ BytecodeValue HostBridgeRegistry::handleModeTick(
 BytecodeValue HostBridgeRegistry::handleProcessFind(
     const std::vector<BytecodeValue> &args) {
   const auto name = requireStringArg(args, 0, "process.find");
-  auto matches = havel::ProcessManager::findProcesses(name);
+  
+  std::vector<int32_t> matches;
+  if (deps_.process_service) {
+    matches = deps_.process_service->findProcesses(name);
+  } else {
+    auto coreMatches = havel::ProcessManager::findProcesses(name);
+    matches.reserve(coreMatches.size());
+    for (const auto& m : coreMatches) {
+      matches.push_back(m.pid);
+    }
+  }
 
   const auto result = vm_.createHostArray();
-  for (const auto &entry : matches) {
-    vm_.pushHostArrayValue(result, static_cast<int64_t>(entry.pid));
+  for (const auto &pid : matches) {
+    vm_.pushHostArrayValue(result, static_cast<int64_t>(pid));
   }
   return BytecodeValue(result);
 }

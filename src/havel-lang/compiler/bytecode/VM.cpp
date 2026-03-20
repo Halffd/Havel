@@ -341,7 +341,19 @@ BytecodeValue VM::execute(
               << std::endl;
   }
 
-  while (!frames.empty()) {
+  runDispatchLoop(0);
+
+  if (stack.empty()) {
+    return nullptr;
+  }
+
+  BytecodeValue result = stack.top();
+  stack.pop();
+  return result;
+}
+
+void VM::runDispatchLoop(size_t stop_frame_depth) {
+  while (frames.size() > stop_frame_depth) {
     auto *active_frame = &currentFrame();
     size_t previous_ip = active_frame->ip;
 
@@ -377,11 +389,22 @@ BytecodeValue VM::execute(
       currentFrame().ip++;
     }
   }
+}
+
+BytecodeValue VM::call(const BytecodeValue &callee_value,
+                       const std::vector<BytecodeValue> &args) {
+  if (!current_chunk) {
+    throw std::runtime_error(
+        "VM::call requires an active bytecode chunk (run execute first)");
+  }
+
+  const size_t base_depth = frames.size();
+  doCall(callee_value, args);
+  runDispatchLoop(base_depth);
 
   if (stack.empty()) {
     return nullptr;
   }
-
   BytecodeValue result = stack.top();
   stack.pop();
   return result;
@@ -437,7 +460,9 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   }
 
   // Advance caller IP now so RETURN resumes at the next instruction.
-  currentFrame().ip++;
+  if (!frames.empty()) {
+    currentFrame().ip++;
+  }
 
   size_t base = locals.size();
   locals.resize(base + callee->local_count, nullptr);

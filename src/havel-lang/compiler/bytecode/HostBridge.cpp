@@ -5,6 +5,7 @@
 #include "host/window/WindowService.hpp"
 #include "host/mode/ModeService.hpp"
 #include "host/process/ProcessService.hpp"
+#include "host/clipboard/ClipboardService.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
@@ -591,6 +592,24 @@ BytecodeValue HostBridgeRegistry::handleProcessFind(
     vm_.pushHostArrayValue(result, static_cast<int64_t>(pid));
   }
   return BytecodeValue(result);
+}
+
+BytecodeValue HostBridgeRegistry::handleClipboardGet(
+    const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(host::ClipboardService::getText());
+}
+
+BytecodeValue HostBridgeRegistry::handleClipboardSet(
+    const std::vector<BytecodeValue> &args) {
+  const auto text = requireStringArg(args, 0, "clipboard.set");
+  return BytecodeValue(host::ClipboardService::setText(text));
+}
+
+BytecodeValue HostBridgeRegistry::handleClipboardClear(
+    const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(host::ClipboardService::clear());
 }
 
 } // namespace havel::compiler

@@ -169,6 +169,12 @@ ObjectRef VM::createHostObject() {
   return ref;
 }
 
+ArrayRef VM::createHostArray() {
+  ArrayRef ref = heap_.allocateArray();
+  maybeCollectGarbage();
+  return ref;
+}
+
 void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
                             BytecodeValue value) {
   auto *object = heap_.object(object_ref.id);
@@ -176,6 +182,14 @@ void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
     throw std::runtime_error("setHostObjectField unknown object id");
   }
   (*object)[key] = std::move(value);
+}
+
+void VM::pushHostArrayValue(ArrayRef array_ref, BytecodeValue value) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array) {
+    throw std::runtime_error("pushHostArrayValue unknown array id");
+  }
+  array->push_back(std::move(value));
 }
 
 uint64_t VM::pinExternalRoot(const BytecodeValue &value) {

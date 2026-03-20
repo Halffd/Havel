@@ -334,11 +334,12 @@ BytecodeSmokeResult runBytecodePipeline(
     throw;
   }
 
-  VM vm;
+  VM owned_vm;
+  VM *vm = options.vm_override ? options.vm_override : &owned_vm;
   for (const auto &[name, fn] : options.host_functions) {
-    vm.registerHostFunction(name, fn);
+    vm->registerHostFunction(name, fn);
   }
-  result.return_value = vm.execute(*chunk, entry_function);
+  result.return_value = vm->execute(*chunk, entry_function);
   return result;
 }
 

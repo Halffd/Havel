@@ -1,5 +1,6 @@
 #pragma once
 
+#include "LexicalResolver.hpp"
 #include "BytecodeIR.hpp"
 #include "../../ast/AST.h"
 #include <optional>
@@ -34,7 +35,6 @@ private:
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);
     void compileBlockStatement(const ast::BlockStatement& block);
-    void enforcePhase2ClosureBoundary(const ast::Statement& statement) const;
     std::optional<std::string> getCalleeName(const ast::Expression& callee) const;
 
     uint32_t declareLocal(const std::string& name);
@@ -48,6 +48,7 @@ private:
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
     std::unordered_map<std::string, uint32_t> locals;
     uint32_t next_local_index = 0;
+    LexicalResolutionResult lexical_resolution_;
 };
 
 } // namespace havel::compiler

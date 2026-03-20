@@ -203,6 +203,33 @@ return outer()
   }
 }
 
+int runUnresolvedIdentifierCase(bool dump_bytecode) {
+  const std::string source = R"havel(
+return missing_value
+)havel";
+
+  try {
+    if (dump_bytecode) {
+      dumpBytecode("unresolved-identifier", source);
+    }
+
+    (void)havel::compiler::runBytecodePipeline(source);
+    std::cerr << "[FAIL] unresolved-identifier: expected resolution error"
+              << std::endl;
+    return 1;
+  } catch (const std::exception &e) {
+    const std::string message = e.what();
+    if (message.find("Unresolved identifier") == std::string::npos) {
+      std::cerr << "[FAIL] unresolved-identifier: wrong error: " << message
+                << std::endl;
+      return 1;
+    }
+
+    std::cout << "[PASS] unresolved-identifier" << std::endl;
+    return 0;
+  }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -238,6 +265,7 @@ return sum
 )havel", 6, dump_bytecode);
 
   failures += runClosureBoundaryCase(dump_bytecode);
+  failures += runUnresolvedIdentifierCase(dump_bytecode);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

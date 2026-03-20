@@ -409,6 +409,7 @@ if(ENABLE_HAVEL_LANG)
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
         src/havel-lang/compiler/bytecode/AstBytecodeCompiler.cpp
+        src/havel-lang/compiler/bytecode/LexicalResolver.cpp
         src/havel-lang/compiler/bytecode/SourceBytecodePipeline.cpp
         src/havel-lang/compiler/bytecode/StackVMInterpreter.cpp
         src/utils/Logger.cpp

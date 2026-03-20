@@ -3,11 +3,14 @@
  *
  * IO control module for Havel language.
  * Host binding - connects language to IO system.
+ * 
+ * THIN BINDING LAYER - Business logic is in IOService
  */
 #include "IOModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "core/IO.hpp"
 #include "window/WindowManager.hpp"
+#include "host/io/IOService.hpp"
 #include <algorithm>
 #include <cctype>
 #include <optional>
@@ -69,6 +72,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   }
 
   IO *io = hostAPI->GetIO();
+  host::IOService ioService(io);
 
   // Create io module object
   auto ioObj = std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -103,180 +107,173 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   };
 
   // =========================================================================
-  // Key sending functions
+  // Key sending functions - thin wrappers over IOService
   // =========================================================================
 
   (*ioObj)["send"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->send() requires keys to send");
         }
         std::string keys = valueToString(args[0]);
-        io->Send(keys.c_str());
+        ioService.sendKeys(keys);
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["sendKey"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->sendKey() requires key name");
         }
         std::string key = valueToString(args[0]);
-        io->SendX11Key(key, true);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        io->SendX11Key(key, false);
+        ioService.sendKey(key);
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["keyDown"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->keyDown() requires key name");
         }
         std::string key = valueToString(args[0]);
-        io->SendX11Key(key, true);
+        ioService.keyDown(key);
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["keyUp"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->keyUp() requires key name");
         }
         std::string key = valueToString(args[0]);
-        io->SendX11Key(key, false);
+        ioService.keyUp(key);
         return HavelValue(nullptr);
       }));
 
   // =========================================================================
-  // Key mapping functions
+  // Key mapping functions - thin wrappers over IOService
   // =========================================================================
 
   (*ioObj)["map"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("io->map() requires (from, to)");
         }
 
         std::string from = valueToString(args[0]);
         std::string to = valueToString(args[1]);
-        io->Map(from, to);
+        ioService.map(from, to);
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["remap"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("io->remap() requires (key1, key2)");
         }
 
         std::string key1 = valueToString(args[0]);
         std::string key2 = valueToString(args[1]);
-        io->Remap(key1, key2);
+        ioService.remap(key1, key2);
         return HavelValue(nullptr);
       }));
 
   // =========================================================================
-  // IO control functions
+  // IO control functions - thin wrappers over IOService
   // =========================================================================
 
   (*ioObj)["block"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        // Emergency release all keys to block input
-        io->EmergencyReleaseAllKeys();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        ioService.block();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["unblock"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        // Ungrab all hotkeys to unblock input
-        io->UngrabAll();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        ioService.unblock();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["suspend"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->Suspend());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.suspend());
       }));
 
   (*ioObj)["resume"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        if (io->isSuspended) {
-          return HavelValue(io->Suspend());
-        }
-        return HavelValue(true);
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.resume());
       }));
 
   (*ioObj)["isSuspended"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->IsSuspended());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.isSuspended());
       }));
 
   (*ioObj)["grab"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        io->EmergencyReleaseAllKeys();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        ioService.grab();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["ungrab"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        io->UngrabAll();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        ioService.ungrab();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["emergencyRelease"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        io->EmergencyReleaseAllKeys();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        ioService.emergencyRelease();
         return HavelValue(nullptr);
       }));
 
   // =========================================================================
-  // Key state functions
+  // Key state functions - thin wrappers over IOService
   // =========================================================================
 
   (*ioObj)["getKeyState"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->getKeyState() requires key name");
         }
 
         std::string key = valueToString(args[0]);
-        return HavelValue(io->GetKeyState(key));
+        return HavelValue(ioService.getKeyState(key));
       }));
 
   (*ioObj)["isKeyPressed"] = HavelValue(BuiltinFunction(
-      [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
+      [&ioService, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->isKeyPressed() requires key name");
         }
 
         std::string key = valueToString(args[0]);
-        return HavelValue(io->IsKeyPressed(key));
+        return HavelValue(ioService.isKeyPressed(key));
       }));
 
   (*ioObj)["isShiftPressed"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->IsShiftPressed());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.isShiftPressed());
       }));
 
   (*ioObj)["isCtrlPressed"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->IsCtrlPressed());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.isCtrlPressed());
       }));
 
   (*ioObj)["isAltPressed"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->IsAltPressed());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.isAltPressed());
       }));
 
   (*ioObj)["isWinPressed"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->IsWinPressed());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.isWinPressed());
       }));
 
   (*ioObj)["getCurrentModifiers"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(static_cast<double>(io->GetCurrentModifiers()));
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(static_cast<double>(ioService.getCurrentModifiers()));
       }));
 
   // =========================================================================
@@ -380,14 +377,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   }));
 
   // =========================================================================
-  // Mouse functions
+  // Mouse functions - thin wrappers over IOService
   // =========================================================================
 
   auto mouseObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   (*mouseObj)["move"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("mouse.move(dx, dy) requires 2 arguments");
         }
@@ -395,14 +392,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         int dx = static_cast<int>(args[0].asNumber());
         int dy = static_cast<int>(args[1].asNumber());
 
-        if (!io->MouseMove(dx, dy)) {
+        if (!ioService.mouseMove(dx, dy)) {
           return HavelRuntimeError("MouseMove failed");
         }
         return HavelValue(true);
       }));
 
   (*mouseObj)["moveTo"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
         }
@@ -412,14 +409,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         int speed = args.size() > 2 ? static_cast<int>(args[2].asNumber()) : 1;
         int accel = args.size() > 3 ? static_cast<int>(args[3].asNumber()) : 0;
 
-        if (!io->MouseMoveTo(x, y, speed, accel)) {
+        if (!ioService.mouseMoveTo(x, y, speed, accel)) {
           return HavelRuntimeError("MouseMoveTo failed");
         }
         return HavelValue(true);
       }));
 
   (*mouseObj)["click"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -428,12 +425,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           }
           button = *parsed;
         }
-        io->MouseClick(button);
+        if (!ioService.mouseClick(button)) {
+          return HavelRuntimeError("MouseClick failed");
+        }
         return HavelValue(true);
       }));
 
   (*mouseObj)["doubleClick"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -443,15 +442,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           }
           button = *parsed;
         }
-        // Double click = two clicks in sequence
-        io->MouseClick(button);
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-        io->MouseClick(button);
+        if (!ioService.mouseDoubleClick(button)) {
+          return HavelRuntimeError("MouseDoubleClick failed");
+        }
         return HavelValue(true);
       }));
 
   (*mouseObj)["press"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -460,14 +458,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           }
           button = *parsed;
         }
-        if (!io->MouseDown(button)) {
+        if (!ioService.mousePress(button)) {
           return HavelRuntimeError("MouseDown failed");
         }
         return HavelValue(true);
       }));
 
   (*mouseObj)["release"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -476,7 +474,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           }
           button = *parsed;
         }
-        if (!io->MouseUp(button)) {
+        if (!ioService.mouseRelease(button)) {
           return HavelRuntimeError("MouseUp failed");
         }
         return HavelValue(true);
@@ -486,7 +484,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (*mouseObj)["up"] = (*mouseObj)["release"];
 
   (*mouseObj)["scroll"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("mouse.scroll() requires 1 or 2 arguments");
         }
@@ -505,15 +503,15 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
           dy = args[0].asNumber(); // First arg = vertical (dy)
           dx = args[1].asNumber(); // Second arg = horizontal (dx)
         }
-        if (!io->Scroll(dy, dx)) {
+        if (!ioService.scroll(dy, dx)) {
           return HavelRuntimeError("MouseScroll failed");
         }
         return HavelValue(true);
       }));
 
   (*mouseObj)["getPosition"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        auto pos = io->GetMousePosition();
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        auto pos = ioService.getMousePosition();
         auto posObj =
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
         (*posObj)["x"] = HavelValue(static_cast<double>(pos.first));
@@ -523,19 +521,19 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (*mouseObj)["pos"] = (*mouseObj)["getPosition"]; // Alias
 
   (*mouseObj)["setSensitivity"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
               "mouse.setSensitivity() requires sensitivity value");
         }
         double sensitivity = args[0].asNumber();
-        io->SetMouseSensitivity(sensitivity);
+        ioService.setMouseSensitivity(sensitivity);
         return HavelValue(nullptr);
       }));
 
   (*mouseObj)["getSensitivity"] = HavelValue(
-      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
-        return HavelValue(io->GetMouseSensitivity());
+      BuiltinFunction([&ioService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(ioService.getMouseSensitivity());
       }));
 
   // Register io and mouse modules
@@ -560,18 +558,23 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // =========================================================================
 
   env.Define("title", HavelValue(BuiltinFunction(
-                          [io](const std::vector<HavelValue> &) -> HavelResult {
+                          [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
+                            // Note: window title/class still need IO for now
+                            // These are legacy - should move to window service
+                            if (!io) return HavelValue("");
                             return HavelValue(io->GetActiveWindowTitle());
                           })));
 
   env.Define("class", HavelValue(BuiltinFunction(
-                          [io](const std::vector<HavelValue> &) -> HavelResult {
+                          [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
+                            if (!io) return HavelValue("");
                             return HavelValue(io->GetActiveWindowClass());
                           })));
 
   // Get current active window executable name
   env.Define("exe", HavelValue(BuiltinFunction(
-                        [io](const std::vector<HavelValue> &) -> HavelResult {
+                        [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
+                          if (!io) return HavelValue("");
                           return HavelValue(WindowManager::getProcessName(
                               io->GetActiveWindowPID()));
                         })));
@@ -579,19 +582,19 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Global suspend/resume aliases (AHK-style)
   env.Define("suspend",
              HavelValue(BuiltinFunction(
-                 [io](const std::vector<HavelValue> &args) -> HavelResult {
+                 [&ioService](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      // suspend() with no args = toggle
-                     return HavelValue(io->Suspend());
+                     return HavelValue(ioService.suspend());
                    }
                    // suspend(true/false) = explicit suspend/resume
                    bool shouldSuspend = args[0].isBool()
                                             ? args[0].asBool()
                                             : (args[0].asNumber() != 0);
                    if (shouldSuspend) {
-                     return HavelValue(io->Suspend());
+                     return HavelValue(ioService.suspend());
                    } else {
-                     return HavelValue(io->Resume());
+                     return HavelValue(ioService.resume());
                    }
                  })));
 

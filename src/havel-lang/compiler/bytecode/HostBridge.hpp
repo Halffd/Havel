@@ -15,6 +15,12 @@ class IO;
 class HotkeyManager;
 class ModeManager;
 class ProcessManager;
+
+namespace host {
+class IOService;
+class HotkeyService;
+class WindowService;
+} // namespace host
 } // namespace havel
 
 namespace havel::compiler {
@@ -25,6 +31,11 @@ struct HostBridgeDependencies {
   std::shared_ptr<HotkeyManager> hotkey_manager;
   std::shared_ptr<ModeManager> mode_manager;
   ProcessManager *process_manager = nullptr;
+  
+  // Service layer (preferred - decouples from core types)
+  std::shared_ptr<host::IOService> io_service;
+  std::shared_ptr<host::HotkeyService> hotkey_service;
+  std::shared_ptr<host::WindowService> window_service;
 };
 
 class HostBridgeRegistry

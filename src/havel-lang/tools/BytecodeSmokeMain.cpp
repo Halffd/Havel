@@ -28,6 +28,8 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "POP";
   case OpCode::DUP:
     return "DUP";
+  case OpCode::SWAP:
+    return "SWAP";
   case OpCode::ADD:
     return "ADD";
   case OpCode::SUB:
@@ -94,6 +96,12 @@ std::string bytecodeValueToString(const BytecodeValue &value) {
   if (std::holds_alternative<uint32_t>(value)) {
     return std::to_string(std::get<uint32_t>(value));
   }
+  if (std::holds_alternative<havel::compiler::FunctionObject>(value)) {
+    return "fn[" + std::to_string(
+                       std::get<havel::compiler::FunctionObject>(value)
+                           .function_index) +
+           "]";
+  }
   return "<unknown>";
 }
 
@@ -150,17 +158,28 @@ void dumpBytecode(const std::string &name, const std::string &source) {
 }
 
 int runCase(const std::string &name, const std::string &source, int64_t expected,
-            bool dump_bytecode) {
+            bool dump_bytecode, const std::string &snapshot_dir) {
   try {
     if (dump_bytecode) {
       dumpBytecode(name, source);
     }
 
-    const auto result = havel::compiler::runBytecodePipeline(source);
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = name;
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+
+    const auto result =
+        havel::compiler::runBytecodePipeline(source, "__main__", options);
     if (!equalsInt(result.return_value, expected)) {
       std::cerr << "[FAIL] " << name << ": expected " << expected
                 << " but got non-matching result" << std::endl;
       return 1;
+    }
+
+    if (!result.snapshot.artifact_path.empty()) {
+      std::cout << "[SNAPSHOT] " << name << ": " << result.snapshot.artifact_path
+                << std::endl;
     }
 
     std::cout << "[PASS] " << name << std::endl;
@@ -172,7 +191,7 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
   }
 }
 
-int runClosureBoundaryCase(bool dump_bytecode) {
+int runClosureBoundaryCase(bool dump_bytecode, const std::string &snapshot_dir) {
   const std::string source = R"havel(
 fn outer() {
     let x = 1
@@ -190,7 +209,11 @@ return outer()
       dumpBytecode("closure-boundary", source);
     }
 
-    (void)havel::compiler::runBytecodePipeline(source);
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = "closure-boundary";
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
     std::cerr << "[FAIL] closure-boundary: expected Phase 2 boundary error"
               << std::endl;
     return 1;
@@ -207,7 +230,8 @@ return outer()
   }
 }
 
-int runUnresolvedIdentifierCase(bool dump_bytecode) {
+int runUnresolvedIdentifierCase(bool dump_bytecode,
+                                const std::string &snapshot_dir) {
   const std::string source = R"havel(
 return missing_value
 )havel";
@@ -217,7 +241,11 @@ return missing_value
       dumpBytecode("unresolved-identifier", source);
     }
 
-    (void)havel::compiler::runBytecodePipeline(source);
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = "unresolved-identifier";
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
     std::cerr << "[FAIL] unresolved-identifier: expected resolution error"
               << std::endl;
     return 1;
@@ -238,9 +266,18 @@ return missing_value
 
 int main(int argc, char **argv) {
   bool dump_bytecode = false;
+  std::string snapshot_dir = "/tmp/havel-bytecode-snapshots";
   for (int i = 1; i < argc; ++i) {
     if (std::string(argv[i]) == "--dump-bytecode") {
       dump_bytecode = true;
+    } else if (std::string(argv[i]) == "--no-snapshots") {
+      snapshot_dir.clear();
+    } else if (std::string(argv[i]) == "--snapshot-dir") {
+      if (i + 1 >= argc) {
+        std::cerr << "--snapshot-dir requires a directory argument" << std::endl;
+        return 1;
+      }
+      snapshot_dir = argv[++i];
     }
   }
 
@@ -254,7 +291,16 @@ fn add(a, b) {
 let x = add(2, 3)
 print(x)
 return x
-)havel", 5, dump_bytecode);
+)havel", 5, dump_bytecode, snapshot_dir);
+
+  failures += runCase("first-class-call", R"havel(
+fn add(a, b) {
+    return a + b
+}
+
+let f = add
+return f(20, 22)
+)havel", 42, dump_bytecode, snapshot_dir);
 
   failures += runCase("while-loop", R"havel(
 let i = 0
@@ -262,7 +308,7 @@ while i < 1 {
     return 6
 }
 return 0
-)havel", 6, dump_bytecode);
+)havel", 6, dump_bytecode, snapshot_dir);
 
   failures += runCase("shadowing", R"havel(
 let x = 1
@@ -271,10 +317,10 @@ if true {
     print(x)
 }
 return x
-)havel", 1, dump_bytecode);
+)havel", 1, dump_bytecode, snapshot_dir);
 
-  failures += runClosureBoundaryCase(dump_bytecode);
-  failures += runUnresolvedIdentifierCase(dump_bytecode);
+  failures += runClosureBoundaryCase(dump_bytecode, snapshot_dir);
+  failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

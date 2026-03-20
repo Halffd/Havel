@@ -19,6 +19,9 @@ namespace havel::compiler {
 class ByteCompiler : public BytecodeCompiler {
 public:
     std::unique_ptr<BytecodeChunk> compile(const ast::Program& program) override;
+    const LexicalResolutionResult& lexicalResolution() const {
+      return lexical_resolution_;
+    }
 
 private:
     void emit(OpCode op);
@@ -47,6 +50,7 @@ private:
     std::unique_ptr<BytecodeChunk> chunk;
     std::unique_ptr<BytecodeFunction> current_function;
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
+    std::unordered_map<std::string, uint32_t> function_indices_by_name_;
     uint32_t next_local_index = 0;
     LexicalResolutionResult lexical_resolution_;
 };

@@ -336,6 +336,49 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::ArrayLiteral: {
+    const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
+    emit(OpCode::ARRAY_NEW);
+    for (const auto &element : array.elements) {
+      if (!element) {
+        throw std::runtime_error("Array literal contains null element");
+      }
+      emit(OpCode::DUP);
+      compileExpression(*element);
+      emit(OpCode::ARRAY_PUSH);
+    }
+    break;
+  }
+
+  case ast::NodeType::SetExpression: {
+    const auto &set = static_cast<const ast::SetExpression &>(expression);
+    emit(OpCode::SET_NEW);
+    for (const auto &element : set.elements) {
+      if (!element) {
+        throw std::runtime_error("Set literal contains null element");
+      }
+      emit(OpCode::DUP);
+      compileExpression(*element);
+      emit(OpCode::LOAD_CONST, addConstant(true));
+      emit(OpCode::ARRAY_SET);
+    }
+    break;
+  }
+
+  case ast::NodeType::ObjectLiteral: {
+    const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &pair : object.pairs) {
+      if (!pair.second) {
+        throw std::runtime_error("Object literal contains null value");
+      }
+      emit(OpCode::DUP);
+      compileExpression(*pair.second);
+      emit(OpCode::OBJECT_SET, pair.first);
+    }
+    break;
+  }
+
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
     const auto *binding = bindingFor(id);
@@ -384,60 +427,145 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::AssignmentExpression: {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
-    auto *target_id =
-        assignment.target
-            ? dynamic_cast<const ast::Identifier *>(assignment.target.get())
-            : nullptr;
-    if (!target_id) {
-      throw std::runtime_error(
-          "Bytecode compiler only supports identifier assignment targets");
-    }
     if (!assignment.value) {
       throw std::runtime_error("Assignment expression missing value");
     }
 
-    const auto *binding = bindingFor(*target_id);
-    if (!binding) {
-      throw std::runtime_error("Missing lexical binding for assignment target: " +
-                               target_id->symbol);
-    }
+    const auto *target_id =
+        assignment.target
+            ? dynamic_cast<const ast::Identifier *>(assignment.target.get())
+            : nullptr;
+    const auto *target_member =
+        assignment.target
+            ? dynamic_cast<const ast::MemberExpression *>(assignment.target.get())
+            : nullptr;
+    const auto *target_index =
+        assignment.target
+            ? dynamic_cast<const ast::IndexExpression *>(assignment.target.get())
+            : nullptr;
 
-    auto emitStoreWithResult = [&](OpCode store_op, uint32_t slot) {
+    auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       emit(OpCode::DUP);
-      emit(store_op, slot);
+      if (binding.kind == ResolvedBindingKind::Local) {
+        emit(OpCode::STORE_VAR, binding.slot);
+      } else if (binding.kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::STORE_UPVALUE, binding.slot);
+      } else {
+        throw std::runtime_error("Assignment target is not mutable");
+      }
+    };
+
+    auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
+      if (binding.kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_VAR, binding.slot);
+      } else if (binding.kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::LOAD_UPVALUE, binding.slot);
+      } else {
+        throw std::runtime_error("Assignment target is not mutable");
+      }
+    };
+
+    auto emitStoreMemberWithResult = [&](const ast::MemberExpression &member) {
+      auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+      if (!member.object || !property) {
+        throw std::runtime_error(
+            "Member assignment expects identifier property target");
+      }
+      uint32_t temp_slot = next_local_index;
+      reserveLocalSlot(temp_slot);
+      emit(OpCode::STORE_VAR, temp_slot);
+      compileExpression(*member.object);
+      emit(OpCode::LOAD_VAR, temp_slot);
+      emit(OpCode::OBJECT_SET, property->symbol);
+      emit(OpCode::LOAD_VAR, temp_slot);
+    };
+
+    auto emitLoadMember = [&](const ast::MemberExpression &member) {
+      auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+      if (!member.object || !property) {
+        throw std::runtime_error(
+            "Member assignment expects identifier property target");
+      }
+      compileExpression(*member.object);
+      emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+      emit(OpCode::OBJECT_GET);
+    };
+
+    auto emitStoreIndexWithResult = [&](const ast::IndexExpression &index_expr) {
+      if (!index_expr.object || !index_expr.index) {
+        throw std::runtime_error("Index assignment expects object and index");
+      }
+      uint32_t temp_slot = next_local_index;
+      reserveLocalSlot(temp_slot);
+      emit(OpCode::STORE_VAR, temp_slot);
+      compileExpression(*index_expr.object);
+      compileExpression(*index_expr.index);
+      emit(OpCode::LOAD_VAR, temp_slot);
+      emit(OpCode::ARRAY_SET);
+      emit(OpCode::LOAD_VAR, temp_slot);
+    };
+
+    auto emitLoadIndex = [&](const ast::IndexExpression &index_expr) {
+      if (!index_expr.object || !index_expr.index) {
+        throw std::runtime_error("Index assignment expects object and index");
+      }
+      compileExpression(*index_expr.object);
+      compileExpression(*index_expr.index);
+      emit(OpCode::ARRAY_GET);
     };
 
     if (assignment.operator_ == "=") {
       compileExpression(*assignment.value);
-      if (binding->kind == ResolvedBindingKind::Local) {
-        emitStoreWithResult(OpCode::STORE_VAR, binding->slot);
+      if (target_id) {
+        const auto *binding = bindingFor(*target_id);
+        if (!binding) {
+          throw std::runtime_error(
+              "Missing lexical binding for assignment target: " +
+              target_id->symbol);
+        }
+        emitStoreIdentifierWithResult(*binding);
         break;
       }
-      if (binding->kind == ResolvedBindingKind::Upvalue) {
-        emitStoreWithResult(OpCode::STORE_UPVALUE, binding->slot);
+      if (target_member) {
+        emitStoreMemberWithResult(*target_member);
         break;
       }
-      throw std::runtime_error("Assignment target is not mutable: " +
-                               target_id->symbol);
+      if (target_index) {
+        emitStoreIndexWithResult(*target_index);
+        break;
+      }
+      throw std::runtime_error("Unsupported assignment target");
     }
 
     auto emitCompound = [&](OpCode math_op) {
-      if (binding->kind == ResolvedBindingKind::Local) {
-        emit(OpCode::LOAD_VAR, binding->slot);
-      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
-        emit(OpCode::LOAD_UPVALUE, binding->slot);
-      } else {
-        throw std::runtime_error("Assignment target is not mutable: " +
-                                 target_id->symbol);
+      if (target_id) {
+        const auto *binding = bindingFor(*target_id);
+        if (!binding) {
+          throw std::runtime_error(
+              "Missing lexical binding for assignment target: " +
+              target_id->symbol);
+        }
+        emitLoadIdentifier(*binding);
+        compileExpression(*assignment.value);
+        emit(math_op);
+        emitStoreIdentifierWithResult(*binding);
+        return;
       }
-
-      compileExpression(*assignment.value);
-      emit(math_op);
-      if (binding->kind == ResolvedBindingKind::Local) {
-        emitStoreWithResult(OpCode::STORE_VAR, binding->slot);
-      } else {
-        emitStoreWithResult(OpCode::STORE_UPVALUE, binding->slot);
+      if (target_member) {
+        emitLoadMember(*target_member);
+        compileExpression(*assignment.value);
+        emit(math_op);
+        emitStoreMemberWithResult(*target_member);
+        return;
       }
+      if (target_index) {
+        emitLoadIndex(*target_index);
+        compileExpression(*assignment.value);
+        emit(math_op);
+        emitStoreIndexWithResult(*target_index);
+        return;
+      }
+      throw std::runtime_error("Unsupported compound assignment target");
     };
 
     if (assignment.operator_ == "+=") {
@@ -464,6 +592,29 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::CallExpression:
     compileCallExpression(static_cast<const ast::CallExpression &>(expression));
     break;
+
+  case ast::NodeType::MemberExpression: {
+    const auto &member = static_cast<const ast::MemberExpression &>(expression);
+    auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+    if (!member.object || !property) {
+      throw std::runtime_error("Unsupported member expression");
+    }
+    compileExpression(*member.object);
+    emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+    emit(OpCode::OBJECT_GET);
+    break;
+  }
+
+  case ast::NodeType::IndexExpression: {
+    const auto &index = static_cast<const ast::IndexExpression &>(expression);
+    if (!index.object || !index.index) {
+      throw std::runtime_error("Malformed index expression");
+    }
+    compileExpression(*index.object);
+    compileExpression(*index.index);
+    emit(OpCode::ARRAY_GET);
+    break;
+  }
 
   default:
     throw std::runtime_error("Unsupported expression in bytecode compiler: " +

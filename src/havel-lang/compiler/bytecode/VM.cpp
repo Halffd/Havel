@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -38,7 +39,44 @@ std::string toString(const BytecodeValue &value) {
   if (std::holds_alternative<ClosureRef>(value)) {
     return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
   }
+  if (std::holds_alternative<ArrayRef>(value)) {
+    return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<ObjectRef>(value)) {
+    return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<SetRef>(value)) {
+    return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
+  }
   return "unknown";
+}
+
+std::optional<int64_t> indexFromValue(const BytecodeValue &value) {
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::get<int64_t>(value);
+  }
+  if (std::holds_alternative<double>(value)) {
+    return static_cast<int64_t>(std::get<double>(value));
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> keyFromValue(const BytecodeValue &value) {
+  if (std::holds_alternative<std::string>(value)) {
+    return std::get<std::string>(value);
+  }
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::to_string(std::get<int64_t>(value));
+  }
+  if (std::holds_alternative<double>(value)) {
+    std::ostringstream out;
+    out << std::get<double>(value);
+    return out.str();
+  }
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value) ? "true" : "false";
+  }
+  return std::nullopt;
 }
 } // namespace
 
@@ -164,6 +202,12 @@ BytecodeValue VM::execute(
   closures.clear();
   open_upvalues.clear();
   next_closure_id = 1;
+  arrays_.clear();
+  objects_.clear();
+  sets_.clear();
+  next_array_id_ = 1;
+  next_object_id_ = 1;
+  next_set_id_ = 1;
 
   frames.push_back(CallFrame{entry, 0, 0, 0});
   locals.resize(entry->local_count);
@@ -713,9 +757,206 @@ void VM::executeInstruction(
     break;
   }
 
-  case OpCode::ARRAY_NEW:
+  case OpCode::ARRAY_NEW: {
+    uint32_t id = next_array_id_++;
+    arrays_[id] = {};
+    push(ArrayRef{.id = id});
+    break;
+  }
+
+  case OpCode::SET_NEW: {
+    uint32_t id = next_set_id_++;
+    sets_[id] = {};
+    push(SetRef{.id = id});
+    break;
+  }
+
+  case OpCode::ARRAY_PUSH: {
+    BytecodeValue value = pop();
+    BytecodeValue container = pop();
+    if (!std::holds_alternative<ArrayRef>(container)) {
+      throw std::runtime_error("ARRAY_PUSH expects array container");
+    }
+    uint32_t id = std::get<ArrayRef>(container).id;
+    auto it = arrays_.find(id);
+    if (it == arrays_.end()) {
+      throw std::runtime_error("ARRAY_PUSH unknown array id");
+    }
+    it->second.push_back(value);
+    push(container);
+    break;
+  }
+
+  case OpCode::ARRAY_GET: {
+    BytecodeValue index_or_key = pop();
+    BytecodeValue container = pop();
+
+    if (std::holds_alternative<ArrayRef>(container)) {
+      auto index = indexFromValue(index_or_key);
+      if (!index || *index < 0) {
+        throw std::runtime_error("ARRAY_GET expects non-negative integer index");
+      }
+      auto it = arrays_.find(std::get<ArrayRef>(container).id);
+      if (it == arrays_.end()) {
+        throw std::runtime_error("ARRAY_GET unknown array id");
+      }
+      if (static_cast<size_t>(*index) >= it->second.size()) {
+        push(nullptr);
+      } else {
+        push(it->second[static_cast<size_t>(*index)]);
+      }
+      break;
+    }
+
+    if (std::holds_alternative<SetRef>(container)) {
+      auto key = keyFromValue(index_or_key);
+      if (!key) {
+        throw std::runtime_error("SET membership expects string/number/bool key");
+      }
+      auto it = sets_.find(std::get<SetRef>(container).id);
+      if (it == sets_.end()) {
+        throw std::runtime_error("ARRAY_GET unknown set id");
+      }
+      push(it->second.find(*key) != it->second.end());
+      break;
+    }
+
+    if (std::holds_alternative<ObjectRef>(container)) {
+      auto key = keyFromValue(index_or_key);
+      if (!key) {
+        throw std::runtime_error("OBJECT index expects string/number/bool key");
+      }
+      auto it = objects_.find(std::get<ObjectRef>(container).id);
+      if (it == objects_.end()) {
+        throw std::runtime_error("ARRAY_GET unknown object id");
+      }
+      auto kv = it->second.find(*key);
+      push(kv == it->second.end() ? BytecodeValue(nullptr) : kv->second);
+      break;
+    }
+
+    throw std::runtime_error("ARRAY_GET expects array/set/object container");
+  }
+
+  case OpCode::ARRAY_SET: {
+    BytecodeValue value = pop();
+    BytecodeValue index_or_key = pop();
+    BytecodeValue container = pop();
+
+    if (std::holds_alternative<ArrayRef>(container)) {
+      auto index = indexFromValue(index_or_key);
+      if (!index || *index < 0) {
+        throw std::runtime_error("ARRAY_SET expects non-negative integer index");
+      }
+      auto it = arrays_.find(std::get<ArrayRef>(container).id);
+      if (it == arrays_.end()) {
+        throw std::runtime_error("ARRAY_SET unknown array id");
+      }
+      const auto idx = static_cast<size_t>(*index);
+      if (idx >= it->second.size()) {
+        it->second.resize(idx + 1, nullptr);
+      }
+      it->second[idx] = value;
+      break;
+    }
+
+    if (std::holds_alternative<SetRef>(container)) {
+      auto key = keyFromValue(index_or_key);
+      if (!key) {
+        throw std::runtime_error("SET assignment expects string/number/bool key");
+      }
+      auto it = sets_.find(std::get<SetRef>(container).id);
+      if (it == sets_.end()) {
+        throw std::runtime_error("ARRAY_SET unknown set id");
+      }
+      bool present = false;
+      if (std::holds_alternative<bool>(value)) {
+        present = std::get<bool>(value);
+      } else if (std::holds_alternative<int64_t>(value)) {
+        present = std::get<int64_t>(value) != 0;
+      } else if (std::holds_alternative<double>(value)) {
+        present = std::get<double>(value) != 0.0;
+      } else {
+        throw std::runtime_error(
+            "SET assignment value must be bool/number to indicate presence");
+      }
+      if (present) {
+        it->second[*key] = nullptr;
+      } else {
+        it->second.erase(*key);
+      }
+      break;
+    }
+
+    if (std::holds_alternative<ObjectRef>(container)) {
+      auto key = keyFromValue(index_or_key);
+      if (!key) {
+        throw std::runtime_error("OBJECT index assignment expects valid key");
+      }
+      auto it = objects_.find(std::get<ObjectRef>(container).id);
+      if (it == objects_.end()) {
+        throw std::runtime_error("ARRAY_SET unknown object id");
+      }
+      it->second[*key] = value;
+      break;
+    }
+
+    throw std::runtime_error("ARRAY_SET expects array/set/object container");
+  }
+
   case OpCode::OBJECT_NEW: {
-    push(nullptr);
+    uint32_t id = next_object_id_++;
+    objects_[id] = {};
+    push(ObjectRef{.id = id});
+    break;
+  }
+
+  case OpCode::OBJECT_GET: {
+    BytecodeValue key_value = pop();
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_GET expects object container");
+    }
+    auto key = keyFromValue(key_value);
+    if (!key) {
+      throw std::runtime_error("OBJECT_GET expects string/number/bool key");
+    }
+    auto it = objects_.find(std::get<ObjectRef>(object).id);
+    if (it == objects_.end()) {
+      throw std::runtime_error("OBJECT_GET unknown object id");
+    }
+    auto kv = it->second.find(*key);
+    push(kv == it->second.end() ? BytecodeValue(nullptr) : kv->second);
+    break;
+  }
+
+  case OpCode::OBJECT_SET: {
+    std::optional<std::string> key;
+    BytecodeValue value = nullptr;
+    BytecodeValue object = nullptr;
+    if (!instruction.operands.empty()) {
+      value = pop();
+      object = pop();
+      key = keyFromValue(instruction.operands[0]);
+    } else {
+      value = pop();
+      BytecodeValue key_value = pop();
+      object = pop();
+      key = keyFromValue(key_value);
+    }
+
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_SET expects object container");
+    }
+
+    if (!key) {
+      throw std::runtime_error("OBJECT_SET expects string/number/bool key");
+    }
+    auto it = objects_.find(std::get<ObjectRef>(object).id);
+    if (it == objects_.end()) {
+      throw std::runtime_error("OBJECT_SET unknown object id");
+    }
+    it->second[*key] = value;
     break;
   }
 
@@ -733,11 +974,6 @@ void VM::executeInstruction(
 
   case OpCode::NOP:
   case OpCode::DEFINE_FUNC:
-  case OpCode::ARRAY_GET:
-  case OpCode::ARRAY_SET:
-  case OpCode::ARRAY_PUSH:
-  case OpCode::OBJECT_GET:
-  case OpCode::OBJECT_SET:
     break;
 
   default:

@@ -271,6 +271,47 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::IndexExpression: {
+    const auto &index = static_cast<const ast::IndexExpression &>(expression);
+    if (index.object) {
+      resolveExpression(*index.object);
+    }
+    if (index.index) {
+      resolveExpression(*index.index);
+    }
+    break;
+  }
+
+  case ast::NodeType::ArrayLiteral: {
+    const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
+    for (const auto &element : array.elements) {
+      if (element) {
+        resolveExpression(*element);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::SetExpression: {
+    const auto &set = static_cast<const ast::SetExpression &>(expression);
+    for (const auto &element : set.elements) {
+      if (element) {
+        resolveExpression(*element);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::ObjectLiteral: {
+    const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
+    for (const auto &pair : object.pairs) {
+      if (pair.second) {
+        resolveExpression(*pair.second);
+      }
+    }
+    break;
+  }
+
   default:
     break;
   }

@@ -71,6 +71,7 @@ enum class OpCode : uint8_t {
   ARRAY_GET,
   ARRAY_SET,
   ARRAY_PUSH,
+  SET_NEW,
 
   // Object operations
   OBJECT_NEW,
@@ -92,10 +93,22 @@ struct ClosureRef {
   uint32_t id = 0;
 };
 
+struct ArrayRef {
+  uint32_t id = 0;
+};
+
+struct ObjectRef {
+  uint32_t id = 0;
+};
+
+struct SetRef {
+  uint32_t id = 0;
+};
+
 using BytecodeValue = std::variant<
     std::nullptr_t, bool, int64_t, double, std::string,
     uint32_t, // Index into constant pool
-    FunctionObject, ClosureRef>;
+    FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

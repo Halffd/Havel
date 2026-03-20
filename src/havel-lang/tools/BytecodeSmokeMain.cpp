@@ -72,6 +72,8 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "CALL_HOST";
   case OpCode::RETURN:
     return "RETURN";
+  case OpCode::CLOSURE:
+    return "CLOSURE";
   default:
     return "OTHER";
   }
@@ -100,6 +102,11 @@ std::string bytecodeValueToString(const BytecodeValue &value) {
     return "fn[" + std::to_string(
                        std::get<havel::compiler::FunctionObject>(value)
                            .function_index) +
+           "]";
+  }
+  if (std::holds_alternative<havel::compiler::ClosureRef>(value)) {
+    return "closure[" +
+           std::to_string(std::get<havel::compiler::ClosureRef>(value).id) +
            "]";
   }
   return "<unknown>";
@@ -191,7 +198,7 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
   }
 }
 
-int runClosureBoundaryCase(bool dump_bytecode, const std::string &snapshot_dir) {
+int runClosureCase(bool dump_bytecode, const std::string &snapshot_dir) {
   const std::string source = R"havel(
 fn outer() {
     let x = 1
@@ -206,27 +213,25 @@ return outer()
 
   try {
     if (dump_bytecode) {
-      dumpBytecode("closure-boundary", source);
+      dumpBytecode("closure", source);
     }
 
     havel::compiler::PipelineOptions options;
-    options.compile_unit_name = "closure-boundary";
+    options.compile_unit_name = "closure";
     options.snapshot_dir = snapshot_dir;
     options.write_snapshot_artifact = !snapshot_dir.empty();
-    (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
-    std::cerr << "[FAIL] closure-boundary: expected Phase 2 boundary error"
-              << std::endl;
-    return 1;
-  } catch (const std::exception &e) {
-    const std::string message = e.what();
-    if (message.find("Phase 2") == std::string::npos) {
-      std::cerr << "[FAIL] closure-boundary: wrong error: " << message
+    const auto result =
+        havel::compiler::runBytecodePipeline(source, "__main__", options);
+    if (!equalsInt(result.return_value, 1)) {
+      std::cerr << "[FAIL] closure: expected 1 but got non-matching result"
                 << std::endl;
       return 1;
     }
-
-    std::cout << "[PASS] closure-boundary" << std::endl;
+    std::cout << "[PASS] closure" << std::endl;
     return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] closure: exception: " << e.what() << std::endl;
+    return 1;
   }
 }
 
@@ -331,7 +336,7 @@ if true {
 return x
 )havel", 1, dump_bytecode, snapshot_dir);
 
-  failures += runClosureBoundaryCase(dump_bytecode, snapshot_dir);
+  failures += runClosureCase(dump_bytecode, snapshot_dir);
   failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
 
   if (failures != 0) {

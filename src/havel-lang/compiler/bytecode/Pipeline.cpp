@@ -85,10 +85,10 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
     out << symbol << " => slot=" << slot << "\n";
   }
 
-  out << "\n[resolver.captures]\n";
-  std::vector<std::pair<std::string, std::vector<std::string>>> captures;
-  captures.reserve(resolution.captured_variables.size());
-  for (const auto &[function, vars] : resolution.captured_variables) {
+  out << "\n[resolver.upvalues]\n";
+  std::vector<std::pair<std::string, std::vector<UpvalueDescriptor>>> captures;
+  captures.reserve(resolution.function_upvalues.size());
+  for (const auto &[function, vars] : resolution.function_upvalues) {
     const std::string fn =
         (function && function->name) ? function->name->symbol : "<anonymous>";
     captures.emplace_back(fn, vars);
@@ -98,17 +98,13 @@ std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
               return lhs.first < rhs.first;
             });
   for (const auto &[fn, vars] : captures) {
-    out << fn << " => ";
-    if (vars.empty()) {
-      out << "[]\n";
-      continue;
-    }
-    out << "[";
+    out << fn << " => [";
     for (size_t i = 0; i < vars.size(); ++i) {
       if (i > 0) {
         out << ", ";
       }
-      out << vars[i];
+      out << "{index=" << vars[i].index
+          << ", local=" << (vars[i].captures_local ? "true" : "false") << "}";
     }
     out << "]\n";
   }
@@ -138,6 +134,9 @@ std::string formatValue(const BytecodeValue &value) {
   if (std::holds_alternative<FunctionObject>(value)) {
     return "fn[" +
            std::to_string(std::get<FunctionObject>(value).function_index) + "]";
+  }
+  if (std::holds_alternative<ClosureRef>(value)) {
+    return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
   }
   return "<unknown>";
 }

@@ -1,7 +1,5 @@
 #include "LexicalResolver.hpp"
 
-#include <algorithm>
-
 namespace havel::compiler {
 
 LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
@@ -61,9 +59,16 @@ void LexicalResolver::beginFunction(const ast::FunctionDeclaration *function) {
 }
 
 void LexicalResolver::endFunction() {
-  if (!function_stack_.empty()) {
-    function_stack_.pop_back();
+  if (function_stack_.empty()) {
+    return;
   }
+
+  const auto &ctx = function_stack_.back();
+  if (ctx.owner) {
+    result_.function_upvalues[ctx.owner] = ctx.upvalues;
+  }
+
+  function_stack_.pop_back();
 }
 
 void LexicalResolver::beginScope() {
@@ -259,60 +264,92 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   }
 }
 
-std::optional<ResolvedBinding>
-LexicalResolver::resolveIdentifier(const std::string &name) const {
+std::optional<ResolvedBinding> LexicalResolver::resolveIdentifier(
+    const std::string &name) {
   if (function_stack_.empty()) {
     return std::nullopt;
   }
+  return resolveIdentifierInFunction(name, function_stack_.size() - 1);
+}
 
-  for (size_t fn = function_stack_.size(); fn > 0; --fn) {
-    const auto &ctx = function_stack_[fn - 1];
+std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
+    const std::string &name, size_t function_index) {
+  if (function_index >= function_stack_.size()) {
+    return std::nullopt;
+  }
 
-    for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
-      const auto &scope = ctx.scopes[sc - 1];
-      auto it = scope.find(name);
-      if (it == scope.end()) {
-        continue;
-      }
-
-      ResolvedBinding binding;
-      binding.name = name;
-      binding.slot = it->second;
-      binding.scope_distance = static_cast<uint32_t>(function_stack_.size() - fn);
-      binding.kind = (fn == function_stack_.size()) ? ResolvedBindingKind::Local
-                                                    : ResolvedBindingKind::Upvalue;
-      return binding;
+  auto &ctx = function_stack_[function_index];
+  for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
+    const auto &scope = ctx.scopes[sc - 1];
+    auto it = scope.find(name);
+    if (it == scope.end()) {
+      continue;
     }
+
+    return ResolvedBinding{ResolvedBindingKind::Local, it->second,
+                           static_cast<uint32_t>(function_stack_.size() - 1 -
+                                                 function_index),
+                           name};
   }
 
-  if (top_level_functions_.find(name) != top_level_functions_.end()) {
-    return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name};
+  if (function_index == 0) {
+    if (top_level_functions_.find(name) != top_level_functions_.end()) {
+      return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name};
+    }
+
+    if (builtins_.find(name) != builtins_.end()) {
+      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name};
+    }
+
+    return std::nullopt;
   }
 
-  if (builtins_.find(name) != builtins_.end()) {
-    return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name};
+  auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
+  if (!enclosing) {
+    return std::nullopt;
   }
 
-  return std::nullopt;
+  if (enclosing->kind == ResolvedBindingKind::GlobalFunction ||
+      enclosing->kind == ResolvedBindingKind::Builtin) {
+    return enclosing;
+  }
+
+  if (enclosing->kind == ResolvedBindingKind::Local) {
+    uint32_t upvalue_slot = addUpvalue(function_index, name, enclosing->slot, true);
+    return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
+                           static_cast<uint32_t>(function_stack_.size() - 1 -
+                                                 function_index),
+                           name};
+  }
+
+  uint32_t upvalue_slot =
+      addUpvalue(function_index, name, enclosing->slot, false);
+  return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
+                         static_cast<uint32_t>(function_stack_.size() - 1 -
+                                               function_index),
+                         name};
+}
+
+uint32_t LexicalResolver::addUpvalue(size_t function_index,
+                                     const std::string &name,
+                                     uint32_t source_index,
+                                     bool captures_local) {
+  auto &ctx = function_stack_[function_index];
+  auto it = ctx.upvalue_slots.find(name);
+  if (it != ctx.upvalue_slots.end()) {
+    return it->second;
+  }
+
+  uint32_t slot = static_cast<uint32_t>(ctx.upvalues.size());
+  ctx.upvalues.push_back(
+      UpvalueDescriptor{.index = source_index, .captures_local = captures_local});
+  ctx.upvalue_slots[name] = slot;
+  return slot;
 }
 
 void LexicalResolver::noteIdentifierBinding(const ast::Identifier &identifier,
                                             const ResolvedBinding &binding) {
   result_.identifier_bindings[&identifier] = binding;
-
-  if (binding.kind != ResolvedBindingKind::Upvalue || function_stack_.empty()) {
-    return;
-  }
-
-  const auto *current_function = function_stack_.back().owner;
-  if (!current_function) {
-    return;
-  }
-
-  auto &captures = result_.captured_variables[current_function];
-  if (std::find(captures.begin(), captures.end(), binding.name) == captures.end()) {
-    captures.push_back(binding.name);
-  }
 }
 
 } // namespace havel::compiler

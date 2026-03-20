@@ -177,7 +177,10 @@ BytecodeValue StackVMInterpreter::execute(
   }
 
   while (!frames.empty()) {
-    auto &frame = currentFrame();
+    auto *active_frame = &currentFrame();
+    size_t previous_ip = active_frame->ip;
+
+    auto &frame = *active_frame;
     if (frame.ip >= frame.function->instructions.size()) {
       stack.push(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
@@ -193,7 +196,8 @@ BytecodeValue StackVMInterpreter::execute(
     }
 
     executeInstruction(instruction);
-    if (!frames.empty() && &frame == &currentFrame()) {
+    if (!frames.empty() && active_frame == &currentFrame() &&
+        currentFrame().ip == previous_ip) {
       currentFrame().ip++;
     }
   }
@@ -221,9 +225,12 @@ void StackVMInterpreter::doCall(const std::string &function_name,
   if (arg_count != callee->param_count) {
     throw std::runtime_error("Argument count mismatch calling '" +
                              function_name + "' (expected " +
-                             std::to_string(callee->param_count) + ", got " +
-                             std::to_string(arg_count) + ")");
+                               std::to_string(callee->param_count) + ", got " +
+                               std::to_string(arg_count) + ")");
   }
+
+  // Advance caller IP now so RETURN resumes at the next instruction.
+  currentFrame().ip++;
 
   std::vector<BytecodeValue> args(arg_count);
   for (uint32_t i = 0; i < arg_count; i++) {

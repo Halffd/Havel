@@ -402,6 +402,36 @@ target_link_libraries(havel-lsp PRIVATE
     nlohmann_json::nlohmann_json
 )
 
+if(ENABLE_HAVEL_LANG)
+    set(BYTECODE_SMOKE_SOURCES
+        src/havel-lang/tools/BytecodeSmokeMain.cpp
+        src/havel-lang/ast/AST.cpp
+        src/havel-lang/lexer/Lexer.cpp
+        src/havel-lang/parser/Parser.cpp
+        src/havel-lang/compiler/bytecode/AstBytecodeCompiler.cpp
+        src/havel-lang/compiler/bytecode/SourceBytecodePipeline.cpp
+        src/havel-lang/compiler/bytecode/StackVMInterpreter.cpp
+        src/utils/Logger.cpp
+    )
+
+    add_executable(havel-bytecode-smoke ${BYTECODE_SMOKE_SOURCES})
+    set_target_properties(havel-bytecode-smoke PROPERTIES
+        CXX_STANDARD 23
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    target_include_directories(havel-bytecode-smoke PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src/havel-lang
+    )
+
+    target_link_libraries(havel-bytecode-smoke PRIVATE
+        spdlog::spdlog
+    )
+endif()
+
 # Set target properties
 set_target_properties(havel PROPERTIES
     CXX_STANDARD 23

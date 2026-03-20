@@ -319,6 +319,35 @@ fn outer(x) {
 return outer(21)
 )havel", 42, dump_bytecode, snapshot_dir);
 
+  failures += runCase("closure-return", R"havel(
+fn makeGetter(v) {
+    let x = v
+    fn get() {
+        return x
+    }
+    return get
+}
+
+let getter = makeGetter(9)
+return getter()
+)havel", 9, dump_bytecode, snapshot_dir);
+
+  failures += runCase("closure-transitive", R"havel(
+fn outer() {
+    let x = 41
+    fn middle() {
+        fn inner() {
+            return x + 1
+        }
+        return inner
+    }
+    return middle()
+}
+
+let f = outer()
+return f()
+)havel", 42, dump_bytecode, snapshot_dir);
+
   failures += runCase("while-loop", R"havel(
 let i = 0
 while i < 1 {

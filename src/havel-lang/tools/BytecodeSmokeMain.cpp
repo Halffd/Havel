@@ -1,4 +1,6 @@
+#include "havel-lang/compiler/bytecode/AstBytecodeCompiler.hpp"
 #include "havel-lang/compiler/bytecode/SourceBytecodePipeline.hpp"
+#include "havel-lang/parser/Parser.h"
 
 #include <cstdint>
 #include <exception>
@@ -7,16 +9,149 @@
 
 namespace {
 
-bool equalsInt(const havel::compiler::BytecodeValue &value, int64_t expected) {
+using havel::compiler::BytecodeValue;
+
+std::string opcodeName(havel::compiler::OpCode opcode) {
+  using havel::compiler::OpCode;
+  switch (opcode) {
+  case OpCode::LOAD_CONST:
+    return "LOAD_CONST";
+  case OpCode::LOAD_VAR:
+    return "LOAD_VAR";
+  case OpCode::STORE_VAR:
+    return "STORE_VAR";
+  case OpCode::POP:
+    return "POP";
+  case OpCode::DUP:
+    return "DUP";
+  case OpCode::ADD:
+    return "ADD";
+  case OpCode::SUB:
+    return "SUB";
+  case OpCode::MUL:
+    return "MUL";
+  case OpCode::DIV:
+    return "DIV";
+  case OpCode::MOD:
+    return "MOD";
+  case OpCode::POW:
+    return "POW";
+  case OpCode::EQ:
+    return "EQ";
+  case OpCode::NEQ:
+    return "NEQ";
+  case OpCode::LT:
+    return "LT";
+  case OpCode::LTE:
+    return "LTE";
+  case OpCode::GT:
+    return "GT";
+  case OpCode::GTE:
+    return "GTE";
+  case OpCode::AND:
+    return "AND";
+  case OpCode::OR:
+    return "OR";
+  case OpCode::NOT:
+    return "NOT";
+  case OpCode::JUMP:
+    return "JUMP";
+  case OpCode::JUMP_IF_FALSE:
+    return "JUMP_IF_FALSE";
+  case OpCode::JUMP_IF_TRUE:
+    return "JUMP_IF_TRUE";
+  case OpCode::CALL:
+    return "CALL";
+  case OpCode::CALL_HOST:
+    return "CALL_HOST";
+  case OpCode::RETURN:
+    return "RETURN";
+  default:
+    return "OTHER";
+  }
+}
+
+std::string bytecodeValueToString(const BytecodeValue &value) {
+  if (std::holds_alternative<std::nullptr_t>(value)) {
+    return "null";
+  }
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value) ? "true" : "false";
+  }
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::to_string(std::get<int64_t>(value));
+  }
+  if (std::holds_alternative<double>(value)) {
+    return std::to_string(std::get<double>(value));
+  }
+  if (std::holds_alternative<std::string>(value)) {
+    return '"' + std::get<std::string>(value) + '"';
+  }
+  if (std::holds_alternative<uint32_t>(value)) {
+    return std::to_string(std::get<uint32_t>(value));
+  }
+  return "<unknown>";
+}
+
+bool equalsInt(const BytecodeValue &value, int64_t expected) {
   if (!std::holds_alternative<int64_t>(value)) {
     return false;
   }
   return std::get<int64_t>(value) == expected;
 }
 
-int runCase(const std::string &name, const std::string &source,
-            int64_t expected) {
+std::unique_ptr<havel::compiler::BytecodeChunk>
+compileChunk(const std::string &source) {
+  havel::parser::Parser parser;
+  auto program = parser.produceAST(source);
+  if (!program) {
+    throw std::runtime_error("parser returned null AST");
+  }
+
+  havel::compiler::AstBytecodeCompiler compiler;
+  return compiler.compile(*program);
+}
+
+void dumpBytecode(const std::string &name, const std::string &source) {
+  auto chunk = compileChunk(source);
+  std::cout << "--- BYTECODE DUMP: " << name << " ---" << std::endl;
+
+  for (const auto &function : chunk->getAllFunctions()) {
+    std::cout << "fn " << function.name << "(params=" << function.param_count
+              << ", locals=" << function.local_count << ")" << std::endl;
+
+    for (size_t i = 0; i < function.instructions.size(); ++i) {
+      const auto &instruction = function.instructions[i];
+      std::cout << "  " << i << ": " << opcodeName(instruction.opcode);
+      if (!instruction.operands.empty()) {
+        std::cout << " ";
+        for (size_t j = 0; j < instruction.operands.size(); ++j) {
+          if (j > 0) {
+            std::cout << ", ";
+          }
+          std::cout << bytecodeValueToString(instruction.operands[j]);
+        }
+      }
+      std::cout << std::endl;
+    }
+
+    if (!function.constants.empty()) {
+      std::cout << "  constants:" << std::endl;
+      for (size_t c = 0; c < function.constants.size(); ++c) {
+        std::cout << "    [" << c << "] "
+                  << bytecodeValueToString(function.constants[c]) << std::endl;
+      }
+    }
+  }
+}
+
+int runCase(const std::string &name, const std::string &source, int64_t expected,
+            bool dump_bytecode) {
   try {
+    if (dump_bytecode) {
+      dumpBytecode(name, source);
+    }
+
     const auto result = havel::compiler::runBytecodePipeline(source);
     if (!equalsInt(result.return_value, expected)) {
       std::cerr << "[FAIL] " << name << ": expected " << expected
@@ -33,7 +168,7 @@ int runCase(const std::string &name, const std::string &source,
   }
 }
 
-int runClosureBoundaryCase() {
+int runClosureBoundaryCase(bool dump_bytecode) {
   const std::string source = R"havel(
 fn outer() {
     let x = 1
@@ -47,6 +182,10 @@ return outer()
 )havel";
 
   try {
+    if (dump_bytecode) {
+      dumpBytecode("closure-boundary", source);
+    }
+
     (void)havel::compiler::runBytecodePipeline(source);
     std::cerr << "[FAIL] closure-boundary: expected Phase 2 boundary error"
               << std::endl;
@@ -66,7 +205,14 @@ return outer()
 
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  bool dump_bytecode = false;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--dump-bytecode") {
+      dump_bytecode = true;
+    }
+  }
+
   int failures = 0;
 
   failures += runCase("function-call", R"havel(
@@ -77,7 +223,7 @@ fn add(a, b) {
 let x = add(2, 3)
 print(x)
 return x
-)havel", 5);
+)havel", 5, dump_bytecode);
 
   failures += runCase("while-loop", R"havel(
 let i = 0
@@ -89,9 +235,9 @@ while i < 4 {
 }
 
 return sum
-)havel", 6);
+)havel", 6, dump_bytecode);
 
-  failures += runClosureBoundaryCase();
+  failures += runClosureBoundaryCase(dump_bytecode);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

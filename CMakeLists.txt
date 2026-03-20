@@ -430,6 +430,9 @@ if(ENABLE_HAVEL_LANG)
     target_link_libraries(havel-bytecode-smoke PRIVATE
         spdlog::spdlog
     )
+
+    enable_testing()
+    add_test(NAME bytecode-smoke COMMAND havel-bytecode-smoke)
 endif()
 
 # Set target properties

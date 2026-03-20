@@ -156,6 +156,16 @@ bool VM::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
 }
 
+uint64_t VM::pinExternalRoot(const BytecodeValue &value) {
+  const uint64_t id = next_external_root_id_++;
+  external_roots_[id] = value;
+  return id;
+}
+
+bool VM::unpinExternalRoot(uint64_t root_id) {
+  return external_roots_.erase(root_id) > 0;
+}
+
 void VM::registerDefaultHostFunctions() {
   registerHostFunction("print", [](const std::vector<BytecodeValue> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
@@ -237,6 +247,9 @@ BytecodeValue VM::execute(
   next_array_id_ = 1;
   next_object_id_ = 1;
   next_set_id_ = 1;
+  gc_allocations_since_last_ = 0;
+  external_roots_.clear();
+  next_external_root_id_ = 1;
   opcode_counts_.fill(0);
   executed_instructions_ = 0;
 
@@ -385,6 +398,151 @@ void VM::closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end) {
     cell->is_open = false;
     open_upvalues.erase(it);
   }
+}
+
+void VM::maybeCollectGarbage() {
+  gc_allocations_since_last_++;
+  if (gc_allocations_since_last_ < gc_allocation_budget_) {
+    return;
+  }
+  collectGarbage();
+}
+
+void VM::markValue(const BytecodeValue &value,
+                   std::unordered_set<uint32_t> &marked_arrays,
+                   std::unordered_set<uint32_t> &marked_objects,
+                   std::unordered_set<uint32_t> &marked_sets,
+                   std::unordered_set<uint32_t> &marked_closures) const {
+  if (std::holds_alternative<ArrayRef>(value)) {
+    uint32_t id = std::get<ArrayRef>(value).id;
+    if (!marked_arrays.insert(id).second) {
+      return;
+    }
+    auto it = arrays_.find(id);
+    if (it == arrays_.end()) {
+      return;
+    }
+    for (const auto &entry : it->second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
+    }
+    return;
+  }
+
+  if (std::holds_alternative<ObjectRef>(value)) {
+    uint32_t id = std::get<ObjectRef>(value).id;
+    if (!marked_objects.insert(id).second) {
+      return;
+    }
+    auto it = objects_.find(id);
+    if (it == objects_.end()) {
+      return;
+    }
+    for (const auto &[_, entry] : it->second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
+    }
+    return;
+  }
+
+  if (std::holds_alternative<SetRef>(value)) {
+    uint32_t id = std::get<SetRef>(value).id;
+    if (!marked_sets.insert(id).second) {
+      return;
+    }
+    auto it = sets_.find(id);
+    if (it == sets_.end()) {
+      return;
+    }
+    for (const auto &[_, entry] : it->second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets, marked_closures);
+    }
+    return;
+  }
+
+  if (std::holds_alternative<ClosureRef>(value)) {
+    uint32_t id = std::get<ClosureRef>(value).id;
+    if (!marked_closures.insert(id).second) {
+      return;
+    }
+    auto it = closures.find(id);
+    if (it == closures.end()) {
+      return;
+    }
+    for (const auto &cell : it->second.upvalues) {
+      if (!cell) {
+        continue;
+      }
+      if (cell->is_open) {
+        if (cell->open_index < locals.size()) {
+          markValue(locals[cell->open_index], marked_arrays, marked_objects,
+                    marked_sets, marked_closures);
+        }
+      } else {
+        markValue(cell->closed_value, marked_arrays, marked_objects, marked_sets,
+                  marked_closures);
+      }
+    }
+    return;
+  }
+}
+
+void VM::collectGarbage() {
+  std::unordered_set<uint32_t> marked_arrays;
+  std::unordered_set<uint32_t> marked_objects;
+  std::unordered_set<uint32_t> marked_sets;
+  std::unordered_set<uint32_t> marked_closures;
+
+  std::stack<BytecodeValue> stack_copy = stack;
+  while (!stack_copy.empty()) {
+    markValue(stack_copy.top(), marked_arrays, marked_objects, marked_sets,
+              marked_closures);
+    stack_copy.pop();
+  }
+  for (const auto &value : locals) {
+    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
+  }
+  for (const auto &[_, value] : globals) {
+    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
+  }
+  for (const auto &[_, value] : external_roots_) {
+    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures);
+  }
+  for (const auto &frame : frames) {
+    if (frame.closure_id != 0) {
+      markValue(ClosureRef{.id = frame.closure_id}, marked_arrays, marked_objects,
+                marked_sets, marked_closures);
+    }
+  }
+
+  for (auto it = arrays_.begin(); it != arrays_.end();) {
+    if (marked_arrays.find(it->first) == marked_arrays.end()) {
+      it = arrays_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = objects_.begin(); it != objects_.end();) {
+    if (marked_objects.find(it->first) == marked_objects.end()) {
+      it = objects_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = sets_.begin(); it != sets_.end();) {
+    if (marked_sets.find(it->first) == marked_sets.end()) {
+      it = sets_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+  for (auto it = closures.begin(); it != closures.end();) {
+    if (marked_closures.find(it->first) == marked_closures.end()) {
+      it = closures.erase(it);
+    } else {
+      ++it;
+    }
+  }
+
+  gc_allocations_since_last_ = 0;
 }
 
 void VM::executeInstruction(
@@ -801,6 +959,7 @@ void VM::executeInstruction(
     uint32_t closure_id = next_closure_id++;
     closures.emplace(closure_id, std::move(closure));
     push(ClosureRef{.id = closure_id});
+    maybeCollectGarbage();
     break;
   }
 
@@ -808,6 +967,7 @@ void VM::executeInstruction(
     uint32_t id = next_array_id_++;
     arrays_[id] = {};
     push(ArrayRef{.id = id});
+    maybeCollectGarbage();
     break;
   }
 
@@ -815,6 +975,7 @@ void VM::executeInstruction(
     uint32_t id = next_set_id_++;
     sets_[id] = {};
     push(SetRef{.id = id});
+    maybeCollectGarbage();
     break;
   }
 
@@ -955,6 +1116,7 @@ void VM::executeInstruction(
     uint32_t id = next_object_id_++;
     objects_[id] = {};
     push(ObjectRef{.id = id});
+    maybeCollectGarbage();
     break;
   }
 

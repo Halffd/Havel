@@ -3,7 +3,9 @@
 #include "BytecodeIR.hpp"
 #include <array>
 #include <memory>
+#include <optional>
 #include <stack>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
@@ -44,6 +46,10 @@ private:
   uint32_t next_array_id_ = 1;
   uint32_t next_object_id_ = 1;
   uint32_t next_set_id_ = 1;
+  size_t gc_allocation_budget_ = 1024;
+  size_t gc_allocations_since_last_ = 0;
+  std::unordered_map<uint64_t, BytecodeValue> external_roots_;
+  uint64_t next_external_root_id_ = 1;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   const BytecodeChunk *current_chunk;
@@ -61,6 +67,12 @@ private:
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
+  void maybeCollectGarbage();
+  void markValue(const BytecodeValue &value, std::unordered_set<uint32_t> &marked_arrays,
+                 std::unordered_set<uint32_t> &marked_objects,
+                 std::unordered_set<uint32_t> &marked_sets,
+                 std::unordered_set<uint32_t> &marked_closures) const;
+  void collectGarbage();
   void registerDefaultHostFunctions();
   BytecodeValue invokeHostFunction(const std::string &name,
                                    uint32_t arg_count);
@@ -82,6 +94,10 @@ public:
   uint64_t opcodeCount(OpCode opcode) const {
     return opcode_counts_[static_cast<uint8_t>(opcode)];
   }
+  void setGcAllocationBudget(size_t value) { gc_allocation_budget_ = value; }
+  void runGarbageCollection() { collectGarbage(); }
+  uint64_t pinExternalRoot(const BytecodeValue &value);
+  bool unpinExternalRoot(uint64_t root_id);
 };
 
 } // namespace havel::compiler

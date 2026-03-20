@@ -251,6 +251,18 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::AssignmentExpression: {
+    const auto &assignment =
+        static_cast<const ast::AssignmentExpression &>(expression);
+    if (assignment.target) {
+      resolveExpression(*assignment.target);
+    }
+    if (assignment.value) {
+      resolveExpression(*assignment.value);
+    }
+    break;
+  }
+
   case ast::NodeType::MemberExpression: {
     const auto &member = static_cast<const ast::MemberExpression &>(expression);
     if (member.object) {

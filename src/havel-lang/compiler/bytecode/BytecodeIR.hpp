@@ -19,7 +19,7 @@ namespace havel::compiler {
 class BytecodeCompiler;
 class BytecodeInterpreter;
 class JITCompiler;
-class HavelBytecodeCompiler;
+class AstBytecodeCompiler;
 
 // Bytecode instruction format
 enum class OpCode : uint8_t {
@@ -98,11 +98,18 @@ struct Instruction {
       : opcode(op), operands(std::move(ops)) {}
 };
 
+// Reserved for Phase 2 closure capture support.
+struct UpvalueDescriptor {
+  uint32_t index = 0;
+  bool captures_local = false;
+};
+
 // Bytecode function
 struct BytecodeFunction {
   std::string name;
   std::vector<Instruction> instructions;
   std::vector<BytecodeValue> constants;
+  std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;
 
@@ -174,7 +181,7 @@ public:
 };
 
 // Hybrid execution engine (Compiler + Interpreter + JIT)
-class HybridEngine {
+class HybridExecutionEngine {
 protected:
   std::unique_ptr<BytecodeCompiler> compiler;
   std::unique_ptr<BytecodeInterpreter> interpreter;
@@ -187,11 +194,11 @@ protected:
   uint32_t jit_threshold = 100; // Compile after 100 executions
 
 public:
-  HybridEngine(std::unique_ptr<BytecodeCompiler> comp,
-               std::unique_ptr<BytecodeInterpreter> interp,
-               std::unique_ptr<JITCompiler> jcomp = nullptr);
+  HybridExecutionEngine(std::unique_ptr<BytecodeCompiler> comp,
+                        std::unique_ptr<BytecodeInterpreter> interp,
+                        std::unique_ptr<JITCompiler> jcomp = nullptr);
 
-  virtual ~HybridEngine() = default;
+  virtual ~HybridExecutionEngine() = default;
 
   virtual bool compile(const ast::Program &program);
   virtual BytecodeValue execute(const std::string &function_name,
@@ -207,5 +214,8 @@ public:
   }
   void resetStats() { execution_counts.clear(); }
 };
+
+std::unique_ptr<BytecodeInterpreter> createStackVMInterpreter();
+std::unique_ptr<HybridExecutionEngine> createHybridExecutionEngine();
 
 } // namespace havel::compiler

@@ -1,4 +1,4 @@
-#include "BytecodeCompiler.hpp"
+#include "AstBytecodeCompiler.hpp"
 
 #include <stdexcept>
 
@@ -51,7 +51,7 @@ bool isIntegerLiteral(double value) {
 } // namespace
 
 std::unique_ptr<BytecodeChunk>
-HavelBytecodeCompiler::compile(const ast::Program &program) {
+AstBytecodeCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
 
@@ -92,22 +92,22 @@ HavelBytecodeCompiler::compile(const ast::Program &program) {
   return std::move(chunk);
 }
 
-void HavelBytecodeCompiler::emit(OpCode op) {
+void AstBytecodeCompiler::emit(OpCode op) {
   emit(op, std::vector<BytecodeValue>{});
 }
 
-void HavelBytecodeCompiler::emit(OpCode op, BytecodeValue operand) {
+void AstBytecodeCompiler::emit(OpCode op, BytecodeValue operand) {
   emit(op, std::vector<BytecodeValue>{std::move(operand)});
 }
 
-void HavelBytecodeCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
+void AstBytecodeCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
   if (!current_function) {
     throw std::runtime_error("Attempted to emit bytecode without active function");
   }
   current_function->instructions.emplace_back(op, std::move(operands));
 }
 
-uint32_t HavelBytecodeCompiler::addConstant(const BytecodeValue &value) {
+uint32_t AstBytecodeCompiler::addConstant(const BytecodeValue &value) {
   if (!current_function) {
     throw std::runtime_error("Attempted to add constant without active function");
   }
@@ -116,7 +116,7 @@ uint32_t HavelBytecodeCompiler::addConstant(const BytecodeValue &value) {
   return static_cast<uint32_t>(current_function->constants.size() - 1);
 }
 
-uint32_t HavelBytecodeCompiler::emitJump(OpCode op) {
+uint32_t AstBytecodeCompiler::emitJump(OpCode op) {
   if (op != OpCode::JUMP && op != OpCode::JUMP_IF_FALSE &&
       op != OpCode::JUMP_IF_TRUE) {
     throw std::runtime_error("Invalid jump opcode");
@@ -131,7 +131,7 @@ uint32_t HavelBytecodeCompiler::emitJump(OpCode op) {
   return index;
 }
 
-void HavelBytecodeCompiler::patchJump(uint32_t jump_instruction_index,
+void AstBytecodeCompiler::patchJump(uint32_t jump_instruction_index,
                                       uint32_t target) {
   if (!current_function) {
     throw std::runtime_error("Attempted to patch jump without active function");
@@ -149,7 +149,7 @@ void HavelBytecodeCompiler::patchJump(uint32_t jump_instruction_index,
   instruction.operands[0] = target;
 }
 
-void HavelBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &function) {
+void AstBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     throw std::runtime_error("Function declaration missing name");
   }
@@ -166,6 +166,13 @@ void HavelBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &func
   }
 
   if (function.body) {
+    // Groundwork boundary: nested functions/closures are intentionally deferred
+    // to the Phase 2 resolver/capture implementation.
+    for (const auto &statement : function.body->body) {
+      if (statement) {
+        enforcePhase2ClosureBoundary(*statement);
+      }
+    }
     compileBlockStatement(*function.body);
   }
 
@@ -174,7 +181,7 @@ void HavelBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &func
   leaveFunction();
 }
 
-void HavelBytecodeCompiler::compileStatement(const ast::Statement &statement) {
+void AstBytecodeCompiler::compileStatement(const ast::Statement &statement) {
   switch (statement.kind) {
   case ast::NodeType::ExpressionStatement: {
     const auto &expr_stmt =
@@ -230,6 +237,7 @@ void HavelBytecodeCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::FunctionDeclaration:
     // Top-level function declarations are handled in a first pass.
+    // Nested functions (closures) are blocked by enforcePhase2ClosureBoundary().
     break;
 
   default:
@@ -238,7 +246,7 @@ void HavelBytecodeCompiler::compileStatement(const ast::Statement &statement) {
   }
 }
 
-void HavelBytecodeCompiler::compileExpression(const ast::Expression &expression) {
+void AstBytecodeCompiler::compileExpression(const ast::Expression &expression) {
   switch (expression.kind) {
   case ast::NodeType::NumberLiteral: {
     const auto &num = static_cast<const ast::NumberLiteral &>(expression);
@@ -267,7 +275,9 @@ void HavelBytecodeCompiler::compileExpression(const ast::Expression &expression)
     const auto &id = static_cast<const ast::Identifier &>(expression);
     auto slot = resolveLocal(id.symbol);
     if (!slot) {
-      throw std::runtime_error("Unknown local variable: " + id.symbol);
+      throw std::runtime_error(
+          "Unknown local variable: " + id.symbol +
+          ". Non-local captures are a Phase 2 closure feature.");
     }
     emit(OpCode::LOAD_VAR, *slot);
     break;
@@ -294,7 +304,7 @@ void HavelBytecodeCompiler::compileExpression(const ast::Expression &expression)
   }
 }
 
-void HavelBytecodeCompiler::compileCallExpression(const ast::CallExpression &expression) {
+void AstBytecodeCompiler::compileCallExpression(const ast::CallExpression &expression) {
   if (!expression.callee) {
     throw std::runtime_error("Call expression missing callee");
   }
@@ -323,7 +333,7 @@ void HavelBytecodeCompiler::compileCallExpression(const ast::CallExpression &exp
   emit(OpCode::CALL, arg_count);
 }
 
-void HavelBytecodeCompiler::compileIfStatement(const ast::IfStatement &statement) {
+void AstBytecodeCompiler::compileIfStatement(const ast::IfStatement &statement) {
   if (!statement.condition || !statement.consequence) {
     throw std::runtime_error("Malformed if statement");
   }
@@ -349,7 +359,7 @@ void HavelBytecodeCompiler::compileIfStatement(const ast::IfStatement &statement
   }
 }
 
-void HavelBytecodeCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
+void AstBytecodeCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   if (!statement.condition || !statement.body) {
     throw std::runtime_error("Malformed while statement");
   }
@@ -366,17 +376,60 @@ void HavelBytecodeCompiler::compileWhileStatement(const ast::WhileStatement &sta
   patchJump(end_jump, loop_end);
 }
 
-void HavelBytecodeCompiler::compileBlockStatement(const ast::BlockStatement &block) {
+void AstBytecodeCompiler::compileBlockStatement(const ast::BlockStatement &block) {
   for (const auto &statement : block.body) {
     if (!statement) {
       continue;
     }
+    enforcePhase2ClosureBoundary(*statement);
     compileStatement(*statement);
   }
 }
 
+void AstBytecodeCompiler::enforcePhase2ClosureBoundary(
+    const ast::Statement &statement) const {
+  switch (statement.kind) {
+  case ast::NodeType::FunctionDeclaration:
+    throw std::runtime_error(
+        "Nested functions/closures are reserved for Phase 2. "
+        "Keep functions top-level in Phase 1 bytecode.");
+
+  case ast::NodeType::BlockStatement: {
+    const auto &block = static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block.body) {
+      if (nested) {
+        enforcePhase2ClosureBoundary(*nested);
+      }
+    }
+    break;
+  }
+
+  case ast::NodeType::IfStatement: {
+    const auto &if_stmt = static_cast<const ast::IfStatement &>(statement);
+    if (if_stmt.consequence) {
+      enforcePhase2ClosureBoundary(*if_stmt.consequence);
+    }
+    if (if_stmt.alternative) {
+      enforcePhase2ClosureBoundary(*if_stmt.alternative);
+    }
+    break;
+  }
+
+  case ast::NodeType::WhileStatement: {
+    const auto &while_stmt = static_cast<const ast::WhileStatement &>(statement);
+    if (while_stmt.body) {
+      enforcePhase2ClosureBoundary(*while_stmt.body);
+    }
+    break;
+  }
+
+  default:
+    break;
+  }
+}
+
 std::optional<std::string>
-HavelBytecodeCompiler::getCalleeName(const ast::Expression &callee) const {
+AstBytecodeCompiler::getCalleeName(const ast::Expression &callee) const {
   if (callee.kind == ast::NodeType::Identifier) {
     return static_cast<const ast::Identifier &>(callee).symbol;
   }
@@ -396,7 +449,7 @@ HavelBytecodeCompiler::getCalleeName(const ast::Expression &callee) const {
   return std::nullopt;
 }
 
-uint32_t HavelBytecodeCompiler::declareLocal(const std::string &name) {
+uint32_t AstBytecodeCompiler::declareLocal(const std::string &name) {
   auto existing = locals.find(name);
   if (existing != locals.end()) {
     return existing->second;
@@ -408,7 +461,7 @@ uint32_t HavelBytecodeCompiler::declareLocal(const std::string &name) {
 }
 
 std::optional<uint32_t>
-HavelBytecodeCompiler::resolveLocal(const std::string &name) const {
+AstBytecodeCompiler::resolveLocal(const std::string &name) const {
   auto it = locals.find(name);
   if (it == locals.end()) {
     return std::nullopt;
@@ -416,7 +469,7 @@ HavelBytecodeCompiler::resolveLocal(const std::string &name) const {
   return it->second;
 }
 
-void HavelBytecodeCompiler::enterFunction(BytecodeFunction &&function) {
+void AstBytecodeCompiler::enterFunction(BytecodeFunction &&function) {
   if (current_function) {
     throw std::runtime_error("Nested function compilation is not supported");
   }
@@ -425,7 +478,7 @@ void HavelBytecodeCompiler::enterFunction(BytecodeFunction &&function) {
   resetLocals();
 }
 
-void HavelBytecodeCompiler::leaveFunction() {
+void AstBytecodeCompiler::leaveFunction() {
   if (!current_function) {
     throw std::runtime_error("No active function to close");
   }
@@ -435,7 +488,7 @@ void HavelBytecodeCompiler::leaveFunction() {
   resetLocals();
 }
 
-void HavelBytecodeCompiler::resetLocals() {
+void AstBytecodeCompiler::resetLocals() {
   locals.clear();
   next_local_index = 0;
 }

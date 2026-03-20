@@ -1,20 +1,19 @@
-#include "../ast/AST.h"
-#include "../runtime/Interpreter.hpp"
-#include "Bytecode.h"
-#include "BytecodeCompiler.hpp"
-#include "BytecodeInterpreter.hpp"
+#include "../../ast/AST.h"
+#include "BytecodeIR.hpp"
+#include "AstBytecodeCompiler.hpp"
+#include "StackVMInterpreter.hpp"
 #include <iostream>
 #include <unordered_map>
 
 namespace havel::compiler {
 
-// Simple JIT compiler (placeholder implementation)
-class HavelJITCompiler : public JITCompiler {
+// Minimal JIT placeholder used by the hybrid engine.
+class SimpleJitCompiler : public JITCompiler {
 private:
   std::unordered_map<std::string, bool> compiled_functions;
 
 public:
-  HavelJITCompiler() = default;
+  SimpleJitCompiler() = default;
   void compileFunction(const BytecodeFunction &func) {
     compiled_functions[func.name] = true;
   }
@@ -28,13 +27,13 @@ public:
 };
 
 // Hybrid engine implementation
-HybridEngine::HybridEngine(std::unique_ptr<BytecodeCompiler> comp,
+HybridExecutionEngine::HybridExecutionEngine(std::unique_ptr<BytecodeCompiler> comp,
                            std::unique_ptr<BytecodeInterpreter> interp,
                            std::unique_ptr<JITCompiler> jcomp)
     : compiler(std::move(comp)), interpreter(std::move(interp)),
       jit(std::move(jcomp)) {}
 
-bool HybridEngine::compile(const ast::Program &program) {
+bool HybridExecutionEngine::compile(const ast::Program &program) {
   try {
     this->current_chunk = this->compiler->compile(program);
     return true;
@@ -44,7 +43,7 @@ bool HybridEngine::compile(const ast::Program &program) {
   }
 }
 
-BytecodeValue HybridEngine::execute(const std::string &function_name,
+BytecodeValue HybridExecutionEngine::execute(const std::string &function_name,
                                     const std::vector<BytecodeValue> &args) {
   if (!this->current_chunk) {
     throw std::runtime_error("No compiled program available");
@@ -59,12 +58,12 @@ struct HybridDebugOptions {
 };
 
 // Factory function (placeholder)
-std::unique_ptr<HybridEngine> createHybridEngine() {
+std::unique_ptr<HybridExecutionEngine> createHybridExecutionEngine() {
   std::unique_ptr<BytecodeCompiler> compiler;
-  compiler.reset(new HavelBytecodeCompiler());
-  auto interpreter = std::make_unique<HavelBytecodeInterpreter>();
-  auto jit = std::make_unique<HavelJITCompiler>();
-  return std::make_unique<HybridEngine>(std::move(compiler),
+  compiler.reset(new AstBytecodeCompiler());
+  auto interpreter = std::make_unique<StackVMInterpreter>();
+  auto jit = std::make_unique<SimpleJitCompiler>();
+  return std::make_unique<HybridExecutionEngine>(std::move(compiler),
                                         std::move(interpreter), std::move(jit));
 }
 

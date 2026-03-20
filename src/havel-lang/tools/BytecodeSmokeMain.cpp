@@ -74,6 +74,22 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "RETURN";
   case OpCode::CLOSURE:
     return "CLOSURE";
+  case OpCode::ARRAY_NEW:
+    return "ARRAY_NEW";
+  case OpCode::ARRAY_GET:
+    return "ARRAY_GET";
+  case OpCode::ARRAY_SET:
+    return "ARRAY_SET";
+  case OpCode::ARRAY_PUSH:
+    return "ARRAY_PUSH";
+  case OpCode::SET_NEW:
+    return "SET_NEW";
+  case OpCode::OBJECT_NEW:
+    return "OBJECT_NEW";
+  case OpCode::OBJECT_GET:
+    return "OBJECT_GET";
+  case OpCode::OBJECT_SET:
+    return "OBJECT_SET";
   default:
     return "OTHER";
   }
@@ -108,6 +124,18 @@ std::string bytecodeValueToString(const BytecodeValue &value) {
     return "closure[" +
            std::to_string(std::get<havel::compiler::ClosureRef>(value).id) +
            "]";
+  }
+  if (std::holds_alternative<havel::compiler::ArrayRef>(value)) {
+    return "array[" +
+           std::to_string(std::get<havel::compiler::ArrayRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<havel::compiler::ObjectRef>(value)) {
+    return "object[" +
+           std::to_string(std::get<havel::compiler::ObjectRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<havel::compiler::SetRef>(value)) {
+    return "set[" +
+           std::to_string(std::get<havel::compiler::SetRef>(value).id) + "]";
   }
   return "<unknown>";
 }
@@ -369,6 +397,35 @@ let c = makeCounter(40)
 c()
 return c()
 )havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("object-member-assignment", R"havel(
+let obj = {a: 1}
+obj.a = 7
+obj.a += 2
+return obj.a
+)havel", 9, dump_bytecode, snapshot_dir);
+
+  failures += runCase("index-assignment-array", R"havel(
+let arr = [1, 2]
+arr[1] = 10
+arr[3] = 5
+return arr[1] + arr[3]
+)havel", 15, dump_bytecode, snapshot_dir);
+
+  failures += runCase("set-create-and-assign", R"havel(
+let s = #{1, 2}
+s[3] = true
+s[2] = false
+if s[1] {
+    if s[2] {
+        return 0
+    }
+}
+if s[3] {
+    return 1
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runCase("while-loop", R"havel(
 let i = 0

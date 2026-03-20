@@ -138,6 +138,15 @@ std::string formatValue(const BytecodeValue &value) {
   if (std::holds_alternative<ClosureRef>(value)) {
     return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
   }
+  if (std::holds_alternative<ArrayRef>(value)) {
+    return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<ObjectRef>(value)) {
+    return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
+  }
+  if (std::holds_alternative<SetRef>(value)) {
+    return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
+  }
   return "<unknown>";
 }
 
@@ -213,6 +222,8 @@ std::string opcodeName(OpCode opcode) {
     return "ARRAY_SET";
   case OpCode::ARRAY_PUSH:
     return "ARRAY_PUSH";
+  case OpCode::SET_NEW:
+    return "SET_NEW";
   case OpCode::OBJECT_NEW:
     return "OBJECT_NEW";
   case OpCode::OBJECT_GET:

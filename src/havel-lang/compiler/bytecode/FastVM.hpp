@@ -217,6 +217,9 @@ public:
     if (std::holds_alternative<uint32_t>(value)) return registerType<uint32_t>();
     if (std::holds_alternative<FunctionObject>(value)) return registerType<FunctionObject>();
     if (std::holds_alternative<ClosureRef>(value)) return registerType<ClosureRef>();
+    if (std::holds_alternative<ArrayRef>(value)) return registerType<ArrayRef>();
+    if (std::holds_alternative<ObjectRef>(value)) return registerType<ObjectRef>();
+    if (std::holds_alternative<SetRef>(value)) return registerType<SetRef>();
     return 0;
   }
 };

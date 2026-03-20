@@ -35,6 +35,14 @@ private:
   std::unordered_map<uint32_t, std::shared_ptr<RuntimeClosure::UpvalueCell>>
       open_upvalues;
   uint32_t next_closure_id = 1;
+  std::unordered_map<uint32_t, std::vector<BytecodeValue>> arrays_;
+  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
+      objects_;
+  std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
+      sets_;
+  uint32_t next_array_id_ = 1;
+  uint32_t next_object_id_ = 1;
+  uint32_t next_set_id_ = 1;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   const BytecodeChunk *current_chunk;

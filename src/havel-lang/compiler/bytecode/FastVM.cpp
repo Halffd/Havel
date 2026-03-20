@@ -1,4 +1,4 @@
-#include "OptimizedBytecodeInterpreter.hpp"
+#include "FastVM.hpp"
 #include <iostream>
 
 namespace havel::compiler {

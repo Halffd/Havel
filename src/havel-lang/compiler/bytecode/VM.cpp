@@ -1,4 +1,4 @@
-#include "StackVMInterpreter.hpp"
+#include "VM.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -35,12 +35,12 @@ std::string toString(const BytecodeValue &value) {
 }
 } // namespace
 
-StackVMInterpreter::StackVMInterpreter() : current_chunk(nullptr) {
+VM::VM() : current_chunk(nullptr) {
   registerDefaultHostFunctions();
 }
 
 template <typename T>
-T StackVMInterpreter::getValue(const BytecodeValue &value) {
+T VM::getValue(const BytecodeValue &value) {
   if constexpr (std::is_same_v<T, std::nullptr_t>) {
     return std::get<std::nullptr_t>(value);
   } else if constexpr (std::is_same_v<T, bool>) {
@@ -56,35 +56,35 @@ T StackVMInterpreter::getValue(const BytecodeValue &value) {
   throw std::runtime_error("Invalid type conversion");
 }
 
-const StackVMInterpreter::CallFrame &
-StackVMInterpreter::currentFrame() const {
+const VM::CallFrame &
+VM::currentFrame() const {
   if (frames.empty()) {
     throw std::runtime_error("No active call frame");
   }
   return frames.back();
 }
 
-StackVMInterpreter::CallFrame &StackVMInterpreter::currentFrame() {
+VM::CallFrame &VM::currentFrame() {
   if (frames.empty()) {
     throw std::runtime_error("No active call frame");
   }
   return frames.back();
 }
 
-BytecodeValue StackVMInterpreter::getConstant(uint32_t index) {
+BytecodeValue VM::getConstant(uint32_t index) {
   return currentFrame().function->constants[index];
 }
 
-void StackVMInterpreter::registerHostFunction(
+void VM::registerHostFunction(
     const std::string &name, BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
 }
 
-bool StackVMInterpreter::hasHostFunction(const std::string &name) const {
+bool VM::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
 }
 
-void StackVMInterpreter::registerDefaultHostFunctions() {
+void VM::registerDefaultHostFunctions() {
   registerHostFunction("print", [](const std::vector<BytecodeValue> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
       if (i > 0) {
@@ -120,7 +120,7 @@ void StackVMInterpreter::registerDefaultHostFunctions() {
   });
 }
 
-BytecodeValue StackVMInterpreter::invokeHostFunction(const std::string &name,
+BytecodeValue VM::invokeHostFunction(const std::string &name,
                                                            uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
@@ -139,7 +139,7 @@ BytecodeValue StackVMInterpreter::invokeHostFunction(const std::string &name,
   return it->second(args);
 }
 
-BytecodeValue StackVMInterpreter::execute(
+BytecodeValue VM::execute(
     const BytecodeChunk &chunk, const std::string &function_name,
     const std::vector<BytecodeValue> &args) {
   current_chunk = &chunk;
@@ -211,11 +211,11 @@ BytecodeValue StackVMInterpreter::execute(
   return result;
 }
 
-void StackVMInterpreter::setDebugMode(bool enabled) {
+void VM::setDebugMode(bool enabled) {
   debug_mode = enabled;
 }
 
-void StackVMInterpreter::doCall(const std::string &function_name,
+void VM::doCall(const std::string &function_name,
                                       uint32_t arg_count) {
   const auto *callee = current_chunk->getFunction(function_name);
   if (!callee) {
@@ -250,7 +250,7 @@ void StackVMInterpreter::doCall(const std::string &function_name,
   }
 }
 
-void StackVMInterpreter::executeInstruction(
+void VM::executeInstruction(
     const Instruction &instruction) {
   auto pop = [this]() -> BytecodeValue {
     if (stack.empty()) {
@@ -588,8 +588,8 @@ void StackVMInterpreter::executeInstruction(
   }
 }
 
-std::unique_ptr<BytecodeInterpreter> createStackVMInterpreter() {
-  return std::make_unique<StackVMInterpreter>();
+std::unique_ptr<BytecodeInterpreter> createVM() {
+  return std::make_unique<VM>();
 }
 
 } // namespace havel::compiler

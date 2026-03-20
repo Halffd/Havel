@@ -16,7 +16,7 @@
 
 namespace havel::compiler {
 
-class AstBytecodeCompiler : public BytecodeCompiler {
+class ByteCompiler : public BytecodeCompiler {
 public:
     std::unique_ptr<BytecodeChunk> compile(const ast::Program& program) override;
 

@@ -279,6 +279,7 @@ if(ENABLE_HAVEL_LANG)
     list(REMOVE_ITEM HAVEL_LANG_SOURCES
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
     )
 endif()
 
@@ -408,10 +409,10 @@ if(ENABLE_HAVEL_LANG)
         src/havel-lang/ast/AST.cpp
         src/havel-lang/lexer/Lexer.cpp
         src/havel-lang/parser/Parser.cpp
-        src/havel-lang/compiler/bytecode/AstBytecodeCompiler.cpp
+        src/havel-lang/compiler/bytecode/ByteCompiler.cpp
         src/havel-lang/compiler/bytecode/LexicalResolver.cpp
-        src/havel-lang/compiler/bytecode/SourceBytecodePipeline.cpp
-        src/havel-lang/compiler/bytecode/StackVMInterpreter.cpp
+        src/havel-lang/compiler/bytecode/Pipeline.cpp
+        src/havel-lang/compiler/bytecode/VM.cpp
         src/utils/Logger.cpp
     )
 

@@ -1,7 +1,7 @@
 #include "../../ast/AST.h"
 #include "BytecodeIR.hpp"
-#include "AstBytecodeCompiler.hpp"
-#include "StackVMInterpreter.hpp"
+#include "ByteCompiler.hpp"
+#include "VM.hpp"
 #include <iostream>
 #include <unordered_map>
 
@@ -27,13 +27,13 @@ public:
 };
 
 // Hybrid engine implementation
-HybridExecutionEngine::HybridExecutionEngine(std::unique_ptr<BytecodeCompiler> comp,
+Hybrid::Hybrid(std::unique_ptr<BytecodeCompiler> comp,
                            std::unique_ptr<BytecodeInterpreter> interp,
                            std::unique_ptr<JITCompiler> jcomp)
     : compiler(std::move(comp)), interpreter(std::move(interp)),
       jit(std::move(jcomp)) {}
 
-bool HybridExecutionEngine::compile(const ast::Program &program) {
+bool Hybrid::compile(const ast::Program &program) {
   try {
     this->current_chunk = this->compiler->compile(program);
     return true;
@@ -43,7 +43,7 @@ bool HybridExecutionEngine::compile(const ast::Program &program) {
   }
 }
 
-BytecodeValue HybridExecutionEngine::execute(const std::string &function_name,
+BytecodeValue Hybrid::execute(const std::string &function_name,
                                     const std::vector<BytecodeValue> &args) {
   if (!this->current_chunk) {
     throw std::runtime_error("No compiled program available");
@@ -58,12 +58,12 @@ struct HybridDebugOptions {
 };
 
 // Factory function (placeholder)
-std::unique_ptr<HybridExecutionEngine> createHybridExecutionEngine() {
+std::unique_ptr<Hybrid> createHybrid() {
   std::unique_ptr<BytecodeCompiler> compiler;
-  compiler.reset(new AstBytecodeCompiler());
-  auto interpreter = std::make_unique<StackVMInterpreter>();
+  compiler.reset(new ByteCompiler());
+  auto interpreter = std::make_unique<VM>();
   auto jit = std::make_unique<SimpleJitCompiler>();
-  return std::make_unique<HybridExecutionEngine>(std::move(compiler),
+  return std::make_unique<Hybrid>(std::move(compiler),
                                         std::move(interpreter), std::move(jit));
 }
 

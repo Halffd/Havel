@@ -8,7 +8,7 @@
 namespace havel::compiler {
 
 // Bytecode interpreter implementation
-class StackVMInterpreter : public BytecodeInterpreter {
+class VM : public BytecodeInterpreter {
 private:
   struct CallFrame {
     const BytecodeFunction *function = nullptr;
@@ -36,7 +36,7 @@ private:
                                    uint32_t arg_count);
 
 public:
-  StackVMInterpreter();
+  VM();
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;

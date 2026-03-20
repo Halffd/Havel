@@ -1,7 +1,7 @@
-#include "SourceBytecodePipeline.hpp"
+#include "Pipeline.hpp"
 
-#include "AstBytecodeCompiler.hpp"
-#include "StackVMInterpreter.hpp"
+#include "ByteCompiler.hpp"
+#include "VM.hpp"
 #include "../../parser/Parser.h"
 
 #include <stdexcept>
@@ -16,13 +16,13 @@ BytecodeSmokeResult runBytecodePipeline(const std::string &source,
     throw std::runtime_error("Bytecode smoke pipeline failed: parser returned null AST");
   }
 
-  AstBytecodeCompiler compiler;
+  ByteCompiler compiler;
   auto chunk = compiler.compile(*program);
   if (!chunk) {
     throw std::runtime_error("Bytecode smoke pipeline failed: compiler returned null chunk");
   }
 
-  StackVMInterpreter vm;
+  VM vm;
   BytecodeSmokeResult result;
   result.return_value = vm.execute(*chunk, entry_function);
   return result;

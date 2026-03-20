@@ -1,5 +1,8 @@
 #include "HostBridge.hpp"
 
+#include "host/io/IOService.hpp"
+#include "host/hotkey/HotkeyService.hpp"
+#include "host/window/WindowService.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "core/ModeManager.hpp"
@@ -218,11 +221,13 @@ BytecodeValue HostBridgeRegistry::handleWindowMoveToNextMonitor(
   if (!args.empty()) {
     throw std::runtime_error("window.moveToNextMonitor expects 0 arguments");
   }
-  if (!deps_.window_manager) {
+  if (deps_.window_service) {
+    deps_.window_service->moveActiveWindowToNextMonitor();
+  } else if (deps_.window_manager) {
+    havel::WindowManager::MoveWindowToNextMonitor();
+  } else {
     throw std::runtime_error("window manager unavailable");
   }
-  (void)deps_.window_manager;
-  havel::WindowManager::MoveWindowToNextMonitor();
   return BytecodeValue(nullptr);
 }
 
@@ -231,7 +236,19 @@ BytecodeValue HostBridgeRegistry::handleWindowGetActive(
   if (!args.empty()) {
     throw std::runtime_error("window.getActive expects 0 arguments");
   }
-  auto info = havel::WindowManager::getActiveWindowInfo();
+  havel::WindowInfo info;
+  if (deps_.window_service) {
+    info = deps_.window_service->getActiveWindowInfo();
+  } else if (deps_.window_manager) {
+    info = havel::WindowManager::getActiveWindowInfo();
+  } else {
+    throw std::runtime_error("window manager unavailable");
+  }
+  
+  if (!info.valid) {
+    return BytecodeValue(nullptr);
+  }
+  
   auto object = vm_.createHostObject();
   vm_.setHostObjectField(object, "id", static_cast<int64_t>(info.id));
   vm_.setHostObjectField(object, "title", info.title);
@@ -251,13 +268,25 @@ BytecodeValue HostBridgeRegistry::handleWindowMoveToMonitor(
       requireIntArg(args, 0, "window.moveToMonitor"));
   const auto monitor =
       static_cast<int>(requireIntArg(args, 1, "window.moveToMonitor"));
-  return BytecodeValue(havel::WindowManager::moveWindowToMonitor(id, monitor));
+  if (deps_.window_service) {
+    return BytecodeValue(deps_.window_service->moveWindowToMonitor(id, monitor));
+  } else if (deps_.window_manager) {
+    return BytecodeValue(havel::WindowManager::moveWindowToMonitor(id, monitor));
+  } else {
+    throw std::runtime_error("window manager unavailable");
+  }
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowClose(
     const std::vector<BytecodeValue> &args) {
   const auto id = static_cast<uint64_t>(requireIntArg(args, 0, "window.close"));
-  return BytecodeValue(havel::WindowManager::closeWindow(id));
+  if (deps_.window_service) {
+    return BytecodeValue(deps_.window_service->closeWindow(id));
+  } else if (deps_.window_manager) {
+    return BytecodeValue(havel::WindowManager::closeWindow(id));
+  } else {
+    throw std::runtime_error("window manager unavailable");
+  }
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowResize(
@@ -265,7 +294,13 @@ BytecodeValue HostBridgeRegistry::handleWindowResize(
   const auto id = static_cast<uint64_t>(requireIntArg(args, 0, "window.resize"));
   const auto width = static_cast<int>(requireIntArg(args, 1, "window.resize"));
   const auto height = static_cast<int>(requireIntArg(args, 2, "window.resize"));
-  return BytecodeValue(havel::WindowManager::resizeWindow(id, width, height));
+  if (deps_.window_service) {
+    return BytecodeValue(deps_.window_service->resizeWindow(id, width, height));
+  } else if (deps_.window_manager) {
+    return BytecodeValue(havel::WindowManager::resizeWindow(id, width, height));
+  } else {
+    throw std::runtime_error("window manager unavailable");
+  }
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowOn(
@@ -282,10 +317,13 @@ BytecodeValue HostBridgeRegistry::handleWindowOn(
 BytecodeValue HostBridgeRegistry::handleSend(
     const std::vector<BytecodeValue> &args) {
   const auto text = requireStringArg(args, 0, "send");
-  if (!deps_.io) {
+  if (deps_.io_service) {
+    deps_.io_service->sendKeys(text);
+  } else if (deps_.io) {
+    deps_.io->Send(text.c_str());
+  } else {
     throw std::runtime_error("io unavailable");
   }
-  deps_.io->Send(text.c_str());
   return BytecodeValue(nullptr);
 }
 
@@ -293,12 +331,21 @@ BytecodeValue HostBridgeRegistry::handleSendKey(
     const std::vector<BytecodeValue> &args) {
   const auto key = requireStringArg(args, 0, "io.sendKey");
   const bool press = requireBoolArg(args, 1, "io.sendKey", true);
-  if (!deps_.io) {
+  if (deps_.io_service) {
+    if (press) {
+      deps_.io_service->keyDown(key);
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      deps_.io_service->keyUp(key);
+    } else {
+      deps_.io_service->keyUp(key);
+    }
+  } else if (deps_.io) {
+    const std::string seq =
+        press ? "{" + key + " down}" : "{" + key + " up}";
+    deps_.io->Send(seq.c_str());
+  } else {
     throw std::runtime_error("io unavailable");
   }
-  const std::string seq =
-      press ? "{" + key + " down}" : "{" + key + " up}";
-  deps_.io->Send(seq.c_str());
   return BytecodeValue(nullptr);
 }
 
@@ -306,19 +353,25 @@ BytecodeValue HostBridgeRegistry::handleMouseMove(
     const std::vector<BytecodeValue> &args) {
   const auto x = static_cast<int>(requireIntArg(args, 0, "io.mouseMove"));
   const auto y = static_cast<int>(requireIntArg(args, 1, "io.mouseMove"));
-  if (!deps_.io) {
+  if (deps_.io_service) {
+    return BytecodeValue(deps_.io_service->mouseMoveTo(x, y));
+  } else if (deps_.io) {
+    return BytecodeValue(deps_.io->MouseMove(x, y));
+  } else {
     throw std::runtime_error("io unavailable");
   }
-  return BytecodeValue(deps_.io->MouseMove(x, y));
 }
 
 BytecodeValue HostBridgeRegistry::handleMouseClick(
     const std::vector<BytecodeValue> &args) {
   const auto button = static_cast<int>(requireIntArg(args, 0, "io.mouseClick"));
-  if (!deps_.io) {
+  if (deps_.io_service) {
+    deps_.io_service->mouseClick(button);
+  } else if (deps_.io) {
+    deps_.io->MouseClick(button);
+  } else {
     throw std::runtime_error("io unavailable");
   }
-  deps_.io->MouseClick(button);
   return BytecodeValue(nullptr);
 }
 
@@ -327,13 +380,17 @@ BytecodeValue HostBridgeRegistry::handleGetMousePosition(
   if (!args.empty()) {
     throw std::runtime_error("io.getMousePosition expects 0 arguments");
   }
-  if (!deps_.io) {
+  std::pair<int, int> pos;
+  if (deps_.io_service) {
+    pos = deps_.io_service->getMousePosition();
+  } else if (deps_.io) {
+    pos = deps_.io->GetMousePosition();
+  } else {
     throw std::runtime_error("io unavailable");
   }
-  auto [x, y] = deps_.io->GetMousePosition();
   auto object = vm_.createHostObject();
-  vm_.setHostObjectField(object, "x", static_cast<int64_t>(x));
-  vm_.setHostObjectField(object, "y", static_cast<int64_t>(y));
+  vm_.setHostObjectField(object, "x", static_cast<int64_t>(pos.first));
+  vm_.setHostObjectField(object, "y", static_cast<int64_t>(pos.second));
   return BytecodeValue(object);
 }
 
@@ -343,24 +400,45 @@ BytecodeValue HostBridgeRegistry::handleHotkeyRegister(
   if (args.size() < 2) {
     throw std::runtime_error("hotkey.register expects callback as second argument");
   }
-  if (!deps_.hotkey_manager) {
-    throw std::runtime_error("hotkey manager unavailable");
-  }
 
   const int64_t id = pinLongLivedCallback(args[1], hotkey_callback_roots_);
   hotkey_binding_keys_[id] = key;
-  const bool ok = deps_.hotkey_manager->AddHotkey(
-      key, [weak_self = weak_from_this(), id]() {
-        if (auto self = weak_self.lock()) {
-          try {
-            (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
-          } catch (const std::exception &e) {
-            std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
-                      << std::endl;
+  
+  bool ok = false;
+  
+  // Use service layer if available, otherwise fall back to core
+  if (deps_.hotkey_service) {
+    deps_.hotkey_service->registerHotkey(
+        key,
+        [weak_self = weak_from_this(), id]() {
+          if (auto self = weak_self.lock()) {
+            try {
+              (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
+            } catch (const std::exception &e) {
+              std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
+                        << std::endl;
+            }
           }
-        }
-      },
-      static_cast<int>(id));
+        },
+        static_cast<int>(id));
+    ok = true;  // Service doesn't return bool, assume success
+  } else if (deps_.hotkey_manager) {
+    ok = deps_.hotkey_manager->AddHotkey(
+        key,
+        [weak_self = weak_from_this(), id]() {
+          if (auto self = weak_self.lock()) {
+            try {
+              (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
+            } catch (const std::exception &e) {
+              std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
+                        << std::endl;
+            }
+          }
+        },
+        static_cast<int>(id));
+  } else {
+    throw std::runtime_error("hotkey manager unavailable");
+  }
 
   if (!ok) {
     unpinLongLivedCallback(id, hotkey_callback_roots_);

@@ -223,7 +223,7 @@ public:
 // Optimized Bytecode Interpreter
 // ============================================================================
 
-class OptimizedBytecodeInterpreter : public BytecodeInterpreter {
+class FastVM : public BytecodeInterpreter {
 protected:
   std::stack<BytecodeValue> stack;
   std::vector<BytecodeValue> locals;
@@ -352,7 +352,7 @@ protected:
   }
 
 public:
-  OptimizedBytecodeInterpreter() = default;
+  FastVM() = default;
 
   void setDebugMode(bool enabled) override { debug_mode = enabled; }
 
@@ -466,8 +466,8 @@ public:
 };
 
 // Factory for optimized interpreter
-std::unique_ptr<BytecodeInterpreter> createOptimizedBytecodeInterpreter() {
-  return std::make_unique<OptimizedBytecodeInterpreter>();
+std::unique_ptr<BytecodeInterpreter> createFastVM() {
+  return std::make_unique<FastVM>();
 }
 
 } // namespace havel::compiler

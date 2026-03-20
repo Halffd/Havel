@@ -19,7 +19,7 @@ namespace havel::compiler {
 class BytecodeCompiler;
 class BytecodeInterpreter;
 class JITCompiler;
-class AstBytecodeCompiler;
+class ByteCompiler;
 
 // Bytecode instruction format
 enum class OpCode : uint8_t {
@@ -181,7 +181,7 @@ public:
 };
 
 // Hybrid execution engine (Compiler + Interpreter + JIT)
-class HybridExecutionEngine {
+class Hybrid {
 protected:
   std::unique_ptr<BytecodeCompiler> compiler;
   std::unique_ptr<BytecodeInterpreter> interpreter;
@@ -194,11 +194,11 @@ protected:
   uint32_t jit_threshold = 100; // Compile after 100 executions
 
 public:
-  HybridExecutionEngine(std::unique_ptr<BytecodeCompiler> comp,
+  Hybrid(std::unique_ptr<BytecodeCompiler> comp,
                         std::unique_ptr<BytecodeInterpreter> interp,
                         std::unique_ptr<JITCompiler> jcomp = nullptr);
 
-  virtual ~HybridExecutionEngine() = default;
+  virtual ~Hybrid() = default;
 
   virtual bool compile(const ast::Program &program);
   virtual BytecodeValue execute(const std::string &function_name,
@@ -215,7 +215,7 @@ public:
   void resetStats() { execution_counts.clear(); }
 };
 
-std::unique_ptr<BytecodeInterpreter> createStackVMInterpreter();
-std::unique_ptr<HybridExecutionEngine> createHybridExecutionEngine();
+std::unique_ptr<BytecodeInterpreter> createVM();
+std::unique_ptr<Hybrid> createHybrid();
 
 } // namespace havel::compiler

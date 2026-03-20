@@ -1,4 +1,4 @@
-#include "AstBytecodeCompiler.hpp"
+#include "ByteCompiler.hpp"
 
 #include <stdexcept>
 
@@ -51,7 +51,7 @@ bool isIntegerLiteral(double value) {
 } // namespace
 
 std::unique_ptr<BytecodeChunk>
-AstBytecodeCompiler::compile(const ast::Program &program) {
+ByteCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
 
@@ -110,22 +110,22 @@ AstBytecodeCompiler::compile(const ast::Program &program) {
   return std::move(chunk);
 }
 
-void AstBytecodeCompiler::emit(OpCode op) {
+void ByteCompiler::emit(OpCode op) {
   emit(op, std::vector<BytecodeValue>{});
 }
 
-void AstBytecodeCompiler::emit(OpCode op, BytecodeValue operand) {
+void ByteCompiler::emit(OpCode op, BytecodeValue operand) {
   emit(op, std::vector<BytecodeValue>{std::move(operand)});
 }
 
-void AstBytecodeCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
+void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
   if (!current_function) {
     throw std::runtime_error("Attempted to emit bytecode without active function");
   }
   current_function->instructions.emplace_back(op, std::move(operands));
 }
 
-uint32_t AstBytecodeCompiler::addConstant(const BytecodeValue &value) {
+uint32_t ByteCompiler::addConstant(const BytecodeValue &value) {
   if (!current_function) {
     throw std::runtime_error("Attempted to add constant without active function");
   }
@@ -134,7 +134,7 @@ uint32_t AstBytecodeCompiler::addConstant(const BytecodeValue &value) {
   return static_cast<uint32_t>(current_function->constants.size() - 1);
 }
 
-uint32_t AstBytecodeCompiler::emitJump(OpCode op) {
+uint32_t ByteCompiler::emitJump(OpCode op) {
   if (op != OpCode::JUMP && op != OpCode::JUMP_IF_FALSE &&
       op != OpCode::JUMP_IF_TRUE) {
     throw std::runtime_error("Invalid jump opcode");
@@ -149,7 +149,7 @@ uint32_t AstBytecodeCompiler::emitJump(OpCode op) {
   return index;
 }
 
-void AstBytecodeCompiler::patchJump(uint32_t jump_instruction_index,
+void ByteCompiler::patchJump(uint32_t jump_instruction_index,
                                       uint32_t target) {
   if (!current_function) {
     throw std::runtime_error("Attempted to patch jump without active function");
@@ -167,7 +167,7 @@ void AstBytecodeCompiler::patchJump(uint32_t jump_instruction_index,
   instruction.operands[0] = target;
 }
 
-void AstBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &function) {
+void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   if (!function.name) {
     throw std::runtime_error("Function declaration missing name");
   }
@@ -192,7 +192,7 @@ void AstBytecodeCompiler::compileFunction(const ast::FunctionDeclaration &functi
   leaveFunction();
 }
 
-void AstBytecodeCompiler::compileStatement(const ast::Statement &statement) {
+void ByteCompiler::compileStatement(const ast::Statement &statement) {
   switch (statement.kind) {
   case ast::NodeType::ExpressionStatement: {
     const auto &expr_stmt =
@@ -256,7 +256,7 @@ void AstBytecodeCompiler::compileStatement(const ast::Statement &statement) {
   }
 }
 
-void AstBytecodeCompiler::compileExpression(const ast::Expression &expression) {
+void ByteCompiler::compileExpression(const ast::Expression &expression) {
   switch (expression.kind) {
   case ast::NodeType::NumberLiteral: {
     const auto &num = static_cast<const ast::NumberLiteral &>(expression);
@@ -314,7 +314,7 @@ void AstBytecodeCompiler::compileExpression(const ast::Expression &expression) {
   }
 }
 
-void AstBytecodeCompiler::compileCallExpression(const ast::CallExpression &expression) {
+void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) {
   if (!expression.callee) {
     throw std::runtime_error("Call expression missing callee");
   }
@@ -343,7 +343,7 @@ void AstBytecodeCompiler::compileCallExpression(const ast::CallExpression &expre
   emit(OpCode::CALL, arg_count);
 }
 
-void AstBytecodeCompiler::compileIfStatement(const ast::IfStatement &statement) {
+void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
   if (!statement.condition || !statement.consequence) {
     throw std::runtime_error("Malformed if statement");
   }
@@ -369,7 +369,7 @@ void AstBytecodeCompiler::compileIfStatement(const ast::IfStatement &statement) 
   }
 }
 
-void AstBytecodeCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
+void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   if (!statement.condition || !statement.body) {
     throw std::runtime_error("Malformed while statement");
   }
@@ -386,7 +386,7 @@ void AstBytecodeCompiler::compileWhileStatement(const ast::WhileStatement &state
   patchJump(end_jump, loop_end);
 }
 
-void AstBytecodeCompiler::compileBlockStatement(const ast::BlockStatement &block) {
+void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
   for (const auto &statement : block.body) {
     if (!statement) {
       continue;
@@ -396,7 +396,7 @@ void AstBytecodeCompiler::compileBlockStatement(const ast::BlockStatement &block
 }
 
 std::optional<std::string>
-AstBytecodeCompiler::getCalleeName(const ast::Expression &callee) const {
+ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   if (callee.kind == ast::NodeType::Identifier) {
     return static_cast<const ast::Identifier &>(callee).symbol;
   }
@@ -416,7 +416,7 @@ AstBytecodeCompiler::getCalleeName(const ast::Expression &callee) const {
   return std::nullopt;
 }
 
-uint32_t AstBytecodeCompiler::declareLocal(const std::string &name) {
+uint32_t ByteCompiler::declareLocal(const std::string &name) {
   auto existing = locals.find(name);
   if (existing != locals.end()) {
     return existing->second;
@@ -428,7 +428,7 @@ uint32_t AstBytecodeCompiler::declareLocal(const std::string &name) {
 }
 
 std::optional<uint32_t>
-AstBytecodeCompiler::resolveLocal(const std::string &name) const {
+ByteCompiler::resolveLocal(const std::string &name) const {
   auto it = locals.find(name);
   if (it == locals.end()) {
     return std::nullopt;
@@ -436,7 +436,7 @@ AstBytecodeCompiler::resolveLocal(const std::string &name) const {
   return it->second;
 }
 
-void AstBytecodeCompiler::enterFunction(BytecodeFunction &&function) {
+void ByteCompiler::enterFunction(BytecodeFunction &&function) {
   if (current_function) {
     throw std::runtime_error("Nested function compilation is not supported");
   }
@@ -445,7 +445,7 @@ void AstBytecodeCompiler::enterFunction(BytecodeFunction &&function) {
   resetLocals();
 }
 
-void AstBytecodeCompiler::leaveFunction() {
+void ByteCompiler::leaveFunction() {
   if (!current_function) {
     throw std::runtime_error("No active function to close");
   }
@@ -455,7 +455,7 @@ void AstBytecodeCompiler::leaveFunction() {
   resetLocals();
 }
 
-void AstBytecodeCompiler::resetLocals() {
+void ByteCompiler::resetLocals() {
   locals.clear();
   next_local_index = 0;
 }

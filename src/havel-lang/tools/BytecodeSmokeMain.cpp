@@ -1,5 +1,5 @@
-#include "havel-lang/compiler/bytecode/AstBytecodeCompiler.hpp"
-#include "havel-lang/compiler/bytecode/SourceBytecodePipeline.hpp"
+#include "havel-lang/compiler/bytecode/ByteCompiler.hpp"
+#include "havel-lang/compiler/bytecode/Pipeline.hpp"
 #include "havel-lang/parser/Parser.h"
 
 #include <cstdint>
@@ -108,7 +108,7 @@ compileChunk(const std::string &source) {
     throw std::runtime_error("parser returned null AST");
   }
 
-  havel::compiler::AstBytecodeCompiler compiler;
+  havel::compiler::ByteCompiler compiler;
   return compiler.compile(*program);
 }
 

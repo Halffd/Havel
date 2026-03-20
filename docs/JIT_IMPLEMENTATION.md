@@ -1,7 +1,7 @@
 # JIT Implementation Summary
 
 ## Overview
-Enhanced the `OptimizedBytecodeInterpreter` with comprehensive JIT compilation support, inline caching, and performance profiling capabilities.
+Enhanced the `FastVM` with comprehensive JIT compilation support, inline caching, and performance profiling capabilities.
 
 ## Features Implemented
 
@@ -113,7 +113,7 @@ interpreter.setDebugMode(true);
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│              OptimizedBytecodeInterpreter               │
+│              FastVM               │
 ├─────────────────────────────────────────────────────────┤
 │  Execution Loop                                         │
 │    ├─ Check JIT compilation threshold                   │
@@ -187,7 +187,7 @@ JIT code size: 21 bytes
 ```cpp
 #include "OptimizedInterpreter.h"
 
-auto interpreter = createOptimizedBytecodeInterpreter();
+auto interpreter = createFastVM();
 interpreter->setDebugMode(true);
 interpreter->setJITThreshold(50);  // Compile after 50 executions
 

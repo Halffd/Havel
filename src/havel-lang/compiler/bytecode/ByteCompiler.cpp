@@ -5,10 +5,6 @@
 namespace havel::compiler {
 
 namespace {
-bool isHostBuiltin(const std::string &name) {
-  return name == "print" || name == "sleep_ms" || name == "clock_ms";
-}
-
 OpCode toBytecodeOperator(ast::BinaryOperator op) {
   switch (op) {
   case ast::BinaryOperator::Add:
@@ -57,7 +53,7 @@ ByteCompiler::compile(const ast::Program &program) {
   function_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
 
-  LexicalResolver resolver;
+  LexicalResolver resolver(host_builtin_names_);
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
     throw std::runtime_error("Lexical resolution failed: " +
@@ -672,18 +668,6 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{binding->name, arg_count});
       return;
     }
-  }
-
-  if (auto callee_name = getCalleeName(*expression.callee);
-      callee_name && isHostBuiltin(*callee_name)) {
-    for (const auto &arg : expression.args) {
-      if (!arg) {
-        throw std::runtime_error("Call expression contains null argument");
-      }
-      compileExpression(*arg);
-    }
-    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*callee_name, arg_count});
-    return;
   }
 
   compileExpression(*expression.callee);

@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace havel::compiler {
@@ -33,6 +34,10 @@ struct LexicalResolutionResult {
 
 class LexicalResolver {
 public:
+  LexicalResolver() = default;
+  explicit LexicalResolver(std::unordered_set<std::string> builtins)
+      : builtins_(std::move(builtins)) {}
+
   LexicalResolutionResult resolve(const ast::Program &program);
   const std::vector<std::string> &errors() const { return errors_; }
 

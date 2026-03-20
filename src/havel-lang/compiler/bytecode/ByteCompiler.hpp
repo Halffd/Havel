@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 // Qt defines 'emit' as a macro - we need to undefine it for our method name
@@ -19,6 +20,10 @@ namespace havel::compiler {
 class ByteCompiler : public BytecodeCompiler {
 public:
     std::unique_ptr<BytecodeChunk> compile(const ast::Program& program) override;
+    void addHostBuiltin(std::string name) { host_builtin_names_.insert(std::move(name)); }
+    void setHostBuiltins(std::unordered_set<std::string> names) {
+      host_builtin_names_ = std::move(names);
+    }
     const LexicalResolutionResult& lexicalResolution() const {
       return lexical_resolution_;
     }
@@ -76,6 +81,8 @@ private:
     uint32_t next_local_index = 0;
     std::optional<SourceLocation> current_source_location_;
     LexicalResolutionResult lexical_resolution_;
+    std::unordered_set<std::string> host_builtin_names_{
+        "print", "sleep_ms", "clock_ms"};
 };
 
 } // namespace havel::compiler

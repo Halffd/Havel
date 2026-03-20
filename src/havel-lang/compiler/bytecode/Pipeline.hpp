@@ -2,6 +2,8 @@
 
 #include "BytecodeIR.hpp"
 #include "LexicalResolver.hpp"
+#include <functional>
+#include <unordered_map>
 #include <string>
 
 namespace havel::compiler {
@@ -16,6 +18,7 @@ struct PipelineOptions {
   std::string compile_unit_name = "unit";
   std::string snapshot_dir;
   bool write_snapshot_artifact = false;
+  std::unordered_map<std::string, BytecodeHostFunction> host_functions;
 };
 
 struct BytecodeSmokeResult {

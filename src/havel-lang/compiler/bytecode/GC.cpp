@@ -1,5 +1,7 @@
 #include "GC.hpp"
 
+#include <chrono>
+
 namespace havel::compiler {
 
 void GCHeap::reset() {
@@ -14,6 +16,8 @@ void GCHeap::reset() {
   allocations_since_last_ = 0;
   external_roots_.clear();
   next_external_root_id_ = 1;
+  collections_ = 0;
+  last_pause_ns_ = 0;
 }
 
 ClosureRef GCHeap::allocateClosure(RuntimeClosure closure) {
@@ -81,6 +85,39 @@ std::optional<BytecodeValue> GCHeap::externalRoot(uint64_t root_id) const {
     return std::nullopt;
   }
   return it->second;
+}
+
+GCHeap::Stats GCHeap::stats() const {
+  uint64_t heap_size = 0;
+  for (const auto &[_, array] : arrays_) {
+    heap_size += sizeof(array) +
+                 static_cast<uint64_t>(array.size()) * sizeof(BytecodeValue);
+  }
+  for (const auto &[_, object] : objects_) {
+    heap_size += sizeof(object);
+    for (const auto &[key, _] : object) {
+      heap_size += static_cast<uint64_t>(key.size()) + sizeof(BytecodeValue);
+    }
+  }
+  for (const auto &[_, set] : sets_) {
+    heap_size += sizeof(set);
+    for (const auto &[key, _] : set) {
+      heap_size += static_cast<uint64_t>(key.size()) + sizeof(BytecodeValue);
+    }
+  }
+  for (const auto &[_, closure] : closures_) {
+    heap_size += sizeof(closure);
+    heap_size += static_cast<uint64_t>(closure.upvalues.size()) *
+                 sizeof(std::shared_ptr<UpvalueCell>);
+  }
+
+  return Stats{
+      .heap_size = heap_size,
+      .object_count = static_cast<uint64_t>(arrays_.size() + objects_.size() +
+                                            sets_.size() + closures_.size()),
+      .collections = collections_,
+      .last_pause_ns = last_pause_ns_,
+  };
 }
 
 void GCHeap::maybeCollectGarbage(
@@ -188,6 +225,8 @@ void GCHeap::collectGarbage(
     const std::vector<uint32_t> &active_closure_ids,
     const std::function<std::optional<BytecodeValue>(uint32_t)> &
         open_local_reader) {
+  const auto pause_start = std::chrono::steady_clock::now();
+
   std::unordered_set<uint32_t> marked_arrays;
   std::unordered_set<uint32_t> marked_objects;
   std::unordered_set<uint32_t> marked_sets;
@@ -247,6 +286,11 @@ void GCHeap::collectGarbage(
   }
 
   allocations_since_last_ = 0;
+  collections_++;
+  last_pause_ns_ = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - pause_start)
+          .count());
 }
 
 } // namespace havel::compiler

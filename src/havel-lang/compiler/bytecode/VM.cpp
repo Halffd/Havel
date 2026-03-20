@@ -163,6 +163,21 @@ bool VM::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
 }
 
+ObjectRef VM::createHostObject() {
+  ObjectRef ref = heap_.allocateObject();
+  maybeCollectGarbage();
+  return ref;
+}
+
+void VM::setHostObjectField(ObjectRef object_ref, const std::string &key,
+                            BytecodeValue value) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) {
+    throw std::runtime_error("setHostObjectField unknown object id");
+  }
+  (*object)[key] = std::move(value);
+}
+
 uint64_t VM::pinExternalRoot(const BytecodeValue &value) {
   return heap_.pinExternalRoot(value);
 }
@@ -211,6 +226,33 @@ void VM::registerDefaultHostFunctions() {
     std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
     return BytecodeValue(nullptr);
   });
+
+  auto registerSystemGc = [this](const std::string &name) {
+    registerHostFunction(name, 0, [this](const std::vector<BytecodeValue> &) {
+      runGarbageCollection();
+      return BytecodeValue(nullptr);
+    });
+  };
+  registerSystemGc("system.gc");
+  registerSystemGc("system_gc");
+
+  auto registerSystemGcStats = [this](const std::string &name) {
+    registerHostFunction(name, 0, [this](const std::vector<BytecodeValue> &) {
+      const auto stats = gcStats();
+      const auto object_ref = createHostObject();
+      setHostObjectField(object_ref, "heapSize",
+                         static_cast<int64_t>(stats.heap_size));
+      setHostObjectField(object_ref, "objectCount",
+                         static_cast<int64_t>(stats.object_count));
+      setHostObjectField(object_ref, "collections",
+                         static_cast<int64_t>(stats.collections));
+      setHostObjectField(object_ref, "lastPauseNs",
+                         static_cast<int64_t>(stats.last_pause_ns));
+      return BytecodeValue(object_ref);
+    });
+  };
+  registerSystemGcStats("system.gcStats");
+  registerSystemGcStats("system_gcStats");
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,

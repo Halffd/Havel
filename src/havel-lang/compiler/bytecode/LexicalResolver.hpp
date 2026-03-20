@@ -54,7 +54,10 @@ private:
   std::vector<std::string> errors_;
   std::unordered_set<std::string> top_level_functions_;
   std::vector<FunctionContext> function_stack_;
-  std::unordered_set<std::string> builtins_{"print", "sleep_ms", "clock_ms"};
+  std::unordered_set<std::string> builtins_{
+      "print",      "sleep_ms",        "clock_ms",
+      "system.gc",  "system.gcStats",  "system_gc",
+      "system_gcStats"};
 
   void collectTopLevelFunctions(const ast::Program &program);
 

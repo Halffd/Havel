@@ -670,6 +670,18 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
     }
   }
 
+  if (auto callee_name = getCalleeName(*expression.callee);
+      callee_name && host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        throw std::runtime_error("Call expression contains null argument");
+      }
+      compileExpression(*arg);
+    }
+    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*callee_name, arg_count});
+    return;
+  }
+
   compileExpression(*expression.callee);
   for (const auto &arg : expression.args) {
     if (!arg) {

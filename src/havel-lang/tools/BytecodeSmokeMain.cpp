@@ -594,6 +594,37 @@ while i < 2000 {
 return i
 )havel", 2000, dump_bytecode, snapshot_dir);
 
+  failures += runCase("system-gc-manual", R"havel(
+let i = 0
+while i < 256 {
+    let arr = [i, i + 1]
+    i += 1
+}
+system.gc()
+return i
+)havel", 256, dump_bytecode, snapshot_dir);
+
+  failures += runCase("system-gc-stats", R"havel(
+let before = system.gcStats()
+let i = 0
+while i < 64 {
+    let obj = {v: i}
+    i += 1
+}
+system.gc()
+let after = system.gcStats()
+if after.collections >= before.collections {
+    if after.heapSize >= 0 {
+        if after.objectCount >= 0 {
+            if after.lastPauseNs >= 0 {
+                return 1
+            }
+        }
+    }
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
   failures += runCase("member-compound-single-eval", R"havel(
 fn run() {
     let hits = 0

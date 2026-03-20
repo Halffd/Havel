@@ -80,7 +80,8 @@ void LexicalResolver::endScope() {
   function_stack_.back().scopes.pop_back();
 }
 
-uint32_t LexicalResolver::declareLocal(const std::string &name) {
+uint32_t LexicalResolver::declareLocal(const std::string &name,
+                                       const ast::Identifier *declaration) {
   auto &ctx = function_stack_.back();
   if (ctx.scopes.empty()) {
     beginScope();
@@ -94,6 +95,9 @@ uint32_t LexicalResolver::declareLocal(const std::string &name) {
 
   uint32_t slot = ctx.next_slot++;
   scope[name] = slot;
+  if (declaration) {
+    result_.declaration_slots[declaration] = slot;
+  }
   return slot;
 }
 
@@ -103,7 +107,7 @@ void LexicalResolver::resolveFunctionDeclaration(
 
   for (const auto &param : function.parameters) {
     if (param && param->paramName) {
-      declareLocal(param->paramName->symbol);
+      declareLocal(param->paramName->symbol, param->paramName.get());
     }
   }
 
@@ -137,7 +141,14 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
 
     auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     if (identifier) {
-      declareLocal(identifier->symbol);
+      auto existing = resolveIdentifier(identifier->symbol);
+      if (existing && existing->kind == ResolvedBindingKind::Local) {
+        // Current language behavior treats repeated `let x = ...` in nested
+        // blocks as rebinding the same storage slot.
+        result_.declaration_slots[identifier] = existing->slot;
+      } else {
+        declareLocal(identifier->symbol, identifier);
+      }
     }
     break;
   }
@@ -192,7 +203,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
     if (fn.name) {
       // Allow nested function references from the surrounding function scope.
-      declareLocal(fn.name->symbol);
+      declareLocal(fn.name->symbol, fn.name.get());
     }
     resolveFunctionDeclaration(fn);
     break;

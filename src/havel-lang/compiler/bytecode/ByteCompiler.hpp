@@ -36,9 +36,10 @@ private:
     void compileWhileStatement(const ast::WhileStatement& statement);
     void compileBlockStatement(const ast::BlockStatement& block);
     std::optional<std::string> getCalleeName(const ast::Expression& callee) const;
+    const ResolvedBinding* bindingFor(const ast::Identifier& id) const;
+    uint32_t declarationSlot(const ast::Identifier& id) const;
+    void reserveLocalSlot(uint32_t slot);
 
-    uint32_t declareLocal(const std::string& name);
-    std::optional<uint32_t> resolveLocal(const std::string& name) const;
     void enterFunction(BytecodeFunction&& function);
     void leaveFunction();
     void resetLocals();
@@ -46,7 +47,6 @@ private:
     std::unique_ptr<BytecodeChunk> chunk;
     std::unique_ptr<BytecodeFunction> current_function;
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
-    std::unordered_map<std::string, uint32_t> locals;
     uint32_t next_local_index = 0;
     LexicalResolutionResult lexical_resolution_;
 };

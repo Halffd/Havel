@@ -25,6 +25,7 @@ struct ResolvedBinding {
 
 struct LexicalResolutionResult {
   std::unordered_map<const ast::Identifier *, ResolvedBinding> identifier_bindings;
+  std::unordered_map<const ast::Identifier *, uint32_t> declaration_slots;
   std::unordered_map<const ast::FunctionDeclaration *,
                      std::vector<std::string>>
       captured_variables;
@@ -54,7 +55,8 @@ private:
   void endFunction();
   void beginScope();
   void endScope();
-  uint32_t declareLocal(const std::string &name);
+  uint32_t declareLocal(const std::string &name,
+                        const ast::Identifier *declaration = nullptr);
 
   void resolveStatement(const ast::Statement &statement);
   void resolveExpression(const ast::Expression &expression);
@@ -66,4 +68,3 @@ private:
 };
 
 } // namespace havel::compiler
-

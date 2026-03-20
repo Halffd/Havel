@@ -144,8 +144,8 @@ Same service can support:
 | IO Service | ✅ Complete | `src/host/io/IOService.{hpp,cpp}` |
 | Hotkey Service | ✅ Complete | `src/host/hotkey/HotkeyService.{hpp,cpp}` |
 | Window Service | ✅ Complete | `src/host/window/WindowService.{hpp,cpp}` |
-| Mode Service | ⏳ Pending | - |
-| Process Service | ⏳ Pending | - |
+| Mode Service | ✅ Complete | `src/host/mode/ModeService.{hpp,cpp}` |
+| Process Service | ✅ Complete | `src/host/process/ProcessService.{hpp,cpp}` |
 | Clipboard Service | ⏳ Pending | - |
 
 ### Migration Order

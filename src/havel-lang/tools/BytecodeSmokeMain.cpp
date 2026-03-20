@@ -8,6 +8,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -150,7 +151,8 @@ bool equalsInt(const BytecodeValue &value, int64_t expected) {
 }
 
 std::unique_ptr<havel::compiler::BytecodeChunk>
-compileChunk(const std::string &source) {
+compileChunk(const std::string &source,
+             const std::vector<std::string> &extra_host_builtins = {}) {
   havel::parser::Parser parser;
   auto program = parser.produceAST(source);
   if (!program) {
@@ -158,6 +160,9 @@ compileChunk(const std::string &source) {
   }
 
   havel::compiler::ByteCompiler compiler;
+  for (const auto &name : extra_host_builtins) {
+    compiler.addHostBuiltin(name);
+  }
   return compiler.compile(*program);
 }
 
@@ -385,10 +390,10 @@ fn make() {
 }
 
 let cb = make()
-sleep_ms(cb)
+store_closure(cb)
 cb = 0
-print()
-let loaded = clock_ms()
+gc_now()
+let loaded = load_closure()
 return loaded()
 )havel";
 
@@ -397,26 +402,26 @@ return loaded()
       dumpBytecode("host-root-lifetime", source);
     }
 
-    auto chunk = compileChunk(source);
+    auto chunk = compileChunk(source, {"store_closure", "load_closure", "gc_now"});
     havel::compiler::VM vm;
     vm.setGcAllocationBudget(1);
     std::optional<havel::compiler::VM::GCRoot> stored_closure;
 
     vm.registerHostFunction(
-        "sleep_ms", 1,
+        "store_closure", 1,
         [&vm, &stored_closure](const std::vector<BytecodeValue> &args) {
           stored_closure.emplace(vm.makeRoot(args[0]));
           return BytecodeValue(nullptr);
         });
     vm.registerHostFunction(
-        "clock_ms", 0,
+        "load_closure", 0,
         [&stored_closure](const std::vector<BytecodeValue> &) {
           if (!stored_closure.has_value()) {
             return BytecodeValue(nullptr);
           }
           return stored_closure->get().value_or(BytecodeValue(nullptr));
         });
-    vm.registerHostFunction("print", 0,
+    vm.registerHostFunction("gc_now", 0,
                             [&vm](const std::vector<BytecodeValue> &) {
                               vm.runGarbageCollection();
                               return BytecodeValue(nullptr);

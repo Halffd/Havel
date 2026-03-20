@@ -313,6 +313,9 @@ BytecodeSmokeResult runBytecodePipeline(
   }
 
   ByteCompiler compiler;
+  for (const auto &[name, _] : options.host_functions) {
+    compiler.addHostBuiltin(name);
+  }
   BytecodeSmokeResult result;
   std::unique_ptr<BytecodeChunk> chunk;
   try {
@@ -332,6 +335,9 @@ BytecodeSmokeResult runBytecodePipeline(
   }
 
   VM vm;
+  for (const auto &[name, fn] : options.host_functions) {
+    vm.registerHostFunction(name, fn);
+  }
   result.return_value = vm.execute(*chunk, entry_function);
   return result;
 }

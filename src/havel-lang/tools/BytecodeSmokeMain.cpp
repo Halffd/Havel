@@ -457,6 +457,66 @@ return loaded()
   }
 }
 
+int runExternalCallbackInvocationCase(bool dump_bytecode) {
+  const std::string source = R"havel(
+fn makeCallback(seed) {
+    let x = seed
+    fn cb() {
+        return x + 2
+    }
+    return cb
+}
+
+let cb = makeCallback(40)
+register_cb(cb)
+return trigger_cb()
+)havel";
+
+  try {
+    if (dump_bytecode) {
+      dumpBytecode("external-callback-invocation", source);
+    }
+
+    auto chunk = compileChunk(source, {"register_cb", "trigger_cb"});
+    havel::compiler::VM vm;
+    std::optional<havel::compiler::VM::GCRoot> stored_callback;
+
+    vm.registerHostFunction(
+        "register_cb", 1,
+        [&vm, &stored_callback](const std::vector<BytecodeValue> &args) {
+          stored_callback.emplace(vm.makeRoot(args[0]));
+          return BytecodeValue(true);
+        });
+    vm.registerHostFunction(
+        "trigger_cb", 0,
+        [&vm, &stored_callback](const std::vector<BytecodeValue> &) {
+          if (!stored_callback.has_value()) {
+            throw std::runtime_error("missing callback");
+          }
+          auto callback = stored_callback->get();
+          if (!callback.has_value()) {
+            throw std::runtime_error("callback root missing");
+          }
+          return vm.call(*callback);
+        });
+
+    const auto result = vm.execute(*chunk, "__main__");
+    if (!equalsInt(result, 42)) {
+      std::cerr << "[FAIL] external-callback-invocation: expected 42 but got "
+                   "non-matching result"
+                << std::endl;
+      return 1;
+    }
+
+    std::cout << "[PASS] external-callback-invocation" << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] external-callback-invocation: exception: " << e.what()
+              << std::endl;
+    return 1;
+  }
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -680,6 +740,7 @@ return x
 
   failures += runClosureCase(dump_bytecode, snapshot_dir);
   failures += runHostRootLifetimeCase(dump_bytecode);
+  failures += runExternalCallbackInvocationCase(dump_bytecode);
   failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
   failures += runRuntimeLineErrorCase(dump_bytecode, snapshot_dir);
   failures += runStackOverflowCase(dump_bytecode, snapshot_dir);

@@ -93,6 +93,7 @@ private:
   BytecodeValue getConstant(uint32_t index);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
+  void runDispatchLoop(size_t stop_frame_depth);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
   std::vector<BytecodeValue> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;
@@ -109,6 +110,8 @@ public:
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;
+  BytecodeValue call(const BytecodeValue &callee_value,
+                     const std::vector<BytecodeValue> &args = {});
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;

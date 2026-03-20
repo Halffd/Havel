@@ -22,6 +22,7 @@ class HotkeyService;
 class WindowService;
 class ModeService;
 class ProcessService;
+class ClipboardService;
 } // namespace host
 } // namespace havel
 
@@ -40,6 +41,7 @@ struct HostBridgeDependencies {
   std::shared_ptr<host::WindowService> window_service;
   std::shared_ptr<host::ModeService> mode_service;
   std::shared_ptr<host::ProcessService> process_service;
+  std::shared_ptr<host::ClipboardService> clipboard_service;
 };
 
 class HostBridgeRegistry
@@ -72,6 +74,9 @@ private:
   BytecodeValue handleModeSet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleModeTick(const std::vector<BytecodeValue> &args);
   BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args);
 
   int64_t pinLongLivedCallback(const BytecodeValue &value, RootTable &table);
   void unpinLongLivedCallback(int64_t id, RootTable &table);

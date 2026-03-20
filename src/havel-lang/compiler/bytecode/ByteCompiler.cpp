@@ -381,6 +381,86 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::AssignmentExpression: {
+    const auto &assignment =
+        static_cast<const ast::AssignmentExpression &>(expression);
+    auto *target_id =
+        assignment.target
+            ? dynamic_cast<const ast::Identifier *>(assignment.target.get())
+            : nullptr;
+    if (!target_id) {
+      throw std::runtime_error(
+          "Bytecode compiler only supports identifier assignment targets");
+    }
+    if (!assignment.value) {
+      throw std::runtime_error("Assignment expression missing value");
+    }
+
+    const auto *binding = bindingFor(*target_id);
+    if (!binding) {
+      throw std::runtime_error("Missing lexical binding for assignment target: " +
+                               target_id->symbol);
+    }
+
+    auto emitStoreWithResult = [&](OpCode store_op, uint32_t slot) {
+      emit(OpCode::DUP);
+      emit(store_op, slot);
+    };
+
+    if (assignment.operator_ == "=") {
+      compileExpression(*assignment.value);
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emitStoreWithResult(OpCode::STORE_VAR, binding->slot);
+        break;
+      }
+      if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emitStoreWithResult(OpCode::STORE_UPVALUE, binding->slot);
+        break;
+      }
+      throw std::runtime_error("Assignment target is not mutable: " +
+                               target_id->symbol);
+    }
+
+    auto emitCompound = [&](OpCode math_op) {
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+      } else {
+        throw std::runtime_error("Assignment target is not mutable: " +
+                                 target_id->symbol);
+      }
+
+      compileExpression(*assignment.value);
+      emit(math_op);
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emitStoreWithResult(OpCode::STORE_VAR, binding->slot);
+      } else {
+        emitStoreWithResult(OpCode::STORE_UPVALUE, binding->slot);
+      }
+    };
+
+    if (assignment.operator_ == "+=") {
+      emitCompound(OpCode::ADD);
+      break;
+    }
+    if (assignment.operator_ == "-=") {
+      emitCompound(OpCode::SUB);
+      break;
+    }
+    if (assignment.operator_ == "*=") {
+      emitCompound(OpCode::MUL);
+      break;
+    }
+    if (assignment.operator_ == "/=") {
+      emitCompound(OpCode::DIV);
+      break;
+    }
+
+    throw std::runtime_error("Unsupported assignment operator: " +
+                             assignment.operator_);
+  }
+
   case ast::NodeType::CallExpression:
     compileCallExpression(static_cast<const ast::CallExpression &>(expression));
     break;

@@ -348,6 +348,28 @@ let f = outer()
 return f()
 )havel", 42, dump_bytecode, snapshot_dir);
 
+  failures += runCase("assignment-local", R"havel(
+let x = 1
+x = x + 4
+x += 5
+return x
+)havel", 10, dump_bytecode, snapshot_dir);
+
+  failures += runCase("assignment-upvalue", R"havel(
+fn makeCounter(seed) {
+    let x = seed
+    fn next() {
+        x += 1
+        return x
+    }
+    return next
+}
+
+let c = makeCounter(40)
+c()
+return c()
+)havel", 42, dump_bytecode, snapshot_dir);
+
   failures += runCase("while-loop", R"havel(
 let i = 0
 while i < 1 {

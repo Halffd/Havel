@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Bytecode.h"
+#include "BytecodeIR.hpp"
 #include <stack>
 #include <unordered_map>
 #include <vector>
@@ -8,7 +8,7 @@
 namespace havel::compiler {
 
 // Bytecode interpreter implementation
-class HavelBytecodeInterpreter : public BytecodeInterpreter {
+class StackVMInterpreter : public BytecodeInterpreter {
 private:
   struct CallFrame {
     const BytecodeFunction *function = nullptr;
@@ -36,7 +36,7 @@ private:
                                    uint32_t arg_count);
 
 public:
-  HavelBytecodeInterpreter();
+  StackVMInterpreter();
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Bytecode.h"
+#include "BytecodeIR.hpp"
 #include <array>
 #include <iostream>
 #include <stack>

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Bytecode.h"
-#include "../ast/AST.h"
+#include "BytecodeIR.hpp"
+#include "../../ast/AST.h"
 #include <optional>
 #include <memory>
 #include <string>
@@ -15,7 +15,7 @@
 
 namespace havel::compiler {
 
-class HavelBytecodeCompiler : public BytecodeCompiler {
+class AstBytecodeCompiler : public BytecodeCompiler {
 public:
     std::unique_ptr<BytecodeChunk> compile(const ast::Program& program) override;
 
@@ -34,6 +34,7 @@ private:
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);
     void compileBlockStatement(const ast::BlockStatement& block);
+    void enforcePhase2ClosureBoundary(const ast::Statement& statement) const;
     std::optional<std::string> getCalleeName(const ast::Expression& callee) const;
 
     uint32_t declareLocal(const std::string& name);

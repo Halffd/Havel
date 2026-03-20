@@ -1,4 +1,4 @@
-#include "BytecodeInterpreter.hpp"
+#include "StackVMInterpreter.hpp"
 
 #include <chrono>
 #include <cmath>
@@ -35,12 +35,12 @@ std::string toString(const BytecodeValue &value) {
 }
 } // namespace
 
-HavelBytecodeInterpreter::HavelBytecodeInterpreter() : current_chunk(nullptr) {
+StackVMInterpreter::StackVMInterpreter() : current_chunk(nullptr) {
   registerDefaultHostFunctions();
 }
 
 template <typename T>
-T HavelBytecodeInterpreter::getValue(const BytecodeValue &value) {
+T StackVMInterpreter::getValue(const BytecodeValue &value) {
   if constexpr (std::is_same_v<T, std::nullptr_t>) {
     return std::get<std::nullptr_t>(value);
   } else if constexpr (std::is_same_v<T, bool>) {
@@ -56,35 +56,35 @@ T HavelBytecodeInterpreter::getValue(const BytecodeValue &value) {
   throw std::runtime_error("Invalid type conversion");
 }
 
-const HavelBytecodeInterpreter::CallFrame &
-HavelBytecodeInterpreter::currentFrame() const {
+const StackVMInterpreter::CallFrame &
+StackVMInterpreter::currentFrame() const {
   if (frames.empty()) {
     throw std::runtime_error("No active call frame");
   }
   return frames.back();
 }
 
-HavelBytecodeInterpreter::CallFrame &HavelBytecodeInterpreter::currentFrame() {
+StackVMInterpreter::CallFrame &StackVMInterpreter::currentFrame() {
   if (frames.empty()) {
     throw std::runtime_error("No active call frame");
   }
   return frames.back();
 }
 
-BytecodeValue HavelBytecodeInterpreter::getConstant(uint32_t index) {
+BytecodeValue StackVMInterpreter::getConstant(uint32_t index) {
   return currentFrame().function->constants[index];
 }
 
-void HavelBytecodeInterpreter::registerHostFunction(
+void StackVMInterpreter::registerHostFunction(
     const std::string &name, BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
 }
 
-bool HavelBytecodeInterpreter::hasHostFunction(const std::string &name) const {
+bool StackVMInterpreter::hasHostFunction(const std::string &name) const {
   return host_functions.find(name) != host_functions.end();
 }
 
-void HavelBytecodeInterpreter::registerDefaultHostFunctions() {
+void StackVMInterpreter::registerDefaultHostFunctions() {
   registerHostFunction("print", [](const std::vector<BytecodeValue> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
       if (i > 0) {
@@ -120,7 +120,7 @@ void HavelBytecodeInterpreter::registerDefaultHostFunctions() {
   });
 }
 
-BytecodeValue HavelBytecodeInterpreter::invokeHostFunction(const std::string &name,
+BytecodeValue StackVMInterpreter::invokeHostFunction(const std::string &name,
                                                            uint32_t arg_count) {
   auto it = host_functions.find(name);
   if (it == host_functions.end()) {
@@ -139,7 +139,7 @@ BytecodeValue HavelBytecodeInterpreter::invokeHostFunction(const std::string &na
   return it->second(args);
 }
 
-BytecodeValue HavelBytecodeInterpreter::execute(
+BytecodeValue StackVMInterpreter::execute(
     const BytecodeChunk &chunk, const std::string &function_name,
     const std::vector<BytecodeValue> &args) {
   current_chunk = &chunk;
@@ -207,11 +207,11 @@ BytecodeValue HavelBytecodeInterpreter::execute(
   return result;
 }
 
-void HavelBytecodeInterpreter::setDebugMode(bool enabled) {
+void StackVMInterpreter::setDebugMode(bool enabled) {
   debug_mode = enabled;
 }
 
-void HavelBytecodeInterpreter::doCall(const std::string &function_name,
+void StackVMInterpreter::doCall(const std::string &function_name,
                                       uint32_t arg_count) {
   const auto *callee = current_chunk->getFunction(function_name);
   if (!callee) {
@@ -243,7 +243,7 @@ void HavelBytecodeInterpreter::doCall(const std::string &function_name,
   }
 }
 
-void HavelBytecodeInterpreter::executeInstruction(
+void StackVMInterpreter::executeInstruction(
     const Instruction &instruction) {
   auto pop = [this]() -> BytecodeValue {
     if (stack.empty()) {
@@ -581,8 +581,8 @@ void HavelBytecodeInterpreter::executeInstruction(
   }
 }
 
-std::unique_ptr<BytecodeInterpreter> createBytecodeInterpreter() {
-  return std::make_unique<HavelBytecodeInterpreter>();
+std::unique_ptr<BytecodeInterpreter> createStackVMInterpreter() {
+  return std::make_unique<StackVMInterpreter>();
 }
 
 } // namespace havel::compiler

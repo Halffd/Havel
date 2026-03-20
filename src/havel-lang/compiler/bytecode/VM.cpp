@@ -319,6 +319,16 @@ void VM::executeInstruction(
     break;
   }
 
+  case OpCode::LOAD_UPVALUE: {
+    throw std::runtime_error(
+        "LOAD_UPVALUE reached runtime, but closure storage is not implemented");
+  }
+
+  case OpCode::STORE_UPVALUE: {
+    throw std::runtime_error(
+        "STORE_UPVALUE reached runtime, but closure storage is not implemented");
+  }
+
   case OpCode::POP: {
     pop();
     break;

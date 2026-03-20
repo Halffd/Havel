@@ -141,14 +141,9 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
 
     auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
     if (identifier) {
-      auto existing = resolveIdentifier(identifier->symbol);
-      if (existing && existing->kind == ResolvedBindingKind::Local) {
-        // Current language behavior treats repeated `let x = ...` in nested
-        // blocks as rebinding the same storage slot.
-        result_.declaration_slots[identifier] = existing->slot;
-      } else {
-        declareLocal(identifier->symbol, identifier);
-      }
+      // Always allocate a new slot for `let` declarations.
+      // This preserves lexical shadowing across nested blocks.
+      declareLocal(identifier->symbol, identifier);
     }
     break;
   }

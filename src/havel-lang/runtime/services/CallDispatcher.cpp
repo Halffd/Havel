@@ -81,7 +81,7 @@ void CallDispatcher::dispatchCall(const ast::CallExpression &node) {
 // Private method implementations
 static HavelResult callBuiltin(BuiltinFunction builtin,
                                const std::vector<HavelValue> &args) {
-  return (*builtin)(args);
+  return (builtin)(args);
 }
 
 static HavelResult callUserFunction(Interpreter *interp,
@@ -137,7 +137,7 @@ static HavelResult callObject(const HavelObject &obj,
   auto it = obj->find("__call__");
   if (it != obj->end() && it->second.is<BuiltinFunction>()) {
     auto callFunc = it->second.get<BuiltinFunction>();
-    return (*callFunc)(args);
+    return callFunc(args);
   }
 
   return HavelRuntimeError("Object is not callable");

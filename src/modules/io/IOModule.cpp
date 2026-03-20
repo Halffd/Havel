@@ -106,7 +106,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Key sending functions
   // =========================================================================
 
-  (*ioObj)["send"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["send"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->send() requires keys to send");
@@ -116,7 +116,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*ioObj)["sendKey"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["sendKey"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->sendKey() requires key name");
@@ -128,7 +128,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*ioObj)["keyDown"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["keyDown"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->keyDown() requires key name");
@@ -138,7 +138,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*ioObj)["keyUp"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["keyUp"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->keyUp() requires key name");
@@ -152,7 +152,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Key mapping functions
   // =========================================================================
 
-  (*ioObj)["map"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["map"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("io->map() requires (from, to)");
@@ -164,7 +164,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(nullptr);
       }));
 
-  (*ioObj)["remap"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["remap"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("io->remap() requires (key1, key2)");
@@ -181,26 +181,26 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // =========================================================================
 
   (*ioObj)["block"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         // Emergency release all keys to block input
         io->EmergencyReleaseAllKeys();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["unblock"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         // Ungrab all hotkeys to unblock input
         io->UngrabAll();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["suspend"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->Suspend());
       }));
 
   (*ioObj)["resume"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         if (io->isSuspended) {
           return HavelValue(io->Suspend());
         }
@@ -208,24 +208,24 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   (*ioObj)["isSuspended"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->IsSuspended());
       }));
 
   (*ioObj)["grab"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         io->EmergencyReleaseAllKeys();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["ungrab"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         io->UngrabAll();
         return HavelValue(nullptr);
       }));
 
   (*ioObj)["emergencyRelease"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         io->EmergencyReleaseAllKeys();
         return HavelValue(nullptr);
       }));
@@ -234,7 +234,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Key state functions
   // =========================================================================
 
-  (*ioObj)["getKeyState"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["getKeyState"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->getKeyState() requires key name");
@@ -244,7 +244,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(io->GetKeyState(key));
       }));
 
-  (*ioObj)["isKeyPressed"] = HavelValue(makeBuiltinFunction(
+  (*ioObj)["isKeyPressed"] = HavelValue(BuiltinFunction(
       [io, valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("io->isKeyPressed() requires key name");
@@ -255,27 +255,27 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   (*ioObj)["isShiftPressed"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->IsShiftPressed());
       }));
 
   (*ioObj)["isCtrlPressed"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->IsCtrlPressed());
       }));
 
   (*ioObj)["isAltPressed"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->IsAltPressed());
       }));
 
   (*ioObj)["isWinPressed"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->IsWinPressed());
       }));
 
   (*ioObj)["getCurrentModifiers"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(static_cast<double>(io->GetCurrentModifiers()));
       }));
 
@@ -283,10 +283,9 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // KeyTap - Advanced hotkey with conditions
   // =========================================================================
 
-  (*ioObj)["keyTap"] = HavelValue(makeBuiltinFunction([hostAPI](
-                                                          const std::vector<
-                                                              HavelValue> &args)
-                                                          -> HavelResult {
+  (*ioObj)["keyTap"] = HavelValue(BuiltinFunction([hostAPI](const std::vector<
+                                                            HavelValue> &args)
+                                                      -> HavelResult {
     if (args.empty()) {
       return HavelRuntimeError("io->keyTap() requires at least a key name");
     }
@@ -308,16 +307,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
     bool grabUp = true;
 
     if (args.size() > 1 && args[1].isFunction()) {
-      onTap = [func = *args[1].get<BuiltinFunction>()]() { func({}); };
+      onTap = [func = args[1].get<BuiltinFunction>()]() { func({}); };
     }
 
     if (args.size() > 2) {
       if (args[2].isString()) {
         tapCondition = args[2].asString();
       } else if (args[2].isFunction()) {
-        tapCondition =
-            [func = *args[2]
-                        .get<BuiltinFunction>()]() -> bool {
+        tapCondition = [func = args[2].get<BuiltinFunction>()]() -> bool {
           auto result = func({});
           if (auto *val = std::get_if<HavelValue>(&result)) {
             return val->isBool()     ? val->get<bool>()
@@ -333,9 +330,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       if (args[3].isString()) {
         comboCondition = args[3].asString();
       } else if (args[3].isFunction()) {
-        comboCondition =
-            [func = *args[3]
-                        .get<BuiltinFunction>()]() -> bool {
+        comboCondition = [func = args[3].get<BuiltinFunction>()]() -> bool {
           auto result = func({});
           if (auto *val = std::get_if<HavelValue>(&result)) {
             return val->isBool()     ? val->get<bool>()
@@ -348,10 +343,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
     }
 
     if (args.size() > 4 && args[4].isFunction()) {
-      onCombo = [func = *args[4]
-                            .get<BuiltinFunction>()]() {
-        func({});
-      };
+      onCombo = [func = args[4].get<BuiltinFunction>()]() { func({}); };
     }
 
     if (args.size() > 5 && args[5].isBool()) {
@@ -394,8 +386,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   auto mouseObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  (*mouseObj)["move"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["move"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("mouse.move(dx, dy) requires 2 arguments");
         }
@@ -409,8 +401,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*mouseObj)["moveTo"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["moveTo"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("mouse.moveTo(x, y) requires 2 arguments");
         }
@@ -426,8 +418,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*mouseObj)["click"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["click"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -440,8 +432,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*mouseObj)["doubleClick"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["doubleClick"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -458,8 +450,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*mouseObj)["press"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["press"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -474,8 +466,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(true);
       }));
 
-  (*mouseObj)["release"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["release"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         int button = 1;
         if (!args.empty()) {
           auto parsed = parseMouseButton(args[0]);
@@ -493,8 +485,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (*mouseObj)["down"] = (*mouseObj)["press"];
   (*mouseObj)["up"] = (*mouseObj)["release"];
 
-  (*mouseObj)["scroll"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["scroll"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("mouse.scroll() requires 1 or 2 arguments");
         }
@@ -520,7 +512,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   (*mouseObj)["getPosition"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         auto pos = io->GetMousePosition();
         auto posObj =
             std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -530,8 +522,8 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
   (*mouseObj)["pos"] = (*mouseObj)["getPosition"]; // Alias
 
-  (*mouseObj)["setSensitivity"] = HavelValue(makeBuiltinFunction(
-      [io](const std::vector<HavelValue> &args) -> HavelResult {
+  (*mouseObj)["setSensitivity"] = HavelValue(
+      BuiltinFunction([io](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError(
               "mouse.setSensitivity() requires sensitivity value");
@@ -542,7 +534,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   (*mouseObj)["getSensitivity"] = HavelValue(
-      makeBuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
+      BuiltinFunction([io](const std::vector<HavelValue> &) -> HavelResult {
         return HavelValue(io->GetMouseSensitivity());
       }));
 
@@ -567,18 +559,18 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Global window information (for use in when blocks and conditions)
   // =========================================================================
 
-  env.Define("title", HavelValue(makeBuiltinFunction(
+  env.Define("title", HavelValue(BuiltinFunction(
                           [io](const std::vector<HavelValue> &) -> HavelResult {
                             return HavelValue(io->GetActiveWindowTitle());
                           })));
 
-  env.Define("class", HavelValue(makeBuiltinFunction(
+  env.Define("class", HavelValue(BuiltinFunction(
                           [io](const std::vector<HavelValue> &) -> HavelResult {
                             return HavelValue(io->GetActiveWindowClass());
                           })));
 
   // Get current active window executable name
-  env.Define("exe", HavelValue(makeBuiltinFunction(
+  env.Define("exe", HavelValue(BuiltinFunction(
                         [io](const std::vector<HavelValue> &) -> HavelResult {
                           return HavelValue(WindowManager::getProcessName(
                               io->GetActiveWindowPID()));
@@ -586,7 +578,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   // Global suspend/resume aliases (AHK-style)
   env.Define("suspend",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [io](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      // suspend() with no args = toggle

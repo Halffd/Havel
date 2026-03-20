@@ -15,7 +15,7 @@ void registerTimeModule(Environment &env) {
   // time.now() - Get current timestamp (seconds since epoch)
   // ==========================================================================
   env.Define("now",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &) -> HavelResult {
                    auto now = std::chrono::system_clock::now();
                    auto epoch = now.time_since_epoch();
@@ -28,7 +28,7 @@ void registerTimeModule(Environment &env) {
   // time.nowMs() - Get current timestamp in milliseconds
   // ==========================================================================
   env.Define("nowMs",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &) -> HavelResult {
                    auto now = std::chrono::system_clock::now();
                    auto epoch = now.time_since_epoch();
@@ -43,7 +43,7 @@ void registerTimeModule(Environment &env) {
   // ==========================================================================
   env.Define(
       "sleep",
-      HavelValue(makeBuiltinFunction(
+      HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty()) {
               return HavelRuntimeError("sleep() requires duration in seconds");
@@ -63,7 +63,7 @@ void registerTimeModule(Environment &env) {
   // time.sleepMs(milliseconds) - Sleep for specified milliseconds
   // ==========================================================================
   env.Define("sleepMs",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      return HavelRuntimeError(
@@ -85,7 +85,7 @@ void registerTimeModule(Environment &env) {
   // time.format(timestamp, format) - Format timestamp to string
   // ==========================================================================
   env.Define("format",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      return HavelRuntimeError("format() requires timestamp");
@@ -108,7 +108,7 @@ void registerTimeModule(Environment &env) {
   // time.parse(string, format) - Parse string to timestamp
   // ==========================================================================
   env.Define("parse",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      return HavelRuntimeError("parse() requires time string");
@@ -135,7 +135,7 @@ void registerTimeModule(Environment &env) {
   // time.year(timestamp) - Get year from timestamp
   // ==========================================================================
   env.Define("year",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -148,7 +148,7 @@ void registerTimeModule(Environment &env) {
   // time.month(timestamp) - Get month from timestamp (1-12)
   // ==========================================================================
   env.Define("month",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -160,7 +160,7 @@ void registerTimeModule(Environment &env) {
   // ==========================================================================
   // time.day(timestamp) - Get day from timestamp (1-31)
   // ==========================================================================
-  env.Define("day", HavelValue(makeBuiltinFunction(
+  env.Define("day", HavelValue(BuiltinFunction(
                         [](const std::vector<HavelValue> &args) -> HavelResult {
                           double timestamp =
                               args.empty() ? time(nullptr) : args[0].asNumber();
@@ -173,7 +173,7 @@ void registerTimeModule(Environment &env) {
   // time.hour(timestamp) - Get hour from timestamp (0-23)
   // ==========================================================================
   env.Define("hour",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -186,7 +186,7 @@ void registerTimeModule(Environment &env) {
   // time.minute(timestamp) - Get minute from timestamp (0-59)
   // ==========================================================================
   env.Define("minute",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -199,7 +199,7 @@ void registerTimeModule(Environment &env) {
   // time.second(timestamp) - Get second from timestamp (0-59)
   // ==========================================================================
   env.Define("second",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -212,7 +212,7 @@ void registerTimeModule(Environment &env) {
   // time.weekday(timestamp) - Get weekday from timestamp (0=Sunday, 6=Saturday)
   // ==========================================================================
   env.Define("weekday",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -225,7 +225,7 @@ void registerTimeModule(Environment &env) {
   // time.yearday(timestamp) - Get day of year (0-365)
   // ==========================================================================
   env.Define("yearday",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -238,7 +238,7 @@ void registerTimeModule(Environment &env) {
   // time.isLeapYear(year) - Check if year is a leap year
   // ==========================================================================
   env.Define("isLeapYear",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {
                      return HavelRuntimeError("isLeapYear() requires year");
@@ -255,7 +255,7 @@ void registerTimeModule(Environment &env) {
   // ==========================================================================
   env.Define(
       "daysInMonth",
-      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &args)
+      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("daysInMonth() requires year and month");
@@ -286,7 +286,7 @@ void registerTimeModule(Environment &env) {
   // time.diff(timestamp1, timestamp2) - Get difference in seconds
   // ==========================================================================
   env.Define("diff",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2) {
                      return HavelRuntimeError("diff() requires two timestamps");
@@ -302,7 +302,7 @@ void registerTimeModule(Environment &env) {
   // time.diffDays(timestamp1, timestamp2) - Get difference in days
   // ==========================================================================
   env.Define("diffDays",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2) {
                      return HavelRuntimeError(
@@ -322,7 +322,7 @@ void registerTimeModule(Environment &env) {
   // time.toISO(timestamp) - Convert to ISO 8601 format
   // ==========================================================================
   env.Define("toISO",
-             HavelValue(makeBuiltinFunction(
+             HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    double timestamp =
                        args.empty() ? time(nullptr) : args[0].asNumber();
@@ -341,7 +341,7 @@ void registerTimeModule(Environment &env) {
   // ==========================================================================
   env.Define(
       "fromISO",
-      HavelValue(makeBuiltinFunction(
+      HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty()) {
               return HavelRuntimeError("fromISO() requires ISO 8601 string");

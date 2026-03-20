@@ -112,18 +112,9 @@ struct ContinueValue {};
 using HavelResult = std::variant<HavelValue, HavelRuntimeError, ReturnValue,
                                  BreakValue, ContinueValue>;
 
-// Function type (now HavelResult is known) - use shared_ptr to prevent memory
-// leaks
-using BuiltinFunction = std::shared_ptr<
-    std::function<HavelResult(const std::vector<HavelValue> &)>>;
-
-// Helper to create BuiltinFunction from lambda (prevents memory leaks)
-template <typename Func>
-inline BuiltinFunction makeBuiltinFunction(Func &&func) {
-  return std::make_shared<
-      std::function<HavelResult(const std::vector<HavelValue> &)>>(
-      std::forward<Func>(func));
-}
+// Function type (now HavelResult is known)
+using BuiltinFunction =
+    std::function<HavelResult(const std::vector<HavelValue> &)>;
 
 // Forward declaration for Promise
 // struct Promise; // Temporarily disabled to fix build

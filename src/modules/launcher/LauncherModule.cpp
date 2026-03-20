@@ -19,7 +19,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Process launching functions
   // =========================================================================
 
-  (*launcherObj)["run"] = HavelValue(makeBuiltinFunction(
+  (*launcherObj)["run"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("run() requires command");
@@ -47,7 +47,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(resultObj);
       }));
 
-  (*launcherObj)["runAsync"] = HavelValue(makeBuiltinFunction(
+  (*launcherObj)["runAsync"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("runAsync() requires command");
@@ -61,7 +61,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(static_cast<double>(result.pid));
       }));
 
-  (*launcherObj)["runShell"] = HavelValue(makeBuiltinFunction(
+  (*launcherObj)["runShell"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("runShell() requires command");
@@ -88,7 +88,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(resultObj);
       }));
 
-  (*launcherObj)["runDetached"] = HavelValue(makeBuiltinFunction(
+  (*launcherObj)["runDetached"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("runDetached() requires command");
@@ -102,7 +102,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(result.success);
       }));
 
-  (*launcherObj)["terminal"] = HavelValue(makeBuiltinFunction(
+  (*launcherObj)["terminal"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("terminal() requires command");

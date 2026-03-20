@@ -31,25 +31,25 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
   // app.enableReload/disableReload/toggleReload/reload
   // =========================================================================
 
-  (*appObj)["enableReload"] = HavelValue(makeBuiltinFunction(
+  (*appObj)["enableReload"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->enableReload();
         return HavelValue(true);
       }));
 
-  (*appObj)["disableReload"] = HavelValue(makeBuiltinFunction(
+  (*appObj)["disableReload"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->disableReload();
         return HavelValue(false);
       }));
 
-  (*appObj)["toggleReload"] = HavelValue(makeBuiltinFunction(
+  (*appObj)["toggleReload"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &) -> HavelResult {
         interpreter->toggleReload();
         return HavelValue(interpreter->isReloadEnabled());
       }));
 
-  (*appObj)["reload"] = HavelValue(makeBuiltinFunction(
+  (*appObj)["reload"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() >= 1) {
           if (auto b = args[0].get_if<bool>()) {
@@ -70,7 +70,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
 
   env.Define(
       "runOnce",
-      HavelValue(makeBuiltinFunction(
+      HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty()) {
               return HavelRuntimeError(
@@ -119,7 +119,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
   auto debugObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  (*debugObj)["showAST"] = HavelValue(makeBuiltinFunction(
+  (*debugObj)["showAST"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
           if (auto b = args[0].get_if<bool>()) {
@@ -129,7 +129,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
         return HavelValue(interpreter->getShowAST());
       }));
 
-  (*debugObj)["stopOnError"] = HavelValue(makeBuiltinFunction(
+  (*debugObj)["stopOnError"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &args) -> HavelValue {
         if (args.size() >= 1) {
           if (auto b = args[0].get_if<bool>()) {
@@ -139,7 +139,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
         return HavelValue(interpreter->getStopOnError());
       }));
 
-  (*debugObj)["interpreterState"] = HavelValue(makeBuiltinFunction(
+  (*debugObj)["interpreterState"] = HavelValue(BuiltinFunction(
       [interpreter](const std::vector<HavelValue> &) -> HavelValue {
         return HavelValue(interpreter->getInterpreterState());
       }));

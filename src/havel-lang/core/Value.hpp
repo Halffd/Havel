@@ -25,16 +25,8 @@ struct Value;
 using ArrayValue = std::shared_ptr<std::vector<Value>>;
 using ObjectValue = std::shared_ptr<std::unordered_map<std::string, Value>>;
 
-// Builtin function type - use shared_ptr to prevent memory leaks in variant
-using BuiltinFunction =
-    std::shared_ptr<std::function<Value(const std::vector<Value> &)>>;
-
-// Helper to create BuiltinFunction from lambda (prevents memory leaks)
-template <typename Func>
-inline BuiltinFunction makeBuiltinFunction(Func &&func) {
-  return std::make_shared<std::function<Value(const std::vector<Value> &)>>(
-      std::forward<Func>(func));
-}
+// Built-in function type
+using BuiltinFunction = std::function<Value(const std::vector<Value> &)>;
 
 /**
  * Runtime error wrapper
@@ -135,7 +127,7 @@ struct Value {
   // Call function
   Result call(const std::vector<Value> &args) const {
     if (auto *fn = std::get_if<BuiltinFunction>(&data)) {
-      return (**fn)(args);
+      return (*fn)(args);
     }
     if (auto *fn =
             std::get_if<std::function<Result(const std::vector<Value> &)>>(

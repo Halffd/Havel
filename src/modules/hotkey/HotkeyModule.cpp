@@ -35,7 +35,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.toggleOverlay() - Toggle fake desktop overlay
   // =========================================================================
 
-  (*hotkeyObj)["toggleOverlay"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["toggleOverlay"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->toggleFakeDesktopOverlay();
         return HavelValue(nullptr);
@@ -45,7 +45,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.showBlackOverlay() - Show black overlay
   // =========================================================================
 
-  (*hotkeyObj)["showBlackOverlay"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["showBlackOverlay"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->showBlackOverlay();
         return HavelValue(nullptr);
@@ -55,7 +55,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.printActiveWindowInfo() - Print active window info
   // =========================================================================
 
-  (*hotkeyObj)["printActiveWindowInfo"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["printActiveWindowInfo"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->printActiveWindowInfo();
         return HavelValue(nullptr);
@@ -65,7 +65,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.toggleWindowFocusTracking() - Toggle window focus tracking
   // =========================================================================
 
-  (*hotkeyObj)["toggleWindowFocusTracking"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["toggleWindowFocusTracking"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->toggleWindowFocusTracking();
         return HavelValue(nullptr);
@@ -75,7 +75,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.updateConditional() - Update conditional hotkeys
   // =========================================================================
 
-  (*hotkeyObj)["updateConditional"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["updateConditional"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->updateAllConditionalHotkeys();
         return HavelValue(nullptr);
@@ -85,7 +85,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // hotkey.clearAll() - Clear all registered hotkeys
   // =========================================================================
 
-  (*hotkeyObj)["clearAll"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["clearAll"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         hostAPI->GetHotkeyManager()->clearAllHotkeys();
         return HavelValue(nullptr);
@@ -96,7 +96,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // Note: getAllHotkeys() not available in HotkeyManager
   // =========================================================================
 
-  (*hotkeyObj)["list"] = HavelValue(makeBuiltinFunction(
+  (*hotkeyObj)["list"] = HavelValue(BuiltinFunction(
       [hostAPI](const std::vector<HavelValue> &) -> HavelResult {
         auto arr = std::make_shared<std::vector<HavelValue>>();
 
@@ -145,151 +145,149 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   env.Define(
       "Hotkey",
-      HavelValue(makeBuiltinFunction(
-          [hostAPI](const std::vector<HavelValue> &args) -> HavelResult {
-            // Check if HotkeyManager is available
-            auto *hm = hostAPI->GetHotkeyManager();
-            if (!hm) {
-              return HavelRuntimeError(
-                  "Hotkey() requires HotkeyManager (not initialized yet)");
-            }
+      HavelValue(BuiltinFunction([hostAPI](const std::vector<HavelValue> &args)
+                                     -> HavelResult {
+        // Check if HotkeyManager is available
+        auto *hm = hostAPI->GetHotkeyManager();
+        if (!hm) {
+          return HavelRuntimeError(
+              "Hotkey() requires HotkeyManager (not initialized yet)");
+        }
 
-            if (args.size() < 2) {
-              return HavelRuntimeError(
-                  "Hotkey() requires at least (key, callback)");
-            }
+        if (args.size() < 2) {
+          return HavelRuntimeError(
+              "Hotkey() requires at least (key, callback)");
+        }
 
-            std::string key = args[0].asString();
-            std::function<void()> callback;
-            std::function<void()> conditionFalse;
-            std::string condition;
+        std::string key = args[0].asString();
+        std::function<void()> callback;
+        std::function<void()> conditionFalse;
+        std::string condition;
 
-            if (args[1].isFunction()) {
-              // Store the function value for later execution through
-              // interpreter
-              HavelValue funcValue = args[1];
+        if (args[1].isFunction()) {
+          // Store the function value for later execution through
+          // interpreter
+          HavelValue funcValue = args[1];
 
-              callback = [funcValue]() {
-                try {
-                  // Lock the interpreter weak pointer
-                  if (auto interp = g_hotkeyInterpreter.lock()) {
-                    havel::debug("Hotkey callback executing on interpreter {}",
-                                 (void *)interp.get());
-                    // Execute through interpreter - CallFunction handles its
-                    // own locking
-                    auto result = interp->CallFunction(funcValue, {});
-                    if (std::holds_alternative<HavelRuntimeError>(result)) {
-                      havel::error("Hotkey callback error: {}",
-                                   std::get<HavelRuntimeError>(result).what());
-                    }
-                  } else {
-                    havel::error(
-                        "Hotkey callback: interpreter no longer exists");
-                  }
-                } catch (const std::exception &e) {
-                  havel::error("Hotkey callback error: {}", e.what());
+          callback = [funcValue]() {
+            try {
+              // Lock the interpreter weak pointer
+              if (auto interp = g_hotkeyInterpreter.lock()) {
+                havel::debug("Hotkey callback executing on interpreter {}",
+                             (void *)interp.get());
+                // Execute through interpreter - CallFunction handles its
+                // own locking
+                auto result = interp->CallFunction(funcValue, {});
+                if (std::holds_alternative<HavelRuntimeError>(result)) {
+                  havel::error("Hotkey callback error: {}",
+                               std::get<HavelRuntimeError>(result).what());
                 }
-              };
-            } else {
-              return HavelRuntimeError(
-                  "Hotkey(): second argument must be a function");
-            }
-
-            // Parse optional condition (string or function)
-            if (args.size() >= 3) {
-              if (args[2].isString()) {
-                condition = args[2].asString();
-              } else if (args[2].isFunction()) {
-                // Condition function - will be evaluated by
-                // ConditionalHotkeyManager
-                condition =
-                    args[2].asString(); // Store as string representation
-              }
-            }
-
-            // Parse optional conditionFalse callback
-            if (args.size() >= 4 && args[3].isFunction()) {
-              HavelValue conditionFunc = args[3];
-              conditionFalse = [conditionFunc]() {
-                try {
-                  if (auto interp = g_hotkeyInterpreter.lock()) {
-                    auto result = interp->CallFunction(conditionFunc, {});
-                    if (std::holds_alternative<HavelRuntimeError>(result)) {
-                      havel::error("Hotkey conditionFalse error: {}",
-                                   std::get<HavelRuntimeError>(result).what());
-                    }
-                  } else if (conditionFunc.isFunction()) {
-                    if (auto *builtinFunc =
-                            conditionFunc.get_if<BuiltinFunction>()) {
-                      (**builtinFunc)({});
-                    }
-                  }
-                } catch (const std::exception &e) {
-                  havel::error("Hotkey conditionFalse error: {}", e.what());
-                }
-              };
-            }
-
-            // Register the hotkey
-            int hotkeyId = nextHotkeyId++;
-
-            if (!condition.empty()) {
-              if (conditionFalse) {
-                // With conditionFalse callback
-                hostAPI->GetHotkeyManager()->AddContextualHotkey(
-                    key, condition, callback, conditionFalse, hotkeyId);
               } else {
-                // With condition, no conditionFalse
-                hostAPI->GetHotkeyManager()->AddContextualHotkey(
-                    key, condition, callback, nullptr, hotkeyId);
+                havel::error("Hotkey callback: interpreter no longer exists");
               }
-            } else {
-              // No condition
-              hostAPI->GetHotkeyManager()->AddHotkey(key, callback, hotkeyId);
+            } catch (const std::exception &e) {
+              havel::error("Hotkey callback error: {}", e.what());
             }
+          };
+        } else {
+          return HavelRuntimeError(
+              "Hotkey(): second argument must be a function");
+        }
 
-            // Return hotkey object with all info
-            auto hotkeyInfo =
-                std::make_shared<std::unordered_map<std::string, HavelValue>>();
-            (*hotkeyInfo)["id"] = HavelValue(static_cast<double>(hotkeyId));
-            (*hotkeyInfo)["key"] = HavelValue(key);
-            (*hotkeyInfo)["condition"] = HavelValue(condition);
-            (*hotkeyInfo)["hasConditionFalse"] =
-                HavelValue(conditionFalse ? true : false);
-            (*hotkeyInfo)["active"] = HavelValue(true);
+        // Parse optional condition (string or function)
+        if (args.size() >= 3) {
+          if (args[2].isString()) {
+            condition = args[2].asString();
+          } else if (args[2].isFunction()) {
+            // Condition function - will be evaluated by
+            // ConditionalHotkeyManager
+            condition = args[2].asString(); // Store as string representation
+          }
+        }
 
-            // Methods
-            (*hotkeyInfo)["ungrab"] = HavelValue(makeBuiltinFunction(
-                [=](const std::vector<HavelValue> &) -> HavelResult {
-                  hostAPI->GetHotkeyManager()->UngrabHotkey(hotkeyId);
-                  return HavelValue(nullptr);
-                }));
+        // Parse optional conditionFalse callback
+        if (args.size() >= 4 && args[3].isFunction()) {
+          HavelValue conditionFunc = args[3];
+          conditionFalse = [conditionFunc]() {
+            try {
+              if (auto interp = g_hotkeyInterpreter.lock()) {
+                auto result = interp->CallFunction(conditionFunc, {});
+                if (std::holds_alternative<HavelRuntimeError>(result)) {
+                  havel::error("Hotkey conditionFalse error: {}",
+                               std::get<HavelRuntimeError>(result).what());
+                }
+              } else if (conditionFunc.isFunction()) {
+                if (auto *builtinFunc =
+                        conditionFunc.get_if<BuiltinFunction>()) {
+                  (*builtinFunc)({});
+                }
+              }
+            } catch (const std::exception &e) {
+              havel::error("Hotkey conditionFalse error: {}", e.what());
+            }
+          };
+        }
 
-            (*hotkeyInfo)["grab"] = HavelValue(makeBuiltinFunction(
-                [=](const std::vector<HavelValue> &) -> HavelResult {
-                  hostAPI->GetHotkeyManager()->GrabHotkey(hotkeyId);
-                  return HavelValue(nullptr);
-                }));
+        // Register the hotkey
+        int hotkeyId = nextHotkeyId++;
 
-            (*hotkeyInfo)["remove"] = HavelValue(makeBuiltinFunction(
-                [=](const std::vector<HavelValue> &) -> HavelResult {
-                  hostAPI->GetHotkeyManager()->RemoveHotkey(hotkeyId);
-                  return HavelValue(nullptr);
-                }));
+        if (!condition.empty()) {
+          if (conditionFalse) {
+            // With conditionFalse callback
+            hostAPI->GetHotkeyManager()->AddContextualHotkey(
+                key, condition, callback, conditionFalse, hotkeyId);
+          } else {
+            // With condition, no conditionFalse
+            hostAPI->GetHotkeyManager()->AddContextualHotkey(
+                key, condition, callback, nullptr, hotkeyId);
+          }
+        } else {
+          // No condition
+          hostAPI->GetHotkeyManager()->AddHotkey(key, callback, hotkeyId);
+        }
 
-            (*hotkeyInfo)["info"] = HavelValue(makeBuiltinFunction(
-                [hotkeyId, key,
-                 condition](const std::vector<HavelValue> &) -> HavelResult {
-                  auto info = std::make_shared<
-                      std::unordered_map<std::string, HavelValue>>();
-                  (*info)["id"] = HavelValue(static_cast<double>(hotkeyId));
-                  (*info)["key"] = HavelValue(key);
-                  (*info)["condition"] = HavelValue(condition);
-                  return HavelValue(info);
-                }));
+        // Return hotkey object with all info
+        auto hotkeyInfo =
+            std::make_shared<std::unordered_map<std::string, HavelValue>>();
+        (*hotkeyInfo)["id"] = HavelValue(static_cast<double>(hotkeyId));
+        (*hotkeyInfo)["key"] = HavelValue(key);
+        (*hotkeyInfo)["condition"] = HavelValue(condition);
+        (*hotkeyInfo)["hasConditionFalse"] =
+            HavelValue(conditionFalse ? true : false);
+        (*hotkeyInfo)["active"] = HavelValue(true);
 
-            return HavelValue(hotkeyInfo);
-          })));
+        // Methods
+        (*hotkeyInfo)["ungrab"] = HavelValue(BuiltinFunction(
+            [=](const std::vector<HavelValue> &) -> HavelResult {
+              hostAPI->GetHotkeyManager()->UngrabHotkey(hotkeyId);
+              return HavelValue(nullptr);
+            }));
+
+        (*hotkeyInfo)["grab"] = HavelValue(BuiltinFunction(
+            [=](const std::vector<HavelValue> &) -> HavelResult {
+              hostAPI->GetHotkeyManager()->GrabHotkey(hotkeyId);
+              return HavelValue(nullptr);
+            }));
+
+        (*hotkeyInfo)["remove"] = HavelValue(BuiltinFunction(
+            [=](const std::vector<HavelValue> &) -> HavelResult {
+              hostAPI->GetHotkeyManager()->RemoveHotkey(hotkeyId);
+              return HavelValue(nullptr);
+            }));
+
+        (*hotkeyInfo)["info"] = HavelValue(BuiltinFunction(
+            [hotkeyId, key,
+             condition](const std::vector<HavelValue> &) -> HavelResult {
+              auto info = std::make_shared<
+                  std::unordered_map<std::string, HavelValue>>();
+              (*info)["id"] = HavelValue(static_cast<double>(hotkeyId));
+              (*info)["key"] = HavelValue(key);
+              (*info)["condition"] = HavelValue(condition);
+              return HavelValue(info);
+            }));
+
+        return HavelValue(hotkeyInfo);
+      })));
 
   // Register hotkey module
   env.Define("hotkey", HavelValue(hotkeyObj));

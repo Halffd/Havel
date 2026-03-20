@@ -56,7 +56,7 @@ void registerAutomationModule(Environment &env,
   // AutoClicker functions
   // =========================================================================
 
-  (*automationObj)["startAutoClicker"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["startAutoClicker"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string button = args.empty() ? "left" : valueToString(args[0]);
@@ -67,7 +67,7 @@ void registerAutomationModule(Environment &env,
         return HavelValue(task->getName());
       }));
 
-  (*automationObj)["stopAutoClicker"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["stopAutoClicker"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName =
@@ -84,7 +84,7 @@ void registerAutomationModule(Environment &env,
   // AutoKeyPresser functions
   // =========================================================================
 
-  (*automationObj)["startAutoKeyPresser"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["startAutoKeyPresser"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string key = args.empty() ? "space" : valueToString(args[0]);
@@ -95,7 +95,7 @@ void registerAutomationModule(Environment &env,
         return HavelValue(task->getName());
       }));
 
-  (*automationObj)["stopAutoKeyPresser"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["stopAutoKeyPresser"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName =
@@ -112,7 +112,7 @@ void registerAutomationModule(Environment &env,
   // AutoRunner functions
   // =========================================================================
 
-  (*automationObj)["startAutoRunner"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["startAutoRunner"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string direction = args.empty() ? "w" : valueToString(args[0]);
@@ -123,7 +123,7 @@ void registerAutomationModule(Environment &env,
         return HavelValue(task->getName());
       }));
 
-  (*automationObj)["stopAutoRunner"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["stopAutoRunner"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName =
@@ -140,7 +140,7 @@ void registerAutomationModule(Environment &env,
   // Task management functions
   // =========================================================================
 
-  (*automationObj)["getTask"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["getTask"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName = args.empty() ? "" : valueToString(args[0]);
@@ -155,14 +155,14 @@ void registerAutomationModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*automationObj)["hasTask"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["hasTask"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName = args.empty() ? "" : valueToString(args[0]);
         return HavelValue(am->hasTask(taskName));
       }));
 
-  (*automationObj)["removeTask"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["removeTask"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName = args.empty() ? "" : valueToString(args[0]);
@@ -171,13 +171,13 @@ void registerAutomationModule(Environment &env,
       }));
 
   (*automationObj)["stopAllTasks"] = HavelValue(
-      makeBuiltinFunction([am = app->automationManager, &valueToString](
+      BuiltinFunction([am = app->automationManager, &valueToString](
                               const std::vector<HavelValue> &) -> HavelResult {
         am->stopAll();
         return HavelValue(true);
       }));
 
-  (*automationObj)["toggleTask"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["toggleTask"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string taskName = args.empty() ? "" : valueToString(args[0]);
@@ -193,7 +193,7 @@ void registerAutomationModule(Environment &env,
   // Convenience functions
   // =========================================================================
 
-  (*automationObj)["autoClick"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["autoClick"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string button = args.empty() ? "left" : valueToString(args[0]);
@@ -204,7 +204,7 @@ void registerAutomationModule(Environment &env,
         return HavelValue(task->getName());
       }));
 
-  (*automationObj)["autoPress"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["autoPress"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string key = args.empty() ? "space" : valueToString(args[0]);
@@ -215,7 +215,7 @@ void registerAutomationModule(Environment &env,
         return HavelValue(task->getName());
       }));
 
-  (*automationObj)["autoRun"] = HavelValue(makeBuiltinFunction(
+  (*automationObj)["autoRun"] = HavelValue(BuiltinFunction(
       [am = app->automationManager,
        &valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         std::string direction = args.empty() ? "w" : valueToString(args[0]);

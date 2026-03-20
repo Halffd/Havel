@@ -18,7 +18,7 @@ static HavelResult callFunction(Interpreter *interpreter, const HavelValue &fn,
                                 const std::vector<HavelValue> &args) {
   // Debug: Track entry
   if (auto *builtin = fn.get_if<BuiltinFunction>()) {
-    return (**builtin)(args);
+    return (*builtin)(args);
   } else if (auto *userFunc = fn.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &func = *userFunc;
     if (!interpreter) {
@@ -140,7 +140,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // ============================================================================
 
   // map(array, function) - transform array elements
-  env.Define("map", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+  env.Define("map", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                             -> HavelResult {
                if (args.size() < 2)
                  return HavelRuntimeError("map() requires (array, function)");
@@ -165,7 +165,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // filter(array, predicate) - filter array elements
   env.Define(
       "filter",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("filter() requires (array, predicate)");
@@ -191,7 +191,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // reduce(array, function, initial) - reduce array to single value
   env.Define("reduce",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 3)
                      return HavelRuntimeError(
@@ -218,7 +218,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // forEach(array, function) - execute function for each element
   env.Define(
       "forEach",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("forEach() requires (array, function)");
@@ -238,7 +238,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // find(array, predicate) - find first matching element
   env.Define("find",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError(
@@ -264,7 +264,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // some(array, predicate) - check if any element matches
   env.Define("some",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError(
@@ -291,7 +291,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // every(array, predicate) - check if all elements match
   env.Define(
       "every",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("every() requires (array, predicate)");
@@ -318,7 +318,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // includes(array, value) - check if array contains value
   env.Define(
       "includes",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("includes() requires (array, value)");
@@ -348,7 +348,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // indexOf(array, value) - find index of value
   env.Define(
       "indexOf",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("indexOf() requires (array, value)");
@@ -382,7 +382,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // push(array, value) - add element to end
   env.Define("push",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError("push() requires (array, value)");
@@ -399,7 +399,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // pop(array) - remove and return last element
   env.Define("pop",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("pop() requires array");
@@ -417,7 +417,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // shift(array) - remove and return first element
   env.Define("shift",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("shift() requires array");
@@ -436,7 +436,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // unshift(array, value) - add element to beginning
   env.Define(
       "unshift",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("unshift() requires (array, value)");
@@ -454,7 +454,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // concat(array1, array2, ...) - concatenate arrays
   env.Define(
       "concat",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("concat() requires at least one array");
@@ -477,7 +477,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // slice(array, start, end) - extract portion of array
   env.Define(
-      "slice", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "slice", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                        -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("slice() requires array");
@@ -515,7 +515,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // splice(array, start, deleteCount, ...items) - modify array in place
   env.Define(
-      "splice", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "splice", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                         -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("splice() requires (array, start)");
@@ -557,7 +557,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // reverse(array) - reverse array in place
   env.Define("reverse",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("reverse() requires array");
@@ -575,7 +575,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // flat(array, depth) - flatten nested arrays
   env.Define(
       "flat",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("flat() requires array");
@@ -615,7 +615,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // flatMap(array, function) - map then flatten
   env.Define(
       "flatMap",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("flatMap() requires (array, function)");
@@ -655,7 +655,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
   // join(array, separator) - join array elements into string
   // Also supports strings (passthrough for pipeline compatibility)
   env.Define(
-      "join", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "join", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                       -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("join() requires array or string");
@@ -685,7 +685,7 @@ void registerArrayModule(Environment &env, Interpreter *interpreter) {
 
   // split(text, delimiter) - split string into array
   env.Define(
-      "split", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "split", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                        -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("split() requires string");

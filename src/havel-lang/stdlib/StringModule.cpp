@@ -113,7 +113,7 @@ void registerStringModule(Environment &env) {
 
   // format(formatString, arg0, arg1, ...) - Python-style string formatting
   env.Define(
-      "format", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "format", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                         -> HavelResult {
         if (args.empty())
           return HavelRuntimeError(
@@ -177,7 +177,7 @@ void registerStringModule(Environment &env) {
 
   // upper(text) - convert to uppercase
   env.Define("upper",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("upper() requires text");
@@ -189,7 +189,7 @@ void registerStringModule(Environment &env) {
 
   // lower(text) - convert to lowercase
   env.Define("lower",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("lower() requires text");
@@ -202,7 +202,7 @@ void registerStringModule(Environment &env) {
   // trim(text) - remove leading/trailing whitespace
   env.Define(
       "trim",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.empty())
               return HavelRuntimeError("trim() requires text");
@@ -221,7 +221,7 @@ void registerStringModule(Environment &env) {
 
   // length(text) - get string length
   env.Define("length",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty())
                      return HavelRuntimeError("length() requires text");
@@ -231,7 +231,7 @@ void registerStringModule(Environment &env) {
 
   // replace(text, search, replacement) - replace all occurrences
   env.Define("replace",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 3)
                      return HavelRuntimeError(
@@ -250,7 +250,7 @@ void registerStringModule(Environment &env) {
 
   // contains(text, search) - check if text contains substring
   env.Define("contains",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError(
@@ -262,7 +262,7 @@ void registerStringModule(Environment &env) {
 
   // includes(text, search) - alias for contains (string method style)
   env.Define("includes",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError(
@@ -274,7 +274,7 @@ void registerStringModule(Environment &env) {
 
   // substr(text, start[, length]) - extract substring
   env.Define(
-      "substr", makeBuiltinFunction([&](const std::vector<HavelValue> &args)
+      "substr", BuiltinFunction([&](const std::vector<HavelValue> &args)
                                         -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("substr() requires (text, start[, length])");
@@ -297,7 +297,7 @@ void registerStringModule(Environment &env) {
 
   // left(text, count) - get leftmost characters
   env.Define("left",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError("left() requires (text, count)");
@@ -313,7 +313,7 @@ void registerStringModule(Environment &env) {
 
   // right(text, count) - get rightmost characters
   env.Define("right",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError("right() requires (text, count)");
@@ -330,7 +330,7 @@ void registerStringModule(Environment &env) {
   // startsWith(text, prefix) - check if text starts with prefix
   env.Define(
       "startsWith",
-      makeBuiltinFunction(
+      BuiltinFunction(
           [&](const std::vector<HavelValue> &args) -> HavelResult {
             if (args.size() < 2)
               return HavelRuntimeError("startsWith() requires (text, prefix)");
@@ -342,7 +342,7 @@ void registerStringModule(Environment &env) {
 
   // endsWith(text, suffix) - check if text ends with suffix
   env.Define("endsWith",
-             makeBuiltinFunction(
+             BuiltinFunction(
                  [&](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() < 2)
                      return HavelRuntimeError(

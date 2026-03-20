@@ -1981,7 +1981,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
   }
 
   if (auto *builtin = callee.get_if<BuiltinFunction>()) {
-    auto result = (**builtin)(args);
+    auto result = (*builtin)(args);
     // Unwrap the result to get the actual value
     if (isError(result)) {
       lastResult = result;
@@ -2045,7 +2045,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
       auto it = (*objPtr)->find("__call__");
       if (it != (*objPtr)->end() && it->second.is<BuiltinFunction>()) {
         auto callFunc = it->second.get<BuiltinFunction>();
-        lastResult = (*callFunc)(args);
+        lastResult = (callFunc)(args);
         return;
       }
     }
@@ -2063,7 +2063,7 @@ void Interpreter::visitCallExpression(const ast::CallExpression &node) {
 HavelResult Interpreter::CallFunction(const HavelValue &func,
                                       const std::vector<HavelValue> &args) {
   if (auto *builtin = func.get_if<BuiltinFunction>()) {
-    return (**builtin)(args);
+    return ((*builtin))(args);
   } else if (auto *userFunc = func.get_if<std::shared_ptr<HavelFunction>>()) {
     auto &f = **userFunc;
 
@@ -2156,12 +2156,12 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the string as first argument
       auto str = *strPtr; // Capture the string value
-      lastResult = HavelValue(makeBuiltinFunction(
+      lastResult = HavelValue(BuiltinFunction(
           [str, builtin](const std::vector<HavelValue> &args) -> HavelResult {
             std::vector<HavelValue> boundArgs;
             boundArgs.push_back(HavelValue(str));
             boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            return (*builtin)(boundArgs);
+            return builtin(boundArgs);
           }));
       return;
     }
@@ -2179,12 +2179,12 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
       auto builtin = methodValOpt->get<BuiltinFunction>();
       // Create a bound function that captures the array as first argument
       auto array = objectValue; // Capture the array value
-      lastResult = HavelValue(makeBuiltinFunction(
+      lastResult = HavelValue(BuiltinFunction(
           [array, builtin](const std::vector<HavelValue> &args) -> HavelResult {
             std::vector<HavelValue> boundArgs;
             boundArgs.push_back(array);
             boundArgs.insert(boundArgs.end(), args.begin(), args.end());
-            return (*builtin)(boundArgs);
+            return builtin(boundArgs);
           }));
       return;
     }
@@ -2207,7 +2207,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
         // Create a bound method that captures the struct instance as 'this'
         auto instance = objectValue;
         const ast::StructMethodDef *methodPtr = method; // Capture raw pointer
-        lastResult = HavelValue(makeBuiltinFunction(
+        lastResult = HavelValue(BuiltinFunction(
             [this, instance,
              methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
               // Check argument count
@@ -2243,7 +2243,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
       // Default toString() method for all structs
       if (propName == "toString") {
         auto structInst = objectValue.asStructInstance();
-        lastResult = HavelValue(makeBuiltinFunction(
+        lastResult = HavelValue(BuiltinFunction(
             [structInst](const std::vector<HavelValue> &) -> HavelResult {
               std::string result = structInst.typeName + "{";
               bool first = true;
@@ -2270,7 +2270,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
           // Found trait method - create bound version
           auto instance = objectValue;
           auto traitMethod = methodIt->second.get<BuiltinFunction>();
-          lastResult = HavelValue(makeBuiltinFunction(
+          lastResult = HavelValue(BuiltinFunction(
               [this, instance, traitMethod](
                   const std::vector<HavelValue> &args) -> HavelResult {
                 // Create method environment with 'this' bound
@@ -2281,7 +2281,7 @@ void Interpreter::visitMemberExpression(const ast::MemberExpression &node) {
                 this->environment = methodEnv;
                 // Call the trait method with instance as first arg
                 std::vector<HavelValue> callArgs = args;
-                auto res = (*traitMethod)(callArgs);
+                auto res = traitMethod(callArgs);
                 this->environment = originalEnv;
                 return res;
               }));
@@ -2318,7 +2318,7 @@ void Interpreter::visitLambdaExpression(const ast::LambdaExpression &node) {
   const ast::Statement *bodyPtr = node.body.get();
 
   // Build a callable that binds args to parameter names and evaluates body
-  BuiltinFunction lambda = makeBuiltinFunction(
+  BuiltinFunction lambda = BuiltinFunction(
       [this, closureEnv, paramInfos,
        bodyPtr](const std::vector<HavelValue> &args) -> HavelResult {
         // Check argument count (allow fewer args if defaults exist)
@@ -2422,7 +2422,7 @@ void Interpreter::visitPipelineExpression(const ast::PipelineExpression &node) {
 
     HavelValue callee = unwrap(calleeRes);
     if (auto *builtin = callee.get_if<BuiltinFunction>()) {
-      currentResult = (**builtin)(args);
+      currentResult = ((*builtin))(args);
     } else if (auto *userFunc =
                    callee.get_if<std::shared_ptr<HavelFunction>>()) {
       auto &func = *userFunc;
@@ -3855,7 +3855,7 @@ void Interpreter::visitStructDeclaration(const ast::StructDeclaration &node) {
   auto structTypeName = node.name;
 
   // Create MousePos.new function
-  auto newFunc = makeBuiltinFunction(
+  auto newFunc = BuiltinFunction(
       [this, structType](const std::vector<HavelValue> &args) -> HavelResult {
         // Create new struct instance
         HavelStructInstance instance(structType->getName(), structType);
@@ -3943,7 +3943,7 @@ void Interpreter::visitImplDeclaration(const ast::ImplDeclaration &node) {
     const ast::FunctionDeclaration *methodPtr = methodDecl.get();
 
     // Create a bound function for this method
-    auto methodFunc = makeBuiltinFunction(
+    auto methodFunc = BuiltinFunction(
         [this, methodPtr](const std::vector<HavelValue> &args) -> HavelResult {
           // Create method environment
           auto methodEnv = std::make_shared<Environment>(this->environment);

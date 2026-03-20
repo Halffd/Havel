@@ -29,7 +29,7 @@ void registerBrightnessModule(Environment &env,
   // Brightness get/set functions
   // =========================================================================
 
-  (*brightnessObj)["getBrightness"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["getBrightness"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -42,7 +42,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(bm->getBrightness(monitorIndex));
       }));
 
-  (*brightnessObj)["getTemperature"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["getTemperature"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -56,7 +56,7 @@ void registerBrightnessModule(Environment &env,
             static_cast<double>(bm->getTemperature(monitorIndex)));
       }));
 
-  (*brightnessObj)["setBrightness"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["setBrightness"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -77,7 +77,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["increaseBrightness"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["increaseBrightness"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -94,7 +94,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["decreaseBrightness"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["decreaseBrightness"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -111,7 +111,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["setTemperature"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["setTemperature"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -132,7 +132,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["getShadowLift"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["getShadowLift"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -145,7 +145,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(bm->getShadowLift(monitorIndex));
       }));
 
-  (*brightnessObj)["setShadowLift"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["setShadowLift"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -166,7 +166,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["decreaseGamma"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["decreaseGamma"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -187,7 +187,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["increaseGamma"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["increaseGamma"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -208,7 +208,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["setGammaRGB"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["setGammaRGB"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -233,7 +233,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["increaseTemperature"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["increaseTemperature"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();
@@ -254,7 +254,7 @@ void registerBrightnessModule(Environment &env,
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["decreaseTemperature"] = HavelValue(makeBuiltinFunction(
+  (*brightnessObj)["decreaseTemperature"] = HavelValue(BuiltinFunction(
       [hostAPI,
        &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
         auto *bm = hostAPI->GetBrightnessManager();

@@ -49,7 +49,7 @@ void registerFileModule(Environment &env) {
   // ============================================================================
 
   // file.read(path) - read entire file content
-  (*fileObj)["read"] = makeBuiltinFunction(
+  (*fileObj)["read"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("file.read() requires path");
@@ -64,7 +64,7 @@ void registerFileModule(Environment &env) {
       });
 
   // file.write(path, content) - write content to file
-  (*fileObj)["write"] = makeBuiltinFunction(
+  (*fileObj)["write"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2)
           return HavelRuntimeError("file.write() requires (path, content)");
@@ -80,7 +80,7 @@ void registerFileModule(Environment &env) {
       });
 
   // file.exists(path) - check if file exists
-  (*fileObj)["exists"] = makeBuiltinFunction(
+  (*fileObj)["exists"] = BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty())
           return HavelRuntimeError("file.exists() requires path");

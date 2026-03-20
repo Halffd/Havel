@@ -19,7 +19,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // setTimeout(callback, delayMs) - One-time timer
   // =========================================================================
 
-  (*timerObj)["setTimeout"] = HavelValue(makeBuiltinFunction(
+  (*timerObj)["setTimeout"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("setTimeout requires callback and delay");
@@ -60,7 +60,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // setInterval(callback, intervalMs) - Repeating timer
   // =========================================================================
 
-  (*timerObj)["setInterval"] = HavelValue(makeBuiltinFunction(
+  (*timerObj)["setInterval"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError(
@@ -97,7 +97,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // clearTimeout(timerId) - Cancel timeout
   // =========================================================================
 
-  (*timerObj)["clearTimeout"] = HavelValue(makeBuiltinFunction(
+  (*timerObj)["clearTimeout"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("clearTimeout requires timer ID");
@@ -120,7 +120,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // clearInterval(timerId) - Cancel interval
   // =========================================================================
 
-  (*timerObj)["clearInterval"] = HavelValue(makeBuiltinFunction(
+  (*timerObj)["clearInterval"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("clearInterval requires timer ID");
@@ -140,7 +140,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // stopTimer(timerId) - Unified cancel function
   // =========================================================================
 
-  (*timerObj)["stopTimer"] = HavelValue(makeBuiltinFunction(
+  (*timerObj)["stopTimer"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("stopTimer requires timer ID");

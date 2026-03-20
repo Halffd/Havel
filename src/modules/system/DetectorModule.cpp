@@ -18,7 +18,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "detectDisplay",
-      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &)
+      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &)
                                          -> HavelResult {
         auto monitors = DisplayManager::GetMonitors();
         auto result =
@@ -53,7 +53,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "detectMonitorConfig",
-      HavelValue(makeBuiltinFunction([](const std::vector<HavelValue> &)
+      HavelValue(BuiltinFunction([](const std::vector<HavelValue> &)
                                          -> HavelResult {
         auto monitors = DisplayManager::GetMonitors();
         auto result =
@@ -88,7 +88,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "detectWindowManager",
-      HavelValue(makeBuiltinFunction(
+      HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &) -> HavelResult {
             auto result =
                 std::make_shared<std::unordered_map<std::string, HavelValue>>();
@@ -109,7 +109,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
 
   env.Define(
       "detectSystem",
-      HavelValue(makeBuiltinFunction(
+      HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &) -> HavelResult {
             auto result =
                 std::make_shared<std::unordered_map<std::string, HavelValue>>();

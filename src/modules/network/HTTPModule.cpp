@@ -63,7 +63,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.get(url) - HTTP GET request
   // =========================================================================
 
-  (*httpMod)["get"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["get"] = HavelValue(BuiltinFunction(
       [valueToString,
        createResponse](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
@@ -79,7 +79,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.post(url, [data]) - HTTP POST request
   // =========================================================================
 
-  (*httpMod)["post"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["post"] = HavelValue(BuiltinFunction(
       [valueToString,
        createResponse](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
@@ -96,7 +96,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.put(url, [data]) - HTTP PUT request
   // =========================================================================
 
-  (*httpMod)["put"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["put"] = HavelValue(BuiltinFunction(
       [valueToString,
        createResponse](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
@@ -113,7 +113,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.delete(url) - HTTP DELETE request
   // =========================================================================
 
-  (*httpMod)["delete"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["delete"] = HavelValue(BuiltinFunction(
       [valueToString,
        createResponse](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
@@ -129,7 +129,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.download(url, path) - Download file from URL
   // =========================================================================
 
-  (*httpMod)["download"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["download"] = HavelValue(BuiltinFunction(
       [valueToString](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
           return HavelRuntimeError("http.download() requires (url, path)");
@@ -144,7 +144,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.upload(url, path) - Upload file to URL
   // =========================================================================
 
-  (*httpMod)["upload"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["upload"] = HavelValue(BuiltinFunction(
       [valueToString,
        createResponse](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.size() < 2) {
@@ -161,7 +161,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   // http.setTimeout(ms) - Set HTTP timeout
   // =========================================================================
 
-  (*httpMod)["setTimeout"] = HavelValue(makeBuiltinFunction(
+  (*httpMod)["setTimeout"] = HavelValue(BuiltinFunction(
       [](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
           return HavelRuntimeError("http.setTimeout() requires timeout in ms");

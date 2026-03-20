@@ -179,6 +179,15 @@ void dumpBytecode(const std::string &name, const std::string &source) {
           std::cout << bytecodeValueToString(instruction.operands[j]);
         }
       }
+      if (i < function.instruction_locations.size()) {
+        const auto &location = function.instruction_locations[i];
+        std::cout << " @";
+        if (location.line == 0 && location.column == 0) {
+          std::cout << "?";
+        } else {
+          std::cout << location.line << ":" << location.column;
+        }
+      }
       std::cout << std::endl;
     }
 
@@ -291,6 +300,74 @@ return missing_value
     }
 
     std::cout << "[PASS] unresolved-identifier" << std::endl;
+    return 0;
+  }
+}
+
+int runRuntimeLineErrorCase(bool dump_bytecode, const std::string &snapshot_dir) {
+  const std::string source = R"havel(
+fn bad() {
+    let x = 1
+    return x / 0
+}
+return bad()
+)havel";
+
+  try {
+    if (dump_bytecode) {
+      dumpBytecode("runtime-line-error", source);
+    }
+
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = "runtime-line-error";
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
+    std::cerr << "[FAIL] runtime-line-error: expected runtime error"
+              << std::endl;
+    return 1;
+  } catch (const std::exception &e) {
+    const std::string message = e.what();
+    if (message.find("source") == std::string::npos ||
+        message.find("Division by zero") == std::string::npos) {
+      std::cerr << "[FAIL] runtime-line-error: wrong error: " << message
+                << std::endl;
+      return 1;
+    }
+    std::cout << "[PASS] runtime-line-error" << std::endl;
+    return 0;
+  }
+}
+
+int runStackOverflowCase(bool dump_bytecode, const std::string &snapshot_dir) {
+  const std::string source = R"havel(
+fn spin() {
+    return spin()
+}
+return spin()
+)havel";
+
+  try {
+    if (dump_bytecode) {
+      dumpBytecode("stack-overflow", source);
+    }
+
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = "stack-overflow";
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    (void)havel::compiler::runBytecodePipeline(source, "__main__", options);
+    std::cerr << "[FAIL] stack-overflow: expected stack overflow error"
+              << std::endl;
+    return 1;
+  } catch (const std::exception &e) {
+    const std::string message = e.what();
+    if (message.find("Stack overflow") == std::string::npos) {
+      std::cerr << "[FAIL] stack-overflow: wrong error: " << message
+                << std::endl;
+      return 1;
+    }
+    std::cout << "[PASS] stack-overflow" << std::endl;
     return 0;
   }
 }
@@ -476,6 +553,8 @@ return x
 
   failures += runClosureCase(dump_bytecode, snapshot_dir);
   failures += runUnresolvedIdentifierCase(dump_bytecode, snapshot_dir);
+  failures += runRuntimeLineErrorCase(dump_bytecode, snapshot_dir);
+  failures += runStackOverflowCase(dump_bytecode, snapshot_dir);
 
   if (failures != 0) {
     std::cerr << "Bytecode smoke failed with " << failures << " failing case(s)"

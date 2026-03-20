@@ -24,6 +24,24 @@ public:
     }
 
 private:
+    struct SourceLocationScope {
+      ByteCompiler *compiler = nullptr;
+      std::optional<SourceLocation> previous;
+      SourceLocationScope(ByteCompiler *owner, const ast::ASTNode &node)
+          : compiler(owner), previous(owner->current_source_location_) {
+        owner->current_source_location_ =
+            SourceLocation{static_cast<uint32_t>(node.line),
+                           static_cast<uint32_t>(node.column)};
+      }
+      ~SourceLocationScope() {
+        compiler->current_source_location_ = previous;
+      }
+    };
+
+    SourceLocationScope atNode(const ast::ASTNode &node) {
+      return SourceLocationScope(this, node);
+    }
+
     void emit(OpCode op);
     void emit(OpCode op, BytecodeValue operand);
     void emit(OpCode op, std::vector<BytecodeValue> operands);
@@ -56,6 +74,7 @@ private:
         function_indices_by_node_;
     std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
     uint32_t next_local_index = 0;
+    std::optional<SourceLocation> current_source_location_;
     LexicalResolutionResult lexical_resolution_;
 };
 

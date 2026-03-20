@@ -253,6 +253,15 @@ std::string formatBytecodeSnapshot(const BytecodeChunk &chunk) {
         out << (j == 0 ? " " : ", ")
             << formatValue(function.instructions[i].operands[j]);
       }
+      if (i < function.instruction_locations.size()) {
+        const auto &location = function.instruction_locations[i];
+        out << "    @";
+        if (location.line == 0 && location.column == 0) {
+          out << "?";
+        } else {
+          out << location.line << ":" << location.column;
+        }
+      }
       out << "\n";
     }
 

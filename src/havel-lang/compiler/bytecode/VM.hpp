@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BytecodeIR.hpp"
+#include <array>
 #include <memory>
 #include <stack>
 #include <unordered_map>
@@ -47,6 +48,10 @@ private:
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   const BytecodeChunk *current_chunk;
   bool debug_mode = false;
+  size_t max_call_depth_ = 1024;
+  bool profiling_enabled_ = false;
+  std::array<uint64_t, 256> opcode_counts_{};
+  uint64_t executed_instructions_ = 0;
 
   // Helper functions
   template <typename T> T getValue(const BytecodeValue &value);
@@ -68,7 +73,15 @@ public:
   void setDebugMode(bool enabled) override;
   void registerHostFunction(const std::string &name,
                             BytecodeHostFunction function) override;
+  void registerHostFunction(const std::string &name, size_t arity,
+                            BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
+  void setMaxCallDepth(size_t value) { max_call_depth_ = value; }
+  void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
+  uint64_t executedInstructionCount() const { return executed_instructions_; }
+  uint64_t opcodeCount(OpCode opcode) const {
+    return opcode_counts_[static_cast<uint8_t>(opcode)];
+  }
 };
 
 } // namespace havel::compiler

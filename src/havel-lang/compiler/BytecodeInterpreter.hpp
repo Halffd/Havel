@@ -20,6 +20,7 @@ private:
   std::vector<BytecodeValue> locals;
   std::vector<CallFrame> frames;
   std::unordered_map<std::string, BytecodeValue> globals;
+  std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   const BytecodeChunk *current_chunk;
   bool debug_mode = false;
 
@@ -28,15 +29,21 @@ private:
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
   BytecodeValue getConstant(uint32_t index);
-  void executeInstruction();
-  void doCall(const std::string &function_name, uint8_t arg_count);
+  void executeInstruction(const Instruction &instruction);
+  void doCall(const std::string &function_name, uint32_t arg_count);
+  void registerDefaultHostFunctions();
+  BytecodeValue invokeHostFunction(const std::string &name,
+                                   uint32_t arg_count);
 
 public:
-  HavelBytecodeInterpreter() = default;
+  HavelBytecodeInterpreter();
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;
   void setDebugMode(bool enabled) override;
+  void registerHostFunction(const std::string &name,
+                            BytecodeHostFunction function) override;
+  bool hasHostFunction(const std::string &name) const override;
 };
 
 } // namespace havel::compiler

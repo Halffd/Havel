@@ -13,6 +13,7 @@
 #include "../host/clipboard/ClipboardService.hpp"
 #include "../host/audio/AudioService.hpp"
 #include "../host/brightness/BrightnessService.hpp"
+#include "../host/screenshot/ScreenshotService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -107,6 +108,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     }
     auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
     registry.registerService<host::BrightnessService>(brightnessService);
+    
+    // Screenshot service doesn't need constructor args (uses Qt directly)
+    auto screenshotService = std::make_shared<host::ScreenshotService>();
+    registry.registerService<host::ScreenshotService>(screenshotService);
     
     info("ServiceRegistry initialized with {} services", registry.size());
 }

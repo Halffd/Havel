@@ -19,6 +19,34 @@ namespace havel::compiler {
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
+// Pixel format for VM image type
+enum class PixelFormat : uint8_t {
+    RGBA8,    // 4 bytes per pixel (R, G, B, A)
+    RGB8,     // 3 bytes per pixel (R, G, B)
+    GRAY8,    // 1 byte per pixel
+    BGRA8,    // 4 bytes per pixel (B, G, R, A) - Qt default
+};
+
+// VM-safe image representation
+// Used for screenshot, image processing, etc.
+struct VMImage {
+    int32_t width = 0;
+    int32_t height = 0;
+    int32_t stride = 0;  // bytes per row
+    PixelFormat format = PixelFormat::BGRA8;
+    std::shared_ptr<uint8_t[]> data;  // GC-managed buffer
+    
+    // Helper: total size in bytes
+    size_t size() const {
+        return stride > 0 ? static_cast<size_t>(stride) * height : 0;
+    }
+    
+    // Helper: check if valid
+    bool isValid() const {
+        return width > 0 && height > 0 && data != nullptr;
+    }
+};
+
 class VM : public BytecodeInterpreter {
 public:
   class GCRoot {

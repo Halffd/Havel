@@ -82,10 +82,8 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI->GetModeManager()) {
         throw std::runtime_error("initializeServiceRegistry: ModeManager not available");
     }
-    auto modeManager = hostAPI->GetModeManager();
-    auto modeService = std::make_shared<host::ModeService>(
-        std::shared_ptr<havel::ModeManager>(modeManager, [](havel::ModeManager*){}));
-    registry.registerService<host::ModeService>(modeService);
+    // ModeService is created later in createHostBridgeDependencies() when VM is available
+    // because it needs VM* for callback management
 
     if (!hostAPI->GetProcessManager()) {
         throw std::runtime_error("initializeServiceRegistry: ProcessManager not available");

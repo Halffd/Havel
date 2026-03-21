@@ -38,10 +38,10 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   
   // Create VM
   vm_ = std::make_unique<compiler::VM>();
-  
-  // Create HostBridge dependencies
-  auto deps = havel::createHostBridgeDependencies(hostAPI);
-  
+
+  // Create HostBridge dependencies (pass VM* for ModeService)
+  auto deps = havel::createHostBridgeDependencies(hostAPI, vm_.get());
+
   // Create HostBridge registry
   hostBridge_ = compiler::createHostBridgeRegistry(*vm_, deps);
   

@@ -17,31 +17,33 @@ class ModeManager;
 class ProcessManager;
 
 namespace host {
-class IOService;
-class HotkeyService;
-class WindowService;
-class ModeService;
-class ProcessService;
-class ClipboardService;
+class ServiceRegistry;
 } // namespace host
 } // namespace havel
 
 namespace havel::compiler {
 
+/**
+ * HostBridgeDependencies - Dependencies for HostBridge
+ * 
+ * CRITICAL: This should NOT grow with every new service.
+ * HostBridge depends on ServiceRegistry for service discovery,
+ * not on individual services directly.
+ * 
+ * Legacy dependencies (deprecated, for gradual migration):
+ * - io, hotkey_manager, etc. will be removed once all modules use services
+ */
 struct HostBridgeDependencies {
+  // Service registry (THE ONE dependency for all services)
+  std::shared_ptr<host::ServiceRegistry> services;
+  
+  // Legacy dependencies (deprecated - for gradual migration only)
+  // These will be removed once all modules are migrated to services
   WindowManager *window_manager = nullptr;
   std::shared_ptr<IO> io;
   std::shared_ptr<HotkeyManager> hotkey_manager;
   std::shared_ptr<ModeManager> mode_manager;
   ProcessManager *process_manager = nullptr;
-  
-  // Service layer (preferred - decouples from core types)
-  std::shared_ptr<host::IOService> io_service;
-  std::shared_ptr<host::HotkeyService> hotkey_service;
-  std::shared_ptr<host::WindowService> window_service;
-  std::shared_ptr<host::ModeService> mode_service;
-  std::shared_ptr<host::ProcessService> process_service;
-  std::shared_ptr<host::ClipboardService> clipboard_service;
 };
 
 class HostBridgeRegistry

@@ -1195,6 +1195,57 @@ void VM::executeInstruction(
   }
 }
 
+// ============================================================================
+// Callback System - VM owns closures, systems use opaque IDs
+// ============================================================================
+
+CallbackId VM::registerCallback(const BytecodeValue &closure) {
+  if (!std::holds_alternative<ClosureRef>(closure)) {
+    throw std::runtime_error("registerCallback expects a closure");
+  }
+  
+  // Pin the closure as an external root (GC will not collect it)
+  CallbackId id = static_cast<CallbackId>(pinExternalRoot(closure));
+  
+  if (id == INVALID_CALLBACK_ID) {
+    throw std::runtime_error("Failed to register callback - invalid ID");
+  }
+  
+  return id;
+}
+
+BytecodeValue VM::invokeCallback(CallbackId id, std::span<BytecodeValue> args) {
+  if (id == INVALID_CALLBACK_ID) {
+    throw std::runtime_error("invokeCallback called with invalid callback ID");
+  }
+  
+  // Get the closure from external roots
+  auto closureValue = externalRootValue(id);
+  if (!closureValue.has_value()) {
+    throw std::runtime_error("invokeCallback: callback not found (may have been released)");
+  }
+  
+  // Call the closure and return result
+  return call(*closureValue, std::vector<BytecodeValue>(args.begin(), args.end()));
+}
+
+void VM::releaseCallback(CallbackId id) {
+  if (id == INVALID_CALLBACK_ID) {
+    return;  // Nothing to release
+  }
+  
+  // Unpin the external root (GC can now collect it)
+  unpinExternalRoot(id);
+}
+
+bool VM::isValidCallback(CallbackId id) const {
+  if (id == INVALID_CALLBACK_ID) {
+    return false;
+  }
+  
+  return externalRootValue(id).has_value();
+}
+
 std::unique_ptr<BytecodeInterpreter> createVM() {
   return std::make_unique<VM>();
 }

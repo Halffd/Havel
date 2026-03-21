@@ -194,40 +194,33 @@ void HostBridgeRegistry::clear() {
   if (!deps_.services) return;
   auto hotkeyService = deps_.services->get<host::HotkeyService>();
   if (hotkeyService) {
-    for (const auto &[id, _] : hotkey_callback_roots_) {
+    for (const auto &[id, _] : hotkey_binding_keys_) {
       hotkeyService->removeHotkey(static_cast<int>(id));
+      releaseCallback(id);
     }
   }
-  hotkey_callback_roots_.clear();
   hotkey_binding_keys_.clear();
-  mode_callback_roots_.clear();
+  
+  // Release mode callbacks
+  for (auto& [mode_name, binding] : mode_bindings_) {
+    if (binding.condition_id) releaseCallback(*binding.condition_id);
+    if (binding.enter_id) releaseCallback(*binding.enter_id);
+    if (binding.exit_id) releaseCallback(*binding.exit_id);
+  }
   mode_bindings_.clear();
   mode_definition_order_.clear();
-  window_event_callback_roots_.clear();
 }
 
-int64_t HostBridgeRegistry::pinLongLivedCallback(const BytecodeValue &value,
-                                                 RootTable &table) {
-  const int64_t id = next_callback_id_++;
-  table.emplace(id, vm_.makeRoot(value));
-  return id;
+CallbackId HostBridgeRegistry::registerCallback(const BytecodeValue &closure) {
+  return vm_.registerCallback(closure);
 }
 
-void HostBridgeRegistry::unpinLongLivedCallback(int64_t id, RootTable &table) {
-  table.erase(id);
+BytecodeValue HostBridgeRegistry::invokeCallback(CallbackId id, std::span<BytecodeValue> args) {
+  return vm_.invokeCallback(id, args);
 }
 
-BytecodeValue HostBridgeRegistry::invokePinnedCallback(
-    RootTable &table, int64_t id, const std::vector<BytecodeValue> &args) {
-  auto it = table.find(id);
-  if (it == table.end()) {
-    throw std::runtime_error("callback id not found");
-  }
-  auto value = it->second.get();
-  if (!value.has_value()) {
-    throw std::runtime_error("callback root expired");
-  }
-  return vm_.call(*value, args);
+void HostBridgeRegistry::releaseCallback(CallbackId id) {
+  vm_.releaseCallback(id);
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowMoveToNextMonitor(
@@ -312,9 +305,10 @@ BytecodeValue HostBridgeRegistry::handleWindowOn(
   if (args.size() < 2) {
     throw std::runtime_error("window.on expects callback as second argument");
   }
-  const auto id = pinLongLivedCallback(args[1], window_event_callback_roots_);
+  // Register callback through VM (VM owns the closure)
+  CallbackId id = registerCallback(args[1]);
   // Event source wiring is host-specific; callback lifetime is GC-safe now.
-  return BytecodeValue(id);
+  return BytecodeValue(static_cast<int64_t>(id));
 }
 
 BytecodeValue HostBridgeRegistry::handleSend(
@@ -402,30 +396,32 @@ BytecodeValue HostBridgeRegistry::handleHotkeyRegister(
     throw std::runtime_error("HotkeyService not registered");
   }
 
-  const int64_t id = pinLongLivedCallback(args[1], hotkey_callback_roots_);
-  hotkey_binding_keys_[id] = key;
+  // Register callback through VM (VM owns the closure)
+  CallbackId callbackId = registerCallback(args[1]);
+  hotkey_binding_keys_[callbackId] = key;
   
   hotkeyService->registerHotkey(
       key,
-      [weak_self = weak_from_this(), id]() {
+      [weak_self = weak_from_this(), callbackId]() {
         if (auto self = weak_self.lock()) {
           try {
-            (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
+            self->invokeCallback(callbackId);
           } catch (const std::exception &e) {
             std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
                       << std::endl;
           }
         }
       },
-      static_cast<int>(id));
+      static_cast<int>(callbackId));
   
-  return BytecodeValue(static_cast<int64_t>(id));
+  return BytecodeValue(static_cast<int64_t>(callbackId));
 }
 
 BytecodeValue HostBridgeRegistry::handleHotkeyTrigger(
     const std::vector<BytecodeValue> &args) {
-  const auto id = requireIntArg(args, 0, "hotkey.trigger");
-  return invokePinnedCallback(hotkey_callback_roots_, id);
+  const auto id = static_cast<CallbackId>(requireIntArg(args, 0, "hotkey.trigger"));
+  invokeCallback(id);
+  return BytecodeValue(nullptr);
 }
 
 BytecodeValue HostBridgeRegistry::handleModeDefine(
@@ -442,24 +438,24 @@ BytecodeValue HostBridgeRegistry::handleModeDefine(
   ModeBinding binding;
   size_t arg_index = 1;
   if (args.size() >= 3) {
-    binding.condition_id =
-        pinLongLivedCallback(args[arg_index++], mode_callback_roots_);
+    binding.condition_id = registerCallback(args[arg_index++]);
   }
-  binding.enter_id =
-      pinLongLivedCallback(args[arg_index++], mode_callback_roots_);
+  binding.enter_id = registerCallback(args[arg_index++]);
   if (args.size() > arg_index) {
-    binding.exit_id =
-        pinLongLivedCallback(args[arg_index], mode_callback_roots_);
+    binding.exit_id = registerCallback(args[arg_index]);
   }
 
   havel::ModeManager::ModeDefinition mode;
   mode.name = mode_name;
-  if (binding.enter_id.has_value()) {
-    const auto enter_id = *binding.enter_id;
-    mode.onEnter = [weak_self = weak_from_this(), enter_id]() {
+  
+  // Store callback IDs in ModeManager (not closures!)
+  // ModeManager will call back through HostBridge which invokes through VM
+  if (binding.enter_id) {
+    auto enterId = *binding.enter_id;
+    mode.onEnter = [weak_self = weak_from_this(), enterId]() {
       if (auto self = weak_self.lock()) {
         try {
-          (void)self->invokePinnedCallback(self->mode_callback_roots_, enter_id);
+          self->invokeCallback(enterId);
         } catch (const std::exception &e) {
           std::cerr << "[HostBridge][mode.enter] callback failed: " << e.what()
                     << std::endl;
@@ -467,12 +463,12 @@ BytecodeValue HostBridgeRegistry::handleModeDefine(
       }
     };
   }
-  if (binding.exit_id.has_value()) {
-    const auto exit_id = *binding.exit_id;
-    mode.onExit = [weak_self = weak_from_this(), exit_id]() {
+  if (binding.exit_id) {
+    auto exitId = *binding.exit_id;
+    mode.onExit = [weak_self = weak_from_this(), exitId]() {
       if (auto self = weak_self.lock()) {
         try {
-          (void)self->invokePinnedCallback(self->mode_callback_roots_, exit_id);
+          self->invokeCallback(exitId);
         } catch (const std::exception &e) {
           std::cerr << "[HostBridge][mode.exit] callback failed: " << e.what()
                     << std::endl;
@@ -512,19 +508,18 @@ BytecodeValue HostBridgeRegistry::handleModeTick(
   if (!modeService) {
     throw std::runtime_error("ModeService not registered");
   }
-  
+
   for (const auto &mode_name : mode_definition_order_) {
     auto it = mode_bindings_.find(mode_name);
     if (it == mode_bindings_.end()) {
       continue;
     }
-    if (!it->second.condition_id.has_value()) {
+    if (!it->second.condition_id) {
       continue;
     }
     bool condition_met = false;
     try {
-      BytecodeValue condition =
-          invokePinnedCallback(mode_callback_roots_, *it->second.condition_id);
+      BytecodeValue condition = invokeCallback(*it->second.condition_id);
       if (std::holds_alternative<bool>(condition)) {
         condition_met = std::get<bool>(condition);
       } else if (std::holds_alternative<int64_t>(condition)) {

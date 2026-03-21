@@ -14,11 +14,11 @@ namespace havel::modules {
 
 void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (void)hostAPI;  // Services don't use hostAPI directly
-  
+
   // Get ClipboardService from registry - FAIL if not registered
   auto& registry = host::ServiceRegistry::instance();
   auto clipboardService = registry.get<host::ClipboardService>();
-  
+
   if (!clipboardService) {
     throw std::runtime_error("ClipboardService not registered. Call initializeServiceRegistry() first.");
   }
@@ -76,6 +76,65 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
           return HavelRuntimeError("clipboard.clear() requires GUI application");
         }
         return HavelValue(clipboardService->clear());
+      }));
+
+  // =========================================================================
+  // Clipboard history functions - thin wrappers over ClipboardService
+  // =========================================================================
+
+  (*clip)["addToHistory"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clipboard.addToHistory() requires text");
+        }
+        std::string text = args[0].asString();
+        clipboardService->addToHistory(text);
+        return HavelValue(nullptr);
+      }));
+
+  (*clip)["getHistory"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        auto history = clipboardService->getHistory();
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& item : history) {
+          arr->push_back(HavelValue(item));
+        }
+        return HavelValue(arr);
+      }));
+
+  (*clip)["getHistoryItem"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clipboard.getHistoryItem() requires index");
+        }
+        int index = static_cast<int>(args[0].asNumber());
+        return HavelValue(clipboardService->getHistoryItem(index));
+      }));
+
+  (*clip)["getHistoryCount"] = HavelValue(
+      BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(static_cast<double>(clipboardService->getHistoryCount()));
+      }));
+
+  (*clip)["clearHistory"] = HavelValue(
+      BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        clipboardService->clearHistory();
+        return HavelValue(nullptr);
+      }));
+
+  (*clip)["setMaxHistorySize"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clipboard.setMaxHistorySize() requires size");
+        }
+        int size = static_cast<int>(args[0].asNumber());
+        clipboardService->setMaxHistorySize(size);
+        return HavelValue(nullptr);
+      }));
+
+  (*clip)["getMaxHistorySize"] = HavelValue(
+      BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(static_cast<double>(clipboardService->getMaxHistorySize()));
       }));
 
   // Register clipboard module

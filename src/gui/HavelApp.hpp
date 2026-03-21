@@ -17,6 +17,8 @@
 
 #ifdef ENABLE_HAVEL_LANG
 #include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/compiler/bytecode/VM.hpp"
+#include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #else
 namespace havel {
 class Interpreter;
@@ -89,6 +91,10 @@ public:
   std::shared_ptr<net::NetworkManager> networkManager;
 #ifdef ENABLE_HAVEL_LANG
   std::unique_ptr<GUIManager> guiManager;
+  
+  // Bytecode VM and HostBridge
+  std::unique_ptr<havel::compiler::VM> bytecodeVM;
+  std::shared_ptr<havel::compiler::HostBridgeRegistry> hostBridgeRegistry;
 #endif
 private slots:
   void showTextChunker();

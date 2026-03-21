@@ -114,6 +114,9 @@ void loadAllModules(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   registerStdLibModules(loader);
   loadStdLibModules(env, loader);
 
+  // Initialize service registry with all services
+  initializeServiceRegistry(hostAPI);
+
   // Register and load host modules
   registerHostModules(loader);
   loadHostModules(env, loader, hostAPI);

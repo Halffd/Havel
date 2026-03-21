@@ -31,8 +31,8 @@ namespace havel::compiler {
  * TODO: Refactor mode system to use ModeService with callback support
  */
 struct HostBridgeDependencies {
-  // Service registry (THE ONLY dependency for most operations)
-  std::shared_ptr<host::ServiceRegistry> services;
+  // Service registry reference (singleton - do not copy)
+  host::ServiceRegistry* services = nullptr;
   
   // TEMPORARY - ModeManager for complex mode operations
   // TODO: Remove when mode system is refactored

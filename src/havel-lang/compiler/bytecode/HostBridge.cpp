@@ -191,6 +191,7 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
 }
 
 void HostBridgeRegistry::clear() {
+  if (!deps_.services) return;
   auto hotkeyService = deps_.services->get<host::HotkeyService>();
   if (hotkeyService) {
     for (const auto &[id, _] : hotkey_callback_roots_) {

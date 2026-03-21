@@ -3,6 +3,16 @@
 // Simple, explicit registration
 
 #include "../havel-lang/runtime/ModuleLoader.hpp"
+#include "../havel-lang/compiler/bytecode/HostBridge.hpp"
+#include "../host/ServiceRegistry.hpp"
+#include "../host/io/IOService.hpp"
+#include "../host/hotkey/HotkeyService.hpp"
+#include "../host/window/WindowService.hpp"
+#include "../host/mode/ModeService.hpp"
+#include "../host/process/ProcessService.hpp"
+#include "../host/clipboard/ClipboardService.hpp"
+#include "../host/audio/AudioService.hpp"
+#include "../host/brightness/BrightnessService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -32,10 +42,72 @@
 #include "ffi/FFIModule.hpp"
 #include "process/ProcessModule.hpp"
 #include "concurrency/ConcurrencyModule.hpp"
-#include "window/WindowModule.hpp"
-#include "config/ConfigModule.hpp"
 
 namespace havel {
+
+/**
+ * Initialize service registry with all services
+ * Called once at application startup
+ */
+void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
+    if (!hostAPI) return;
+    
+    auto& registry = host::ServiceRegistry::instance();
+    
+    // Register all services
+    if (hostAPI->GetIO()) {
+        auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
+        registry.registerService<host::IOService>(ioService);
+    }
+    
+    if (hostAPI->GetHotkeyManager()) {
+        auto hotkeyManager = hostAPI->GetHotkeyManager();
+        auto hotkeyService = std::make_shared<host::HotkeyService>(
+            std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
+        registry.registerService<host::HotkeyService>(hotkeyService);
+    }
+    
+    if (hostAPI->GetWindowManager()) {
+        auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
+        registry.registerService<host::WindowService>(windowService);
+    }
+    
+    if (hostAPI->GetModeManager()) {
+        auto modeManager = hostAPI->GetModeManager();
+        auto modeService = std::make_shared<host::ModeService>(
+            std::shared_ptr<havel::ModeManager>(modeManager, [](havel::ModeManager*){}));
+        registry.registerService<host::ModeService>(modeService);
+    }
+    
+    if (hostAPI->GetProcessManager()) {
+        auto processService = std::make_shared<host::ProcessService>();
+        registry.registerService<host::ProcessService>(processService);
+    }
+    
+    // Clipboard service doesn't need constructor args
+    auto clipboardService = std::make_shared<host::ClipboardService>();
+    registry.registerService<host::ClipboardService>(clipboardService);
+    
+    if (hostAPI->GetAudioManager()) {
+        auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
+        registry.registerService<host::AudioService>(audioService);
+    }
+    
+    if (hostAPI->GetBrightnessManager()) {
+        auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+        registry.registerService<host::BrightnessService>(brightnessService);
+    }
+}
+
+/**
+ * Create HostBridgeDependencies with service registry
+ */
+compiler::HostBridgeDependencies createHostBridgeDependencies(std::shared_ptr<IHostAPI> hostAPI) {
+    compiler::HostBridgeDependencies deps;
+    deps.services = &host::ServiceRegistry::instance();
+    deps.mode_manager = hostAPI ? hostAPI->GetModeManager() : nullptr;
+    return deps;
+}
 
 /**
  * Register all host modules
@@ -70,8 +142,6 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("hotkey", modules::registerHotkeyModule);
     loader.addHost("browser", modules::registerBrowserModule);
     loader.addHost("concurrency", modules::registerConcurrencyModule);
-    loader.addHost("window", modules::registerWindowQueryModule);
-    loader.addHost("config", modules::registerConfigModule);
     // loader.addHost("ffi", modules::ffi::registerFFIModule);  // No IHostAPI
 }
 

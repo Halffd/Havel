@@ -45,12 +45,13 @@ public:
   HostBridgeRegistry(VM &vm, HostBridgeDependencies deps);
   ~HostBridgeRegistry();
 
-  void install(PipelineOptions &options);
+  void install();
   void clear();
   
-  // Public access for stdlib registration
+  // Accessors for stdlib registration
   VM& vm() { return vm_; }
   PipelineOptions& options() { return options_; }
+  const PipelineOptions& options() const { return options_; }
 
 private:
   using RootTable = std::unordered_map<int64_t, VM::GCRoot>;

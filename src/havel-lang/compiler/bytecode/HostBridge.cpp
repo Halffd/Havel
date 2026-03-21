@@ -13,6 +13,12 @@
 #include "window/WindowQuery.hpp"  // For WindowInfo
 #include "core/ModeManager.hpp"  // TEMPORARY for mode.define/mode.tick
 
+#include "../../stdlib/MathModule.hpp"
+#include "../../stdlib/StringModule.hpp"
+#include "../../stdlib/TypeModule.hpp"
+#include "../../stdlib/UtilityModule.hpp"
+#include "../../stdlib/ArrayModule.hpp"
+
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -85,8 +91,9 @@ createHostBridgeRegistry(VM &vm, HostBridgeDependencies deps) {
   return std::make_shared<HostBridgeRegistry>(vm, std::move(deps));
 }
 
-void HostBridgeRegistry::install(PipelineOptions &options) {
+void HostBridgeRegistry::install() {
   const auto self = shared_from_this();
+  auto& options = options_;
 
   options.host_functions["window.moveToNextMonitor"] =
       [self](const std::vector<BytecodeValue> &args) {
@@ -177,6 +184,13 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleScreenshotRegion(args);
       };
+
+  // Register VM-native stdlib modules
+  stdlib::registerMathModuleVM(*self);
+  stdlib::registerStringModuleVM(*self);
+  stdlib::registerTypeModuleVM(*self);
+  stdlib::registerUtilityModuleVM(*self);
+  stdlib::registerArrayModuleVM(*self);
 
   options.vm_setup = [self](VM &vm) {
     auto registerObject = [&vm](const std::string &name,

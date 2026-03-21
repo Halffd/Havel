@@ -5,6 +5,7 @@
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
+#include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/tools/REPL.hpp"
 #include "utils/Logger.hpp"
 #include <QApplication>
@@ -344,7 +345,15 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   if constexpr (USE_BYTECODE_VM) {
     info("Executing with bytecode VM");
     try {
-      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__");
+      // Create minimal options with stdlib functions
+      havel::compiler::PipelineOptions options;
+      havel::compiler::VM tempVm;
+      havel::compiler::HostBridgeDependencies deps;
+      auto registry = havel::compiler::createHostBridgeRegistry(tempVm, deps);
+      registry->install();
+      options = registry->options();
+      
+      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
       info("Bytecode execution completed successfully");
       return 0;
     } catch (const std::exception& e) {

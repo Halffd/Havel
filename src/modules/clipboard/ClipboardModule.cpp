@@ -13,14 +13,14 @@
 namespace havel::modules {
 
 void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
-  // Get ClipboardService from registry
+  (void)hostAPI;  // Services don't use hostAPI directly
+  
+  // Get ClipboardService from registry - FAIL if not registered
   auto& registry = host::ServiceRegistry::instance();
   auto clipboardService = registry.get<host::ClipboardService>();
   
   if (!clipboardService) {
-    // Create service (doesn't need constructor args)
-    clipboardService = std::make_shared<host::ClipboardService>();
-    registry.registerService<host::ClipboardService>(clipboardService);
+    throw std::runtime_error("ClipboardService not registered. Call initializeServiceRegistry() first.");
   }
 
   // Create clipboard module object

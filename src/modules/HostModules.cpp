@@ -47,56 +47,68 @@ namespace havel {
 
 /**
  * Initialize service registry with all services
- * Called once at application startup
+ * Called ONCE at application startup, before any modules are loaded.
+ * All services MUST be registered here - modules will fail if services are missing.
  */
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI) return;
-    
+    if (!hostAPI) {
+        throw std::runtime_error("initializeServiceRegistry: hostAPI is null");
+    }
+
     auto& registry = host::ServiceRegistry::instance();
-    
-    // Register all services
-    if (hostAPI->GetIO()) {
-        auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
-        registry.registerService<host::IOService>(ioService);
+
+    // Register all services - explicit construction, no fallbacks
+    if (!hostAPI->GetIO()) {
+        throw std::runtime_error("initializeServiceRegistry: IO not available");
     }
-    
-    if (hostAPI->GetHotkeyManager()) {
-        auto hotkeyManager = hostAPI->GetHotkeyManager();
-        auto hotkeyService = std::make_shared<host::HotkeyService>(
-            std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
-        registry.registerService<host::HotkeyService>(hotkeyService);
+    auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
+    registry.registerService<host::IOService>(ioService);
+
+    if (!hostAPI->GetHotkeyManager()) {
+        throw std::runtime_error("initializeServiceRegistry: HotkeyManager not available");
     }
-    
-    if (hostAPI->GetWindowManager()) {
-        auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
-        registry.registerService<host::WindowService>(windowService);
+    auto hotkeyManager = hostAPI->GetHotkeyManager();
+    auto hotkeyService = std::make_shared<host::HotkeyService>(
+        std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
+    registry.registerService<host::HotkeyService>(hotkeyService);
+
+    if (!hostAPI->GetWindowManager()) {
+        throw std::runtime_error("initializeServiceRegistry: WindowManager not available");
     }
-    
-    if (hostAPI->GetModeManager()) {
-        auto modeManager = hostAPI->GetModeManager();
-        auto modeService = std::make_shared<host::ModeService>(
-            std::shared_ptr<havel::ModeManager>(modeManager, [](havel::ModeManager*){}));
-        registry.registerService<host::ModeService>(modeService);
+    auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
+    registry.registerService<host::WindowService>(windowService);
+
+    if (!hostAPI->GetModeManager()) {
+        throw std::runtime_error("initializeServiceRegistry: ModeManager not available");
     }
-    
-    if (hostAPI->GetProcessManager()) {
-        auto processService = std::make_shared<host::ProcessService>();
-        registry.registerService<host::ProcessService>(processService);
+    auto modeManager = hostAPI->GetModeManager();
+    auto modeService = std::make_shared<host::ModeService>(
+        std::shared_ptr<havel::ModeManager>(modeManager, [](havel::ModeManager*){}));
+    registry.registerService<host::ModeService>(modeService);
+
+    if (!hostAPI->GetProcessManager()) {
+        throw std::runtime_error("initializeServiceRegistry: ProcessManager not available");
     }
-    
+    auto processService = std::make_shared<host::ProcessService>();
+    registry.registerService<host::ProcessService>(processService);
+
     // Clipboard service doesn't need constructor args
     auto clipboardService = std::make_shared<host::ClipboardService>();
     registry.registerService<host::ClipboardService>(clipboardService);
-    
-    if (hostAPI->GetAudioManager()) {
-        auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
-        registry.registerService<host::AudioService>(audioService);
+
+    if (!hostAPI->GetAudioManager()) {
+        throw std::runtime_error("initializeServiceRegistry: AudioManager not available");
     }
-    
-    if (hostAPI->GetBrightnessManager()) {
-        auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-        registry.registerService<host::BrightnessService>(brightnessService);
+    auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
+    registry.registerService<host::AudioService>(audioService);
+
+    if (!hostAPI->GetBrightnessManager()) {
+        throw std::runtime_error("initializeServiceRegistry: BrightnessManager not available");
     }
+    auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+    registry.registerService<host::BrightnessService>(brightnessService);
+    
+    info("ServiceRegistry initialized with {} services", registry.size());
 }
 
 /**

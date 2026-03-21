@@ -72,6 +72,10 @@ private:
   BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleScreenshotFull(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleScreenshotMonitor(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleScreenshotWindow(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleScreenshotRegion(const std::vector<BytecodeValue> &args);
 
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);

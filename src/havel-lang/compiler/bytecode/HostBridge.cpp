@@ -158,6 +158,23 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
         return self->handleProcessFind(args);
       };
 
+  options.host_functions["screenshot.full"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotFull(args);
+      };
+  options.host_functions["screenshot.monitor"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotMonitor(args);
+      };
+  options.host_functions["screenshot.window"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotWindow(args);
+      };
+  options.host_functions["screenshot.region"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotRegion(args);
+      };
+
   options.vm_setup = [self](VM &vm) {
     auto registerObject = [&vm](const std::string &name,
                                 const std::vector<std::pair<std::string, std::string>>
@@ -586,6 +603,114 @@ BytecodeValue HostBridgeRegistry::handleClipboardClear(
     throw std::runtime_error("ClipboardService not registered");
   }
   return BytecodeValue(clipboardService->clear());
+}
+
+// ============================================================================
+// Screenshot handlers - translate QImage → VMImage
+// ============================================================================
+
+BytecodeValue HostBridgeRegistry::handleScreenshotFull(
+    const std::vector<BytecodeValue> &args) {
+  (void)args;
+  auto screenshotService = deps_.services->get<host::ScreenshotService>();
+  if (!screenshotService) {
+    throw std::runtime_error("ScreenshotService not registered");
+  }
+  
+  auto data = screenshotService->captureFullDesktop();
+  if (data.empty()) {
+    return BytecodeValue(nullptr);
+  }
+  
+  // Create VMImage object
+  auto screenshotObj = vm_.createHostObject();
+  vm_.setHostObjectField(screenshotObj, "width", static_cast<int64_t>(0));
+  vm_.setHostObjectField(screenshotObj, "height", static_cast<int64_t>(0));
+  vm_.setHostObjectField(screenshotObj, "data", vm_.createHostArray());
+  
+  // TODO: Properly create VMImage with width/height/data
+  // For now, return raw array
+  auto dataArray = vm_.createHostArray();
+  for (uint8_t byte : data) {
+    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
+  }
+  
+  return BytecodeValue(dataArray);
+}
+
+BytecodeValue HostBridgeRegistry::handleScreenshotMonitor(
+    const std::vector<BytecodeValue> &args) {
+  int monitorIndex = 0;
+  if (!args.empty()) {
+    monitorIndex = static_cast<int>(requireIntArg(args, 0, "screenshot.monitor"));
+  }
+  
+  auto screenshotService = deps_.services->get<host::ScreenshotService>();
+  if (!screenshotService) {
+    throw std::runtime_error("ScreenshotService not registered");
+  }
+  
+  auto data = screenshotService->captureMonitor(monitorIndex);
+  if (data.empty()) {
+    return BytecodeValue(nullptr);
+  }
+  
+  auto dataArray = vm_.createHostArray();
+  for (uint8_t byte : data) {
+    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
+  }
+  
+  return BytecodeValue(dataArray);
+}
+
+BytecodeValue HostBridgeRegistry::handleScreenshotWindow(
+    const std::vector<BytecodeValue> &args) {
+  (void)args;
+  auto screenshotService = deps_.services->get<host::ScreenshotService>();
+  if (!screenshotService) {
+    throw std::runtime_error("ScreenshotService not registered");
+  }
+  
+  auto data = screenshotService->captureActiveWindow();
+  if (data.empty()) {
+    return BytecodeValue(nullptr);
+  }
+  
+  auto dataArray = vm_.createHostArray();
+  for (uint8_t byte : data) {
+    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
+  }
+  
+  return BytecodeValue(dataArray);
+}
+
+BytecodeValue HostBridgeRegistry::handleScreenshotRegion(
+    const std::vector<BytecodeValue> &args) {
+  if (args.size() < 4) {
+    throw std::runtime_error("screenshot.region requires (x, y, width, height)");
+  }
+  
+  int x = static_cast<int>(requireIntArg(args, 0, "screenshot.region"));
+  int y = static_cast<int>(requireIntArg(args, 1, "screenshot.region"));
+  int width = static_cast<int>(requireIntArg(args, 2, "screenshot.region"));
+  int height = static_cast<int>(requireIntArg(args, 3, "screenshot.region"));
+  
+  auto screenshotService = deps_.services->get<host::ScreenshotService>();
+  if (!screenshotService) {
+    throw std::runtime_error("ScreenshotService not registered");
+  }
+  
+  auto data = screenshotService->captureRegion(x, y, width, height);
+  if (data.empty()) {
+    return BytecodeValue(nullptr);
+  }
+  
+  auto dataArray = vm_.createHostArray();
+  for (uint8_t byte : data) {
+    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
+  }
+  
+  return BytecodeValue(dataArray);
 }
 
 } // namespace havel::compiler

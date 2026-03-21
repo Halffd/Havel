@@ -15,7 +15,11 @@
 #include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
+#include "../host/automation/AutomationService.hpp"
 #include "../host/chunker/TextChunkerService.hpp"
+#include "../host/browser/BrowserService.hpp"
+#include "../host/io/MapManagerService.hpp"
+#include "../host/window/AltTabService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -120,6 +124,22 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     // TextChunker service doesn't need constructor args (pure C++ logic)
     auto chunkerService = std::make_shared<host::TextChunkerService>();
     registry.registerService<host::TextChunkerService>(chunkerService);
+
+    // Browser service doesn't need constructor args (uses HTTP/WebSocket)
+    auto browserService = std::make_shared<host::BrowserService>();
+    registry.registerService<host::BrowserService>(browserService);
+
+    // MapManager service needs IO pointer
+    auto mapManagerService = std::make_shared<host::MapManagerService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
+    registry.registerService<host::MapManagerService>(mapManagerService);
+
+    // AltTab service doesn't need constructor args (uses Qt directly)
+    auto altTabService = std::make_shared<host::AltTabService>();
+    registry.registerService<host::AltTabService>(altTabService);
+
+    // Automation service needs IO pointer
+    auto automationService = std::make_shared<host::AutomationService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
+    registry.registerService<host::AutomationService>(automationService);
 
     info("ServiceRegistry initialized with {} services", registry.size());
 }

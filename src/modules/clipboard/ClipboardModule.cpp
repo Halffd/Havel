@@ -5,7 +5,6 @@
  * Thin binding layer - delegates to ClipboardService.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../host/clipboard/ClipboardService.hpp"
 #include <QGuiApplication>
@@ -27,7 +26,7 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
   auto clip = std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
   // =========================================================================
-  // Basic clipboard functions - thin wrappers over ClipboardService
+  // Basic clipboard functions - ZERO overhead (just QClipboard access)
   // =========================================================================
 
   (*clip)["get"] = HavelValue(
@@ -78,8 +77,16 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
         return HavelValue(clipboardService->clear());
       }));
 
+  (*clip)["hasText"] = HavelValue(
+      BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        if (!QGuiApplication::instance()) {
+          return HavelValue(false);
+        }
+        return HavelValue(clipboardService->hasText());
+      }));
+
   // =========================================================================
-  // Clipboard history functions - thin wrappers over ClipboardService
+  // Clipboard history functions - opt-in overhead (only if you use them)
   // =========================================================================
 
   (*clip)["addToHistory"] = HavelValue(BuiltinFunction(
@@ -94,7 +101,7 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
 
   (*clip)["getHistory"] = HavelValue(BuiltinFunction(
       [clipboardService](const std::vector<HavelValue> &) -> HavelResult {
-        auto history = clipboardService->getHistory();
+        const auto& history = clipboardService->getHistory();
         auto arr = std::make_shared<std::vector<HavelValue>>();
         for (const auto& item : history) {
           arr->push_back(HavelValue(item));
@@ -120,6 +127,39 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
       BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
         clipboardService->clearHistory();
         return HavelValue(nullptr);
+      }));
+
+  (*clip)["getLast"] = HavelValue(
+      BuiltinFunction([clipboardService](const std::vector<HavelValue> &) -> HavelResult {
+        return HavelValue(clipboardService->getLast());
+      }));
+
+  (*clip)["getRecent"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clipboard.getRecent() requires count");
+        }
+        int count = static_cast<int>(args[0].asNumber());
+        auto recent = clipboardService->getRecent(count);
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& item : recent) {
+          arr->push_back(HavelValue(item));
+        }
+        return HavelValue(arr);
+      }));
+
+  (*clip)["filter"] = HavelValue(BuiltinFunction(
+      [clipboardService](const std::vector<HavelValue> &args) -> HavelResult {
+        if (args.empty()) {
+          return HavelRuntimeError("clipboard.filter() requires pattern");
+        }
+        std::string pattern = args[0].asString();
+        auto filtered = clipboardService->filter(pattern);
+        auto arr = std::make_shared<std::vector<HavelValue>>();
+        for (const auto& item : filtered) {
+          arr->push_back(HavelValue(item));
+        }
+        return HavelValue(arr);
       }));
 
   (*clip)["setMaxHistorySize"] = HavelValue(BuiltinFunction(

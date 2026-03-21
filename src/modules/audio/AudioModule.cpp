@@ -12,22 +12,14 @@
 namespace havel::modules {
 
 void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
-  if (!hostAPI->GetIO()) {
-    return;
-  }
-
-  // Get AudioService from registry
+  (void)hostAPI;  // Services don't use hostAPI directly
+  
+  // Get AudioService from registry - FAIL if not registered
   auto& registry = host::ServiceRegistry::instance();
   auto audioService = registry.get<host::AudioService>();
   
   if (!audioService) {
-    // Fallback: create service from core manager
-    if (hostAPI->GetAudioManager()) {
-      audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
-      registry.registerService<host::AudioService>(audioService);
-    } else {
-      return;
-    }
+    throw std::runtime_error("AudioService not registered. Call initializeServiceRegistry() first.");
   }
 
   // Create audio module object

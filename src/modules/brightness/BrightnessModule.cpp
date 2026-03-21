@@ -12,22 +12,14 @@
 namespace havel::modules {
 
 void registerBrightnessModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
-  if (!hostAPI->GetIO()) {
-    return;
-  }
-
-  // Get BrightnessService from registry
+  (void)hostAPI;  // Services don't use hostAPI directly
+  
+  // Get BrightnessService from registry - FAIL if not registered
   auto& registry = host::ServiceRegistry::instance();
   auto brightnessService = registry.get<host::BrightnessService>();
   
   if (!brightnessService) {
-    // Fallback: create service from core manager
-    if (hostAPI->GetBrightnessManager()) {
-      brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-      registry.registerService<host::BrightnessService>(brightnessService);
-    } else {
-      return;
-    }
+    throw std::runtime_error("BrightnessService not registered. Call initializeServiceRegistry() first.");
   }
 
   // Create brightness module object

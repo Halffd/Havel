@@ -15,7 +15,7 @@
 
 namespace havel {
 
-// Forward declaration
+// Forward declarations
 class IO;
 class Environment;
 

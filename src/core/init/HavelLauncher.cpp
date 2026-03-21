@@ -4,6 +4,7 @@
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/Interpreter.hpp"
+#include "havel-lang/compiler/bytecode/Pipeline.hpp"
 #include "utils/Logger.hpp"
 #include <QApplication>
 #include <QProcess>
@@ -20,6 +21,9 @@
 using namespace havel;
 
 namespace havel::init {
+
+// Global flag to enable/disable bytecode VM
+static constexpr bool USE_BYTECODE_VM = true;
 
 int HavelLauncher::run(int argc, char *argv[]) {
   try {
@@ -334,6 +338,19 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   sigaction(SIGINT, &sa, nullptr);
   sigaction(SIGTERM, &sa, nullptr);
   info("Signal handling initialized for headless mode");
+
+  // Execute with bytecode VM if enabled
+  if constexpr (USE_BYTECODE_VM) {
+    info("Executing with bytecode VM");
+    try {
+      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__");
+      info("Bytecode execution completed successfully");
+      return 0;
+    } catch (const std::exception& e) {
+      error("Bytecode error: {}", e.what());
+      return 1;
+    }
+  }
 
   // Create minimal interpreter without IO/hotkeys
   havel::Interpreter interpreter;

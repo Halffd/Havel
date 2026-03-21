@@ -47,6 +47,10 @@ public:
 
   void install(PipelineOptions &options);
   void clear();
+  
+  // Public access for stdlib registration
+  VM& vm() { return vm_; }
+  PipelineOptions& options() { return options_; }
 
 private:
   using RootTable = std::unordered_map<int64_t, VM::GCRoot>;
@@ -90,6 +94,7 @@ private:
 
   VM &vm_;
   HostBridgeDependencies deps_;
+  PipelineOptions options_;  // For stdlib registration
   CallbackId next_callback_id_ = 1;
   std::unordered_map<CallbackId, std::string> hotkey_binding_keys_;
   std::vector<std::string> mode_definition_order_;

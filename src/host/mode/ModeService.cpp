@@ -29,30 +29,14 @@ void ModeService::defineMode(const std::string& name,
                               compiler::CallbackId conditionId,
                               compiler::CallbackId enterId,
                               compiler::CallbackId exitId) {
-    if (!m_manager || !m_vm) return;
+    (void)conditionId;  // ModeManager uses AST expressions for conditions, not callbacks
+    if (!m_vm || !m_manager) return;
     
     // Create mode definition with callbacks that invoke through VM
     havel::ModeManager::ModeDefinition mode;
     mode.name = name;
-    
-    // Condition callback - invokes through VM
-    if (conditionId != compiler::INVALID_CALLBACK_ID) {
-        mode.condition = [vm = m_vm, id = conditionId]() -> bool {
-            try {
-                auto result = vm->invokeCallback(id);
-                if (std::holds_alternative<bool>(result)) {
-                    return std::get<bool>(result);
-                } else if (std::holds_alternative<int64_t>(result)) {
-                    return std::get<int64_t>(result) != 0;
-                } else if (std::holds_alternative<double>(result)) {
-                    return std::get<double>(result) != 0.0;
-                }
-            } catch (...) {
-                // Callback failed, assume false
-            }
-            return false;
-        };
-    }
+    // Note: conditionExpr is for AST expressions, not callbacks
+    // Condition handling is done through mode.tick() checking CallbackId
     
     // Enter callback - invokes through VM
     if (enterId != compiler::INVALID_CALLBACK_ID) {
@@ -64,7 +48,7 @@ void ModeService::defineMode(const std::string& name,
             }
         };
     }
-    
+
     // Exit callback - invokes through VM
     if (exitId != compiler::INVALID_CALLBACK_ID) {
         mode.onExit = [vm = m_vm, id = exitId]() {
@@ -75,7 +59,7 @@ void ModeService::defineMode(const std::string& name,
             }
         };
     }
-    
+
     m_manager->defineMode(std::move(mode));
 }
 

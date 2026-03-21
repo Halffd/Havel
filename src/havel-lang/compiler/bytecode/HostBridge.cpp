@@ -7,6 +7,9 @@
 #include "host/mode/ModeService.hpp"
 #include "host/process/ProcessService.hpp"
 #include "host/clipboard/ClipboardService.hpp"
+#include "host/audio/AudioService.hpp"
+#include "host/brightness/BrightnessService.hpp"
+#include "host/screenshot/ScreenshotService.hpp"
 #include "window/WindowQuery.hpp"  // For WindowInfo
 #include "core/ModeManager.hpp"  // TEMPORARY for mode.define/mode.tick
 

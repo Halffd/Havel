@@ -34,8 +34,8 @@ std::vector<uint8_t> ScreenshotService::captureFullDesktop() {
     // Get virtual geometry (all monitors combined)
     QRect geometry = primaryScreen->virtualGeometry();
     
-    QPixmap pixmap = QGuiApplication::primaryScreen()->grabWindow(
-        QGuiApplication::primaryScreen()->rootWindow()->winId(),
+    // Grab the entire virtual desktop
+    QPixmap pixmap = primaryScreen->grabWindow(0,  // 0 = root window
         geometry.x(),
         geometry.y(),
         geometry.width(),
@@ -89,8 +89,7 @@ std::vector<uint8_t> ScreenshotService::captureRegion(int x, int y, int width, i
         return {};
     }
     
-    QPixmap pixmap = primaryScreen->grabWindow(
-        primaryScreen->rootWindow()->winId(),
+    QPixmap pixmap = primaryScreen->grabWindow(0,  // 0 = root window
         x, y, width, height
     );
     
@@ -129,7 +128,7 @@ std::vector<uint8_t> ScreenshotService::captureFromScreen(QScreen* screen) {
         return {};
     }
     
-    QPixmap pixmap = screen->grabWindow(screen->rootWindow()->winId());
+    QPixmap pixmap = screen->grabWindow(0);  // 0 = root window
     QImage image = pixmap.toImage();
     return imageToRGBA(image);
 }
@@ -143,7 +142,7 @@ std::vector<uint8_t> ScreenshotService::imageToRGBA(const QImage& image) {
     QImage rgbaImage = image.convertToFormat(QImage::Format_RGBA8888);
     
     // Copy data to vector
-    std::vector<uint8_t> data(rgbaImage.byteCount());
+    std::vector<uint8_t> data(rgbaImage.sizeInBytes());
     std::memcpy(data.data(), rgbaImage.bits(), data.size());
     
     return data;

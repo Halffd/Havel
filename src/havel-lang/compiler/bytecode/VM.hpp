@@ -27,24 +27,22 @@ enum class PixelFormat : uint8_t {
     BGRA8,    // 4 bytes per pixel (B, G, R, A) - Qt default
 };
 
-// VM-safe image representation
-// Used for screenshot, image processing, etc.
+// VM image representation - GC-managed via ObjectRef
+// This is NOT a GC object itself, but wraps an ObjectRef
 struct VMImage {
     int32_t width = 0;
     int32_t height = 0;
     int32_t stride = 0;  // bytes per row
     PixelFormat format = PixelFormat::BGRA8;
-    std::shared_ptr<uint8_t[]> data;  // GC-managed buffer
-    
-    // Helper: total size in bytes
-    size_t size() const {
-        return stride > 0 ? static_cast<size_t>(stride) * height : 0;
-    }
+    ObjectRef object_ref;  // GC-managed object containing data
     
     // Helper: check if valid
     bool isValid() const {
-        return width > 0 && height > 0 && data != nullptr;
+        return width > 0 && height > 0 && object_ref.id != 0;
     }
+    
+    // Get raw data pointer from GC heap (read-only during GC cycles)
+    const uint8_t* data() const;
 };
 
 class VM : public BytecodeInterpreter {
@@ -185,6 +183,10 @@ public:
   BytecodeValue invokeCallback(CallbackId id, std::span<BytecodeValue> args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
+  
+  // Image helpers - create GC-managed images
+  VMImage createImage(int width, int height, int stride, PixelFormat format, const uint8_t* data);
+  VMImage createImageFromRGBA(int width, int height, const std::vector<uint8_t>& rgbaData);
 };
 
 } // namespace havel::compiler

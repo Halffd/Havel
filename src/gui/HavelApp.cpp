@@ -7,6 +7,7 @@
 #include "core/io/EventListener.hpp"
 #include "core/io/KeyTap.hpp"
 #include "gui/GUIManager.hpp"
+#include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
@@ -249,6 +250,28 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Register interpreter for hotkey callbacks (must be after construction)
   interpreter->RegisterForHotkeys();
   std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+
+  // Initialize bytecode VM and HostBridge
+  try {
+    info("Initializing bytecode VM and HostBridge...");
+    
+    // Initialize service registry with all services
+    initializeServiceRegistry(interpreter->getHostAPI());
+    
+    // Create VM
+    bytecodeVM = std::make_unique<compiler::VM>();
+    
+    // Create HostBridge dependencies
+    auto deps = createHostBridgeDependencies(interpreter->getHostAPI());
+    
+    // Create HostBridge registry
+    hostBridgeRegistry = compiler::createHostBridgeRegistry(*bytecodeVM, deps);
+    
+    info("Bytecode VM and HostBridge initialized successfully");
+  } catch (const std::exception& e) {
+    error("Failed to initialize bytecode VM: {}", e.what());
+    // Continue anyway - VM is optional for now
+  }
 #else
   interpreter = nullptr;
   std::cerr << "[DEBUG] Havel language disabled, interpreter is null"

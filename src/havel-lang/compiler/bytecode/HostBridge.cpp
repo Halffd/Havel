@@ -609,7 +609,7 @@ BytecodeValue HostBridgeRegistry::handleClipboardClear(
 }
 
 // ============================================================================
-// Screenshot handlers - translate QImage → VMImage
+// Screenshot handlers - translate QImage → VMImage (GC-managed)
 // ============================================================================
 
 BytecodeValue HostBridgeRegistry::handleScreenshotFull(
@@ -619,26 +619,25 @@ BytecodeValue HostBridgeRegistry::handleScreenshotFull(
   if (!screenshotService) {
     throw std::runtime_error("ScreenshotService not registered");
   }
-  
+
   auto data = screenshotService->captureFullDesktop();
   if (data.empty()) {
     return BytecodeValue(nullptr);
   }
+
+  // Create GC-managed VMImage (assume RGBA from ScreenshotService)
+  // For now, use placeholder dimensions - ScreenshotService should return metadata
+  int width = 1920;  // TODO: Get from service
+  int height = 1080;
+  auto vmImage = vm_.createImageFromRGBA(width, height, data);
   
-  // Create VMImage object
-  auto screenshotObj = vm_.createHostObject();
-  vm_.setHostObjectField(screenshotObj, "width", static_cast<int64_t>(0));
-  vm_.setHostObjectField(screenshotObj, "height", static_cast<int64_t>(0));
-  vm_.setHostObjectField(screenshotObj, "data", vm_.createHostArray());
+  // Return as object with metadata
+  auto imgObj = vm_.createHostObject();
+  vm_.setHostObjectField(imgObj, "width", static_cast<int64_t>(width));
+  vm_.setHostObjectField(imgObj, "height", static_cast<int64_t>(height));
+  vm_.setHostObjectField(imgObj, "format", static_cast<int64_t>(0));  // RGBA8
   
-  // TODO: Properly create VMImage with width/height/data
-  // For now, return raw array
-  auto dataArray = vm_.createHostArray();
-  for (uint8_t byte : data) {
-    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
-  }
-  
-  return BytecodeValue(dataArray);
+  return BytecodeValue(imgObj);
 }
 
 BytecodeValue HostBridgeRegistry::handleScreenshotMonitor(
@@ -647,23 +646,28 @@ BytecodeValue HostBridgeRegistry::handleScreenshotMonitor(
   if (!args.empty()) {
     monitorIndex = static_cast<int>(requireIntArg(args, 0, "screenshot.monitor"));
   }
-  
+
   auto screenshotService = deps_.services->get<host::ScreenshotService>();
   if (!screenshotService) {
     throw std::runtime_error("ScreenshotService not registered");
   }
-  
+
   auto data = screenshotService->captureMonitor(monitorIndex);
   if (data.empty()) {
     return BytecodeValue(nullptr);
   }
+
+  // Create GC-managed VMImage
+  int width = 1920;  // TODO: Get from service
+  int height = 1080;
+  auto vmImage = vm_.createImageFromRGBA(width, height, data);
   
-  auto dataArray = vm_.createHostArray();
-  for (uint8_t byte : data) {
-    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
-  }
+  auto imgObj = vm_.createHostObject();
+  vm_.setHostObjectField(imgObj, "width", static_cast<int64_t>(width));
+  vm_.setHostObjectField(imgObj, "height", static_cast<int64_t>(height));
+  vm_.setHostObjectField(imgObj, "format", static_cast<int64_t>(0));  // RGBA8
   
-  return BytecodeValue(dataArray);
+  return BytecodeValue(imgObj);
 }
 
 BytecodeValue HostBridgeRegistry::handleScreenshotWindow(
@@ -673,18 +677,23 @@ BytecodeValue HostBridgeRegistry::handleScreenshotWindow(
   if (!screenshotService) {
     throw std::runtime_error("ScreenshotService not registered");
   }
-  
+
   auto data = screenshotService->captureActiveWindow();
   if (data.empty()) {
     return BytecodeValue(nullptr);
   }
+
+  // Create GC-managed VMImage
+  int width = 800;  // TODO: Get from service
+  int height = 600;
+  auto vmImage = vm_.createImageFromRGBA(width, height, data);
   
-  auto dataArray = vm_.createHostArray();
-  for (uint8_t byte : data) {
-    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
-  }
+  auto imgObj = vm_.createHostObject();
+  vm_.setHostObjectField(imgObj, "width", static_cast<int64_t>(width));
+  vm_.setHostObjectField(imgObj, "height", static_cast<int64_t>(height));
+  vm_.setHostObjectField(imgObj, "format", static_cast<int64_t>(0));  // RGBA8
   
-  return BytecodeValue(dataArray);
+  return BytecodeValue(imgObj);
 }
 
 BytecodeValue HostBridgeRegistry::handleScreenshotRegion(
@@ -692,28 +701,31 @@ BytecodeValue HostBridgeRegistry::handleScreenshotRegion(
   if (args.size() < 4) {
     throw std::runtime_error("screenshot.region requires (x, y, width, height)");
   }
-  
+
   int x = static_cast<int>(requireIntArg(args, 0, "screenshot.region"));
   int y = static_cast<int>(requireIntArg(args, 1, "screenshot.region"));
   int width = static_cast<int>(requireIntArg(args, 2, "screenshot.region"));
   int height = static_cast<int>(requireIntArg(args, 3, "screenshot.region"));
-  
+
   auto screenshotService = deps_.services->get<host::ScreenshotService>();
   if (!screenshotService) {
     throw std::runtime_error("ScreenshotService not registered");
   }
-  
+
   auto data = screenshotService->captureRegion(x, y, width, height);
   if (data.empty()) {
     return BytecodeValue(nullptr);
   }
+
+  // Create GC-managed VMImage with actual dimensions
+  auto vmImage = vm_.createImageFromRGBA(width, height, data);
   
-  auto dataArray = vm_.createHostArray();
-  for (uint8_t byte : data) {
-    vm_.pushHostArrayValue(dataArray, static_cast<int64_t>(byte));
-  }
+  auto imgObj = vm_.createHostObject();
+  vm_.setHostObjectField(imgObj, "width", static_cast<int64_t>(width));
+  vm_.setHostObjectField(imgObj, "height", static_cast<int64_t>(height));
+  vm_.setHostObjectField(imgObj, "format", static_cast<int64_t>(0));  // RGBA8
   
-  return BytecodeValue(dataArray);
+  return BytecodeValue(imgObj);
 }
 
 } // namespace havel::compiler

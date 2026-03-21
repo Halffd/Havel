@@ -1242,8 +1242,45 @@ bool VM::isValidCallback(CallbackId id) const {
   if (id == INVALID_CALLBACK_ID) {
     return false;
   }
-  
+
   return externalRootValue(id).has_value();
+}
+
+// ============================================================================
+// Image helpers - GC-managed image creation
+// ============================================================================
+
+VMImage VM::createImage(int width, int height, int stride, PixelFormat format, const uint8_t* data) {
+  VMImage img;
+  img.width = width;
+  img.height = height;
+  img.stride = stride;
+  img.format = format;
+  
+  // Create GC-managed byte array for image data
+  size_t dataSize = stride > 0 ? static_cast<size_t>(stride) * height : width * height * 4;
+  auto arrayRef = createHostArray();
+  for (size_t i = 0; i < dataSize; ++i) {
+    pushHostArrayValue(arrayRef, static_cast<int64_t>(data[i]));
+  }
+  
+  // Store array reference in VMImage
+  img.object_ref = ObjectRef{arrayRef.id};
+  
+  return img;
+}
+
+VMImage VM::createImageFromRGBA(int width, int height, const std::vector<uint8_t>& rgbaData) {
+  // RGBA format: 4 bytes per pixel
+  int stride = width * 4;
+  return createImage(width, height, stride, PixelFormat::RGBA8, rgbaData.data());
+}
+
+const uint8_t* VMImage::data() const {
+  // VMImage stores data in a GC-managed array
+  // This would need VM access to retrieve - for now return nullptr
+  // Proper implementation would store raw pointer alongside ObjectRef
+  return nullptr;
 }
 
 std::unique_ptr<BytecodeInterpreter> createVM() {

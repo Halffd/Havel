@@ -2,281 +2,114 @@
  * BrightnessModule.cpp
  *
  * Brightness management module for Havel language.
- * Host binding - connects language to BrightnessManager.
+ * Thin binding layer - delegates to BrightnessService.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
 #include "../../host/HostContext.hpp"
-#include "core/BrightnessManager.hpp"
+#include "../../host/ServiceRegistry.hpp"
+#include "../../host/brightness/BrightnessService.hpp"
 
 namespace havel::modules {
 
-void registerBrightnessModule(Environment &env,
-                              std::shared_ptr<IHostAPI> hostAPI) {
-  if (!hostAPI->GetIO() || !hostAPI->GetAudioManager()) {
-    return; // Skip if no brightness manager available
+void registerBrightnessModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
+  if (!hostAPI->GetIO()) {
+    return;
   }
 
-  // Create brightnessManager module object
+  // Get BrightnessService from registry
+  auto& registry = host::ServiceRegistry::instance();
+  auto brightnessService = registry.get<host::BrightnessService>();
+  
+  if (!brightnessService) {
+    // Fallback: create service from core manager
+    if (hostAPI->GetBrightnessManager()) {
+      brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+      registry.registerService<host::BrightnessService>(brightnessService);
+    } else {
+      return;
+    }
+  }
+
+  // Create brightness module object
   auto brightnessObj =
       std::make_shared<std::unordered_map<std::string, HavelValue>>();
 
-  // Helper to convert value to number
-  auto valueToNumber = [](const HavelValue &v) -> double {
-    return v.asNumber();
-  };
-
   // =========================================================================
-  // Brightness get/set functions
+  // Brightness get/set - thin wrappers over BrightnessService
   // =========================================================================
 
   (*brightnessObj)["getBrightness"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelValue(bm->getBrightness());
-        }
-        int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-        return HavelValue(bm->getBrightness(monitorIndex));
-      }));
-
-  (*brightnessObj)["getTemperature"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelValue(static_cast<double>(bm->getTemperature()));
-        }
-        int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-        return HavelValue(
-            static_cast<double>(bm->getTemperature(monitorIndex)));
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
+        int monitorIndex = args.empty() ? -1 : static_cast<int>(args[0].asNumber());
+        return HavelValue(brightnessService->getBrightness(monitorIndex));
       }));
 
   (*brightnessObj)["setBrightness"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
-          return HavelRuntimeError(
-              "setBrightness() requires value or (monitorIndex, value)");
+          return HavelRuntimeError("setBrightness() requires brightness value");
         }
         if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          double brightness = valueToNumber(args[1]);
-          bm->setBrightness(monitorIndex, brightness);
-          return HavelValue(nullptr);
+          int monitorIndex = static_cast<int>(args[0].asNumber());
+          double brightness = args[1].asNumber();
+          brightnessService->setBrightness(brightness, monitorIndex);
+        } else {
+          brightnessService->setBrightness(args[0].asNumber());
         }
-        double brightness = valueToNumber(args[0]);
-        bm->setBrightness(brightness);
         return HavelValue(nullptr);
       }));
 
   (*brightnessObj)["increaseBrightness"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
+        double step = args.empty() ? 0.1 : args[0].asNumber();
         if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          double step = valueToNumber(args[1]);
-          bm->increaseBrightness(monitorIndex, step);
-          return HavelValue(nullptr);
+          int monitorIndex = static_cast<int>(args[0].asNumber());
+          brightnessService->increaseBrightness(step, monitorIndex);
+        } else {
+          brightnessService->increaseBrightness(step);
         }
-        double step = args.empty() ? 0.1 : valueToNumber(args[0]);
-        bm->increaseBrightness(step);
         return HavelValue(nullptr);
       }));
 
   (*brightnessObj)["decreaseBrightness"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
+        double step = args.empty() ? 0.1 : args[0].asNumber();
         if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          double step = valueToNumber(args[1]);
-          bm->decreaseBrightness(monitorIndex, step);
-          return HavelValue(nullptr);
+          int monitorIndex = static_cast<int>(args[0].asNumber());
+          brightnessService->decreaseBrightness(step, monitorIndex);
+        } else {
+          brightnessService->decreaseBrightness(step);
         }
-        double step = args.empty() ? 0.1 : valueToNumber(args[0]);
-        bm->decreaseBrightness(step);
         return HavelValue(nullptr);
+      }));
+
+  // =========================================================================
+  // Temperature control - thin wrappers over BrightnessService
+  // =========================================================================
+
+  (*brightnessObj)["getTemperature"] = HavelValue(BuiltinFunction(
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
+        int monitorIndex = args.empty() ? -1 : static_cast<int>(args[0].asNumber());
+        return HavelValue(static_cast<double>(brightnessService->getTemperature(monitorIndex)));
       }));
 
   (*brightnessObj)["setTemperature"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
+      [brightnessService](const std::vector<HavelValue> &args) -> HavelResult {
         if (args.empty()) {
-          return HavelRuntimeError(
-              "setTemperature() requires kelvin or (monitorIndex, kelvin)");
+          return HavelRuntimeError("setTemperature() requires temperature value");
         }
+        int temperature = static_cast<int>(args[0].asNumber());
         if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          int kelvin = static_cast<int>(valueToNumber(args[1]));
-          bm->setTemperature(monitorIndex, kelvin);
-          return HavelValue(nullptr);
+          int monitorIndex = static_cast<int>(args[0].asNumber());
+          brightnessService->setTemperature(temperature, monitorIndex);
+        } else {
+          brightnessService->setTemperature(temperature);
         }
-        int kelvin = static_cast<int>(valueToNumber(args[0]));
-        bm->setTemperature(kelvin);
         return HavelValue(nullptr);
       }));
 
-  (*brightnessObj)["getShadowLift"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelValue(bm->getShadowLift());
-        }
-        int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-        return HavelValue(bm->getShadowLift(monitorIndex));
-      }));
-
-  (*brightnessObj)["setShadowLift"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelRuntimeError(
-              "setShadowLift() requires lift or (monitorIndex, lift)");
-        }
-        if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          double lift = valueToNumber(args[1]);
-          bm->setShadowLift(monitorIndex, lift);
-          return HavelValue(nullptr);
-        }
-        double lift = valueToNumber(args[0]);
-        bm->setShadowLift(lift);
-        return HavelValue(nullptr);
-      }));
-
-  (*brightnessObj)["decreaseGamma"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelRuntimeError(
-              "decreaseGamma() requires amount or (monitorIndex, amount)");
-        }
-        if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          int amount = static_cast<int>(valueToNumber(args[1]));
-          bm->decreaseGamma(monitorIndex, amount);
-          return HavelValue(nullptr);
-        }
-        int amount = static_cast<int>(valueToNumber(args[0]));
-        bm->decreaseGamma(amount);
-        return HavelValue(nullptr);
-      }));
-
-  (*brightnessObj)["increaseGamma"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelRuntimeError(
-              "increaseGamma() requires amount or (monitorIndex, amount)");
-        }
-        if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          int amount = static_cast<int>(valueToNumber(args[1]));
-          bm->increaseGamma(monitorIndex, amount);
-          return HavelValue(nullptr);
-        }
-        int amount = static_cast<int>(valueToNumber(args[0]));
-        bm->increaseGamma(amount);
-        return HavelValue(nullptr);
-      }));
-
-  (*brightnessObj)["setGammaRGB"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.size() < 3) {
-          return HavelRuntimeError(
-              "setGammaRGB() requires (r, g, b) or (monitorIndex, r, g, b)");
-        }
-        if (args.size() >= 4) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          double r = valueToNumber(args[1]);
-          double g = valueToNumber(args[2]);
-          double b = valueToNumber(args[3]);
-          bm->setGammaRGB(monitorIndex, r, g, b);
-          return HavelValue(nullptr);
-        }
-        double r = valueToNumber(args[0]);
-        double g = valueToNumber(args[1]);
-        double b = valueToNumber(args[2]);
-        bm->setGammaRGB(r, g, b);
-        return HavelValue(nullptr);
-      }));
-
-  (*brightnessObj)["increaseTemperature"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelRuntimeError("increaseTemperature() requires amount or "
-                                   "(monitorIndex, amount)");
-        }
-        if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          int amount = static_cast<int>(valueToNumber(args[1]));
-          bm->increaseTemperature(monitorIndex, amount);
-          return HavelValue(nullptr);
-        }
-        int amount = static_cast<int>(valueToNumber(args[0]));
-        bm->increaseTemperature(amount);
-        return HavelValue(nullptr);
-      }));
-
-  (*brightnessObj)["decreaseTemperature"] = HavelValue(BuiltinFunction(
-      [hostAPI,
-       &valueToNumber](const std::vector<HavelValue> &args) -> HavelResult {
-        auto *bm = hostAPI->GetBrightnessManager();
-        if (!bm)
-          return HavelRuntimeError("BrightnessManager not available");
-        if (args.empty()) {
-          return HavelRuntimeError("decreaseTemperature() requires amount or "
-                                   "(monitorIndex, amount)");
-        }
-        if (args.size() >= 2) {
-          int monitorIndex = static_cast<int>(valueToNumber(args[0]));
-          int amount = static_cast<int>(valueToNumber(args[1]));
-          bm->decreaseTemperature(monitorIndex, amount);
-          return HavelValue(nullptr);
-        }
-        int amount = static_cast<int>(valueToNumber(args[0]));
-        bm->decreaseTemperature(amount);
-        return HavelValue(nullptr);
-      }));
-
-  // Register brightnessManager module
-  env.Define("brightnessManager", HavelValue(brightnessObj));
+  // Register brightness module
+  env.Define("brightness", HavelValue(brightnessObj));
 }
 
 } // namespace havel::modules

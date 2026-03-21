@@ -7,11 +7,8 @@
 #include "host/mode/ModeService.hpp"
 #include "host/process/ProcessService.hpp"
 #include "host/clipboard/ClipboardService.hpp"
-#include "core/HotkeyManager.hpp"
-#include "core/IO.hpp"
-#include "core/ModeManager.hpp"
-#include "core/process/ProcessManager.hpp"
-#include "window/WindowManager.hpp"
+#include "window/WindowQuery.hpp"  // For WindowInfo
+#include "core/ModeManager.hpp"  // TEMPORARY for mode.define/mode.tick
 
 #include <iostream>
 #include <stdexcept>
@@ -194,9 +191,10 @@ void HostBridgeRegistry::install(PipelineOptions &options) {
 }
 
 void HostBridgeRegistry::clear() {
-  if (deps_.hotkey_manager) {
+  auto hotkeyService = deps_.services->get<host::HotkeyService>();
+  if (hotkeyService) {
     for (const auto &[id, _] : hotkey_callback_roots_) {
-      deps_.hotkey_manager->RemoveHotkey(static_cast<int>(id));
+      hotkeyService->removeHotkey(static_cast<int>(id));
     }
   }
   hotkey_callback_roots_.clear();
@@ -236,14 +234,11 @@ BytecodeValue HostBridgeRegistry::handleWindowMoveToNextMonitor(
   if (!args.empty()) {
     throw std::runtime_error("window.moveToNextMonitor expects 0 arguments");
   }
-  auto windowService = deps_.services ? deps_.services->get<host::WindowService>() : nullptr;
-  if (windowService) {
-    windowService->moveActiveWindowToNextMonitor();
-  } else if (deps_.window_manager) {
-    havel::WindowManager::MoveWindowToNextMonitor();
-  } else {
-    throw std::runtime_error("window manager unavailable");
+  auto windowService = deps_.services->get<host::WindowService>();
+  if (!windowService) {
+    throw std::runtime_error("WindowService not registered");
   }
+  windowService->moveActiveWindowToNextMonitor();
   return BytecodeValue(nullptr);
 }
 
@@ -252,16 +247,12 @@ BytecodeValue HostBridgeRegistry::handleWindowGetActive(
   if (!args.empty()) {
     throw std::runtime_error("window.getActive expects 0 arguments");
   }
-  havel::WindowInfo info;
-  auto windowService = deps_.services ? deps_.services->get<host::WindowService>() : nullptr;
-  if (windowService) {
-    info = windowService->getActiveWindowInfo();
-  } else if (deps_.window_manager) {
-    info = havel::WindowManager::getActiveWindowInfo();
-  } else {
-    throw std::runtime_error("window manager unavailable");
+  auto windowService = deps_.services->get<host::WindowService>();
+  if (!windowService) {
+    throw std::runtime_error("WindowService not registered");
   }
   
+  auto info = windowService->getActiveWindowInfo();
   if (!info.valid) {
     return BytecodeValue(nullptr);
   }
@@ -285,27 +276,21 @@ BytecodeValue HostBridgeRegistry::handleWindowMoveToMonitor(
       requireIntArg(args, 0, "window.moveToMonitor"));
   const auto monitor =
       static_cast<int>(requireIntArg(args, 1, "window.moveToMonitor"));
-  auto windowService = deps_.services ? deps_.services->get<host::WindowService>() : nullptr;
-  if (windowService) {
-    return BytecodeValue(windowService->moveWindowToMonitor(id, monitor));
-  } else if (deps_.window_manager) {
-    return BytecodeValue(havel::WindowManager::moveWindowToMonitor(id, monitor));
-  } else {
-    throw std::runtime_error("window manager unavailable");
+  auto windowService = deps_.services->get<host::WindowService>();
+  if (!windowService) {
+    throw std::runtime_error("WindowService not registered");
   }
+  return BytecodeValue(windowService->moveWindowToMonitor(id, monitor));
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowClose(
     const std::vector<BytecodeValue> &args) {
   const auto id = static_cast<uint64_t>(requireIntArg(args, 0, "window.close"));
-  auto windowService = deps_.services ? deps_.services->get<host::WindowService>() : nullptr;
-  if (windowService) {
-    return BytecodeValue(windowService->closeWindow(id));
-  } else if (deps_.window_manager) {
-    return BytecodeValue(havel::WindowManager::closeWindow(id));
-  } else {
-    throw std::runtime_error("window manager unavailable");
+  auto windowService = deps_.services->get<host::WindowService>();
+  if (!windowService) {
+    throw std::runtime_error("WindowService not registered");
   }
+  return BytecodeValue(windowService->closeWindow(id));
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowResize(
@@ -313,14 +298,11 @@ BytecodeValue HostBridgeRegistry::handleWindowResize(
   const auto id = static_cast<uint64_t>(requireIntArg(args, 0, "window.resize"));
   const auto width = static_cast<int>(requireIntArg(args, 1, "window.resize"));
   const auto height = static_cast<int>(requireIntArg(args, 2, "window.resize"));
-  auto windowService = deps_.services ? deps_.services->get<host::WindowService>() : nullptr;
-  if (windowService) {
-    return BytecodeValue(windowService->resizeWindow(id, width, height));
-  } else if (deps_.window_manager) {
-    return BytecodeValue(havel::WindowManager::resizeWindow(id, width, height));
-  } else {
-    throw std::runtime_error("window manager unavailable");
+  auto windowService = deps_.services->get<host::WindowService>();
+  if (!windowService) {
+    throw std::runtime_error("WindowService not registered");
   }
+  return BytecodeValue(windowService->resizeWindow(id, width, height));
 }
 
 BytecodeValue HostBridgeRegistry::handleWindowOn(
@@ -337,15 +319,11 @@ BytecodeValue HostBridgeRegistry::handleWindowOn(
 BytecodeValue HostBridgeRegistry::handleSend(
     const std::vector<BytecodeValue> &args) {
   const auto text = requireStringArg(args, 0, "send");
-  
-  auto ioService = deps_.services ? deps_.services->get<host::IOService>() : nullptr;
-  if (ioService) {
-    ioService->sendKeys(text);
-  } else if (deps_.io) {
-    deps_.io->Send(text.c_str());
-  } else {
-    throw std::runtime_error("io unavailable");
+  auto ioService = deps_.services->get<host::IOService>();
+  if (!ioService) {
+    throw std::runtime_error("IOService not registered");
   }
+  ioService->sendKeys(text);
   return BytecodeValue(nullptr);
 }
 
@@ -354,21 +332,17 @@ BytecodeValue HostBridgeRegistry::handleSendKey(
   const auto key = requireStringArg(args, 0, "io.sendKey");
   const bool press = requireBoolArg(args, 1, "io.sendKey", true);
   
-  auto ioService = deps_.services ? deps_.services->get<host::IOService>() : nullptr;
-  if (ioService) {
-    if (press) {
-      ioService->keyDown(key);
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
-      ioService->keyUp(key);
-    } else {
-      ioService->keyUp(key);
-    }
-  } else if (deps_.io) {
-    const std::string seq =
-        press ? "{" + key + " down}" : "{" + key + " up}";
-    deps_.io->Send(seq.c_str());
+  auto ioService = deps_.services->get<host::IOService>();
+  if (!ioService) {
+    throw std::runtime_error("IOService not registered");
+  }
+  
+  if (press) {
+    ioService->keyDown(key);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    ioService->keyUp(key);
   } else {
-    throw std::runtime_error("io unavailable");
+    ioService->keyUp(key);
   }
   return BytecodeValue(nullptr);
 }
@@ -378,28 +352,22 @@ BytecodeValue HostBridgeRegistry::handleMouseMove(
   const auto x = static_cast<int>(requireIntArg(args, 0, "io.mouseMove"));
   const auto y = static_cast<int>(requireIntArg(args, 1, "io.mouseMove"));
   
-  auto ioService = deps_.services ? deps_.services->get<host::IOService>() : nullptr;
-  if (ioService) {
-    return BytecodeValue(ioService->mouseMoveTo(x, y));
-  } else if (deps_.io) {
-    return BytecodeValue(deps_.io->MouseMove(x, y));
-  } else {
-    throw std::runtime_error("io unavailable");
+  auto ioService = deps_.services->get<host::IOService>();
+  if (!ioService) {
+    throw std::runtime_error("IOService not registered");
   }
+  return BytecodeValue(ioService->mouseMoveTo(x, y));
 }
 
 BytecodeValue HostBridgeRegistry::handleMouseClick(
     const std::vector<BytecodeValue> &args) {
   const auto button = static_cast<int>(requireIntArg(args, 0, "io.mouseClick"));
   
-  auto ioService = deps_.services ? deps_.services->get<host::IOService>() : nullptr;
-  if (ioService) {
-    ioService->mouseClick(button);
-  } else if (deps_.io) {
-    deps_.io->MouseClick(button);
-  } else {
-    throw std::runtime_error("io unavailable");
+  auto ioService = deps_.services->get<host::IOService>();
+  if (!ioService) {
+    throw std::runtime_error("IOService not registered");
   }
+  ioService->mouseClick(button);
   return BytecodeValue(nullptr);
 }
 
@@ -409,16 +377,12 @@ BytecodeValue HostBridgeRegistry::handleGetMousePosition(
     throw std::runtime_error("io.getMousePosition expects 0 arguments");
   }
   
-  std::pair<int, int> pos;
-  auto ioService = deps_.services ? deps_.services->get<host::IOService>() : nullptr;
-  if (ioService) {
-    pos = ioService->getMousePosition();
-  } else if (deps_.io) {
-    pos = deps_.io->GetMousePosition();
-  } else {
-    throw std::runtime_error("io unavailable");
+  auto ioService = deps_.services->get<host::IOService>();
+  if (!ioService) {
+    throw std::runtime_error("IOService not registered");
   }
   
+  auto pos = ioService->getMousePosition();
   auto object = vm_.createHostObject();
   vm_.setHostObjectField(object, "x", static_cast<int64_t>(pos.first));
   vm_.setHostObjectField(object, "y", static_cast<int64_t>(pos.second));
@@ -432,51 +396,28 @@ BytecodeValue HostBridgeRegistry::handleHotkeyRegister(
     throw std::runtime_error("hotkey.register expects callback as second argument");
   }
 
+  auto hotkeyService = deps_.services->get<host::HotkeyService>();
+  if (!hotkeyService) {
+    throw std::runtime_error("HotkeyService not registered");
+  }
+
   const int64_t id = pinLongLivedCallback(args[1], hotkey_callback_roots_);
   hotkey_binding_keys_[id] = key;
   
-  bool ok = false;
+  hotkeyService->registerHotkey(
+      key,
+      [weak_self = weak_from_this(), id]() {
+        if (auto self = weak_self.lock()) {
+          try {
+            (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
+          } catch (const std::exception &e) {
+            std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
+                      << std::endl;
+          }
+        }
+      },
+      static_cast<int>(id));
   
-  // Use service layer if available, otherwise fall back to core
-  auto hotkeyService = deps_.services ? deps_.services->get<host::HotkeyService>() : nullptr;
-  if (hotkeyService) {
-    hotkeyService->registerHotkey(
-        key,
-        [weak_self = weak_from_this(), id]() {
-          if (auto self = weak_self.lock()) {
-            try {
-              (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
-            } catch (const std::exception &e) {
-              std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
-                        << std::endl;
-            }
-          }
-        },
-        static_cast<int>(id));
-    ok = true;  // Service doesn't return bool, assume success
-  } else if (deps_.hotkey_manager) {
-    ok = deps_.hotkey_manager->AddHotkey(
-        key,
-        [weak_self = weak_from_this(), id]() {
-          if (auto self = weak_self.lock()) {
-            try {
-              (void)self->invokePinnedCallback(self->hotkey_callback_roots_, id);
-            } catch (const std::exception &e) {
-              std::cerr << "[HostBridge][hotkey] callback failed: " << e.what()
-                        << std::endl;
-            }
-          }
-        },
-        static_cast<int>(id));
-  } else {
-    throw std::runtime_error("hotkey manager unavailable");
-  }
-
-  if (!ok) {
-    unpinLongLivedCallback(id, hotkey_callback_roots_);
-    hotkey_binding_keys_.erase(id);
-    return BytecodeValue(false);
-  }
   return BytecodeValue(static_cast<int64_t>(id));
 }
 
@@ -550,14 +491,11 @@ BytecodeValue HostBridgeRegistry::handleModeDefine(
 BytecodeValue HostBridgeRegistry::handleModeSet(
     const std::vector<BytecodeValue> &args) {
   const auto mode_name = requireStringArg(args, 0, "mode.set");
-  auto modeService = deps_.services ? deps_.services->get<host::ModeService>() : nullptr;
-  if (modeService) {
-    modeService->setMode(mode_name);
-  } else if (deps_.mode_manager) {
-    deps_.mode_manager->setMode(mode_name);
-  } else {
-    throw std::runtime_error("mode manager unavailable");
+  auto modeService = deps_.services->get<host::ModeService>();
+  if (!modeService) {
+    throw std::runtime_error("ModeService not registered");
   }
+  modeService->setMode(mode_name);
   return BytecodeValue(true);
 }
 
@@ -566,10 +504,14 @@ BytecodeValue HostBridgeRegistry::handleModeTick(
   if (!args.empty()) {
     throw std::runtime_error("mode.tick expects 0 arguments");
   }
-  if (!deps_.mode_manager) {
-    throw std::runtime_error("mode manager unavailable");
+  // Mode tick evaluates conditions and triggers mode transitions
+  // This requires VM callback invocation, so it stays in HostBridge
+  // ModeService handles simple mode operations only
+  auto modeService = deps_.services->get<host::ModeService>();
+  if (!modeService) {
+    throw std::runtime_error("ModeService not registered");
   }
-
+  
   for (const auto &mode_name : mode_definition_order_) {
     auto it = mode_bindings_.find(mode_name);
     if (it == mode_bindings_.end()) {
@@ -606,17 +548,12 @@ BytecodeValue HostBridgeRegistry::handleProcessFind(
     const std::vector<BytecodeValue> &args) {
   const auto name = requireStringArg(args, 0, "process.find");
   
-  std::vector<int32_t> matches;
-  auto processService = deps_.services ? deps_.services->get<host::ProcessService>() : nullptr;
-  if (processService) {
-    matches = processService->findProcesses(name);
-  } else {
-    auto coreMatches = havel::ProcessManager::findProcesses(name);
-    matches.reserve(coreMatches.size());
-    for (const auto& m : coreMatches) {
-      matches.push_back(m.pid);
-    }
+  auto processService = deps_.services->get<host::ProcessService>();
+  if (!processService) {
+    throw std::runtime_error("ProcessService not registered");
   }
+  
+  auto matches = processService->findProcesses(name);
 
   const auto result = vm_.createHostArray();
   for (const auto &pid : matches) {
@@ -628,31 +565,31 @@ BytecodeValue HostBridgeRegistry::handleProcessFind(
 BytecodeValue HostBridgeRegistry::handleClipboardGet(
     const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto clipboardService = deps_.services ? deps_.services->get<host::ClipboardService>() : nullptr;
-  if (clipboardService) {
-    return BytecodeValue(clipboardService->getText());
+  auto clipboardService = deps_.services->get<host::ClipboardService>();
+  if (!clipboardService) {
+    throw std::runtime_error("ClipboardService not registered");
   }
-  return BytecodeValue(host::ClipboardService::getText());
+  return BytecodeValue(clipboardService->getText());
 }
 
 BytecodeValue HostBridgeRegistry::handleClipboardSet(
     const std::vector<BytecodeValue> &args) {
   const auto text = requireStringArg(args, 0, "clipboard.set");
-  auto clipboardService = deps_.services ? deps_.services->get<host::ClipboardService>() : nullptr;
-  if (clipboardService) {
-    return BytecodeValue(clipboardService->setText(text));
+  auto clipboardService = deps_.services->get<host::ClipboardService>();
+  if (!clipboardService) {
+    throw std::runtime_error("ClipboardService not registered");
   }
-  return BytecodeValue(host::ClipboardService::setText(text));
+  return BytecodeValue(clipboardService->setText(text));
 }
 
 BytecodeValue HostBridgeRegistry::handleClipboardClear(
     const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto clipboardService = deps_.services ? deps_.services->get<host::ClipboardService>() : nullptr;
-  if (clipboardService) {
-    return BytecodeValue(clipboardService->clear());
+  auto clipboardService = deps_.services->get<host::ClipboardService>();
+  if (!clipboardService) {
+    throw std::runtime_error("ClipboardService not registered");
   }
-  return BytecodeValue(host::ClipboardService::clear());
+  return BytecodeValue(clipboardService->clear());
 }
 
 } // namespace havel::compiler

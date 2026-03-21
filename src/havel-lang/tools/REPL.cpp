@@ -45,9 +45,9 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 
   // Create HostBridge registry
   hostBridge_ = compiler::createHostBridgeRegistry(*vm_, deps);
-
-  // Register stdlib modules with VM (VM-native)
-  havel::registerStdLibWithVM(*hostBridge_);
+  
+  // Install host functions (populates options_)
+  hostBridge_->install();
 
   initialized = true;
   info("REPL initialized successfully");
@@ -212,8 +212,8 @@ bool REPL::execute(const std::string& code) {
   }
   
   try {
-    // Execute with bytecode VM
-    auto result = compiler::runBytecodePipeline(code, "__repl__");
+    // Execute with bytecode VM, using HostBridge options
+    auto result = compiler::runBytecodePipeline(code, "__repl__", hostBridge_->options());
     (void)result;  // For now, just check it doesn't throw
     return true;
   } catch (const std::exception& e) {

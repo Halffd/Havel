@@ -268,9 +268,6 @@ void HavelApp::initializeComponents(bool isStartup) {
     // Create HostBridge registry
     hostBridgeRegistry = compiler::createHostBridgeRegistry(*bytecodeVM, deps);
 
-    // Register stdlib modules with VM (VM-native)
-    registerStdLibWithVM(*hostBridgeRegistry);
-
     info("Bytecode VM and HostBridge initialized successfully");
   } catch (const std::exception& e) {
     error("Failed to initialize bytecode VM: {}", e.what());

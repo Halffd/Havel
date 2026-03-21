@@ -10,6 +10,11 @@
 #include <algorithm>
 #include <cmath>
 
+namespace havel {
+    class Environment;
+    class Interpreter;
+}
+
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY

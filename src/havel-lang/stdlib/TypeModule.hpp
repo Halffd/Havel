@@ -7,6 +7,11 @@
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
 
+namespace havel {
+    class Environment;
+}
+
+
 #include <algorithm>
 #include <cmath>
 #include <sstream>

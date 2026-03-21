@@ -1,24 +1,22 @@
 /*
  * ClipboardService.cpp
  *
- * Pure C++ clipboard service implementation.
- * No VM, no interpreter, no HavelValue - just system logic.
- * 
- * Note: Requires Qt GUI application to be running.
+ * Clipboard service implementation using Qt.
  */
 #include "ClipboardService.hpp"
-#include <QGuiApplication>
 #include <QClipboard>
-#include <QTimer>
-#include <QMimeData>
+#include <QGuiApplication>
+#include <algorithm>
 
 namespace havel::host {
 
-// =========================================================================
-// Clipboard text operations
-// =========================================================================
+ClipboardService::ClipboardService() {
+}
 
-std::string ClipboardService::getText() {
+ClipboardService::~ClipboardService() {
+}
+
+std::string ClipboardService::getText() const {
     if (!QGuiApplication::instance()) {
         return "";
     }
@@ -34,13 +32,7 @@ bool ClipboardService::setText(const std::string& text) {
     if (!clipboard) {
         return false;
     }
-    
-    // Use QTimer to make clipboard operation asynchronous and avoid X11 blocking
-    QString textToSet = QString::fromStdString(text);
-    QTimer::singleShot(0, [clipboard, textToSet]() {
-        clipboard->setText(textToSet);
-    });
-    
+    clipboard->setText(QString::fromStdString(text));
     return true;
 }
 
@@ -52,91 +44,59 @@ bool ClipboardService::clear() {
     if (!clipboard) {
         return false;
     }
-    
-    // Use QTimer to make clipboard operation asynchronous
-    QTimer::singleShot(0, [clipboard]() {
-        clipboard->clear();
-    });
-    
+    clipboard->clear();
     return true;
 }
 
-bool ClipboardService::hasText() {
-    if (!QGuiApplication::instance()) {
-        return false;
-    }
-    QClipboard* clipboard = QGuiApplication::clipboard();
-    return clipboard && !clipboard->text().isEmpty();
-}
-
-// =========================================================================
-// Clipboard aliases
-// =========================================================================
-
-std::string ClipboardService::get() {
-    return getText();
-}
-
-std::string ClipboardService::in() {
-    return getText();
-}
-
-std::string ClipboardService::out() {
-    return getText();
-}
-
-// =========================================================================
-// Clipboard send
-// =========================================================================
-
-bool ClipboardService::send(const std::string& text, std::function<void(const std::string&)> ioSend) {
-    if (!ioSend) {
-        return false;
+void ClipboardService::addToHistory(const std::string& text) {
+    if (text.empty()) {
+        return;
     }
     
-    std::string textToSend = text;
-    if (textToSend.empty()) {
-        textToSend = getText();
+    // Don't add duplicates at the top
+    if (!history_.empty() && history_.front() == text) {
+        return;
     }
     
-    if (textToSend.empty()) {
-        return false;
+    // Add to front (most recent)
+    history_.insert(history_.begin(), text);
+    
+    // Trim to max size
+    while (static_cast<int>(history_.size()) > maxHistorySize_) {
+        history_.pop_back();
     }
+}
+
+std::string ClipboardService::getHistoryItem(int index) const {
+    if (index < 0 || index >= static_cast<int>(history_.size())) {
+        return "";
+    }
+    return history_[index];
+}
+
+int ClipboardService::getHistoryCount() const {
+    return static_cast<int>(history_.size());
+}
+
+void ClipboardService::clearHistory() {
+    history_.clear();
+}
+
+std::vector<std::string> ClipboardService::getHistory() const {
+    return history_;
+}
+
+void ClipboardService::setMaxHistorySize(int size) {
+    maxHistorySize_ = std::max(1, size);
     
-    // Use QTimer for async send
-    QTimer::singleShot(0, [ioSend, textToSend]() {
-        ioSend(textToSend);
-    });
-    
-    return true;
+    // Trim if necessary
+    while (static_cast<int>(history_.size()) > maxHistorySize_) {
+        history_.pop_back();
+    }
 }
 
-// =========================================================================
-// Clipboard manager operations
-// =========================================================================
-
-void ClipboardService::showManager(void* manager) {
-    // ClipboardManager is Qt-specific, would need to be called from GUI thread
-    // This is a placeholder - actual implementation requires Qt headers
-    (void)manager;
-}
-
-void ClipboardService::hideManager(void* manager) {
-    (void)manager;
-}
-
-std::vector<std::string> ClipboardService::getHistory(void* manager) {
-    (void)manager;
-    return {};
-}
-
-void ClipboardService::clearHistory(void* manager) {
-    (void)manager;
-}
-
-void ClipboardService::pasteHistoryItem(void* manager, int index) {
-    (void)manager;
-    (void)index;
+int ClipboardService::getMaxHistorySize() const {
+    return maxHistorySize_;
 }
 
 } // namespace havel::host

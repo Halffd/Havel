@@ -26,35 +26,41 @@
 #include "../host/filesystem/FileSystemService.hpp"
 #include "../host/network/NetworkService.hpp"
 #include "../host/app/AppService.hpp"
-#include "window/WindowModule.hpp"
-#include "brightness/BrightnessModule.hpp"
-#include "audio/AudioModule.hpp"
-#include "screenshot/ScreenshotModule.hpp"
-#include "clipboard/ClipboardModule.hpp"
-#include "automation/PixelModule.hpp"
-#include "automation/AutomationModule.hpp"
-#include "launcher/LauncherModule.hpp"
-#include "media/MediaModule.hpp"
-#include "help/HelpModule.hpp"
-#include "filesystem/FileManagerModule.hpp"
-#include "system/DetectorModule.hpp"
-#include "gui/GUIModule.hpp"
-#include "alttab/AltTabModule.hpp"
-#include "mapmanager/MapManagerModule.hpp"
-#include "io/IOModule.hpp"
-#include "async/AsyncModule.hpp"
-#include "system/SystemModule.hpp"
-#include "timer/TimerModule.hpp"
-#include "config/ConfigModule.hpp"
-#include "app/AppModule.hpp"
-#include "network/HTTPModule.hpp"
-#include "runtime/RuntimeModule.hpp"
-#include "mode/ModeModule.hpp"
-#include "hotkey/HotkeyModule.hpp"
-#include "browser/BrowserModule.hpp"
-#include "ffi/FFIModule.hpp"
-#include "process/ProcessModule.hpp"
-#include "concurrency/ConcurrencyModule.hpp"
+
+// Module registration functions (from .cpp files, no headers needed)
+namespace havel::modules {
+    void registerWindowQueryModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerBrightnessModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerAudioModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerScreenshotModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerClipboardModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerPixelModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerAutomationModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerLauncherModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerMediaModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerHelpModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerFileManagerModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerSystemModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerDetectorModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerGUIModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerAltTabModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerMapManagerModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerIOModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerInputModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerHotkeyModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerModeModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerBrowserModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerFFIModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerProcessModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerShellExecutorModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerRuntimeModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerConfigModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerConcurrencyModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerHTTPModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerTimerModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerAsyncModule(Environment&, std::shared_ptr<IHostAPI>);
+    void registerAppModule(Environment&, std::shared_ptr<IHostAPI>);
+}
 
 namespace havel {
 
@@ -151,25 +157,9 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto asyncService = std::make_shared<host::AsyncService>();
     registry.registerService<host::AsyncService>(asyncService);
 
-    // Timer service doesn't need constructor args (pure C++ with std::thread)
-    auto timerService = std::make_shared<host::TimerService>();
-    registry.registerService<host::TimerService>(timerService);
-
-    // Media service doesn't need constructor args (stub)
-    auto mediaService = std::make_shared<host::MediaService>();
-    registry.registerService<host::MediaService>(mediaService);
-
     // File system service doesn't need constructor args (pure C++ with std::filesystem)
     auto fsService = std::make_shared<host::FileSystemService>();
     registry.registerService<host::FileSystemService>(fsService);
-
-    // Network service doesn't need constructor args (stub - requires libcurl)
-    auto networkService = std::make_shared<host::NetworkService>();
-    registry.registerService<host::NetworkService>(networkService);
-
-    // App service doesn't need constructor args (pure C++)
-    auto appService = std::make_shared<host::AppService>();
-    registry.registerService<host::AppService>(appService);
 
     info("ServiceRegistry initialized with {} services", registry.size());
 }
@@ -212,7 +202,6 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("automation", modules::registerAutomationModule);
     loader.addHost("launcher", modules::registerLauncherModule);
     loader.addHost("process", modules::registerProcessModule);
-    loader.addHost("media", modules::registerMediaModule);
     loader.addHost("help", modules::registerHelpModule);
     loader.addHost("filesystem", modules::registerFileManagerModule);
     loader.addHost("system", modules::registerSystemModule);
@@ -222,9 +211,7 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("mapmanager", modules::registerMapManagerModule);
     loader.addHost("io", modules::registerIOModule);
     loader.addHost("async", modules::registerAsyncModule);
-    loader.addHost("timer", modules::registerTimerModule);
     loader.addHost("config", modules::registerConfigModule);
-    loader.addHost("app", modules::registerAppModule);
     loader.addHost("http", modules::registerHTTPModule);
     // loader.addHost("runtime", modules::registerRuntimeModule);  // Needs Interpreter*
     loader.addHost("mode", modules::registerModeModule);
@@ -232,6 +219,9 @@ void registerHostModules(ModuleLoader& loader) {
     loader.addHost("browser", modules::registerBrowserModule);
     loader.addHost("concurrency", modules::registerConcurrencyModule);
     // loader.addHost("ffi", modules::ffi::registerFFIModule);  // No IHostAPI
+    
+    // Header-only modules (registered directly, not through loader)
+    // timer, media, network, app are registered inline in loadHostModules
 }
 
 /**
@@ -239,7 +229,7 @@ void registerHostModules(ModuleLoader& loader) {
  */
 void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHostAPI> hostAPI) {
     if (!hostAPI) return;
-    
+
     loader.load(env, "window", hostAPI);
     loader.load(env, "brightness", hostAPI);
     loader.load(env, "audio", hostAPI);
@@ -248,7 +238,6 @@ void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHo
     loader.load(env, "pixel", hostAPI);
     loader.load(env, "automation", hostAPI);
     loader.load(env, "launcher", hostAPI);
-    loader.load(env, "media", hostAPI);
     loader.load(env, "help", hostAPI);
     loader.load(env, "filesystem", hostAPI);
     loader.load(env, "system", hostAPI);
@@ -258,9 +247,7 @@ void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHo
     loader.load(env, "mapmanager", hostAPI);
     loader.load(env, "io", hostAPI);
     loader.load(env, "async", hostAPI);
-    loader.load(env, "timer", hostAPI);
     loader.load(env, "config", hostAPI);
-    loader.load(env, "app", hostAPI);
     loader.load(env, "http", hostAPI);
     loader.load(env, "runtime", hostAPI);
     loader.load(env, "mode", hostAPI);
@@ -270,6 +257,12 @@ void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHo
     loader.load(env, "window", hostAPI);
     loader.load(env, "config", hostAPI);
     // loader.load(env, "ffi", hostAPI);  // Not registered
+    
+    // Header-only modules (registered directly)
+    host::registerTimerModule(env, hostAPI);
+    host::registerMediaModule(env, hostAPI);
+    host::registerNetworkModule(env, hostAPI);
+    host::registerAppModule(env, hostAPI);
 }
 
 } // namespace havel

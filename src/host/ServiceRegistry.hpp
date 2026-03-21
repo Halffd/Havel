@@ -117,8 +117,8 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         return services_.size();
     }
-    
-    // Non-copyable, non-movable
+
+    // Non-copyable, non-movable (singleton pattern)
     ServiceRegistry(const ServiceRegistry&) = delete;
     ServiceRegistry& operator=(const ServiceRegistry&) = delete;
     ServiceRegistry(ServiceRegistry&&) = delete;
@@ -126,8 +126,11 @@ public:
 
 private:
     ServiceRegistry() = default;
+
+public:
     ~ServiceRegistry() = default;
-    
+
+private:
     mutable std::mutex mutex_;
     std::unordered_map<std::type_index, std::shared_ptr<void>> services_;
 };

@@ -113,11 +113,25 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
 
 /**
  * Create HostBridgeDependencies with service registry
+ * 
+ * @param hostAPI Host API for accessing managers
+ * @param vm VM instance for callback management (needed for ModeService)
+ * @return HostBridgeDependencies with services and VM
  */
-compiler::HostBridgeDependencies createHostBridgeDependencies(std::shared_ptr<IHostAPI> hostAPI) {
+compiler::HostBridgeDependencies createHostBridgeDependencies(
+    std::shared_ptr<IHostAPI> hostAPI,
+    compiler::VM* vm) {
+    
     compiler::HostBridgeDependencies deps;
     deps.services = &host::ServiceRegistry::instance();
     deps.mode_manager = hostAPI ? hostAPI->GetModeManager() : nullptr;
+    
+    // Create ModeService with VM injection (for direct closure pinning)
+    if (vm && hostAPI && hostAPI->GetModeManager()) {
+        auto modeService = std::make_shared<host::ModeService>(vm, hostAPI->GetModeManager());
+        deps.services->registerService<host::ModeService>(modeService);
+    }
+    
     return deps;
 }
 

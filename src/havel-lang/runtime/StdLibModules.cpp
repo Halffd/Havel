@@ -57,7 +57,9 @@ void registerStdLibWithVM(compiler::HostBridgeRegistry& registry) {
     stdlib::registerMathModuleVM(registry);
     stdlib::registerStringModuleVM(registry);
     stdlib::registerTypeModuleVM(registry);
-    // TODO: Convert remaining stdlib modules to VM-native
+    stdlib::registerUtilityModuleVM(registry);
+    stdlib::registerArrayModuleVM(registry);
+    // TODO: Convert remaining stdlib modules (File, Process, Regex, Time, Object, Physics)
 }
 
 } // namespace havel

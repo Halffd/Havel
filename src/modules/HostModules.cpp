@@ -20,6 +20,12 @@
 #include "../host/browser/BrowserService.hpp"
 #include "../host/io/MapManagerService.hpp"
 #include "../host/window/AltTabService.hpp"
+#include "../host/async/AsyncService.hpp"
+#include "../host/timer/TimerService.hpp"
+#include "../host/media/MediaService.hpp"
+#include "../host/filesystem/FileSystemService.hpp"
+#include "../host/network/NetworkService.hpp"
+#include "../host/app/AppService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -140,6 +146,30 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     // Automation service needs IO pointer
     auto automationService = std::make_shared<host::AutomationService>(hostAPI->GetIO() ? std::shared_ptr<IO>(hostAPI->GetIO(), [](IO*){}) : std::shared_ptr<IO>());
     registry.registerService<host::AutomationService>(automationService);
+
+    // Async service doesn't need constructor args (pure C++ with std::thread)
+    auto asyncService = std::make_shared<host::AsyncService>();
+    registry.registerService<host::AsyncService>(asyncService);
+
+    // Timer service doesn't need constructor args (pure C++ with std::thread)
+    auto timerService = std::make_shared<host::TimerService>();
+    registry.registerService<host::TimerService>(timerService);
+
+    // Media service doesn't need constructor args (stub)
+    auto mediaService = std::make_shared<host::MediaService>();
+    registry.registerService<host::MediaService>(mediaService);
+
+    // File system service doesn't need constructor args (pure C++ with std::filesystem)
+    auto fsService = std::make_shared<host::FileSystemService>();
+    registry.registerService<host::FileSystemService>(fsService);
+
+    // Network service doesn't need constructor args (stub - requires libcurl)
+    auto networkService = std::make_shared<host::NetworkService>();
+    registry.registerService<host::NetworkService>(networkService);
+
+    // App service doesn't need constructor args (pure C++)
+    auto appService = std::make_shared<host::AppService>();
+    registry.registerService<host::AppService>(appService);
 
     info("ServiceRegistry initialized with {} services", registry.size());
 }

@@ -2,6 +2,7 @@
 
 #include "BytecodeIR.hpp"
 #include "GC.hpp"
+#include "VMImage.hpp"
 
 #include <array>
 #include <cstdint>
@@ -18,32 +19,6 @@ namespace havel::compiler {
 // Opaque callback handle - systems can store this without knowing VM internals
 using CallbackId = uint32_t;
 constexpr CallbackId INVALID_CALLBACK_ID = 0;
-
-// Pixel format for VM image type
-enum class PixelFormat : uint8_t {
-    RGBA8,    // 4 bytes per pixel (R, G, B, A)
-    RGB8,     // 3 bytes per pixel (R, G, B)
-    GRAY8,    // 1 byte per pixel
-    BGRA8,    // 4 bytes per pixel (B, G, R, A) - Qt default
-};
-
-// VM image representation - GC-managed via ObjectRef
-// This is NOT a GC object itself, but wraps an ObjectRef
-struct VMImage {
-    int32_t width = 0;
-    int32_t height = 0;
-    int32_t stride = 0;  // bytes per row
-    PixelFormat format = PixelFormat::BGRA8;
-    ObjectRef object_ref;  // GC-managed object containing data
-    
-    // Helper: check if valid
-    bool isValid() const {
-        return width > 0 && height > 0 && object_ref.id != 0;
-    }
-    
-    // Get raw data pointer from GC heap (read-only during GC cycles)
-    const uint8_t* data() const;
-};
 
 class VM : public BytecodeInterpreter {
 public:

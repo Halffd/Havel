@@ -1276,13 +1276,6 @@ VMImage VM::createImageFromRGBA(int width, int height, const std::vector<uint8_t
   return createImage(width, height, stride, PixelFormat::RGBA8, rgbaData.data());
 }
 
-const uint8_t* VMImage::data() const {
-  // VMImage stores data in a GC-managed array
-  // This would need VM access to retrieve - for now return nullptr
-  // Proper implementation would store raw pointer alongside ObjectRef
-  return nullptr;
-}
-
 std::unique_ptr<BytecodeInterpreter> createVM() {
   return std::make_unique<VM>();
 }

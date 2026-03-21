@@ -14,6 +14,7 @@
 #include "../host/audio/AudioService.hpp"
 #include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
+#include "../host/automation/PixelAutomationService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -110,7 +111,11 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     // Screenshot service doesn't need constructor args (uses Qt directly)
     auto screenshotService = std::make_shared<host::ScreenshotService>();
     registry.registerService<host::ScreenshotService>(screenshotService);
-    
+
+    // PixelAutomation service doesn't need constructor args (uses Qt/OpenCV directly)
+    auto pixelService = std::make_shared<host::PixelAutomationService>();
+    registry.registerService<host::PixelAutomationService>(pixelService);
+
     info("ServiceRegistry initialized with {} services", registry.size());
 }
 

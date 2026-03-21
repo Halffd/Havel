@@ -15,6 +15,7 @@
 #include "../host/brightness/BrightnessService.hpp"
 #include "../host/screenshot/ScreenshotService.hpp"
 #include "../host/automation/PixelAutomationService.hpp"
+#include "../host/chunker/TextChunkerService.hpp"
 #include "window/WindowModule.hpp"
 #include "brightness/BrightnessModule.hpp"
 #include "audio/AudioModule.hpp"
@@ -115,6 +116,10 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     // PixelAutomation service doesn't need constructor args (uses Qt/OpenCV directly)
     auto pixelService = std::make_shared<host::PixelAutomationService>();
     registry.registerService<host::PixelAutomationService>(pixelService);
+
+    // TextChunker service doesn't need constructor args (pure C++ logic)
+    auto chunkerService = std::make_shared<host::TextChunkerService>();
+    registry.registerService<host::TextChunkerService>(chunkerService);
 
     info("ServiceRegistry initialized with {} services", registry.size());
 }

@@ -73,7 +73,7 @@ private:
   BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args);
 
-  // Callback management through VM
+  // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id, std::span<BytecodeValue> args = {});
   void releaseCallback(CallbackId id);

@@ -3,28 +3,29 @@
  *
  * Pure C++ mode service - no VM, no interpreter, no HavelValue.
  * This is the business logic layer for mode operations.
+ * 
+ * Uses CallbackId for all callbacks - VM owns closures, Service stores IDs only.
  */
 #pragma once
 
 #include <string>
 #include <vector>
-#include <memory>
-#include <chrono>
-#include <functional>
+#include <cstdint>
 
-namespace havel { class ModeManager; }  // Forward declaration
+namespace havel { class ModeManager; }
+namespace havel::compiler { class VM; using CallbackId = uint32_t; }
 
 namespace havel::host {
 
 /**
  * ModeService - Pure mode business logic
- *
+ * 
  * Provides system-level mode operations without any language runtime coupling.
- * All methods return simple C++ types (bool, int, string, vector, etc.)
+ * All callbacks are stored as CallbackId (opaque handles) - VM owns the closures.
  */
 class ModeService {
 public:
-    explicit ModeService(std::shared_ptr<havel::ModeManager> manager);
+    ModeService(havel::compiler::VM* vm, havel::ModeManager* manager);
     ~ModeService() = default;
 
     // =========================================================================
@@ -32,46 +33,35 @@ public:
     // =========================================================================
 
     /// Get current mode name
-    /// @return mode name (empty if none)
     std::string getCurrentMode() const;
 
     /// Get previous mode name
-    /// @return previous mode name
     std::string getPreviousMode() const;
-
-    /// Get time spent in a mode
-    /// @param modeName Mode name (empty for current mode)
-    /// @return duration in milliseconds
-    std::chrono::milliseconds getModeTime(const std::string& modeName = "") const;
-
-    /// Get number of transitions for a mode
-    /// @param modeName Mode name (empty for current mode)
-    /// @return transition count
-    int getModeTransitions(const std::string& modeName = "") const;
-
-    /// Get all defined mode names
-    /// @return vector of mode names
-    std::vector<std::string> getModeNames() const;
 
     // =========================================================================
     // Mode control
     // =========================================================================
 
     /// Set mode explicitly
-    /// @param modeName Mode name
     void setMode(const std::string& modeName);
 
     // =========================================================================
-    // Signal queries
+    // Mode definition with VM-coupled callbacks
     // =========================================================================
 
-    /// Check if a signal is active
-    /// @param signalName Signal name
-    /// @return true if signal is active
-    bool isSignalActive(const std::string& signalName) const;
+    /// Define a mode with callbacks (stored as CallbackId in HostBridge)
+    /// @param name Mode name
+    /// @param conditionId Condition callback ID (VM-owned)
+    /// @param enterId Enter callback ID (VM-owned)
+    /// @param exitId Exit callback ID (VM-owned)
+    void defineMode(const std::string& name,
+                    compiler::CallbackId conditionId,
+                    compiler::CallbackId enterId,
+                    compiler::CallbackId exitId);
 
 private:
-    std::shared_ptr<havel::ModeManager> m_manager;  // Shared ownership
+    havel::compiler::VM* m_vm;  // Non-owning, for callback invocation
+    havel::ModeManager* m_manager;  // Non-owning
 };
 
 } // namespace havel::host

@@ -4,13 +4,20 @@
 #include "GC.hpp"
 
 #include <array>
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stack>
 #include <unordered_map>
 #include <vector>
 
 namespace havel::compiler {
+
+// Opaque callback handle - systems can store this without knowing VM internals
+using CallbackId = uint32_t;
+constexpr CallbackId INVALID_CALLBACK_ID = 0;
 
 class VM : public BytecodeInterpreter {
 public:
@@ -144,6 +151,12 @@ public:
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }
+  
+  // Callback system - VM owns closures, systems use opaque IDs
+  CallbackId registerCallback(const BytecodeValue &closure);
+  BytecodeValue invokeCallback(CallbackId id, std::span<BytecodeValue> args = {});
+  void releaseCallback(CallbackId id);
+  bool isValidCallback(CallbackId id) const;
 };
 
 } // namespace havel::compiler

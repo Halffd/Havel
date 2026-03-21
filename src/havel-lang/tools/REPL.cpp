@@ -5,6 +5,7 @@
  */
 #include "REPL.hpp"
 #include "../../modules/HostModules.hpp"
+#include "../runtime/StdLibModules.hpp"
 #include "../../utils/Logger.hpp"
 #include <iostream>
 #include <sstream>
@@ -44,7 +45,10 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
 
   // Create HostBridge registry
   hostBridge_ = compiler::createHostBridgeRegistry(*vm_, deps);
-  
+
+  // Register stdlib modules with VM (VM-native)
+  havel::registerStdLibWithVM(*hostBridge_);
+
   initialized = true;
   info("REPL initialized successfully");
 }

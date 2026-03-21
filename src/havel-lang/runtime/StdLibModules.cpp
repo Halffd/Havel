@@ -50,4 +50,12 @@ void loadStdLibModules(Environment &env, ModuleLoader &loader,
   loader.load(env, "time");
 }
 
+/**
+ * Register stdlib modules with VM (VM-native, no Environment)
+ */
+void registerStdLibWithVM(compiler::HostBridgeRegistry& registry) {
+    stdlib::registerMathModuleVM(registry);
+    // TODO: Convert other stdlib modules to VM-native
+}
+
 } // namespace havel

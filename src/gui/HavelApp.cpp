@@ -8,6 +8,7 @@
 #include "core/io/KeyTap.hpp"
 #include "gui/GUIManager.hpp"
 #include "modules/HostModules.hpp"
+#include "../havel-lang/runtime/StdLibModules.hpp"
 #include "utils/Logger.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
@@ -266,7 +267,10 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Create HostBridge registry
     hostBridgeRegistry = compiler::createHostBridgeRegistry(*bytecodeVM, deps);
-    
+
+    // Register stdlib modules with VM (VM-native)
+    registerStdLibWithVM(*hostBridgeRegistry);
+
     info("Bytecode VM and HostBridge initialized successfully");
   } catch (const std::exception& e) {
     error("Failed to initialize bytecode VM: {}", e.what());

@@ -11,7 +11,8 @@
 namespace havel::compiler {
 
 namespace {
-std::string toString(const BytecodeValue &value) {
+// Internal toString with heap support
+std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
   if (std::holds_alternative<std::nullptr_t>(value)) {
     return "null";
   }
@@ -40,10 +41,38 @@ std::string toString(const BytecodeValue &value) {
     return "closure[" + std::to_string(std::get<ClosureRef>(value).id) + "]";
   }
   if (std::holds_alternative<ArrayRef>(value)) {
-    return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
+    if (!heap) {
+      return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
+    }
+    auto* arr = heap->array(std::get<ArrayRef>(value).id);
+    if (!arr) {
+      return "array[]";
+    }
+    std::string result = "[";
+    for (size_t i = 0; i < arr->size(); ++i) {
+      if (i > 0) result += ", ";
+      result += toStringInternal((*arr)[i], heap);
+    }
+    result += "]";
+    return result;
   }
   if (std::holds_alternative<ObjectRef>(value)) {
-    return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
+    if (!heap) {
+      return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
+    }
+    auto* obj = heap->object(std::get<ObjectRef>(value).id);
+    if (!obj) {
+      return "object{}";
+    }
+    std::string result = "{";
+    bool first = true;
+    for (const auto& [key, val] : *obj) {
+      if (!first) result += ", ";
+      first = false;
+      result += "\"" + key + "\": " + toStringInternal(val, heap);
+    }
+    result += "}";
+    return result;
   }
   if (std::holds_alternative<SetRef>(value)) {
     return "set[" + std::to_string(std::get<SetRef>(value).id) + "]";
@@ -52,6 +81,19 @@ std::string toString(const BytecodeValue &value) {
     return "hostfn[" + std::get<HostFunctionRef>(value).name + "]";
   }
   return "unknown";
+}
+} // anonymous namespace
+
+// Public toString without heap (for backward compatibility)
+std::string toString(const BytecodeValue &value) {
+  return toStringInternal(value, nullptr);
+}
+
+// Public toString with heap (for formatted output)
+// Note: Currently disabled due to infinite recursion with nested structures
+std::string toString(const BytecodeValue &value, GCHeap* heap) {
+  (void)heap;  // Unused for now
+  return toStringInternal(value, nullptr);
 }
 
 // Type conversion helpers
@@ -150,7 +192,6 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   return std::to_string(location.line) + ":" +
          std::to_string(location.column);
 }
-} // namespace
 
 VM::VM() {
   registerDefaultHostFunctions();
@@ -413,7 +454,7 @@ std::optional<BytecodeValue> VM::externalRootValue(uint64_t root_id) const {
 }
 
 void VM::registerDefaultHostFunctions() {
-  registerHostFunction("print", [](const std::vector<BytecodeValue> &args) {
+  registerHostFunction("print", [this](const std::vector<BytecodeValue> &args) {
     for (size_t i = 0; i < args.size(); ++i) {
       if (i > 0) {
         std::cout << ' ';
@@ -460,6 +501,36 @@ void VM::registerDefaultHostFunctions() {
 
   registerHostFunction("str", 1, [](const std::vector<BytecodeValue> &args) {
     return BytecodeValue(toString(args[0]));
+  });
+
+  // Additional type conversion (useful even if not in docs)
+  registerHostFunction("bool", 1, [](const std::vector<BytecodeValue> &args) {
+    return BytecodeValue(toBool(args[0]));
+  });
+
+  registerHostFunction("type", 1, [](const std::vector<BytecodeValue> &args) {
+    const auto& value = args[0];
+    std::string typeName;
+    if (std::holds_alternative<std::nullptr_t>(value)) {
+      typeName = "null";
+    } else if (std::holds_alternative<bool>(value)) {
+      typeName = "bool";
+    } else if (std::holds_alternative<int64_t>(value)) {
+      typeName = "int";
+    } else if (std::holds_alternative<double>(value)) {
+      typeName = "float";
+    } else if (std::holds_alternative<std::string>(value)) {
+      typeName = "string";
+    } else if (std::holds_alternative<ArrayRef>(value)) {
+      typeName = "array";
+    } else if (std::holds_alternative<ObjectRef>(value)) {
+      typeName = "object";
+    } else if (std::holds_alternative<HostFunctionRef>(value)) {
+      typeName = "function";
+    } else {
+      typeName = "unknown";
+    }
+    return BytecodeValue(typeName);
   });
 
   auto registerSystemGc = [this](const std::string &name) {

@@ -26,6 +26,7 @@ private:
     bool debugParser = false;
     bool debugAst = false;
     bool debugLexer = false;
+    bool debugBytecode = false;
     bool stopOnError = false; // Stop on first error/warning
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
   };

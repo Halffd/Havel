@@ -702,23 +702,24 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member = static_cast<const ast::MemberExpression &>(*expression.callee);
     auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
-    
-    // Check if object is a literal (primitive)
-    bool isPrimitiveObject = 
+
+    // Check if object is a literal or identifier (variable)
+    bool isPrimitiveObject =
         member.object->kind == ast::NodeType::StringLiteral ||
         member.object->kind == ast::NodeType::ArrayLiteral ||
         member.object->kind == ast::NodeType::ObjectLiteral;
-    
-    if (isPrimitiveObject && property) {
+    bool isVariableObject =
+        member.object->kind == ast::NodeType::Identifier;
+
+    if (property && (isPrimitiveObject || isVariableObject)) {
       // Compile prototype method call:
-      // 1. Load the prototype method (e.g., "string.upper")
-      // 2. Load the object as first argument
-      // 3. Load remaining arguments
-      // 4. Call the method
-      
+      // 1. Load the object (literal or variable) as first argument
+      // 2. Load remaining arguments
+      // 3. Call the prototype method (e.g., "string.upper")
+
       std::string methodName;
       std::string typeName;
-      
+
       // Determine type from object kind
       if (member.object->kind == ast::NodeType::StringLiteral) {
         typeName = "string";
@@ -726,15 +727,38 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
         typeName = "array";
       } else if (member.object->kind == ast::NodeType::ObjectLiteral) {
         typeName = "object";
+      } else if (member.object->kind == ast::NodeType::Identifier) {
+        // For variables, we'll use a runtime type check
+        // The method name will be resolved at runtime based on the value's type
+        // For now, we'll try all three types
+        typeName = "any";
       }
 
-      methodName = typeName + "." + property->symbol;
+      if (typeName != "any") {
+        methodName = typeName + "." + property->symbol;
 
-      // Check if this is a registered prototype method
-      if (host_builtin_names_.find(methodName) != host_builtin_names_.end()) {
-        // Compile the object (push as first argument)
+        // Check if this is a registered prototype method
+        if (host_builtin_names_.find(methodName) != host_builtin_names_.end()) {
+          // Compile the object (push as first argument)
+          compileExpression(*member.object);
+
+          // Compile remaining arguments
+          for (const auto &arg : expression.args) {
+            if (!arg) {
+              throw std::runtime_error("Call expression contains null argument");
+            }
+            compileExpression(*arg);
+          }
+
+          // Call the prototype method (object is already first arg)
+          emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{methodName, arg_count + 1});
+          return;
+        }
+      } else {
+        // For variables, emit runtime method dispatch
+        // First compile the object to get its value
         compileExpression(*member.object);
-
+        
         // Compile remaining arguments
         for (const auto &arg : expression.args) {
           if (!arg) {
@@ -742,8 +766,10 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
           }
           compileExpression(*arg);
         }
-
-        // Call the prototype method (object is already first arg)
+        
+        // Emit CALL_HOST with method name and arg count
+        // The runtime will determine the type and call the appropriate method
+        methodName = "any." + property->symbol;
         emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{methodName, arg_count + 1});
         return;
       }

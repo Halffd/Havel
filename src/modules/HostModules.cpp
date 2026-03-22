@@ -83,13 +83,13 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
     auto ioService = std::make_shared<host::IOService>(hostAPI->GetIO());
     registry.registerService<host::IOService>(ioService);
 
-    if (!hostAPI->GetHotkeyManager()) {
-        throw std::runtime_error("initializeServiceRegistry: HotkeyManager not available");
+    // HotkeyManager is optional - only register HotkeyService if available
+    if (hostAPI->GetHotkeyManager()) {
+        auto hotkeyManager = hostAPI->GetHotkeyManager();
+        auto hotkeyService = std::make_shared<host::HotkeyService>(
+            std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
+        registry.registerService<host::HotkeyService>(hotkeyService);
     }
-    auto hotkeyManager = hostAPI->GetHotkeyManager();
-    auto hotkeyService = std::make_shared<host::HotkeyService>(
-        std::shared_ptr<havel::HotkeyManager>(hotkeyManager, [](havel::HotkeyManager*){}));
-    registry.registerService<host::HotkeyService>(hotkeyService);
 
     if (!hostAPI->GetWindowManager()) {
         throw std::runtime_error("initializeServiceRegistry: WindowManager not available");

@@ -47,12 +47,13 @@ public:
 
   void install();
   void clear();
-  
+  void shutdown();  // Explicit shutdown to clear containers before exit
+
   // Accessors for stdlib registration
   VM& vm() { return vm_; }
   PipelineOptions& options() { return options_; }
   const PipelineOptions& options() const { return options_; }
-  
+
   // Add vm_setup callback (accumulates with previous callbacks)
   void addVmSetup(std::function<void(VM&)> setupFn);
 

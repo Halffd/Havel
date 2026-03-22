@@ -95,37 +95,41 @@ void HostBridgeRegistry::install() {
   const auto self = shared_from_this();
   auto& options = options_;
 
-  options.host_functions["window.moveToNextMonitor"] =
+  // Reserve space to reduce rehashing (prevents ASan noise)
+  options.host_functions.reserve(64);
+  vm_setup_callbacks_.reserve(16);
+
+  options.host_functions.emplace("window.moveToNextMonitor",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowMoveToNextMonitor(args);
-      };
-  options.host_functions["window.getActive"] =
+      });
+  options.host_functions.emplace("window.getActive",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowGetActive(args);
-      };
-  options.host_functions["window.moveToMonitor"] =
+      });
+  options.host_functions.emplace("window.moveToMonitor",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowMoveToMonitor(args);
-      };
-  options.host_functions["window.close"] =
+      });
+  options.host_functions.emplace("window.close",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowClose(args);
-      };
-  options.host_functions["window.resize"] =
+      });
+  options.host_functions.emplace("window.resize",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowResize(args);
-      };
-  options.host_functions["window.on"] =
+      });
+  options.host_functions.emplace("window.on",
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleWindowOn(args);
-      };
+      });
 
-  options.host_functions["send"] = [self](const std::vector<BytecodeValue> &args) {
+  options.host_functions.emplace("send", [self](const std::vector<BytecodeValue> &args) {
     return self->handleSend(args);
-  };
-  options.host_functions["io.Send"] = [self](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("io.Send", [self](const std::vector<BytecodeValue> &args) {
     return self->handleSend(args);
-  };
+  });
   options.host_functions["io.sendKey"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleSendKey(args);
@@ -156,12 +160,12 @@ void HostBridgeRegistry::install() {
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleModeDefine(args);
       };
-  options.host_functions["mode.set"] = [self](const std::vector<BytecodeValue> &args) {
+  options.host_functions.emplace("mode.set", [self](const std::vector<BytecodeValue> &args) {
     return self->handleModeSet(args);
-  };
-  options.host_functions["mode.tick"] = [self](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("mode.tick", [self](const std::vector<BytecodeValue> &args) {
     return self->handleModeTick(args);
-  };
+  });
 
   options.host_functions["process.find"] =
       [self](const std::vector<BytecodeValue> &args) {
@@ -187,57 +191,57 @@ void HostBridgeRegistry::install() {
 
   // Generic method dispatcher for variables (any.methodName)
   // This allows str.upper() where str is a variable
-  options.host_functions["any.upper"] = [&options](const std::vector<BytecodeValue> &args) {
+  options.host_functions.emplace("any.upper", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.upper() requires a string argument");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.upper() requires a string argument");
     return options.host_functions.at("string.upper")(args);
-  };
-  options.host_functions["any.lower"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.lower", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.lower() requires a string argument");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.lower() requires a string argument");
     return options.host_functions.at("string.lower")(args);
-  };
-  options.host_functions["any.trim"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.trim", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.trim() requires a string argument");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.trim() requires a string argument");
     return options.host_functions.at("string.trim")(args);
-  };
-  options.host_functions["any.sub"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.sub", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.sub() requires arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.sub() requires a string argument");
     return options.host_functions.at("string.sub")(args);
-  };
-  options.host_functions["any.find"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.find", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) throw std::runtime_error("any.find() requires 2 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.find() requires a string argument");
     return options.host_functions.at("string.find")(args);
-  };
-  options.host_functions["any.replace"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.replace", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 3) throw std::runtime_error("any.replace() requires 3 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.replace() requires a string argument");
     return options.host_functions.at("string.replace")(args);
-  };
-  options.host_functions["any.split"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.split", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) throw std::runtime_error("any.split() requires 2 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.split() requires a string argument");
     return options.host_functions.at("string.split")(args);
-  };
-  options.host_functions["any.startswith"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.startswith", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) throw std::runtime_error("any.startswith() requires 2 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.startswith() requires a string argument");
     return options.host_functions.at("string.startswith")(args);
-  };
-  options.host_functions["any.endswith"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.endswith", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) throw std::runtime_error("any.endswith() requires 2 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.endswith() requires a string argument");
     return options.host_functions.at("string.endswith")(args);
-  };
-  options.host_functions["any.includes"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.includes", [&options](const std::vector<BytecodeValue> &args) {
     if (args.size() < 2) throw std::runtime_error("any.includes() requires 2 arguments");
     if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.includes() requires a string argument");
     return options.host_functions.at("string.includes")(args);
-  };
-  options.host_functions["any.len"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.len", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.len() requires an argument");
     if (std::holds_alternative<std::string>(args[0])) {
       return options.host_functions.at("string.len")(args);
@@ -245,27 +249,27 @@ void HostBridgeRegistry::install() {
       return options.host_functions.at("array.len")(args);
     }
     throw std::runtime_error("any.len() requires a string or array argument");
-  };
-  options.host_functions["any.sort"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.sort", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.sort() requires an array argument");
     if (!std::holds_alternative<ArrayRef>(args[0])) throw std::runtime_error("any.sort() requires an array argument");
     return options.host_functions.at("array.sort")(args);
-  };
-  options.host_functions["any.reverse"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.reverse", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.reverse() requires an array argument");
     if (!std::holds_alternative<ArrayRef>(args[0])) throw std::runtime_error("any.reverse() requires an array argument");
     return options.host_functions.at("array.reverse")(args);
-  };
-  options.host_functions["any.keys"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.keys", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.keys() requires an object argument");
     if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("any.keys() requires an object argument");
     return options.host_functions.at("object.keys")(args);
-  };
-  options.host_functions["any.values"] = [&options](const std::vector<BytecodeValue> &args) {
+  });
+  options.host_functions.emplace("any.values", [&options](const std::vector<BytecodeValue> &args) {
     if (args.empty()) throw std::runtime_error("any.values() requires an object argument");
     if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("any.values() requires an object argument");
     return options.host_functions.at("object.values")(args);
-  };
+  });
 
   // Apply accumulated vm_setup callbacks at the end
   options.vm_setup = [self](VM &vm) {
@@ -319,7 +323,7 @@ void HostBridgeRegistry::clear() {
     }
   }
   hotkey_binding_keys_.clear();
-  
+
   // Release mode callbacks
   for (auto& [mode_name, binding] : mode_bindings_) {
     if (binding.condition_id) releaseCallback(*binding.condition_id);
@@ -328,6 +332,14 @@ void HostBridgeRegistry::clear() {
   }
   mode_bindings_.clear();
   mode_definition_order_.clear();
+}
+
+// Explicit shutdown - clears all containers to prevent ASan false positives
+void HostBridgeRegistry::shutdown() {
+  clear();
+  options_.host_functions.clear();
+  vm_setup_callbacks_.clear();
+  vm_setup_callbacks_.shrink_to_fit();
 }
 
 CallbackId HostBridgeRegistry::registerCallback(const BytecodeValue &closure) {

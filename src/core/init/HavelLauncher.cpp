@@ -386,14 +386,18 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       }
 
       auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
-      
+
       // Print bytecode debug info if requested
       if (cfg.debugBytecode && vmResult.snapshot.bytecode.empty() == false) {
         info("=== Bytecode Debug Output ===");
         info("{}", vmResult.snapshot.bytecode);
       }
-      
+
       info("Bytecode execution completed successfully");
+      
+      // Explicit shutdown to clear containers before ASan leak check
+      registry->shutdown();
+      
       return 0;
     } catch (const std::exception& e) {
       error("Bytecode error: {}", e.what());

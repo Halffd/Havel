@@ -203,7 +203,25 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
         // Simplified for now
         return compiler::BytecodeValue(args[0]);
     };
-    
+
+    // Register prototype methods for [].method() syntax
+    registry.vm().registerPrototypeMethod("Array", "len", compiler::HostFunctionRef{.name = "array.len"});
+    registry.vm().registerPrototypeMethod("Array", "push", compiler::HostFunctionRef{.name = "array.push"});
+    registry.vm().registerPrototypeMethod("Array", "pop", compiler::HostFunctionRef{.name = "array.pop"});
+    registry.vm().registerPrototypeMethod("Array", "insert", compiler::HostFunctionRef{.name = "array.insert"});
+    registry.vm().registerPrototypeMethod("Array", "remove", compiler::HostFunctionRef{.name = "array.remove"});
+    registry.vm().registerPrototypeMethod("Array", "concat", compiler::HostFunctionRef{.name = "array.concat"});
+    registry.vm().registerPrototypeMethod("Array", "slice", compiler::HostFunctionRef{.name = "array.slice"});
+    registry.vm().registerPrototypeMethod("Array", "map", compiler::HostFunctionRef{.name = "array.map"});
+    registry.vm().registerPrototypeMethod("Array", "filter", compiler::HostFunctionRef{.name = "array.filter"});
+    registry.vm().registerPrototypeMethod("Array", "reduce", compiler::HostFunctionRef{.name = "array.reduce"});
+    registry.vm().registerPrototypeMethod("Array", "find", compiler::HostFunctionRef{.name = "array.find"});
+    registry.vm().registerPrototypeMethod("Array", "indexOf", compiler::HostFunctionRef{.name = "array.indexOf"});
+    registry.vm().registerPrototypeMethod("Array", "includes", compiler::HostFunctionRef{.name = "array.includes"});
+    registry.vm().registerPrototypeMethod("Array", "join", compiler::HostFunctionRef{.name = "array.join"});
+    registry.vm().registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
+    registry.vm().registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
+
     // Register array object via vm_setup
     registry.addVmSetup([](compiler::VM& vm) {
         auto arrObj = vm.createHostObject();

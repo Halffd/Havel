@@ -293,6 +293,56 @@ BytecodeValue VM::callHostFunction(const BytecodeValue& fn, const std::vector<By
   return BytecodeValue(nullptr);
 }
 
+// Prototype system - methods on types
+void VM::registerPrototypeMethod(const std::string& typeName, const std::string& methodName, HostFunctionRef method) {
+  prototypes_[typeName][methodName] = method;
+}
+
+std::optional<HostFunctionRef> VM::getPrototypeMethod(const BytecodeValue& value, const std::string& methodName) {
+  // Determine type name
+  std::string typeName;
+  if (std::holds_alternative<std::string>(value)) {
+    typeName = "String";
+  } else if (std::holds_alternative<ArrayRef>(value)) {
+    typeName = "Array";
+  } else if (std::holds_alternative<ObjectRef>(value)) {
+    typeName = "Object";
+  } else {
+    return std::nullopt;
+  }
+  
+  // Look up method in prototype
+  auto typeIt = prototypes_.find(typeName);
+  if (typeIt == prototypes_.end()) return std::nullopt;
+  
+  auto methodIt = typeIt->second.find(methodName);
+  if (methodIt == typeIt->second.end()) return std::nullopt;
+  
+  return methodIt->second;
+}
+
+std::vector<std::string> VM::getPrototypeMethods(const BytecodeValue& value) {
+  std::string typeName;
+  if (std::holds_alternative<std::string>(value)) {
+    typeName = "String";
+  } else if (std::holds_alternative<ArrayRef>(value)) {
+    typeName = "Array";
+  } else if (std::holds_alternative<ObjectRef>(value)) {
+    typeName = "Object";
+  } else {
+    return {};
+  }
+  
+  auto typeIt = prototypes_.find(typeName);
+  if (typeIt == prototypes_.end()) return {};
+  
+  std::vector<std::string> methods;
+  for (const auto& [name, fn] : typeIt->second) {
+    methods.push_back(name);
+  }
+  return methods;
+}
+
 uint64_t VM::pinExternalRoot(const BytecodeValue &value) {
   return heap_.pinExternalRoot(value);
 }

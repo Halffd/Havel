@@ -194,7 +194,21 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
         std::string substr = toString(args[1]);
         return compiler::BytecodeValue(s.find(substr) != std::string::npos);
     };
-    
+
+    // Register prototype methods for "string".method() syntax
+    registry.vm().registerPrototypeMethod("String", "len", compiler::HostFunctionRef{.name = "string.len"});
+    registry.vm().registerPrototypeMethod("String", "lower", compiler::HostFunctionRef{.name = "string.lower"});
+    registry.vm().registerPrototypeMethod("String", "upper", compiler::HostFunctionRef{.name = "string.upper"});
+    registry.vm().registerPrototypeMethod("String", "trim", compiler::HostFunctionRef{.name = "string.trim"});
+    registry.vm().registerPrototypeMethod("String", "sub", compiler::HostFunctionRef{.name = "string.sub"});
+    registry.vm().registerPrototypeMethod("String", "find", compiler::HostFunctionRef{.name = "string.find"});
+    registry.vm().registerPrototypeMethod("String", "replace", compiler::HostFunctionRef{.name = "string.replace"});
+    registry.vm().registerPrototypeMethod("String", "split", compiler::HostFunctionRef{.name = "string.split"});
+    registry.vm().registerPrototypeMethod("String", "join", compiler::HostFunctionRef{.name = "string.join"});
+    registry.vm().registerPrototypeMethod("String", "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
+    registry.vm().registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
+    registry.vm().registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
+
     // Register string object via vm_setup (accumulated)
     registry.addVmSetup([](compiler::VM& vm) {
         auto strObj = vm.createHostObject();

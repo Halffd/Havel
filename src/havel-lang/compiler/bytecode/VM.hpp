@@ -88,6 +88,11 @@ private:
       open_upvalues;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  
+  // Prototype system - methods on types (String, Array, Object)
+  // Maps type name -> method name -> function
+  std::unordered_map<std::string, std::unordered_map<std::string, HostFunctionRef>> prototypes_;
+  
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
   size_t max_call_depth_ = 1024;
@@ -167,6 +172,11 @@ public:
   
   // Function calling
   BytecodeValue callHostFunction(const BytecodeValue& fn, const std::vector<BytecodeValue>& args);
+  
+  // Prototype system - methods on types
+  void registerPrototypeMethod(const std::string& typeName, const std::string& methodName, HostFunctionRef method);
+  std::optional<HostFunctionRef> getPrototypeMethod(const BytecodeValue& value, const std::string& methodName);
+  std::vector<std::string> getPrototypeMethods(const BytecodeValue& value);
   
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);

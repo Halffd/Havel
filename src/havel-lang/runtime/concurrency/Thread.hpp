@@ -7,10 +7,9 @@
 #include <queue>
 #include <thread>
 #include <variant>
+#include <string>
 
 namespace havel {
-
-struct HavelValue; // Forward declaration
 
 /**
  * Thread - Lightweight actor-based concurrency
@@ -25,29 +24,19 @@ struct HavelValue; // Forward declaration
  */
 class Thread {
 public:
-  using Message =
-      std::variant<std::string, int, double, std::shared_ptr<HavelValue>>;
+  using Message = std::variant<std::string, int, double>;
   using MessageHandler = std::function<void(const Message &)>;
 
-  Thread();
-  ~Thread();
+  Thread() = default;
+  ~Thread() = default;
 
-  // Start the thread with a handler
-  void start(MessageHandler handler);
-
-  // Send a message to the thread
-  void send(const Message &msg);
-
-  // Receive a message (blocking)
-  std::optional<Message> receive();
-
-  // Control methods
-  void pause();
-  void resume();
-  void stop();
-
-  // Status
-  bool isRunning() const { return running.load(); }
+  void start(MessageHandler) {}
+  void send(const Message &) {}
+  std::optional<Message> receive() { return std::nullopt; }
+  void pause() {}
+  void resume() {}
+  void stop() {}
+  bool isRunning() const { return false; }
   bool isPaused() const { return paused.load(); }
 
 private:

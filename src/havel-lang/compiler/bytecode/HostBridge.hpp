@@ -52,12 +52,18 @@ public:
   VM& vm() { return vm_; }
   PipelineOptions& options() { return options_; }
   const PipelineOptions& options() const { return options_; }
+  
+  // Add vm_setup callback (accumulates with previous callbacks)
+  void addVmSetup(std::function<void(VM&)> setupFn);
 
 private:
   using RootTable = std::unordered_map<int64_t, VM::GCRoot>;
 
   BytecodeValue handleWindowMoveToNextMonitor(
       const std::vector<BytecodeValue> &args);
+  
+  // Accumulated vm_setup callbacks
+  std::vector<std::function<void(VM&)>> vm_setup_callbacks_;
   BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);

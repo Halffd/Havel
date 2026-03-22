@@ -1,5 +1,5 @@
 /*
- * StringModule.hpp - String stdlib for VM (no host/service)
+ * StringModule.hpp - String stdlib for VM with method chaining support
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
@@ -7,14 +7,13 @@
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
 
-namespace havel {
-    class Environment;
-}
-
-
 #include <algorithm>
 #include <cctype>
 #include <sstream>
+
+namespace havel {
+    class Environment;
+}
 
 namespace havel::stdlib {
 
@@ -24,7 +23,6 @@ void registerStringModule(Environment& env);
 // NEW: Register string module with VM's host bridge (VM-native)
 inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
     auto& vm = registry.vm();
-    auto& options = registry.options();
     
     // Helper: convert BytecodeValue to string
     auto toString = [](const compiler::BytecodeValue& v) -> std::string {
@@ -69,47 +67,47 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // string.len(s) - Get string length
-    options.host_functions["string.len"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() != 1) throw std::runtime_error("string.len() requires 1 argument");
+    registry.options().host_functions["string.len"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("string.len() requires 1 argument");
         std::string s = toString(args[0]);
         return compiler::BytecodeValue(static_cast<int64_t>(s.length()));
     };
     
-    // string.lower(s) - Convert to lowercase
-    options.host_functions["string.lower"] = [toLower, toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() != 1) throw std::runtime_error("string.lower() requires 1 argument");
+    // string.lower(s) - Convert to lowercase (returns string for chaining)
+    registry.options().host_functions["string.lower"] = [toLower, toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("string.lower() requires 1 argument");
         return compiler::BytecodeValue(toLower(toString(args[0])));
     };
     
-    // string.upper(s) - Convert to uppercase
-    options.host_functions["string.upper"] = [toUpper, toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() != 1) throw std::runtime_error("string.upper() requires 1 argument");
+    // string.upper(s) - Convert to uppercase (returns string for chaining)
+    registry.options().host_functions["string.upper"] = [toUpper, toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("string.upper() requires 1 argument");
         return compiler::BytecodeValue(toUpper(toString(args[0])));
     };
     
-    // string.trim(s) - Trim whitespace
-    options.host_functions["string.trim"] = [trim, toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() != 1) throw std::runtime_error("string.trim() requires 1 argument");
+    // string.trim(s) - Trim whitespace (returns string for chaining)
+    registry.options().host_functions["string.trim"] = [trim, toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("string.trim() requires 1 argument");
         return compiler::BytecodeValue(trim(toString(args[0])));
     };
     
-    // string.sub(s, start, end) - Substring
-    options.host_functions["string.sub"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() < 2) throw std::runtime_error("string.sub() requires at least 2 arguments");
+    // string.sub(s, start, end) - Substring (returns string for chaining)
+    registry.options().host_functions["string.sub"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("string.sub() requires at least 1 argument");
         std::string s = toString(args[0]);
-        int64_t start = std::holds_alternative<int64_t>(args[1]) ? std::get<int64_t>(args[1]) : 0;
+        int64_t start = args.size() > 1 && std::holds_alternative<int64_t>(args[1]) ? std::get<int64_t>(args[1]) : 0;
         int64_t end = args.size() > 2 && std::holds_alternative<int64_t>(args[2]) ? std::get<int64_t>(args[2]) : static_cast<int64_t>(s.length());
-        
+
         if (start < 0) start = std::max(static_cast<int64_t>(0), static_cast<int64_t>(s.length()) + start);
         if (end < 0) end = static_cast<int64_t>(s.length()) + end;
         end = std::min(end, static_cast<int64_t>(s.length()));
-        
+
         if (start >= end) return compiler::BytecodeValue(std::string(""));
         return compiler::BytecodeValue(s.substr(start, end - start));
     };
     
     // string.find(s, substr) - Find substring
-    options.host_functions["string.find"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["string.find"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() != 2) throw std::runtime_error("string.find() requires 2 arguments");
         std::string s = toString(args[0]);
         std::string substr = toString(args[1]);
@@ -117,58 +115,62 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
         return compiler::BytecodeValue(pos != std::string::npos ? static_cast<int64_t>(pos) : static_cast<int64_t>(-1));
     };
     
-    // string.replace(s, old, new) - Replace substring
-    options.host_functions["string.replace"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+    // string.replace(s, old, new) - Replace substring (returns string for chaining)
+    registry.options().host_functions["string.replace"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() != 3) throw std::runtime_error("string.replace() requires 3 arguments");
         std::string s = toString(args[0]);
         std::string oldStr = toString(args[1]);
         std::string newStr = toString(args[2]);
-        
+
         size_t pos = s.find(oldStr);
         if (pos == std::string::npos) return compiler::BytecodeValue(s);
-        
+
         std::string result = s;
         result.replace(pos, oldStr.length(), newStr);
         return compiler::BytecodeValue(result);
     };
     
     // string.split(s, delimiter) - Split string
-    options.host_functions["string.split"] = [toString, &vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["string.split"] = [toString, &vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("string.split() requires at least 2 arguments");
         std::string s = toString(args[0]);
         std::string delimiter = toString(args[1]);
-        
+
         auto arr = vm.createHostArray();
         size_t pos = 0;
         size_t found;
-        
+
         while ((found = s.find(delimiter, pos)) != std::string::npos) {
             vm.pushHostArrayValue(arr, compiler::BytecodeValue(s.substr(pos, found - pos)));
             pos = found + delimiter.length();
         }
         vm.pushHostArrayValue(arr, compiler::BytecodeValue(s.substr(pos)));
-        
+
         return compiler::BytecodeValue(arr);
     };
     
     // string.join(arr, delimiter) - Join array
-    options.host_functions["string.join"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
-        if (args.size() != 2) throw std::runtime_error("string.join() requires 2 arguments");
-        
+    registry.options().host_functions["string.join"] = [toString, &vm](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.size() < 2) throw std::runtime_error("string.join() requires at least 2 arguments");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
-            throw std::runtime_error("string.join() first argument must be an array");
+            throw std::runtime_error("string.join() first argument must be array");
         }
         
         std::string delimiter = toString(args[1]);
-        std::string result;
-        
         const auto& arr = std::get<compiler::ArrayRef>(args[0]);
-        // Note: Would need VM access to iterate array - simplified for now
+        size_t len = vm.getHostArrayLength(arr);
+        
+        std::string result;
+        for (size_t i = 0; i < len; ++i) {
+            if (i > 0) result += delimiter;
+            auto value = vm.getHostArrayValue(arr, i);
+            result += toString(value);
+        }
         return compiler::BytecodeValue(result);
     };
     
     // string.startswith(s, prefix) - Check if starts with
-    options.host_functions["string.startswith"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["string.startswith"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() != 2) throw std::runtime_error("string.startswith() requires 2 arguments");
         std::string s = toString(args[0]);
         std::string prefix = toString(args[1]);
@@ -176,17 +178,25 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // string.endswith(s, suffix) - Check if ends with
-    options.host_functions["string.endswith"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["string.endswith"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() != 2) throw std::runtime_error("string.endswith() requires 2 arguments");
         std::string s = toString(args[0]);
         std::string suffix = toString(args[1]);
-        
+
         if (suffix.length() > s.length()) return compiler::BytecodeValue(false);
         return compiler::BytecodeValue(s.compare(s.length() - suffix.length(), suffix.length(), suffix) == 0);
     };
     
-    // Register string object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    // string.includes(s, substr) - Check if contains (returns bool)
+    registry.options().host_functions["string.includes"] = [toString](const std::vector<compiler::BytecodeValue>& args) {
+        if (args.size() != 2) throw std::runtime_error("string.includes() requires 2 arguments");
+        std::string s = toString(args[0]);
+        std::string substr = toString(args[1]);
+        return compiler::BytecodeValue(s.find(substr) != std::string::npos);
+    };
+    
+    // Register string object via vm_setup (accumulated)
+    registry.addVmSetup([](compiler::VM& vm) {
         auto strObj = vm.createHostObject();
         vm.setHostObjectField(strObj, "len", compiler::HostFunctionRef{.name = "string.len"});
         vm.setHostObjectField(strObj, "lower", compiler::HostFunctionRef{.name = "string.lower"});
@@ -199,8 +209,9 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(strObj, "join", compiler::HostFunctionRef{.name = "string.join"});
         vm.setHostObjectField(strObj, "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
         vm.setHostObjectField(strObj, "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
-        vm.setGlobal("string", strObj);
-    };
+        vm.setHostObjectField(strObj, "includes", compiler::HostFunctionRef{.name = "string.includes"});
+        vm.setGlobal("String", strObj);
+    });
 }
 
 // Implementation of old registerStringModule (placeholder)

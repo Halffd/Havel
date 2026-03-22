@@ -148,6 +148,26 @@ public:
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           BytecodeValue value);
   void pushHostArrayValue(ArrayRef array_ref, BytecodeValue value);
+  
+  // Array helpers
+  size_t getHostArrayLength(ArrayRef array_ref);
+  BytecodeValue getHostArrayValue(ArrayRef array_ref, size_t index);
+  void setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value);
+  BytecodeValue popHostArrayValue(ArrayRef array_ref);
+  void insertHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value);
+  BytecodeValue removeHostArrayValue(ArrayRef array_ref, size_t index);
+  
+  // Object helpers
+  std::vector<std::string> getHostObjectKeys(ObjectRef object_ref);
+  std::vector<std::pair<std::string, BytecodeValue>> getHostObjectEntries(ObjectRef object_ref);
+  bool hasHostObjectField(ObjectRef object_ref, const std::string& key);
+  bool deleteHostObjectField(ObjectRef object_ref, const std::string& key);
+  void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
+  void setHostObjectSealed(ObjectRef object_ref, bool sealed);
+  
+  // Function calling
+  BytecodeValue callHostFunction(const BytecodeValue& fn, const std::vector<BytecodeValue>& args);
+  
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;

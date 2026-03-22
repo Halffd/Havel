@@ -195,6 +195,104 @@ void VM::pushHostArrayValue(ArrayRef array_ref, BytecodeValue value) {
   array->push_back(std::move(value));
 }
 
+// Array helpers
+size_t VM::getHostArrayLength(ArrayRef array_ref) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array) return 0;
+  return array->size();
+}
+
+BytecodeValue VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array || index >= array->size()) return BytecodeValue(nullptr);
+  return (*array)[index];
+}
+
+void VM::setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array) return;
+  if (index >= array->size()) {
+    // Extend array if needed
+    while (array->size() <= index) {
+      array->push_back(BytecodeValue(nullptr));
+    }
+  }
+  (*array)[index] = std::move(value);
+}
+
+BytecodeValue VM::popHostArrayValue(ArrayRef array_ref) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array || array->empty()) return BytecodeValue(nullptr);
+  auto value = std::move(array->back());
+  array->pop_back();
+  return value;
+}
+
+void VM::insertHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array) return;
+  if (index > array->size()) index = array->size();
+  array->insert(array->begin() + index, std::move(value));
+}
+
+BytecodeValue VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array || index >= array->size()) return BytecodeValue(nullptr);
+  auto value = std::move((*array)[index]);
+  array->erase(array->begin() + index);
+  return value;
+}
+
+// Object helpers
+std::vector<std::string> VM::getHostObjectKeys(ObjectRef object_ref) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) return {};
+  std::vector<std::string> keys;
+  keys.reserve(object->size());
+  for (const auto& [key, value] : *object) {
+    keys.push_back(key);
+  }
+  return keys;
+}
+
+std::vector<std::pair<std::string, BytecodeValue>> VM::getHostObjectEntries(ObjectRef object_ref) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) return {};
+  return std::vector<std::pair<std::string, BytecodeValue>>(object->begin(), object->end());
+}
+
+bool VM::hasHostObjectField(ObjectRef object_ref, const std::string& key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) return false;
+  return object->find(key) != object->end();
+}
+
+bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string& key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) return false;
+  return object->erase(key) > 0;
+}
+
+void VM::setHostObjectFrozen(ObjectRef, bool) {
+  // TODO: Implement object freezing
+}
+
+void VM::setHostObjectSealed(ObjectRef, bool) {
+  // TODO: Implement object sealing
+}
+
+// Function calling
+BytecodeValue VM::callHostFunction(const BytecodeValue& fn, const std::vector<BytecodeValue>& args) {
+  if (std::holds_alternative<HostFunctionRef>(fn)) {
+    auto hostFnRef = std::get<HostFunctionRef>(fn);
+    auto it = host_functions.find(hostFnRef.name);
+    if (it != host_functions.end()) {
+      return it->second(args);
+    }
+  }
+  return BytecodeValue(nullptr);
+}
+
 uint64_t VM::pinExternalRoot(const BytecodeValue &value) {
   return heap_.pinExternalRoot(value);
 }

@@ -87,7 +87,7 @@ inline void registerTimeModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register time functions via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto timeObj = vm.createHostObject();
         vm.setHostObjectField(timeObj, "now", compiler::HostFunctionRef{.name = "time.now"});
         vm.setHostObjectField(timeObj, "nowMs", compiler::HostFunctionRef{.name = "time.nowMs"});
@@ -96,7 +96,7 @@ inline void registerTimeModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(timeObj, "strftime", compiler::HostFunctionRef{.name = "time.strftime"});
         vm.setHostObjectField(timeObj, "unix", compiler::HostFunctionRef{.name = "time.unix"});
         vm.setGlobal("time", timeObj);
-    };
+    });
 }
 
 // Implementation of old registerTimeModule (placeholder)

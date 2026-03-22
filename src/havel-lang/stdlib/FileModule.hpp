@@ -137,7 +137,7 @@ inline void registerFileModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register file object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto fileObj = vm.createHostObject();
         vm.setHostObjectField(fileObj, "read", compiler::HostFunctionRef{.name = "file.read"});
         vm.setHostObjectField(fileObj, "write", compiler::HostFunctionRef{.name = "file.write"});
@@ -150,7 +150,7 @@ inline void registerFileModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(fileObj, "abs", compiler::HostFunctionRef{.name = "file.abs"});
         vm.setHostObjectField(fileObj, "join", compiler::HostFunctionRef{.name = "file.join"});
         vm.setGlobal("file", fileObj);
-    };
+    });
 }
 
 // Implementation of old registerFileModule (placeholder)

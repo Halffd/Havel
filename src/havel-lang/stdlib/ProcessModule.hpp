@@ -110,7 +110,7 @@ inline void registerProcessModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register process object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto procObj = vm.createHostObject();
         vm.setHostObjectField(procObj, "list", compiler::HostFunctionRef{.name = "process.list"});
         vm.setHostObjectField(procObj, "find", compiler::HostFunctionRef{.name = "process.find"});
@@ -119,7 +119,7 @@ inline void registerProcessModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(procObj, "getPid", compiler::HostFunctionRef{.name = "process.getPid"});
         vm.setHostObjectField(procObj, "getPpid", compiler::HostFunctionRef{.name = "process.getPpid"});
         vm.setGlobal("process", procObj);
-    };
+    });
 }
 
 // Implementation of old registerProcessModule (placeholder)

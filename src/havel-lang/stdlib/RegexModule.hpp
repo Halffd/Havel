@@ -104,14 +104,14 @@ inline void registerRegexModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register regex object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto regexObj = vm.createHostObject();
         vm.setHostObjectField(regexObj, "match", compiler::HostFunctionRef{.name = "regex.match"});
         vm.setHostObjectField(regexObj, "test", compiler::HostFunctionRef{.name = "regex.test"});
         vm.setHostObjectField(regexObj, "replace", compiler::HostFunctionRef{.name = "regex.replace"});
         vm.setHostObjectField(regexObj, "split", compiler::HostFunctionRef{.name = "regex.split"});
         vm.setGlobal("regex", regexObj);
-    };
+    });
 }
 
 // Implementation of old registerRegexModule (placeholder)

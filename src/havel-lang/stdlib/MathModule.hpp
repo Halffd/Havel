@@ -118,7 +118,7 @@ inline void registerMathModuleVM(compiler::HostBridgeRegistry& registry) {
     vm.setGlobal("E", compiler::BytecodeValue(2.71828182845904523536));
     
     // Register math object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto mathObj = vm.createHostObject();
         vm.setHostObjectField(mathObj, "abs", compiler::HostFunctionRef{.name = "math.abs"});
         vm.setHostObjectField(mathObj, "ceil", compiler::HostFunctionRef{.name = "math.ceil"});
@@ -135,7 +135,7 @@ inline void registerMathModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(mathObj, "max", compiler::HostFunctionRef{.name = "math.max"});
         vm.setHostObjectField(mathObj, "random", compiler::HostFunctionRef{.name = "math.random"});
         vm.setGlobal("math", mathObj);
-    };
+    });
 }
 
 // Implementation of old registerMathModule (placeholder)

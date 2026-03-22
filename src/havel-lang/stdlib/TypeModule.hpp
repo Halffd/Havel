@@ -163,10 +163,10 @@ inline void registerTypeModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register type functions via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         // Type conversion functions are global
         // No type object needed
-    };
+    });
 }
 
 // Implementation of old registerTypeModule (placeholder)

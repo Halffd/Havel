@@ -175,9 +175,9 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
 #ifdef ENABLE_HAVEL_LANG
         // Try bytecode VM first, fall back to AST interpreter
-        auto *bytecodeVM = havelApp.getBytecodeVM();
-        auto *hostBridgeRegistry = havelApp.getHostBridgeRegistry();
-        
+        auto *bytecodeVM = reinterpret_cast<havel::compiler::VM*>(havelApp.getBytecodeVM());
+        auto *hostBridgeRegistry = reinterpret_cast<havel::compiler::HostBridgeRegistry*>(havelApp.getHostBridgeRegistry());
+
         if (bytecodeVM && hostBridgeRegistry) {
           info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
           

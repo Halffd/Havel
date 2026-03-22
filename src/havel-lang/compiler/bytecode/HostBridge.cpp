@@ -30,9 +30,9 @@
 
 namespace havel::compiler {
 
-HostBridge::HostBridge(VM &vm, HostContext ctx)
-    : vm_(vm), ctx_(std::move(ctx)) {
-  if (!ctx_.isValid()) {
+HostBridge::HostBridge(const HostContext& ctx)
+    : ctx_(&ctx) {
+  if (!ctx_->isValid()) {
     throw std::runtime_error("HostBridge: HostContext is invalid (io is null)");
   }
 }
@@ -361,19 +361,29 @@ BytecodeValue HostBridge::handleScreenshotRegion(const std::vector<BytecodeValue
 }
 
 CallbackId HostBridge::registerCallback(const BytecodeValue &closure) {
-  return vm_.registerCallback(closure);
+  // VM needed for callback registration - get from context
+  if (!ctx_->vm) {
+    throw std::runtime_error("VM not available for callback registration");
+  }
+  return ctx_->vm->registerCallback(closure);
 }
 
 BytecodeValue HostBridge::invokeCallback(CallbackId id, std::span<BytecodeValue> args) {
-  return vm_.invokeCallback(id, args);
+  if (!ctx_->vm) {
+    throw std::runtime_error("VM not available for callback invocation");
+  }
+  return ctx_->vm->invokeCallback(id, args);
 }
 
 void HostBridge::releaseCallback(CallbackId id) {
-  vm_.releaseCallback(id);
+  if (!ctx_->vm) {
+    throw std::runtime_error("VM not available for callback release");
+  }
+  ctx_->vm->releaseCallback(id);
 }
 
-std::shared_ptr<HostBridge> createHostBridge(VM& vm, HostContext ctx) {
-  return std::make_shared<HostBridge>(vm, std::move(ctx));
+std::shared_ptr<HostBridge> createHostBridge(const HostContext& ctx) {
+  return std::make_shared<HostBridge>(ctx);
 }
 
 } // namespace havel::compiler

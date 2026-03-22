@@ -191,35 +191,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   auto windowMonitor =
       std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
 
-  // Build HostContext from managers (hotkeyManager will be set later)
-  HostContext ctx;
-  ctx.commandLineArgs = commandLineArgs; // Store command line arguments
-  ctx.io = io;                           // Share ownership
-  ctx.windowManager = windowManager.get();
-  ctx.hotkeyManager = nullptr;       // Will be set after HotkeyManager creation
-  ctx.modeManager = nullptr;         // Will be set after HotkeyManager creation
-  ctx.windowMonitor = windowMonitor; // Window monitoring
-  ctx.brightnessManager = brightnessManager.get();
-  ctx.audioManager = audioManager.get();
-  ctx.guiManager = guiManager.get();
-  ctx.screenshotManager = screenshotMgr;
-  ctx.clipboardManager = clipboardMgr;
-  ctx.pixelAutomation = pixelAuto;
-
-  // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
-  if (false) { // interpreter removed
-    throw std::runtime_error("Interpreter removed");
-  }
-
   std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
 
   // Get screenshot manager with null guard (nullptr in REPL mode)
   auto *screenshotMgrForHotkey =
       suite ? suite->getScreenshotManager() : nullptr;
 
-  // Create HotkeyManager - needs interpreter reference
+  // Create HotkeyManager (without interpreter - conditions stubbed)
   hotkeyManager = std::make_shared<HotkeyManager>(
-      io, *windowManager, *mpv, *audioManager, *interpreter,
+      io, *windowManager, *mpv, *audioManager,
       screenshotMgrForHotkey, *brightnessManager, networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
@@ -233,36 +213,36 @@ void HavelApp::initializeComponents(bool isStartup) {
   hotkeyManager->loadDebugSettings();
   hotkeyManager->applyDebugSettings();
 
-  // Update interpreter's hostContext with hotkeyManager and modeManager
-  interpreter->getHostContext().hotkeyManager = hotkeyManager;
-  interpreter->getHostContext().modeManager = hotkeyManager->getModeManager();
-
-  // Update HostAPI with hotkeyManager and modeManager (HostAPI was created with
-  // nullptr)
-  if (interpreter->getHostAPI()) {
-    interpreter->getHostAPI()->SetHotkeyManager(hotkeyManager.get());
-    interpreter->getHostAPI()->SetModeManager(
-        hotkeyManager->getModeManager().get());
-  }
-
-  // Set interpreter in hotkeyManager for condition evaluation
-
-  // Register interpreter for hotkey callbacks (must be after construction)
-  interpreter->RegisterForHotkeys();
-  std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
+  // Build HostContext from managers (raw pointers - no ownership)
+  HostContext ctx;
+  ctx.io = io.get();
+  ctx.windowManager = windowManager.get();
+  ctx.hotkeyManager = hotkeyManager.get();
+  ctx.modeManager = hotkeyManager->getModeManager().get();
+  ctx.windowMonitor = windowMonitor.get();
+  ctx.brightnessManager = brightnessManager.get();
+  ctx.audioManager = audioManager.get();
+  ctx.guiManager = guiManager.get();
+  ctx.screenshotManager = screenshotMgr;
+  ctx.clipboardManager = clipboardMgr;
+  ctx.pixelAutomation = pixelAuto;
+  ctx.automationManager = automationManager.get();
+  ctx.fileManager = nullptr;  // Not used
+  ctx.processManager = nullptr;  // Not used
+  ctx.networkManager = networkManager.get();
 
   // Initialize bytecode VM and HostBridge
   try {
     info("Initializing bytecode VM and HostBridge...");
 
-    // Create VM
-    bytecodeVM = std::make_unique<compiler::VM>();
-
-    // Create HostContext with injected dependencies
-    auto ctx = havel::createHostContext(interpreter->getHostAPI());
+    // Create VM with context
+    bytecodeVM = std::make_unique<compiler::VM>(ctx);
     
-    // Create HostBridge with injected context
-    hostBridge = compiler::createHostBridge(*bytecodeVM, std::move(ctx));
+    // Set VM pointer in context (non-owning)
+    ctx.vm = bytecodeVM.get();
+
+    // Create HostBridge with context
+    hostBridge = compiler::createHostBridge(ctx);
     hostBridge->install();
 
     info("Bytecode VM and HostBridge initialized successfully");
@@ -271,11 +251,9 @@ void HavelApp::initializeComponents(bool isStartup) {
     // Continue anyway - VM is optional for now
   }
 #else
-  interpreter = nullptr;
-  std::cerr << "[DEBUG] Havel language disabled, interpreter is null"
-            << std::endl;
+  std::cerr << "[DEBUG] Havel language disabled" << std::endl;
 #endif
-  info("Havel interpreter initialized successfully");
+  info("Havel initialized successfully");
 
   // Set the hotkeyManager on the IO instance so it can access it during
   // suspend/resume operations

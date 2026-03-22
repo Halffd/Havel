@@ -55,41 +55,49 @@ struct Capability {
 /**
  * HostContext - Injected dependencies for HostBridge
  * 
+ * ARCHITECTURE:
+ * - HostContext does NOT own services (raw pointers)
+ * - VM is infrastructure, not a service (non-owning pointer)
+ * - Services are pure C++ (no VM types)
+ * - Only HostBridge and high-level systems touch VM
+ * 
  * Usage:
+ *   auto vm = std::make_unique<VM>(ctx);
  *   HostContext ctx;
- *   ctx.io = std::make_shared<IO>();
- *   ctx.caps["custom"] = std::make_shared<MyCustomCap>();
+ *   ctx.vm = vm.get();  // Non-owning
+ *   ctx.io = io.get();  // Non-owning
  *   
  *   auto bridge = std::make_unique<HostBridge>(ctx);
  */
 struct HostContext {
-    // Core services (required for basic functionality)
-    std::shared_ptr<IO> io;
+    // VM infrastructure (non-owning - only high-level systems use this)
+    class VM* vm = nullptr;
     
-    // Optional services (nullptr if not available)
-    std::shared_ptr<HotkeyManager> hotkeyManager;
-    std::shared_ptr<WindowManager> windowManager;
-    std::shared_ptr<ModeManager> modeManager;
-    std::shared_ptr<BrightnessManager> brightnessManager;
-    std::shared_ptr<AudioManager> audioManager;
-    std::shared_ptr<GUIManager> guiManager;
-    std::shared_ptr<ScreenshotManager> screenshotManager;
-    std::shared_ptr<ClipboardManager> clipboardManager;
-    std::shared_ptr<PixelAutomation> pixelAutomation;
-    std::shared_ptr<AutomationManager> automationManager;
-    std::shared_ptr<FileManager> fileManager;
-    std::shared_ptr<ProcessManager> processManager;
-    std::shared_ptr<net::NetworkManager> networkManager;
+    // Core services (non-owning pointers)
+    class IO* io = nullptr;
+    class WindowManager* windowManager = nullptr;
+    class HotkeyManager* hotkeyManager = nullptr;
+    class ModeManager* modeManager = nullptr;
+    class BrightnessManager* brightnessManager = nullptr;
+    class AudioManager* audioManager = nullptr;
+    class GUIManager* guiManager = nullptr;
+    class ScreenshotManager* screenshotManager = nullptr;
+    class ClipboardManager* clipboardManager = nullptr;
+    class PixelAutomation* pixelAutomation = nullptr;
+    class AutomationManager* automationManager = nullptr;
+    class FileManager* fileManager = nullptr;
+    class ProcessManager* processManager = nullptr;
+    class net::NetworkManager* networkManager = nullptr;
     
     // Capability-based extensions (embedder-provided)
     std::unordered_map<std::string, std::shared_ptr<Capability>> caps;
     
     // Helper to get capability with type safety
     template<typename T>
-    std::shared_ptr<T> getCap(const std::string& name) const {
+    T* getCap(const std::string& name) const {
         auto it = caps.find(name);
         if (it == caps.end()) return nullptr;
-        return std::dynamic_pointer_cast<T>(it->second);
+        return dynamic_cast<T*>(it->second.get());
     }
     
     // Validation

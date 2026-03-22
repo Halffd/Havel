@@ -369,10 +369,9 @@ set(COMMON_LIBS
     # ZIP libraries (use minizip if available, otherwise fall back to generic zip)
     $<$<BOOL:${MINIZIP_FOUND}>:${MINIZIP_LIBRARIES}>
     $<$<NOT:$<BOOL:${MINIZIP_FOUND}>>:zip>
-    # Qt6 libraries
+    # Qt6 libraries (only what's actually used)
     Qt6::Core
     Qt6::Widgets
-    Qt6::Charts
 )
 
 # ==============================================================================

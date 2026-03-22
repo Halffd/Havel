@@ -44,11 +44,16 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 endif()
 
-# LTO configuration - use thin LTO for faster builds
+# LTO configuration - use thin LTO for faster builds, disable for debug
 include(CheckIPOSupported)
 check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_OUTPUT)
 if(LTO_SUPPORTED AND CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    # Use thin LTO for faster builds (Clang) or auto (GCC)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -flto=thin")
+        set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto=thin")
+    endif()
 endif()
 find_program(CCACHE ccache)
 if(CCACHE)

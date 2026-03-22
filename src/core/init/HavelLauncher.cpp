@@ -77,6 +77,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugLexer = true;
     } else if (arg == "--debug-bytecode" || arg == "-dbc") {
       cfg.debugBytecode = true;
+    } else if (arg == "--diff" || arg == "-diff") {
+      cfg.diffBytecode = true;
+      cfg.debugBytecode = true;  // --diff implies --debug-bytecode
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
@@ -162,7 +165,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    // Load and execute startup script if specified
+    // Load and execute startup script if specified (using bytecode VM by default)
     if (!cfg.scriptFile.empty()) {
       std::ifstream file(cfg.scriptFile);
       if (file) {
@@ -170,18 +173,89 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
         buffer << file.rdbuf();
         std::string code = buffer.str();
 
-        auto *interpreter = havelApp.getInterpreter();
-        if (interpreter) {
-          info("Loading startup script: {}", cfg.scriptFile);
-          auto result = interpreter->Execute(code);
+#ifdef ENABLE_HAVEL_LANG
+        // Try bytecode VM first, fall back to AST interpreter
+        auto *bytecodeVM = havelApp.getBytecodeVM();
+        auto *hostBridgeRegistry = havelApp.getHostBridgeRegistry();
+        
+        if (bytecodeVM && hostBridgeRegistry) {
+          info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
+          
+          havel::compiler::PipelineOptions options = hostBridgeRegistry->options();
+          options.vm_override = bytecodeVM;
+          
+          // Enable bytecode debug output if requested
+          if (cfg.debugBytecode) {
+            options.write_snapshot_artifact = true;
+            options.snapshot_dir = "/tmp/havel-bytecode";
+            
+            // Compare with previous snapshot if --diff requested
+            if (cfg.diffBytecode) {
+              std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
+              if (prevSnapshot) {
+                std::string prevContent((std::istreambuf_iterator<char>(prevSnapshot)),
+                                        std::istreambuf_iterator<char>());
+                // Will compare after execution
+              }
+            }
+          }
+          
+          try {
+            auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+            
+            // Print bytecode debug info if requested
+            if (cfg.debugBytecode && !vmResult.snapshot.bytecode.empty()) {
+              info("=== Bytecode Debug Output ===");
+              info("{}", vmResult.snapshot.bytecode);
+              
+              // Save snapshot for diff comparison
+              std::ofstream snapshot("/tmp/havel-bytecode/current.txt");
+              if (snapshot) {
+                snapshot << vmResult.snapshot.bytecode;
+              }
+              
+              // Compare with previous if --diff requested
+              if (cfg.diffBytecode) {
+                std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
+                if (prevSnapshot) {
+                  std::string prevContent((std::istreambuf_iterator<char>(prevSnapshot)),
+                                          std::istreambuf_iterator<char>());
+                  if (prevContent != vmResult.snapshot.bytecode) {
+                    info("=== BYTECODE DIFF ===");
+                    info("Bytecode has changed from previous run");
+                  } else {
+                    info("Bytecode unchanged from previous run");
+                  }
+                }
+                // Save current as previous for next run
+                std::ofstream prevFile("/tmp/havel-bytecode/previous.txt");
+                if (prevFile) {
+                  prevFile << vmResult.snapshot.bytecode;
+                }
+              }
+            }
+            
+            info("Bytecode execution completed successfully");
+          } catch (const std::exception& e) {
+            error("Bytecode execution error: {}", e.what());
+          }
+        } else
+#endif
+        {
+          // Fall back to AST interpreter
+          auto *interpreter = havelApp.getInterpreter();
+          if (interpreter) {
+            info("Loading startup script (AST interpreter): {}", cfg.scriptFile);
+            auto result = interpreter->Execute(code);
 
-          if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-            const auto &err = std::get<havel::HavelRuntimeError>(result);
-            if (err.hasLocation && err.line > 0) {
-              error("Startup script error at line {}: {}", err.line,
-                    err.what());
-            } else {
-              error("Startup script error: {}", err.what());
+            if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
+              const auto &err = std::get<havel::HavelRuntimeError>(result);
+              if (err.hasLocation && err.line > 0) {
+                error("Startup script error at line {}: {}", err.line,
+                      err.what());
+              } else {
+                error("Startup script error: {}", err.what());
+              }
             }
           }
         }
@@ -869,6 +943,8 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --debug-parser, -dp Enable parser debugging\n";
   std::cout << "  --debug-ast, -da    Enable AST debugging\n";
   std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
+  std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
+  std::cout << "  --diff              Compare bytecode with previous run (implies -dbc)\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";
   std::cout << "  --repl, -r          Start interactive REPL (minimal mode)\n";
   std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
@@ -891,4 +967,8 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout
       << "  Useful for testing scripts that auto-exit or don't need input.\n";
   std::cout << "  Example: havel --run scripts/test_types.hv\n";
+  std::cout << "\nBytecode debugging:\n";
+  std::cout << "  --debug-bytecode        Print bytecode to console\n";
+  std::cout << "  --diff                  Compare bytecode with previous run\n";
+  std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
 } // namespace havel::init

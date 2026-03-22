@@ -72,12 +72,16 @@ public:
   bool gui = true;
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
+  havel::compiler::VM* getBytecodeVM() { return bytecodeVM.get(); }
+  havel::compiler::HostBridgeRegistry* getHostBridgeRegistry() { return hostBridgeRegistry.get(); }
   ClipboardManager *getClipboardManager() {
     auto *suite = AutomationSuite::Instance();
     return suite ? suite->getClipboardManager() : nullptr;
   }
 #else
   Interpreter *getInterpreter() { return nullptr; }
+  havel::compiler::VM* getBytecodeVM() { return nullptr; }
+  havel::compiler::HostBridgeRegistry* getHostBridgeRegistry() { return nullptr; }
   ClipboardManager *getClipboardManager() { return nullptr; }
 #endif
   std::shared_ptr<IO> io;

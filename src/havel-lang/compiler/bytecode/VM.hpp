@@ -88,11 +88,14 @@ private:
       open_upvalues;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
-  
+
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> function
   std::unordered_map<std::string, std::unordered_map<std::string, HostFunctionRef>> prototypes_;
-  
+
+  // Host context for service access (non-owning)
+  const class HostContext* context_ = nullptr;
+
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
   size_t max_call_depth_ = 1024;
@@ -119,6 +122,7 @@ private:
 
 public:
   VM();
+  VM(const class HostContext& ctx);
   ~VM() override;
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,

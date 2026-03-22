@@ -238,6 +238,12 @@ VM::VM() {
   registerDefaultHostFunctions();
 }
 
+VM::VM(const HostContext& ctx) {
+  // Store context for service access
+  context_ = &ctx;
+  registerDefaultHostFunctions();
+}
+
 VM::~VM() {
   if (heap_.externalRootCount() > 0) {
     std::cerr << "[VM][GC] Warning: " << heap_.externalRootCount()

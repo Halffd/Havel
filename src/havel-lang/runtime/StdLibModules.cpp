@@ -7,6 +7,7 @@
 #include "../stdlib/FileModule.hpp"
 #include "../stdlib/MathModule.hpp"
 #include "../stdlib/ObjectModule.hpp"
+#include "../stdlib/PhysicsModule.hpp"
 #include "../stdlib/ProcessModule.hpp"
 #include "../stdlib/RegexModule.hpp"
 #include "../stdlib/StringModule.hpp"
@@ -59,7 +60,12 @@ void registerStdLibWithVM(compiler::HostBridgeRegistry& registry) {
     stdlib::registerTypeModuleVM(registry);
     stdlib::registerUtilityModuleVM(registry);
     stdlib::registerArrayModuleVM(registry);
-    // TODO: Convert remaining stdlib modules (File, Process, Regex, Time, Object, Physics)
+    stdlib::registerFileModuleVM(registry);
+    stdlib::registerProcessModuleVM(registry);
+    stdlib::registerRegexModuleVM(registry);
+    stdlib::registerTimeModuleVM(registry);
+    stdlib::registerObjectModuleVM(registry);
+    stdlib::registerPhysicsModuleVM(registry);
 }
 
 } // namespace havel

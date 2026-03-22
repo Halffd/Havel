@@ -1,5 +1,7 @@
 #include "HostBridge.hpp"
 
+#include <thread>  // for std::this_thread::sleep_for
+
 #include "host/ServiceRegistry.hpp"
 #include "host/io/IOService.hpp"
 #include "host/hotkey/HotkeyService.hpp"

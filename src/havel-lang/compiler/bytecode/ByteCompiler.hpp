@@ -66,6 +66,8 @@ private:
                                      std::vector<const ast::FunctionDeclaration*>& out) const;
     void compileStatement(const ast::Statement& statement);
     void compileExpression(const ast::Expression& expression);
+    void compileHotkeyBinding(const ast::HotkeyBinding& binding);
+    void compileInputStatement(const ast::InputStatement& statement);
     void compileCallExpression(const ast::CallExpression& expression);
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);

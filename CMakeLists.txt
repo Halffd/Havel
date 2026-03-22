@@ -40,8 +40,15 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=thin -fuse-ld=lld -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
     set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
-    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -flto=auto -DNDEBUG -ffast-math -fvisibility=hidden -fvisibility-inlines-hidden -Wno-nan-infinity-disabled")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "-flto=auto -Wl,--as-needed -Wl,--gc-sections -Wl,-z,nocopyreloc")
+endif()
+
+# LTO configuration - use thin LTO for faster builds
+include(CheckIPOSupported)
+check_ipo_supported(RESULT LTO_SUPPORTED OUTPUT LTO_OUTPUT)
+if(LTO_SUPPORTED AND CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 find_program(CCACHE ccache)
 if(CCACHE)
@@ -483,8 +490,12 @@ target_precompile_headers(havel PRIVATE
     <sys/types.h>
 )
 
-target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-target_link_options(havel PRIVATE -fsanitize=address,undefined)
+# Sanitizers - only for Debug builds to reduce binary size
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(havel PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(havel PRIVATE -fsanitize=address,undefined)
+endif()
+
 # Include directories
 target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src

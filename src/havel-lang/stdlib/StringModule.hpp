@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>    // for std::floor
 #include <sstream>
 
 namespace havel {

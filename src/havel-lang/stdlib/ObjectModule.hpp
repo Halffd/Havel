@@ -142,7 +142,17 @@ inline void registerObjectModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectSealed(obj, true);
         return compiler::BytecodeValue(obj);  // Return object for chaining
     };
-    
+
+    // Register prototype methods for {}.method() syntax
+    registry.vm().registerPrototypeMethod("Object", "keys", compiler::HostFunctionRef{.name = "Object.keys"});
+    registry.vm().registerPrototypeMethod("Object", "values", compiler::HostFunctionRef{.name = "Object.values"});
+    registry.vm().registerPrototypeMethod("Object", "entries", compiler::HostFunctionRef{.name = "Object.entries"});
+    registry.vm().registerPrototypeMethod("Object", "has", compiler::HostFunctionRef{.name = "Object.has"});
+    registry.vm().registerPrototypeMethod("Object", "delete", compiler::HostFunctionRef{.name = "Object.delete"});
+    registry.vm().registerPrototypeMethod("Object", "assign", compiler::HostFunctionRef{.name = "Object.assign"});
+    registry.vm().registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "Object.freeze"});
+    registry.vm().registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "Object.seal"});
+
     // Register Object functions via vm_setup (accumulated)
     registry.addVmSetup([](compiler::VM& vm) {
         auto objConstructor = vm.createHostObject();

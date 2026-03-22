@@ -274,6 +274,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileBlockStatement(static_cast<const ast::BlockStatement &>(statement));
     break;
 
+  case ast::NodeType::HotkeyBinding:
+    compileHotkeyBinding(static_cast<const ast::HotkeyBinding &>(statement));
+    break;
+
+  case ast::NodeType::InputStatement:
+    compileInputStatement(static_cast<const ast::InputStatement &>(statement));
+    break;
+
   case ast::NodeType::FunctionDeclaration:
     // Function declarations evaluate to function objects stored in local slots.
     // Top-level declarations are skipped in __main__ and do not hit this path.
@@ -470,6 +478,45 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     compileExpression(*binary.left);
     compileExpression(*binary.right);
     emit(toBytecodeOperator(binary.operator_));
+    break;
+  }
+
+  case ast::NodeType::PipelineExpression: {
+    const auto &pipeline = static_cast<const ast::PipelineExpression &>(expression);
+    if (pipeline.stages.empty()) {
+      throw std::runtime_error("Pipeline expression has no stages");
+    }
+    
+    // Compile first stage
+    compileExpression(*pipeline.stages[0]);
+    
+    // For each subsequent stage, compile it as a function call with previous result as argument
+    for (size_t i = 1; i < pipeline.stages.size(); ++i) {
+      auto& stage = pipeline.stages[i];
+      if (!stage) {
+        throw std::runtime_error("Pipeline stage is null");
+      }
+      
+      // The stage should be a call expression or identifier that can be called
+      // Result from previous stage is already on stack as first argument
+      if (stage->kind == ast::NodeType::CallExpression) {
+        const auto& call = static_cast<const ast::CallExpression&>(*stage);
+        // Compile the callee (function to call)
+        if (call.callee) {
+          compileExpression(*call.callee);
+        }
+        // Add arguments from the call (previous result is already on stack)
+        for (const auto& arg : call.args) {
+          if (arg) compileExpression(*arg);
+        }
+        // Call with (previous_result + explicit_args) count
+        emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
+      } else {
+        // Stage is just an identifier or member expression - call it with previous result
+        compileExpression(*stage);
+        emit(OpCode::CALL, 1);
+      }
+    }
     break;
   }
 
@@ -994,6 +1041,78 @@ void ByteCompiler::leaveFunction() {
 
 void ByteCompiler::resetLocals() {
   next_local_index = 0;
+}
+
+// Compile hotkey binding: hotkey => action
+void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
+  // Compile the action (body)
+  if (binding.action) {
+    compileStatement(*binding.action);
+  }
+  
+  // For each hotkey in the binding, register it
+  for (const auto& hotkeyExpr : binding.hotkeys) {
+    if (!hotkeyExpr) continue;
+    
+    // Hotkey expression should be a string or identifier
+    // We need to call hotkey.register(hotkey_string, callback_function)
+    // The callback is a closure that wraps the action
+    
+    // For now, emit a host function call to hotkey.register
+    // The hotkey string needs to be evaluated
+    compileExpression(*hotkeyExpr);
+    
+    // The action body was already compiled above
+    // We need to create a closure for the callback
+    // This is complex - for now we'll emit a placeholder
+    // TODO: Properly implement hotkey registration with closures
+  }
+}
+
+// Compile input statement: > "text" or > {Enter}
+void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
+  // Each input command becomes a host function call to io.send or similar
+  for (const auto& cmd : statement.commands) {
+    switch (cmd.type) {
+    case ast::InputCommand::SendText:
+      // io.send(cmd.text)
+      emit(OpCode::LOAD_CONST, addConstant(cmd.text));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"io.send", 1});
+      break;
+    case ast::InputCommand::SendKey:
+      // io.sendKey(cmd.key)
+      emit(OpCode::LOAD_CONST, addConstant(cmd.key));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"io.sendKey", 1});
+      break;
+    case ast::InputCommand::MouseClick:
+      // io.mouseClick(cmd.text) - text contains button name
+      emit(OpCode::LOAD_CONST, addConstant(cmd.text));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"io.mouseClick", 1});
+      break;
+    case ast::InputCommand::MouseMove:
+      // io.mouseMove(x, y) - xExprStr and yExprStr contain coordinates
+      // For now, treat as strings and evaluate them
+      // TODO: Properly evaluate expressions
+      emit(OpCode::LOAD_CONST, addConstant(cmd.xExprStr));
+      emit(OpCode::LOAD_CONST, addConstant(cmd.yExprStr));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"io.mouseMove", 2});
+      break;
+    case ast::InputCommand::MouseRelative:
+      // Similar to MouseMove but relative
+      emit(OpCode::LOAD_CONST, addConstant(cmd.xExprStr));
+      emit(OpCode::LOAD_CONST, addConstant(cmd.yExprStr));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"io.mouseMoveRel", 2});
+      break;
+    case ast::InputCommand::Sleep:
+      // sleep_ms(cmd.duration)
+      emit(OpCode::LOAD_CONST, addConstant(std::stoi(cmd.duration)));
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"sleep_ms", 1});
+      break;
+    default:
+      // Other commands not yet implemented
+      break;
+    }
+  }
 }
 
 } // namespace havel::compiler

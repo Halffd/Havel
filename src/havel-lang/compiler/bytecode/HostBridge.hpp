@@ -31,7 +31,7 @@ namespace havel::compiler {
 class HostBridge
     : public std::enable_shared_from_this<HostBridge> {
 public:
-  HostBridge(const HostContext& ctx);
+  HostBridge(const havel::HostContext& ctx);
   ~HostBridge();
 
   void install();
@@ -52,7 +52,7 @@ public:
   void addVmSetup(std::function<void(VM&)> setupFn);
 
 private:
-  const HostContext* ctx_;
+  const havel::HostContext* ctx_;
   PipelineOptions options_;
   
   // Accumulated vm_setup callbacks
@@ -109,6 +109,6 @@ private:
  * 
  * This is the primary factory function for embedders.
  */
-std::shared_ptr<HostBridge> createHostBridge(const HostContext& ctx);
+std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext& ctx);
 
 } // namespace havel::compiler

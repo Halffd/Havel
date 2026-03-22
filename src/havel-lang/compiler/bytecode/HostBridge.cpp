@@ -30,7 +30,7 @@
 
 namespace havel::compiler {
 
-HostBridge::HostBridge(const HostContext& ctx)
+HostBridge::HostBridge(const havel::HostContext& ctx)
     : ctx_(&ctx) {
   if (!ctx_->isValid()) {
     throw std::runtime_error("HostBridge: HostContext is invalid (io is null)");
@@ -382,7 +382,7 @@ void HostBridge::releaseCallback(CallbackId id) {
   ctx_->vm->releaseCallback(id);
 }
 
-std::shared_ptr<HostBridge> createHostBridge(const HostContext& ctx) {
+std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext& ctx) {
   return std::make_shared<HostBridge>(ctx);
 }
 

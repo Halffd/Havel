@@ -8,7 +8,6 @@
 #undef emit
 #endif
 
-#include "runtime/Interpreter.hpp"
 #include "../../utils/Util.hpp"
 // Include LLVM headers in correct order
 #include "llvm.h"

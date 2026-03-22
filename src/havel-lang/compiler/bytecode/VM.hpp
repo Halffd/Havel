@@ -14,6 +14,10 @@
 #include <unordered_map>
 #include <vector>
 
+namespace havel {
+class HostContext;  // Forward declaration
+}
+
 namespace havel::compiler {
 
 // Opaque callback handle - systems can store this without knowing VM internals
@@ -94,7 +98,7 @@ private:
   std::unordered_map<std::string, std::unordered_map<std::string, HostFunctionRef>> prototypes_;
 
   // Host context for service access (non-owning)
-  const class HostContext* context_ = nullptr;
+  const class havel::HostContext* context_ = nullptr;
 
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
@@ -122,7 +126,7 @@ private:
 
 public:
   VM();
-  VM(const class HostContext& ctx);
+  VM(const class havel::HostContext& ctx);
   ~VM() override;
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,

@@ -23,7 +23,7 @@ void registerTypeModule(Environment& env);
 
 // NEW: Register type module with VM's host bridge (VM-native)
 inline void registerTypeModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to number

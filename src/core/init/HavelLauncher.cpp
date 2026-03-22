@@ -388,7 +388,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       havel::compiler::VM tempVm;
       
       // Create HostBridge with minimal context
-      auto bridge = havel::compiler::createHostBridge(tempVm, std::move(ctx));
+      auto bridge = havel::compiler::createHostBridge(ctx);
       bridge->install();
 
       // Register stdlib modules with VM (VM-native)
@@ -456,6 +456,7 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &,
   return 1;
 }
 
+void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
   std::cout << "  --diff              Compare bytecode with previous run (implies -dbc)\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";

@@ -22,7 +22,7 @@ void registerFileModule(Environment& env);
 
 // NEW: Register file module with VM's host bridge (VM-native)
 inline void registerFileModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to string

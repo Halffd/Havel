@@ -21,7 +21,7 @@ void registerUtilityModule(Environment& env);
 
 // NEW: Register utility module with VM's host bridge (VM-native)
 inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // keys(obj) - Get keys from object/map

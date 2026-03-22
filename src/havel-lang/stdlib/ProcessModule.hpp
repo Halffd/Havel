@@ -22,7 +22,7 @@ void registerProcessModule(Environment& env);
 
 // NEW: Register process module with VM's host bridge (VM-native)
 inline void registerProcessModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to string

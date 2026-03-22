@@ -17,7 +17,7 @@ namespace havel::stdlib {
 
 // NEW: Register physics module with VM's host bridge (VM-native)
 inline void registerPhysicsModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     
     // Create physics object with constants
     auto physicsObj = vm.createHostObject();

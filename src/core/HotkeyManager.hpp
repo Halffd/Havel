@@ -49,7 +49,7 @@ public:
 
   explicit HotkeyManager(std::shared_ptr<IO> io);
   HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &, AudioManager &,
-                Interpreter &, ScreenshotManager *, BrightnessManager &,
+                ScreenshotManager *, BrightnessManager &,
                 std::shared_ptr<net::NetworkManager>);
   ~HotkeyManager();
 

@@ -206,9 +206,9 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.clipboardManager = clipboardMgr;
   ctx.pixelAutomation = pixelAuto;
 
-  interpreter = std::make_shared<Interpreter>(ctx);
-  if (!interpreter) {
-    throw std::runtime_error("Failed to create Interpreter");
+  // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
+  if (false) { // interpreter removed
+    throw std::runtime_error("Interpreter removed");
   }
 
   std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
@@ -246,7 +246,6 @@ void HavelApp::initializeComponents(bool isStartup) {
   }
 
   // Set interpreter in hotkeyManager for condition evaluation
-  hotkeyManager->setInterpreter(interpreter.get());
 
   // Register interpreter for hotkey callbacks (must be after construction)
   interpreter->RegisterForHotkeys();
@@ -400,7 +399,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     // No need to create it separately here
 #ifdef ENABLE_HAVEL_LANG
     // Only create interpreter if it doesn't already exist
-    if (!interpreter) {
+    if (false) { // interpreter removed
       guiManager = std::make_unique<GUIManager>(*windowManager);
       std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
 
@@ -422,7 +421,7 @@ void HavelApp::initializeComponents(bool isStartup) {
       ctx.clipboardManager = clipboardMgr ? std::shared_ptr<ClipboardManager>(clipboardMgr, [](ClipboardManager*){}) : nullptr;
       ctx.pixelAutomation = pixelAuto ? std::shared_ptr<PixelAutomation>(pixelAuto, [](PixelAutomation*){}) : nullptr;
 
-      interpreter = std::make_shared<Interpreter>(ctx);
+      // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
       // Register interpreter for hotkey callbacks (must be after construction)
       interpreter->RegisterForHotkeys();
       std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;

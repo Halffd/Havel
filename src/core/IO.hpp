@@ -420,11 +420,11 @@ public:
   void UngrabAll();
 
   // Mouse button code conversion - multiple overloads for different types
-  int GetMouseButtonCode(const HavelValue &arg);
+  int GetMouseButtonCode(const std::string& arg);
   int GetMouseButtonCode(MouseButton btn) { return static_cast<int>(btn); }
   int GetMouseButtonCode(int idx);
 
-  MouseAction GetMouseAction(const HavelValue &action);
+  MouseAction GetMouseAction(const std::string& action);
   MouseAction GetMouseAction(MouseAction action) { return action; }
   MouseAction GetMouseAction(int idx);
   template <typename T, typename S> bool Click(T button, S action) {

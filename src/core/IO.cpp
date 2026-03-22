@@ -4326,52 +4326,30 @@ void IO::executeComboAction(const std::string &action) {
 // (removed - now inline in header)
 
 // Mouse button code conversion implementations
-int IO::GetMouseButtonCode(const HavelValue &arg) {
-  if (arg.isString()) {
-    std::string s = toLower(arg.asString());
-    if (s == "right")
-      return BTN_RIGHT;
-    if (s == "middle")
-      return BTN_MIDDLE;
-    if (s == "side1" || s == "xbutton1")
-      return BTN_SIDE;
-    if (s == "side2" || s == "xbutton2")
-      return BTN_EXTRA;
-    if (s == "side3" || s == "forward")
-      return BTN_FORWARD;
-    if (s == "side4" || s == "back")
-      return BTN_BACK;
-    if (s == "left")
-      return BTN_LEFT;
-    try {
-      if (std::stoi(s) > 0) {
-        return GetMouseButtonCode(std::stoi(s));
-      }
-    } catch (...) {
-      // not a number, continue
-    }
-    return BTN_LEFT; // fallback
-  }
-  // numeric argument: treat 1=left, 2=right, 3=middle, etc.
-  int idx = static_cast<int>(stod(arg));
-  switch (idx) {
-  case 1:
-    return BTN_LEFT;
-  case 2:
+int IO::GetMouseButtonCode(const std::string& arg) {
+  std::string s = toLower(arg);
+  if (s == "right")
     return BTN_RIGHT;
-  case 3:
+  if (s == "middle")
     return BTN_MIDDLE;
-  case 4:
+  if (s == "side1" || s == "xbutton1")
     return BTN_SIDE;
-  case 5:
+  if (s == "side2" || s == "xbutton2")
     return BTN_EXTRA;
-  case 6:
+  if (s == "side3" || s == "forward")
     return BTN_FORWARD;
-  case 7:
+  if (s == "side4" || s == "back")
     return BTN_BACK;
-  default:
+  if (s == "left")
     return BTN_LEFT;
+  try {
+    if (std::stoi(s) > 0) {
+      return GetMouseButtonCode(std::stoi(s));
+    }
+  } catch (...) {
+    // not a number, continue
   }
+  return BTN_LEFT; // fallback
 }
 
 int IO::GetMouseButtonCode(int idx) {
@@ -4395,36 +4373,22 @@ int IO::GetMouseButtonCode(int idx) {
   }
 }
 
-MouseAction IO::GetMouseAction(const HavelValue &action) {
-  if (action.isString()) {
-    std::string s = toLower(action.asString());
-    if (s == "press" || s == "hold")
-      return MouseAction::Hold;
-    if (s == "release")
-      return MouseAction::Release;
-    if (s == "click")
-      return MouseAction::Click;
-    try {
-      if (std::stoi(s) > 0) {
-        return GetMouseAction(std::stoi(s));
-      }
-    } catch (...) {
-      // not a number, continue
-    }
-    return MouseAction::Click; // fallback
-  }
-  // numeric argument: treat 0=hold, 1=release, 2=click
-  int idx = static_cast<int>(stod(action));
-  switch (idx) {
-  case 0:
+MouseAction IO::GetMouseAction(const std::string& action) {
+  std::string s = toLower(action);
+  if (s == "press" || s == "hold")
     return MouseAction::Hold;
-  case 1:
+  if (s == "release")
     return MouseAction::Release;
-  case 2:
+  if (s == "click")
     return MouseAction::Click;
-  default:
-    return MouseAction::Click;
+  try {
+    if (std::stoi(s) > 0) {
+      return GetMouseAction(std::stoi(s));
+    }
+  } catch (...) {
+    // not a number, continue
   }
+  return MouseAction::Click; // fallback
 }
 
 MouseAction IO::GetMouseAction(int idx) {

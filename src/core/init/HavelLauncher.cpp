@@ -3,7 +3,6 @@
 #include "havel-lang/common/Debug.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/runtime/StdLibModules.hpp"
@@ -239,26 +238,9 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
           } catch (const std::exception& e) {
             error("Bytecode execution error: {}", e.what());
           }
-        } else
-#endif
-        {
-          // Fall back to AST interpreter
-          auto *interpreter = havelApp.getInterpreter();
-          if (interpreter) {
-            info("Loading startup script (AST interpreter): {}", cfg.scriptFile);
-            auto result = interpreter->Execute(code);
-
-            if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-              const auto &err = std::get<havel::HavelRuntimeError>(result);
-              if (err.hasLocation && err.line > 0) {
-                error("Startup script error at line {}: {}", err.line,
-                      err.what());
-              } else {
-                error("Startup script error: {}", err.what());
-              }
-            }
-          }
         }
+        // Note: AST interpreter removed - bytecode VM is the only execution engine
+#endif
       } else {
         error("Cannot open startup script: {}", cfg.scriptFile);
       }
@@ -315,46 +297,23 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    // Use HavelApp's interpreter
-    auto *interpreter = havelApp.getInterpreter();
-    if (!interpreter) {
-      error("Interpreter is not available");
+    // Execute with bytecode VM through HavelApp
+    auto *bytecodeVM = havelApp.getBytecodeVM();
+    auto *hostBridge = havelApp.getHostBridge();
+    
+    if (!bytecodeVM || !hostBridge) {
+      error("Bytecode VM not available");
       return 1;
     }
 
-    auto result = interpreter->Execute(code);
+    try {
+      havel::compiler::PipelineOptions options = hostBridge->options();
+      options.vm_override = bytecodeVM;
 
-    if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-      const auto &err = std::get<havel::HavelRuntimeError>(result);
-
-      // Print detailed error information
-      havel::error(
-          "╔═══════════════════════════════════════════════════════════╗");
-      havel::error(
-          "║         RUNTIME ERROR IN STARTUP SCRIPT                   ║");
-      havel::error(
-          "╚═══════════════════════════════════════════════════════════╝");
-      havel::error("");
-      havel::error("  Error: {}", err.what());
-
-      // Use structured location data if available
-      if (err.hasLocation && err.line > 0) {
-        havel::error("");
-        havel::error("  At line {}, column {}", err.line, err.column);
-
-        // Print source code context
-        interpreter->printSourceWithContext(code, err.line);
-      } else {
-        // No location info - print full source context
-        havel::error("");
-        havel::error("  (No location information available)");
-        interpreter->printSourceWithContext(code, 0);
-      }
-
-      havel::error("");
-      havel::error("  Script file: {}", cfg.scriptFile);
-      havel::error("");
-
+      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+      info("Startup script executed successfully with bytecode VM");
+    } catch (const std::exception& e) {
+      error("Startup script error: {}", e.what());
       return 1;
     }
 
@@ -483,470 +442,20 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     }
   }
 
-  // Create minimal interpreter without IO/hotkeys
-  havel::Interpreter interpreter;
 
-  // Set script path for auto-reload support
-  interpreter.setScriptPath(cfg.scriptFile);
-
-  // Configure debug flags
-  interpreter.setDebugParser(cfg.debugParser);
-  interpreter.setStopOnError(cfg.stopOnError);
-  interpreter.setShowAST(cfg.debugAst);
-
-  // Execute script
-  auto result = interpreter.Execute(code);
-
-  if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    const auto &err = std::get<havel::HavelRuntimeError>(result);
-    if (err.hasLocation && err.line > 0) {
-      error("Runtime Error at line {}: {}", err.line, err.what());
-    } else {
-      error("Runtime Error: {}", err.what());
-    }
-    return 1;
-  }
-
-  // Print result if any
-  if (auto *value = std::get_if<havel::HavelValue>(&result)) {
-    // Print value based on type using semantic helpers
-    if (value->isString()) {
-      std::cout << value->asString() << std::endl;
-    } else if (value->isNumber()) {
-      std::cout << value->asNumber() << std::endl;
-    } else if (value->isBool()) {
-      std::cout << (value->asBool() ? "true" : "false") << std::endl;
-    }
-  }
-
-  info("Script executed successfully");
-  return 0;
+  // Bytecode VM not available - error
+  error("Bytecode VM not available");
+  return 1;
 }
 
-int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
-  info("Starting Havel REPL (bytecode VM)");
-
-  // Create minimal HostAPI for REPL (with IO if available)
-  auto io = std::make_shared<IO>();
-  auto hostAPI = std::make_shared<HostAPI>(
-      io.get(),
-      nullptr,  // hotkeyManager - not available in REPL
-      Configs::Get(),
-      nullptr,  // windowManager
-      nullptr,  // brightnessManager
-      nullptr,  // audioManager
-      nullptr,  // guiManager
-      nullptr,  // screenshotManager
-      nullptr,  // clipboardManager
-      nullptr,  // pixelAutomation
-      nullptr,  // automationManager
-      nullptr,  // fileManager
-      nullptr,  // processManager
-      nullptr,  // mapManager
-      nullptr,  // modeManager
-      std::vector<std::string>()  // command line args
-  );
-
-  // Configure REPL
-  repl::REPLConfig replConfig;
-  replConfig.debugMode = cfg.debugMode;
-  replConfig.showAST = cfg.debugAst;
-  replConfig.stopOnError = cfg.stopOnError;
-  
-  // Create and initialize REPL
-  repl::REPL repl(replConfig);
-  repl.initialize(hostAPI);
-  
-  // Run REPL
-  return repl.run();
+int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &,
+                                                 int, char *[]) {
+  // Interpreter removed - REPL not available
+  error("REPL mode not available - interpreter removed");
+  error("Use --run mode for bytecode VM execution instead");
+  return 1;
 }
 
-int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg,
-                                                 int argc, char *argv[]) {
-  info("Running Havel script and entering REPL: {}", cfg.scriptFile);
-
-  // Read script file
-  std::ifstream file(cfg.scriptFile);
-  if (!file) {
-    error("Cannot open script file: {}", cfg.scriptFile);
-    return 2;
-  }
-
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  std::string code = buffer.str();
-
-  // Convert argc/argv to vector<string> for HavelApp
-  std::vector<std::string> args;
-  for (int i = 0; i < argc; ++i) {
-    args.emplace_back(argv[i]);
-  }
-
-  // Create HavelApp instance
-  HavelApp havelApp(false, cfg.scriptFile, false, false, args);
-
-  // Use HavelApp's interpreter
-  auto *interpreter = havelApp.getInterpreter();
-  if (!interpreter) {
-    error("Interpreter is not available");
-    return 1;
-  }
-
-  // Execute the script first
-  auto result = interpreter->Execute(code);
-  if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-    const auto &err = std::get<havel::HavelRuntimeError>(result);
-    if (err.hasLocation && err.line > 0) {
-      error("Script runtime error at line {}: {}", err.line, err.what());
-    } else {
-      error("Script runtime error: {}", err.what());
-    }
-    return 1;
-  }
-
-  info("Script executed successfully. Entering REPL...");
-
-  // Now enter REPL with the same interpreter and environment
-  // Reuse the REPL logic but without creating a new interpreter
-  std::cout << "Havel Language REPL v1.0\n";
-  std::cout << "Type 'exit' or 'quit' to exit, 'help' for help\n\n";
-
-  std::string line;
-  std::string multiline;
-  int braceCount = 0;
-
-  // REPL log file
-  std::string home =
-      std::getenv("HOME") ? std::getenv("HOME") : std::string(".");
-  std::string logPath = home + "/.havel_repl.log";
-  std::ofstream replLog(logPath, std::ios::app);
-
-  while (true) {
-    std::string prompt = (braceCount > 0) ? "... " : ">>> ";
-
-#ifdef HAVE_READLINE
-    // Disable readline signal handling
-    rl_catch_signals = 0;
-    rl_catch_sigwinch = 0;
-
-    char *input = readline(prompt.c_str());
-    if (!input) {
-      std::cout << "\nGoodbye!\n";
-      break;
-    }
-
-    line = std::string(input);
-    free(input);
-    if (!line.empty())
-      add_history(line.c_str());
-#else
-    std::cout << prompt;
-    if (!std::getline(std::cin, line))
-
-#endif
-
-    // Trim whitespace
-    size_t start = line.find_first_not_of(" \t");
-    if (start == std::string::npos) {
-      if (braceCount == 0)
-        continue;
-      line = "";
-    } else {
-      line = line.substr(start);
-    }
-
-    // Log input
-    if (replLog.is_open()) {
-      replLog << line << '\n';
-      replLog.flush();
-    }
-
-    // Commands
-    if (braceCount == 0) {
-      if (line == "exit" || line == "quit") {
-        std::cout << "Goodbye!\n";
-        return 0;
-      }
-      if (line == "help") {
-        std::cout << "Available commands:\n";
-        std::cout << "  exit, quit  - Exit REPL\n";
-        std::cout << "  help        - Show this help\n";
-        std::cout << "  clear       - Clear screen\n";
-        std::cout << "\nType any Havel expression or statement to evaluate.\n";
-        continue;
-      }
-      if (line == "clear") {
-        std::cout << "\033[2J\033[1;1H";
-        continue;
-      }
-      if (line.empty()) {
-        continue;
-      }
-    }
-
-    // Track braces
-    for (char c : line) {
-      if (c == '{')
-        braceCount++;
-      else if (c == '}')
-        braceCount--;
-    }
-
-    multiline += line + "\n";
-
-    // Execute when balanced
-    if (braceCount == 0 && !multiline.empty()) {
-      try {
-        auto result = interpreter->Execute(multiline);
-
-        if (std::holds_alternative<havel::HavelValue>(result)) {
-          auto val = std::get<havel::HavelValue>(result);
-          if (!val.isNull()) {
-            std::cout << "=> " << havel::Interpreter::ValueToString(val)
-                      << "\n";
-          }
-        } else if (std::holds_alternative<havel::HavelRuntimeError>(result)) {
-          const auto &err = std::get<havel::HavelRuntimeError>(result);
-          if (err.hasLocation && err.line > 0) {
-            std::cerr << "Error at line " << err.line << ": " << err.what()
-                      << "\n";
-          } else {
-            std::cerr << "Error: " << err.what() << "\n";
-          }
-        }
-      } catch (const std::exception &e) {
-        std::cerr << "Error: " << e.what() << "\n";
-      }
-
-      multiline.clear();
-    }
-  }
-
-  return 0;
-}
-
-int havel::init::HavelLauncher::runCli(int argc, char *argv[]) {
-  if (argc < 3) {
-    std::cerr << "usage: havel lexer script.hv\n";
-    return 2;
-  }
-
-  const std::string subcommand = argv[1];
-  if (subcommand != "lexer") {
-    std::cerr << "Unknown command: " << subcommand << "\n";
-    std::cerr << "usage: havel lexer script.hv\n";
-    return 2;
-  }
-
-  const std::string filePath = argv[2];
-
-  auto readFile = [](const std::string &path) -> std::string {
-    std::ifstream file(path);
-    if (!file) {
-      throw std::runtime_error("Cannot open script file: " + path);
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-  };
-
-  auto getLine = [](const std::string &source,
-                    size_t oneBasedLine) -> std::string {
-    if (oneBasedLine == 0)
-      return "";
-    size_t currentLine = 1;
-    size_t start = 0;
-    while (start < source.size() && currentLine < oneBasedLine) {
-      size_t nl = source.find('\n', start);
-      if (nl == std::string::npos)
-        return "";
-      start = nl + 1;
-      currentLine++;
-    }
-    if (start >= source.size())
-      return "";
-    size_t end = source.find('\n', start);
-    if (end == std::string::npos)
-      end = source.size();
-    return source.substr(start, end - start);
-  };
-
-  auto printDiagnostic = [&](const std::string &kind, size_t line,
-                             size_t column, const std::string &message,
-                             const std::string &source) {
-    auto countLines = [](const std::string &s) -> size_t {
-      if (s.empty())
-        return 1;
-      size_t count = 1;
-      for (char c : s) {
-        if (c == '\n')
-          ++count;
-      }
-      return count;
-    };
-
-    const size_t totalLines = countLines(source);
-    const size_t safeLine =
-        (line == 0 ? 1 : (line > totalLines ? totalLines : line));
-    const size_t safeColumn = (column == 0 ? 1 : column);
-
-    std::cerr << filePath << ":" << safeLine << ":" << safeColumn << ": "
-              << kind << ": " << message << "\n";
-
-    std::string srcLine = getLine(source, safeLine);
-    if (safeLine >= 1 && safeLine <= totalLines) {
-      std::cerr << srcLine << "\n";
-
-      size_t caretCol = safeColumn;
-      if (column == 0) {
-        caretCol = srcLine.size() + 1;
-      }
-      if (caretCol < 1)
-        caretCol = 1;
-      if (caretCol > srcLine.size() + 1)
-        caretCol = srcLine.size() + 1;
-
-      for (size_t i = 1; i < caretCol; ++i)
-        std::cerr << ' ';
-      std::cerr << "^\n";
-    }
-  };
-
-  auto prettify = [](const std::vector<havel::Token> &tokens) -> std::string {
-    auto needsSpaceBefore = [](havel::TokenType t) {
-      return t == havel::TokenType::Identifier ||
-             t == havel::TokenType::Number || t == havel::TokenType::String ||
-             t == havel::TokenType::InterpolatedString ||
-             t == havel::TokenType::Hotkey;
-    };
-    auto needsSpaceAround = [](havel::TokenType t) {
-      return t == havel::TokenType::Plus || t == havel::TokenType::Minus ||
-             t == havel::TokenType::Multiply || t == havel::TokenType::Divide ||
-             t == havel::TokenType::Modulo || t == havel::TokenType::Equals ||
-             t == havel::TokenType::NotEquals || t == havel::TokenType::Less ||
-             t == havel::TokenType::Greater ||
-             t == havel::TokenType::LessEquals ||
-             t == havel::TokenType::GreaterEquals ||
-             t == havel::TokenType::And || t == havel::TokenType::Or ||
-             t == havel::TokenType::Assign ||
-             t == havel::TokenType::PlusAssign ||
-             t == havel::TokenType::MinusAssign ||
-             t == havel::TokenType::MultiplyAssign ||
-             t == havel::TokenType::DivideAssign ||
-             t == havel::TokenType::Arrow || t == havel::TokenType::Pipe ||
-             t == havel::TokenType::DotDot;
-    };
-
-    std::string out;
-    havel::TokenType prev = havel::TokenType::EOF_TOKEN;
-
-    for (const auto &tok : tokens) {
-      if (tok.type == havel::TokenType::EOF_TOKEN)
-
-        if (tok.type == havel::TokenType::NewLine) {
-          while (!out.empty() && out.back() == ' ')
-            out.pop_back();
-          out += "\n";
-          prev = tok.type;
-          continue;
-        }
-
-      if (tok.type == havel::TokenType::Comma) {
-        while (!out.empty() && out.back() == ' ')
-          out.pop_back();
-        out += ", ";
-        prev = tok.type;
-        continue;
-      }
-
-      if (tok.type == havel::TokenType::Semicolon) {
-        while (!out.empty() && out.back() == ' ')
-          out.pop_back();
-        out += ";\n";
-        prev = tok.type;
-        continue;
-      }
-
-      if (tok.type == havel::TokenType::CloseParen ||
-          tok.type == havel::TokenType::CloseBracket ||
-          tok.type == havel::TokenType::CloseBrace) {
-        while (!out.empty() && out.back() == ' ')
-          out.pop_back();
-      }
-
-      bool insertSpace = false;
-      if (!out.empty() && out.back() != '\n') {
-        if (needsSpaceBefore(tok.type) &&
-            (needsSpaceBefore(prev) || prev == havel::TokenType::CloseParen ||
-             prev == havel::TokenType::CloseBracket)) {
-          insertSpace = true;
-        }
-        if (tok.type == havel::TokenType::OpenBrace &&
-            prev != havel::TokenType::NewLine &&
-            prev != havel::TokenType::OpenBrace) {
-          insertSpace = true;
-        }
-      }
-
-      if (insertSpace)
-        out += ' ';
-
-      if (needsSpaceAround(tok.type)) {
-        while (!out.empty() && out.back() == ' ')
-          out.pop_back();
-        if (!out.empty() && out.back() != '\n')
-          out += ' ';
-        out += tok.raw;
-        out += ' ';
-      } else {
-        out += tok.raw;
-      }
-
-      prev = tok.type;
-    }
-
-    while (!out.empty() && out.back() == ' ')
-      out.pop_back();
-    if (!out.empty() && out.back() != '\n')
-      out += '\n';
-    return out;
-  };
-
-  try {
-    const std::string source = readFile(filePath);
-
-    havel::Lexer lexer(source);
-    std::vector<havel::Token> tokens = lexer.tokenize();
-
-    havel::parser::Parser parser;
-    (void)parser.parseStrict(source);
-
-    std::cout << prettify(tokens);
-    return 0;
-  } catch (const havel::LexError &e) {
-    printDiagnostic("lex error", e.line, e.column, e.what(),
-                    readFile(filePath));
-    return 1;
-  } catch (const havel::parser::ParseError &e) {
-    printDiagnostic("parse error", e.line, e.column, e.what(),
-                    readFile(filePath));
-    return 1;
-  } catch (const std::exception &e) {
-    std::cerr << "Error: " << e.what() << "\n";
-    return 1;
-  }
-}
-
-void havel::init::HavelLauncher::showHelp() {
-  std::cout << "Usage: havel [script.hv] [options]\n";
-  std::cout << "       havel lexer script.hv\n";
-  std::cout << "       havel --run script.hv\n";
-  std::cout << "Options:\n";
-  std::cout << "  --startup, -s       Run at system startup\n";
-  std::cout << "  --debug, -d         Enable debug logging\n";
-  std::cout << "  --debug-parser, -dp Enable parser debugging\n";
-  std::cout << "  --debug-ast, -da    Enable AST debugging\n";
-  std::cout << "  --debug-lexer, -dl  Enable lexer debugging\n";
   std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
   std::cout << "  --diff              Compare bytecode with previous run (implies -dbc)\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";

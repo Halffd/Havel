@@ -124,7 +124,6 @@ public:
   void setModeManager(std::weak_ptr<class ModeManager> mgr) { modeManager = mgr; }
 
   // Set interpreter for expression evaluation
-  void setInterpreter(class Interpreter* interp) { interpreter = interp; }
 
   // Debug options
   bool verboseConditionLogging = false;
@@ -169,9 +168,6 @@ private:
   // Mode management
   static std::mutex modeMutex;
   static std::string currentMode;
-
-  // Interpreter for expression evaluation
-  class Interpreter* interpreter = nullptr;
 
   // Update loop
   std::thread updateLoopThread;

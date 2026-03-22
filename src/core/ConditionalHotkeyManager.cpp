@@ -1,7 +1,6 @@
 #include "ConditionalHotkeyManager.hpp"
 #include "IO.hpp"
 #include "ModeManager.hpp"
-#include "havel-lang/runtime/Interpreter.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
 #include <algorithm>
@@ -513,13 +512,9 @@ void ConditionalHotkeyManager::UpdateLoop() {
 
     // Update modes first (may trigger enter/exit callbacks)
     if (auto modeMgr = modeManager.lock()) {
-      // Create evaluator that uses interpreter to evaluate expressions
-      ModeManager::ExprEvaluator evaluator = [this](const ast::Expression& expr) -> bool {
-        // Evaluate condition using interpreter
-        if (inCleanupMode.load() || !interpreter) {
-          return false;  // Don't evaluate during cleanup
-        }
-        return interpreter->evaluateCondition(expr);
+      // Stub evaluator - conditions not evaluated without interpreter
+      ModeManager::ExprEvaluator evaluator = [](const ast::Expression&) -> bool {
+        return false;  // Stub: conditions not evaluated
       };
       modeMgr->update(evaluator);
     }
@@ -600,15 +595,10 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
   std::string currentTitle;
   std::string currentClass;
   std::string currentExe;
-  
-  if (interpreter) {
-    currentTitle = interpreter->getActiveWindowTitle();
-    currentClass = interpreter->getActiveWindowClass();
-    currentExe = interpreter->getActiveWindowExe();
-  } else {
-    currentTitle = io->GetActiveWindowTitle();
-    currentClass = io->GetActiveWindowClass();
-  }
+
+  // Get window info from IO (interpreter not available)
+  currentTitle = io->GetActiveWindowTitle();
+  currentClass = io->GetActiveWindowClass();
 
   // Syntax: window.title == '' or window.title==''
   if (condition.find("window.title ==") != std::string::npos ||

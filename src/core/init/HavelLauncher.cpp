@@ -176,19 +176,19 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 #ifdef ENABLE_HAVEL_LANG
         // Try bytecode VM first, fall back to AST interpreter
         auto *bytecodeVM = reinterpret_cast<havel::compiler::VM*>(havelApp.getBytecodeVM());
-        auto *hostBridgeRegistry = reinterpret_cast<havel::compiler::HostBridgeRegistry*>(havelApp.getHostBridgeRegistry());
+        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge*>(havelApp.getHostBridge());
 
-        if (bytecodeVM && hostBridgeRegistry) {
+        if (bytecodeVM && hostBridge) {
           info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
-          
-          havel::compiler::PipelineOptions options = hostBridgeRegistry->options();
+
+          havel::compiler::PipelineOptions options = hostBridge->options();
           options.vm_override = bytecodeVM;
-          
+
           // Enable bytecode debug output if requested
           if (cfg.debugBytecode) {
             options.write_snapshot_artifact = true;
             options.snapshot_dir = "/tmp/havel-bytecode";
-            
+
             // Compare with previous snapshot if --diff requested
             if (cfg.diffBytecode) {
               std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");

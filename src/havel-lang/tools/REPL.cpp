@@ -36,17 +36,15 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   
   // Initialize service registry with all services
   havel::initializeServiceRegistry(hostAPI);
-  
+
   // Create VM
   vm_ = std::make_unique<compiler::VM>();
 
-  // Create HostBridge dependencies (pass VM* for ModeService)
-  auto deps = havel::createHostBridgeDependencies(hostAPI, vm_.get());
-
-  // Create HostBridge registry
-  hostBridge_ = compiler::createHostBridgeRegistry(*vm_, deps);
+  // Create HostContext with injected dependencies
+  auto ctx = havel::modules::createHostContext(hostAPI);
   
-  // Install host functions (populates options_)
+  // Create HostBridge with injected context
+  hostBridge_ = compiler::createHostBridge(*vm_, std::move(ctx));
   hostBridge_->install();
 
   initialized = true;

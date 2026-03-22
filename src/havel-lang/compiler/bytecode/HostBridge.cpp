@@ -97,9 +97,6 @@ void HostBridge::install() {
   registerTypeModuleVM(*this);
   registerUtilityModuleVM(*this);
   registerArrayModuleVM(*this);
-
-  // Register host functions through HostBridge
-  // These use injected services from HostContext
   
   // Window functions
   options.host_functions.emplace("window.moveToNextMonitor",

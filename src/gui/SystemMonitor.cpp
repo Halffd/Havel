@@ -5,8 +5,6 @@
 #include <vector>
 #include <sys/sysinfo.h>
 #include <dirent.h>
-#include <QtCharts/QAbstractAxis>
-#include <QtCharts/QValueAxis>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QTabWidget>
@@ -57,37 +55,22 @@ void SystemMonitor::setupUI() {
     leftLayout->addWidget(uptimeLabel);
     leftLayout->addWidget(netLabel);
 
-    // Right side: Charts and Process List
+    // Right side: Process List (Charts disabled - Qt Charts not linked)
     QTabWidget* tabWidget = new QTabWidget(this);
     rightLayout->addWidget(tabWidget);
-
-    // -- Charts Tab --
-    QWidget* chartsTab = new QWidget(this);
-    QVBoxLayout* chartsLayout = new QVBoxLayout(chartsTab);
-    tabWidget->addTab(chartsTab, "Usage Graphs");
-
-    cpuChart = new QChart();
-    cpuSeries = new QLineSeries();
-    cpuChart->addSeries(cpuSeries);
-    cpuChart->setTitle("CPU Usage History");
-    cpuChart->createDefaultAxes();
-    cpuChart->axes(Qt::Vertical).first()->setRange(0, 100);
-    cpuChartView = new QChartView(cpuChart);
-    chartsLayout->addWidget(cpuChartView);
-
-    memChart = new QChart();
-    memSeries = new QLineSeries();
-    memChart->addSeries(memSeries);
-    memChart->setTitle("Memory Usage History");
-    memChart->createDefaultAxes();
-    memChart->axes(Qt::Vertical).first()->setRange(0, 100);
-    memChartView = new QChartView(memChart);
-    chartsLayout->addWidget(memChartView);
 
     // -- Process List Tab --
     processTree = new QTreeWidget(static_cast<QWidget*>(this));
     processTree->setHeaderLabels({"PID", "Name", "CPU %", "Memory"});
     tabWidget->addTab(processTree, "Processes");
+    
+    // Charts tab disabled - Qt Charts not linked to reduce binary size
+    QWidget* chartsPlaceholder = new QWidget(this);
+    QVBoxLayout* chartsLayout = new QVBoxLayout(chartsPlaceholder);
+    QLabel* noChartsLabel = new QLabel("Charts disabled to reduce binary size.\nUse external tools like 'htop' or 'gnome-system-monitor' for graphs.");
+    noChartsLabel->setAlignment(Qt::AlignCenter);
+    chartsLayout->addWidget(noChartsLabel);
+    tabWidget->addTab(chartsPlaceholder, "Usage Graphs (Disabled)");
 }
 
 void SystemMonitor::updateData() {
@@ -100,9 +83,7 @@ void SystemMonitor::updateData() {
         long long idleDiff = idle - prevIdle;
         cpuUsage = 100.0 * (totalDiff - idleDiff) / totalDiff;
         cpuBar->setValue(static_cast<int>(cpuUsage));
-        cpuSeries->append(cpuSeries->count(), cpuUsage);
-        if (cpuSeries->count() > 60) cpuSeries->remove(0);
-        cpuChart->axes(Qt::Horizontal).first()->setRange(0, cpuSeries->count());
+        // Charts disabled - skip graph updates
     }
     prevTotal = total;
     prevIdle = idle;
@@ -110,13 +91,7 @@ void SystemMonitor::updateData() {
     // Memory
     double memUsage = getMemoryUsage();
     memBar->setValue(static_cast<int>(memUsage));
-    memSeries->append(memSeries->count(), memUsage);
-    if (memSeries->count() > 60) memSeries->remove(0);
-    memChart->axes(Qt::Horizontal).first()->setRange(0, memSeries->count());
-
-
-    // Uptime
-    uptimeLabel->setText("Uptime: " + getUptime());
+    // Charts disabled - skip graph updates
 
     // Network
     updateNetworkUsage();

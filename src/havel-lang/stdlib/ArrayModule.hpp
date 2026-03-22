@@ -205,7 +205,7 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register array object via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         auto arrObj = vm.createHostObject();
         vm.setHostObjectField(arrObj, "len", compiler::HostFunctionRef{.name = "array.len"});
         vm.setHostObjectField(arrObj, "push", compiler::HostFunctionRef{.name = "array.push"});
@@ -224,7 +224,7 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(arrObj, "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
         vm.setHostObjectField(arrObj, "sort", compiler::HostFunctionRef{.name = "array.sort"});
         vm.setGlobal("array", arrObj);
-    };
+    });
 }
 
 // Implementation of old registerArrayModule (placeholder)

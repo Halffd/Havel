@@ -170,10 +170,10 @@ inline void registerUtilityModuleVM(compiler::HostBridgeRegistry& registry) {
     };
     
     // Register utility functions via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    registry.addVmSetup([](compiler::VM& vm) {
         // Utility functions are global
         // No utility object needed
-    };
+    });
 }
 
 // Implementation of old registerUtilityModule (placeholder)

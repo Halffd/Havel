@@ -365,11 +365,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       }
       
       // Add VM's function names to host_global_names so compiler knows about them
-      options.host_global_names.insert("toInt");
-      options.host_global_names.insert("toFloat");
-      options.host_global_names.insert("toString");
-      options.host_global_names.insert("toBool");
-      options.host_global_names.insert("typeof");
+      options.host_global_names.insert("int");
+      options.host_global_names.insert("num");
+      options.host_global_names.insert("str");
       options.host_global_names.insert("print");
       options.host_global_names.insert("clock_ms");
       options.host_global_names.insert("sleep_ms");

@@ -54,6 +54,63 @@ std::string toString(const BytecodeValue &value) {
   return "unknown";
 }
 
+// Type conversion helpers
+int64_t toInt(const BytecodeValue& value) {
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::get<int64_t>(value);
+  }
+  if (std::holds_alternative<double>(value)) {
+    return static_cast<int64_t>(std::get<double>(value));
+  }
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value) ? 1 : 0;
+  }
+  if (std::holds_alternative<std::string>(value)) {
+    try {
+      return std::stoll(std::get<std::string>(value));
+    } catch (...) {
+      return 0;
+    }
+  }
+  return 0;
+}
+
+double toFloat(const BytecodeValue& value) {
+  if (std::holds_alternative<double>(value)) {
+    return std::get<double>(value);
+  }
+  if (std::holds_alternative<int64_t>(value)) {
+    return static_cast<double>(std::get<int64_t>(value));
+  }
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value) ? 1.0 : 0.0;
+  }
+  if (std::holds_alternative<std::string>(value)) {
+    try {
+      return std::stod(std::get<std::string>(value));
+    } catch (...) {
+      return 0.0;
+    }
+  }
+  return 0.0;
+}
+
+bool toBool(const BytecodeValue& value) {
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value);
+  }
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::get<int64_t>(value) != 0;
+  }
+  if (std::holds_alternative<double>(value)) {
+    return std::get<double>(value) != 0.0;
+  }
+  if (std::holds_alternative<std::string>(value)) {
+    return !std::get<std::string>(value).empty();
+  }
+  return false;  // null, arrays, objects, etc. are falsy
+}
+
 std::optional<int64_t> indexFromValue(const BytecodeValue &value) {
   if (std::holds_alternative<int64_t>(value)) {
     return std::get<int64_t>(value);
@@ -390,6 +447,48 @@ void VM::registerDefaultHostFunctions() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
     return BytecodeValue(nullptr);
+  });
+
+  // Type conversion builtins
+  registerHostFunction("toInt", 1, [](const std::vector<BytecodeValue> &args) {
+    return BytecodeValue(toInt(args[0]));
+  });
+
+  registerHostFunction("toFloat", 1, [](const std::vector<BytecodeValue> &args) {
+    return BytecodeValue(toFloat(args[0]));
+  });
+
+  registerHostFunction("toString", 1, [](const std::vector<BytecodeValue> &args) {
+    return BytecodeValue(toString(args[0]));
+  });
+
+  registerHostFunction("toBool", 1, [](const std::vector<BytecodeValue> &args) {
+    return BytecodeValue(toBool(args[0]));
+  });
+
+  registerHostFunction("typeof", 1, [](const std::vector<BytecodeValue> &args) {
+    const auto& value = args[0];
+    std::string typeName;
+    if (std::holds_alternative<std::nullptr_t>(value)) {
+      typeName = "null";
+    } else if (std::holds_alternative<bool>(value)) {
+      typeName = "bool";
+    } else if (std::holds_alternative<int64_t>(value)) {
+      typeName = "int";
+    } else if (std::holds_alternative<double>(value)) {
+      typeName = "float";
+    } else if (std::holds_alternative<std::string>(value)) {
+      typeName = "string";
+    } else if (std::holds_alternative<ArrayRef>(value)) {
+      typeName = "array";
+    } else if (std::holds_alternative<ObjectRef>(value)) {
+      typeName = "object";
+    } else if (std::holds_alternative<HostFunctionRef>(value)) {
+      typeName = "function";
+    } else {
+      typeName = "unknown";
+    }
+    return BytecodeValue(typeName);
   });
 
   auto registerSystemGc = [this](const std::string &name) {
@@ -1318,6 +1417,134 @@ void VM::executeInstruction(
       throw std::runtime_error("OBJECT_SET unknown object id");
     }
     (*obj)[*key] = value;
+    break;
+  }
+
+  // Spread operator - spread array elements
+  case OpCode::SPREAD: {
+    BytecodeValue value = pop();
+    if (std::holds_alternative<ArrayRef>(value)) {
+      auto arrRef = std::get<ArrayRef>(value);
+      auto* arr = heap_.array(arrRef.id);
+      if (arr) {
+        // Push each element individually
+        for (auto& elem : *arr) {
+          push(elem);
+        }
+      }
+    } else if (std::holds_alternative<std::string>(value)) {
+      // Spread string into characters
+      auto str = std::get<std::string>(value);
+      auto arrRef = heap_.allocateArray();
+      auto* arr = heap_.array(arrRef.id);
+      if (arr) {
+        for (char c : str) {
+          arr->push_back(BytecodeValue(std::string(1, c)));
+        }
+        push(BytecodeValue(arrRef));
+      }
+    }
+    break;
+  }
+
+  // Spread in function call
+  case OpCode::SPREAD_CALL: {
+    // Similar to SPREAD but marks arguments for spread in CALL
+    BytecodeValue value = pop();
+    if (std::holds_alternative<ArrayRef>(value)) {
+      auto arrRef = std::get<ArrayRef>(value);
+      auto* arr = heap_.array(arrRef.id);
+      if (arr) {
+        for (auto& elem : *arr) {
+          push(elem);
+        }
+      }
+    }
+    break;
+  }
+
+  // Type conversion - as operator
+  case OpCode::AS_TYPE: {
+    if (instruction.operands.size() < 1) {
+      throw std::runtime_error("AS_TYPE requires type operand");
+    }
+    const std::string& typeName = std::get<std::string>(instruction.operands[0]);
+    BytecodeValue value = pop();
+    
+    if (typeName == "int" || typeName == "Int") {
+      push(toInt(value));
+    } else if (typeName == "float" || typeName == "Float" || typeName == "double") {
+      push(toFloat(value));
+    } else if (typeName == "string" || typeName == "String") {
+      push(BytecodeValue(toString(value)));
+    } else if (typeName == "bool" || typeName == "Bool" || typeName == "boolean") {
+      push(toBool(value));
+    } else if (typeName == "array" || typeName == "Array") {
+      // Convert to array if possible
+      if (std::holds_alternative<ArrayRef>(value)) {
+        push(value);
+      } else {
+        auto arrRef = heap_.allocateArray();
+        push(BytecodeValue(arrRef));
+      }
+    } else {
+      push(value);  // Unknown type, return as-is
+    }
+    break;
+  }
+
+  // toInt() builtin
+  case OpCode::TO_INT: {
+    BytecodeValue value = pop();
+    push(toInt(value));
+    break;
+  }
+
+  // toFloat() builtin
+  case OpCode::TO_FLOAT: {
+    BytecodeValue value = pop();
+    push(toFloat(value));
+    break;
+  }
+
+  // toString() builtin
+  case OpCode::TO_STRING: {
+    BytecodeValue value = pop();
+    push(BytecodeValue(toString(value)));
+    break;
+  }
+
+  // toBool() builtin
+  case OpCode::TO_BOOL: {
+    BytecodeValue value = pop();
+    push(toBool(value));
+    break;
+  }
+
+  // typeof() builtin
+  case OpCode::TYPE_OF: {
+    BytecodeValue value = pop();
+    std::string typeName;
+    if (std::holds_alternative<std::nullptr_t>(value)) {
+      typeName = "null";
+    } else if (std::holds_alternative<bool>(value)) {
+      typeName = "bool";
+    } else if (std::holds_alternative<int64_t>(value)) {
+      typeName = "int";
+    } else if (std::holds_alternative<double>(value)) {
+      typeName = "float";
+    } else if (std::holds_alternative<std::string>(value)) {
+      typeName = "string";
+    } else if (std::holds_alternative<ArrayRef>(value)) {
+      typeName = "array";
+    } else if (std::holds_alternative<ObjectRef>(value)) {
+      typeName = "object";
+    } else if (std::holds_alternative<HostFunctionRef>(value)) {
+      typeName = "function";
+    } else {
+      typeName = "unknown";
+    }
+    push(BytecodeValue(typeName));
     break;
   }
 

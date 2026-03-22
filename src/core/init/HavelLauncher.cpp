@@ -353,6 +353,12 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       registry->install();
       options = registry->options();
       
+      // Copy VM's host functions to options for compiler and execution
+      // This makes built-in functions (toInt, toFloat, etc.) available
+      for (const auto& [name, fn] : tempVm.getHostFunctions()) {
+        options.host_functions[name] = fn;
+      }
+
       auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
       info("Bytecode execution completed successfully");
       return 0;

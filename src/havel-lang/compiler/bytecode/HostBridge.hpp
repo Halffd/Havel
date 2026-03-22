@@ -2,6 +2,7 @@
 
 #include "Pipeline.hpp"
 #include "VM.hpp"
+#include "../../runtime/HostContext.hpp"
 
 #include <memory>
 #include <optional>
@@ -9,41 +10,29 @@
 #include <unordered_map>
 #include <vector>
 
-namespace havel {
-class ModeManager;  // TEMPORARY for mode.define/mode.tick
-namespace host {
-class ServiceRegistry;
-} // namespace host
-} // namespace havel
-
 namespace havel::compiler {
 
 /**
- * HostBridgeDependencies - Dependencies for HostBridge
+ * HostBridge - Bridges VM host functions to injected services
  * 
- * CRITICAL: HostBridge depends ONLY on ServiceRegistry.
- * All services are discovered through the registry.
+ * ARCHITECTURE:
+ * - Dependencies are INJECTED via HostContext (not pulled from registry)
+ * - Embedders provide custom capabilities via ctx.caps
+ * - No hidden dependencies or global state
  * 
- * Legacy dependencies have been removed - services MUST be registered
- * in ServiceRegistry before HostBridge is used.
- * 
- * TEMPORARY: ModeManager is still needed for mode.define/mode.tick
- * TODO: Refactor mode system to use ModeService with callback support
+ * USAGE:
+ *   HostContext ctx;
+ *   ctx.io = std::make_shared<IO>();
+ *   ctx.caps["custom"] = std::make_shared<MyCustomCap>();
+ *   
+ *   auto bridge = std::make_unique<HostBridge>(vm, ctx);
+ *   bridge->install();
  */
-struct HostBridgeDependencies {
-  // Service registry reference (singleton - do not copy)
-  host::ServiceRegistry* services = nullptr;
-  
-  // TEMPORARY - ModeManager for complex mode operations
-  // TODO: Remove when mode system is refactored
-  class ModeManager* mode_manager = nullptr;
-};
-
-class HostBridgeRegistry
-    : public std::enable_shared_from_this<HostBridgeRegistry> {
+class HostBridge
+    : public std::enable_shared_from_this<HostBridge> {
 public:
-  HostBridgeRegistry(VM &vm, HostBridgeDependencies deps);
-  ~HostBridgeRegistry();
+  HostBridge(VM &vm, HostContext ctx);
+  ~HostBridge();
 
   void install();
   void clear();
@@ -53,18 +42,30 @@ public:
   VM& vm() { return vm_; }
   PipelineOptions& options() { return options_; }
   const PipelineOptions& options() const { return options_; }
+  
+  // Get context (for embedders to inspect/modify)
+  const HostContext& context() const { return ctx_; }
+
+  // Register custom module (embedder extension point)
+  void registerModule(const HostModule& module);
 
   // Add vm_setup callback (accumulates with previous callbacks)
   void addVmSetup(std::function<void(VM&)> setupFn);
 
 private:
-  using RootTable = std::unordered_map<int64_t, VM::GCRoot>;
-
-  BytecodeValue handleWindowMoveToNextMonitor(
-      const std::vector<BytecodeValue> &args);
+  VM vm_;
+  HostContext ctx_;
+  PipelineOptions options_;
   
   // Accumulated vm_setup callbacks
   std::vector<std::function<void(VM&)>> vm_setup_callbacks_;
+  
+  // Registered modules
+  std::vector<HostModule> modules_;
+
+  // Handler methods
+  BytecodeValue handleWindowMoveToNextMonitor(
+      const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);
@@ -100,16 +101,16 @@ private:
     std::optional<CallbackId> exit_id;
   };
 
-  VM &vm_;
-  HostBridgeDependencies deps_;
-  PipelineOptions options_;  // For stdlib registration
-  CallbackId next_callback_id_ = 1;
-  std::unordered_map<CallbackId, std::string> hotkey_binding_keys_;
-  std::vector<std::string> mode_definition_order_;
   std::unordered_map<std::string, ModeBinding> mode_bindings_;
+  std::vector<std::string> mode_definition_order_;
+  std::unordered_map<CallbackId, std::string> hotkey_binding_keys_;
 };
 
-std::shared_ptr<HostBridgeRegistry>
-createHostBridgeRegistry(VM &vm, HostBridgeDependencies deps);
+/**
+ * Create HostBridge with injected context
+ * 
+ * This is the primary factory function for embedders.
+ */
+std::shared_ptr<HostBridge> createHostBridge(VM& vm, HostContext ctx);
 
 } // namespace havel::compiler

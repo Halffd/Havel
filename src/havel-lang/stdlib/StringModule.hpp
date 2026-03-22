@@ -214,7 +214,7 @@ inline void registerStringModuleVM(compiler::HostBridge& registry) {
     bridge.options().host_global_names.insert("String");
 
     // Register string object via vm_setup (accumulated)
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto strObj = vm.createHostObject();
         vm.setHostObjectField(strObj, "len", compiler::HostFunctionRef{.name = "string.len"});
         vm.setHostObjectField(strObj, "lower", compiler::HostFunctionRef{.name = "string.lower"});

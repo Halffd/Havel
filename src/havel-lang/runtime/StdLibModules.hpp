@@ -18,6 +18,6 @@ void loadStdLibModules(Environment &env, ModuleLoader &loader,
                        Interpreter *interpreter = nullptr);
 
 // Register stdlib modules with VM (VM-native, no Environment)
-void registerStdLibWithVM(compiler::HostBridgeRegistry& registry);
+void registerStdLibWithVM(compiler::HostBridge& bridge);
 
 } // namespace havel

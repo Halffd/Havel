@@ -110,7 +110,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     };
     
     // Register process object via vm_setup
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto procObj = vm.createHostObject();
         vm.setHostObjectField(procObj, "list", compiler::HostFunctionRef{.name = "process.list"});
         vm.setHostObjectField(procObj, "find", compiler::HostFunctionRef{.name = "process.find"});

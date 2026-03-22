@@ -137,7 +137,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // Register file object via vm_setup
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto fileObj = vm.createHostObject();
         vm.setHostObjectField(fileObj, "read", compiler::HostFunctionRef{.name = "file.read"});
         vm.setHostObjectField(fileObj, "write", compiler::HostFunctionRef{.name = "file.write"});

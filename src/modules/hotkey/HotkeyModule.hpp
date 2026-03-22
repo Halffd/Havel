@@ -6,7 +6,6 @@
  */
 #pragma once
 
-#include "../../host/HostContext.hpp"
 #include <memory>
 
 namespace havel {

@@ -120,7 +120,7 @@ inline void registerMathModuleVM(compiler::HostBridge& bridge) {
     vm.setGlobal("E", compiler::BytecodeValue(2.71828182845904523536));
     
     // Register math object via vm_setup
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto mathObj = vm.createHostObject();
         vm.setHostObjectField(mathObj, "abs", compiler::HostFunctionRef{.name = "math.abs"});
         vm.setHostObjectField(mathObj, "ceil", compiler::HostFunctionRef{.name = "math.ceil"});

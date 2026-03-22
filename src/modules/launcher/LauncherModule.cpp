@@ -5,7 +5,6 @@
  * Host binding - connects language to Launcher.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "process/Launcher.hpp"
 
 namespace havel::modules {

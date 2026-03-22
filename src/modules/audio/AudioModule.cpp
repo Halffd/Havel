@@ -5,7 +5,6 @@
  * Thin binding layer - delegates to AudioService.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../host/audio/AudioService.hpp"
 

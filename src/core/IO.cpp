@@ -2,7 +2,6 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
-#include "havel-lang/runtime/Interpreter.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -4354,7 +4353,7 @@ int IO::GetMouseButtonCode(const HavelValue &arg) {
     return BTN_LEFT; // fallback
   }
   // numeric argument: treat 1=left, 2=right, 3=middle, etc.
-  int idx = static_cast<int>(Interpreter::ValueToNumber(arg));
+  int idx = static_cast<int>(stod(arg));
   switch (idx) {
   case 1:
     return BTN_LEFT;
@@ -4415,7 +4414,7 @@ MouseAction IO::GetMouseAction(const HavelValue &action) {
     return MouseAction::Click; // fallback
   }
   // numeric argument: treat 0=hold, 1=release, 2=click
-  int idx = static_cast<int>(Interpreter::ValueToNumber(action));
+  int idx = static_cast<int>(stod(action));
   switch (idx) {
   case 0:
     return MouseAction::Hold;

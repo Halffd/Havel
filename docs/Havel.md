@@ -440,11 +440,6 @@ on reload {
 // Enable auto-reload
 app.enableReload()
 print("Auto-reload enabled for: " + app.getScriptPath())
-
-// Your main script logic
-hotkey "F1" => {
-    print("Hotkey pressed")
-}
 ```
 
 ### Configuration Block Enhancements
@@ -1498,15 +1493,17 @@ Inside hotkey blocks, you can use implicit input commands without the `>` prefix
 ```havel
 // Traditional explicit syntax
 ^!t => {
-    > "Hello World"
-    > {Enter}
-    > lmb
-    > m(100, 200)
+    "Hello World"
+    {Enter}
+    lmb
+    m(100, 200)
 }
 
 // Also works with explicit > prefix
+> {Esc} :500
 ^!t => {
     > "Hello World" :500 > {Enter}
+    :100
     > lmb :250 > rmb
     > m(500, 200) lmb :2000 > r(0, 50)
 }

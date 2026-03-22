@@ -1,5 +1,6 @@
 #include "VM.hpp"
 
+#include "../../../core/io/MouseController.hpp"  // For ParseDuration
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -525,6 +526,34 @@ void VM::registerDefaultHostFunctions() {
     int64_t duration_ms = std::get<int64_t>(args[0]);
     if (duration_ms < 0) {
       throw std::runtime_error("sleep_ms duration cannot be negative");
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+    return BytecodeValue(nullptr);
+  });
+
+  // Enhanced sleep() with duration string support
+  registerHostFunction("sleep", 1,
+                       [](const std::vector<BytecodeValue> &args) {
+    long long duration_ms = 0;
+    
+    if (std::holds_alternative<int64_t>(args[0])) {
+      duration_ms = std::get<int64_t>(args[0]);
+    } else if (std::holds_alternative<double>(args[0])) {
+      duration_ms = static_cast<long long>(std::get<double>(args[0]));
+    } else if (std::holds_alternative<std::string>(args[0])) {
+      // Import ParseDuration from MouseController
+      auto duration = havel::ParseDuration(std::get<std::string>(args[0]));
+      if (!duration) {
+        throw std::runtime_error("sleep(): invalid duration format");
+      }
+      duration_ms = *duration;
+    } else {
+      throw std::runtime_error("sleep(): expects number or string");
+    }
+    
+    if (duration_ms < 0) {
+      throw std::runtime_error("sleep(): duration cannot be negative");
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));

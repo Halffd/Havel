@@ -2,6 +2,7 @@
 
 #include <thread>  // for std::this_thread::sleep_for
 
+#include "../../../core/io/MouseController.hpp"  // For ParseMouseButton, ParseDuration
 #include "host/ServiceRegistry.hpp"
 #include "host/io/IOService.hpp"
 #include "host/hotkey/HotkeyService.hpp"
@@ -489,8 +490,21 @@ BytecodeValue HostBridgeRegistry::handleMouseMove(
 
 BytecodeValue HostBridgeRegistry::handleMouseClick(
     const std::vector<BytecodeValue> &args) {
-  const auto button = static_cast<int>(requireIntArg(args, 0, "io.mouseClick"));
-  
+  int button = 1;
+  if (!args.empty()) {
+    if (std::holds_alternative<int64_t>(args[0])) {
+      button = static_cast<int>(std::get<int64_t>(args[0]));
+    } else if (std::holds_alternative<std::string>(args[0])) {
+      auto parsed = havel::ParseMouseButton(std::get<std::string>(args[0]));
+      if (!parsed) {
+        throw std::runtime_error("io.mouseClick: invalid button");
+      }
+      button = *parsed;
+    } else {
+      throw std::runtime_error("io.mouseClick: expects string or int");
+    }
+  }
+
   auto ioService = deps_.services->get<host::IOService>();
   if (!ioService) {
     throw std::runtime_error("IOService not registered");

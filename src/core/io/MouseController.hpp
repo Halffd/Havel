@@ -8,12 +8,30 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <optional>
 
 namespace havel {
 
 class EventListener;
 
 enum class MouseAction { Hold = 1, Release = 0, Click = 2 };
+
+/**
+ * Parse mouse button from string or number
+ * @param value String ("left", "L", "1") or number (1-5)
+ * @return Button code 1-5, or nullopt if invalid
+ */
+std::optional<int> ParseMouseButton(const std::string& value);
+std::optional<int> ParseMouseButton(int value);
+
+/**
+ * Parse duration string (e.g., "30s", "1h30m", "0:0:30.500")
+ * @param value Duration string or number (milliseconds)
+ * @return Duration in milliseconds, or nullopt if invalid
+ */
+std::optional<long long> ParseDuration(const std::string& value);
+std::optional<long long> ParseDuration(double value);
 
 /**
  * MouseController - Handles mouse movement and clicking

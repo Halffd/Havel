@@ -4,15 +4,18 @@
 #undef None
 
 #include <QTimer>
-#include <QtCharts/QChart>
-#include <QtCharts/QLineSeries>
-#include <QtCharts/QChartView>
 #include <QWidget>
 #include <QProgressBar>
 #include <QLabel>
 #include <QTreeWidget>
 #include <QMainWindow>
+#include <QVBoxLayout>
 #include "types.hpp"
+
+// Stub chart classes since Qt Charts is no longer linked
+class QChart : public QWidget { Q_OBJECT };
+class QLineSeries : public QObject { Q_OBJECT };
+class QChartView : public QWidget { Q_OBJECT };
 
 class SystemMonitor : public QMainWindow {
     Q_OBJECT
@@ -43,13 +46,13 @@ private:
     long long prevIdle = 0;
     long long prevNetBytes = 0;
 
-    QChart* cpuChart;
-    QLineSeries* cpuSeries;
-    QChartView* cpuChartView;
-
-    QChart* memChart;
-    QLineSeries* memSeries;
-    QChartView* memChartView;
+    // Chart members removed - Qt Charts not linked to reduce binary size
+    // QChart* cpuChart;
+    // QLineSeries* cpuSeries;
+    // QChartView* cpuChartView;
+    // QChart* memChart;
+    // QLineSeries* memSeries;
+    // QChartView* memChartView;
 
     QTreeWidget* processTree;
 };

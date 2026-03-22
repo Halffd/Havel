@@ -39,10 +39,11 @@ declare -A BUILD_CONFIGS=(
     [7]="Release,OFF,OFF,OFF,build-release" # 7: release, no tests, no lang, NO llvm
     [8]="Debug,OFF,ON,OFF,build-debug"       # 8: debug, no tests, lang, NO llvm
     [9]="Release,ON,ON,OFF,build-release"    # 9: release, tests, lang, NO llvm
+    [10]="Debug,OFF,ON,ON,build"
 )
 
 # Parse build mode from environment or first arg
-if [[ "$1" =~ ^[012356789]$ ]]; then
+if [[ "$1" =~ ^[012356789] ]]; then
     BUILD_MODE=$1
     shift
     

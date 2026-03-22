@@ -1165,15 +1165,16 @@ browser.setPort(9223)
 browser.connect()
 
 Mouse Control Module
-mouse.click(button)        // Click mouse button (left, right, middle)
+mouse.click(button, state)        // Click mouse button (left, right, middle, side1, side2 or 1,2,3,4,5) (click, press, release or 0,1,2)
 mouse.down(button)         // Press and hold button
 mouse.up(button)           // Release button
-mouse.move(x, y)           // Move to absolute position
-mouse.moveRel(dx, dy)      // Move relative to current position
-mouse.scroll(amount)        // Scroll wheel (positive=up, negative=down)
+mouse.move(x, y, speed, acceleration)           // Move to absolute position
+mouse.moveRel(dx, dy, speed, acceleration)      // Move relative to current position
+mouse.scroll(dy, dx)        // Scroll wheel (positive=up, negative=down)
 mouse.pos()        // Get current position {x, y}
 mouse.setSpeed(speed)      // Set mouse speed (default: 5)
 mouse.setAccel(accel)      // Set acceleration (default: 1.0)
+mouse.setDPI(dpi)
 
 Mouse Button Values
 - "left" or "L" or 1 - Left button
@@ -2240,7 +2241,7 @@ WorkerThreads=4
 
 ## Configuration System
 
-### Config Sections (Hyprland-Style)
+### Config Sections
 
 Declarative configuration blocks with expression support:
 
@@ -2268,27 +2269,25 @@ monitor "HDMI-0" "primary" {
 print(config.general.log)           // true
 print(config.brightness.step)       // 0.2
 print(config.monitor.brightness)    // 0.8
+// config gets automaticly saved from config blocks
 ```
-
-### Debounced Saves
-
-Config changes are automatically saved with 500ms debounce:
+Config changes that get automatically saved with debounce:
 
 ```havel
-// Multiple changes trigger single save
-config.set("General.Key1", "value1", true)
-config.set("General.Key2", "value2", true)
-config.set("General.Key3", "value3", true)
-// Single save after 500ms, not 3 saves
+config.debounce(800)
+// Multiple config changes trigger single save
+config.set("General.Key1", "value1")
+config.set("General.Key2", "value2")
+config.set("General.Key3", "value3")
 
 // Force immediate save
 config.save()
 
 // Batch mode
-config.beginBatch()
+config.begin()
 config.set("A", "1", true)
 config.set("B", "2", true)
-config.endBatch()  // Single save
+config.end()  // Single save
 ```
 
 ---
@@ -2803,7 +2802,7 @@ config {
 
 ---
 
-### Reusable Condition Functions
+### Modes Condition Functions
 
 Define conditions once, reuse everywhere:
 

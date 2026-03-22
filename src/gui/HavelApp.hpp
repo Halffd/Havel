@@ -20,8 +20,11 @@
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #else
 namespace havel {
-class Interpreter;
-} // namespace havel
+namespace compiler {
+class VM;
+class HostBridge;
+}
+}
 #endif
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
@@ -69,7 +72,6 @@ public:
   bool repl = false;
   bool gui = true;
 #ifdef ENABLE_HAVEL_LANG
-  Interpreter *getInterpreter() { return interpreter.get(); }
   havel::compiler::VM* getBytecodeVM() { return bytecodeVM.get(); }
   havel::compiler::HostBridge* getHostBridge() { return hostBridge.get(); }
   ClipboardManager *getClipboardManager() {
@@ -77,7 +79,6 @@ public:
     return suite ? suite->getClipboardManager() : nullptr;
   }
 #else
-  Interpreter *getInterpreter() { return nullptr; }
   void* getBytecodeVM() { return nullptr; }
   void* getHostBridge() { return nullptr; }
   ClipboardManager *getClipboardManager() { return nullptr; }
@@ -85,7 +86,6 @@ public:
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;
   std::shared_ptr<MPVController> mpv;
-  std::shared_ptr<havel::Interpreter> interpreter;
   std::shared_ptr<HotkeyManager> hotkeyManager;
   std::shared_ptr<AudioManager> audioManager;
   std::shared_ptr<BrightnessManager> brightnessManager;

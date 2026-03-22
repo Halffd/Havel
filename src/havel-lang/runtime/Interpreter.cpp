@@ -333,6 +333,22 @@ Interpreter::Interpreter(HostContext ctx,
   // Load all modules (stdlib + host)
   havel::modules::loadAllModules(*environment, this->hostAPI);
 
+  // Add print() as a global function for compatibility with bytecode VM
+  environment->Define("print", HavelValue(BuiltinFunction(
+      [this](const std::vector<HavelValue> &args) -> HavelResult {
+        for (size_t i = 0; i < args.size(); ++i) {
+          if (i > 0) std::cout << ' ';
+          const auto& arg = args[i];
+          if (arg.isString()) std::cout << arg.asString();
+          else if (arg.isNumber()) std::cout << arg.asNumber();
+          else if (arg.isBool()) std::cout << (arg.asBool() ? "true" : "false");
+          else if (arg.isNull()) std::cout << "null";
+          else std::cout << "<value>";
+        }
+        std::cout << std::endl;
+        return HavelValue(nullptr);
+      })));
+
   info("Interpreter initialized (hotkey interpreter will be set by caller)");
 }
 

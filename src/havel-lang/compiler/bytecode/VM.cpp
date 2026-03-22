@@ -11,8 +11,17 @@
 namespace havel::compiler {
 
 namespace {
-// Internal toString with heap support
-std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
+// Internal toString with cycle detection and depth limit
+std::string toStringInternal(const BytecodeValue &value, GCHeap* heap, 
+                              std::unordered_set<uint32_t>& visitedIds, int depth);
+
+std::string toStringInternal(const BytecodeValue &value, GCHeap* heap, 
+                              std::unordered_set<uint32_t>& visitedIds, int depth) {
+  // Depth limit to prevent stack overflow
+  if (depth > 32) {
+    return "...";
+  }
+  
   if (std::holds_alternative<std::nullptr_t>(value)) {
     return "null";
   }
@@ -48,12 +57,20 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
     if (!arr) {
       return "array[]";
     }
+    // Cycle detection using array ID
+    uint32_t arrId = std::get<ArrayRef>(value).id;
+    if (visitedIds.count(arrId) > 0) {
+      return "<cycle>";
+    }
+    visitedIds.insert(arrId);
+    
     std::string result = "[";
     for (size_t i = 0; i < arr->size(); ++i) {
       if (i > 0) result += ", ";
-      result += toStringInternal((*arr)[i], heap);
+      result += toStringInternal((*arr)[i], heap, visitedIds, depth + 1);
     }
     result += "]";
+    visitedIds.erase(arrId);
     return result;
   }
   if (std::holds_alternative<ObjectRef>(value)) {
@@ -64,14 +81,22 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
     if (!obj) {
       return "object{}";
     }
+    // Cycle detection using object ID
+    uint32_t objId = std::get<ObjectRef>(value).id;
+    if (visitedIds.count(objId) > 0) {
+      return "<cycle>";
+    }
+    visitedIds.insert(objId);
+    
     std::string result = "{";
     bool first = true;
     for (const auto& [key, val] : *obj) {
       if (!first) result += ", ";
       first = false;
-      result += "\"" + key + "\": " + toStringInternal(val, heap);
+      result += "\"" + key + "\": " + toStringInternal(val, heap, visitedIds, depth + 1);
     }
     result += "}";
+    visitedIds.erase(objId);
     return result;
   }
   if (std::holds_alternative<SetRef>(value)) {
@@ -82,6 +107,12 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
   }
   return "unknown";
 }
+
+// Wrapper without visited set (for backward compatibility)
+std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
+  std::unordered_set<uint32_t> visitedIds;
+  return toStringInternal(value, heap, visitedIds, 0);
+}
 } // anonymous namespace
 
 // Public toString without heap (for backward compatibility)
@@ -90,10 +121,8 @@ std::string toString(const BytecodeValue &value) {
 }
 
 // Public toString with heap (for formatted output)
-// Note: Currently disabled due to infinite recursion with nested structures
 std::string toString(const BytecodeValue &value, GCHeap* heap) {
-  (void)heap;  // Unused for now
-  return toStringInternal(value, nullptr);
+  return toStringInternal(value, heap);
 }
 
 // Type conversion helpers
@@ -150,7 +179,18 @@ bool toBool(const BytecodeValue& value) {
   if (std::holds_alternative<std::string>(value)) {
     return !std::get<std::string>(value).empty();
   }
-  return false;  // null, arrays, objects, etc. are falsy
+  // Collections: JavaScript truthiness (all collections are truthy, even empty)
+  // This matches: if (arr) { ... } pattern
+  if (std::holds_alternative<ArrayRef>(value)) {
+    return true;
+  }
+  if (std::holds_alternative<ObjectRef>(value)) {
+    return true;
+  }
+  if (std::holds_alternative<SetRef>(value)) {
+    return true;
+  }
+  return false;  // null, undefined, etc.
 }
 
 std::optional<int64_t> indexFromValue(const BytecodeValue &value) {
@@ -459,6 +499,7 @@ void VM::registerDefaultHostFunctions() {
       if (i > 0) {
         std::cout << ' ';
       }
+      // Use simple toString without heap for now to debug
       std::cout << toString(args[i]);
     }
     std::cout << std::endl;

@@ -90,10 +90,15 @@ void HavelApp::cleanup() noexcept {
     hotkeyManager.reset();
   }
 
-  // 3. Destroy interpreter (which holds HostAPI)
-  if (interpreter) {
-    debug("HavelApp::cleanup() - destroying Interpreter");
-    interpreter.reset();
+  // 3. Destroy VM and HostBridge
+  if (hostBridge) {
+    debug("HavelApp::cleanup() - destroying HostBridge");
+    hostBridge->shutdown();
+    hostBridge.reset();
+  }
+  if (bytecodeVM) {
+    debug("HavelApp::cleanup() - destroying VM");
+    bytecodeVM.reset();
   }
 
   // 4. Destroy other components
@@ -219,16 +224,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.windowManager = windowManager.get();
   ctx.hotkeyManager = hotkeyManager.get();
   ctx.modeManager = hotkeyManager->getModeManager().get();
-  ctx.windowMonitor = windowMonitor.get();
   ctx.brightnessManager = brightnessManager.get();
   ctx.audioManager = audioManager.get();
   ctx.guiManager = guiManager.get();
   ctx.screenshotManager = screenshotMgr;
   ctx.clipboardManager = clipboardMgr;
   ctx.pixelAutomation = pixelAuto;
-  ctx.automationManager = automationManager.get();
-  ctx.fileManager = nullptr;  // Not used
-  ctx.processManager = nullptr;  // Not used
+  ctx.automationManager = reinterpret_cast<havel::AutomationManager*>(automationManager.get());
+  ctx.fileManager = nullptr;
+  ctx.processManager = nullptr;
   ctx.networkManager = networkManager.get();
 
   // Initialize bytecode VM and HostBridge
@@ -239,7 +243,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     bytecodeVM = std::make_unique<compiler::VM>(ctx);
     
     // Set VM pointer in context (non-owning)
-    ctx.vm = bytecodeVM.get();
+    ctx.vm = reinterpret_cast<havel::VM*>(bytecodeVM.get());
 
     // Create HostBridge with context
     hostBridge = compiler::createHostBridge(ctx);
@@ -254,14 +258,6 @@ void HavelApp::initializeComponents(bool isStartup) {
   std::cerr << "[DEBUG] Havel language disabled" << std::endl;
 #endif
   info("Havel initialized successfully");
-
-  // Set the hotkeyManager on the IO instance so it can access it during
-  // suspend/resume operations
-  io->setHotkeyManager(hotkeyManager);
-
-  // Initialize hotkey manager
-  hotkeyManager->loadDebugSettings();
-  hotkeyManager->applyDebugSettings();
 
   if (isStartup) {
     TimerManager::SetTimer(
@@ -389,19 +385,18 @@ void HavelApp::initializeComponents(bool isStartup) {
 
       // Build HostContext from managers (wrap raw pointers in shared_ptr without ownership)
       HostContext ctx;
-      ctx.io = io;  // Already shared_ptr
-      ctx.windowManager = std::shared_ptr<WindowManager>(windowManager.get(), [](WindowManager*){});
-      ctx.hotkeyManager = hotkeyManager;  // Already shared_ptr
-      ctx.brightnessManager = std::shared_ptr<BrightnessManager>(brightnessManager.get(), [](BrightnessManager*){});
-      ctx.audioManager = std::shared_ptr<AudioManager>(audioManager.get(), [](AudioManager*){});
-      ctx.guiManager = std::shared_ptr<GUIManager>(guiManager.get(), [](GUIManager*){});
-      ctx.screenshotManager = screenshotMgr ? std::shared_ptr<ScreenshotManager>(screenshotMgr, [](ScreenshotManager*){}) : nullptr;
-      ctx.clipboardManager = clipboardMgr ? std::shared_ptr<ClipboardManager>(clipboardMgr, [](ClipboardManager*){}) : nullptr;
-      ctx.pixelAutomation = pixelAuto ? std::shared_ptr<PixelAutomation>(pixelAuto, [](PixelAutomation*){}) : nullptr;
+      ctx.io = io.get();  // Already shared_ptr
+      ctx.windowManager = windowManager.get();
+      ctx.hotkeyManager = hotkeyManager.get();
+      ctx.brightnessManager = brightnessManager.get();
+      ctx.audioManager = audioManager.get();
+      ctx.guiManager = guiManager.get();
+      ctx.screenshotManager = screenshotMgr;
+      ctx.clipboardManager = clipboardMgr;
+      ctx.pixelAutomation = pixelAuto;
 
       // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
       // Register interpreter for hotkey callbacks (must be after construction)
-      interpreter->RegisterForHotkeys();
       std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
     } else {
       std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;

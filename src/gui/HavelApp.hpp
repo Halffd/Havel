@@ -80,8 +80,8 @@ public:
   }
 #else
   Interpreter *getInterpreter() { return nullptr; }
-  havel::compiler::VM* getBytecodeVM() { return nullptr; }
-  havel::compiler::HostBridgeRegistry* getHostBridgeRegistry() { return nullptr; }
+  void* getBytecodeVM() { return nullptr; }
+  void* getHostBridgeRegistry() { return nullptr; }
   ClipboardManager *getClipboardManager() { return nullptr; }
 #endif
   std::shared_ptr<IO> io;

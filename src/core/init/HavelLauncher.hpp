@@ -27,6 +27,7 @@ private:
     bool debugAst = false;
     bool debugLexer = false;
     bool debugBytecode = false;
+    bool diffBytecode = false;  // Compare bytecode with previous run
     bool stopOnError = false; // Stop on first error/warning
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
   };

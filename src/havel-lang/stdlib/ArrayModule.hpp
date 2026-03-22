@@ -21,9 +21,9 @@ namespace havel::stdlib {
 void registerArrayModule(Environment& env, Interpreter* interpreter);
 
 // NEW: Register array module with VM's host bridge (VM-native)
-inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
-    auto& vm = registry.vm();
-    auto& options = registry.options();
+inline void registerArrayModuleVM(compiler::HostBridge& registry) {
+    auto& vm = bridge.vm();
+    auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to number
     auto toNumber = [](const compiler::BytecodeValue& v) -> double {
@@ -205,25 +205,25 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
     };
 
     // Register prototype methods for [].method() syntax
-    registry.vm().registerPrototypeMethod("Array", "len", compiler::HostFunctionRef{.name = "array.len"});
-    registry.vm().registerPrototypeMethod("Array", "push", compiler::HostFunctionRef{.name = "array.push"});
-    registry.vm().registerPrototypeMethod("Array", "pop", compiler::HostFunctionRef{.name = "array.pop"});
-    registry.vm().registerPrototypeMethod("Array", "insert", compiler::HostFunctionRef{.name = "array.insert"});
-    registry.vm().registerPrototypeMethod("Array", "remove", compiler::HostFunctionRef{.name = "array.remove"});
-    registry.vm().registerPrototypeMethod("Array", "concat", compiler::HostFunctionRef{.name = "array.concat"});
-    registry.vm().registerPrototypeMethod("Array", "slice", compiler::HostFunctionRef{.name = "array.slice"});
-    registry.vm().registerPrototypeMethod("Array", "map", compiler::HostFunctionRef{.name = "array.map"});
-    registry.vm().registerPrototypeMethod("Array", "filter", compiler::HostFunctionRef{.name = "array.filter"});
-    registry.vm().registerPrototypeMethod("Array", "reduce", compiler::HostFunctionRef{.name = "array.reduce"});
-    registry.vm().registerPrototypeMethod("Array", "find", compiler::HostFunctionRef{.name = "array.find"});
-    registry.vm().registerPrototypeMethod("Array", "indexOf", compiler::HostFunctionRef{.name = "array.indexOf"});
-    registry.vm().registerPrototypeMethod("Array", "includes", compiler::HostFunctionRef{.name = "array.includes"});
-    registry.vm().registerPrototypeMethod("Array", "join", compiler::HostFunctionRef{.name = "array.join"});
-    registry.vm().registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
-    registry.vm().registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
+    bridge.vm().registerPrototypeMethod("Array", "len", compiler::HostFunctionRef{.name = "array.len"});
+    bridge.vm().registerPrototypeMethod("Array", "push", compiler::HostFunctionRef{.name = "array.push"});
+    bridge.vm().registerPrototypeMethod("Array", "pop", compiler::HostFunctionRef{.name = "array.pop"});
+    bridge.vm().registerPrototypeMethod("Array", "insert", compiler::HostFunctionRef{.name = "array.insert"});
+    bridge.vm().registerPrototypeMethod("Array", "remove", compiler::HostFunctionRef{.name = "array.remove"});
+    bridge.vm().registerPrototypeMethod("Array", "concat", compiler::HostFunctionRef{.name = "array.concat"});
+    bridge.vm().registerPrototypeMethod("Array", "slice", compiler::HostFunctionRef{.name = "array.slice"});
+    bridge.vm().registerPrototypeMethod("Array", "map", compiler::HostFunctionRef{.name = "array.map"});
+    bridge.vm().registerPrototypeMethod("Array", "filter", compiler::HostFunctionRef{.name = "array.filter"});
+    bridge.vm().registerPrototypeMethod("Array", "reduce", compiler::HostFunctionRef{.name = "array.reduce"});
+    bridge.vm().registerPrototypeMethod("Array", "find", compiler::HostFunctionRef{.name = "array.find"});
+    bridge.vm().registerPrototypeMethod("Array", "indexOf", compiler::HostFunctionRef{.name = "array.indexOf"});
+    bridge.vm().registerPrototypeMethod("Array", "includes", compiler::HostFunctionRef{.name = "array.includes"});
+    bridge.vm().registerPrototypeMethod("Array", "join", compiler::HostFunctionRef{.name = "array.join"});
+    bridge.vm().registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
+    bridge.vm().registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
 
     // Register module globals (compiler already knows about methods from host_functions)
-    registry.options().host_global_names.insert("Array");
+    bridge.options().host_global_names.insert("Array");
 
     // Register array object via vm_setup
     registry.addVmSetup([](compiler::VM& vm) {

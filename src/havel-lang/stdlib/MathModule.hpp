@@ -20,9 +20,9 @@ namespace havel::stdlib {
 void registerMathModule(Environment& env);
 
 // NEW: Register math module with VM's host bridge (VM-native)
-inline void registerMathModuleVM(compiler::HostBridgeRegistry& registry) {
-    auto& vm = registry.vm();
-    auto& options = registry.options();
+inline void registerMathModuleVM(compiler::HostBridge& bridge) {
+    auto& vm = bridge.vm();
+    auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to double
     auto toNum = [](const compiler::BytecodeValue& v) -> double {

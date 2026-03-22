@@ -73,7 +73,7 @@ public:
 #ifdef ENABLE_HAVEL_LANG
   Interpreter *getInterpreter() { return interpreter.get(); }
   havel::compiler::VM* getBytecodeVM() { return bytecodeVM.get(); }
-  havel::compiler::HostBridgeRegistry* getHostBridgeRegistry() { return hostBridgeRegistry.get(); }
+  havel::compiler::HostBridge* getHostBridge() { return hostBridge.get(); }
   ClipboardManager *getClipboardManager() {
     auto *suite = AutomationSuite::Instance();
     return suite ? suite->getClipboardManager() : nullptr;
@@ -81,7 +81,7 @@ public:
 #else
   Interpreter *getInterpreter() { return nullptr; }
   void* getBytecodeVM() { return nullptr; }
-  void* getHostBridgeRegistry() { return nullptr; }
+  void* getHostBridge() { return nullptr; }
   ClipboardManager *getClipboardManager() { return nullptr; }
 #endif
   std::shared_ptr<IO> io;
@@ -95,10 +95,10 @@ public:
   std::shared_ptr<net::NetworkManager> networkManager;
 #ifdef ENABLE_HAVEL_LANG
   std::unique_ptr<GUIManager> guiManager;
-  
+
   // Bytecode VM and HostBridge
   std::unique_ptr<havel::compiler::VM> bytecodeVM;
-  std::shared_ptr<havel::compiler::HostBridgeRegistry> hostBridgeRegistry;
+  std::shared_ptr<havel::compiler::HostBridge> hostBridge;
 #endif
 private slots:
   void showTextChunker();

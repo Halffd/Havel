@@ -132,7 +132,7 @@ private:
   
   // Bytecode VM
   std::unique_ptr<compiler::VM> vm_;
-  std::shared_ptr<compiler::HostBridgeRegistry> hostBridge_;
+  std::shared_ptr<compiler::HostBridge> hostBridge_;
   
   // Handlers
   std::function<void(const std::string&)> printHandler_;

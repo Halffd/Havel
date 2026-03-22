@@ -20,9 +20,9 @@ namespace havel::stdlib {
 void registerUtilityModule(Environment& env);
 
 // NEW: Register utility module with VM's host bridge (VM-native)
-inline void registerUtilityModuleVM(compiler::HostBridgeRegistry& registry) {
-    auto& vm = registry.vm();
-    auto& options = registry.options();
+inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
+    auto& vm = bridge.vm();
+    auto& options = bridge.options();
     
     // keys(obj) - Get keys from object/map
     options.host_functions["keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {

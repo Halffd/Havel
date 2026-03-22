@@ -21,9 +21,9 @@ namespace havel::stdlib {
 void registerProcessModule(Environment& env);
 
 // NEW: Register process module with VM's host bridge (VM-native)
-inline void registerProcessModuleVM(compiler::HostBridgeRegistry& registry) {
-    auto& vm = registry.vm();
-    auto& options = registry.options();
+inline void registerProcessModuleVM(compiler::HostBridge& registry) {
+    auto& vm = bridge.vm();
+    auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to string
     auto valueToString = [](const compiler::BytecodeValue& v) -> std::string {

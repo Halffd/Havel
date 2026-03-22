@@ -256,15 +256,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   try {
     info("Initializing bytecode VM and HostBridge...");
 
-    // Service registry already initialized by Interpreter
-    // Just create VM and HostBridge
+    // Create VM
     bytecodeVM = std::make_unique<compiler::VM>();
 
-    // Create HostBridge dependencies (pass VM* for ModeService)
-    auto deps = createHostBridgeDependencies(interpreter->getHostAPI(), bytecodeVM.get());
-
-    // Create HostBridge registry
-    hostBridgeRegistry = compiler::createHostBridgeRegistry(*bytecodeVM, deps);
+    // Create HostContext with injected dependencies
+    auto ctx = havel::modules::createHostContext(interpreter->getHostAPI());
+    
+    // Create HostBridge with injected context
+    hostBridge = compiler::createHostBridge(*bytecodeVM, std::move(ctx));
+    hostBridge->install();
 
     info("Bytecode VM and HostBridge initialized successfully");
   } catch (const std::exception& e) {

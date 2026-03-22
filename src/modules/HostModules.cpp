@@ -3,6 +3,7 @@
 // Simple, explicit registration
 
 #include "../havel-lang/runtime/ModuleLoader.hpp"
+#include "../havel-lang/runtime/HostContext.hpp"
 #include "../havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "../host/ServiceRegistry.hpp"
 #include "../host/io/IOService.hpp"
@@ -166,27 +167,40 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
 }
 
 /**
- * Create HostBridgeDependencies with service registry
- * 
+ * Create HostContext with injected dependencies
+ *
  * @param hostAPI Host API for accessing managers
- * @param vm VM instance for callback management (needed for ModeService)
- * @return HostBridgeDependencies with services and VM
+ * @return HostContext with all available services
  */
-compiler::HostBridgeDependencies createHostBridgeDependencies(
-    std::shared_ptr<IHostAPI> hostAPI,
-    compiler::VM* vm) {
+havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
+    havel::HostContext ctx;
     
-    compiler::HostBridgeDependencies deps;
-    deps.services = &host::ServiceRegistry::instance();
-    deps.mode_manager = hostAPI ? hostAPI->GetModeManager() : nullptr;
-    
-    // Create ModeService with VM injection (for direct closure pinning)
-    if (vm && hostAPI && hostAPI->GetModeManager()) {
-        auto modeService = std::make_shared<host::ModeService>(vm, hostAPI->GetModeManager());
-        deps.services->registerService<host::ModeService>(modeService);
+    if (!hostAPI) {
+        return ctx;
     }
     
-    return deps;
+    // Core services
+    ctx.io = hostAPI->GetIO() ? std::shared_ptr<havel::IO>(hostAPI->GetIO(), [](havel::IO*){}) : nullptr;
+    
+    // Optional services (nullptr if not available)
+    ctx.hotkeyManager = hostAPI->GetHotkeyManager() 
+        ? std::shared_ptr<havel::HotkeyManager>(hostAPI->GetHotkeyManager(), [](havel::HotkeyManager*){})
+        : nullptr;
+    
+    ctx.windowManager = hostAPI->GetWindowManager();
+    ctx.modeManager = hostAPI->GetModeManager();
+    ctx.brightnessManager = hostAPI->GetBrightnessManager();
+    ctx.audioManager = hostAPI->GetAudioManager();
+    ctx.guiManager = hostAPI->GetGUIManager();
+    ctx.screenshotManager = hostAPI->GetScreenshotManager();
+    ctx.clipboardManager = hostAPI->GetClipboardManager();
+    ctx.pixelAutomation = hostAPI->GetPixelAutomation();
+    ctx.automationManager = hostAPI->GetAutomationManager();
+    ctx.fileManager = hostAPI->GetFileManager();
+    ctx.processManager = hostAPI->GetProcessManager();
+    ctx.networkManager = hostAPI->GetNetworkManager();
+    
+    return ctx;
 }
 
 /**

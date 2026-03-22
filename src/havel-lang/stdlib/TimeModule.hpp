@@ -23,9 +23,9 @@ namespace havel::stdlib {
 void registerTimeModule(Environment& env);
 
 // NEW: Register time module with VM's host bridge (VM-native)
-inline void registerTimeModuleVM(compiler::HostBridgeRegistry& registry) {
-    auto& vm = registry.vm();
-    auto& options = registry.options();
+inline void registerTimeModuleVM(compiler::HostBridge& registry) {
+    auto& vm = bridge.vm();
+    auto& options = bridge.options();
     
     // time.now() - Get current timestamp (seconds since epoch)
     options.host_functions["time.now"] = [](const std::vector<compiler::BytecodeValue>&) {

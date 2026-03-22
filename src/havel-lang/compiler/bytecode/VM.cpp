@@ -450,45 +450,16 @@ void VM::registerDefaultHostFunctions() {
   });
 
   // Type conversion builtins
-  registerHostFunction("toInt", 1, [](const std::vector<BytecodeValue> &args) {
+  registerHostFunction("int", 1, [](const std::vector<BytecodeValue> &args) {
     return BytecodeValue(toInt(args[0]));
   });
 
-  registerHostFunction("toFloat", 1, [](const std::vector<BytecodeValue> &args) {
+  registerHostFunction("num", 1, [](const std::vector<BytecodeValue> &args) {
     return BytecodeValue(toFloat(args[0]));
   });
 
-  registerHostFunction("toString", 1, [](const std::vector<BytecodeValue> &args) {
+  registerHostFunction("str", 1, [](const std::vector<BytecodeValue> &args) {
     return BytecodeValue(toString(args[0]));
-  });
-
-  registerHostFunction("toBool", 1, [](const std::vector<BytecodeValue> &args) {
-    return BytecodeValue(toBool(args[0]));
-  });
-
-  registerHostFunction("typeof", 1, [](const std::vector<BytecodeValue> &args) {
-    const auto& value = args[0];
-    std::string typeName;
-    if (std::holds_alternative<std::nullptr_t>(value)) {
-      typeName = "null";
-    } else if (std::holds_alternative<bool>(value)) {
-      typeName = "bool";
-    } else if (std::holds_alternative<int64_t>(value)) {
-      typeName = "int";
-    } else if (std::holds_alternative<double>(value)) {
-      typeName = "float";
-    } else if (std::holds_alternative<std::string>(value)) {
-      typeName = "string";
-    } else if (std::holds_alternative<ArrayRef>(value)) {
-      typeName = "array";
-    } else if (std::holds_alternative<ObjectRef>(value)) {
-      typeName = "object";
-    } else if (std::holds_alternative<HostFunctionRef>(value)) {
-      typeName = "function";
-    } else {
-      typeName = "unknown";
-    }
-    return BytecodeValue(typeName);
   });
 
   auto registerSystemGc = [this](const std::string &name) {

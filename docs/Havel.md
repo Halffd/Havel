@@ -238,7 +238,7 @@ try {
 Any value can be thrown:
 ```havel
 throw "Error message"           // String
-throw 42                        // Number  
+throw 42                        // Number
 throw {type: "custom", code: 123} // Object
 ```
 
@@ -273,7 +273,6 @@ help("http.get")    // Show specific function documentation
 | `window` | Window management | `window.maximize()` |
 | `process` | Process management | `process.find("chrome")` |
 | `clipboard` | Clipboard operations | `clipboard.get()` |
-| `text` | Text processing | `text.upper("hello")` |
 | `system` | System integration | `system.notify("msg")` |
 
 ### Quick Reference
@@ -458,14 +457,14 @@ config {
     debug = true
     logKeys = true
     timeout = 5000
-    
+
     // Nested blocks create hierarchical keys
     window {
         monitoring = true
         printWindows = false
         opacity = 0.9
     }
-    
+
     hotkeys {
         enableGlobal = true
         prefix = "ctrl+alt"
@@ -517,7 +516,7 @@ click()                  // Left click
 doubleClick()            // Double click
 mousePress()             // Press mouse button
 mouseRelease()           // Release mouse button
-mouseMove(x, y)          // Move to position
+mouseMove(x, y, speed, acceleration)          // Move to position
 mouseMoveRel(dx, dy)     // Relative movement
 scroll(dy, dx)           // Scroll
 ```
@@ -752,15 +751,15 @@ F2 if mode == "work" && class == "code" => {
 ### When Blocks (Group Hotkeys by Condition)
 ```havel
 when mode gaming {
-    LButton & RButton => { 
+    LButton & RButton => {
         print "Attack!"
         automation.autoClick("LButton")
     }
-    Enter => { 
+    Enter => {
         print "Defend!"
         mouse.down("right")
     }
-    F1 => { 
+    F1 => {
         print "Special!"
         for i in [1, 2, 3, 4] {
             send i
@@ -769,7 +768,7 @@ when mode gaming {
 }
 
 when mode work {
-    ^b => { 
+    ^b => {
         print("Build project")
         let path = window.active().programPath
         run "cd $path && npm run build"
@@ -849,8 +848,8 @@ Core Language Features
 F1 => send "Hello World!"
 
 // Pipeline transformations
-clipboard.get 
-    | upper 
+clipboard.get
+    | upper
     | replace " " "_"
     | send
 
@@ -895,7 +894,7 @@ Logo Design
     ⚙️ HAVEL ⚙️
    ╭─────────────╮
    │  ⚙️ ⚒️ ⚙️  │
-   │  ⚒️ H ⚒️   │  
+   │  ⚒️ H ⚒️   │
    │  ⚙️ ⚒️ ⚙️  │
    ╰─────────────╯
 
@@ -959,12 +958,6 @@ window.groups()   // Get all window group names
 window.groupGet(group) // Get windows in group
 window.inGroup(title, group) // Check if window in group
 window.findInGroup(group) // Find first window in group
-
-System Integration Module
-system.run(cmd)      // Execute system command
-system.notify(msg)   // Show notification
-system.beep()        // System beep
-system.sleep(ms|duration)  // Delay execution (e.g., 1000, "30s", "1h30m")
 
 Pixel and Image Automation Module
 pixel.get(x, y)              // Get pixel color (returns {r,g,b,a,hex})
@@ -1210,8 +1203,8 @@ mouse.up("left")
 mouse.scroll(3)    // Scroll up 3 notches
 mouse.scroll(-5)   // Scroll down 5 notches
 
-// Precise positioning 
-mouse.move(5, 5, 5, 1.2)
+// Precise positioning
+mouse.move(1500, 500, 5, 1.2)
 pos = mouse.pos()
 print("Mouse at: " + pos.x + ", " + pos.y)
 
@@ -1219,43 +1212,17 @@ print("Mouse at: " + pos.x + ", " + pos.y)
 mouse.setSpeed(10)     // Faster movement
 mouse.setAccel(2.0)    // More acceleration
 
-🛠️ Development Tools
-IDE Integration
-	* VS Code Extension - Syntax highlighting, IntelliSense, debugging
-	* Language Server Protocol - Universal editor support
-	* Vim/Neovim Plugin - Community-driven support
-
-Development Workflow
-# Create new project
-havel init myproject
-
-# Run script
-havel run automation.hv
-
-# Watch for changes
-havel watch automation.hv
-
-# Format code
-havel fmt automation.hv
-
-# Check syntax
-havel check automation.hv
-
-# Package for distribution
-havel build --target windows-x64
-
 Debugging & Testing
 	* Interactive REPL - Test code snippets
-	* Step Debugger - Debug automation flows
 	* Unit Testing Framework - Built-in testing capabilities
 	* Performance Profiler - Optimize automation scripts
 
 Getting Started
 # Quick start
-curl -sSL https://install.havel-lang.org | sh
+./build.sh 1 build install
 havel --version
 echo 'F1 => send "Hello, Havel!"' > hello.hv
-havel run hello.hv
+havel hello.hv
 
 ----
 
@@ -1264,16 +1231,13 @@ havel run hello.hv
 "In automation, as in battle, preparation and reliability triumph over complexity."
 
 ---
-
-## New Features (Latest)
-
 ### Hotkey Self-Management with `this` Context
 
 Hotkeys can now manage themselves from within their action blocks using the `this` context:
 
 ```havel
 // Self-disable based on window title
-Enter if mode == "default" => { 
+Enter if mode == "default" => {
     if window.title == "vscode" {
         print("Disabling " + this.alias)
         this.disable()
@@ -1324,13 +1288,13 @@ window.group.music = title Spotify
 **Window Module Functions:**
 ```havel
 // Get all groups
-let groups = window.getGroups()
+let groups = window.groups()
 
 // Get windows in a group
-let wins = window.getGroupWindows("browsers")
+let wins = window.groupGet("browsers")
 
 // Check if current window is in group
-if window.isWindowInGroup(window.title, "browsers") {
+if window.inGroup(window.title, "browsers") {
     print("Browser is active")
 }
 
@@ -1427,12 +1391,12 @@ click()           // Left click
 doubleClick()     // Double click
 mousePress()      // Press mouse button
 mouseRelease()    // Release mouse button
-mouseMove(x, y)   // Move to position
-mouseMoveRel(dx, dy)  // Relative movement
+move(x, y)   // Move to position
+moveRel(dx, dy)  // Relative movement
 scroll(dy, dx)    // Scroll (vertical, horizontal)
 ```
 
-### Spread Operator (`*`)
+### Spread Operator
 
 The spread operator expands arrays and objects inline, similar to JavaScript.
 
@@ -1554,7 +1518,7 @@ Inside hotkey blocks, you can use implicit input commands without the `>` prefix
 - `lmb`, `rmb` - Mouse clicks
 - `m(x, y)` - Move mouse to absolute position
 - `r(x, y)` - Move mouse relative to current position
-- `w(x, y)` - Scroll wheel
+- `w(y, x)` - Scroll wheel
 - `:500` - Sleep for 500ms
 
 **Example: Complex Input Sequence**
@@ -1616,7 +1580,7 @@ Get information about connected monitors:
 
 ```havel
 // Get all monitors
-let monitors = window.getMonitors()
+let monitors = display.getMonitors()
 for mon in monitors {
     print("Monitor: " + mon.name)
     print("  Position: (" + mon.x + ", " + mon.y + ")")
@@ -1625,7 +1589,7 @@ for mon in monitors {
 }
 
 // Get combined area of all monitors
-let area = window.getMonitorArea()
+let area = display.getMonitorArea()
 print("Total desktop area: " + area.width + "x" + area.height)
 print("Bounding box: (" + area.x + ", " + area.y + ")")
 ```
@@ -1639,13 +1603,13 @@ print("Bounding box: (" + area.x + ", " + area.y + ")")
 **Example: Multi-Monitor Setup**
 ```havel
 // Two monitors: 1366x768 at (0, 312) + 1920x1080 at (1366, 0)
-let monitors = window.getMonitors()
+let monitors = display.getMonitors()
 // => [
 //   {name: "DVI-D-0", x: 0, y: 312, width: 1366, height: 768, isPrimary: false},
 //   {name: "HDMI-0", x: 1366, y: 0, width: 1920, height: 1080, isPrimary: true}
 // ]
 
-let area = window.getMonitorArea()
+let area = display.getMonitorArea()
 // => {x: 0, y: 0, width: 3286, height: 1080}
 ```
 
@@ -1655,22 +1619,22 @@ Combo hotkeys now correctly distinguish between left and right modifiers:
 
 ```havel
 // Right Shift + Wheel Up/Down
-@RShift & WheelUp => zoom(1)
-@RShift & WheelDown => zoom(0)
+RShift & WheelUp => zoom(1)
+RShift & WheelDown => zoom(0)
 
 // Left Shift + Wheel (different action)
-@LShift & WheelUp => scrollUp()
-@LShift & WheelDown => scrollDown()
+LShift & WheelUp => scrollUp()
+LShift & WheelDown => scrollDown()
 
 // Mouse button combos
-@LButton & RButton => toggleFeature()
-@RButton & WheelUp => nextItem()
+LButton & RButton => toggleFeature()
+RButton & WheelUp => nextItem()
 ```
 
 **Key Points:**
-- `@RShift` requires Right Shift specifically (not Left Shift)
-- `@LShift` requires Left Shift specifically
-- Same for `@LCtrl`, `@RCtrl`, `@LAlt`, `@RAlt`
+- `RShift` requires Right Shift specifically (not Left Shift)
+- `LShift` requires Left Shift specifically
+- Same for `LCtrl`, `RCtrl`, `LAlt`, `RAlt`
 - Wheel events work correctly in combos
 
 ### Pixel and Image Automation
@@ -1705,7 +1669,7 @@ if btn {
     print("Found at: " + btn.x + ", " + btn.y)
     print("Size: " + btn.w + "x" + btn.h)
     print("Confidence: " + btn.confidence)
-    
+
     // Click on the found image
     > m(btn.centerX, btn.centerY) lmb
 }
@@ -1945,16 +1909,16 @@ Structs now support methods and constructor sugar:
 struct MousePos {
   x
   y
-  
+
   fn init(x, y) {
     this.x = x
     this.y = y
   }
-  
+
   fn moveTo(speed) {
     mouse.moveTo(this.x, this.y, speed)
   }
-  
+
   fn distance(other) {
     let dx = this.x - other.x
     let dy = this.y - other.y
@@ -1973,7 +1937,7 @@ p1.distance(p2)
 
 ### Type Conversions
 
-New type conversion functions:
+Type conversion functions:
 
 ```havel
 // Numeric conversions
@@ -2031,9 +1995,9 @@ Havel supports optional type annotations for better code organization and IDE su
 ### Type Modes
 ```havel
 // Set type checking mode
-TypeChecker.setMode("none")   // Ignore types (default)
-TypeChecker.setMode("warn")   // Print warnings on mismatch
-TypeChecker.setMode("strict") // Runtime error on mismatch
+typeChecker.setMode("none")   // Ignore types (default)
+typeChecker.setMode("warn")   // Print warnings on mismatch
+typeypeChecker.setMode("strict") // Runtime error on mismatch
 ```
 
 ### Struct Definitions
@@ -2132,9 +2096,6 @@ havel run script.hv
 havel --repl
 havel -r
 
-# GUI-only mode (no hotkeys)
-havel --gui
-
 # Show help
 havel --help
 havel -h
@@ -2146,17 +2107,8 @@ havel -h
 |--------|-------------|
 | `--run`, `-r` | Run script in pure mode (no IO/hotkeys) |
 | `--repl` | Start interactive REPL |
-| `--gui` | GUI-only mode (no hotkeys) |
 | `--error`, `-e` | Stop on first error/warning |
 | `--help`, `-h` | Show help |
-
-### Error Reporting
-
-Runtime errors now include line and column information:
-
-```
-2026-03-01 05:12:51.032 [ERROR] Runtime Error at line 4: Undefined variable: undefinedVar
-```
 
 ### Pure Mode (--run)
 
@@ -2289,50 +2241,6 @@ ProcessPriority=0
 WorkerThreads=4
 ```
 
-#### Clipboard Manager
-
-Multi-select and animation features:
-
-```havel
-// Multi-select support (in GUI)
-// Hold Ctrl to select multiple items
-// Press Enter to copy all selected items
-
-// Animations
-// Window fade-in/fade-out on show/hide
-// Item fade animation on delete
-```
-
-### Window Manager Detection
-
-The window manager detector now uses EWMH properties for reliable detection:
-
-```havel
-// Get active window title
-let title = window.getTitle()
-
-// Get active window class
-let className = window.getClass()
-```
-
-Detection works correctly with:
-- ✅ X11 sessions (including `startx`)
-- ✅ Wayland compositors
-- ✅ Display managers (gdm, sddm, lightdm)
-
-### Exception Containment
-
-All interpreter exceptions are now contained to prevent crashes:
-
-```havel
-// Conditional hotkeys with errors won't crash
-mode == "gaming" => {
-    F1 => click()  // Safe even if condition fails
-}
-```
-
----
-
 ## Configuration System
 
 ### Config Sections (Hyprland-Style)
@@ -2359,7 +2267,7 @@ monitor "HDMI-0" "primary" {
   enabled = true
 }
 
-// Access via config namespace
+// Access via config
 print(config.general.log)           // true
 print(config.brightness.step)       // 0.2
 print(config.monitor.brightness)    // 0.8
@@ -2377,25 +2285,13 @@ config.set("General.Key3", "value3", true)
 // Single save after 500ms, not 3 saves
 
 // Force immediate save
-config.forceSave()
+config.save()
 
 // Batch mode
 config.beginBatch()
 config.set("A", "1", true)
 config.set("B", "2", true)
 config.endBatch()  // Single save
-```
-
-### Hot Reload
-
-Config file changes are detected instantly using inotify (Linux):
-
-```havel
-// Start watching (automatic in most cases)
-config.startFileWatching()
-
-// Changes to havel.cfg trigger instant reload
-// No polling - zero CPU usage when idle
 ```
 
 ---
@@ -2437,25 +2333,6 @@ repeat 5 { print("loop") }
 ### Standard Library
 
 Use `help()` in REPL or see [GRAMMAR.md#standard-library](GRAMMAR.md#standard-library) for complete list.
-
----
-
-## Exception Containment
-
-All interpreter exceptions are contained to prevent crashes:
-
-```havel
-// Conditional hotkeys with errors won't crash
-mode == "gaming" => {
-    F1 => undefinedFunction()  // Error logged, continues
-}
-```
-
----
-
-## New Features (Latest)
-
-> **⚠️ Implementation Note**: Some features documented below have **runtime support** but **parser support is in progress**. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for details on what requires workarounds.
 
 ### Script Imports
 
@@ -2507,8 +2384,6 @@ export fn toggle() {
 
 ### Enhanced Mode System
 
-> **⚠️ Parser Status**: Mode priority and transition hooks have runtime support but parser integration is pending. Use workarounds noted in IMPLEMENTATION_STATUS.md.
-
 #### Signals
 
 Define system facts that can be monitored:
@@ -2558,20 +2433,20 @@ Execute code on specific mode transitions:
 ```havel
 mode gaming {
     condition = isGame()
-    enter { 
+    enter {
         brightness(50)
         volume(80)
     }
-    exit { 
+    exit {
         brightness(100)
         volume(50)
     }
-    
+
     // Called when entering from specific mode
-    on enter from "coding" { 
+    on enter from "coding" {
         notify("leaving code for games, respect")
     }
-    
+
     // Called when exiting to specific mode
     on exit to "default" {
         run("killall -9 steam") // rage quit
@@ -2588,11 +2463,11 @@ stats {
     // Get time spent in mode (seconds)
     let gamingTime = mode.time("gaming")
     print("Gaming time: " + gamingTime + " seconds")
-    
+
     // Get transition count
     let switches = mode.transitions()
     print("Mode switches: " + switches)
-    
+
     // Monitor mode duration
     on mode.change {
         if mode.duration > 3600 {  // 1 hour
@@ -2618,9 +2493,6 @@ mode.isSignal("steam")    // Check if signal active (boolean)
 ---
 
 ### Window Query API
-
-> **⚠️ Usage Note**: Window query methods require function arguments. See IMPLEMENTATION_STATUS.md for expression syntax status.
-
 Query windows with powerful filters:
 
 ```havel
@@ -2703,7 +2575,7 @@ Repeating timer with full control:
 // Create repeating timer
 let timer = interval 1000 {
     print("Tick: " + time.now())
-    
+
     if title ~ "YouTube" {
         audio.unmute()
     }
@@ -2799,8 +2671,8 @@ print("Current: " + subtitle)
 mpv.ipcSet("/tmp/mpvsocket2")  // Set IPC socket path
 mpv.ipcRestart()                // Restart IPC connection
 
-// Picture-in-picture
-let pip = mpv.pic  // Get PiP status
+// Screenshot
+let pic = mpv.screenshot()
 ```
 
 ---
@@ -2812,7 +2684,7 @@ Tap and combo key detection:
 ```havel
 // Tap detection (quick press/release)
 on tap(lwin) => {
-    if xfce { run("/bin/xfce4-popup-whiskermenu") }
+    if xfce { run("xfce4-popup-whiskermenu") }
     else { $ ["rofi", "-show", "drun"] }
 }
 
@@ -2875,14 +2747,12 @@ on keyUp(lctrl, rctrl, lshift, rshift, esc) {
 Clean file path fallback:
 
 ```havel
-// Instead of confusing ?. ?? operators
 audio.play(firstExisting(
     "~/Music/night-theme.mp3",
-    "~/Music/default-night.mp3", 
+    "~/Music/default-night.mp3",
     "~/Music/fallback-night.mp3"
 ))
 
-// Returns first existing file path
 ```
 
 ---
@@ -2895,19 +2765,19 @@ audio.play(firstExisting(
 config {
     debug = true
     logKeys = true
-    
+
     // Nested blocks create hierarchical keys
     window {
         monitoring = true
         printWindows = false
         opacity = 0.9
     }
-    
+
     hotkeys {
         enableGlobal = true
         prefix = "ctrl+alt"
     }
-    
+
     gaming {
         classes = ["steam", "lutris", "heroic"]
         exclude = ["browser", "discord"]
@@ -2942,10 +2812,10 @@ Define conditions once, reuse everywhere:
 
 ```havel
 // Define reusable conditions
-let isGame = (class in config.gaming.classes || title in config.gaming.titles) 
+let isGame = (class in config.gaming.classes || title in config.gaming.titles)
           && !(class in config.gaming.exclude)
 
-let isTerminal = exe in ["kitty", "alacritty", "wezterm", 
+let isTerminal = exe in ["kitty", "alacritty", "wezterm",
                          "gnome-terminal", "tilix", "xterm"]
 
 // Use in modes
@@ -2969,7 +2839,7 @@ Batch operations on multiple modes:
 ```havel
 group "productivity" {
     modes: ["coding", "terminal", "typing"]
-    
+
     on enter {
         brightness(80)
         workspace.set(2)
@@ -2978,8 +2848,8 @@ group "productivity" {
 
 // Apply to all modes in group
 for mode in group.productivity {
-    mode.enter { 
-        do_not_disturb(true) 
+    mode.enter {
+        do_not_disturb(true)
     }
 }
 ```
@@ -2995,7 +2865,7 @@ High-priority temporary modes:
 mode meeting {
     condition = exe == "zoom" || exe == "teams"
     priority = 10  // Higher than normal modes
-    
+
     enter {
         notify("Meeting mode: muted notifications")
         do_not_disturb(true)
@@ -3012,11 +2882,11 @@ Programmatic mode definition:
 ```havel
 let GamingMode = Mode({
     condition = isGame()
-    enter = fn() { 
+    enter = fn() {
         brightness(50)
         volume(80)
     }
-    exit = fn() { 
+    exit = fn() {
         brightness(100)
         volume(50)
     }
@@ -3048,12 +2918,12 @@ signal coding_focus = active.class in ["code", "vim", "nvim"]
 // Define modes with priority
 mode gaming priority 10 {
     condition = active.exe == "steam.exe"
-    enter { 
+    enter {
         brightness(50)
         volume(80)
         game.start()
     }
-    exit { 
+    exit {
         brightness(100)
         volume(50)
         game.stop()
@@ -3232,7 +3102,7 @@ if not (mode == "gaming") {
 }
 
 // Complex expressions
-if (mode == "gaming" and title ~ /Steam/) or 
+if (mode == "gaming" and title ~ /Steam/) or
    (mode == "coding" and class == "code") {
     print("Active session")
 }
@@ -3270,35 +3140,6 @@ if count > 1 {
 - No temp file I/O
 - Memory-based pipes
 - Proper error handling
-
-**Performance:**
-- **Before**: ~100 KB/s (temp files)
-- **After**: ~10 MB/s (Unix pipes)
-- **Improvement**: 100× faster
-
----
-
-## Shell Command Type Safety
-
-Shell commands validate input types:
-
-```havel
-// Valid: string or array
-$ "echo hello"           // ✅ String
-$ ["ls", "-la"]          // ✅ Array
-
-// Invalid: other types
-$ 42                     // ❌ Error: number not allowed
-$ true                   // ❌ Error: boolean not allowed
-$ someFunction           // ❌ Error: function not allowed
-```
-
-**Error Messages:**
-```
-Shell command must be a string or array, got number
-Shell command cannot be a function. Did you forget ()?
-```
-
 ---
 
 ## Special Window Identifiers
@@ -3334,36 +3175,6 @@ if class == "firefox" and title ~ "YouTube" {
 - Conditional hotkeys
 - Window detection
 - Process monitoring
-
----
-
-## X11 Display Caching
-
-Window operations use cached X11 display connection:
-
-```havel
-// Before: Opens/closes display for EVERY operation
-// Slow: ~10ms per operation
-
-// After: Reuses cached display
-// Fast: ~0.1ms per operation
-
-// Automatic - no code changes needed
-window.active.title      // Uses cached display
-window.count(class == "steam")  // Reuses connection
-```
-
-**Performance Impact:**
-- **Before**: Opens display each time (socket, auth, etc.)
-- **After**: Single connection, reused
-- **Speedup**: 10-100× for window operations
-
-**Implementation:**
-- Static `shared_ptr<Display>` in `Window` class
-- Automatic initialization on first use
-- Proper cleanup on shutdown
-
----
 
 ## Memory Management
 
@@ -3431,7 +3242,5 @@ $ "nonexistent" || {
 - Structured result handling
 - Proper error propagation
 - Pipe chain support
-
----
 
 ---

@@ -721,18 +721,17 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
       
       // Determine type from object kind
       if (member.object->kind == ast::NodeType::StringLiteral) {
-        typeName = "String";
+        typeName = "string";
       } else if (member.object->kind == ast::NodeType::ArrayLiteral) {
-        typeName = "Array";
+        typeName = "array";
       } else if (member.object->kind == ast::NodeType::ObjectLiteral) {
-        typeName = "Object";
+        typeName = "object";
       }
 
       methodName = typeName + "." + property->symbol;
 
-      // Check if this is a registered prototype method (case-insensitive)
-      auto foundMethod = findHostBuiltin(methodName);
-      if (foundMethod) {
+      // Check if this is a registered prototype method
+      if (host_builtin_names_.find(methodName) != host_builtin_names_.end()) {
         // Compile the object (push as first argument)
         compileExpression(*member.object);
 
@@ -745,7 +744,7 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
         }
 
         // Call the prototype method (object is already first arg)
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*foundMethod, arg_count + 1});
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{methodName, arg_count + 1});
         return;
       }
     }
@@ -774,20 +773,17 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
 
   if (expression.callee->kind == ast::NodeType::Identifier) {
     auto callee_name = getCalleeName(*expression.callee);
-    if (callee_name) {
-      // Case-insensitive lookup
-      auto found = findHostBuiltin(*callee_name);
-      if (found) {
-        for (const auto &arg : expression.args) {
-          if (!arg) {
-            throw std::runtime_error("Call expression contains null argument");
-          }
-          compileExpression(*arg);
+    if (callee_name &&
+        host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
         }
-        emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{*found, arg_count});
-        return;
+        compileExpression(*arg);
       }
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{*callee_name, arg_count});
+      return;
     }
   }
 

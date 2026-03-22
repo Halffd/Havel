@@ -79,6 +79,18 @@ enum class OpCode : uint8_t {
   OBJECT_GET,
   OBJECT_SET,
 
+  // Spread operator
+  SPREAD,
+  SPREAD_CALL,
+  
+  // Type conversion
+  AS_TYPE,
+  TO_INT,
+  TO_FLOAT,
+  TO_STRING,
+  TO_BOOL,
+  TYPE_OF,
+
   // Special operations
   PRINT,
   DEBUG,

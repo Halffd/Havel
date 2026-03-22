@@ -178,6 +178,9 @@ public:
   std::optional<HostFunctionRef> getPrototypeMethod(const BytecodeValue& value, const std::string& methodName);
   std::vector<std::string> getPrototypeMethods(const BytecodeValue& value);
   
+  // Get registered host functions (for copying to options)
+  const std::unordered_map<std::string, BytecodeHostFunction>& getHostFunctions() const { return host_functions; }
+  
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;

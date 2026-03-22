@@ -116,10 +116,7 @@ public:
   bool conditionalHotkeysEnabled = true;
   std::vector<ConditionalHotkey> *activeConditionalHotkeys;
 
-  // Set interpreter for condition evaluation
-  void setInterpreter(class Interpreter* interp) {
-    conditionalManager.setInterpreter(interp);
-  }
+  // Note: setInterpreter removed - interpreter no longer available
 
 private:
   void initializeInputCallbacks();

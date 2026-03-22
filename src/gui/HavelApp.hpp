@@ -16,7 +16,6 @@
 #include <vector>
 
 #ifdef ENABLE_HAVEL_LANG
-#include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/compiler/bytecode/VM.hpp"
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #else
@@ -29,7 +28,6 @@ class Interpreter;
 #include "core/net/NetworkManager.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "gui/TextChunkerWindow.hpp"
-#include "havel-lang/runtime/Interpreter.hpp"
 #include "utils/Logger.hpp"
 #include "window/WindowManager.hpp"
 #include "x11.h"

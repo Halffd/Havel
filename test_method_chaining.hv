@@ -1,0 +1,41 @@
+// Test method chaining and case-insensitive modules
+
+print("=== Testing Method Chaining on Literals ===");
+
+// String methods
+print('"hello".upper() =', "hello".upper());
+print('"HELLO".lower() =', "HELLO".lower());
+print('"  hi  ".trim() =', "  hi  ".trim());
+
+// Array methods
+print('[1,2,3].len() =', [1,2,3].len());
+print('[3,1,2].sort() =', [3,1,2].sort());
+print('[1,2,3].reverse() =', [1,2,3].reverse());
+
+// Object methods
+print('{"a": 1, "b": 2}.keys() =', {"a": 1, "b": 2}.keys());
+print('{"a": 1, "b": 2}.values() =', {"a": 1, "b": 2}.values());
+
+print("\n=== Testing Case-Insensitive Modules ===");
+
+// Both should work
+print('String.upper("hello") =', String.upper("hello"));
+print('string.upper("hello") =', string.upper("hello"));
+
+print('Array.len([1,2,3]) =', Array.len([1,2,3]));
+print('array.len([1,2,3]) =', array.len([1,2,3]));
+
+print('Object.keys({"x": 1}) =', Object.keys({"x": 1}));
+print('object.keys({"x": 1}) =', object.keys({"x": 1}));
+
+print("\n=== Testing Type Conversion ===");
+
+print('toInt(42.9) =', toInt(42.9));
+print('toFloat("3.14") =', toFloat("3.14"));
+print('toString(123) =', toString(123));
+print('toBool(0) =', toBool(0));
+print('toBool(1) =', toBool(1));
+print('typeof(42) =', typeof(42));
+print('typeof("hi") =', typeof("hi"));
+
+print("\n=== All tests completed! ===");

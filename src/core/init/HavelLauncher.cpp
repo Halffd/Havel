@@ -6,6 +6,7 @@
 #include "havel-lang/runtime/Interpreter.hpp"
 #include "havel-lang/compiler/bytecode/Pipeline.hpp"
 #include "havel-lang/compiler/bytecode/HostBridge.hpp"
+#include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/tools/REPL.hpp"
 #include "utils/Logger.hpp"
 #include <QApplication>
@@ -351,13 +352,32 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       havel::compiler::HostBridgeDependencies deps;
       auto registry = havel::compiler::createHostBridgeRegistry(tempVm, deps);
       registry->install();
-      options = registry->options();
       
+      // Register stdlib modules with VM (VM-native)
+      havel::registerStdLibWithVM(*registry);
+
+      options = registry->options();
+
       // Copy VM's host functions to options for compiler and execution
       // This makes built-in functions (toInt, toFloat, etc.) available
       for (const auto& [name, fn] : tempVm.getHostFunctions()) {
         options.host_functions[name] = fn;
       }
+      
+      // Add VM's function names to host_global_names so compiler knows about them
+      options.host_global_names.insert("toInt");
+      options.host_global_names.insert("toFloat");
+      options.host_global_names.insert("toString");
+      options.host_global_names.insert("toBool");
+      options.host_global_names.insert("typeof");
+      options.host_global_names.insert("print");
+      options.host_global_names.insert("clock_ms");
+      options.host_global_names.insert("sleep_ms");
+      options.host_global_names.insert("system.gc");
+      options.host_global_names.insert("system_gc");
+      
+      // Use the same VM for execution (so it has all the registered functions)
+      options.vm_override = &tempVm;
 
       auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
       info("Bytecode execution completed successfully");

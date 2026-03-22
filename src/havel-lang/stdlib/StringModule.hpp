@@ -209,6 +209,10 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
     registry.vm().registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
     registry.vm().registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
 
+    // Register module globals (case-insensitive)
+    registry.options().host_global_names.insert("String");
+    registry.options().host_global_names.insert("string");
+
     // Register string object via vm_setup (accumulated)
     registry.addVmSetup([](compiler::VM& vm) {
         auto strObj = vm.createHostObject();
@@ -225,6 +229,7 @@ inline void registerStringModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(strObj, "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
         vm.setHostObjectField(strObj, "includes", compiler::HostFunctionRef{.name = "string.includes"});
         vm.setGlobal("String", strObj);
+        vm.setGlobal("string", strObj);  // Case-insensitive alias
     });
 }
 

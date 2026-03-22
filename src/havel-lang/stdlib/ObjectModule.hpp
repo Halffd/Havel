@@ -153,6 +153,10 @@ inline void registerObjectModuleVM(compiler::HostBridgeRegistry& registry) {
     registry.vm().registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "Object.freeze"});
     registry.vm().registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "Object.seal"});
 
+    // Register module globals (case-insensitive)
+    registry.options().host_global_names.insert("Object");
+    registry.options().host_global_names.insert("object");
+
     // Register Object functions via vm_setup (accumulated)
     registry.addVmSetup([](compiler::VM& vm) {
         auto objConstructor = vm.createHostObject();
@@ -165,6 +169,7 @@ inline void registerObjectModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(objConstructor, "freeze", compiler::HostFunctionRef{.name = "Object.freeze"});
         vm.setHostObjectField(objConstructor, "seal", compiler::HostFunctionRef{.name = "Object.seal"});
         vm.setGlobal("Object", objConstructor);
+        vm.setGlobal("object", objConstructor);  // Case-insensitive alias
     });
 }
 

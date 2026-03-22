@@ -185,13 +185,7 @@ void HostBridgeRegistry::install() {
         return self->handleScreenshotRegion(args);
       };
 
-  // Register VM-native stdlib modules
-  stdlib::registerMathModuleVM(*self);
-  stdlib::registerStringModuleVM(*self);
-  stdlib::registerTypeModuleVM(*self);
-  stdlib::registerUtilityModuleVM(*self);
-  stdlib::registerArrayModuleVM(*self);
-
+  // Apply accumulated vm_setup callbacks at the end
   options.vm_setup = [self](VM &vm) {
     auto registerObject = [&vm](const std::string &name,
                                 const std::vector<std::pair<std::string, std::string>>
@@ -221,7 +215,16 @@ void HostBridgeRegistry::install() {
                             {"set", "mode.set"},
                             {"tick", "mode.tick"}});
     registerObject("process", {{"find", "process.find"}});
+    
+    // Apply all accumulated stdlib vm_setup callbacks
+    for (auto& setupFn : self->vm_setup_callbacks_) {
+      setupFn(vm);
+    }
   };
+}
+
+void HostBridgeRegistry::addVmSetup(std::function<void(VM&)> setupFn) {
+  vm_setup_callbacks_.push_back(std::move(setupFn));
 }
 
 void HostBridgeRegistry::clear() {

@@ -379,6 +379,52 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::LambdaExpression: {
+    const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
+    
+    // Create bytecode function for lambda
+    BytecodeFunction func("<lambda>", static_cast<uint8_t>(lambda.parameters.size()), 0);
+    
+    // Enter function context
+    enterFunction(std::move(func));
+    
+    // Add parameters as locals
+    for (size_t i = 0; i < lambda.parameters.size(); ++i) {
+      const auto &param = lambda.parameters[i];
+      // Declare local by reserving slot
+      reserveLocalSlot(next_local_index++);
+    }
+    
+    // Compile function body
+    if (lambda.body) {
+      compileStatement(*lambda.body);
+      // If body is expression statement, result is already on stack
+      // Otherwise, return null
+      if (lambda.body->kind != ast::NodeType::ExpressionStatement) {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    }
+    emit(OpCode::RETURN);
+    
+    // Leave function context
+    leaveFunction();
+    
+    // Load closure
+    const auto &compiled_func = compiled_functions.back();
+    uint32_t function_index = 0;
+    for (size_t i = 0; i < compiled_functions.size(); ++i) {
+      if (&compiled_functions[i] == &compiled_func) {
+        function_index = static_cast<uint32_t>(i);
+        break;
+      }
+    }
+    emit(OpCode::LOAD_CONST, addConstant(FunctionObject{.function_index = function_index}));
+    emit(OpCode::CLOSURE, function_index);
+    break;
+  }
+
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
     const auto *binding = bindingFor(id);
@@ -652,6 +698,59 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
 
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
 
+  // Check for method call on primitive (prototype method)
+  if (expression.callee->kind == ast::NodeType::MemberExpression) {
+    const auto &member = static_cast<const ast::MemberExpression &>(*expression.callee);
+    auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+    
+    // Check if object is a literal (primitive)
+    bool isPrimitiveObject = 
+        member.object->kind == ast::NodeType::StringLiteral ||
+        member.object->kind == ast::NodeType::ArrayLiteral ||
+        member.object->kind == ast::NodeType::ObjectLiteral;
+    
+    if (isPrimitiveObject && property) {
+      // Compile prototype method call:
+      // 1. Load the prototype method (e.g., "string.upper")
+      // 2. Load the object as first argument
+      // 3. Load remaining arguments
+      // 4. Call the method
+      
+      std::string methodName;
+      std::string typeName;
+      
+      // Determine type from object kind
+      if (member.object->kind == ast::NodeType::StringLiteral) {
+        typeName = "String";
+      } else if (member.object->kind == ast::NodeType::ArrayLiteral) {
+        typeName = "Array";
+      } else if (member.object->kind == ast::NodeType::ObjectLiteral) {
+        typeName = "Object";
+      }
+
+      methodName = typeName + "." + property->symbol;
+
+      // Check if this is a registered prototype method (case-insensitive)
+      auto foundMethod = findHostBuiltin(methodName);
+      if (foundMethod) {
+        // Compile the object (push as first argument)
+        compileExpression(*member.object);
+
+        // Compile remaining arguments
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            throw std::runtime_error("Call expression contains null argument");
+          }
+          compileExpression(*arg);
+        }
+
+        // Call the prototype method (object is already first arg)
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{*foundMethod, arg_count + 1});
+        return;
+      }
+    }
+  }
+
   if (expression.callee->kind == ast::NodeType::Identifier) {
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);
@@ -675,17 +774,20 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
 
   if (expression.callee->kind == ast::NodeType::Identifier) {
     auto callee_name = getCalleeName(*expression.callee);
-    if (callee_name &&
-        host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
+    if (callee_name) {
+      // Case-insensitive lookup
+      auto found = findHostBuiltin(*callee_name);
+      if (found) {
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            throw std::runtime_error("Call expression contains null argument");
+          }
+          compileExpression(*arg);
         }
-        compileExpression(*arg);
+        emit(OpCode::CALL_HOST,
+             std::vector<BytecodeValue>{*found, arg_count});
+        return;
       }
-      emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{*callee_name, arg_count});
-      return;
     }
   }
 

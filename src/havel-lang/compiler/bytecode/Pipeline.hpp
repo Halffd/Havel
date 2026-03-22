@@ -21,6 +21,7 @@ struct PipelineOptions {
   std::string snapshot_dir;
   bool write_snapshot_artifact = false;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  std::unordered_set<std::string> host_global_names;  // For case-insensitive module access
   VM *vm_override = nullptr;
   std::function<void(VM &)> vm_setup;
 };

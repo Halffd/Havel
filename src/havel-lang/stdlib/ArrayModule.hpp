@@ -222,6 +222,10 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
     registry.vm().registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
     registry.vm().registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
 
+    // Register module globals (case-insensitive)
+    registry.options().host_global_names.insert("Array");
+    registry.options().host_global_names.insert("array");
+
     // Register array object via vm_setup
     registry.addVmSetup([](compiler::VM& vm) {
         auto arrObj = vm.createHostObject();
@@ -241,7 +245,8 @@ inline void registerArrayModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(arrObj, "join", compiler::HostFunctionRef{.name = "array.join"});
         vm.setHostObjectField(arrObj, "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
         vm.setHostObjectField(arrObj, "sort", compiler::HostFunctionRef{.name = "array.sort"});
-        vm.setGlobal("array", arrObj);
+        vm.setGlobal("Array", arrObj);
+        vm.setGlobal("array", arrObj);  // Case-insensitive alias
     });
 }
 

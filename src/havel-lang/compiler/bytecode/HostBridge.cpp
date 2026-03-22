@@ -185,6 +185,88 @@ void HostBridgeRegistry::install() {
         return self->handleScreenshotRegion(args);
       };
 
+  // Generic method dispatcher for variables (any.methodName)
+  // This allows str.upper() where str is a variable
+  options.host_functions["any.upper"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.upper() requires a string argument");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.upper() requires a string argument");
+    return options.host_functions.at("string.upper")(args);
+  };
+  options.host_functions["any.lower"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.lower() requires a string argument");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.lower() requires a string argument");
+    return options.host_functions.at("string.lower")(args);
+  };
+  options.host_functions["any.trim"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.trim() requires a string argument");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.trim() requires a string argument");
+    return options.host_functions.at("string.trim")(args);
+  };
+  options.host_functions["any.sub"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.sub() requires arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.sub() requires a string argument");
+    return options.host_functions.at("string.sub")(args);
+  };
+  options.host_functions["any.find"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) throw std::runtime_error("any.find() requires 2 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.find() requires a string argument");
+    return options.host_functions.at("string.find")(args);
+  };
+  options.host_functions["any.replace"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 3) throw std::runtime_error("any.replace() requires 3 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.replace() requires a string argument");
+    return options.host_functions.at("string.replace")(args);
+  };
+  options.host_functions["any.split"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) throw std::runtime_error("any.split() requires 2 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.split() requires a string argument");
+    return options.host_functions.at("string.split")(args);
+  };
+  options.host_functions["any.startswith"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) throw std::runtime_error("any.startswith() requires 2 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.startswith() requires a string argument");
+    return options.host_functions.at("string.startswith")(args);
+  };
+  options.host_functions["any.endswith"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) throw std::runtime_error("any.endswith() requires 2 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.endswith() requires a string argument");
+    return options.host_functions.at("string.endswith")(args);
+  };
+  options.host_functions["any.includes"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) throw std::runtime_error("any.includes() requires 2 arguments");
+    if (!std::holds_alternative<std::string>(args[0])) throw std::runtime_error("any.includes() requires a string argument");
+    return options.host_functions.at("string.includes")(args);
+  };
+  options.host_functions["any.len"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.len() requires an argument");
+    if (std::holds_alternative<std::string>(args[0])) {
+      return options.host_functions.at("string.len")(args);
+    } else if (std::holds_alternative<ArrayRef>(args[0])) {
+      return options.host_functions.at("array.len")(args);
+    }
+    throw std::runtime_error("any.len() requires a string or array argument");
+  };
+  options.host_functions["any.sort"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.sort() requires an array argument");
+    if (!std::holds_alternative<ArrayRef>(args[0])) throw std::runtime_error("any.sort() requires an array argument");
+    return options.host_functions.at("array.sort")(args);
+  };
+  options.host_functions["any.reverse"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.reverse() requires an array argument");
+    if (!std::holds_alternative<ArrayRef>(args[0])) throw std::runtime_error("any.reverse() requires an array argument");
+    return options.host_functions.at("array.reverse")(args);
+  };
+  options.host_functions["any.keys"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.keys() requires an object argument");
+    if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("any.keys() requires an object argument");
+    return options.host_functions.at("object.keys")(args);
+  };
+  options.host_functions["any.values"] = [&options](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) throw std::runtime_error("any.values() requires an object argument");
+    if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("any.values() requires an object argument");
+    return options.host_functions.at("object.values")(args);
+  };
+
   // Apply accumulated vm_setup callbacks at the end
   options.vm_setup = [self](VM &vm) {
     auto registerObject = [&vm](const std::string &name,

@@ -75,6 +75,8 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--debug-lexer" || arg == "-dl") {
       debugging::debug_lexer = true;
       cfg.debugLexer = true;
+    } else if (arg == "--debug-bytecode" || arg == "-dbc") {
+      cfg.debugBytecode = true;
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
@@ -376,8 +378,21 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       
       // Use the same VM for execution (so it has all the registered functions)
       options.vm_override = &tempVm;
+      
+      // Enable bytecode debug output if requested
+      options.write_snapshot_artifact = cfg.debugBytecode;
+      if (cfg.debugBytecode) {
+        options.snapshot_dir = "/tmp/havel-bytecode";
+      }
 
       auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+      
+      // Print bytecode debug info if requested
+      if (cfg.debugBytecode && vmResult.snapshot.bytecode.empty() == false) {
+        info("=== Bytecode Debug Output ===");
+        info("{}", vmResult.snapshot.bytecode);
+      }
+      
       info("Bytecode execution completed successfully");
       return 0;
     } catch (const std::exception& e) {

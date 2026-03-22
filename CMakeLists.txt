@@ -315,7 +315,19 @@ pkg_check_modules(LEPTONICA REQUIRED lept)
 # OpenCV with workaround for FFmpeg symbol version mismatch
 # Some systems have libavfilter/libavutil version conflicts
 # We ignore unresolved symbols in OpenCV's FFmpeg dependencies since we don't use video
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs)
+
+# Only link essential OpenCV modules (reduces binary size by ~200MB)
+# Full OpenCV has 40+ modules, we only use:
+# - core: Basic data structures and functions
+# - imgproc: Image processing (pixel automation)
+# - imgcodecs: Image reading/writing (screenshots)
+set(OPENCV_ESSENTIAL_LIBS
+    opencv_core
+    opencv_imgproc
+    opencv_imgcodecs
+)
+
 if(OpenCV_LIBS MATCHES "avfilter")
     message(STATUS "OpenCV found with FFmpeg - applying linker workaround for libavutil symbols")
     # Add workaround for av_alpha_mode_* symbols that may be missing in some FFmpeg versions
@@ -343,7 +355,7 @@ set(COMMON_LIBS
     # OCR libraries
     ${TESSERACT_LIBRARIES}
     ${LEPTONICA_LIBRARIES}
-    ${OpenCV_LIBS}
+    ${OPENCV_ESSENTIAL_LIBS}
     # Optional Readline
     ${READLINE_LIB}
     dl crypto ssl pthread m

@@ -8,7 +8,6 @@
  */
 #include "HotkeyModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../havel-lang/runtime/Interpreter.hpp"
 #include "core/HotkeyManager.hpp"
 #include "host/hotkey/HotkeyService.hpp"
 

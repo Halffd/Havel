@@ -6,7 +6,6 @@
  */
 #include "RuntimeModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../havel-lang/runtime/Interpreter.hpp"
 #include "process/Launcher.hpp"
 #include "stdlib/TypeModule.hpp"
 

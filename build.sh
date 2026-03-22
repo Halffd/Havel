@@ -40,6 +40,7 @@ declare -A BUILD_CONFIGS=(
     [8]="Debug,OFF,ON,OFF,build-debug"       # 8: debug, no tests, lang, NO llvm
     [9]="Release,ON,ON,OFF,build-release"    # 9: release, tests, lang, NO llvm
     [10]="Debug,OFF,ON,ON,build"
+    [11]="Release,OFF,ON,ON,build"
 )
 
 # Parse build mode from environment or first arg

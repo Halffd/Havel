@@ -1,5 +1,5 @@
 /*
- * ObjectModule.hpp - Object manipulation stdlib for VM (no host/service)
+ * ObjectModule.hpp - Object manipulation stdlib for VM with method chaining
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
@@ -21,88 +21,130 @@ void registerObjectModule(Environment& env);
 // NEW: Register object module with VM's host bridge (VM-native)
 inline void registerObjectModuleVM(compiler::HostBridgeRegistry& registry) {
     auto& vm = registry.vm();
-    auto& options = registry.options();
     
     // Object.keys(obj) - Get array of keys (sorted)
-    options.host_functions["Object.keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.keys() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.keys() arg must be object");
         
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        auto keys = vm.getHostObjectKeys(obj);
+        
+        // Sort keys alphabetically
+        std::sort(keys.begin(), keys.end());
+        
         auto arr = vm.createHostArray();
-        // Note: Would need VM access to iterate object keys
-        // Simplified for now
+        for (const auto& key : keys) {
+            vm.pushHostArrayValue(arr, compiler::BytecodeValue(key));
+        }
         return compiler::BytecodeValue(arr);
     };
     
     // Object.values(obj) - Get array of values (sorted by key)
-    options.host_functions["Object.values"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.values"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.values() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.values() arg must be object");
         
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        auto entries = vm.getHostObjectEntries(obj);
+        
+        // Sort by key
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        
         auto arr = vm.createHostArray();
-        // Note: Would need VM access to iterate object values
-        // Simplified for now
+        for (const auto& [key, value] : entries) {
+            vm.pushHostArrayValue(arr, value);
+        }
         return compiler::BytecodeValue(arr);
     };
     
     // Object.entries(obj) - Get array of [key, value] pairs
-    options.host_functions["Object.entries"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.entries"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.entries() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.entries() arg must be object");
         
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        auto entries = vm.getHostObjectEntries(obj);
+        
+        // Sort by key
+        std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+            return a.first < b.first;
+        });
+        
         auto arr = vm.createHostArray();
-        // Note: Would need VM access to iterate object entries
-        // Simplified for now
+        for (const auto& [key, value] : entries) {
+            auto pairArr = vm.createHostArray();
+            vm.pushHostArrayValue(pairArr, compiler::BytecodeValue(key));
+            vm.pushHostArrayValue(pairArr, value);
+            vm.pushHostArrayValue(arr, compiler::BytecodeValue(pairArr));
+        }
         return compiler::BytecodeValue(arr);
     };
     
     // Object.has(obj, key) - Check if object has key
-    options.host_functions["Object.has"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.has"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.has() first arg must be object");
         if (!std::holds_alternative<std::string>(args[1])) throw std::runtime_error("Object.has() second arg must be string");
         
-        // Note: Would need VM access to check object keys
-        // Simplified for now
-        return compiler::BytecodeValue(false);
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        auto key = std::get<std::string>(args[1]);
+        return compiler::BytecodeValue(vm.hasHostObjectField(obj, key));
     };
     
     // Object.delete(obj, key) - Delete key from object
-    options.host_functions["Object.delete"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.delete"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.delete() requires object and key");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.delete() first arg must be object");
+        if (!std::holds_alternative<std::string>(args[1])) throw std::runtime_error("Object.delete() second arg must be string");
         
-        // Note: Would need VM access to delete from object
-        // Simplified for now
-        return compiler::BytecodeValue(false);
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        auto key = std::get<std::string>(args[1]);
+        return compiler::BytecodeValue(vm.deleteHostObjectField(obj, key));
     };
     
     // Object.assign(target, source1, ...) - Copy properties from sources to target
-    options.host_functions["Object.assign"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.assign"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.assign() requires at least target object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.assign() first arg must be object");
         
-        // Note: Would need VM access to copy properties
-        // Simplified for now
-        return args[0];
+        auto target = std::get<compiler::ObjectRef>(args[0]);
+        for (size_t i = 1; i < args.size(); ++i) {
+            if (std::holds_alternative<compiler::ObjectRef>(args[i])) {
+                auto source = std::get<compiler::ObjectRef>(args[i]);
+                auto entries = vm.getHostObjectEntries(source);
+                for (const auto& [key, value] : entries) {
+                    vm.setHostObjectField(target, key, value);
+                }
+            }
+        }
+        return compiler::BytecodeValue(target);  // Return target for chaining
     };
     
     // Object.freeze(obj) - Freeze object (prevent modifications)
-    options.host_functions["Object.freeze"] = [](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.freeze"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.freeze() requires object");
-        // Note: VM doesn't support freezing yet
-        return args.empty() ? compiler::BytecodeValue(nullptr) : args[0];
+        if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.freeze() arg must be object");
+        
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        vm.setHostObjectFrozen(obj, true);
+        return compiler::BytecodeValue(obj);  // Return object for chaining
     };
     
     // Object.seal(obj) - Seal object (prevent new properties)
-    options.host_functions["Object.seal"] = [](const std::vector<compiler::BytecodeValue>& args) {
+    registry.options().host_functions["Object.seal"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.seal() requires object");
-        // Note: VM doesn't support sealing yet
-        return args.empty() ? compiler::BytecodeValue(nullptr) : args[0];
+        if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.seal() arg must be object");
+        
+        auto obj = std::get<compiler::ObjectRef>(args[0]);
+        vm.setHostObjectSealed(obj, true);
+        return compiler::BytecodeValue(obj);  // Return object for chaining
     };
     
-    // Register Object functions via vm_setup
-    options.vm_setup = [](compiler::VM& vm) {
+    // Register Object functions via vm_setup (accumulated)
+    registry.addVmSetup([](compiler::VM& vm) {
         auto objConstructor = vm.createHostObject();
         vm.setHostObjectField(objConstructor, "keys", compiler::HostFunctionRef{.name = "Object.keys"});
         vm.setHostObjectField(objConstructor, "values", compiler::HostFunctionRef{.name = "Object.values"});
@@ -113,7 +155,7 @@ inline void registerObjectModuleVM(compiler::HostBridgeRegistry& registry) {
         vm.setHostObjectField(objConstructor, "freeze", compiler::HostFunctionRef{.name = "Object.freeze"});
         vm.setHostObjectField(objConstructor, "seal", compiler::HostFunctionRef{.name = "Object.seal"});
         vm.setGlobal("Object", objConstructor);
-    };
+    });
 }
 
 // Implementation of old registerObjectModule (placeholder)

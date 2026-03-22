@@ -20,7 +20,7 @@ void registerRegexModule(Environment& env);
 
 // NEW: Register regex module with VM's host bridge (VM-native)
 inline void registerRegexModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to string

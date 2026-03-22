@@ -3,14 +3,11 @@
  *
  * Variable scoping and environment management for Havel interpreter.
  *
- * Note: This header includes Interpreter.hpp because Environment needs
  * the full HavelValue definition. This is a stepping stone toward
  * better organization - in the future, HavelValue should be moved to
- * a separate Value.hpp that both this file and Interpreter.hpp can include.
  */
 #pragma once
 
-#include "Interpreter.hpp" // For HavelValue
 #include <memory>
 #include <optional>
 #include <unordered_map>

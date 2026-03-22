@@ -2,7 +2,6 @@
 
 #include "../lexer/Lexer.hpp"
 #include "parser/Parser.h"
-#include "runtime/Interpreter.hpp"
 #include "ModuleLoader.hpp"
 #include "ast/AST.h"
 #include "core/IO.hpp"

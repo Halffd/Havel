@@ -238,7 +238,7 @@ VM::VM() {
   registerDefaultHostFunctions();
 }
 
-VM::VM(const HostContext& ctx) {
+VM::VM(const havel::HostContext& ctx) {
   // Store context for service access
   context_ = &ctx;
   registerDefaultHostFunctions();

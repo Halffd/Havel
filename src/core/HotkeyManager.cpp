@@ -108,7 +108,7 @@ HotkeyManager::HotkeyManager(std::shared_ptr<IO> io)
 }
 
 HotkeyManager::HotkeyManager(std::shared_ptr<IO> io, WindowManager &, MPVController &,
-                             AudioManager &, Interpreter &, ScreenshotManager *,
+                             AudioManager &, ScreenshotManager *,
                              BrightnessManager &,
                              std::shared_ptr<net::NetworkManager>)
     : HotkeyManager(io) {}

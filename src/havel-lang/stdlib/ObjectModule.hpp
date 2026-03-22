@@ -20,7 +20,7 @@ void registerObjectModule(Environment& env);
 
 // NEW: Register object module with VM's host bridge (VM-native)
 inline void registerObjectModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.vm();
+    auto& vm = bridge.context().vm;
     
     // Object.keys(obj) - Get array of keys (sorted)
     bridge.options().host_functions["object.keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
@@ -144,14 +144,14 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
 
     // Register prototype methods for {}.method() syntax
-    bridge.vm().registerPrototypeMethod("Object", "keys", compiler::HostFunctionRef{.name = "object.keys"});
-    bridge.vm().registerPrototypeMethod("Object", "values", compiler::HostFunctionRef{.name = "object.values"});
-    bridge.vm().registerPrototypeMethod("Object", "entries", compiler::HostFunctionRef{.name = "object.entries"});
-    bridge.vm().registerPrototypeMethod("Object", "has", compiler::HostFunctionRef{.name = "object.has"});
-    bridge.vm().registerPrototypeMethod("Object", "delete", compiler::HostFunctionRef{.name = "object.delete"});
-    bridge.vm().registerPrototypeMethod("Object", "assign", compiler::HostFunctionRef{.name = "object.assign"});
-    bridge.vm().registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "object.freeze"});
-    bridge.vm().registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "object.seal"});
+    bridge.context().vm.registerPrototypeMethod("Object", "keys", compiler::HostFunctionRef{.name = "object.keys"});
+    bridge.context().vm.registerPrototypeMethod("Object", "values", compiler::HostFunctionRef{.name = "object.values"});
+    bridge.context().vm.registerPrototypeMethod("Object", "entries", compiler::HostFunctionRef{.name = "object.entries"});
+    bridge.context().vm.registerPrototypeMethod("Object", "has", compiler::HostFunctionRef{.name = "object.has"});
+    bridge.context().vm.registerPrototypeMethod("Object", "delete", compiler::HostFunctionRef{.name = "object.delete"});
+    bridge.context().vm.registerPrototypeMethod("Object", "assign", compiler::HostFunctionRef{.name = "object.assign"});
+    bridge.context().vm.registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "object.freeze"});
+    bridge.context().vm.registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "object.seal"});
 
     // Register module globals (compiler already knows about methods from host_functions)
     bridge.options().host_global_names.insert("Object");

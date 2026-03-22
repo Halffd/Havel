@@ -18,8 +18,6 @@ namespace havel {
 class Interpreter;
 struct HavelValue;
 struct HavelFunction;
-// Note: HavelResult and BuiltinFunction are type aliases defined in Interpreter.hpp
-// The .cpp file includes Interpreter.hpp first to get full definitions
 
 namespace ast {
     struct CallExpression;

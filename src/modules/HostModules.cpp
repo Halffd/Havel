@@ -91,39 +91,40 @@ void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI) {
         registry.registerService<host::HotkeyService>(hotkeyService);
     }
 
+    // WindowManager is required for window operations
     if (!hostAPI->GetWindowManager()) {
         throw std::runtime_error("initializeServiceRegistry: WindowManager not available");
     }
     auto windowService = std::make_shared<host::WindowService>(hostAPI->GetWindowManager());
     registry.registerService<host::WindowService>(windowService);
 
-    if (!hostAPI->GetModeManager()) {
-        throw std::runtime_error("initializeServiceRegistry: ModeManager not available");
+    // ModeManager is optional - ModeService is created later in createHostBridgeDependencies()
+    // when VM is available because it needs VM* for callback management
+    if (hostAPI->GetModeManager()) {
+        // ModeService will be created in createHostBridgeDependencies()
     }
-    // ModeService is created later in createHostBridgeDependencies() when VM is available
-    // because it needs VM* for callback management
 
-    if (!hostAPI->GetProcessManager()) {
-        throw std::runtime_error("initializeServiceRegistry: ProcessManager not available");
+    // ProcessManager is optional
+    if (hostAPI->GetProcessManager()) {
+        auto processService = std::make_shared<host::ProcessService>();
+        registry.registerService<host::ProcessService>(processService);
     }
-    auto processService = std::make_shared<host::ProcessService>();
-    registry.registerService<host::ProcessService>(processService);
 
     // Clipboard service doesn't need constructor args
     auto clipboardService = std::make_shared<host::ClipboardService>();
     registry.registerService<host::ClipboardService>(clipboardService);
 
-    if (!hostAPI->GetAudioManager()) {
-        throw std::runtime_error("initializeServiceRegistry: AudioManager not available");
+    // AudioManager is optional
+    if (hostAPI->GetAudioManager()) {
+        auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
+        registry.registerService<host::AudioService>(audioService);
     }
-    auto audioService = std::make_shared<host::AudioService>(hostAPI->GetAudioManager());
-    registry.registerService<host::AudioService>(audioService);
 
-    if (!hostAPI->GetBrightnessManager()) {
-        throw std::runtime_error("initializeServiceRegistry: BrightnessManager not available");
+    // BrightnessManager is optional
+    if (hostAPI->GetBrightnessManager()) {
+        auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
+        registry.registerService<host::BrightnessService>(brightnessService);
     }
-    auto brightnessService = std::make_shared<host::BrightnessService>(hostAPI->GetBrightnessManager());
-    registry.registerService<host::BrightnessService>(brightnessService);
     
     // Screenshot service doesn't need constructor args (uses Qt directly)
     auto screenshotService = std::make_shared<host::ScreenshotService>();

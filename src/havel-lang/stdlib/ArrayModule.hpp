@@ -226,7 +226,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     bridge.options().host_global_names.insert("Array");
 
     // Register array object via vm_setup
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto arrObj = vm.createHostObject();
         vm.setHostObjectField(arrObj, "len", compiler::HostFunctionRef{.name = "array.len"});
         vm.setHostObjectField(arrObj, "push", compiler::HostFunctionRef{.name = "array.push"});

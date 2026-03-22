@@ -1,5 +1,5 @@
 #pragma once
-#include "../../host/HostContext.hpp"
+#include "HostContext.hpp"
 #include "ModuleLoader.hpp"
 #include "RuntimeServices.hpp"
 #include "ast/AST.h"
@@ -464,8 +464,8 @@ public:
     environment.reset(); // Free all variables
     lastResult = HavelValue(nullptr);
 
-    // Clear HostContext components (stops threads, frees resources)
-    hostContext.clear();
+    // Clear HostContext (services will be freed when shared_ptrs go out of scope)
+    hostContext = HostContext();
 
     // Clear global interpreter reference to prevent dangling pointer
     havel::modules::SetHotkeyInterpreter(std::weak_ptr<Interpreter>());

@@ -422,17 +422,21 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   if constexpr (USE_BYTECODE_VM) {
     info("Executing with bytecode VM");
     try {
-      // Create minimal options with stdlib functions
-      havel::compiler::PipelineOptions options;
-      havel::compiler::VM tempVm;
-      havel::compiler::HostBridgeDependencies deps;
-      auto registry = havel::compiler::createHostBridgeRegistry(tempVm, deps);
-      registry->install();
+      // Create minimal context (no services needed for pure script execution)
+      havel::HostContext ctx;
       
-      // Register stdlib modules with VM (VM-native)
-      havel::registerStdLibWithVM(*registry);
+      // Create VM
+      havel::compiler::VM tempVm;
+      
+      // Create HostBridge with minimal context
+      auto bridge = havel::compiler::createHostBridge(tempVm, std::move(ctx));
+      bridge->install();
 
-      options = registry->options();
+      // Register stdlib modules with VM (VM-native)
+      havel::registerStdLibWithVM(*bridge);
+
+      havel::compiler::PipelineOptions options = bridge->options();
+      options.vm_override = &tempVm;
 
       // Copy VM's host functions to options for compiler and execution
       // This makes built-in functions (toInt, toFloat, etc.) available
@@ -468,10 +472,10 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       }
 
       info("Bytecode execution completed successfully");
-      
+
       // Explicit shutdown to clear containers before ASan leak check
-      registry->shutdown();
-      
+      bridge->shutdown();
+
       return 0;
     } catch (const std::exception& e) {
       error("Bytecode error: {}", e.what());

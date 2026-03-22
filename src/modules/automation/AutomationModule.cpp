@@ -5,7 +5,6 @@
  * Host binding - connects language to AutomationManager.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "core/automation/AutomationManager.hpp"
 #include "gui/HavelApp.hpp"
 

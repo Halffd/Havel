@@ -54,18 +54,18 @@ void loadStdLibModules(Environment &env, ModuleLoader &loader,
 /**
  * Register stdlib modules with VM (VM-native, no Environment)
  */
-void registerStdLibWithVM(compiler::HostBridgeRegistry& registry) {
-    stdlib::registerMathModuleVM(registry);
-    stdlib::registerStringModuleVM(registry);
-    stdlib::registerTypeModuleVM(registry);
-    stdlib::registerUtilityModuleVM(registry);
-    stdlib::registerArrayModuleVM(registry);
-    stdlib::registerFileModuleVM(registry);
-    stdlib::registerProcessModuleVM(registry);
-    stdlib::registerRegexModuleVM(registry);
-    stdlib::registerTimeModuleVM(registry);
-    stdlib::registerObjectModuleVM(registry);
-    stdlib::registerPhysicsModuleVM(registry);
+void registerStdLibWithVM(compiler::HostBridge& bridge) {
+    stdlib::registerMathModuleVM(bridge);
+    stdlib::registerStringModuleVM(bridge);
+    stdlib::registerTypeModuleVM(bridge);
+    stdlib::registerUtilityModuleVM(bridge);
+    stdlib::registerArrayModuleVM(bridge);
+    stdlib::registerFileModuleVM(bridge);
+    stdlib::registerProcessModuleVM(bridge);
+    stdlib::registerRegexModuleVM(bridge);
+    stdlib::registerTimeModuleVM(bridge);
+    stdlib::registerObjectModuleVM(bridge);
+    stdlib::registerPhysicsModuleVM(bridge);
 }
 
 } // namespace havel

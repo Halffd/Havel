@@ -5,7 +5,6 @@
  * Host binding - connects language to PixelAutomation.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "core/automation/PixelAutomation.hpp"
 
 namespace havel::modules {

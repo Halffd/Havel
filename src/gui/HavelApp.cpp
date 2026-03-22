@@ -260,7 +260,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     bytecodeVM = std::make_unique<compiler::VM>();
 
     // Create HostContext with injected dependencies
-    auto ctx = havel::modules::createHostContext(interpreter->getHostAPI());
+    auto ctx = havel::createHostContext(interpreter->getHostAPI());
     
     // Create HostBridge with injected context
     hostBridge = compiler::createHostBridge(*bytecodeVM, std::move(ctx));
@@ -410,17 +410,17 @@ void HavelApp::initializeComponents(bool isStartup) {
       auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
       auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
-      // Build HostContext from managers
+      // Build HostContext from managers (wrap raw pointers in shared_ptr without ownership)
       HostContext ctx;
-      ctx.io = io; // Share ownership
-      ctx.windowManager = windowManager.get();
-      ctx.hotkeyManager = hotkeyManager;
-      ctx.brightnessManager = brightnessManager.get();
-      ctx.audioManager = audioManager.get();
-      ctx.guiManager = guiManager.get();
-      ctx.screenshotManager = screenshotMgr;
-      ctx.clipboardManager = clipboardMgr;
-      ctx.pixelAutomation = pixelAuto;
+      ctx.io = io;  // Already shared_ptr
+      ctx.windowManager = std::shared_ptr<WindowManager>(windowManager.get(), [](WindowManager*){});
+      ctx.hotkeyManager = hotkeyManager;  // Already shared_ptr
+      ctx.brightnessManager = std::shared_ptr<BrightnessManager>(brightnessManager.get(), [](BrightnessManager*){});
+      ctx.audioManager = std::shared_ptr<AudioManager>(audioManager.get(), [](AudioManager*){});
+      ctx.guiManager = std::shared_ptr<GUIManager>(guiManager.get(), [](GUIManager*){});
+      ctx.screenshotManager = screenshotMgr ? std::shared_ptr<ScreenshotManager>(screenshotMgr, [](ScreenshotManager*){}) : nullptr;
+      ctx.clipboardManager = clipboardMgr ? std::shared_ptr<ClipboardManager>(clipboardMgr, [](ClipboardManager*){}) : nullptr;
+      ctx.pixelAutomation = pixelAuto ? std::shared_ptr<PixelAutomation>(pixelAuto, [](PixelAutomation*){}) : nullptr;
 
       interpreter = std::make_shared<Interpreter>(ctx);
       // Register interpreter for hotkey callbacks (must be after construction)

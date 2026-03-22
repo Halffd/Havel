@@ -157,7 +157,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     bridge.options().host_global_names.insert("Object");
 
     // Register Object functions via vm_setup (accumulated)
-    registry.addVmSetup([](compiler::VM& vm) {
+    bridge.addVmSetup([](compiler::VM& vm) {
         auto objConstructor = vm.createHostObject();
         vm.setHostObjectField(objConstructor, "keys", compiler::HostFunctionRef{.name = "object.keys"});
         vm.setHostObjectField(objConstructor, "values", compiler::HostFunctionRef{.name = "object.values"});

@@ -4,6 +4,7 @@
 #include "Environment.hpp"   // For Environment and TraitRegistry
 #include "HostAPI.hpp"       // For HostAPI wrapper
 #include "StdLibModules.hpp" // For registerStdLibModules, loadStdLibModules
+#include "ast/AST.h"
 #include "core/BrightnessManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/ModeManager.hpp"
@@ -523,8 +524,6 @@ bool Interpreter::evaluateCondition(const ast::Expression &expr) {
 
 // Get window info via WindowMonitor (for condition evaluation)
 std::string Interpreter::getActiveWindowExe() const {
-  if (hostContext.windowMonitor) {
-    return hostContext.windowMonitor->GetActiveWindowExe();
   }
   // Fallback to WindowManager
   if (hostContext.windowManager) {
@@ -535,9 +534,6 @@ std::string Interpreter::getActiveWindowExe() const {
 }
 
 std::string Interpreter::getActiveWindowClass() const {
-  if (hostContext.windowMonitor) {
-    return hostContext.windowMonitor->GetActiveWindowClass();
-  }
   if (hostContext.windowManager) {
     return hostContext.windowManager->GetActiveWindowClass();
   }
@@ -545,9 +541,6 @@ std::string Interpreter::getActiveWindowClass() const {
 }
 
 std::string Interpreter::getActiveWindowTitle() const {
-  if (hostContext.windowMonitor) {
-    return hostContext.windowMonitor->GetActiveWindowTitle();
-  }
   if (hostContext.windowManager) {
     return hostContext.windowManager->GetActiveWindowTitle();
   }
@@ -555,9 +548,6 @@ std::string Interpreter::getActiveWindowTitle() const {
 }
 
 pid_t Interpreter::getActiveWindowPid() const {
-  if (hostContext.windowMonitor) {
-    return hostContext.windowMonitor->GetActiveWindowPid();
-  }
   if (hostContext.windowManager) {
     return hostContext.windowManager->GetActiveWindowPID();
   }

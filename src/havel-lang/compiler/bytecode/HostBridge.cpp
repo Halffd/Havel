@@ -3,7 +3,7 @@
 #include <thread>  // for std::this_thread::sleep_for
 
 #include "../../../core/io/MouseController.hpp"  // For ParseMouseButton, ParseDuration
-#include "../../../core/io/IO.hpp"
+#include "../../../core/IO.hpp"
 #include "../../../core/io/EventListener.hpp"
 #include "../../../host/io/IOService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"

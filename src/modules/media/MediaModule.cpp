@@ -5,7 +5,6 @@
  * Host binding - connects language to MPVController via HavelApp.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "gui/HavelApp.hpp"
 
 namespace havel::modules {

@@ -6,7 +6,6 @@
  */
 #include "AsyncModule.hpp"
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include <chrono>
 #include <condition_variable>
 #include <memory>

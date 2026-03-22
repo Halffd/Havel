@@ -41,7 +41,7 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   vm_ = std::make_unique<compiler::VM>();
 
   // Create HostContext with injected dependencies
-  auto ctx = havel::modules::createHostContext(hostAPI);
+  auto ctx = havel::createHostContext(hostAPI);
   
   // Create HostBridge with injected context
   hostBridge_ = compiler::createHostBridge(*vm_, std::move(ctx));

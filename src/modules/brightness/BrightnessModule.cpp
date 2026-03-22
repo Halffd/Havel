@@ -5,7 +5,6 @@
  * Thin binding layer - delegates to BrightnessService.
  */
 #include "../../havel-lang/runtime/Environment.hpp"
-#include "../../host/HostContext.hpp"
 #include "../../host/ServiceRegistry.hpp"
 #include "../../host/brightness/BrightnessService.hpp"
 

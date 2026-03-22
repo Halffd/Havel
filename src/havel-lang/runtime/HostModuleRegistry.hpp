@@ -6,7 +6,7 @@
  */
 #pragma once
 
-#include "../../host/HostContext.hpp"
+#include "../runtime/HostContext.hpp"
 #include <string>
 #include <vector>
 #include <functional>

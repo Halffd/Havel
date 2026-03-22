@@ -12,10 +12,8 @@ class IHostAPI;
 // Initialize service registry with all services
 void initializeServiceRegistry(std::shared_ptr<IHostAPI> hostAPI);
 
-// Create HostBridgeDependencies with service registry
-compiler::HostBridgeDependencies createHostBridgeDependencies(
-    std::shared_ptr<IHostAPI> hostAPI,
-    compiler::VM* vm);
+// Create HostContext with injected dependencies
+HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI);
 
 // Register all host modules (called once at startup)
 void registerHostModules(ModuleLoader& loader);

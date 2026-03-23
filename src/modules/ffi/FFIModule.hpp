@@ -7,7 +7,6 @@
  */
 #pragma once
 
-#include "../../havel-lang/runtime/Environment.hpp"
 
 namespace havel::modules::ffi {
 

@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include <regex>
 
@@ -19,7 +20,7 @@ namespace havel::stdlib {
 void registerRegexModule(Environment& env);
 
 // NEW: Register regex module with VM's host bridge (VM-native)
-inline void registerRegexModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
@@ -42,7 +43,7 @@ inline void registerRegexModuleVM(compiler::HostBridge& registry) {
     };
     
     // regex.match(string, pattern) - Returns true if pattern matches
-    options.host_functions["regex.match"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["regex.match"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("regex.match() requires string and pattern");
         std::string str = valueToString(args[0]);
         std::string pattern = valueToString(args[1]);
@@ -56,7 +57,7 @@ inline void registerRegexModuleVM(compiler::HostBridge& registry) {
     };
     
     // regex.test(string, pattern) - Alias for match
-    options.host_functions["regex.test"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["regex.test"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("regex.test() requires string and pattern");
         std::string str = valueToString(args[0]);
         std::string pattern = valueToString(args[1]);
@@ -70,7 +71,7 @@ inline void registerRegexModuleVM(compiler::HostBridge& registry) {
     };
     
     // regex.replace(string, pattern, replacement) - Replace matches
-    options.host_functions["regex.replace"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["regex.replace"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 3) throw std::runtime_error("regex.replace() requires string, pattern, and replacement");
         std::string str = valueToString(args[0]);
         std::string pattern = valueToString(args[1]);
@@ -89,7 +90,7 @@ inline void registerRegexModuleVM(compiler::HostBridge& registry) {
         if (args.size() < 2) throw std::runtime_error("regex.split() requires string and pattern");
         std::string str = valueToString(args[0]);
         std::string pattern = valueToString(args[1]);
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         try {
             std::regex re(pattern);
             std::sregex_token_iterator it(str.begin(), str.end(), re, -1);

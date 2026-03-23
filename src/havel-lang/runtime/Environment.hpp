@@ -1,34 +1,32 @@
 /*
- * Environment.hpp - Stubbed (interpreter removed)
- * 
+ * Environment.hpp - Completely stubbed (interpreter removed)
+ *
  * Was used for interpreter variable scoping.
  * VM uses stack/registers instead.
  */
 #pragma once
 
 #include <memory>
-#include <optional>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
 namespace havel {
 
-// Forward declare for backward compatibility
-struct HavelValue;
-
-// Stubbed - interpreter removed
+// Completely stubbed - interpreter removed
 class Environment {
 public:
   Environment(std::shared_ptr<Environment> = nullptr) {}
-  
-  void Define(const std::string&, const HavelValue&, bool = false) {}
-  std::optional<HavelValue> Get(const std::string&) const { return std::nullopt; }
-  bool Assign(const std::string&, const HavelValue&) { return false; }
+
+  // All methods stubbed - no HavelValue usage
+  void Define(const std::string&, bool = false) {}
+  bool Get(const std::string&) const { return false; }
+  bool Assign(const std::string&, bool) { return false; }
   bool IsConst(const std::string&) const { return false; }
-  
+
 private:
   std::weak_ptr<Environment> parent;
-  std::unordered_map<std::string, HavelValue> values;
+  std::unordered_map<std::string, bool> values;  // Stub type
   std::unordered_set<std::string> constVars;
 };
 

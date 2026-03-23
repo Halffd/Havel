@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 namespace havel {
     class Environment;
@@ -16,7 +17,7 @@ namespace havel {
 namespace havel::stdlib {
 
 // NEW: Register physics module with VM's host bridge (VM-native)
-inline void registerPhysicsModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     
     // Create physics object with constants

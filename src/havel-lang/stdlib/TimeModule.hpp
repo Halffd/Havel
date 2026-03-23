@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include <chrono>
 #include <ctime>
@@ -23,7 +24,7 @@ namespace havel::stdlib {
 void registerTimeModule(Environment& env);
 
 // NEW: Register time module with VM's host bridge (VM-native)
-inline void registerTimeModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     

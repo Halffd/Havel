@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 namespace havel {
     class Environment;
@@ -20,19 +21,20 @@ namespace havel::stdlib {
 void registerUtilityModule(Environment& env);
 
 // NEW: Register utility module with VM's host bridge (VM-native)
-inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
+#include "../compiler/bytecode/VM.hpp"
+inline void registerUtilityModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // keys(obj) - Get keys from object/map
-    options.host_functions["keys"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["keys"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("keys() requires an object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) {
             throw std::runtime_error("keys() requires an object argument");
         }
         
         const auto& objRef = std::get<compiler::ObjectRef>(args[0]);
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate object keys
         // Simplified for now
@@ -40,14 +42,14 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // items(obj) - Get key-value pairs from object/map
-    options.host_functions["items"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["items"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("items() requires an object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) {
             throw std::runtime_error("items() requires an object argument");
         }
         
         const auto& objRef = std::get<compiler::ObjectRef>(args[0]);
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate object
         // Simplified for now
@@ -55,7 +57,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // list(value) - Convert to list
-    options.host_functions["list"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["list"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("list() requires an argument");
         
         const auto& arg = args[0];
@@ -68,21 +70,21 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
         // If string, convert to array of characters
         if (std::holds_alternative<std::string>(arg)) {
             const auto& str = std::get<std::string>(arg);
-            auto arr = vm.createHostArray();
+            auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
             for (char c : str) {
-                vm.pushHostArrayValue(arr, compiler::BytecodeValue(std::string(1, c)));
+                ((havel::compiler::VM*)(vm))->pushHostArrayValue(arr, compiler::BytecodeValue(std::string(1, c)));
             }
             return compiler::BytecodeValue(arr);
         }
         
         // For other types, create single-element array
-        auto arr = vm.createHostArray();
-        vm.pushHostArrayValue(arr, arg);
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
+        ((havel::compiler::VM*)(vm))->pushHostArrayValue(arr, arg);
         return compiler::BytecodeValue(arr);
     };
     
     // range(start, end, step) - Generate range of numbers
-    options.host_functions["range"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["range"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("range() requires at least 1 argument");
         
         int64_t start = 0, end = 0, step = 1;
@@ -99,14 +101,14 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
         
         if (step == 0) throw std::runtime_error("range() step cannot be zero");
         
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         if (step > 0) {
             for (int64_t i = start; i < end; i += step) {
-                vm.pushHostArrayValue(arr, compiler::BytecodeValue(i));
+                ((havel::compiler::VM*)(vm))->pushHostArrayValue(arr, compiler::BytecodeValue(i));
             }
         } else {
             for (int64_t i = start; i > end; i += step) {
-                vm.pushHostArrayValue(arr, compiler::BytecodeValue(i));
+                ((havel::compiler::VM*)(vm))->pushHostArrayValue(arr, compiler::BytecodeValue(i));
             }
         }
         
@@ -114,14 +116,14 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // enumerate(arr) - Get index-value pairs
-    options.host_functions["enumerate"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["enumerate"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("enumerate() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("enumerate() requires an array argument");
         }
         
         const auto& arrRef = std::get<compiler::ArrayRef>(args[0]);
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate array
         // Simplified for now
@@ -129,10 +131,10 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // zip(arr1, arr2, ...) - Combine arrays
-    options.host_functions["zip"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["zip"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("zip() requires at least 1 array");
         
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate arrays
         // Simplified for now
@@ -140,14 +142,14 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // reverse(arr) - Reverse array
-    options.host_functions["reverse"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["reverse"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("reverse() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("reverse() requires an array argument");
         }
         
         const auto& arrRef = std::get<compiler::ArrayRef>(args[0]);
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate and reverse
         // Simplified for now
@@ -155,14 +157,14 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // sort(arr) - Sort array
-    options.host_functions["sort"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["sort"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("sort() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("sort() requires an array argument");
         }
         
         const auto& arrRef = std::get<compiler::ArrayRef>(args[0]);
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         
         // Note: Would need VM access to iterate and sort
         // Simplified for now

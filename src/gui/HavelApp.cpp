@@ -243,7 +243,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     bytecodeVM = std::make_unique<compiler::VM>(ctx);
     
     // Set VM pointer in context (non-owning)
-    ctx.vm = reinterpret_cast<havel::VM*>(bytecodeVM.get());
+    ctx.vm = reinterpret_cast<void*>(bytecodeVM.get());
 
     // Create HostBridge with context
     hostBridge = compiler::createHostBridge(ctx);

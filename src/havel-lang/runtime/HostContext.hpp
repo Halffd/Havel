@@ -12,6 +12,8 @@
  */
 #pragma once
 
+
+
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -20,6 +22,9 @@
 #include <variant>
 
 namespace havel {
+
+
+// Forward declaration
 
 // Forward declarations
 class IO;
@@ -71,7 +76,7 @@ struct Capability {
  */
 struct HostContext {
     // VM infrastructure (non-owning - only high-level systems use this)
-    class VM* vm = nullptr;
+    void* vm = nullptr;
     
     // Core services (non-owning pointers)
     class IO* io = nullptr;

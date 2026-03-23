@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include <algorithm>
 #include <cctype>
@@ -22,7 +23,7 @@ namespace havel::stdlib {
 void registerStringModule(Environment& env);
 
 // NEW: Register string module with VM's host bridge (VM-native)
-inline void registerStringModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     
     // Helper: convert BytecodeValue to string
@@ -137,7 +138,7 @@ inline void registerStringModuleVM(compiler::HostBridge& registry) {
         std::string s = toString(args[0]);
         std::string delimiter = toString(args[1]);
 
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         size_t pos = 0;
         size_t found;
 
@@ -197,18 +198,18 @@ inline void registerStringModuleVM(compiler::HostBridge& registry) {
     };
 
     // Register prototype methods for "string".method() syntax
-    bridge.context().vm->registerPrototypeMethod("String", "len", compiler::HostFunctionRef{.name = "string.len"});
-    bridge.context().vm->registerPrototypeMethod("String", "lower", compiler::HostFunctionRef{.name = "string.lower"});
-    bridge.context().vm->registerPrototypeMethod("String", "upper", compiler::HostFunctionRef{.name = "string.upper"});
-    bridge.context().vm->registerPrototypeMethod("String", "trim", compiler::HostFunctionRef{.name = "string.trim"});
-    bridge.context().vm->registerPrototypeMethod("String", "sub", compiler::HostFunctionRef{.name = "string.sub"});
-    bridge.context().vm->registerPrototypeMethod("String", "find", compiler::HostFunctionRef{.name = "string.find"});
-    bridge.context().vm->registerPrototypeMethod("String", "replace", compiler::HostFunctionRef{.name = "string.replace"});
-    bridge.context().vm->registerPrototypeMethod("String", "split", compiler::HostFunctionRef{.name = "string.split"});
-    bridge.context().vm->registerPrototypeMethod("String", "join", compiler::HostFunctionRef{.name = "string.join"});
-    bridge.context().vm->registerPrototypeMethod("String", "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
-    bridge.context().vm->registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
-    bridge.context().vm->registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "len", compiler::HostFunctionRef{.name = "string.len"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "lower", compiler::HostFunctionRef{.name = "string.lower"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "upper", compiler::HostFunctionRef{.name = "string.upper"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "trim", compiler::HostFunctionRef{.name = "string.trim"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "sub", compiler::HostFunctionRef{.name = "string.sub"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "find", compiler::HostFunctionRef{.name = "string.find"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "replace", compiler::HostFunctionRef{.name = "string.replace"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "split", compiler::HostFunctionRef{.name = "string.split"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "join", compiler::HostFunctionRef{.name = "string.join"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
 
     // Register module globals (compiler already knows about methods from host_functions)
     bridge.options().host_global_names.insert("String");

@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include <filesystem>
 #include <fstream>
@@ -21,7 +22,7 @@ namespace havel::stdlib {
 void registerFileModule(Environment& env);
 
 // NEW: Register file module with VM's host bridge (VM-native)
-inline void registerFileModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
@@ -44,7 +45,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.read(path) - Read entire file content
-    options.host_functions["file.read"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.read"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.read() requires path");
         std::string path = valueToString(args[0]);
         std::ifstream file(path);
@@ -54,7 +55,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.write(path, content) - Write content to file
-    options.host_functions["file.write"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.write"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("file.write() requires (path, content)");
         std::string path = valueToString(args[0]);
         std::string content = valueToString(args[1]);
@@ -65,21 +66,21 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.exists(path) - Check if file exists
-    options.host_functions["file.exists"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.exists"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.exists() requires path");
         std::string path = valueToString(args[0]);
         return compiler::BytecodeValue(std::filesystem::exists(path));
     };
     
     // file.isDir(path) - Check if path is directory
-    options.host_functions["file.isDir"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.isDir"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.isDir() requires path");
         std::string path = valueToString(args[0]);
         return compiler::BytecodeValue(std::filesystem::is_directory(path));
     };
     
     // file.delete(path) - Delete file or directory
-    options.host_functions["file.delete"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.delete"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.delete() requires path");
         std::string path = valueToString(args[0]);
         std::error_code ec;
@@ -88,7 +89,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.mkdir(path) - Create directory
-    options.host_functions["file.mkdir"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.mkdir"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.mkdir() requires path");
         std::string path = valueToString(args[0]);
         std::error_code ec;
@@ -100,7 +101,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     options.host_functions["file.list"] = [valueToString, &vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.list() requires path");
         std::string path = valueToString(args[0]);
-        auto arr = vm.createHostArray();
+        auto arr = ((havel::compiler::VM*)(vm))->createHostArray();
         std::error_code ec;
         for (const auto& entry : std::filesystem::directory_iterator(path, ec)) {
             vm.pushHostArrayValue(arr, compiler::BytecodeValue(entry.path().filename().string()));
@@ -109,7 +110,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.size(path) - Get file size in bytes
-    options.host_functions["file.size"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.size"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.size() requires path");
         std::string path = valueToString(args[0]);
         std::error_code ec;
@@ -118,7 +119,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.abs(path) - Get absolute path
-    options.host_functions["file.abs"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.abs"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.abs() requires path");
         std::string path = valueToString(args[0]);
         std::error_code ec;
@@ -127,7 +128,7 @@ inline void registerFileModuleVM(compiler::HostBridge& registry) {
     };
     
     // file.join(path1, path2, ...) - Join path components
-    options.host_functions["file.join"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["file.join"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("file.join() requires at least 1 path");
         std::filesystem::path result = valueToString(args[0]);
         for (size_t i = 1; i < args.size(); ++i) {

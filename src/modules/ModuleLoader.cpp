@@ -5,7 +5,6 @@
 #include "ModuleLoader.hpp"
 #include "../havel-lang/runtime/ModuleLoader.hpp"
 #include "HostModules.hpp"
-#include "havel-lang/runtime/Environment.hpp"
 #include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/runtime/StdLibModules.hpp"
 #include <filesystem>

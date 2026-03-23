@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 namespace havel {
     class Environment;
@@ -22,7 +23,7 @@ namespace havel::stdlib {
 void registerTypeModule(Environment& env);
 
 // NEW: Register type module with VM's host bridge (VM-native)
-inline void registerTypeModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
@@ -103,7 +104,7 @@ inline void registerTypeModuleVM(compiler::HostBridge& registry) {
     };
     
     // len(x) - Get length
-    options.host_functions["len"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["len"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("len() requires an argument");
         const auto& v = args[0];
         if (std::holds_alternative<std::string>(v)) {

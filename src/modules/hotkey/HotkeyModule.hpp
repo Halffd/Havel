@@ -15,7 +15,7 @@ class Interpreter;
 
 namespace modules {
 
-void registerHotkeyModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
+void registerModuleStub();
 
 // Set the global interpreter reference for hotkey callbacks (uses weak_ptr for safety)
 void SetHotkeyInterpreter(std::weak_ptr<Interpreter> interp);

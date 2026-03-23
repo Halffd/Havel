@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include <algorithm>
 #include <cmath>
@@ -21,7 +22,7 @@ namespace havel::stdlib {
 void registerArrayModule(Environment& env, Interpreter* interpreter);
 
 // NEW: Register array module with VM's host bridge (VM-native)
-inline void registerArrayModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
@@ -35,7 +36,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     // Helper: check if value is array
     
     // array.len(arr) - Get array length
-    options.host_functions["array.len"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.len"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.len() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.len() requires an array argument");
         
@@ -45,7 +46,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.push(arr, value) - Append to array
-    options.host_functions["array.push"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.push"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.push() requires array and value");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.push() first argument must be array");
         
@@ -55,7 +56,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.pop(arr) - Remove last element
-    options.host_functions["array.pop"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.pop"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.pop() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.pop() requires an array argument");
         
@@ -65,7 +66,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.insert(arr, index, value) - Insert at index
-    options.host_functions["array.insert"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.insert"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 3) throw std::runtime_error("array.insert() requires array, index, and value");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.insert() first argument must be array");
         
@@ -75,7 +76,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.remove(arr, index) - Remove at index
-    options.host_functions["array.remove"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.remove"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.remove() requires array and index");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.remove() first argument must be array");
         
@@ -85,10 +86,10 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.concat(arr1, arr2, ...) - Concatenate arrays
-    options.host_functions["array.concat"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.concat"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.concat() requires at least 1 array");
         
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         for (const auto& arg : args) {
             if (std::holds_alternative<compiler::ArrayRef>(arg)) {
                 // Note: Would need VM access to iterate and copy
@@ -99,40 +100,40 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.slice(arr, start, end) - Slice array
-    options.host_functions["array.slice"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.slice"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.slice() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.slice() first argument must be array");
         
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         // Note: Would need VM access to slice array
         // Simplified for now
         return compiler::BytecodeValue(result);
     };
     
     // array.map(arr, fn) - Map function over array
-    options.host_functions["array.map"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.map"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.map() requires array and function");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.map() first argument must be array");
         
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         // Note: Would need VM access to iterate and call function
         // Simplified for now
         return compiler::BytecodeValue(result);
     };
     
     // array.filter(arr, fn) - Filter array
-    options.host_functions["array.filter"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.filter"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.filter() requires array and function");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.filter() first argument must be array");
         
-        auto result = vm.createHostArray();
+        auto result = ((havel::compiler::VM*)(vm))->createHostArray();
         // Note: Would need VM access to iterate and filter
         // Simplified for now
         return compiler::BytecodeValue(result);
     };
     
     // array.reduce(arr, fn, initial) - Reduce array
-    options.host_functions["array.reduce"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.reduce"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 3) throw std::runtime_error("array.reduce() requires array, function, and initial value");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.reduce() first argument must be array");
         
@@ -142,7 +143,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.find(arr, fn) - Find first matching element
-    options.host_functions["array.find"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.find"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.find() requires array and function");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.find() first argument must be array");
         
@@ -152,7 +153,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.indexOf(arr, value) - Find index of value
-    options.host_functions["array.indexOf"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.indexOf"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.indexOf() requires array and value");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.indexOf() first argument must be array");
         
@@ -162,7 +163,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.includes(arr, value) - Check if array includes value
-    options.host_functions["array.includes"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.includes"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("array.includes() requires array and value");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.includes() first argument must be array");
         
@@ -172,7 +173,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.join(arr, delimiter) - Join array elements
-    options.host_functions["array.join"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.join"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.join() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.join() first argument must be array");
         
@@ -185,7 +186,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.reverse(arr) - Reverse array
-    options.host_functions["array.reverse"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.reverse"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.reverse() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.reverse() first argument must be array");
         
@@ -195,7 +196,7 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
     
     // array.sort(arr) - Sort array
-    options.host_functions["array.sort"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["array.sort"] = [=, &bridge](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("array.sort() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) throw std::runtime_error("array.sort() first argument must be array");
         
@@ -205,22 +206,22 @@ inline void registerArrayModuleVM(compiler::HostBridge& registry) {
     };
 
     // Register prototype methods for [].method() syntax
-    bridge.context().vm->registerPrototypeMethod("Array", "len", compiler::HostFunctionRef{.name = "array.len"});
-    bridge.context().vm->registerPrototypeMethod("Array", "push", compiler::HostFunctionRef{.name = "array.push"});
-    bridge.context().vm->registerPrototypeMethod("Array", "pop", compiler::HostFunctionRef{.name = "array.pop"});
-    bridge.context().vm->registerPrototypeMethod("Array", "insert", compiler::HostFunctionRef{.name = "array.insert"});
-    bridge.context().vm->registerPrototypeMethod("Array", "remove", compiler::HostFunctionRef{.name = "array.remove"});
-    bridge.context().vm->registerPrototypeMethod("Array", "concat", compiler::HostFunctionRef{.name = "array.concat"});
-    bridge.context().vm->registerPrototypeMethod("Array", "slice", compiler::HostFunctionRef{.name = "array.slice"});
-    bridge.context().vm->registerPrototypeMethod("Array", "map", compiler::HostFunctionRef{.name = "array.map"});
-    bridge.context().vm->registerPrototypeMethod("Array", "filter", compiler::HostFunctionRef{.name = "array.filter"});
-    bridge.context().vm->registerPrototypeMethod("Array", "reduce", compiler::HostFunctionRef{.name = "array.reduce"});
-    bridge.context().vm->registerPrototypeMethod("Array", "find", compiler::HostFunctionRef{.name = "array.find"});
-    bridge.context().vm->registerPrototypeMethod("Array", "indexOf", compiler::HostFunctionRef{.name = "array.indexOf"});
-    bridge.context().vm->registerPrototypeMethod("Array", "includes", compiler::HostFunctionRef{.name = "array.includes"});
-    bridge.context().vm->registerPrototypeMethod("Array", "join", compiler::HostFunctionRef{.name = "array.join"});
-    bridge.context().vm->registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
-    bridge.context().vm->registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "len", compiler::HostFunctionRef{.name = "array.len"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "push", compiler::HostFunctionRef{.name = "array.push"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "pop", compiler::HostFunctionRef{.name = "array.pop"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "insert", compiler::HostFunctionRef{.name = "array.insert"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "remove", compiler::HostFunctionRef{.name = "array.remove"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "concat", compiler::HostFunctionRef{.name = "array.concat"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "slice", compiler::HostFunctionRef{.name = "array.slice"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "map", compiler::HostFunctionRef{.name = "array.map"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "filter", compiler::HostFunctionRef{.name = "array.filter"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "reduce", compiler::HostFunctionRef{.name = "array.reduce"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "find", compiler::HostFunctionRef{.name = "array.find"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "indexOf", compiler::HostFunctionRef{.name = "array.indexOf"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "includes", compiler::HostFunctionRef{.name = "array.includes"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "join", compiler::HostFunctionRef{.name = "array.join"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "reverse", compiler::HostFunctionRef{.name = "array.reverse"});
+    static_cast<havel::VM*>(bridge.context().vm)->registerPrototypeMethod("Array", "sort", compiler::HostFunctionRef{.name = "array.sort"});
 
     // Register module globals (compiler already knows about methods from host_functions)
     bridge.options().host_global_names.insert("Array");

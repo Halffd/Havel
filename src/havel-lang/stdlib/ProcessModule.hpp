@@ -3,9 +3,10 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-
 #include "../compiler/bytecode/VM.hpp"
 #include "../compiler/bytecode/HostBridge.hpp"
+
+
 
 #include "core/process/ProcessManager.hpp"
 #include <cstdlib>
@@ -21,7 +22,7 @@ namespace havel::stdlib {
 void registerProcessModule(Environment& env);
 
 // NEW: Register process module with VM's host bridge (VM-native)
-inline void registerProcessModuleVM(compiler::HostBridge& registry) {
+inline void registerModuleVM(compiler::HostBridge& bridge) {
     auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
@@ -44,7 +45,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     };
     
     // Helper: create ProcessInfo object
-    auto createProcessInfo = [vm](const ProcessManager::ProcessInfo& info) -> compiler::BytecodeValue {
+    auto createProcessInfo = [=, &bridge](const ProcessManager::ProcessInfo& info) {
         auto procObj = vm.createHostObject();
         vm.setHostObjectField(procObj, "pid", compiler::BytecodeValue(static_cast<int64_t>(info.pid)));
         vm.setHostObjectField(procObj, "ppid", compiler::BytecodeValue(static_cast<int64_t>(info.ppid)));
@@ -58,7 +59,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     
     // process.list() - List all processes
     options.host_functions["process.list"] = [createProcessInfo, &vm](const std::vector<compiler::BytecodeValue>&) {
-        auto resultArray = vm.createHostArray();
+        auto resultArray = ((havel::compiler::VM*)(vm))->createHostArray();
         auto procs = ProcessManager::listProcesses();
         for (const auto& proc : procs) {
             vm.pushHostArrayValue(resultArray, createProcessInfo(proc));
@@ -70,7 +71,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     options.host_functions["process.find"] = [valueToString, createProcessInfo, &vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("process.find() requires a process name");
         std::string processName = valueToString(args[0]);
-        auto resultArray = vm.createHostArray();
+        auto resultArray = ((havel::compiler::VM*)(vm))->createHostArray();
         auto procs = ProcessManager::listProcesses();
         for (const auto& proc : procs) {
             if (proc.name.find(processName) != std::string::npos) {
@@ -92,7 +93,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     };
     
     // process.exec(command) - Execute command
-    options.host_functions["process.exec"] = [valueToString](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["process.exec"] = [=, [valueToString]bridge, [valueToString]valueToString](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("process.exec() requires a command");
         std::string command = valueToString(args[0]);
         int result = std::system(command.c_str());

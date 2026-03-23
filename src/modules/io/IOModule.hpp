@@ -15,7 +15,7 @@ class IO;
 
 namespace modules {
 
-void registerIOModule(Environment& env, std::shared_ptr<IHostAPI> hostAPI);
+void registerModuleStub();
 
 } // namespace modules
 } // namespace havel

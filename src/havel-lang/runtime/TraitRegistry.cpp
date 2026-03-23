@@ -2,7 +2,6 @@
  * TraitRegistry.cpp - STUBBED (interpreter removed)
  * Trait system requires HavelValue which was removed with interpreter
  */
-#include "TraitRegistry.hpp"
 
 namespace havel {
 

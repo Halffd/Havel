@@ -3,6 +3,8 @@
 // Simple, explicit registration
 
 #include "../havel-lang/runtime/ModuleLoader.hpp"
+#include "../havel-lang/runtime/HostAPI.hpp"
+#include "../utils/Logger.hpp"
 #include "../havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "../host/ServiceRegistry.hpp"
 #include "../host/io/IOService.hpp"
@@ -179,58 +181,33 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
     }
 
     // Core services - wrap raw pointers in shared_ptr without ownership (no deleter)
-    ctx.io = hostAPI->GetIO() ? std::shared_ptr<havel::IO>(hostAPI->GetIO(), [](havel::IO*){}) : nullptr;
+    ctx.io = hostAPI ? hostAPI->GetIO() : nullptr;
 
     // Optional services (nullptr if not available)
-    ctx.hotkeyManager = hostAPI->GetHotkeyManager()
-        ? std::shared_ptr<havel::HotkeyManager>(hostAPI->GetHotkeyManager(), [](havel::HotkeyManager*){})
-        : nullptr;
+    ctx.hotkeyManager = hostAPI ? hostAPI->GetHotkeyManager() : nullptr;
 
-    ctx.windowManager = hostAPI->GetWindowManager()
-        ? std::shared_ptr<havel::WindowManager>(hostAPI->GetWindowManager(), [](havel::WindowManager*){})
-        : nullptr;
+    ctx.windowManager = hostAPI ? hostAPI->GetWindowManager() : nullptr;
 
-    ctx.modeManager = hostAPI->GetModeManager()
-        ? std::shared_ptr<havel::ModeManager>(hostAPI->GetModeManager(), [](havel::ModeManager*){})
-        : nullptr;
+    ctx.modeManager = hostAPI ? hostAPI->GetModeManager() : nullptr;
 
-    ctx.brightnessManager = hostAPI->GetBrightnessManager()
-        ? std::shared_ptr<havel::BrightnessManager>(hostAPI->GetBrightnessManager(), [](havel::BrightnessManager*){})
-        : nullptr;
+    ctx.brightnessManager = hostAPI ? hostAPI->GetBrightnessManager() : nullptr;
 
-    ctx.audioManager = hostAPI->GetAudioManager()
-        ? std::shared_ptr<havel::AudioManager>(hostAPI->GetAudioManager(), [](havel::AudioManager*){})
-        : nullptr;
+    ctx.audioManager = hostAPI ? hostAPI->GetAudioManager() : nullptr;
 
-    ctx.guiManager = hostAPI->GetGUIManager()
-        ? std::shared_ptr<havel::GUIManager>(hostAPI->GetGUIManager(), [](havel::GUIManager*){})
-        : nullptr;
+    ctx.guiManager = hostAPI ? hostAPI->GetGUIManager() : nullptr;
 
-    ctx.screenshotManager = hostAPI->GetScreenshotManager()
-        ? std::shared_ptr<havel::ScreenshotManager>(hostAPI->GetScreenshotManager(), [](havel::ScreenshotManager*){})
-        : nullptr;
+    ctx.screenshotManager = hostAPI ? hostAPI->GetScreenshotManager() : nullptr;
 
-    ctx.clipboardManager = hostAPI->GetClipboardManager()
-        ? std::shared_ptr<havel::ClipboardManager>(hostAPI->GetClipboardManager(), [](havel::ClipboardManager*){})
-        : nullptr;
+    ctx.clipboardManager = hostAPI ? hostAPI->GetClipboardManager() : nullptr;
 
-    ctx.pixelAutomation = hostAPI->GetPixelAutomation()
-        ? std::shared_ptr<havel::PixelAutomation>(hostAPI->GetPixelAutomation(), [](havel::PixelAutomation*){})
-        : nullptr;
+    ctx.pixelAutomation = hostAPI ? hostAPI->GetPixelAutomation() : nullptr;
 
-    ctx.automationManager = hostAPI->GetAutomationManager()
-        ? std::shared_ptr<havel::AutomationManager>(hostAPI->GetAutomationManager(), [](havel::AutomationManager*){})
-        : nullptr;
+    ctx.automationManager = hostAPI ? hostAPI->GetAutomationManager() : nullptr;
 
-    ctx.fileManager = hostAPI->GetFileManager()
-        ? std::shared_ptr<havel::FileManager>(hostAPI->GetFileManager(), [](havel::FileManager*){})
-        : nullptr;
+    ctx.fileManager = hostAPI ? hostAPI->GetFileManager() : nullptr;
 
-    ctx.processManager = hostAPI->GetProcessManager()
-        ? std::shared_ptr<havel::ProcessManager>(hostAPI->GetProcessManager(), [](havel::ProcessManager*){})
-        : nullptr;
+    ctx.processManager = hostAPI ? hostAPI->GetProcessManager() : nullptr;
 
-    ctx.networkManager = hostAPI->GetNetworkManager();  // Already shared_ptr
 
     return ctx;
 }

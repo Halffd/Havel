@@ -2,12 +2,12 @@
 #include "core/ConfigManager.hpp"
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/io/KeyTap.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
 static std::vector<std::unique_ptr<havel::KeyTap>> g_keyTapStorage;
 
-#include "core/io/KeyTap.hpp"
 #include "include/x11_includes.h"
 #include "io/EventListener.hpp"
 #include "io/HotkeyExecutor.hpp"
@@ -4326,7 +4326,7 @@ void IO::executeComboAction(const std::string &action) {
 // (removed - now inline in header)
 
 // Mouse button code conversion implementations
-int IO::GetMouseButtonCode(const std::string& arg) {
+int IO::GetMouseButtonCode(const std::string &arg) {
   std::string s = toLower(arg);
   if (s == "right")
     return BTN_RIGHT;
@@ -4373,7 +4373,7 @@ int IO::GetMouseButtonCode(int idx) {
   }
 }
 
-MouseAction IO::GetMouseAction(const std::string& action) {
+MouseAction IO::GetMouseAction(const std::string &action) {
   std::string s = toLower(action);
   if (s == "press" || s == "hold")
     return MouseAction::Hold;

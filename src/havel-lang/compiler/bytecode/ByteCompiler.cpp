@@ -36,7 +36,8 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
   case ast::BinaryOperator::Or:
     return OpCode::OR;
   default:
-    throw std::runtime_error("Unsupported binary operator in bytecode compiler");
+    throw std::runtime_error(
+        "Unsupported binary operator in bytecode compiler");
   }
 }
 
@@ -67,8 +68,7 @@ ByteCompiler::compile(const ast::Program &program) {
 
   uint32_t next_function_index = 0;
   for (const auto &statement : program.body) {
-    if (!statement ||
-        statement->kind != ast::NodeType::FunctionDeclaration) {
+    if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
       continue;
     }
     const auto &decl =
@@ -76,7 +76,8 @@ ByteCompiler::compile(const ast::Program &program) {
     if (!decl.name) {
       throw std::runtime_error("Function declaration missing name");
     }
-    top_level_function_indices_by_name_[decl.name->symbol] = next_function_index;
+    top_level_function_indices_by_name_[decl.name->symbol] =
+        next_function_index;
     function_indices_by_node_[&decl] = next_function_index++;
   }
 
@@ -91,7 +92,8 @@ ByteCompiler::compile(const ast::Program &program) {
     if (!decl) {
       continue;
     }
-    if (function_indices_by_node_.find(decl) != function_indices_by_node_.end()) {
+    if (function_indices_by_node_.find(decl) !=
+        function_indices_by_node_.end()) {
       continue;
     }
     function_indices_by_node_[decl] = next_function_index++;
@@ -130,9 +132,7 @@ ByteCompiler::compile(const ast::Program &program) {
   return std::move(chunk);
 }
 
-void ByteCompiler::emit(OpCode op) {
-  emit(op, std::vector<BytecodeValue>{});
-}
+void ByteCompiler::emit(OpCode op) { emit(op, std::vector<BytecodeValue>{}); }
 
 void ByteCompiler::emit(OpCode op, BytecodeValue operand) {
   emit(op, std::vector<BytecodeValue>{std::move(operand)});
@@ -140,7 +140,8 @@ void ByteCompiler::emit(OpCode op, BytecodeValue operand) {
 
 void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
   if (!current_function) {
-    throw std::runtime_error("Attempted to emit bytecode without active function");
+    throw std::runtime_error(
+        "Attempted to emit bytecode without active function");
   }
   current_function->instructions.emplace_back(op, std::move(operands));
   current_function->instruction_locations.push_back(
@@ -149,7 +150,8 @@ void ByteCompiler::emit(OpCode op, std::vector<BytecodeValue> operands) {
 
 uint32_t ByteCompiler::addConstant(const BytecodeValue &value) {
   if (!current_function) {
-    throw std::runtime_error("Attempted to add constant without active function");
+    throw std::runtime_error(
+        "Attempted to add constant without active function");
   }
 
   current_function->constants.push_back(value);
@@ -171,8 +173,7 @@ uint32_t ByteCompiler::emitJump(OpCode op) {
   return index;
 }
 
-void ByteCompiler::patchJump(uint32_t jump_instruction_index,
-                                      uint32_t target) {
+void ByteCompiler::patchJump(uint32_t jump_instruction_index, uint32_t target) {
   if (!current_function) {
     throw std::runtime_error("Attempted to patch jump without active function");
   }
@@ -194,9 +195,9 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     throw std::runtime_error("Function declaration missing name");
   }
 
-  enterFunction(BytecodeFunction(function.name->symbol,
-                                 static_cast<uint32_t>(function.parameters.size()),
-                                 0));
+  enterFunction(
+      BytecodeFunction(function.name->symbol,
+                       static_cast<uint32_t>(function.parameters.size()), 0));
   auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
   if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
@@ -324,8 +325,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::NumberLiteral: {
     const auto &num = static_cast<const ast::NumberLiteral &>(expression);
     if (isIntegerLiteral(num.value)) {
-      emit(OpCode::LOAD_CONST,
-           addConstant(static_cast<int64_t>(num.value)));
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(num.value)));
     } else {
       emit(OpCode::LOAD_CONST, addConstant(num.value));
     }
@@ -389,20 +389,21 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::LambdaExpression: {
     const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
-    
+
     // Create bytecode function for lambda
-    BytecodeFunction func("<lambda>", static_cast<uint8_t>(lambda.parameters.size()), 0);
-    
+    BytecodeFunction func("<lambda>",
+                          static_cast<uint8_t>(lambda.parameters.size()), 0);
+
     // Enter function context
     enterFunction(std::move(func));
-    
+
     // Add parameters as locals
     for (size_t i = 0; i < lambda.parameters.size(); ++i) {
       const auto &param = lambda.parameters[i];
       // Declare local by reserving slot
       reserveLocalSlot(next_local_index++);
     }
-    
+
     // Compile function body
     if (lambda.body) {
       compileStatement(*lambda.body);
@@ -415,10 +416,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_CONST, addConstant(nullptr));
     }
     emit(OpCode::RETURN);
-    
+
     // Leave function context
     leaveFunction();
-    
+
     // Load closure
     const auto &compiled_func = compiled_functions.back();
     uint32_t function_index = 0;
@@ -428,7 +429,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         break;
       }
     }
-    emit(OpCode::LOAD_CONST, addConstant(FunctionObject{.function_index = function_index}));
+    emit(OpCode::LOAD_CONST,
+         addConstant(FunctionObject{.function_index = function_index}));
     emit(OpCode::CLOSURE, function_index);
     break;
   }
@@ -449,17 +451,15 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Resolver is now upvalue-aware; runtime support is still pending.
       emit(OpCode::LOAD_UPVALUE, binding->slot);
       break;
-    case ResolvedBindingKind::GlobalFunction:
-      {
-        auto it = top_level_function_indices_by_name_.find(binding->name);
-        if (it == top_level_function_indices_by_name_.end()) {
-          throw std::runtime_error("Missing function index for: " +
-                                   binding->name);
-        }
-        emit(OpCode::LOAD_CONST,
-             addConstant(FunctionObject{.function_index = it->second}));
+    case ResolvedBindingKind::GlobalFunction: {
+      auto it = top_level_function_indices_by_name_.find(binding->name);
+      if (it == top_level_function_indices_by_name_.end()) {
+        throw std::runtime_error("Missing function index for: " +
+                                 binding->name);
       }
-      break;
+      emit(OpCode::LOAD_CONST,
+           addConstant(FunctionObject{.function_index = it->second}));
+    } break;
     case ResolvedBindingKind::HostGlobal:
       emit(OpCode::LOAD_GLOBAL, binding->name);
       break;
@@ -482,37 +482,41 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   }
 
   case ast::NodeType::PipelineExpression: {
-    const auto &pipeline = static_cast<const ast::PipelineExpression &>(expression);
+    const auto &pipeline =
+        static_cast<const ast::PipelineExpression &>(expression);
     if (pipeline.stages.empty()) {
       throw std::runtime_error("Pipeline expression has no stages");
     }
-    
+
     // Compile first stage
     compileExpression(*pipeline.stages[0]);
-    
-    // For each subsequent stage, compile it as a function call with previous result as argument
+
+    // For each subsequent stage, compile it as a function call with previous
+    // result as argument
     for (size_t i = 1; i < pipeline.stages.size(); ++i) {
-      auto& stage = pipeline.stages[i];
+      auto &stage = pipeline.stages[i];
       if (!stage) {
         throw std::runtime_error("Pipeline stage is null");
       }
-      
+
       // The stage should be a call expression or identifier that can be called
       // Result from previous stage is already on stack as first argument
       if (stage->kind == ast::NodeType::CallExpression) {
-        const auto& call = static_cast<const ast::CallExpression&>(*stage);
+        const auto &call = static_cast<const ast::CallExpression &>(*stage);
         // Compile the callee (function to call)
         if (call.callee) {
           compileExpression(*call.callee);
         }
         // Add arguments from the call (previous result is already on stack)
-        for (const auto& arg : call.args) {
-          if (arg) compileExpression(*arg);
+        for (const auto &arg : call.args) {
+          if (arg)
+            compileExpression(*arg);
         }
         // Call with (previous_result + explicit_args) count
         emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
       } else {
-        // Stage is just an identifier or member expression - call it with previous result
+        // Stage is just an identifier or member expression - call it with
+        // previous result
         compileExpression(*stage);
         emit(OpCode::CALL, 1);
       }
@@ -532,13 +536,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             ? dynamic_cast<const ast::Identifier *>(assignment.target.get())
             : nullptr;
     const auto *target_member =
-        assignment.target
-            ? dynamic_cast<const ast::MemberExpression *>(assignment.target.get())
-            : nullptr;
-    const auto *target_index =
-        assignment.target
-            ? dynamic_cast<const ast::IndexExpression *>(assignment.target.get())
-            : nullptr;
+        assignment.target ? dynamic_cast<const ast::MemberExpression *>(
+                                assignment.target.get())
+                          : nullptr;
+    const auto *target_index = assignment.target
+                                   ? dynamic_cast<const ast::IndexExpression *>(
+                                         assignment.target.get())
+                                   : nullptr;
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       emit(OpCode::DUP);
@@ -562,7 +566,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     };
 
     auto emitStoreMemberWithResult = [&](const ast::MemberExpression &member) {
-      auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+      auto *property =
+          dynamic_cast<const ast::Identifier *>(member.property.get());
       if (!member.object || !property) {
         throw std::runtime_error(
             "Member assignment expects identifier property target");
@@ -576,19 +581,21 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_VAR, temp_slot);
     };
 
-    auto emitStoreIndexWithResult = [&](const ast::IndexExpression &index_expr) {
-      if (!index_expr.object || !index_expr.index) {
-        throw std::runtime_error("Index assignment expects object and index");
-      }
-      uint32_t temp_slot = next_local_index;
-      reserveLocalSlot(temp_slot);
-      emit(OpCode::STORE_VAR, temp_slot);
-      compileExpression(*index_expr.object);
-      compileExpression(*index_expr.index);
-      emit(OpCode::LOAD_VAR, temp_slot);
-      emit(OpCode::ARRAY_SET);
-      emit(OpCode::LOAD_VAR, temp_slot);
-    };
+    auto emitStoreIndexWithResult =
+        [&](const ast::IndexExpression &index_expr) {
+          if (!index_expr.object || !index_expr.index) {
+            throw std::runtime_error(
+                "Index assignment expects object and index");
+          }
+          uint32_t temp_slot = next_local_index;
+          reserveLocalSlot(temp_slot);
+          emit(OpCode::STORE_VAR, temp_slot);
+          compileExpression(*index_expr.object);
+          compileExpression(*index_expr.index);
+          emit(OpCode::LOAD_VAR, temp_slot);
+          emit(OpCode::ARRAY_SET);
+          emit(OpCode::LOAD_VAR, temp_slot);
+        };
 
     if (assignment.operator_ == "=") {
       compileExpression(*assignment.value);
@@ -628,8 +635,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         return;
       }
       if (target_member) {
-        auto *property =
-            dynamic_cast<const ast::Identifier *>(target_member->property.get());
+        auto *property = dynamic_cast<const ast::Identifier *>(
+            target_member->property.get());
         if (!target_member->object || !property) {
           throw std::runtime_error(
               "Member assignment expects identifier property target");
@@ -711,7 +718,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::MemberExpression: {
     const auto &member = static_cast<const ast::MemberExpression &>(expression);
-    auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+    auto *property =
+        dynamic_cast<const ast::Identifier *>(member.property.get());
     if (!member.object || !property) {
       throw std::runtime_error("Unsupported member expression");
     }
@@ -738,7 +746,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   }
 }
 
-void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) {
+void ByteCompiler::compileCallExpression(
+    const ast::CallExpression &expression) {
   if (!expression.callee) {
     throw std::runtime_error("Call expression missing callee");
   }
@@ -747,16 +756,17 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
 
   // Check for method call on primitive (prototype method)
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
-    const auto &member = static_cast<const ast::MemberExpression &>(*expression.callee);
-    auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+    const auto &member =
+        static_cast<const ast::MemberExpression &>(*expression.callee);
+    auto *property =
+        dynamic_cast<const ast::Identifier *>(member.property.get());
 
     // Check if object is a literal or identifier (variable)
     bool isPrimitiveObject =
         member.object->kind == ast::NodeType::StringLiteral ||
         member.object->kind == ast::NodeType::ArrayLiteral ||
         member.object->kind == ast::NodeType::ObjectLiteral;
-    bool isVariableObject =
-        member.object->kind == ast::NodeType::Identifier;
+    bool isVariableObject = member.object->kind == ast::NodeType::Identifier;
 
     if (property && (isPrimitiveObject || isVariableObject)) {
       // Compile prototype method call:
@@ -775,10 +785,23 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
       } else if (member.object->kind == ast::NodeType::ObjectLiteral) {
         typeName = "object";
       } else if (member.object->kind == ast::NodeType::Identifier) {
-        // For variables, we'll use a runtime type check
-        // The method name will be resolved at runtime based on the value's type
-        // For now, we'll try all three types
-        typeName = "any";
+        // Check if this is a host global (like "math", "string", etc.)
+        const auto *ident =
+            static_cast<const ast::Identifier *>(member.object.get());
+        auto binding = bindingFor(*ident);
+        if (binding && binding->kind == ResolvedBindingKind::HostGlobal) {
+          // Use the host global name as the type (lowercase for
+          // case-insensitive matching)
+          typeName = binding->name;
+          // Convert to lowercase for case-insensitive module access
+          std::transform(typeName.begin(), typeName.end(), typeName.begin(),
+                         ::tolower);
+        } else {
+          // For variables, we'll use a runtime type check
+          // The method name will be resolved at runtime based on the value's
+          // type For now, we'll try all three types
+          typeName = "any";
+        }
       }
 
       if (typeName != "any") {
@@ -792,20 +815,22 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
           // Compile remaining arguments
           for (const auto &arg : expression.args) {
             if (!arg) {
-              throw std::runtime_error("Call expression contains null argument");
+              throw std::runtime_error(
+                  "Call expression contains null argument");
             }
             compileExpression(*arg);
           }
 
           // Call the prototype method (object is already first arg)
-          emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{methodName, arg_count + 1});
+          emit(OpCode::CALL_HOST,
+               std::vector<BytecodeValue>{methodName, arg_count + 1});
           return;
         }
       } else {
         // For variables, emit runtime method dispatch
         // First compile the object to get its value
         compileExpression(*member.object);
-        
+
         // Compile remaining arguments
         for (const auto &arg : expression.args) {
           if (!arg) {
@@ -813,11 +838,12 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
           }
           compileExpression(*arg);
         }
-        
+
         // Emit CALL_HOST with method name and arg count
         // The runtime will determine the type and call the appropriate method
         methodName = "any." + property->symbol;
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{methodName, arg_count + 1});
+        emit(OpCode::CALL_HOST,
+             std::vector<BytecodeValue>{methodName, arg_count + 1});
         return;
       }
     }
@@ -839,7 +865,8 @@ void ByteCompiler::compileCallExpression(const ast::CallExpression &expression) 
         }
         compileExpression(*arg);
       }
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{binding->name, arg_count});
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{binding->name, arg_count});
       return;
     }
   }
@@ -891,7 +918,8 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
         static_cast<uint32_t>(current_function->instructions.size());
     patchJump(end_jump, end_target);
   } else {
-    uint32_t target = static_cast<uint32_t>(current_function->instructions.size());
+    uint32_t target =
+        static_cast<uint32_t>(current_function->instructions.size());
     patchJump(else_jump, target);
   }
 }
@@ -901,7 +929,8 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
     throw std::runtime_error("Malformed while statement");
   }
 
-  uint32_t loop_start = static_cast<uint32_t>(current_function->instructions.size());
+  uint32_t loop_start =
+      static_cast<uint32_t>(current_function->instructions.size());
 
   compileExpression(*statement.condition);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
@@ -909,7 +938,8 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   compileStatement(*statement.body);
   emit(OpCode::JUMP, loop_start);
 
-  uint32_t loop_end = static_cast<uint32_t>(current_function->instructions.size());
+  uint32_t loop_end =
+      static_cast<uint32_t>(current_function->instructions.size());
   patchJump(end_jump, loop_end);
 }
 
@@ -987,7 +1017,8 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
     const auto &member = static_cast<const ast::MemberExpression &>(callee);
 
     auto *object = dynamic_cast<const ast::Identifier *>(member.object.get());
-    auto *property = dynamic_cast<const ast::Identifier *>(member.property.get());
+    auto *property =
+        dynamic_cast<const ast::Identifier *>(member.property.get());
     if (!object || !property) {
       return std::nullopt;
     }
@@ -998,7 +1029,8 @@ ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   return std::nullopt;
 }
 
-const ResolvedBinding *ByteCompiler::bindingFor(const ast::Identifier &id) const {
+const ResolvedBinding *
+ByteCompiler::bindingFor(const ast::Identifier &id) const {
   auto it = lexical_resolution_.identifier_bindings.find(&id);
   if (it == lexical_resolution_.identifier_bindings.end()) {
     return nullptr;
@@ -1039,9 +1071,7 @@ void ByteCompiler::leaveFunction() {
   resetLocals();
 }
 
-void ByteCompiler::resetLocals() {
-  next_local_index = 0;
-}
+void ByteCompiler::resetLocals() { next_local_index = 0; }
 
 // Compile hotkey binding: hotkey => action
 void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
@@ -1049,19 +1079,20 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
   if (binding.action) {
     compileStatement(*binding.action);
   }
-  
+
   // For each hotkey in the binding, register it
-  for (const auto& hotkeyExpr : binding.hotkeys) {
-    if (!hotkeyExpr) continue;
-    
+  for (const auto &hotkeyExpr : binding.hotkeys) {
+    if (!hotkeyExpr)
+      continue;
+
     // Hotkey expression should be a string or identifier
     // We need to call hotkey.register(hotkey_string, callback_function)
     // The callback is a closure that wraps the action
-    
+
     // For now, emit a host function call to hotkey.register
     // The hotkey string needs to be evaluated
     compileExpression(*hotkeyExpr);
-    
+
     // The action body was already compiled above
     // We need to create a closure for the callback
     // This is complex - for now we'll emit a placeholder
@@ -1072,7 +1103,7 @@ void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
 // Compile input statement: > "text" or > {Enter}
 void ByteCompiler::compileInputStatement(const ast::InputStatement &statement) {
   // Each input command becomes a host function call to io.send or similar
-  for (const auto& cmd : statement.commands) {
+  for (const auto &cmd : statement.commands) {
     switch (cmd.type) {
     case ast::InputCommand::SendText:
       // io.send(cmd.text)

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "../../runtime/HostContext.hpp"
 #include "Pipeline.hpp"
 #include "VM.hpp"
-#include "../../runtime/HostContext.hpp"
 
 #include <memory>
 #include <optional>
@@ -14,58 +14,58 @@ namespace havel::compiler {
 
 /**
  * HostBridge - Bridges VM host functions to injected services
- * 
+ *
  * ARCHITECTURE:
  * - Dependencies are INJECTED via HostContext (not pulled from registry)
  * - Embedders provide custom capabilities via ctx.caps
  * - No hidden dependencies or global state
- * 
+ *
  * USAGE:
  *   HostContext ctx;
  *   ctx.io = std::make_shared<IO>();
  *   ctx.caps["custom"] = std::make_shared<MyCustomCap>();
- *   
+ *
  *   auto bridge = std::make_unique<HostBridge>(vm, ctx);
  *   bridge->install();
  */
-class HostBridge
-    : public std::enable_shared_from_this<HostBridge> {
+class HostBridge : public std::enable_shared_from_this<HostBridge> {
 public:
-  HostBridge(const havel::HostContext& ctx);
+  HostBridge(const havel::HostContext &ctx);
   ~HostBridge();
 
   void install();
   void clear();
-  void shutdown();  // Explicit shutdown to clear containers before exit
+  void shutdown(); // Explicit shutdown to clear containers before exit
 
   // Accessors for stdlib registration
-  PipelineOptions& options() { return options_; }
-  const PipelineOptions& options() const { return options_; }
-  
+  PipelineOptions &options() { return options_; }
+  const PipelineOptions &options() const { return options_; }
+
   // Get context (for embedders to inspect/modify)
-  const HostContext& context() const { return *ctx_; }
+  const HostContext &context() const { return *ctx_; }
 
   // Register custom module (embedder extension point)
-  void registerModule(const HostModule& module);
+  void registerModule(const HostModule &module);
 
   // Add vm_setup callback (accumulates with previous callbacks)
-  void addVmSetup(std::function<void(VM&)> setupFn);
+  void addVmSetup(std::function<void(VM &)> setupFn);
 
 private:
-  const havel::HostContext* ctx_;
+  const havel::HostContext *ctx_;
   PipelineOptions options_;
-  
+
   // Accumulated vm_setup callbacks
-  std::vector<std::function<void(VM&)>> vm_setup_callbacks_;
-  
+  std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
+
   // Registered modules
   std::vector<HostModule> modules_;
 
   // Handler methods
-  BytecodeValue handleWindowMoveToNextMonitor(
-      const std::vector<BytecodeValue> &args);
+  BytecodeValue
+  handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
+  BytecodeValue
+  handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args);
   BytecodeValue handleWindowOn(const std::vector<BytecodeValue> &args);
@@ -90,7 +90,8 @@ private:
 
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
-  BytecodeValue invokeCallback(CallbackId id, std::span<BytecodeValue> args = {});
+  BytecodeValue invokeCallback(CallbackId id,
+                               const std::vector<BytecodeValue> &args = {});
   void releaseCallback(CallbackId id);
 
   struct ModeBinding {
@@ -106,9 +107,9 @@ private:
 
 /**
  * Create HostBridge with injected context
- * 
+ *
  * This is the primary factory function for embedders.
  */
-std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext& ctx);
+std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx);
 
 } // namespace havel::compiler

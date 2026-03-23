@@ -1,6 +1,6 @@
 #include "VM.hpp"
 
-#include "../../../core/io/MouseController.hpp"  // For ParseDuration
+#include "../../../core/io/MouseController.hpp" // For ParseDuration
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -13,16 +13,18 @@ namespace havel::compiler {
 
 namespace {
 // Internal toString with cycle detection and depth limit
-std::string toStringInternal(const BytecodeValue &value, GCHeap* heap, 
-                              std::unordered_set<uint32_t>& visitedIds, int depth);
+std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
+                             std::unordered_set<uint32_t> &visitedIds,
+                             int depth);
 
-std::string toStringInternal(const BytecodeValue &value, GCHeap* heap, 
-                              std::unordered_set<uint32_t>& visitedIds, int depth) {
+std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
+                             std::unordered_set<uint32_t> &visitedIds,
+                             int depth) {
   // Depth limit to prevent stack overflow
   if (depth > 32) {
     return "...";
   }
-  
+
   if (std::holds_alternative<std::nullptr_t>(value)) {
     return "null";
   }
@@ -54,7 +56,7 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap,
     if (!heap) {
       return "array[" + std::to_string(std::get<ArrayRef>(value).id) + "]";
     }
-    auto* arr = heap->array(std::get<ArrayRef>(value).id);
+    auto *arr = heap->array(std::get<ArrayRef>(value).id);
     if (!arr) {
       return "array[]";
     }
@@ -64,10 +66,11 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap,
       return "<cycle>";
     }
     visitedIds.insert(arrId);
-    
+
     std::string result = "[";
     for (size_t i = 0; i < arr->size(); ++i) {
-      if (i > 0) result += ", ";
+      if (i > 0)
+        result += ", ";
       result += toStringInternal((*arr)[i], heap, visitedIds, depth + 1);
     }
     result += "]";
@@ -78,7 +81,7 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap,
     if (!heap) {
       return "object[" + std::to_string(std::get<ObjectRef>(value).id) + "]";
     }
-    auto* obj = heap->object(std::get<ObjectRef>(value).id);
+    auto *obj = heap->object(std::get<ObjectRef>(value).id);
     if (!obj) {
       return "object{}";
     }
@@ -88,13 +91,15 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap,
       return "<cycle>";
     }
     visitedIds.insert(objId);
-    
+
     std::string result = "{";
     bool first = true;
-    for (const auto& [key, val] : *obj) {
-      if (!first) result += ", ";
+    for (const auto &[key, val] : *obj) {
+      if (!first)
+        result += ", ";
       first = false;
-      result += "\"" + key + "\": " + toStringInternal(val, heap, visitedIds, depth + 1);
+      result += "\"" + key +
+                "\": " + toStringInternal(val, heap, visitedIds, depth + 1);
     }
     result += "}";
     visitedIds.erase(objId);
@@ -110,7 +115,7 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap* heap,
 }
 
 // Wrapper without visited set (for backward compatibility)
-std::string toStringInternal(const BytecodeValue &value, GCHeap* heap) {
+std::string toStringInternal(const BytecodeValue &value, GCHeap *heap) {
   std::unordered_set<uint32_t> visitedIds;
   return toStringInternal(value, heap, visitedIds, 0);
 }
@@ -122,12 +127,12 @@ std::string toString(const BytecodeValue &value) {
 }
 
 // Public toString with heap (for formatted output)
-std::string toString(const BytecodeValue &value, GCHeap* heap) {
+std::string toString(const BytecodeValue &value, GCHeap *heap) {
   return toStringInternal(value, heap);
 }
 
 // Type conversion helpers
-int64_t toInt(const BytecodeValue& value) {
+int64_t toInt(const BytecodeValue &value) {
   if (std::holds_alternative<int64_t>(value)) {
     return std::get<int64_t>(value);
   }
@@ -147,7 +152,7 @@ int64_t toInt(const BytecodeValue& value) {
   return 0;
 }
 
-double toFloat(const BytecodeValue& value) {
+double toFloat(const BytecodeValue &value) {
   if (std::holds_alternative<double>(value)) {
     return std::get<double>(value);
   }
@@ -167,7 +172,7 @@ double toFloat(const BytecodeValue& value) {
   return 0.0;
 }
 
-bool toBool(const BytecodeValue& value) {
+bool toBool(const BytecodeValue &value) {
   if (std::holds_alternative<bool>(value)) {
     return std::get<bool>(value);
   }
@@ -191,7 +196,7 @@ bool toBool(const BytecodeValue& value) {
   if (std::holds_alternative<SetRef>(value)) {
     return true;
   }
-  return false;  // null, undefined, etc.
+  return false; // null, undefined, etc.
 }
 
 std::optional<int64_t> indexFromValue(const BytecodeValue &value) {
@@ -230,15 +235,12 @@ std::string formatSourceLocation(const BytecodeFunction &function, size_t ip) {
   if (location.line == 0 && location.column == 0) {
     return "<unknown>";
   }
-  return std::to_string(location.line) + ":" +
-         std::to_string(location.column);
+  return std::to_string(location.line) + ":" + std::to_string(location.column);
 }
 
-VM::VM() {
-  registerDefaultHostFunctions();
-}
+VM::VM() { registerDefaultHostFunctions(); }
 
-VM::VM(const havel::HostContext& ctx) {
+VM::VM(const havel::HostContext &ctx) {
   // Store context for service access
   context_ = &ctx;
   registerDefaultHostFunctions();
@@ -251,8 +253,7 @@ VM::~VM() {
   }
 }
 
-template <typename T>
-T VM::getValue(const BytecodeValue &value) {
+template <typename T> T VM::getValue(const BytecodeValue &value) {
   if constexpr (std::is_same_v<T, std::nullptr_t>) {
     return std::get<std::nullptr_t>(value);
   } else if constexpr (std::is_same_v<T, bool>) {
@@ -268,8 +269,7 @@ T VM::getValue(const BytecodeValue &value) {
   throw std::runtime_error("Invalid type conversion");
 }
 
-const VM::CallFrame &
-VM::currentFrame() const {
+const VM::CallFrame &VM::currentFrame() const {
   if (frames.empty()) {
     throw std::runtime_error("No active call frame");
   }
@@ -287,20 +287,20 @@ BytecodeValue VM::getConstant(uint32_t index) {
   return currentFrame().function->constants[index];
 }
 
-void VM::registerHostFunction(
-    const std::string &name, BytecodeHostFunction function) {
+void VM::registerHostFunction(const std::string &name,
+                              BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,
                               BytecodeHostFunction function) {
   registerHostFunction(
-      name, [arity, function = std::move(function), name](
-                const std::vector<BytecodeValue> &args) -> BytecodeValue {
+      name,
+      [arity, function = std::move(function),
+       name](const std::vector<BytecodeValue> &args) -> BytecodeValue {
         if (args.size() != arity) {
-          throw std::runtime_error("Host function '" + name +
-                                   "' expects " + std::to_string(arity) +
-                                   " arguments, got " +
+          throw std::runtime_error("Host function '" + name + "' expects " +
+                                   std::to_string(arity) + " arguments, got " +
                                    std::to_string(args.size()));
         }
         return function(args);
@@ -343,19 +343,23 @@ void VM::pushHostArrayValue(ArrayRef array_ref, BytecodeValue value) {
 // Array helpers
 size_t VM::getHostArrayLength(ArrayRef array_ref) {
   auto *array = heap_.array(array_ref.id);
-  if (!array) return 0;
+  if (!array)
+    return 0;
   return array->size();
 }
 
 BytecodeValue VM::getHostArrayValue(ArrayRef array_ref, size_t index) {
   auto *array = heap_.array(array_ref.id);
-  if (!array || index >= array->size()) return BytecodeValue(nullptr);
+  if (!array || index >= array->size())
+    return BytecodeValue(nullptr);
   return (*array)[index];
 }
 
-void VM::setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value) {
+void VM::setHostArrayValue(ArrayRef array_ref, size_t index,
+                           BytecodeValue value) {
   auto *array = heap_.array(array_ref.id);
-  if (!array) return;
+  if (!array)
+    return;
   if (index >= array->size()) {
     // Extend array if needed
     while (array->size() <= index) {
@@ -367,22 +371,27 @@ void VM::setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value
 
 BytecodeValue VM::popHostArrayValue(ArrayRef array_ref) {
   auto *array = heap_.array(array_ref.id);
-  if (!array || array->empty()) return BytecodeValue(nullptr);
+  if (!array || array->empty())
+    return BytecodeValue(nullptr);
   auto value = std::move(array->back());
   array->pop_back();
   return value;
 }
 
-void VM::insertHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value) {
+void VM::insertHostArrayValue(ArrayRef array_ref, size_t index,
+                              BytecodeValue value) {
   auto *array = heap_.array(array_ref.id);
-  if (!array) return;
-  if (index > array->size()) index = array->size();
+  if (!array)
+    return;
+  if (index > array->size())
+    index = array->size();
   array->insert(array->begin() + index, std::move(value));
 }
 
 BytecodeValue VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
   auto *array = heap_.array(array_ref.id);
-  if (!array || index >= array->size()) return BytecodeValue(nullptr);
+  if (!array || index >= array->size())
+    return BytecodeValue(nullptr);
   auto value = std::move((*array)[index]);
   array->erase(array->begin() + index);
   return value;
@@ -391,30 +400,36 @@ BytecodeValue VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
 // Object helpers
 std::vector<std::string> VM::getHostObjectKeys(ObjectRef object_ref) {
   auto *object = heap_.object(object_ref.id);
-  if (!object) return {};
+  if (!object)
+    return {};
   std::vector<std::string> keys;
   keys.reserve(object->size());
-  for (const auto& [key, value] : *object) {
+  for (const auto &[key, value] : *object) {
     keys.push_back(key);
   }
   return keys;
 }
 
-std::vector<std::pair<std::string, BytecodeValue>> VM::getHostObjectEntries(ObjectRef object_ref) {
+std::vector<std::pair<std::string, BytecodeValue>>
+VM::getHostObjectEntries(ObjectRef object_ref) {
   auto *object = heap_.object(object_ref.id);
-  if (!object) return {};
-  return std::vector<std::pair<std::string, BytecodeValue>>(object->begin(), object->end());
+  if (!object)
+    return {};
+  return std::vector<std::pair<std::string, BytecodeValue>>(object->begin(),
+                                                            object->end());
 }
 
-bool VM::hasHostObjectField(ObjectRef object_ref, const std::string& key) {
+bool VM::hasHostObjectField(ObjectRef object_ref, const std::string &key) {
   auto *object = heap_.object(object_ref.id);
-  if (!object) return false;
+  if (!object)
+    return false;
   return object->find(key) != object->end();
 }
 
-bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string& key) {
+bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
   auto *object = heap_.object(object_ref.id);
-  if (!object) return false;
+  if (!object)
+    return false;
   return object->erase(key) > 0;
 }
 
@@ -427,7 +442,8 @@ void VM::setHostObjectSealed(ObjectRef, bool) {
 }
 
 // Function calling
-BytecodeValue VM::callHostFunction(const BytecodeValue& fn, const std::vector<BytecodeValue>& args) {
+BytecodeValue VM::callHostFunction(const BytecodeValue &fn,
+                                   const std::vector<BytecodeValue> &args) {
   if (std::holds_alternative<HostFunctionRef>(fn)) {
     auto hostFnRef = std::get<HostFunctionRef>(fn);
     auto it = host_functions.find(hostFnRef.name);
@@ -439,11 +455,15 @@ BytecodeValue VM::callHostFunction(const BytecodeValue& fn, const std::vector<By
 }
 
 // Prototype system - methods on types
-void VM::registerPrototypeMethod(const std::string& typeName, const std::string& methodName, HostFunctionRef method) {
+void VM::registerPrototypeMethod(const std::string &typeName,
+                                 const std::string &methodName,
+                                 HostFunctionRef method) {
   prototypes_[typeName][methodName] = method;
 }
 
-std::optional<HostFunctionRef> VM::getPrototypeMethod(const BytecodeValue& value, const std::string& methodName) {
+std::optional<HostFunctionRef>
+VM::getPrototypeMethod(const BytecodeValue &value,
+                       const std::string &methodName) {
   // Determine type name
   std::string typeName;
   if (std::holds_alternative<std::string>(value)) {
@@ -455,18 +475,20 @@ std::optional<HostFunctionRef> VM::getPrototypeMethod(const BytecodeValue& value
   } else {
     return std::nullopt;
   }
-  
+
   // Look up method in prototype
   auto typeIt = prototypes_.find(typeName);
-  if (typeIt == prototypes_.end()) return std::nullopt;
-  
+  if (typeIt == prototypes_.end())
+    return std::nullopt;
+
   auto methodIt = typeIt->second.find(methodName);
-  if (methodIt == typeIt->second.end()) return std::nullopt;
-  
+  if (methodIt == typeIt->second.end())
+    return std::nullopt;
+
   return methodIt->second;
 }
 
-std::vector<std::string> VM::getPrototypeMethods(const BytecodeValue& value) {
+std::vector<std::string> VM::getPrototypeMethods(const BytecodeValue &value) {
   std::string typeName;
   if (std::holds_alternative<std::string>(value)) {
     typeName = "String";
@@ -477,12 +499,13 @@ std::vector<std::string> VM::getPrototypeMethods(const BytecodeValue& value) {
   } else {
     return {};
   }
-  
+
   auto typeIt = prototypes_.find(typeName);
-  if (typeIt == prototypes_.end()) return {};
-  
+  if (typeIt == prototypes_.end())
+    return {};
+
   std::vector<std::string> methods;
-  for (const auto& [name, fn] : typeIt->second) {
+  for (const auto &[name, fn] : typeIt->second) {
     methods.push_back(name);
   }
   return methods;
@@ -513,36 +536,34 @@ void VM::registerDefaultHostFunctions() {
     return BytecodeValue(nullptr);
   });
 
-  registerHostFunction("clock_ms", 0,
-                       [](const std::vector<BytecodeValue> &) {
-    const auto now =
-        std::chrono::time_point_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now())
-            .time_since_epoch()
-            .count();
+  registerHostFunction("clock_ms", 0, [](const std::vector<BytecodeValue> &) {
+    const auto now = std::chrono::time_point_cast<std::chrono::milliseconds>(
+                         std::chrono::steady_clock::now())
+                         .time_since_epoch()
+                         .count();
     return BytecodeValue(static_cast<int64_t>(now));
   });
 
-  registerHostFunction("sleep_ms", 1,
-                       [](const std::vector<BytecodeValue> &args) {
-    if (!std::holds_alternative<int64_t>(args[0])) {
-      throw std::runtime_error("sleep_ms expects exactly 1 integer argument");
-    }
+  registerHostFunction(
+      "sleep_ms", 1, [](const std::vector<BytecodeValue> &args) {
+        if (!std::holds_alternative<int64_t>(args[0])) {
+          throw std::runtime_error(
+              "sleep_ms expects exactly 1 integer argument");
+        }
 
-    int64_t duration_ms = std::get<int64_t>(args[0]);
-    if (duration_ms < 0) {
-      throw std::runtime_error("sleep_ms duration cannot be negative");
-    }
+        int64_t duration_ms = std::get<int64_t>(args[0]);
+        if (duration_ms < 0) {
+          throw std::runtime_error("sleep_ms duration cannot be negative");
+        }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
-    return BytecodeValue(nullptr);
-  });
+        std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+        return BytecodeValue(nullptr);
+      });
 
   // Enhanced sleep() with duration string support
-  registerHostFunction("sleep", 1,
-                       [](const std::vector<BytecodeValue> &args) {
+  registerHostFunction("sleep", 1, [](const std::vector<BytecodeValue> &args) {
     long long duration_ms = 0;
-    
+
     if (std::holds_alternative<int64_t>(args[0])) {
       duration_ms = std::get<int64_t>(args[0]);
     } else if (std::holds_alternative<double>(args[0])) {
@@ -557,7 +578,7 @@ void VM::registerDefaultHostFunctions() {
     } else {
       throw std::runtime_error("sleep(): expects number or string");
     }
-    
+
     if (duration_ms < 0) {
       throw std::runtime_error("sleep(): duration cannot be negative");
     }
@@ -585,7 +606,7 @@ void VM::registerDefaultHostFunctions() {
   });
 
   registerHostFunction("type", 1, [](const std::vector<BytecodeValue> &args) {
-    const auto& value = args[0];
+    const auto &value = args[0];
     std::string typeName;
     if (std::holds_alternative<std::nullptr_t>(value)) {
       typeName = "null";
@@ -664,9 +685,9 @@ BytecodeValue VM::invokeHostFunction(const std::string &name,
   return it->second(args);
 }
 
-BytecodeValue VM::execute(
-    const BytecodeChunk &chunk, const std::string &function_name,
-    const std::vector<BytecodeValue> &args) {
+BytecodeValue VM::execute(const BytecodeChunk &chunk,
+                          const std::string &function_name,
+                          const std::vector<BytecodeValue> &args) {
   current_chunk = &chunk;
 
   const auto *entry = chunk.getFunction(function_name);
@@ -702,8 +723,8 @@ BytecodeValue VM::execute(
   }
 
   if (debug_mode) {
-    std::cout << "=== Executing function: " << function_name << " ==="
-              << std::endl;
+    std::cout << "=== Executing function: " << function_name
+              << " ===" << std::endl;
   }
 
   runDispatchLoop(0);
@@ -733,8 +754,7 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
 
     if (debug_mode) {
       std::cout << "IP: " << frame.ip
-                << " OP: " << static_cast<int>(instruction.opcode)
-                << std::endl;
+                << " OP: " << static_cast<int>(instruction.opcode) << std::endl;
     }
 
     try {
@@ -775,9 +795,7 @@ BytecodeValue VM::call(const BytecodeValue &callee_value,
   return result;
 }
 
-void VM::setDebugMode(bool enabled) {
-  debug_mode = enabled;
-}
+void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
 void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   if (std::holds_alternative<HostFunctionRef>(callee_value)) {
@@ -803,7 +821,8 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
     closure_id = std::get<ClosureRef>(callee_value).id;
     auto *closure = heap_.closure(closure_id);
     if (!closure) {
-      throw std::runtime_error("Closure not found: " + std::to_string(closure_id));
+      throw std::runtime_error("Closure not found: " +
+                               std::to_string(closure_id));
     }
     function_index = closure->function_index;
   } else {
@@ -818,8 +837,7 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
 
   if (args.size() != callee->param_count) {
     throw std::runtime_error("Argument count mismatch calling function index " +
-                             std::to_string(function_index) +
-                             " (expected " +
+                             std::to_string(function_index) + " (expected " +
                              std::to_string(callee->param_count) + ", got " +
                              std::to_string(args.size()) + ")");
   }
@@ -901,18 +919,17 @@ void VM::maybeCollectGarbage() {
 }
 
 void VM::collectGarbage() {
-  heap_.collectGarbage(
-      stackValuesForRoots(), locals, globals, activeClosureIdsForRoots(),
-      [this](uint32_t index) -> std::optional<BytecodeValue> {
-        if (index >= locals.size()) {
-          return std::nullopt;
-        }
-        return locals[index];
-      });
+  heap_.collectGarbage(stackValuesForRoots(), locals, globals,
+                       activeClosureIdsForRoots(),
+                       [this](uint32_t index) -> std::optional<BytecodeValue> {
+                         if (index >= locals.size()) {
+                           return std::nullopt;
+                         }
+                         return locals[index];
+                       });
 }
 
-void VM::executeInstruction(
-    const Instruction &instruction) {
+void VM::executeInstruction(const Instruction &instruction) {
   auto pop = [this]() -> BytecodeValue {
     if (stack.empty()) {
       throw std::runtime_error("Stack underflow");
@@ -923,9 +940,7 @@ void VM::executeInstruction(
     return value;
   };
 
-  auto push = [this](BytecodeValue value) {
-    stack.push(std::move(value));
-  };
+  auto push = [this](BytecodeValue value) { stack.push(std::move(value)); };
 
   auto toAbsoluteLocal = [this](uint32_t local_index) -> uint32_t {
     return static_cast<uint32_t>(currentFrame().locals_base + local_index);
@@ -1004,7 +1019,8 @@ void VM::executeInstruction(
     if (!closure) {
       throw std::runtime_error("Closure not found for LOAD_UPVALUE");
     }
-    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
       throw std::runtime_error("LOAD_UPVALUE index out of range");
     }
     const auto &cell = closure->upvalues[upvalue_index];
@@ -1027,7 +1043,8 @@ void VM::executeInstruction(
     if (!closure) {
       throw std::runtime_error("Closure not found for STORE_UPVALUE");
     }
-    if (upvalue_index >= closure->upvalues.size() || !closure->upvalues[upvalue_index]) {
+    if (upvalue_index >= closure->upvalues.size() ||
+        !closure->upvalues[upvalue_index]) {
       throw std::runtime_error("STORE_UPVALUE index out of range");
     }
     auto &cell = closure->upvalues[upvalue_index];
@@ -1274,8 +1291,8 @@ void VM::executeInstruction(
     if (instruction.operands.size() != 2 ||
         !std::holds_alternative<std::string>(instruction.operands[0]) ||
         !std::holds_alternative<uint32_t>(instruction.operands[1])) {
-      throw std::runtime_error(
-          "CALL_HOST expects operands: <string function_name, uint32 arg_count>");
+      throw std::runtime_error("CALL_HOST expects operands: <string "
+                               "function_name, uint32 arg_count>");
     }
 
     const std::string &function_name =
@@ -1373,7 +1390,8 @@ void VM::executeInstruction(
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
       if (!index || *index < 0) {
-        throw std::runtime_error("ARRAY_GET expects non-negative integer index");
+        throw std::runtime_error(
+            "ARRAY_GET expects non-negative integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
@@ -1390,7 +1408,8 @@ void VM::executeInstruction(
     if (std::holds_alternative<SetRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error("SET membership expects string/number/bool key");
+        throw std::runtime_error(
+            "SET membership expects string/number/bool key");
       }
       auto *set = heap_.set(std::get<SetRef>(container).id);
       if (!set) {
@@ -1425,7 +1444,8 @@ void VM::executeInstruction(
     if (std::holds_alternative<ArrayRef>(container)) {
       auto index = indexFromValue(index_or_key);
       if (!index || *index < 0) {
-        throw std::runtime_error("ARRAY_SET expects non-negative integer index");
+        throw std::runtime_error(
+            "ARRAY_SET expects non-negative integer index");
       }
       auto *array = heap_.array(std::get<ArrayRef>(container).id);
       if (!array) {
@@ -1442,7 +1462,8 @@ void VM::executeInstruction(
     if (std::holds_alternative<SetRef>(container)) {
       auto key = keyFromValue(index_or_key);
       if (!key) {
-        throw std::runtime_error("SET assignment expects string/number/bool key");
+        throw std::runtime_error(
+            "SET assignment expects string/number/bool key");
       }
       auto *set = heap_.set(std::get<SetRef>(container).id);
       if (!set) {
@@ -1543,10 +1564,10 @@ void VM::executeInstruction(
     BytecodeValue value = pop();
     if (std::holds_alternative<ArrayRef>(value)) {
       auto arrRef = std::get<ArrayRef>(value);
-      auto* arr = heap_.array(arrRef.id);
+      auto *arr = heap_.array(arrRef.id);
       if (arr) {
         // Push each element individually
-        for (auto& elem : *arr) {
+        for (auto &elem : *arr) {
           push(elem);
         }
       }
@@ -1554,7 +1575,7 @@ void VM::executeInstruction(
       // Spread string into characters
       auto str = std::get<std::string>(value);
       auto arrRef = heap_.allocateArray();
-      auto* arr = heap_.array(arrRef.id);
+      auto *arr = heap_.array(arrRef.id);
       if (arr) {
         for (char c : str) {
           arr->push_back(BytecodeValue(std::string(1, c)));
@@ -1571,9 +1592,9 @@ void VM::executeInstruction(
     BytecodeValue value = pop();
     if (std::holds_alternative<ArrayRef>(value)) {
       auto arrRef = std::get<ArrayRef>(value);
-      auto* arr = heap_.array(arrRef.id);
+      auto *arr = heap_.array(arrRef.id);
       if (arr) {
-        for (auto& elem : *arr) {
+        for (auto &elem : *arr) {
           push(elem);
         }
       }
@@ -1586,16 +1607,19 @@ void VM::executeInstruction(
     if (instruction.operands.size() < 1) {
       throw std::runtime_error("AS_TYPE requires type operand");
     }
-    const std::string& typeName = std::get<std::string>(instruction.operands[0]);
+    const std::string &typeName =
+        std::get<std::string>(instruction.operands[0]);
     BytecodeValue value = pop();
-    
+
     if (typeName == "int" || typeName == "Int") {
       push(toInt(value));
-    } else if (typeName == "float" || typeName == "Float" || typeName == "double") {
+    } else if (typeName == "float" || typeName == "Float" ||
+               typeName == "double") {
       push(toFloat(value));
     } else if (typeName == "string" || typeName == "String") {
       push(BytecodeValue(toString(value)));
-    } else if (typeName == "bool" || typeName == "Bool" || typeName == "boolean") {
+    } else if (typeName == "bool" || typeName == "Bool" ||
+               typeName == "boolean") {
       push(toBool(value));
     } else if (typeName == "array" || typeName == "Array") {
       // Convert to array if possible
@@ -1606,7 +1630,7 @@ void VM::executeInstruction(
         push(BytecodeValue(arrRef));
       }
     } else {
-      push(value);  // Unknown type, return as-is
+      push(value); // Unknown type, return as-is
     }
     break;
   }
@@ -1683,8 +1707,9 @@ void VM::executeInstruction(
     break;
 
   default:
-    throw std::runtime_error("Unknown opcode: " +
-                             std::to_string(static_cast<int>(instruction.opcode)));
+    throw std::runtime_error(
+        "Unknown opcode: " +
+        std::to_string(static_cast<int>(instruction.opcode)));
   }
 }
 
@@ -1696,37 +1721,40 @@ CallbackId VM::registerCallback(const BytecodeValue &closure) {
   if (!std::holds_alternative<ClosureRef>(closure)) {
     throw std::runtime_error("registerCallback expects a closure");
   }
-  
+
   // Pin the closure as an external root (GC will not collect it)
   CallbackId id = static_cast<CallbackId>(pinExternalRoot(closure));
-  
+
   if (id == INVALID_CALLBACK_ID) {
     throw std::runtime_error("Failed to register callback - invalid ID");
   }
-  
+
   return id;
 }
 
-BytecodeValue VM::invokeCallback(CallbackId id, std::span<BytecodeValue> args) {
+BytecodeValue VM::invokeCallback(CallbackId id,
+                                 const std::vector<BytecodeValue> &args) {
   if (id == INVALID_CALLBACK_ID) {
     throw std::runtime_error("invokeCallback called with invalid callback ID");
   }
-  
+
   // Get the closure from external roots
   auto closureValue = externalRootValue(id);
   if (!closureValue.has_value()) {
-    throw std::runtime_error("invokeCallback: callback not found (may have been released)");
+    throw std::runtime_error(
+        "invokeCallback: callback not found (may have been released)");
   }
-  
+
   // Call the closure and return result
-  return call(*closureValue, std::vector<BytecodeValue>(args.begin(), args.end()));
+  return call(*closureValue,
+              std::vector<BytecodeValue>(args.begin(), args.end()));
 }
 
 void VM::releaseCallback(CallbackId id) {
   if (id == INVALID_CALLBACK_ID) {
-    return;  // Nothing to release
+    return; // Nothing to release
   }
-  
+
   // Unpin the external root (GC can now collect it)
   unpinExternalRoot(id);
 }
@@ -1743,30 +1771,34 @@ bool VM::isValidCallback(CallbackId id) const {
 // Image helpers - GC-managed image creation
 // ============================================================================
 
-VMImage VM::createImage(int width, int height, int stride, PixelFormat format, const uint8_t* data) {
+VMImage VM::createImage(int width, int height, int stride, PixelFormat format,
+                        const uint8_t *data) {
   VMImage img;
   img.width = width;
   img.height = height;
   img.stride = stride;
   img.format = format;
-  
+
   // Create GC-managed byte array for image data
-  size_t dataSize = stride > 0 ? static_cast<size_t>(stride) * height : width * height * 4;
+  size_t dataSize =
+      stride > 0 ? static_cast<size_t>(stride) * height : width * height * 4;
   auto arrayRef = createHostArray();
   for (size_t i = 0; i < dataSize; ++i) {
     pushHostArrayValue(arrayRef, static_cast<int64_t>(data[i]));
   }
-  
+
   // Store array reference in VMImage
   img.object_ref = ObjectRef{arrayRef.id};
-  
+
   return img;
 }
 
-VMImage VM::createImageFromRGBA(int width, int height, const std::vector<uint8_t>& rgbaData) {
+VMImage VM::createImageFromRGBA(int width, int height,
+                                const std::vector<uint8_t> &rgbaData) {
   // RGBA format: 4 bytes per pixel
   int stride = width * 4;
-  return createImage(width, height, stride, PixelFormat::RGBA8, rgbaData.data());
+  return createImage(width, height, stride, PixelFormat::RGBA8,
+                     rgbaData.data());
 }
 
 std::unique_ptr<BytecodeInterpreter> createVM() {

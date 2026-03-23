@@ -15,7 +15,7 @@
 #include <vector>
 
 namespace havel {
-class HostContext;  // Forward declaration
+class HostContext; // Forward declaration
 }
 
 namespace havel::compiler {
@@ -95,10 +95,12 @@ private:
 
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> function
-  std::unordered_map<std::string, std::unordered_map<std::string, HostFunctionRef>> prototypes_;
+  std::unordered_map<std::string,
+                     std::unordered_map<std::string, HostFunctionRef>>
+      prototypes_;
 
   // Host context for service access (non-owning)
-  const class havel::HostContext* context_ = nullptr;
+  const class havel::HostContext *context_ = nullptr;
 
   const BytecodeChunk *current_chunk = nullptr;
   bool debug_mode = false;
@@ -121,12 +123,11 @@ private:
   void collectGarbage();
   void registerDefaultHostFunctions();
   void registerDefaultHostGlobals();
-  BytecodeValue invokeHostFunction(const std::string &name,
-                                   uint32_t arg_count);
+  BytecodeValue invokeHostFunction(const std::string &name, uint32_t arg_count);
 
 public:
   VM();
-  VM(const class havel::HostContext& ctx);
+  VM(const class havel::HostContext &ctx);
   ~VM() override;
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
@@ -161,48 +162,63 @@ public:
   void setHostObjectField(ObjectRef object_ref, const std::string &key,
                           BytecodeValue value);
   void pushHostArrayValue(ArrayRef array_ref, BytecodeValue value);
-  
+
   // Array helpers
   size_t getHostArrayLength(ArrayRef array_ref);
   BytecodeValue getHostArrayValue(ArrayRef array_ref, size_t index);
   void setHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value);
   BytecodeValue popHostArrayValue(ArrayRef array_ref);
-  void insertHostArrayValue(ArrayRef array_ref, size_t index, BytecodeValue value);
+  void insertHostArrayValue(ArrayRef array_ref, size_t index,
+                            BytecodeValue value);
   BytecodeValue removeHostArrayValue(ArrayRef array_ref, size_t index);
-  
+
   // Object helpers
   std::vector<std::string> getHostObjectKeys(ObjectRef object_ref);
-  std::vector<std::pair<std::string, BytecodeValue>> getHostObjectEntries(ObjectRef object_ref);
-  bool hasHostObjectField(ObjectRef object_ref, const std::string& key);
-  bool deleteHostObjectField(ObjectRef object_ref, const std::string& key);
+  std::vector<std::pair<std::string, BytecodeValue>>
+  getHostObjectEntries(ObjectRef object_ref);
+  bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
+  bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
   void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
   void setHostObjectSealed(ObjectRef object_ref, bool sealed);
-  
+
   // Function calling
-  BytecodeValue callHostFunction(const BytecodeValue& fn, const std::vector<BytecodeValue>& args);
-  
+  BytecodeValue callHostFunction(const BytecodeValue &fn,
+                                 const std::vector<BytecodeValue> &args);
+
   // Prototype system - methods on types
-  void registerPrototypeMethod(const std::string& typeName, const std::string& methodName, HostFunctionRef method);
-  std::optional<HostFunctionRef> getPrototypeMethod(const BytecodeValue& value, const std::string& methodName);
-  std::vector<std::string> getPrototypeMethods(const BytecodeValue& value);
-  
+  void registerPrototypeMethod(const std::string &typeName,
+                               const std::string &methodName,
+                               HostFunctionRef method);
+  std::optional<HostFunctionRef>
+  getPrototypeMethod(const BytecodeValue &value, const std::string &methodName);
+  std::vector<std::string> getPrototypeMethods(const BytecodeValue &value);
+
   // Get registered host functions (for copying to options)
-  const std::unordered_map<std::string, BytecodeHostFunction>& getHostFunctions() const { return host_functions; }
-  
+  std::unordered_map<std::string, BytecodeHostFunction> &getHostFunctions() {
+    return host_functions;
+  }
+  const std::unordered_map<std::string, BytecodeHostFunction> &
+  getHostFunctions() const {
+    return host_functions;
+  }
+
   uint64_t pinExternalRoot(const BytecodeValue &value);
   bool unpinExternalRoot(uint64_t root_id);
   std::optional<BytecodeValue> externalRootValue(uint64_t root_id) const;
   size_t externalRootCount() const { return heap_.externalRootCount(); }
-  
+
   // Callback system - VM owns closures, systems use opaque IDs
   CallbackId registerCallback(const BytecodeValue &closure);
-  BytecodeValue invokeCallback(CallbackId id, std::span<BytecodeValue> args = {});
+  BytecodeValue invokeCallback(CallbackId id,
+                               const std::vector<BytecodeValue> &args = {});
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
-  
+
   // Image helpers - create GC-managed images
-  VMImage createImage(int width, int height, int stride, PixelFormat format, const uint8_t* data);
-  VMImage createImageFromRGBA(int width, int height, const std::vector<uint8_t>& rgbaData);
+  VMImage createImage(int width, int height, int stride, PixelFormat format,
+                      const uint8_t *data);
+  VMImage createImageFromRGBA(int width, int height,
+                              const std::vector<uint8_t> &rgbaData);
 };
 
 } // namespace havel::compiler

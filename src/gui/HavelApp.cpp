@@ -247,6 +247,10 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Create HostBridge with context
     hostBridge = compiler::createHostBridge(ctx);
+    
+    // Register stdlib modules with VM
+    registerStdLibWithVM(*hostBridge);
+    
     hostBridge->install();
 
     info("Bytecode VM and HostBridge initialized successfully");

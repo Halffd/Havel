@@ -105,8 +105,9 @@ struct HostContext {
         return dynamic_cast<T*>(it->second.get());
     }
     
-    // Validation
-    bool isValid() const { return io != nullptr; }
+    // Validation (io required for full mode, optional for pure script execution)
+    bool isValid() const { return true; }
+    bool hasIO() const { return io != nullptr; }
 };
 
 /**

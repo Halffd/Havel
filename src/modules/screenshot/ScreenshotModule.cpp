@@ -144,7 +144,7 @@ void registerScreenshotModule(Environment &env,
       }));
 
   // Register screenshot module
-  env.Define("screenshot", HavelValue(screenshotObj));
+  // MIGRATED TO BYTECODE VM: env.Define("screenshot", HavelValue(screenshotObj));
 }
 
 } // namespace havel::modules

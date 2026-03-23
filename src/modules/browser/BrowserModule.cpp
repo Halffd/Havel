@@ -173,7 +173,7 @@ void registerBrowserModule(Environment &env,
       }));
 
   // Register browser module
-  env.Define("browser", HavelValue(browserMod));
+  // MIGRATED TO BYTECODE VM: env.Define("browser", HavelValue(browserMod));
 }
 
 } // namespace havel::modules

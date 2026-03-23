@@ -21,11 +21,11 @@ void registerUtilityModule(Environment& env);
 
 // NEW: Register utility module with VM's host bridge (VM-native)
 inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // keys(obj) - Get keys from object/map
-    options.host_functions["keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["keys"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("keys() requires an object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) {
             throw std::runtime_error("keys() requires an object argument");
@@ -40,7 +40,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // items(obj) - Get key-value pairs from object/map
-    options.host_functions["items"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["items"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("items() requires an object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) {
             throw std::runtime_error("items() requires an object argument");
@@ -55,7 +55,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // list(value) - Convert to list
-    options.host_functions["list"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["list"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("list() requires an argument");
         
         const auto& arg = args[0];
@@ -82,7 +82,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // range(start, end, step) - Generate range of numbers
-    options.host_functions["range"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["range"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("range() requires at least 1 argument");
         
         int64_t start = 0, end = 0, step = 1;
@@ -114,7 +114,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // enumerate(arr) - Get index-value pairs
-    options.host_functions["enumerate"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["enumerate"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("enumerate() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("enumerate() requires an array argument");
@@ -129,7 +129,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // zip(arr1, arr2, ...) - Combine arrays
-    options.host_functions["zip"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["zip"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("zip() requires at least 1 array");
         
         auto result = vm.createHostArray();
@@ -140,7 +140,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // reverse(arr) - Reverse array
-    options.host_functions["reverse"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["reverse"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("reverse() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("reverse() requires an array argument");
@@ -155,7 +155,7 @@ inline void registerUtilityModuleVM(compiler::HostBridge& registry) {
     };
     
     // sort(arr) - Sort array
-    options.host_functions["sort"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    options.host_functions["sort"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("sort() requires an array");
         if (!std::holds_alternative<compiler::ArrayRef>(args[0])) {
             throw std::runtime_error("sort() requires an array argument");

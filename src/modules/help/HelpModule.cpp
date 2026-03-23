@@ -13,7 +13,7 @@ namespace havel::modules {
 void registerHelpModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (void)hostAPI; // Help doesn't need host context
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "help",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {

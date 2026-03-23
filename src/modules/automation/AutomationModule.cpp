@@ -226,7 +226,7 @@ void registerAutomationModule(Environment &env,
       }));
 
   // Register automation module
-  env.Define("automation", HavelValue(automationObj));
+  // MIGRATED TO BYTECODE VM: env.Define("automation", HavelValue(automationObj));
 }
 
 } // namespace havel::modules

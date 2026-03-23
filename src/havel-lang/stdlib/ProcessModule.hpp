@@ -22,7 +22,7 @@ void registerProcessModule(Environment& env);
 
 // NEW: Register process module with VM's host bridge (VM-native)
 inline void registerProcessModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to string
@@ -44,7 +44,7 @@ inline void registerProcessModuleVM(compiler::HostBridge& registry) {
     };
     
     // Helper: create ProcessInfo object
-    auto createProcessInfo = [&vm](const ProcessManager::ProcessInfo& info) -> compiler::BytecodeValue {
+    auto createProcessInfo = [vm](const ProcessManager::ProcessInfo& info) -> compiler::BytecodeValue {
         auto procObj = vm.createHostObject();
         vm.setHostObjectField(procObj, "pid", compiler::BytecodeValue(static_cast<int64_t>(info.pid)));
         vm.setHostObjectField(procObj, "ppid", compiler::BytecodeValue(static_cast<int64_t>(info.ppid)));

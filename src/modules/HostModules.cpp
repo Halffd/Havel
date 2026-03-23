@@ -238,78 +238,25 @@ havel::HostContext createHostContext(std::shared_ptr<IHostAPI> hostAPI) {
 /**
  * Register all host modules
  * These modules require IHostAPI
+ * 
+ * MIGRATED TO BYTECODE VM:
+ * Host modules now register through HostBridge with VM
+ * Old interpreter-based modules are stubbed out
  */
 void registerHostModules(ModuleLoader& loader) {
-    loader.addHost("window", modules::registerWindowQueryModule);
-    loader.addHost("brightness", modules::registerBrightnessModule);
-    loader.addHost("audio", modules::registerAudioModule);
-    loader.addHost("screenshot", modules::registerScreenshotModule);
-    loader.addHost("clipboard", modules::registerClipboardModule);
-    loader.addHost("pixel", modules::registerPixelModule);
-    loader.addHost("automation", modules::registerAutomationModule);
-    loader.addHost("launcher", modules::registerLauncherModule);
-    loader.addHost("process", modules::registerProcessModule);
-    loader.addHost("help", modules::registerHelpModule);
-    loader.addHost("filesystem", modules::registerFileManagerModule);
-    loader.addHost("system", modules::registerSystemModule);
-    loader.addHost("detector", modules::registerDetectorModule);
-    loader.addHost("gui", modules::registerGUIModule);
-    loader.addHost("alttab", modules::registerAltTabModule);
-    loader.addHost("mapmanager", modules::registerMapManagerModule);
-    loader.addHost("io", modules::registerIOModule);
-    loader.addHost("async", modules::registerAsyncModule);
-    loader.addHost("config", modules::registerConfigModule);
-    loader.addHost("http", modules::registerHTTPModule);
-    // loader.addHost("runtime", modules::registerRuntimeModule);  // Needs Interpreter*
-    loader.addHost("mode", modules::registerModeModule);
-    loader.addHost("hotkey", modules::registerHotkeyModule);
-    loader.addHost("browser", modules::registerBrowserModule);
-    loader.addHost("concurrency", modules::registerConcurrencyModule);
-    // loader.addHost("ffi", modules::ffi::registerFFIModule);  // No IHostAPI
-    
-    // Header-only modules (registered directly, not through loader)
-    // timer, media, network, app are registered inline in loadHostModules
+    // MIGRATED: All host modules moved to bytecode VM registration
+    // See HostBridge::install() for VM-native host function registration
+    (void)loader;  // Suppress unused warning
 }
 
 /**
  * Load all host modules into environment
  */
 void loadHostModules(Environment& env, ModuleLoader& loader, std::shared_ptr<IHostAPI> hostAPI) {
-    if (!hostAPI) return;
-
-    loader.load(env, "window", hostAPI);
-    loader.load(env, "brightness", hostAPI);
-    loader.load(env, "audio", hostAPI);
-    loader.load(env, "screenshot", hostAPI);
-    loader.load(env, "clipboard", hostAPI);
-    loader.load(env, "pixel", hostAPI);
-    loader.load(env, "automation", hostAPI);
-    loader.load(env, "launcher", hostAPI);
-    loader.load(env, "help", hostAPI);
-    loader.load(env, "filesystem", hostAPI);
-    loader.load(env, "system", hostAPI);
-    loader.load(env, "detector", hostAPI);
-    loader.load(env, "gui", hostAPI);
-    loader.load(env, "alttab", hostAPI);
-    loader.load(env, "mapmanager", hostAPI);
-    loader.load(env, "io", hostAPI);
-    loader.load(env, "async", hostAPI);
-    loader.load(env, "config", hostAPI);
-    loader.load(env, "http", hostAPI);
-    loader.load(env, "runtime", hostAPI);
-    loader.load(env, "mode", hostAPI);
-    loader.load(env, "hotkey", hostAPI);
-    loader.load(env, "browser", hostAPI);
-    loader.load(env, "concurrency", hostAPI);
-    loader.load(env, "window", hostAPI);
-    loader.load(env, "config", hostAPI);
-    // loader.load(env, "ffi", hostAPI);  // Not registered
-    
-    // Header-only modules (registered directly)
-    host::registerTimerModule(env, hostAPI);
-    host::registerMediaModule(env, hostAPI);
-    host::registerNetworkModule(env, hostAPI);
-    host::registerAppModule(env, hostAPI);
+    // MIGRATED: Environment-based loading replaced by bytecode VM
+    (void)env;
+    (void)loader;
+    (void)hostAPI;
 }
 
 } // namespace havel

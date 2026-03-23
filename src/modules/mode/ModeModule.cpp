@@ -124,7 +124,7 @@ void registerModeModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(modeManager->isSignalActive(signalName));
       }));
 
-  env.Define("mode", HavelValue(modeObj));
+  // MIGRATED TO BYTECODE VM: env.Define("mode", HavelValue(modeObj));
 }
 
 } // namespace havel::modules

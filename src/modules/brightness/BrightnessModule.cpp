@@ -100,7 +100,7 @@ void registerBrightnessModule(Environment &env, std::shared_ptr<IHostAPI> hostAP
       }));
 
   // Register brightness module
-  env.Define("brightness", HavelValue(brightnessObj));
+  // MIGRATED TO BYTECODE VM: env.Define("brightness", HavelValue(brightnessObj));
 }
 
 } // namespace havel::modules

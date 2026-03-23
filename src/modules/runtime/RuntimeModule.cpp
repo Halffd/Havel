@@ -67,7 +67,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
   // Note: hasRunOnce/markRunOnce not yet implemented in Interpreter
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "runOnce",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -109,7 +109,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
           })));
 
   // Register app module
-  env.Define("app", HavelValue(appObj));
+  // MIGRATED TO BYTECODE VM: env.Define("app", HavelValue(appObj));
 
   // =========================================================================
   // Debug control functions
@@ -143,7 +143,7 @@ void registerRuntimeModule(Environment &env, Interpreter *interpreter) {
         return HavelValue(interpreter->getInterpreterState());
       }));
 
-  env.Define("debug", HavelValue(debugObj));
+  // MIGRATED TO BYTECODE VM: env.Define("debug", HavelValue(debugObj));
 
   // =========================================================================
   // Register stdlib modules

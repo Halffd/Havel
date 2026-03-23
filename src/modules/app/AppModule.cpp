@@ -98,7 +98,7 @@ void registerAppModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // Register app module
-  env.Define("app", HavelValue(appObj));
+  // MIGRATED TO BYTECODE VM: env.Define("app", HavelValue(appObj));
 }
 
 } // namespace havel::modules

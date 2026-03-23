@@ -130,7 +130,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   static std::atomic<int> nextHotkeyId{1000};
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "Hotkey",
       HavelValue(BuiltinFunction([&hotkeyService](const std::vector<HavelValue> &args)
                                      -> HavelResult {
@@ -270,7 +270,7 @@ void registerHotkeyModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       })));
 
   // Register hotkey module
-  env.Define("hotkey", HavelValue(hotkeyObj));
+  // MIGRATED TO BYTECODE VM: env.Define("hotkey", HavelValue(hotkeyObj));
 }
 
 } // namespace havel::modules

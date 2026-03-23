@@ -2014,7 +2014,7 @@ void registerMapManagerModule(Environment &env,
       }));
 
   // Register mapmanager module
-  env.Define("mapmanager", HavelValue(mapManagerObj));
+  // MIGRATED TO BYTECODE VM: env.Define("mapmanager", HavelValue(mapManagerObj));
 }
 
 } // namespace havel::modules

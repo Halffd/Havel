@@ -116,7 +116,7 @@ void registerLauncherModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Register launcher module
-  env.Define("launcher", HavelValue(launcherObj));
+  // MIGRATED TO BYTECODE VM: env.Define("launcher", HavelValue(launcherObj));
 }
 
 } // namespace havel::modules

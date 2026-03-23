@@ -157,7 +157,7 @@ void registerTimerModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Register timer module
-  env.Define("timer", HavelValue(timerObj));
+  // MIGRATED TO BYTECODE VM: env.Define("timer", HavelValue(timerObj));
 }
 
 } // namespace havel::modules

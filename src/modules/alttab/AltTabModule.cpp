@@ -112,7 +112,7 @@ void registerAltTabModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Register altTab module
-  env.Define("altTab", HavelValue(altTabObj));
+  // MIGRATED TO BYTECODE VM: env.Define("altTab", HavelValue(altTabObj));
 }
 
 } // namespace havel::modules

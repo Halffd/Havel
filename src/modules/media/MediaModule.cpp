@@ -332,8 +332,8 @@ void registerMediaModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Register modules
-  env.Define("media", HavelValue(mediaObj));
-  env.Define("mpvcontroller", HavelValue(mpvObj));
+  // MIGRATED TO BYTECODE VM: env.Define("media", HavelValue(mediaObj));
+  // MIGRATED TO BYTECODE VM: env.Define("mpvcontroller", HavelValue(mpvObj));
 }
 
 } // namespace havel::modules

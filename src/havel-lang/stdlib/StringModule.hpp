@@ -23,7 +23,7 @@ void registerStringModule(Environment& env);
 
 // NEW: Register string module with VM's host bridge (VM-native)
 inline void registerStringModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     
     // Helper: convert BytecodeValue to string
     auto toString = [](const compiler::BytecodeValue& v) -> std::string {
@@ -197,18 +197,18 @@ inline void registerStringModuleVM(compiler::HostBridge& registry) {
     };
 
     // Register prototype methods for "string".method() syntax
-    bridge.context().vm.registerPrototypeMethod("String", "len", compiler::HostFunctionRef{.name = "string.len"});
-    bridge.context().vm.registerPrototypeMethod("String", "lower", compiler::HostFunctionRef{.name = "string.lower"});
-    bridge.context().vm.registerPrototypeMethod("String", "upper", compiler::HostFunctionRef{.name = "string.upper"});
-    bridge.context().vm.registerPrototypeMethod("String", "trim", compiler::HostFunctionRef{.name = "string.trim"});
-    bridge.context().vm.registerPrototypeMethod("String", "sub", compiler::HostFunctionRef{.name = "string.sub"});
-    bridge.context().vm.registerPrototypeMethod("String", "find", compiler::HostFunctionRef{.name = "string.find"});
-    bridge.context().vm.registerPrototypeMethod("String", "replace", compiler::HostFunctionRef{.name = "string.replace"});
-    bridge.context().vm.registerPrototypeMethod("String", "split", compiler::HostFunctionRef{.name = "string.split"});
-    bridge.context().vm.registerPrototypeMethod("String", "join", compiler::HostFunctionRef{.name = "string.join"});
-    bridge.context().vm.registerPrototypeMethod("String", "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
-    bridge.context().vm.registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
-    bridge.context().vm.registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
+    bridge.context().vm->registerPrototypeMethod("String", "len", compiler::HostFunctionRef{.name = "string.len"});
+    bridge.context().vm->registerPrototypeMethod("String", "lower", compiler::HostFunctionRef{.name = "string.lower"});
+    bridge.context().vm->registerPrototypeMethod("String", "upper", compiler::HostFunctionRef{.name = "string.upper"});
+    bridge.context().vm->registerPrototypeMethod("String", "trim", compiler::HostFunctionRef{.name = "string.trim"});
+    bridge.context().vm->registerPrototypeMethod("String", "sub", compiler::HostFunctionRef{.name = "string.sub"});
+    bridge.context().vm->registerPrototypeMethod("String", "find", compiler::HostFunctionRef{.name = "string.find"});
+    bridge.context().vm->registerPrototypeMethod("String", "replace", compiler::HostFunctionRef{.name = "string.replace"});
+    bridge.context().vm->registerPrototypeMethod("String", "split", compiler::HostFunctionRef{.name = "string.split"});
+    bridge.context().vm->registerPrototypeMethod("String", "join", compiler::HostFunctionRef{.name = "string.join"});
+    bridge.context().vm->registerPrototypeMethod("String", "startswith", compiler::HostFunctionRef{.name = "string.startswith"});
+    bridge.context().vm->registerPrototypeMethod("String", "endswith", compiler::HostFunctionRef{.name = "string.endswith"});
+    bridge.context().vm->registerPrototypeMethod("String", "includes", compiler::HostFunctionRef{.name = "string.includes"});
 
     // Register module globals (compiler already knows about methods from host_functions)
     bridge.options().host_global_names.insert("String");

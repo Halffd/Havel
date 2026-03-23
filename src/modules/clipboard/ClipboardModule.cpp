@@ -178,7 +178,7 @@ void registerClipboardModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI
       }));
 
   // Register clipboard module
-  env.Define("clipboard", HavelValue(clip));
+  // MIGRATED TO BYTECODE VM: env.Define("clipboard", HavelValue(clip));
 }
 
 } // namespace havel::modules

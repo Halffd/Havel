@@ -211,7 +211,7 @@ bool defineHostAlias(Environment &env, const std::string &alias,
     current = it->second;
   }
 
-  env.Define(alias, current);
+  // MIGRATED TO BYTECODE VM: env.Define(alias, current);
   return true;
 }
 
@@ -222,7 +222,7 @@ bool defineGlobalAlias(Environment &env, const std::string &alias,
   if (!val) {
     return false;
   }
-  env.Define(alias, *val);
+  // MIGRATED TO BYTECODE VM: env.Define(alias, *val);
   return true;
 }
 

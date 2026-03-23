@@ -82,7 +82,7 @@ void registerAudioModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // Register audio module
-  env.Define("audio", HavelValue(audioObj));
+  // MIGRATED TO BYTECODE VM: env.Define("audio", HavelValue(audioObj));
 }
 
 } // namespace havel::modules

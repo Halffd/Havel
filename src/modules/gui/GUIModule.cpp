@@ -332,7 +332,7 @@ void registerGUIModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // Register gui module
-  env.Define("gui", HavelValue(guiObj));
+  // MIGRATED TO BYTECODE VM: env.Define("gui", HavelValue(guiObj));
 }
 
 } // namespace havel::modules

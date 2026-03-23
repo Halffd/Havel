@@ -173,7 +173,7 @@ void registerHTTPModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
       }));
 
   // Register http module
-  env.Define("http", HavelValue(httpMod));
+  // MIGRATED TO BYTECODE VM: env.Define("http", HavelValue(httpMod));
 }
 
 } // namespace havel::modules

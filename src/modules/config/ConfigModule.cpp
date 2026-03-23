@@ -182,7 +182,7 @@ void registerConfigModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
   (*configObj)["display"] = createNestedConfig("Havel.display");
   (*configObj)["audio"] = createNestedConfig("Havel.audio");
 
-  env.Define("config", HavelValue(configObj));
+  // MIGRATED TO BYTECODE VM: env.Define("config", HavelValue(configObj));
 }
 
 } // namespace havel::modules

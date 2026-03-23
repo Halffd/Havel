@@ -20,10 +20,10 @@ void registerObjectModule(Environment& env);
 
 // NEW: Register object module with VM's host bridge (VM-native)
 inline void registerObjectModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     
     // Object.keys(obj) - Get array of keys (sorted)
-    bridge.options().host_functions["object.keys"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.keys"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.keys() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.keys() arg must be object");
         
@@ -41,7 +41,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.values(obj) - Get array of values (sorted by key)
-    bridge.options().host_functions["object.values"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.values"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.values() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.values() arg must be object");
         
@@ -61,7 +61,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.entries(obj) - Get array of [key, value] pairs
-    bridge.options().host_functions["object.entries"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.entries"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.entries() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.entries() arg must be object");
         
@@ -84,7 +84,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.has(obj, key) - Check if object has key
-    bridge.options().host_functions["object.has"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.has"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.has() requires object and key");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.has() first arg must be object");
         if (!std::holds_alternative<std::string>(args[1])) throw std::runtime_error("Object.has() second arg must be string");
@@ -95,7 +95,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.delete(obj, key) - Delete key from object
-    bridge.options().host_functions["object.delete"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.delete"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.size() < 2) throw std::runtime_error("Object.delete() requires object and key");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.delete() first arg must be object");
         if (!std::holds_alternative<std::string>(args[1])) throw std::runtime_error("Object.delete() second arg must be string");
@@ -106,7 +106,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.assign(target, source1, ...) - Copy properties from sources to target
-    bridge.options().host_functions["object.assign"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.assign"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.assign() requires at least target object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.assign() first arg must be object");
         
@@ -124,7 +124,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.freeze(obj) - Freeze object (prevent modifications)
-    bridge.options().host_functions["object.freeze"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.freeze"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.freeze() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.freeze() arg must be object");
         
@@ -134,7 +134,7 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
     
     // Object.seal(obj) - Seal object (prevent new properties)
-    bridge.options().host_functions["object.seal"] = [&vm](const std::vector<compiler::BytecodeValue>& args) {
+    bridge.options().host_functions["object.seal"] = [vm](const std::vector<compiler::BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.seal() requires object");
         if (!std::holds_alternative<compiler::ObjectRef>(args[0])) throw std::runtime_error("Object.seal() arg must be object");
         
@@ -144,14 +144,14 @@ inline void registerObjectModuleVM(compiler::HostBridge& registry) {
     };
 
     // Register prototype methods for {}.method() syntax
-    bridge.context().vm.registerPrototypeMethod("Object", "keys", compiler::HostFunctionRef{.name = "object.keys"});
-    bridge.context().vm.registerPrototypeMethod("Object", "values", compiler::HostFunctionRef{.name = "object.values"});
-    bridge.context().vm.registerPrototypeMethod("Object", "entries", compiler::HostFunctionRef{.name = "object.entries"});
-    bridge.context().vm.registerPrototypeMethod("Object", "has", compiler::HostFunctionRef{.name = "object.has"});
-    bridge.context().vm.registerPrototypeMethod("Object", "delete", compiler::HostFunctionRef{.name = "object.delete"});
-    bridge.context().vm.registerPrototypeMethod("Object", "assign", compiler::HostFunctionRef{.name = "object.assign"});
-    bridge.context().vm.registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "object.freeze"});
-    bridge.context().vm.registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "object.seal"});
+    bridge.context().vm->registerPrototypeMethod("Object", "keys", compiler::HostFunctionRef{.name = "object.keys"});
+    bridge.context().vm->registerPrototypeMethod("Object", "values", compiler::HostFunctionRef{.name = "object.values"});
+    bridge.context().vm->registerPrototypeMethod("Object", "entries", compiler::HostFunctionRef{.name = "object.entries"});
+    bridge.context().vm->registerPrototypeMethod("Object", "has", compiler::HostFunctionRef{.name = "object.has"});
+    bridge.context().vm->registerPrototypeMethod("Object", "delete", compiler::HostFunctionRef{.name = "object.delete"});
+    bridge.context().vm->registerPrototypeMethod("Object", "assign", compiler::HostFunctionRef{.name = "object.assign"});
+    bridge.context().vm->registerPrototypeMethod("Object", "freeze", compiler::HostFunctionRef{.name = "object.freeze"});
+    bridge.context().vm->registerPrototypeMethod("Object", "seal", compiler::HostFunctionRef{.name = "object.seal"});
 
     // Register module globals (compiler already knows about methods from host_functions)
     bridge.options().host_global_names.insert("Object");

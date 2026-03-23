@@ -17,7 +17,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
   static std::vector<std::shared_ptr<havel::Timeout>> activeTimeouts;
 
   // thread { ... } - Create a new thread
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "thread",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -40,7 +40,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
           })));
 
   // interval ms { ... } - Create a repeating timer
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "interval",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -67,7 +67,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
           })));
 
   // timeout ms { ... } - One-shot delayed execution
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "timeout",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -94,7 +94,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
           })));
 
   // Range type: start..end
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "Range",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -115,7 +115,7 @@ void registerConcurrencyModule(Environment &env, std::shared_ptr<IHostAPI>) {
           })));
 
   // Helper: first_existing file path
-  env.Define("firstExisting",
+  // MIGRATED TO BYTECODE VM: env.Define("firstExisting",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    for (const auto &arg : args) {

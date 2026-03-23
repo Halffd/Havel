@@ -723,7 +723,7 @@ void registerWindowQueryModule(Environment &env,
       }));
 
   // Register the module
-  env.Define("window", HavelValue(windowObj));
+  // MIGRATED TO BYTECODE VM: env.Define("window", HavelValue(windowObj));
 }
 
 } // namespace havel::modules

@@ -126,7 +126,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Full implementation requires interpreter context
   // =========================================================================
 
-  env.Define("spawn",
+  // MIGRATED TO BYTECODE VM: env.Define("spawn",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -149,7 +149,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                    return executeSpawnFunction(args[0], taskId);
                  })));
 
-  env.Define("await",
+  // MIGRATED TO BYTECODE VM: env.Define("await",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -170,7 +170,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Channel functions - Minimal stub implementation
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "channel",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
@@ -300,7 +300,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(channelObj);
       })));
 
-  env.Define("yield",
+  // MIGRATED TO BYTECODE VM: env.Define("yield",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 0) {
@@ -326,7 +326,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    * - Resolves with an array of results when all input promises resolve
    * - Rejects immediately when any input promise rejects
    */
-  env.Define("Promise.all",
+  // MIGRATED TO BYTECODE VM: env.Define("Promise.all",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -353,7 +353,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                    return HavelValue(HavelValue(resultArray));
                  })));
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "Promise.race",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -379,7 +379,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             return array->front();
           })));
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "Promise.allSettled",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
@@ -410,7 +410,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(HavelValue(resultArray));
       })));
 
-  env.Define("Promise.any",
+  // MIGRATED TO BYTECODE VM: env.Define("Promise.any",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -436,7 +436,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                    return array->front();
                  })));
 
-  env.Define("Promise.resolve",
+  // MIGRATED TO BYTECODE VM: env.Define("Promise.resolve",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -446,7 +446,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
                    return args[0];
                  })));
 
-  env.Define("Promise.reject",
+  // MIGRATED TO BYTECODE VM: env.Define("Promise.reject",
              HavelValue(BuiltinFunction(
                  [](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.size() != 1) {
@@ -468,7 +468,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    *
    * Returns a promise that resolves after the specified delay
    */
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "sleep",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -503,7 +503,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    * - cancel(): Method to request cancellation
    * - isCancellationRequested: Property to check if cancellation was requested
    */
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "CancellationTokenSource",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
@@ -540,7 +540,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
    *
    * Helper function to check a token for cancellation
    */
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "throwIfCancellationRequested",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {
@@ -579,7 +579,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
             return HavelValue(nullptr);
           })));
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "withTimeout",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &args)
                                          -> HavelResult {
@@ -611,7 +611,7 @@ void registerAsyncModule(Environment &env, std::shared_ptr<IHostAPI>) {
         return HavelValue(nullptr);
       })));
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "withCancellation",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &args) -> HavelResult {

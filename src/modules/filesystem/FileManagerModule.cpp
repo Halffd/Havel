@@ -316,7 +316,7 @@ void registerFileManagerModule(Environment &env, std::shared_ptr<IHostAPI>) {
       }));
 
   // Register filemanager module
-  env.Define("filemanager", HavelValue(filemanagerObj));
+  // MIGRATED TO BYTECODE VM: env.Define("filemanager", HavelValue(filemanagerObj));
 }
 
 } // namespace havel::modules

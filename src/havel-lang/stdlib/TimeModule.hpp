@@ -24,7 +24,7 @@ void registerTimeModule(Environment& env);
 
 // NEW: Register time module with VM's host bridge (VM-native)
 inline void registerTimeModuleVM(compiler::HostBridge& registry) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // time.now() - Get current timestamp (seconds since epoch)

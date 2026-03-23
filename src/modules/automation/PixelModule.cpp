@@ -343,7 +343,7 @@ void registerPixelModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   // Register pixel and image modules
   (*pixelObj)["image"] = HavelValue(imageObj);
-  env.Define("pixel", HavelValue(pixelObj));
+  // MIGRATED TO BYTECODE VM: env.Define("pixel", HavelValue(pixelObj));
 }
 
 } // namespace havel::modules

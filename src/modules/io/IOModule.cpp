@@ -538,26 +538,26 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
 
   // Register io and mouse modules
   (*ioObj)["mouse"] = HavelValue(mouseObj);
-  env.Define("io", HavelValue(ioObj));
+  // MIGRATED TO BYTECODE VM: env.Define("io", HavelValue(ioObj));
 
   // =========================================================================
   // Global convenience aliases (fast path for common operations)
   // =========================================================================
 
   // Mouse operations
-  env.Define("click", (*mouseObj)["click"]);
-  env.Define("doubleClick", (*mouseObj)["doubleClick"]);
-  env.Define("mousePress", (*mouseObj)["press"]);
-  env.Define("mouseRelease", (*mouseObj)["release"]);
-  env.Define("mouseMove", (*mouseObj)["move"]);
-  env.Define("mouseMoveRel", (*mouseObj)["moveRel"]);
-  env.Define("scroll", (*mouseObj)["scroll"]);
+  // MIGRATED TO BYTECODE VM: env.Define("click", (*mouseObj)["click"]);
+  // MIGRATED TO BYTECODE VM: env.Define("doubleClick", (*mouseObj)["doubleClick"]);
+  // MIGRATED TO BYTECODE VM: env.Define("mousePress", (*mouseObj)["press"]);
+  // MIGRATED TO BYTECODE VM: env.Define("mouseRelease", (*mouseObj)["release"]);
+  // MIGRATED TO BYTECODE VM: env.Define("mouseMove", (*mouseObj)["move"]);
+  // MIGRATED TO BYTECODE VM: env.Define("mouseMoveRel", (*mouseObj)["moveRel"]);
+  // MIGRATED TO BYTECODE VM: env.Define("scroll", (*mouseObj)["scroll"]);
 
   // =========================================================================
   // Global window information (for use in when blocks and conditions)
   // =========================================================================
 
-  env.Define("title", HavelValue(BuiltinFunction(
+  // MIGRATED TO BYTECODE VM: env.Define("title", HavelValue(BuiltinFunction(
                           [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
                             // Note: window title/class still need IO for now
                             // These are legacy - should move to window service
@@ -565,14 +565,14 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
                             return HavelValue(io->GetActiveWindowTitle());
                           })));
 
-  env.Define("class", HavelValue(BuiltinFunction(
+  // MIGRATED TO BYTECODE VM: env.Define("class", HavelValue(BuiltinFunction(
                           [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
                             if (!io) return HavelValue("");
                             return HavelValue(io->GetActiveWindowClass());
                           })));
 
   // Get current active window executable name
-  env.Define("exe", HavelValue(BuiltinFunction(
+  // MIGRATED TO BYTECODE VM: env.Define("exe", HavelValue(BuiltinFunction(
                         [&ioService, io](const std::vector<HavelValue> &) -> HavelResult {
                           if (!io) return HavelValue("");
                           return HavelValue(WindowManager::getProcessName(
@@ -580,7 +580,7 @@ void registerIOModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
                         })));
 
   // Global suspend/resume aliases (AHK-style)
-  env.Define("suspend",
+  // MIGRATED TO BYTECODE VM: env.Define("suspend",
              HavelValue(BuiltinFunction(
                  [&ioService](const std::vector<HavelValue> &args) -> HavelResult {
                    if (args.empty()) {

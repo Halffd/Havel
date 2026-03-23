@@ -140,7 +140,7 @@ void registerProcessModule(Environment &env,
       }));
 
   // Register process module
-  env.Define("process", HavelValue(proc));
+  // MIGRATED TO BYTECODE VM: env.Define("process", HavelValue(proc));
 }
 
 } // namespace havel::modules

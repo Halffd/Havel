@@ -203,7 +203,7 @@ void registerFFIModule(Environment &env) {
         }
       });
 
-  env.Define("ffi", HavelValue(ffiObj));
+  // MIGRATED TO BYTECODE VM: env.Define("ffi", HavelValue(ffiObj));
 }
 
 } // namespace havel::modules::ffi

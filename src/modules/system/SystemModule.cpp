@@ -57,7 +57,7 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(arr);
       }));
 
-  env.Define("system.cpu", HavelValue(cpuObj));
+  // MIGRATED TO BYTECODE VM: env.Define("system.cpu", HavelValue(cpuObj));
 
   // =========================================================================
   // Memory information
@@ -95,7 +95,7 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(static_cast<double>(MemoryInfo::swapFree()));
       }));
 
-  env.Define("system.memory", HavelValue(memObj));
+  // MIGRATED TO BYTECODE VM: env.Define("system.memory", HavelValue(memObj));
 
   // =========================================================================
   // OS information
@@ -133,7 +133,7 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(OSInfo::uptime());
       }));
 
-  env.Define("system.os", HavelValue(osObj));
+  // MIGRATED TO BYTECODE VM: env.Define("system.os", HavelValue(osObj));
 
   // =========================================================================
   // Temperature information
@@ -168,7 +168,7 @@ void registerSystemModule(Environment &env, std::shared_ptr<IHostAPI> hostAPI) {
         return HavelValue(arr);
       }));
 
-  env.Define("system.temperature", HavelValue(tempObj));
+  // MIGRATED TO BYTECODE VM: env.Define("system.temperature", HavelValue(tempObj));
 }
 
 } // namespace havel::modules

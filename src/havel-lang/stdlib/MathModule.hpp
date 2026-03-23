@@ -21,7 +21,7 @@ void registerMathModule(Environment& env);
 
 // NEW: Register math module with VM's host bridge (VM-native)
 inline void registerMathModuleVM(compiler::HostBridge& bridge) {
-    auto& vm = bridge.context().vm;
+    auto* vm = bridge.context().vm;
     auto& options = bridge.options();
     
     // Helper: convert BytecodeValue to double

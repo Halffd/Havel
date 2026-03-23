@@ -16,7 +16,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Display detector
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "detectDisplay",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &)
                                          -> HavelResult {
@@ -51,7 +51,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Monitor config detector
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "detectMonitorConfig",
       HavelValue(BuiltinFunction([](const std::vector<HavelValue> &)
                                          -> HavelResult {
@@ -86,7 +86,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // Window manager detector
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "detectWindowManager",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &) -> HavelResult {
@@ -107,7 +107,7 @@ void registerDetectorModule(Environment &env, std::shared_ptr<IHostAPI>) {
   // System detector (OS, desktop environment, etc.)
   // =========================================================================
 
-  env.Define(
+  // MIGRATED TO BYTECODE VM: env.Define(
       "detectSystem",
       HavelValue(BuiltinFunction(
           [](const std::vector<HavelValue> &) -> HavelResult {

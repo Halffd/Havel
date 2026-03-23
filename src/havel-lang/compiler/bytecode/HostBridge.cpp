@@ -8,9 +8,10 @@ namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext& ctx)
     : ctx_(&ctx) {
-  if (!ctx_->isValid()) {
-    throw std::runtime_error("HostBridge: HostContext is invalid (io is null)");
-  }
+  // Note: io is optional for pure script execution mode
+  // if (!ctx_->isValid()) {
+  //   throw std::runtime_error("HostBridge: HostContext is invalid (io is null)");
+  // }
 }
 
 HostBridge::~HostBridge() {

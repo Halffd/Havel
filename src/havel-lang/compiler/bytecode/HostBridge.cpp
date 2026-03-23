@@ -98,9 +98,9 @@ BytecodeValue HostBridge::handleMouseClick(const std::vector<BytecodeValue> &arg
 
 BytecodeValue HostBridge::handleGetMousePosition(const std::vector<BytecodeValue> &args) {
   (void)args;
-  auto obj = static_cast<VM*>(ctx_->vm)->createHostObject();
-  static_cast<VM*>(ctx_->vm)->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(0)));
-  static_cast<VM*>(ctx_->vm)->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(0)));
+  auto obj = ctx_->vm->createHostObject();
+  ctx_->vm->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(0)));
+  ctx_->vm->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(0)));
   return BytecodeValue(obj);
 }
 
@@ -203,21 +203,21 @@ CallbackId HostBridge::registerCallback(const BytecodeValue &closure) {
   if (!ctx_->vm) {
     throw std::runtime_error("VM not available for callback registration");
   }
-  return static_cast<VM*>(ctx_->vm)->registerCallback(closure);
+  return ctx_->vm->registerCallback(closure);
 }
 
 BytecodeValue HostBridge::invokeCallback(CallbackId id, std::span<BytecodeValue> args) {
   if (!ctx_->vm) {
     throw std::runtime_error("VM not available for callback invocation");
   }
-  return static_cast<VM*>(ctx_->vm)->invokeCallback(id, args);
+  return ctx_->vm->invokeCallback(id, args);
 }
 
 void HostBridge::releaseCallback(CallbackId id) {
   if (!ctx_->vm) {
     throw std::runtime_error("VM not available for callback release");
   }
-  static_cast<VM*>(ctx_->vm)->releaseCallback(id);
+  ctx_->vm->releaseCallback(id);
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext& ctx) {

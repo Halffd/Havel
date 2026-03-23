@@ -23,6 +23,8 @@
 
 namespace havel {
 
+namespace compiler { class VM; }
+
 
 // Forward declaration
 
@@ -76,7 +78,7 @@ struct Capability {
  */
 struct HostContext {
     // VM infrastructure (non-owning - only high-level systems use this)
-    void* vm = nullptr;
+    class compiler::VM* vm = nullptr;
     
     // Core services (non-owning pointers)
     class IO* io = nullptr;

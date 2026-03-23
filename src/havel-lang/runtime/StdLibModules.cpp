@@ -1,5 +1,5 @@
-// StdLibModules.cpp - STUBBED (lambda mangling issue)
-// Stdlib modules moved to separate compilation units to avoid GCC lambda mangling
+// StdLibModules.cpp - STUBBED
+// Stdlib modules will be implemented properly later
 
 #include "../compiler/bytecode/HostBridge.hpp"
 
@@ -7,11 +7,11 @@ namespace havel {
 
 /**
  * Register stdlib modules with VM (VM-native, no Environment)
- * STUBBED - lambda mangling requires separate compilation units
+ * Currently stubbed - stdlib needs proper VM integration
  */
 void registerStdLibWithVM(compiler::HostBridge&) {
-    // STUBBED - stdlib modules need to be compiled as separate translation units
-    // to avoid GCC lambda mangling conflicts
+    // STUBBED - stdlib modules need proper VM integration
+    // Basic functions (print, sleep, type conversions) are registered by VM itself
 }
 
 } // namespace havel

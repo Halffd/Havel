@@ -1,22 +1,11 @@
 /*
- * ScreenshotModule.cpp
- *
- * Screenshot module for Havel language.
- * Host binding - connects language to ScreenshotManager.
+ * ScreenshotModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "gui/ScreenshotManager.hpp"
-#include <QBuffer>
-#include <QGuiApplication>
-#include <QImage>
-#include <QScreen>
+#include "ScreenshotModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

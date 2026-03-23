@@ -1,18 +1,11 @@
 /*
- * LauncherModule.cpp
- *
- * Process launching module for Havel language.
- * Host binding - connects language to Launcher.
+ * LauncherModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "process/Launcher.hpp"
+#include "LauncherModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

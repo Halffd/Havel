@@ -1,20 +1,11 @@
 /*
- * ProcessModule.cpp
- *
- * Process management module for Havel language.
+ * ProcessModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "ProcessModule.hpp"
-#include <algorithm>
-#include <filesystem>
-#include <fstream>
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

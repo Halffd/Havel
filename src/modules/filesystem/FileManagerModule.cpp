@@ -1,19 +1,11 @@
 /*
- * FileManagerModule.cpp
- *
- * Advanced file operations module for Havel language.
- * Host binding - connects language to FileManager.
+ * FileManagerModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "FileManagerModule.hpp"
-#include "fs/FileManager.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

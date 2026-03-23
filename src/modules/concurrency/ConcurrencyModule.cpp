@@ -1,19 +1,11 @@
 /*
- * ConcurrencyModule.cpp
- *
- * Thread, interval, timeout, and range support for Havel language.
+ * ConcurrencyModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "ConcurrencyModule.hpp"
-#include "../../havel-lang/runtime/concurrency/Thread.hpp"
-#include <memory>
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

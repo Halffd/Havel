@@ -1,19 +1,11 @@
 /*
- * AudioModule.cpp
- *
- * Audio management module for Havel language.
- * Thin binding layer - delegates to AudioService.
+ * AudioModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "../../host/ServiceRegistry.hpp"
-#include "../../host/audio/AudioService.hpp"
+#include "AudioModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

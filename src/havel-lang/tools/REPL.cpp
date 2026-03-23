@@ -44,7 +44,7 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   auto ctx = havel::createHostContext(hostAPI);
   
   // Create HostBridge with injected context
-  hostBridge_ = compiler::createHostBridge(*vm_, std::move(ctx));
+  hostBridge_ = compiler::createHostBridge(ctx);
   hostBridge_->install();
 
   initialized = true;

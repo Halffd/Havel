@@ -22,7 +22,7 @@ void registerUtilityModule(Environment& env);
 
 // NEW: Register utility module with VM's host bridge (VM-native)
 #include "../compiler/bytecode/VM.hpp"
-void registerUtilityModuleVM(compiler::HostBridge& bridge);
+void registerModule(compiler::HostBridge& bridge);
 
 // Implementation in UtilityModule.cpp
 

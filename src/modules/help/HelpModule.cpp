@@ -1,19 +1,11 @@
 /*
- * HelpModule.cpp
- *
- * Help documentation module for Havel language.
+ * HelpModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "HelpModule.hpp"
-#include <iostream>
-#include <sstream>
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

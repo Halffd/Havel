@@ -1,10 +1,10 @@
 #include "HavelLauncher.hpp"
 #include "gui/HavelApp.hpp"
 #include "havel-lang/common/Debug.hpp"
+#include "havel-lang/compiler/bytecode/HostBridge.hpp"
+#include "havel-lang/compiler/bytecode/Pipeline.hpp"
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
-#include "havel-lang/compiler/bytecode/Pipeline.hpp"
-#include "havel-lang/compiler/bytecode/HostBridge.hpp"
 #include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/tools/REPL.hpp"
 #include "utils/Logger.hpp"
@@ -78,7 +78,7 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
       cfg.debugBytecode = true;
     } else if (arg == "--diff" || arg == "-diff") {
       cfg.diffBytecode = true;
-      cfg.debugBytecode = true;  // --diff implies --debug-bytecode
+      cfg.debugBytecode = true; // --diff implies --debug-bytecode
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
@@ -164,7 +164,8 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
       return 1;
     }
 
-    // Load and execute startup script if specified (using bytecode VM by default)
+    // Load and execute startup script if specified (using bytecode VM by
+    // default)
     if (!cfg.scriptFile.empty()) {
       std::ifstream file(cfg.scriptFile);
       if (file) {
@@ -174,8 +175,10 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
 
 #ifdef ENABLE_HAVEL_LANG
         // Try bytecode VM first, fall back to AST interpreter
-        auto *bytecodeVM = reinterpret_cast<havel::compiler::VM*>(havelApp.getBytecodeVM());
-        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge*>(havelApp.getHostBridge());
+        auto *bytecodeVM =
+            reinterpret_cast<havel::compiler::VM *>(havelApp.getBytecodeVM());
+        auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
+            havelApp.getHostBridge());
 
         if (bytecodeVM && hostBridge) {
           info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
@@ -192,33 +195,36 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
             if (cfg.diffBytecode) {
               std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
               if (prevSnapshot) {
-                std::string prevContent((std::istreambuf_iterator<char>(prevSnapshot)),
-                                        std::istreambuf_iterator<char>());
+                std::string prevContent(
+                    (std::istreambuf_iterator<char>(prevSnapshot)),
+                    std::istreambuf_iterator<char>());
                 // Will compare after execution
               }
             }
           }
-          
+
           try {
-            auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
-            
+            auto vmResult =
+                havel::compiler::runBytecodePipeline(code, "__main__", options);
+
             // Print bytecode debug info if requested
             if (cfg.debugBytecode && !vmResult.snapshot.bytecode.empty()) {
               info("=== Bytecode Debug Output ===");
               info("{}", vmResult.snapshot.bytecode);
-              
+
               // Save snapshot for diff comparison
               std::ofstream snapshot("/tmp/havel-bytecode/current.txt");
               if (snapshot) {
                 snapshot << vmResult.snapshot.bytecode;
               }
-              
+
               // Compare with previous if --diff requested
               if (cfg.diffBytecode) {
                 std::ifstream prevSnapshot("/tmp/havel-bytecode/previous.txt");
                 if (prevSnapshot) {
-                  std::string prevContent((std::istreambuf_iterator<char>(prevSnapshot)),
-                                          std::istreambuf_iterator<char>());
+                  std::string prevContent(
+                      (std::istreambuf_iterator<char>(prevSnapshot)),
+                      std::istreambuf_iterator<char>());
                   if (prevContent != vmResult.snapshot.bytecode) {
                     info("=== BYTECODE DIFF ===");
                     info("Bytecode has changed from previous run");
@@ -233,13 +239,14 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
                 }
               }
             }
-            
+
             info("Bytecode execution completed successfully");
-          } catch (const std::exception& e) {
+          } catch (const std::exception &e) {
             error("Bytecode execution error: {}", e.what());
           }
         }
-        // Note: AST interpreter removed - bytecode VM is the only execution engine
+        // Note: AST interpreter removed - bytecode VM is the only execution
+        // engine
 #endif
       } else {
         error("Cannot open startup script: {}", cfg.scriptFile);
@@ -300,7 +307,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     // Execute with bytecode VM through HavelApp
     auto *bytecodeVM = havelApp.getBytecodeVM();
     auto *hostBridge = havelApp.getHostBridge();
-    
+
     if (!bytecodeVM || !hostBridge) {
       error("Bytecode VM not available");
       return 1;
@@ -310,9 +317,10 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       havel::compiler::PipelineOptions options = hostBridge->options();
       options.vm_override = bytecodeVM;
 
-      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+      auto vmResult =
+          havel::compiler::runBytecodePipeline(code, "__main__", options);
       info("Startup script executed successfully with bytecode VM");
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       error("Startup script error: {}", e.what());
       return 1;
     }
@@ -383,10 +391,13 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
     try {
       // Create minimal context (no services needed for pure script execution)
       havel::HostContext ctx;
-      
+
       // Create VM
       havel::compiler::VM tempVm;
-      
+
+      // Assign VM to context so HostBridge can access it
+      ctx.vm = &tempVm;
+
       // Create HostBridge with minimal context
       auto bridge = havel::compiler::createHostBridge(ctx);
       bridge->install();
@@ -399,11 +410,13 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 
       // Copy VM's host functions to options for compiler and execution
       // This makes built-in functions (toInt, toFloat, etc.) available
-      for (const auto& [name, fn] : tempVm.getHostFunctions()) {
+      for (const auto &[name, fn] : tempVm.getHostFunctions()) {
         options.host_functions[name] = fn;
       }
-      
-      // Add VM's function names to host_global_names so compiler knows about them
+
+      // Add VM's function names to host_global_names so compiler knows about
+      // them
+
       options.host_global_names.insert("int");
       options.host_global_names.insert("num");
       options.host_global_names.insert("str");
@@ -412,17 +425,18 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       options.host_global_names.insert("sleep_ms");
       options.host_global_names.insert("system.gc");
       options.host_global_names.insert("system_gc");
-      
+
       // Use the same VM for execution (so it has all the registered functions)
       options.vm_override = &tempVm;
-      
+
       // Enable bytecode debug output if requested
       options.write_snapshot_artifact = cfg.debugBytecode;
       if (cfg.debugBytecode) {
         options.snapshot_dir = "/tmp/havel-bytecode";
       }
 
-      auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+      auto vmResult =
+          havel::compiler::runBytecodePipeline(code, "__main__", options);
 
       // Print bytecode debug info if requested
       if (cfg.debugBytecode && vmResult.snapshot.bytecode.empty() == false) {
@@ -436,20 +450,19 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       bridge->shutdown();
 
       return 0;
-    } catch (const std::exception& e) {
+    } catch (const std::exception &e) {
       error("Bytecode error: {}", e.what());
       return 1;
     }
   }
-
 
   // Bytecode VM not available - error
   error("Bytecode VM not available");
   return 1;
 }
 
-int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &,
-                                                 int, char *[]) {
+int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &, int,
+                                                 char *[]) {
   // Interpreter removed - REPL not available
   error("REPL mode not available - interpreter removed");
   error("Use --run mode for bytecode VM execution instead");
@@ -458,7 +471,8 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &,
 
 void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --debug-bytecode, -dbc  Enable bytecode debugging\n";
-  std::cout << "  --diff              Compare bytecode with previous run (implies -dbc)\n";
+  std::cout << "  --diff              Compare bytecode with previous run "
+               "(implies -dbc)\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";
   std::cout << "  --repl, -r          Start interactive REPL (minimal mode)\n";
   std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
@@ -496,3 +510,6 @@ int havel::init::HavelLauncher::runCli(int, char *[]) {
   error("CLI not available - interpreter removed");
   return 1;
 }
+
+// DEBUG
+#include <iostream>

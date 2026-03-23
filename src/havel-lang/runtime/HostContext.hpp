@@ -80,6 +80,10 @@ struct HostContext {
     // VM infrastructure (non-owning - only high-level systems use this)
     class compiler::VM* vm = nullptr;
     
+    // Reference accessor - VM is always present when HostContext is used
+    compiler::VM& getVM() { return *vm; }
+    const compiler::VM& getVM() const { return *vm; }
+    
     // Core services (non-owning pointers)
     class IO* io = nullptr;
     class WindowManager* windowManager = nullptr;

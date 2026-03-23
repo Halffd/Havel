@@ -21,7 +21,7 @@ namespace havel::stdlib {
 void registerMathModule(Environment& env);
 
 // NEW: Register math module with VM's host bridge (VM-native)
-void registerMathModuleVM(compiler::HostBridge& bridge);
+void registerModule(compiler::HostBridge& bridge);
 
 // Implementation in MathModule.cpp
 

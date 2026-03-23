@@ -1,18 +1,11 @@
 /*
- * MediaModule.cpp
- *
- * Media control module for Havel language.
- * Host binding - connects language to MPVController via HavelApp.
+ * MediaModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "gui/HavelApp.hpp"
+#include "MediaModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

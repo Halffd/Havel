@@ -1,18 +1,11 @@
 /*
- * PixelModule.cpp
- *
- * Pixel and image recognition module for Havel language.
- * Host binding - connects language to PixelAutomation.
+ * PixelModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "core/automation/PixelAutomation.hpp"
+#include "PixelModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

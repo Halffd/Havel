@@ -1,20 +1,11 @@
 /*
- * ConfigModule.cpp
- *
- * Config module for Havel language.
- * Exposes config.* API for scripts with nested access support.
+ * ConfigModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "ConfigModule.hpp"
-#include "../../core/ConfigManager.hpp"
-#include <memory>
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

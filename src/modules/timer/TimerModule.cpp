@@ -1,19 +1,11 @@
 /*
- * TimerModule.cpp
- *
- * Timer module for Havel language.
- * Uses existing TimerManager from src/utils/Timer.hpp
+ * TimerModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "TimerModule.hpp"
-#include "utils/Timer.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

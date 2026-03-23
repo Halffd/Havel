@@ -486,3 +486,13 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --diff                  Compare bytecode with previous run\n";
   std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
 } // namespace havel::init
+// STUBBED - interpreter removed
+int havel::init::HavelLauncher::runRepl(const LaunchConfig &) {
+  error("REPL not available - interpreter removed");
+  return 1;
+}
+
+int havel::init::HavelLauncher::runCli(int, char *[]) {
+  error("CLI not available - interpreter removed");
+  return 1;
+}

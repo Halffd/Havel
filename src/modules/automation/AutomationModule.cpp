@@ -1,19 +1,11 @@
 /*
- * AutomationModule.cpp
- *
- * Automation module for Havel language.
- * Host binding - connects language to AutomationManager.
+ * AutomationModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "core/automation/AutomationManager.hpp"
-#include "gui/HavelApp.hpp"
+#include "AutomationModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

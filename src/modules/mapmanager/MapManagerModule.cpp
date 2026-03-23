@@ -1,27 +1,11 @@
 /*
- * MapManagerModule.cpp
- *
- * Map Manager module for Havel language.
- * Host binding - connects language to MapManager.
+ * MapManagerModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "MapManagerModule.hpp"
-#include "core/IO.hpp"
-#include "core/io/Device.hpp"
-#include "core/io/MapManager.hpp"
-#include <algorithm>
-#include <chrono>
-#include <spdlog/spdlog.h>
 
 namespace havel::modules {
 
-// Static instance - matches the pattern in Interpreter.cpp
-static std::unique_ptr<MapManager> coreMapManager;
-
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

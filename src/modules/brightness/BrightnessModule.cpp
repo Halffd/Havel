@@ -1,19 +1,11 @@
 /*
- * BrightnessModule.cpp
- *
- * Brightness management module for Havel language.
- * Thin binding layer - delegates to BrightnessService.
+ * BrightnessModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
-#include "../../host/ServiceRegistry.hpp"
-#include "../../host/brightness/BrightnessService.hpp"
+#include "BrightnessModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

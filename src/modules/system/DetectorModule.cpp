@@ -1,20 +1,11 @@
 /*
- * DetectorModule.cpp
- *
- * System detection module for Havel language.
- * Host binding - connects language to DisplayManager and WindowManagerDetector.
+ * DetectorModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "DetectorModule.hpp"
-#include "core/DisplayManager.hpp"
-#include "window/WindowManagerDetector.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

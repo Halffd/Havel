@@ -1,19 +1,11 @@
 /*
- * BrowserModule.cpp
- *
- * Browser automation module for Havel language.
- * Provides browser control via Chrome DevTools Protocol.
+ * BrowserModule.cpp - STUBBED (interpreter removed)
+ * Module requires migration to bytecode VM
  */
 #include "BrowserModule.hpp"
-#include "core/browser/BrowserModule.hpp"
 
 namespace havel::modules {
 
-void registerModuleStub() {
-    // STUBBED FOR BYTECODE VM MIGRATION
-    // env removed
-    // hostAPI removed
-
-}
+// STUBBED - Module requires migration to bytecode VM
 
 } // namespace havel::modules

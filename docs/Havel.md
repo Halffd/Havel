@@ -442,12 +442,8 @@ app.enableReload()
 print("Auto-reload enabled for: " + app.getScriptPath())
 ```
 
-### Configuration Block Enhancements
-
-Config blocks now support both `=` and `:` as separators, and nested blocks for hierarchical configuration:
-
+### Configuration Block
 ```havel
-// Using = separator (recommended)
 config {
     debug = true
     logKeys = true
@@ -465,29 +461,23 @@ config {
         prefix = "ctrl+alt"
     }
 }
-
-// Using : separator (legacy support)
-config {
-    debug: true
-    window: {
-        monitoring: true
-    }
-}
 ```
 
-**Config Key Hierarchy:**
+**Config Keys:**
 - `Havel.debug = true`
-- `Havel.logKeys = true`
-- `Havel.window.monitoring = true`
-- `Havel.window.printWindows = false`
-- `Havel.hotkeys.enableGlobal = true`
+- `Havel.io.log = true`
+- `Havel.io.evdev = true`
+- `Havel.mouse.log = true`
+- `Havel.window.monitor = true`
+- `Havel.window.log = false`
+- `Havel.hotkey.conditional = true`
 
 **Accessing Config Values:**
 ```havel
 // Config values are stored with Havel. prefix
 use config
 debugMode = config.get("Havel.debug")
-windowMonitoring = config.get("Havel.window.monitoring")
+windowMonitoring = config.get("Havel.window.monitor")
 ```
 
 ## Standard Library Modules
@@ -669,18 +659,18 @@ Havel allows overriding both built-in functions and module functions to provide 
 
 ```havel
 // Override built-in function directly
-function abs(x) {
-    return "custom abs: " + x;
+fn abs(x) {
+    "custom abs: " + x;
 }
 
 // Override module function
-function math.abs(x) {
-    return "custom math.abs: " + x;
+fn math.abs(x) {
+    "custom math.abs: " + x;
 }
 
 // Override with different signature
-function math.sin(x, y) {
-    return "custom sin with 2 args: " + x + ", " + y;
+fn math.sin(x, y) {
+    "custom sin with 2 args: " + x + ", " + y;
 }
 ```
 
@@ -938,9 +928,7 @@ window.list          // List all windows
 window.focus(name)   // Focus specific window
 window.min()         // Minimize window
 window.max()         // Maximize window
-window.getMonitors() // Get array of monitor info objects
-window.getMonitorArea() // Get combined area of all monitors
-window.groups()   // Get all window group names
+window.groups()      // Get all window group names
 window.groupGet(group) // Get windows in group
 window.inGroup(title, group) // Check if window in group
 window.findInGroup(group) // Find first window in group
@@ -1478,9 +1466,9 @@ Inside hotkey blocks, you can use implicit input commands without the `>` prefix
 
 **Example: Complex Input Sequence**
 ```havel
-^!t => {
-    > "test@example.com" :250 > {Tab} "password123" :500 > {Enter}
-    > m(100, 200) lmb :100 > r(50, 0)
+^!t => {         
+    > "test@example.com" :250 {Tab} "password123" :500 {Enter}
+    > m(100, 200) lmb :100 r(50, 0)
 }
 ```
 
@@ -1529,13 +1517,15 @@ arr.sortByKey("name", (a, b) => b > a)
 arr.sortByKey("age", (a, b) => b - a)  // Descending by age
 ```
 
-### Monitor Methods
+### Display module
+
+#### Monitor Methods
 
 Get information about connected monitors:
 
 ```havel
 // Get all monitors
-let monitors = display.getMonitors()
+let monitors = display.monitors()
 for mon in monitors {
     print("Monitor: " + mon.name)
     print("  Position: (" + mon.x + ", " + mon.y + ")")
@@ -1544,7 +1534,7 @@ for mon in monitors {
 }
 
 // Get combined area of all monitors
-let area = display.getMonitorArea()
+let area = display.monitorArea()
 print("Total desktop area: " + area.width + "x" + area.height)
 print("Bounding box: (" + area.x + ", " + area.y + ")")
 ```
@@ -1558,13 +1548,13 @@ print("Bounding box: (" + area.x + ", " + area.y + ")")
 **Example: Multi-Monitor Setup**
 ```havel
 // Two monitors: 1366x768 at (0, 312) + 1920x1080 at (1366, 0)
-let monitors = display.getMonitors()
+let monitors = display.monitors()
 // => [
 //   {name: "DVI-D-0", x: 0, y: 312, width: 1366, height: 768, isPrimary: false},
 //   {name: "HDMI-0", x: 1366, y: 0, width: 1920, height: 1080, isPrimary: true}
 // ]
 
-let area = display.getMonitorArea()
+let area = display.monitorArea()
 // => {x: 0, y: 0, width: 3286, height: 1080}
 ```
 
@@ -1907,7 +1897,7 @@ str(3.14)     // "3.14"
 list(1, 2, 3)      // [1, 2, 3]
 list(existingArr)  // Copy array
 tuple(1, 2, 3)     // Fixed-size list
-set_(1, 2, 2, 3)   // [1, 2, 3] (unique)
+set(1, 2, 2, 3)   // [1, 2, 3] (unique)
 ```
 
 ### approx() - Fuzzy Float Comparison

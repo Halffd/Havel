@@ -119,7 +119,7 @@ private:
 };
 
 /**
- * MediaBridge - Audio and brightness control
+ * MediaBridge - Media playback control
  */
 class MediaBridge : public BridgeModule {
 public:
@@ -128,15 +128,17 @@ public:
 
 private:
   const HostContext *ctx_;
-  static BytecodeValue handleAudioGetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleAudioSetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleAudioToggleMute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleAudioSetMute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleAudioIsMuted(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleBrightnessGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleBrightnessSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleBrightnessGetTemp(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleBrightnessSetTemp(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaPlayPause(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaPause(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaStop(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaNext(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaPrevious(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaGetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaSetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaGetActivePlayer(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaSetActivePlayer(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMediaGetAvailablePlayers(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**
@@ -216,6 +218,44 @@ private:
   static BytecodeValue handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleTextChunkerClear(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * NetworkBridge - Network operations
+ */
+class NetworkBridge : public BridgeModule {
+public:
+  explicit NetworkBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleNetworkGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleNetworkPost(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleNetworkIsOnline(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleNetworkGetExternalIp(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * AppBridge - Application and system info
+ */
+class AppBridge : public BridgeModule {
+public:
+  explicit AppBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleAppGetName(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetVersion(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetOS(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetHostname(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetUsername(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetHomeDir(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetCpuCores(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppGetEnv(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppSetEnv(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAppOpenUrl(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 } // namespace havel::compiler

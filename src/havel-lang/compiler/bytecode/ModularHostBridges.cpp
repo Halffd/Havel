@@ -18,6 +18,9 @@
 #include "../../../host/screenshot/ScreenshotService.hpp"
 #include "../../../host/window/WindowService.hpp"
 #include "../../../host/window/AltTabService.hpp"
+#include "../../../host/media/MediaService.hpp"
+#include "../../../host/network/NetworkService.hpp"
+#include "../../../host/app/AppService.hpp"
 #include "../../../window/WindowManager.hpp"
 
 #include <QClipboard>
@@ -623,185 +626,6 @@ BytecodeValue InputBridge::handleAltTabGetWindows(const std::vector<BytecodeValu
 }
 
 // ============================================================================
-// MediaBridge Implementation
-// ============================================================================
-
-void MediaBridge::install(PipelineOptions &options) {
-  options.host_functions["audio.getVolume"] = [ctx = ctx_](const auto &args) {
-    return handleAudioGetVolume(args, ctx);
-  };
-  options.host_functions["audio.setVolume"] = [ctx = ctx_](const auto &args) {
-    return handleAudioSetVolume(args, ctx);
-  };
-  options.host_functions["audio.toggleMute"] = [ctx = ctx_](const auto &args) {
-    return handleAudioToggleMute(args, ctx);
-  };
-  options.host_functions["audio.setMute"] = [ctx = ctx_](const auto &args) {
-    return handleAudioSetMute(args, ctx);
-  };
-  options.host_functions["audio.isMuted"] = [ctx = ctx_](const auto &args) {
-    return handleAudioIsMuted(args, ctx);
-  };
-  options.host_functions["brightness.get"] = [ctx = ctx_](const auto &args) {
-    return handleBrightnessGet(args, ctx);
-  };
-  options.host_functions["brightness.set"] = [ctx = ctx_](const auto &args) {
-    return handleBrightnessSet(args, ctx);
-  };
-  options.host_functions["brightness.getTemp"] = [ctx = ctx_](const auto &args) {
-    return handleBrightnessGetTemp(args, ctx);
-  };
-  options.host_functions["brightness.setTemp"] = [ctx = ctx_](const auto &args) {
-    return handleBrightnessSetTemp(args, ctx);
-  };
-}
-
-BytecodeValue MediaBridge::handleAudioGetVolume(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
-  (void)args;
-  if (!ctx->audioManager) {
-    return BytecodeValue(0.0);
-  }
-  havel::host::AudioService audioService(ctx->audioManager);
-  return BytecodeValue(audioService.getVolume());
-}
-
-BytecodeValue MediaBridge::handleAudioSetVolume(const std::vector<BytecodeValue> &args,
-                                                const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("audio.setVolume() requires a volume value (0.0-1.0)");
-  }
-  double volume = 0.0;
-  if (std::holds_alternative<int64_t>(args[0])) {
-    volume = static_cast<double>(std::get<int64_t>(args[0])) / 100.0;
-  } else if (std::holds_alternative<double>(args[0])) {
-    volume = std::get<double>(args[0]);
-  } else {
-    throw std::runtime_error("audio.setVolume() requires a number");
-  }
-  if (!ctx->audioManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::AudioService audioService(ctx->audioManager);
-  audioService.setVolume(volume);
-  return BytecodeValue(true);
-}
-
-BytecodeValue MediaBridge::handleAudioToggleMute(const std::vector<BytecodeValue> &args,
-                                                 const HostContext *ctx) {
-  (void)args;
-  if (!ctx->audioManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::AudioService audioService(ctx->audioManager);
-  audioService.toggleMute();
-  return BytecodeValue(true);
-}
-
-BytecodeValue MediaBridge::handleAudioSetMute(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("audio.setMute() requires a boolean");
-  }
-  bool muted = false;
-  if (std::holds_alternative<bool>(args[0])) {
-    muted = std::get<bool>(args[0]);
-  } else {
-    throw std::runtime_error("audio.setMute() requires a boolean");
-  }
-  if (!ctx->audioManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::AudioService audioService(ctx->audioManager);
-  audioService.setMute(muted);
-  return BytecodeValue(true);
-}
-
-BytecodeValue MediaBridge::handleAudioIsMuted(const std::vector<BytecodeValue> &args,
-                                              const HostContext *ctx) {
-  (void)args;
-  if (!ctx->audioManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::AudioService audioService(ctx->audioManager);
-  return BytecodeValue(audioService.isMuted());
-}
-
-BytecodeValue MediaBridge::handleBrightnessGet(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
-  int64_t monitorIndex = -1;
-  if (!args.empty() && std::holds_alternative<int64_t>(args[0])) {
-    monitorIndex = std::get<int64_t>(args[0]);
-  }
-  if (!ctx->brightnessManager) {
-    return BytecodeValue(0.0);
-  }
-  havel::host::BrightnessService brightnessService(ctx->brightnessManager);
-  return BytecodeValue(brightnessService.getBrightness(static_cast<int>(monitorIndex)));
-}
-
-BytecodeValue MediaBridge::handleBrightnessSet(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("brightness.set() requires a brightness value (0.0-1.0)");
-  }
-  double brightness = 0.0;
-  if (std::holds_alternative<int64_t>(args[0])) {
-    brightness = static_cast<double>(std::get<int64_t>(args[0])) / 100.0;
-  } else if (std::holds_alternative<double>(args[0])) {
-    brightness = std::get<double>(args[0]);
-  } else {
-    throw std::runtime_error("brightness.set() requires a number");
-  }
-  int64_t monitorIndex = -1;
-  if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
-    monitorIndex = std::get<int64_t>(args[1]);
-  }
-  if (!ctx->brightnessManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::BrightnessService brightnessService(ctx->brightnessManager);
-  brightnessService.setBrightness(brightness, static_cast<int>(monitorIndex));
-  return BytecodeValue(true);
-}
-
-BytecodeValue MediaBridge::handleBrightnessGetTemp(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
-  int64_t monitorIndex = -1;
-  if (!args.empty() && std::holds_alternative<int64_t>(args[0])) {
-    monitorIndex = std::get<int64_t>(args[0]);
-  }
-  if (!ctx->brightnessManager) {
-    return BytecodeValue(6500);
-  }
-  havel::host::BrightnessService brightnessService(ctx->brightnessManager);
-  return BytecodeValue(static_cast<int64_t>(brightnessService.getTemperature(static_cast<int>(monitorIndex))));
-}
-
-BytecodeValue MediaBridge::handleBrightnessSetTemp(const std::vector<BytecodeValue> &args,
-                                                   const HostContext *ctx) {
-  if (args.empty()) {
-    throw std::runtime_error("brightness.setTemp() requires a temperature value");
-  }
-  int64_t temperature = 6500;
-  if (std::holds_alternative<int64_t>(args[0])) {
-    temperature = std::get<int64_t>(args[0]);
-  } else {
-    throw std::runtime_error("brightness.setTemp() requires an integer");
-  }
-  int64_t monitorIndex = -1;
-  if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
-    monitorIndex = std::get<int64_t>(args[1]);
-  }
-  if (!ctx->brightnessManager) {
-    return BytecodeValue(false);
-  }
-  havel::host::BrightnessService brightnessService(ctx->brightnessManager);
-  brightnessService.setTemperature(static_cast<int>(temperature), static_cast<int>(monitorIndex));
-  return BytecodeValue(true);
-}
-
-// ============================================================================
 // AsyncBridge Implementation
 // ============================================================================
 
@@ -1247,6 +1071,433 @@ BytecodeValue ToolsBridge::handleTextChunkerClear(const std::vector<BytecodeValu
   (void)ctx;
   g_textChunker.clear();
   return BytecodeValue(true);
+}
+
+// ============================================================================
+// MediaBridge Implementation
+// ============================================================================
+
+void MediaBridge::install(PipelineOptions &options) {
+  options.host_functions["media.playPause"] = [ctx = ctx_](const auto &args) {
+    return handleMediaPlayPause(args, ctx);
+  };
+  options.host_functions["media.play"] = [ctx = ctx_](const auto &args) {
+    return handleMediaPlay(args, ctx);
+  };
+  options.host_functions["media.pause"] = [ctx = ctx_](const auto &args) {
+    return handleMediaPause(args, ctx);
+  };
+  options.host_functions["media.stop"] = [ctx = ctx_](const auto &args) {
+    return handleMediaStop(args, ctx);
+  };
+  options.host_functions["media.next"] = [ctx = ctx_](const auto &args) {
+    return handleMediaNext(args, ctx);
+  };
+  options.host_functions["media.previous"] = [ctx = ctx_](const auto &args) {
+    return handleMediaPrevious(args, ctx);
+  };
+  options.host_functions["media.getVolume"] = [ctx = ctx_](const auto &args) {
+    return handleMediaGetVolume(args, ctx);
+  };
+  options.host_functions["media.setVolume"] = [ctx = ctx_](const auto &args) {
+    return handleMediaSetVolume(args, ctx);
+  };
+  options.host_functions["media.getActivePlayer"] = [ctx = ctx_](const auto &args) {
+    return handleMediaGetActivePlayer(args, ctx);
+  };
+  options.host_functions["media.setActivePlayer"] = [ctx = ctx_](const auto &args) {
+    return handleMediaSetActivePlayer(args, ctx);
+  };
+  options.host_functions["media.getAvailablePlayers"] = [ctx = ctx_](const auto &args) {
+    return handleMediaGetAvailablePlayers(args, ctx);
+  };
+}
+
+BytecodeValue MediaBridge::handleMediaPlayPause(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.playPause();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.play();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaPause(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.pause();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaStop(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.stop();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaNext(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.next();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaPrevious(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    media.previous();
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaGetVolume(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    return BytecodeValue(media.getVolume());
+  } catch (...) {
+    return BytecodeValue(0.0);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaSetVolume(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("media.setVolume() requires a volume value (0.0-1.0)");
+  }
+  double volume = 0.0;
+  if (std::holds_alternative<double>(args[0])) {
+    volume = std::get<double>(args[0]);
+  } else if (std::holds_alternative<int64_t>(args[0])) {
+    volume = static_cast<double>(std::get<int64_t>(args[0])) / 100.0;
+  }
+  try {
+    havel::host::MediaService media;
+    media.setVolume(volume);
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaGetActivePlayer(const std::vector<BytecodeValue> &args,
+                                                      const HostContext *ctx) {
+  (void)args;
+  try {
+    havel::host::MediaService media;
+    return BytecodeValue(media.getActivePlayer());
+  } catch (...) {
+    return BytecodeValue(std::string(""));
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaSetActivePlayer(const std::vector<BytecodeValue> &args,
+                                                      const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("media.setActivePlayer() requires a player name");
+  }
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("media.setActivePlayer() requires a string");
+  }
+  try {
+    havel::host::MediaService media;
+    media.setActivePlayer(*name);
+    return BytecodeValue(true);
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue MediaBridge::handleMediaGetAvailablePlayers(const std::vector<BytecodeValue> &args,
+                                                          const HostContext *ctx) {
+  (void)args;
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+  try {
+    havel::host::MediaService media;
+    auto players = media.getAvailablePlayers();
+    auto arr = vm->createHostArray();
+    for (const auto &player : players) {
+      vm->pushHostArrayValue(arr, BytecodeValue(player));
+    }
+    return BytecodeValue(arr);
+  } catch (...) {
+    return BytecodeValue(nullptr);
+  }
+}
+
+// ============================================================================
+// NetworkBridge Implementation
+// ============================================================================
+
+void NetworkBridge::install(PipelineOptions &options) {
+  options.host_functions["network.get"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkGet(args, ctx);
+  };
+  options.host_functions["network.post"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkPost(args, ctx);
+  };
+  options.host_functions["network.isOnline"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkIsOnline(args, ctx);
+  };
+  options.host_functions["network.getExternalIp"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkGetExternalIp(args, ctx);
+  };
+}
+
+BytecodeValue NetworkBridge::handleNetworkGet(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    throw std::runtime_error("network.get() requires a URL");
+  }
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  if (!url) {
+    throw std::runtime_error("network.get() requires a string URL");
+  }
+  int timeout_ms = 30000;
+  if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
+    timeout_ms = static_cast<int>(std::get<int64_t>(args[1]));
+  }
+  try {
+    havel::host::NetworkService net;
+    auto response = net.get(*url, timeout_ms);
+    if (response.success) {
+      return BytecodeValue(response.body);
+    } else {
+      return BytecodeValue(nullptr);
+    }
+  } catch (...) {
+    return BytecodeValue(nullptr);
+  }
+}
+
+BytecodeValue NetworkBridge::handleNetworkPost(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("network.post() requires URL and data");
+  }
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  const std::string *data = std::get_if<std::string>(&args[1]);
+  if (!url || !data) {
+    throw std::runtime_error("network.post() requires string arguments");
+  }
+  std::string content_type = "application/json";
+  if (args.size() > 2 && std::holds_alternative<std::string>(args[2])) {
+    content_type = std::get<std::string>(args[2]);
+  }
+  int timeout_ms = 30000;
+  if (args.size() > 3 && std::holds_alternative<int64_t>(args[3])) {
+    timeout_ms = static_cast<int>(std::get<int64_t>(args[3]));
+  }
+  try {
+    havel::host::NetworkService net;
+    auto response = net.post(*url, *data, content_type, timeout_ms);
+    if (response.success) {
+      return BytecodeValue(response.body);
+    } else {
+      return BytecodeValue(nullptr);
+    }
+  } catch (...) {
+    return BytecodeValue(nullptr);
+  }
+}
+
+BytecodeValue NetworkBridge::handleNetworkIsOnline(const std::vector<BytecodeValue> &args,
+                                                   const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  try {
+    havel::host::NetworkService net;
+    return BytecodeValue(net.isOnline());
+  } catch (...) {
+    return BytecodeValue(false);
+  }
+}
+
+BytecodeValue NetworkBridge::handleNetworkGetExternalIp(const std::vector<BytecodeValue> &args,
+                                                        const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  try {
+    havel::host::NetworkService net;
+    return BytecodeValue(net.getExternalIp());
+  } catch (...) {
+    return BytecodeValue(std::string(""));
+  }
+}
+
+// ============================================================================
+// AppBridge Implementation
+// ============================================================================
+
+void AppBridge::install(PipelineOptions &options) {
+  options.host_functions["app.getName"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetName(args, ctx);
+  };
+  options.host_functions["app.getVersion"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetVersion(args, ctx);
+  };
+  options.host_functions["app.getOS"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetOS(args, ctx);
+  };
+  options.host_functions["app.getHostname"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetHostname(args, ctx);
+  };
+  options.host_functions["app.getUsername"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetUsername(args, ctx);
+  };
+  options.host_functions["app.getHomeDir"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetHomeDir(args, ctx);
+  };
+  options.host_functions["app.getCpuCores"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetCpuCores(args, ctx);
+  };
+  options.host_functions["app.getEnv"] = [ctx = ctx_](const auto &args) {
+    return handleAppGetEnv(args, ctx);
+  };
+  options.host_functions["app.setEnv"] = [ctx = ctx_](const auto &args) {
+    return handleAppSetEnv(args, ctx);
+  };
+  options.host_functions["app.openUrl"] = [ctx = ctx_](const auto &args) {
+    return handleAppOpenUrl(args, ctx);
+  };
+}
+
+BytecodeValue AppBridge::handleAppGetName(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getAppName());
+}
+
+BytecodeValue AppBridge::handleAppGetVersion(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getAppVersion());
+}
+
+BytecodeValue AppBridge::handleAppGetOS(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getOS());
+}
+
+BytecodeValue AppBridge::handleAppGetHostname(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getHostname());
+}
+
+BytecodeValue AppBridge::handleAppGetUsername(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getUsername());
+}
+
+BytecodeValue AppBridge::handleAppGetHomeDir(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(app.getHomeDir());
+}
+
+BytecodeValue AppBridge::handleAppGetCpuCores(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  havel::host::AppService app;
+  return BytecodeValue(static_cast<int64_t>(app.getCpuCores()));
+}
+
+BytecodeValue AppBridge::handleAppGetEnv(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("app.getEnv() requires a variable name");
+  }
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("app.getEnv() requires a string");
+  }
+  havel::host::AppService app;
+  return BytecodeValue(app.getEnv(*name));
+}
+
+BytecodeValue AppBridge::handleAppSetEnv(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.size() < 2) {
+    throw std::runtime_error("app.setEnv() requires name and value");
+  }
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  const std::string *value = std::get_if<std::string>(&args[1]);
+  if (!name || !value) {
+    throw std::runtime_error("app.setEnv() requires string arguments");
+  }
+  havel::host::AppService app;
+  return BytecodeValue(app.setEnv(*name, *value));
+}
+
+BytecodeValue AppBridge::handleAppOpenUrl(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("app.openUrl() requires a URL");
+  }
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  if (!url) {
+    throw std::runtime_error("app.openUrl() requires a string URL");
+  }
+  havel::host::AppService app;
+  return BytecodeValue(app.openUrl(*url));
 }
 
 } // namespace havel::compiler

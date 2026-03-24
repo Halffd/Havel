@@ -1,35 +1,27 @@
 /*
- * TypeModule.hpp - Type conversion stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * TypeModule.hpp - Type conversion stdlib for VM (VMApi)
+ * Pure VM implementation using VMApi
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-
-
-
-namespace havel {
-    class Environment;
-}
-
+#include "../compiler/bytecode/VMApi.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 
+namespace havel {
+class Environment;
+}
+
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerTypeModule(Environment& env);
+void registerTypeModule(Environment &env);
 
-// NEW: Register type module with VM's host bridge (VM-native)
-void registerModuleVM(compiler::HostBridge& bridge);
-
-// Implementation in TypeModule.cpp
+// NEW: Register type module with VMApi (stable API layer)
+void registerTypeModule(compiler::VMApi &api);
 
 // Implementation of old registerTypeModule (placeholder)
-inline void registerTypeModule(Environment& env) {
-    (void)env;
-}
+inline void registerTypeModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

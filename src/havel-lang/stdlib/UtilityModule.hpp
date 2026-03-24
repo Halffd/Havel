@@ -1,34 +1,25 @@
 /*
- * UtilityModule.hpp - Utility stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * UtilityModule.hpp - Utility stdlib for VM (VMApi)
+ * Pure VM implementation using VMApi
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-
-
-
-namespace havel {
-    class Environment;
-}
-
+#include "../compiler/bytecode/VMApi.hpp"
 
 #include <algorithm>
+
+namespace havel {
+class Environment;
+}
 
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerUtilityModule(Environment& env);
+void registerUtilityModule(Environment &env);
 
-// NEW: Register utility module with VM's host bridge (VM-native)
-#include "../compiler/bytecode/VM.hpp"
-void registerModule(compiler::HostBridge& bridge);
-
-// Implementation in UtilityModule.cpp
+// NEW: Register utility module with VMApi (stable API layer)
+void registerUtilityModule(compiler::VMApi &api);
 
 // Implementation of old registerUtilityModule (placeholder)
-inline void registerUtilityModule(Environment& env) {
-    (void)env;
-}
+inline void registerUtilityModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

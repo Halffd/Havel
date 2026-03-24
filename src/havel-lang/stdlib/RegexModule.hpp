@@ -1,32 +1,25 @@
 /*
- * RegexModule.hpp - Regular expression stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * RegexModule.hpp - Regular expression stdlib for VM (VMApi)
+ * Pure VM implementation using VMApi
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-
-
+#include "../compiler/bytecode/VMApi.hpp"
 
 #include <regex>
 
 namespace havel {
-    class Environment;
+class Environment;
 }
 
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerRegexModule(Environment& env);
+void registerRegexModule(Environment &env);
 
-// NEW: Register regex module with VM's host bridge (VM-native)
-void registerModuleVM(compiler::HostBridge& bridge);
-
-// Implementation in RegexModule.cpp
+// NEW: Register regex module with VMApi (stable API layer)
+void registerRegexModule(compiler::VMApi &api);
 
 // Implementation of old registerRegexModule (placeholder)
-inline void registerRegexModule(Environment& env) {
-    (void)env;
-}
+inline void registerRegexModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

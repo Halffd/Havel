@@ -3,30 +3,25 @@
  * Pure VM implementation using BytecodeValue
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-
-
+#include "../compiler/bytecode/VMApi.hpp"
 
 #include <algorithm>
 
 namespace havel {
-    class Environment;
+class Environment;
 }
 
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerObjectModule(Environment& env);
+void registerObjectModule(Environment &env);
 
-// NEW: Register object module with VM's host bridge (VM-native)
-void registerModuleVM(compiler::HostBridge& bridge);
+// NEW: Register object module with VMApi (stable API layer)
+void registerObjectModule(havel::compiler::VMApi &api);
 
 // Implementation in ObjectModule.cpp
 
 // Implementation of old registerObjectModule (placeholder)
-inline void registerObjectModule(Environment& env) {
-    (void)env;
-}
+inline void registerObjectModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

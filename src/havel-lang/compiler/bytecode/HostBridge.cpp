@@ -751,28 +751,6 @@ HostBridge::handleModeTick(const std::vector<BytecodeValue> &args) {
 }
 
 BytecodeValue
-HostBridge::handleProcessFind(const std::vector<BytecodeValue> &args) {
-  if (args.empty()) {
-    return BytecodeValue(nullptr);
-  }
-
-  std::string name;
-  if (auto *v = std::get_if<std::string>(&args[0])) {
-    name = *v;
-  } else {
-    return BytecodeValue(nullptr);
-  }
-
-  auto pids = havel::host::ProcessService::findProcesses(name);
-  auto array_ref = ctx_->vm->createHostArray();
-  for (int32_t pid : pids) {
-    ctx_->vm->pushHostArrayValue(array_ref,
-                                 BytecodeValue(static_cast<int64_t>(pid)));
-  }
-  return BytecodeValue(array_ref);
-}
-
-BytecodeValue
 HostBridge::handleClipboardGet(const std::vector<BytecodeValue> &args) {
   (void)args;
   if (!ctx_->clipboardManager) {

@@ -1,34 +1,26 @@
 /*
- * ProcessModule.hpp - Process management stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * ProcessModule.hpp - Process management stdlib for VM (VMApi)
+ * Pure VM implementation using VMApi
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
+#include "../compiler/bytecode/VMApi.hpp"
 
-
-
-#include "core/process/ProcessManager.hpp"
 #include <cstdlib>
 #include <sstream>
 
 namespace havel {
-    class Environment;
+class Environment;
 }
 
 namespace havel::stdlib {
 
 // OLD: Register with Environment (for AST interpreter) - DECLARATION ONLY
-void registerProcessModule(Environment& env);
+void registerProcessModule(Environment &env);
 
-// NEW: Register process module with VM's host bridge (VM-native)
-void registerModuleVM(compiler::HostBridge& bridge);
-
-// Implementation in ProcessModule.cpp
+// NEW: Register process module with VMApi (stable API layer)
+void registerProcessModule(compiler::VMApi &api);
 
 // Implementation of old registerProcessModule (placeholder)
-inline void registerProcessModule(Environment& env) {
-    (void)env;
-}
+inline void registerProcessModule(Environment &env) { (void)env; }
 
 } // namespace havel::stdlib

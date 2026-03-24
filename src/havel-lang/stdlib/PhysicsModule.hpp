@@ -1,30 +1,27 @@
 /*
- * PhysicsModule.hpp - Physics constants stdlib for VM (no host/service)
- * Pure VM implementation using BytecodeValue
+ * PhysicsModule.hpp - Physics constants stdlib for VM (VMApi)
+ * Pure VM implementation using VMApi
  */
 #pragma once
-#include "../compiler/bytecode/VM.hpp"
-#include "../compiler/bytecode/HostBridge.hpp"
-
-
+#include "../compiler/bytecode/VMApi.hpp"
 
 namespace havel {
-    class Environment;
-    class HostContext;
-    namespace modules { void registerPhysicsModule(Environment& env, HostContext&); }
+class Environment;
+class HostContext;
+namespace modules {
+void registerPhysicsModule(Environment &env, HostContext &);
 }
+} // namespace havel
 
 namespace havel::stdlib {
 
-// NEW: Register physics module with VM's host bridge (VM-native)
-void registerModuleVM(compiler::HostBridge& bridge);
-
-// Implementation in PhysicsModule.cpp
+// NEW: Register physics module with VMApi (stable API layer)
+void registerPhysicsModule(compiler::VMApi &api);
 
 // Implementation of old registerPhysicsModule (placeholder)
-inline void registerPhysicsModule(Environment& env, HostContext& ctx) {
-    (void)env;
-    (void)ctx;
+inline void registerPhysicsModule(Environment &env, HostContext &ctx) {
+  (void)env;
+  (void)ctx;
 }
 
 } // namespace havel::stdlib

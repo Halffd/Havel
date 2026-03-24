@@ -8,6 +8,7 @@
  */
 #include "HostBridge.hpp"
 #include "../../../gui/ClipboardManager.hpp"
+#include "../../../host/async/AsyncService.hpp"
 #include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
 #include "../../../host/io/IOService.hpp"
@@ -17,6 +18,7 @@
 #include <QClipboard>
 #include <fstream>
 #include <sstream>
+#include <chrono>
 
 namespace havel::compiler {
 
@@ -202,6 +204,18 @@ void HostBridge::install() {
   options.host_functions["screenshot.monitor"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleScreenshotMonitor(args);
+      };
+
+  // ==========================================================================
+  // Async/Timer handlers
+  // ==========================================================================
+  options.host_functions["sleep"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleSleep(args);
+      };
+  options.host_functions["time.now"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTimeNow(args);
       };
 
   // Run vm_setup callbacks
@@ -791,6 +805,47 @@ void HostBridge::releaseCallback(CallbackId id) {
     throw std::runtime_error("VM not available for callback release");
   }
   ctx_->vm->releaseCallback(id);
+}
+
+// ============================================================================
+// Async/Timer Handlers - uses AsyncService
+// ============================================================================
+
+BytecodeValue HostBridge::handleSleep(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("sleep() requires milliseconds");
+  }
+
+  int64_t ms = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    ms = std::get<int64_t>(args[0]);
+  } else if (std::holds_alternative<double>(args[0])) {
+    ms = static_cast<int64_t>(std::get<double>(args[0]));
+  } else {
+    throw std::runtime_error("sleep() requires a number");
+  }
+
+  if (ms < 0) {
+    throw std::runtime_error("sleep() milliseconds must be non-negative");
+  }
+
+  // Use AsyncService if available, otherwise fall back to direct sleep
+  if (ctx_->asyncService) {
+    ctx_->asyncService->sleep(static_cast<int>(ms));
+  } else {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+  }
+
+  return BytecodeValue(nullptr);
+}
+
+BytecodeValue HostBridge::handleTimeNow(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  auto now = std::chrono::system_clock::now();
+  auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+                       now.time_since_epoch())
+                       .count();
+  return BytecodeValue(static_cast<int64_t>(timestamp));
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

@@ -46,6 +46,9 @@ class ProcessManager;
 namespace net {
 class NetworkManager;
 }
+namespace host {
+class AsyncService;
+}
 
 /**
  * Capability - Base interface for pluggable host functionality
@@ -99,6 +102,7 @@ struct HostContext {
     class FileManager* fileManager = nullptr;
     class ProcessManager* processManager = nullptr;
     class net::NetworkManager* networkManager = nullptr;
+    class host::AsyncService* asyncService = nullptr;
     
     // Capability-based extensions (embedder-provided)
     std::unordered_map<std::string, std::shared_ptr<Capability>> caps;

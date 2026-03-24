@@ -1,0 +1,3 @@
+// Debug test to check what's available
+// Try to access the timer object directly
+fs.writeFile("/tmp/debug_test.txt", "Script started");

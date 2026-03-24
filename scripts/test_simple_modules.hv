@@ -1,0 +1,47 @@
+// Simple test script for new host modules
+// Tests basic functionality without console output
+
+// Test Timer Module - basic functionality
+let start = timer.now();
+timer.sleep(50);
+let end = timer.now();
+let elapsed = end - start;
+
+// Test File System Module
+let testFile = "/tmp/havel_test.txt";
+fs.writeFile(testFile, "Hello from Havel VM!");
+let content = fs.readFile(testFile);
+let exists = fs.exists(testFile);
+
+// Test Clipboard Module
+clipboard.setText("Test message from Havel VM");
+let clipboardText = clipboard.getText();
+let hasText = clipboard.hasText();
+clipboard.clear();
+
+// Test Window Module (placeholder)
+let activeWindow = window.getActive();
+let allWindows = window.getAll();
+
+// Test Hotkey Module (placeholder)
+let hotkeyId = hotkey.register("ctrl+alt+t", function() {});
+let isRegistered = hotkey.isRegistered(hotkeyId);
+hotkey.unregister(hotkeyId);
+
+// Test File System Module - directory listing
+let entries = fs.listDirectory("/tmp");
+let entryCount = entries.length;
+
+// Create a summary object with test results
+let testResults = {
+    timerTest: elapsed > 0,
+    fileWriteTest: content == "Hello from Havel VM!",
+    fileExistsTest: exists,
+    clipboardTest: clipboardText == "Test message from Havel VM",
+    windowTest: typeof activeWindow == "number",
+    hotkeyTest: typeof hotkeyId == "number",
+    directoryTest: entryCount >= 0
+};
+
+// Try to write results to a file for verification
+fs.writeFile("/tmp/havel_module_test_results.json", JSON.stringify(testResults, null, 2));

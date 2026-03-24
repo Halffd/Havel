@@ -1,0 +1,17 @@
+// Test ProcessModule functionality
+print("Testing ProcessModule...");
+
+// Test process functions
+print("getpid() =", getpid());
+print("getppid() =", getppid());
+
+// Test environment functions
+print("PATH env var:", env("PATH"));
+print("Setting test env var:", setenv("TEST_VAR", "hello_world"));
+print("TEST_VAR env var:", env("TEST_VAR"));
+
+// Test Process object
+print("Process object exists:", Process != null);
+print("Process.getpid exists:", Process.getpid != null);
+
+print("ProcessModule tests completed!");

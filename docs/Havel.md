@@ -548,8 +548,11 @@ send()                   // Send clipboard as keystrokes
 send("hello")            // Send text as keystrokes
 
 // Global variable
-$Clipboard = "text"      // Set clipboard
-print($Clipboard)        // Get clipboard
+#clip = "text"      // Set clipboard
+print(#clip)        // Get clipboard
+=
+clipboard.send() // Send clipboard content
+clipboard.clear()   // Clear clipboard
 ```
 
 #### Strings
@@ -939,7 +942,7 @@ clipboard.set(text)  // Set clipboard content
 clipboard.clear()    // Clear clipboard
 clipboard.send(text) // Send clipboard/text as keystrokes
 clipboard.history    // Access clipboard history
-$Clipboard           // Global clipboard variable (get/set)
+#clip           // Global clipboard variable (get/set)
 
 Window Management Module
 window.active        // Get active window
@@ -1334,25 +1337,6 @@ print(sep * 40)  // Print separator line
 
 // In expressions
 print("=" * 60)
-```
-
-### Global Clipboard Variable `$Clipboard`
-
-Read/write clipboard using a global variable:
-
-```havel
-// Set clipboard
-$Clipboard = "hello"
-$Clipboard = 123
-
-// Get clipboard
-print($Clipboard)
-let text = $Clipboard
-
-// Use in expressions
-if $Clipboard.contains("http") {
-    run($Clipboard)  // Open URL
-}
 ```
 
 ### Clipboard Send Function

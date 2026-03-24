@@ -18,21 +18,20 @@
 #include <string>
 #include <unordered_map>
 #include <functional>
-#include <set>
 #include <vector>
 
 namespace havel::compiler {
 
 /**
- * ModuleInfo - Metadata about a loaded module
+ * ModuleInfo - Metadata about a module
  */
 struct ModuleInfo {
   std::string name;
   std::string version;
-  bool isBuiltin = false;      // Built into runtime (HostBridge)
+  bool isBuiltin = false;      // Provided by HostBridge
   bool isExtension = false;    // Dynamically loaded (.so/.dll)
   std::string extensionPath;   // Path for extension modules
-  std::set<std::string> requiredCapabilities;
+  Capability requiredCaps = Capability::None;
 };
 
 /**
@@ -41,7 +40,7 @@ struct ModuleInfo {
  * Responsibilities:
  * - Lazy module loading (on first import)
  * - Module caching (loaded once)
- * - Capability validation
+ * - Capability validation (at load AND call time)
  * - Extension module loading (dlopen/dylib)
  */
 class ModuleLoader {
@@ -54,6 +53,7 @@ public:
   // =========================================================================
 
   /// Register a built-in module (provided by HostBridge)
+  /// NOTE: Does NOT load - registers metadata only (lazy loading)
   void registerBuiltin(const std::string &name, const ModuleInfo &info);
 
   /// Register a stdlib module (pure VM)
@@ -62,10 +62,10 @@ public:
                       const ModuleInfo &info);
 
   // =========================================================================
-  // Module loading
+  // Module loading (lazy)
   // =========================================================================
 
-  /// Load a module (lazy loading - called on first use)
+  /// Load a module (called on first use via 'use' statement)
   /// @param name Module name (e.g., "clipboard", "window", "io")
   /// @param vm VM instance to register into
   /// @return true if loaded successfully
@@ -81,17 +81,23 @@ public:
   std::vector<std::string> getLoadedModules() const;
 
   // =========================================================================
-  // Capability management
+  // Capability management (runtime enforcement)
   // =========================================================================
 
   /// Check if module can be loaded (capability check)
   bool canLoadModule(const std::string &name) const;
 
+  /// Check if capability is enabled (runtime check for function calls)
+  bool hasCapability(Capability cap) const { return hasCapability(cap); }
+
   /// Set capability flags (for sandboxing)
-  void setCapabilities(const HostBridgeCapabilities &caps);
+  void setCapabilities(HostBridgeCapabilities caps) { caps_ = caps; }
 
   /// Get current capabilities
   const HostBridgeCapabilities &getCapabilities() const { return caps_; }
+
+  /// Runtime capability check for function calls
+  bool checkCapability(const std::string &functionName) const;
 
   // =========================================================================
   // Extension loading (dynamic plugins)
@@ -109,22 +115,31 @@ public:
   // Import system
   // =========================================================================
 
-  /// Parse import statement: "use clipboard" or "use io.*"
+  /// Parse and execute import: "use clipboard" or "use io.*"
   /// @param importSpec Import specification
   /// @param vm VM instance
   /// @return true if successful
   bool import(const std::string &importSpec, VM &vm);
 
+  /// Import module and inject symbols into VM scope
+  bool importWithBinding(const std::string &moduleName, VM &vm);
+
+  /// Import specific member: "use clipboard.get as clip_get"
+  bool importMember(const std::string &moduleName, 
+                    const std::string &memberName,
+                    const std::string &alias,
+                    VM &vm);
+
 private:
   const HostContext &ctx_;
   HostBridgeCapabilities caps_;
 
-  // Module registry
+  // Module registry (metadata only - lazy loading)
   std::unordered_map<std::string, ModuleInfo> registry_;
   std::unordered_map<std::string, std::function<void(VM &)>> stdlibInitFns_;
 
   // Loaded modules cache
-  std::set<std::string> loadedModules_;
+  std::unordered_map<std::string, bool> loadedModules_;
 
   // Extension module handles (for unloading)
   std::unordered_map<std::string, void *> extensionHandles_;
@@ -139,15 +154,19 @@ private:
  */
 struct ImportSpec {
   std::string moduleName;      // "clipboard"
-  std::string memberName;      // "get" (for "use clipboard.get")
+  std::vector<std::string> members; // ["get", "set"] or empty for all
   bool importAll = false;      // "use io.*"
   std::string alias;           // "use clipboard as cb"
 };
 
 /**
  * Parse import specification
- * @param spec Import string (e.g., "use clipboard.get as clip_get")
- * @return Parsed import spec
+ * Supports:
+ * - "use clipboard"
+ * - "use clipboard.get"
+ * - "use clipboard.get as clip_get"
+ * - "use io.*"
+ * - "use fs.path.read" (nested - future)
  */
 ImportSpec parseImportSpec(const std::string &spec);
 

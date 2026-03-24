@@ -59,8 +59,16 @@ public:
   void addVmSetup(std::function<void(VM &)> setupFn);
 
   // Capability management
-  void setCapabilities(const HostBridgeCapabilities &caps) { caps_ = caps; moduleLoader_.setCapabilities(caps); }
-  bool hasCapability(const std::string &name) const;
+  void setCapabilities(const HostBridgeCapabilities &caps) {
+    caps_ = caps;
+    moduleLoader_.setCapabilities(caps);
+  }
+  bool hasCapability(Capability cap) const { return caps_.has(cap); }
+
+  // Runtime capability check for function calls
+  bool checkFunctionCapability(const std::string &funcName) const {
+    return moduleLoader_.checkCapability(funcName);
+  }
 
   // Module loading (lazy loading)
   ModuleLoader &moduleLoader() { return moduleLoader_; }

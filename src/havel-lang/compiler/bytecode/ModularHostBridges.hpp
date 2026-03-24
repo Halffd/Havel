@@ -46,7 +46,7 @@ public:
   explicit IOBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.ioControl;
+    return caps.has(Capability::IO);
   }
 
 private:
@@ -76,7 +76,7 @@ public:
   explicit SystemBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.fileIO || caps.processExec;
+    return caps.has(Capability::FileIO) || caps.has(Capability::ProcessExec);
   }
 
 private:
@@ -115,7 +115,7 @@ public:
   explicit UIBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.windowControl || caps.clipboardAccess || caps.screenshotAccess;
+    return caps.has(Capability::WindowControl) || caps.has(Capability::ClipboardAccess) || caps.has(Capability::ScreenshotAccess);
   }
 
 private:
@@ -164,7 +164,7 @@ public:
   explicit InputBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.hotkeyControl || caps.inputRemapping || caps.altTabControl;
+    return caps.has(Capability::HotkeyControl) || caps.has(Capability::InputRemapping) || caps.has(Capability::AltTabControl);
   }
 
 private:
@@ -212,7 +212,7 @@ public:
   explicit MediaBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.audioControl || caps.brightnessControl;
+    return caps.has(Capability::AudioControl) || caps.has(Capability::BrightnessControl);
   }
 
 private:
@@ -256,7 +256,7 @@ public:
   explicit AsyncBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.asyncOps;
+    return caps.has(Capability::AsyncOps);
   }
 
 private:
@@ -276,7 +276,7 @@ public:
   explicit AutomationBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.automationControl;
+    return caps.has(Capability::AutomationControl);
   }
 
 private:
@@ -310,7 +310,7 @@ public:
   explicit BrowserBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.browserControl;
+    return caps.has(Capability::BrowserControl);
   }
 
 private:
@@ -352,7 +352,7 @@ public:
   explicit ToolsBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
   bool isEnabled(const HostBridgeCapabilities &caps) const override {
-    return caps.textChunkerAccess;
+    return caps.has(Capability::TextChunkerAccess);
   }
 
 private:

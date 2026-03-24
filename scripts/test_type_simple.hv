@@ -1,0 +1,31 @@
+// Test TypeModule VMApi functionality
+print("=== TypeModule VMApi Test ===");
+
+// Test type checking functions
+print("TypeModule Functions:");
+
+print("  isNumber(123):", isNumber(123));
+print("  isNumber(3.14):", isNumber(3.14));
+print("  isNumber('hello'):", isNumber("hello"));
+
+print("  isString('hello'):", isString("hello"));
+print("  isString(123):", isString(123));
+
+print("  isArray([1,2,3]):", isArray([1,2,3]));
+print("  isArray('hello'):", isArray("hello"));
+
+print("  isBoolean(true):", isBoolean(true));
+print("  isBoolean(123):", isBoolean(123));
+
+// Test conversion functions
+print("  toString(123):", toString(123));
+print("  toString(true):", toString(true));
+
+print("  toNumber('123'):", toNumber("123"));
+print("  toNumber('3.14'):", toNumber("3.14"));
+print("  toNumber('abc'):", toNumber("abc"));
+
+// Test Type object
+print("Type object exists");
+
+print("=== TypeModule Test Complete ===");

@@ -1,0 +1,3 @@
+// Test just the timer module
+let now = timer.now();
+fs.writeFile("/tmp/timer_test.txt", "Current time: " + now);

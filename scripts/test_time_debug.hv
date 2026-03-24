@@ -1,0 +1,7 @@
+// Debug TimeModule types
+print("=== TimeModule Debug ===");
+
+print("Testing time.now():", time.now());
+print("Testing time.sleep(50):", time.sleep(50));
+
+print("=== Debug Complete ===");

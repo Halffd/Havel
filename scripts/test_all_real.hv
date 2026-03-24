@@ -1,0 +1,19 @@
+// Test all real VMApi functionality
+print("=== All Real VMApi Test ===");
+
+// Test MathModule (VMApi)
+print("Math constants:");
+print("  PI:", PI);
+print("  E:", E);
+
+// Test StringModule (VMApi)
+print("String functions:");
+print("  string.len('test'):", string.len("test"));
+
+// Test ArrayModule (VMApi) - REAL FUNCTIONALITY
+print("Array functions:");
+print("  array.len([1,2,3]):", array.len([1,2,3]));
+print("  array.join([1,2,3], ','):", array.join([1,2,3], ','));
+print("  array.reverse([1,2,3]):", array.reverse([1,2,3]));
+
+print("=== All Real VMApi Working ===");

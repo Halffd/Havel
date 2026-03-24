@@ -1,0 +1,4 @@
+// Test the existing string module
+let testStr = "Hello World";
+let result = string.len(testStr);
+fs.writeFile("/tmp/string_test.txt", "String length: " + result);

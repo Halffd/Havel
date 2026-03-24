@@ -1,0 +1,4 @@
+// Test the existing string module with capital S
+let testStr = "Hello World";
+let result = String.len(testStr);
+fs.writeFile("/tmp/string_capital_test.txt", "String length: " + result);

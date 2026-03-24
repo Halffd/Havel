@@ -1,0 +1,32 @@
+// Comprehensive test of real ArrayModule functionality
+print("=== Comprehensive ArrayModule Test ===");
+
+// Test basic operations
+print("Basic operations:");
+print("  array.len([1,2,3,4]):", array.len([1,2,3,4]));
+
+// Test pop
+print("Pop operations:");
+print("  array.pop([1,2,3]):", array.pop([1,2,3]));
+
+// Test shift
+print("Shift operations:");
+print("  array.shift([1,2,3]):", array.shift([1,2,3]));
+
+// Test slice
+print("Slice operations:");
+print("  array.slice([1,2,3,4,5], 1, 4):", array.slice([1,2,3,4,5], 1, 4));
+
+// Test concat
+print("Concat operations:");
+print("  array.concat([1,2], [3,4]):", array.concat([1,2], [3,4]));
+
+// Test join
+print("Join operations:");
+print("  array.join([1,2,3], '-'):", array.join([1,2,3], '-'));
+
+// Test reverse
+print("Reverse operations:");
+print("  array.reverse([1,2,3]):", array.reverse([1,2,3]));
+
+print("=== ArrayModule Comprehensive Test Complete ===");

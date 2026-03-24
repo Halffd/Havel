@@ -1,0 +1,7 @@
+// Test real ArrayModule functionality
+print("=== Real ArrayModule Test ===");
+
+print("array.len([1,2,3]):", array.len([1,2,3]));
+print("array.join([1,2,3], ','):", array.join([1,2,3], ','));
+
+print("=== ArrayModule Real Test Complete ===");

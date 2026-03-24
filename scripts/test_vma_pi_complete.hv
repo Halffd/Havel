@@ -1,0 +1,17 @@
+// Comprehensive test of VMApi architecture
+print("=== VMApi Architecture Test ===");
+
+// Test MathModule (VMApi)
+print("Math constants:");
+print("  PI:", PI);
+print("  E:", E);
+
+print("String functions:");
+print("  string.len('test'):", string.len("test"));
+print("  string.upper('test'):", string.upper("test"));
+
+// Test objects exist by checking if they're null
+print("Math object exists:", math != null);
+print("String object exists:", String != null);
+
+print("=== VMApi Test Complete ===");

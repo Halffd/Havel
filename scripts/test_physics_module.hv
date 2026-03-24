@@ -1,0 +1,20 @@
+// Test PhysicsModule functionality
+print("Testing PhysicsModule...");
+
+// Test physics constants
+print("G =", G);
+print("C =", C);
+print("G0 =", G0);
+
+// Test physics functions
+print("force(10, 9.8) =", force(10, 9.8));
+print("kinetic_energy(1000, 20) =", kinetic_energy(1000, 20));
+print("potential_energy(1000, 10) =", potential_energy(1000, 10));
+print("momentum(1000, 20) =", momentum(1000, 20));
+print("wavelength(1000000) =", wavelength(1000000));
+
+// Test Physics object
+print("Physics object exists:", Physics != null);
+print("Physics.force exists:", Physics.force != null);
+
+print("PhysicsModule tests completed!");

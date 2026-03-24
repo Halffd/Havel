@@ -4,7 +4,7 @@
 #include "Pipeline.hpp"
 #include "VM.hpp"
 #include "ModuleLoader.hpp"
-#include "HostBridgeCapabilities.hpp"
+#include "ExecutionPolicy.hpp"
 
 #include <memory>
 #include <string>
@@ -14,9 +14,7 @@
 
 namespace havel::compiler {
 
-/**
- * Forward declarations for modular bridge components
- */
+// Forward declarations for modular bridge components
 class IOBridge;
 class SystemBridge;
 class UIBridge;
@@ -33,15 +31,14 @@ class ToolsBridge;
  * ARCHITECTURE:
  * - HostBridge composes specialized bridge modules
  * - Each module handles a specific capability domain
- * - Capabilities can be gated for sandboxing
- * - Easy to test individual modules
- * - Easy to embed with partial features
+ * - Execution policy is OPTIONAL (for embedding/sandboxing)
+ * - Default: FULL ACCESS (no friction for normal users)
  */
 class HostBridge : public std::enable_shared_from_this<HostBridge> {
 public:
   explicit HostBridge(const havel::HostContext &ctx);
   explicit HostBridge(const havel::HostContext &ctx,
-                      const HostBridgeCapabilities &caps);
+                      const ExecutionPolicy &policy);
   ~HostBridge();
 
   void install();
@@ -52,23 +49,17 @@ public:
   PipelineOptions &options() { return options_; }
   const PipelineOptions &options() const { return options_; }
   const HostContext &context() const { return *ctx_; }
-  const HostBridgeCapabilities &capabilities() const { return caps_; }
 
   // Module registration
   void registerModule(const HostModule &module);
   void addVmSetup(std::function<void(VM &)> setupFn);
 
-  // Capability management
-  void setCapabilities(const HostBridgeCapabilities &caps) {
-    caps_ = caps;
-    moduleLoader_.setCapabilities(caps);
+  // Execution policy (optional - for embedding)
+  void setExecutionPolicy(const ExecutionPolicy &policy) {
+    policy_ = policy;
+    moduleLoader_.setExecutionPolicy(policy);
   }
-  bool hasCapability(Capability cap) const { return caps_.has(cap); }
-
-  // Runtime capability check for function calls
-  bool checkFunctionCapability(const std::string &funcName) const {
-    return moduleLoader_.checkCapability(funcName);
-  }
+  const ExecutionPolicy &executionPolicy() const { return policy_; }
 
   // Module loading (lazy loading)
   ModuleLoader &moduleLoader() { return moduleLoader_; }
@@ -87,12 +78,12 @@ public:
 private:
   const havel::HostContext *ctx_;
   PipelineOptions options_;
-  HostBridgeCapabilities caps_;
+  ExecutionPolicy policy_;  // Optional - defaults to allow all
 
   std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
   std::vector<HostModule> modules_;
 
-  // Module loader (lazy loading, capability gating)
+  // Module loader (lazy loading)
   ModuleLoader moduleLoader_;
 
   // Mode system state
@@ -116,8 +107,7 @@ private:
 };
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx);
-std::shared_ptr<HostBridge>
-createHostBridge(const havel::HostContext &ctx,
-                 const HostBridgeCapabilities &caps);
+std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx,
+                                             const ExecutionPolicy &policy);
 
 } // namespace havel::compiler

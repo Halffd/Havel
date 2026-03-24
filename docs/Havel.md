@@ -499,21 +499,10 @@ Havel provides comprehensive built-in modules for common automation tasks:
 ```havel
 // Direct access
 use io.*
-mouseMove(100, 200)     // Move mouse
-click()                  // Click mouse
 send("hello")            // Send keystrokes
 keyDown("ctrl")          // Key down
 keyUp("ctrl")            // Key up
 suspend()                // Toggle hotkey suspend
-
-// Global convenience functions (no module prefix needed)
-click()                  // Left click
-doubleClick()            // Double click
-mousePress()             // Press mouse button
-mouseRelease()           // Release mouse button
-mouseMove(x, y, speed, acceleration)          // Move to position
-mouseMoveRel(dx, dy)     // Relative movement
-scroll(dy, dx)           // Scroll
 ```
 
 #### Media Module (Media Control)
@@ -550,8 +539,7 @@ send("hello")            // Send text as keystrokes
 // Global variable
 #clip = "text"      // Set clipboard
 print(#clip)        // Get clipboard
-=
-clipboard.send() // Send clipboard content
+clipboard.send()    // Send clipboard content
 clipboard.clear()   // Clear clipboard
 ```
 
@@ -1339,27 +1327,14 @@ print(sep * 40)  // Print separator line
 print("=" * 60)
 ```
 
-### Clipboard Send Function
-
-Send clipboard content or text as keystrokes:
-
-```havel
-// Send current clipboard content
-clipboard.send()
-
-// Send specific text
-clipboard.send("hello world")
-
-// Send number
-clipboard.send(123)
-```
-
 ### IO Suspend/Resume
 
 Toggle hotkey processing on/off:
 
 ```havel
 io.suspend()    // Toggle suspend state
+io.suspend(false) // Unsuspend (enable hotkeys)
+io.suspend(true) // Suspended (disable hotkeys)
 ```
 
 ### Global Convenience Functions
@@ -1368,11 +1343,9 @@ Common mouse operations available as globals:
 
 ```havel
 click()           // Left click
-doubleClick()     // Double click
-mousePress()      // Press mouse button
-mouseRelease()    // Release mouse button
-move(x, y)   // Move to position
-moveRel(dx, dy)  // Relative movement
+dblclick()        // Double click
+move(x, y)        // Move to position
+moveRel(dx, dy)   // Relative movement
 scroll(dy, dx)    // Scroll (vertical, horizontal)
 ```
 

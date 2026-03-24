@@ -1,18 +1,19 @@
 #pragma once
 
 /**
- * ModuleLoader.hpp - Dynamic module loading with capability gating
+ * ModuleLoader.hpp - Dynamic module loading
  *
- * Inspired by Python's import system:
- * - Lazy loading (modules loaded on first use)
+ * Simple lazy loading:
+ * - Modules loaded on first 'use' statement
  * - Module cache (loaded once, reused)
- * - Capability gating (sandbox mode, permissions)
- * - Extension loading (dynamic plugins)
+ * - Optional execution policy (for embedding)
+ *
+ * NOT a security layer - just loading mechanics.
  */
 
 #include "VM.hpp"
 #include "../../runtime/HostContext.hpp"
-#include "HostBridgeCapabilities.hpp"
+#include "ExecutionPolicy.hpp"
 
 #include <memory>
 #include <string>
@@ -31,7 +32,6 @@ struct ModuleInfo {
   bool isBuiltin = false;      // Provided by HostBridge
   bool isExtension = false;    // Dynamically loaded (.so/.dll)
   std::string extensionPath;   // Path for extension modules
-  Capability requiredCaps = Capability::None;
 };
 
 /**
@@ -40,8 +40,11 @@ struct ModuleInfo {
  * Responsibilities:
  * - Lazy module loading (on first import)
  * - Module caching (loaded once)
- * - Capability validation (at load AND call time)
  * - Extension module loading (dlopen/dylib)
+ *
+ * NOT responsible for:
+ * - Security/capability checks (that's ExecutionPolicy)
+ * - Permission enforcement (that's HostBridge/services)
  */
 class ModuleLoader {
 public:
@@ -53,7 +56,6 @@ public:
   // =========================================================================
 
   /// Register a built-in module (provided by HostBridge)
-  /// NOTE: Does NOT load - registers metadata only (lazy loading)
   void registerBuiltin(const std::string &name, const ModuleInfo &info);
 
   /// Register a stdlib module (pure VM)
@@ -66,9 +68,6 @@ public:
   // =========================================================================
 
   /// Load a module (called on first use via 'use' statement)
-  /// @param name Module name (e.g., "clipboard", "window", "io")
-  /// @param vm VM instance to register into
-  /// @return true if loaded successfully
   bool loadModule(const std::string &name, VM &vm);
 
   /// Check if module is already loaded
@@ -81,31 +80,22 @@ public:
   std::vector<std::string> getLoadedModules() const;
 
   // =========================================================================
-  // Capability management (runtime enforcement)
+  // Execution policy (optional - for embedding)
   // =========================================================================
 
-  /// Check if module can be loaded (capability check)
-  bool canLoadModule(const std::string &name) const;
+  /// Set execution policy (sandbox restrictions)
+  void setExecutionPolicy(const ExecutionPolicy &policy) { policy_ = policy; }
 
-  /// Check if capability is enabled (runtime check for function calls)
-  bool hasCapability(Capability cap) const { return hasCapability(cap); }
-
-  /// Set capability flags (for sandboxing)
-  void setCapabilities(HostBridgeCapabilities caps) { caps_ = caps; }
-
-  /// Get current capabilities
-  const HostBridgeCapabilities &getCapabilities() const { return caps_; }
-
-  /// Runtime capability check for function calls
-  bool checkCapability(const std::string &functionName) const;
+  /// Check if action is allowed by policy
+  bool canExecute(const std::string &action) const {
+    return policy_.canExecute(action);
+  }
 
   // =========================================================================
   // Extension loading (dynamic plugins)
   // =========================================================================
 
   /// Load extension module from shared library
-  /// @param path Path to .so/.dll file
-  /// @return module name or empty on failure
   std::string loadExtension(const std::string &path);
 
   /// Unload extension module
@@ -116,23 +106,11 @@ public:
   // =========================================================================
 
   /// Parse and execute import: "use clipboard" or "use io.*"
-  /// @param importSpec Import specification
-  /// @param vm VM instance
-  /// @return true if successful
   bool import(const std::string &importSpec, VM &vm);
-
-  /// Import module and inject symbols into VM scope
-  bool importWithBinding(const std::string &moduleName, VM &vm);
-
-  /// Import specific member: "use clipboard.get as clip_get"
-  bool importMember(const std::string &moduleName, 
-                    const std::string &memberName,
-                    const std::string &alias,
-                    VM &vm);
 
 private:
   const HostContext &ctx_;
-  HostBridgeCapabilities caps_;
+  ExecutionPolicy policy_;  // Optional - defaults to allow all
 
   // Module registry (metadata only - lazy loading)
   std::unordered_map<std::string, ModuleInfo> registry_;
@@ -161,12 +139,6 @@ struct ImportSpec {
 
 /**
  * Parse import specification
- * Supports:
- * - "use clipboard"
- * - "use clipboard.get"
- * - "use clipboard.get as clip_get"
- * - "use io.*"
- * - "use fs.path.read" (nested - future)
  */
 ImportSpec parseImportSpec(const std::string &spec);
 

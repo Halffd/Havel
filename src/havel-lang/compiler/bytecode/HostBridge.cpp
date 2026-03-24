@@ -124,6 +124,86 @@ void HostBridge::install() {
         return self->handleProcessFind(args);
       };
 
+  // ==========================================================================
+  // Window handlers
+  // ==========================================================================
+  options.host_functions["window.active"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleWindowGetActive(args);
+      };
+  options.host_functions["window.close"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleWindowClose(args);
+      };
+  options.host_functions["window.resize"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleWindowResize(args);
+      };
+  options.host_functions["window.moveToMonitor"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleWindowMoveToMonitor(args);
+      };
+  options.host_functions["window.moveToNextMonitor"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleWindowMoveToNextMonitor(args);
+      };
+
+  // ==========================================================================
+  // Hotkey handlers
+  // ==========================================================================
+  options.host_functions["hotkey.register"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleHotkeyRegister(args);
+      };
+  options.host_functions["hotkey.trigger"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleHotkeyTrigger(args);
+      };
+
+  // ==========================================================================
+  // Mode handlers
+  // ==========================================================================
+  options.host_functions["mode.define"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleModeDefine(args);
+      };
+  options.host_functions["mode.set"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleModeSet(args);
+      };
+  options.host_functions["mode.tick"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleModeTick(args);
+      };
+
+  // ==========================================================================
+  // Clipboard handlers
+  // ==========================================================================
+  options.host_functions["clipboard.get"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleClipboardGet(args);
+      };
+  options.host_functions["clipboard.set"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleClipboardSet(args);
+      };
+  options.host_functions["clipboard.clear"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleClipboardClear(args);
+      };
+
+  // ==========================================================================
+  // Screenshot handlers
+  // ==========================================================================
+  options.host_functions["screenshot.full"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotFull(args);
+      };
+  options.host_functions["screenshot.monitor"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleScreenshotMonitor(args);
+      };
+
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));

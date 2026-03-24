@@ -89,6 +89,51 @@ void HostBridge::install() {
   browserBridge_->install(options_);
   toolsBridge_->install(options_);
 
+  // Install extension loading functions
+  auto self = shared_from_this();
+  options_.host_functions["extension.load"] = [self](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(false);
+    }
+    std::string name = std::get<std::string>(args[0]);
+    return BytecodeValue(self->extensionLoader_->loadExtensionByName(name));
+  };
+  options_.host_functions["extension.unload"] = [self](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(false);
+    }
+    std::string name = std::get<std::string>(args[0]);
+    return BytecodeValue(self->extensionLoader_->unloadExtension(name));
+  };
+  options_.host_functions["extension.isLoaded"] = [self](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(false);
+    }
+    std::string name = std::get<std::string>(args[0]);
+    return BytecodeValue(self->extensionLoader_->isLoaded(name));
+  };
+  options_.host_functions["extension.list"] = [self](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    auto names = self->extensionLoader_->getLoadedExtensions();
+    auto *vm = static_cast<VM *>(self->ctx_->vm);
+    if (!vm) {
+      return BytecodeValue(nullptr);
+    }
+    auto arr = vm->createHostArray();
+    for (const auto& name : names) {
+      vm->pushHostArrayValue(arr, BytecodeValue(name));
+    }
+    return BytecodeValue(arr);
+  };
+  options_.host_functions["extension.addSearchPath"] = [self](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(false);
+    }
+    std::string path = std::get<std::string>(args[0]);
+    self->extensionLoader_->addSearchPath(path);
+    return BytecodeValue(true);
+  };
+
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));

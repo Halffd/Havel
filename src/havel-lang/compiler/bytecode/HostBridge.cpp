@@ -9,6 +9,8 @@
 #include "HostBridge.hpp"
 #include "../../../gui/ClipboardManager.hpp"
 #include "../../../host/async/AsyncService.hpp"
+#include "../../../host/audio/AudioService.hpp"
+#include "../../../host/brightness/BrightnessService.hpp"
 #include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
 #include "../../../host/io/IOService.hpp"
@@ -216,6 +218,50 @@ void HostBridge::install() {
   options.host_functions["time.now"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleTimeNow(args);
+      };
+
+  // ==========================================================================
+  // Audio handlers
+  // ==========================================================================
+  options.host_functions["audio.getVolume"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAudioGetVolume(args);
+      };
+  options.host_functions["audio.setVolume"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAudioSetVolume(args);
+      };
+  options.host_functions["audio.toggleMute"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAudioToggleMute(args);
+      };
+  options.host_functions["audio.setMute"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAudioSetMute(args);
+      };
+  options.host_functions["audio.isMuted"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAudioIsMuted(args);
+      };
+
+  // ==========================================================================
+  // Brightness handlers
+  // ==========================================================================
+  options.host_functions["brightness.get"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrightnessGet(args);
+      };
+  options.host_functions["brightness.set"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrightnessSet(args);
+      };
+  options.host_functions["brightness.getTemp"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrightnessGetTemp(args);
+      };
+  options.host_functions["brightness.setTemp"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrightnessSetTemp(args);
       };
 
   // Run vm_setup callbacks
@@ -846,6 +892,162 @@ BytecodeValue HostBridge::handleTimeNow(const std::vector<BytecodeValue> &args) 
                        now.time_since_epoch())
                        .count();
   return BytecodeValue(static_cast<int64_t>(timestamp));
+}
+
+// ============================================================================
+// Audio Handlers - uses AudioService
+// ============================================================================
+
+BytecodeValue HostBridge::handleAudioGetVolume(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  if (!ctx_->audioManager) {
+    return BytecodeValue(0.0);
+  }
+  havel::host::AudioService audioService(ctx_->audioManager);
+  return BytecodeValue(audioService.getVolume());
+}
+
+BytecodeValue HostBridge::handleAudioSetVolume(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("audio.setVolume() requires a volume value (0.0-1.0)");
+  }
+
+  double volume = 0.0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    volume = static_cast<double>(std::get<int64_t>(args[0])) / 100.0;
+  } else if (std::holds_alternative<double>(args[0])) {
+    volume = std::get<double>(args[0]);
+  } else {
+    throw std::runtime_error("audio.setVolume() requires a number");
+  }
+
+  if (!ctx_->audioManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::AudioService audioService(ctx_->audioManager);
+  audioService.setVolume(volume);
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAudioToggleMute(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  if (!ctx_->audioManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::AudioService audioService(ctx_->audioManager);
+  audioService.toggleMute();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAudioSetMute(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("audio.setMute() requires a boolean");
+  }
+
+  bool muted = false;
+  if (std::holds_alternative<bool>(args[0])) {
+    muted = std::get<bool>(args[0]);
+  } else {
+    throw std::runtime_error("audio.setMute() requires a boolean");
+  }
+
+  if (!ctx_->audioManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::AudioService audioService(ctx_->audioManager);
+  audioService.setMute(muted);
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAudioIsMuted(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  if (!ctx_->audioManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::AudioService audioService(ctx_->audioManager);
+  return BytecodeValue(audioService.isMuted());
+}
+
+// ============================================================================
+// Brightness Handlers - uses BrightnessService
+// ============================================================================
+
+BytecodeValue HostBridge::handleBrightnessGet(const std::vector<BytecodeValue> &args) {
+  int64_t monitorIndex = -1;
+  if (!args.empty() && std::holds_alternative<int64_t>(args[0])) {
+    monitorIndex = std::get<int64_t>(args[0]);
+  }
+
+  if (!ctx_->brightnessManager) {
+    return BytecodeValue(0.0);
+  }
+  havel::host::BrightnessService brightnessService(ctx_->brightnessManager);
+  return BytecodeValue(brightnessService.getBrightness(static_cast<int>(monitorIndex)));
+}
+
+BytecodeValue HostBridge::handleBrightnessSet(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("brightness.set() requires a brightness value (0.0-1.0)");
+  }
+
+  double brightness = 0.0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    brightness = static_cast<double>(std::get<int64_t>(args[0])) / 100.0;
+  } else if (std::holds_alternative<double>(args[0])) {
+    brightness = std::get<double>(args[0]);
+  } else {
+    throw std::runtime_error("brightness.set() requires a number");
+  }
+
+  int64_t monitorIndex = -1;
+  if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
+    monitorIndex = std::get<int64_t>(args[1]);
+  }
+
+  if (!ctx_->brightnessManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::BrightnessService brightnessService(ctx_->brightnessManager);
+  brightnessService.setBrightness(brightness, static_cast<int>(monitorIndex));
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleBrightnessGetTemp(const std::vector<BytecodeValue> &args) {
+  int64_t monitorIndex = -1;
+  if (!args.empty() && std::holds_alternative<int64_t>(args[0])) {
+    monitorIndex = std::get<int64_t>(args[0]);
+  }
+
+  if (!ctx_->brightnessManager) {
+    return BytecodeValue(6500);
+  }
+  havel::host::BrightnessService brightnessService(ctx_->brightnessManager);
+  return BytecodeValue(static_cast<int64_t>(brightnessService.getTemperature(static_cast<int>(monitorIndex))));
+}
+
+BytecodeValue HostBridge::handleBrightnessSetTemp(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("brightness.setTemp() requires a temperature value");
+  }
+
+  int64_t temperature = 6500;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    temperature = std::get<int64_t>(args[0]);
+  } else {
+    throw std::runtime_error("brightness.setTemp() requires an integer");
+  }
+
+  int64_t monitorIndex = -1;
+  if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
+    monitorIndex = std::get<int64_t>(args[1]);
+  }
+
+  if (!ctx_->brightnessManager) {
+    return BytecodeValue(false);
+  }
+  havel::host::BrightnessService brightnessService(ctx_->brightnessManager);
+  brightnessService.setTemperature(static_cast<int>(temperature), static_cast<int>(monitorIndex));
+  return BytecodeValue(true);
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

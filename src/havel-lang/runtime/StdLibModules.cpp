@@ -104,6 +104,12 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // Screenshot
   bridge.options().host_global_names.insert("screenshot");
+
+  // Audio
+  bridge.options().host_global_names.insert("audio");
+
+  // Brightness
+  bridge.options().host_global_names.insert("brightness");
 }
 
 } // namespace havel

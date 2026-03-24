@@ -5,6 +5,7 @@
 #include "VM.hpp"
 #include "../../../host/module/ModuleLoader.hpp"
 #include "../../../host/module/ExecutionPolicy.hpp"
+#include "../../../extensions/ExtensionLoader.hpp"
 
 #include <memory>
 #include <string>
@@ -67,6 +68,11 @@ public:
   ModuleLoader &moduleLoader() { return moduleLoader_; }
   const ModuleLoader &moduleLoader() const { return moduleLoader_; }
 
+  // Extension loading (native .so modules)
+  ExtensionLoader &extensionLoader() { return *extensionLoader_; }
+  const ExtensionLoader &extensionLoader() const { return *extensionLoader_; }
+  void loadExtension(const std::string &name);
+
   // Import system
   bool import(const std::string &importSpec);
 
@@ -87,6 +93,9 @@ private:
 
   // Module loader (lazy loading)
   ModuleLoader moduleLoader_;
+
+  // Extension loader (native .so modules)
+  std::unique_ptr<ExtensionLoader> extensionLoader_;
 
   // Mode system state
   std::unordered_map<std::string, ModeBinding> mode_bindings_;

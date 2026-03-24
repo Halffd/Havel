@@ -18,12 +18,14 @@ namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
+  extensionLoader_ = std::make_unique<ExtensionLoader>(*ctx_->vm);
   initBridges();
 }
 
 HostBridge::HostBridge(const havel::HostContext &ctx,
                        const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
+  extensionLoader_ = std::make_unique<ExtensionLoader>(*ctx_->vm);
   moduleLoader_.setExecutionPolicy(policy);
   initBridges();
 }
@@ -47,6 +49,7 @@ void HostBridge::shutdown() {
   automationBridge_.reset();
   browserBridge_.reset();
   toolsBridge_.reset();
+  extensionLoader_.reset();
 }
 
 void HostBridge::clear() {
@@ -115,6 +118,12 @@ bool HostBridge::import(const std::string &importSpec) {
     return false;
   }
   return moduleLoader_.import(importSpec, *ctx_->vm);
+}
+
+void HostBridge::loadExtension(const std::string &name) {
+  if (extensionLoader_) {
+    extensionLoader_->loadExtensionByName(name);
+  }
 }
 
 } // namespace havel::compiler

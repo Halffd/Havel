@@ -1,15 +1,22 @@
 /*
- * HostBridge.cpp - STUBBED for bytecode VM migration
- * Full implementation requires fixing HostContext/VM integration
+ * HostBridge.cpp - Bridges VM to host services
+ *
+ * ARCHITECTURE:
+ * - stdlib = PURE (Math, String, Array, Object, Type, Utility, Regex)
+ * - host = OS access (File, Process, Timer, Hotkey, Window, Clipboard, IO)
+ * - HostBridge exposes host services to VM
  */
 #include "HostBridge.hpp"
 #include "../../../gui/ClipboardManager.hpp"
+#include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
 #include "../../../host/io/IOService.hpp"
 #include "../../../host/process/ProcessService.hpp"
 #include "../../../host/screenshot/ScreenshotService.hpp"
 #include "../../../host/window/WindowService.hpp"
 #include <QClipboard>
+#include <fstream>
+#include <sstream>
 
 namespace havel::compiler {
 
@@ -45,7 +52,9 @@ void HostBridge::install() {
   options.host_functions.reserve(64);
   vm_setup_callbacks_.reserve(16);
 
-  // Register basic host functions
+  // ==========================================================================
+  // IO handlers
+  // ==========================================================================
   options.host_functions["send"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleSend(args);
@@ -69,6 +78,50 @@ void HostBridge::install() {
   options.host_functions["io.getMousePosition"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleGetMousePosition(args);
+      };
+
+  // ==========================================================================
+  // File System handlers
+  // ==========================================================================
+  options.host_functions["readFile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleFileRead(args);
+      };
+  options.host_functions["writeFile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleFileWrite(args);
+      };
+  options.host_functions["fileExists"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleFileExists(args);
+      };
+  options.host_functions["fileSize"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleFileSize(args);
+      };
+  options.host_functions["deleteFile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleFileDelete(args);
+      };
+
+  // ==========================================================================
+  // Process handlers
+  // ==========================================================================
+  options.host_functions["execute"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleProcessExecute(args);
+      };
+  options.host_functions["getpid"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleProcessGetPid(args);
+      };
+  options.host_functions["getppid"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleProcessGetPpid(args);
+      };
+  options.host_functions["process.find"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleProcessFind(args);
       };
 
   // Run vm_setup callbacks
@@ -472,6 +525,170 @@ HostBridge::handleScreenshotRegion(const std::vector<BytecodeValue> &args) {
 
   return BytecodeValue(nullptr);
 }
+
+// ============================================================================
+// File System Handlers - uses FileSystemService
+// ============================================================================
+
+BytecodeValue
+HostBridge::handleFileRead(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("readFile() requires a file path");
+  }
+
+  const std::string *path = std::get_if<std::string>(&args[0]);
+  if (!path) {
+    throw std::runtime_error("readFile() requires a string path");
+  }
+
+  havel::host::FileSystemService fs;
+  std::string content = fs.readFile(*path);
+  if (content.empty()) {
+    return BytecodeValue(nullptr);
+  }
+  return BytecodeValue(content);
+}
+
+BytecodeValue
+HostBridge::handleFileWrite(const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) {
+    throw std::runtime_error("writeFile() requires path and content");
+  }
+
+  const std::string *path = std::get_if<std::string>(&args[0]);
+  const std::string *content = std::get_if<std::string>(&args[1]);
+
+  if (!path || !content) {
+    throw std::runtime_error("writeFile() requires string arguments");
+  }
+
+  havel::host::FileSystemService fs;
+  return BytecodeValue(fs.writeFile(*path, *content));
+}
+
+BytecodeValue
+HostBridge::handleFileExists(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("fileExists() requires a file path");
+  }
+
+  const std::string *path = std::get_if<std::string>(&args[0]);
+  if (!path) {
+    throw std::runtime_error("fileExists() requires a string path");
+  }
+
+  havel::host::FileSystemService fs;
+  return BytecodeValue(fs.exists(*path));
+}
+
+BytecodeValue
+HostBridge::handleFileSize(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("fileSize() requires a file path");
+  }
+
+  const std::string *path = std::get_if<std::string>(&args[0]);
+  if (!path) {
+    throw std::runtime_error("fileSize() requires a string path");
+  }
+
+  havel::host::FileSystemService fs;
+  if (!fs.exists(*path)) {
+    return BytecodeValue(static_cast<int64_t>(0));
+  }
+  return BytecodeValue(fs.getFileSize(*path));
+}
+
+BytecodeValue
+HostBridge::handleFileDelete(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("deleteFile() requires a file path");
+  }
+
+  const std::string *path = std::get_if<std::string>(&args[0]);
+  if (!path) {
+    throw std::runtime_error("deleteFile() requires a string path");
+  }
+
+  havel::host::FileSystemService fs;
+  return BytecodeValue(fs.deleteFile(*path));
+}
+
+// ============================================================================
+// Process Handlers - uses ProcessService
+// ============================================================================
+
+BytecodeValue
+HostBridge::handleProcessExecute(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("execute() requires a command");
+  }
+
+  const std::string *command = std::get_if<std::string>(&args[0]);
+  if (!command) {
+    throw std::runtime_error("execute() requires a string command");
+  }
+
+  // Execute command and capture output
+  std::ostringstream output;
+  FILE *pipe = popen(command->c_str(), "r");
+  if (!pipe) {
+    throw std::runtime_error("Failed to execute command: " + *command);
+  }
+
+  char buffer[128];
+  while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+    output << buffer;
+  }
+
+  int exit_code = pclose(pipe);
+
+  // Return result as object with output and exit_code
+  // For now, just return the output string
+  return BytecodeValue(output.str());
+}
+
+BytecodeValue
+HostBridge::handleProcessGetPid(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(static_cast<int64_t>(havel::host::ProcessService::getCurrentPid()));
+}
+
+BytecodeValue
+HostBridge::handleProcessGetPpid(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(static_cast<int64_t>(havel::host::ProcessService::getParentPid()));
+}
+
+BytecodeValue
+HostBridge::handleProcessFind(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("process.find() requires a process name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("process.find() requires a string argument");
+  }
+
+  auto pids = havel::host::ProcessService::findProcesses(*name);
+
+  // Create array of PIDs
+  auto *vm = static_cast<VM *>(ctx_->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto arr = vm->createHostArray();
+  for (int32_t pid : pids) {
+    vm->pushHostArrayValue(arr, BytecodeValue(static_cast<int64_t>(pid)));
+  }
+  return BytecodeValue(arr);
+}
+
+// ============================================================================
+// Callback Management
+// ============================================================================
 
 CallbackId HostBridge::registerCallback(const BytecodeValue &closure) {
   if (!ctx_->vm) {

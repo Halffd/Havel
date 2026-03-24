@@ -75,6 +75,16 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // HOST services are registered separately through HostBridge
   // File, Process, Timer, Hotkey, Window, Clipboard, IO -> host layer
+  // Register host global names for host services
+  bridge.options().host_global_names.insert("readFile");
+  bridge.options().host_global_names.insert("writeFile");
+  bridge.options().host_global_names.insert("fileExists");
+  bridge.options().host_global_names.insert("fileSize");
+  bridge.options().host_global_names.insert("deleteFile");
+  bridge.options().host_global_names.insert("execute");
+  bridge.options().host_global_names.insert("getpid");
+  bridge.options().host_global_names.insert("getppid");
+  bridge.options().host_global_names.insert("process");
 }
 
 } // namespace havel

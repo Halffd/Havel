@@ -66,39 +66,39 @@ void HostBridge::install() {
   vm_setup_callbacks_.reserve(16);
 
   // Install modular bridges based on capabilities
-  if (ioBridge_ && caps_.ioControl) {
+  if (ioBridge_ && caps_.has(Capability::IO)) {
     ioBridge_->install(options_);
   }
   if (systemBridge_) {
-    if (caps_.fileIO || caps_.processExec) {
+    if (caps_.has(Capability::FileIO) || caps_.has(Capability::ProcessExec)) {
       systemBridge_->install(options_);
     }
   }
   if (uiBridge_) {
-    if (caps_.windowControl || caps_.clipboardAccess || caps_.screenshotAccess) {
+    if (caps_.has(Capability::WindowControl) || caps_.has(Capability::ClipboardAccess) || caps_.has(Capability::ScreenshotAccess)) {
       uiBridge_->install(options_);
     }
   }
   if (inputBridge_) {
-    if (caps_.hotkeyControl || caps_.inputRemapping || caps_.altTabControl) {
+    if (caps_.has(Capability::HotkeyControl) || caps_.has(Capability::InputRemapping) || caps_.has(Capability::AltTabControl)) {
       inputBridge_->install(options_);
     }
   }
   if (mediaBridge_) {
-    if (caps_.audioControl || caps_.brightnessControl) {
+    if (caps_.has(Capability::AudioControl) || caps_.has(Capability::BrightnessControl)) {
       mediaBridge_->install(options_);
     }
   }
-  if (asyncBridge_ && caps_.asyncOps) {
+  if (asyncBridge_ && caps_.has(Capability::AsyncOps)) {
     asyncBridge_->install(options_);
   }
-  if (automationBridge_ && caps_.automationControl) {
+  if (automationBridge_ && caps_.has(Capability::AutomationControl)) {
     automationBridge_->install(options_);
   }
-  if (browserBridge_ && caps_.browserControl) {
+  if (browserBridge_ && caps_.has(Capability::BrowserControl)) {
     browserBridge_->install(options_);
   }
-  if (toolsBridge_ && caps_.textChunkerAccess) {
+  if (toolsBridge_ && caps_.has(Capability::TextChunkerAccess)) {
     toolsBridge_->install(options_);
   }
 
@@ -114,26 +114,6 @@ void HostBridge::registerModule(const HostModule &module) {
 
 void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) {
   vm_setup_callbacks_.push_back(std::move(setupFn));
-}
-
-bool HostBridge::hasCapability(const std::string &name) const {
-  if (name == "io") return caps_.ioControl;
-  if (name == "fileIO") return caps_.fileIO;
-  if (name == "processExec") return caps_.processExec;
-  if (name == "windowControl") return caps_.windowControl;
-  if (name == "hotkeyControl") return caps_.hotkeyControl;
-  if (name == "modeControl") return caps_.modeControl;
-  if (name == "clipboardAccess") return caps_.clipboardAccess;
-  if (name == "screenshotAccess") return caps_.screenshotAccess;
-  if (name == "asyncOps") return caps_.asyncOps;
-  if (name == "audioControl") return caps_.audioControl;
-  if (name == "brightnessControl") return caps_.brightnessControl;
-  if (name == "automationControl") return caps_.automationControl;
-  if (name == "browserControl") return caps_.browserControl;
-  if (name == "textChunkerAccess") return caps_.textChunkerAccess;
-  if (name == "inputRemapping") return caps_.inputRemapping;
-  if (name == "altTabControl") return caps_.altTabControl;
-  return false;
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

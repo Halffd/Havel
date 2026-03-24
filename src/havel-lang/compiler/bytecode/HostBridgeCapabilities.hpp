@@ -1,115 +1,114 @@
 #pragma once
 
 /**
- * HostBridgeCapabilities.hpp - Capability gating for security/sandboxing
+ * HostBridgeCapabilities.hpp - Type-safe capability gating
  *
- * Controls which host features are available to scripts.
- * Used for:
- * - Sandboxing untrusted scripts
- * - Partial embedding (headless mode, CLI-only)
- * - User permission prompts
+ * Uses bitmask for performance and compiler safety.
  */
 
+#include <cstdint>
 #include <string>
-#include <vector>
-#include <set>
+#include <type_traits>
 
 namespace havel::compiler {
 
+/**
+ * Capability bitmask - type-safe, fast, compiler-checked
+ */
+enum class Capability : uint64_t {
+  None = 0,
+  IO = (1ULL << 0),              // send, mouse, keyboard
+  FileIO = (1ULL << 1),          // readFile, writeFile
+  ProcessExec = (1ULL << 2),     // execute, getpid
+  WindowControl = (1ULL << 3),   // window operations
+  HotkeyControl = (1ULL << 4),   // hotkey registration
+  ModeControl = (1ULL << 5),     // mode system
+  ClipboardAccess = (1ULL << 6), // clipboard get/set
+  ScreenshotAccess = (1ULL << 7),// screenshots
+  AsyncOps = (1ULL << 8),        // sleep, timers
+  AudioControl = (1ULL << 9),    // volume, mute
+  BrightnessControl = (1ULL << 10), // brightness, temperature
+  AutomationControl = (1ULL << 11), // auto-clicker, automation
+  BrowserControl = (1ULL << 12),    // browser automation
+  TextChunkerAccess = (1ULL << 13), // text chunking
+  InputRemapping = (1ULL << 14),    // key remapping, macros
+  AltTabControl = (1ULL << 15),     // window switcher
+  
+  // Presets
+  Full = ~0ULL,
+  Sandbox = ~(FileIO | ProcessExec | HotkeyControl | WindowControl | 
+              AutomationControl | BrowserControl | InputRemapping),
+  Minimal = IO | AsyncOps,
+};
+
+// Bitwise operators for Capability
+inline Capability operator|(Capability a, Capability b) {
+  using T = std::underlying_type_t<Capability>;
+  return static_cast<Capability>(static_cast<T>(a) | static_cast<T>(b));
+}
+
+inline Capability operator&(Capability a, Capability b) {
+  using T = std::underlying_type_t<Capability>;
+  return static_cast<Capability>(static_cast<T>(a) & static_cast<T>(b));
+}
+
+inline Capability operator~(Capability a) {
+  using T = std::underlying_type_t<Capability>;
+  return static_cast<Capability>(~static_cast<T>(a));
+}
+
+inline Capability& operator|=(Capability& a, Capability b) {
+  a = a | b;
+  return a;
+}
+
+inline bool hasCapability(Capability caps, Capability test) {
+  using T = std::underlying_type_t<Capability>;
+  return (static_cast<T>(caps & test) & static_cast<T>(test)) != 0;
+}
+
+/**
+ * HostBridgeCapabilities - Capability container
+ */
 struct HostBridgeCapabilities {
-  bool ioControl = true;              // send, mouse, keyboard
-  bool fileIO = true;                 // readFile, writeFile
-  bool processExec = true;            // execute, getpid
-  bool windowControl = true;          // window operations
-  bool hotkeyControl = true;          // hotkey registration
-  bool modeControl = true;            // mode system
-  bool clipboardAccess = true;        // clipboard get/set
-  bool screenshotAccess = true;       // screenshots
-  bool asyncOps = true;               // sleep, timers
-  bool audioControl = true;           // volume, mute
-  bool brightnessControl = true;      // brightness, temperature
-  bool automationControl = true;      // auto-clicker, automation
-  bool browserControl = true;         // browser automation
-  bool textChunkerAccess = true;      // text chunking
-  bool inputRemapping = true;         // key remapping, macros
-  bool altTabControl = true;          // window switcher
+  Capability caps = Capability::Full;
 
-  // Convenience presets
-  static HostBridgeCapabilities Full() { return {}; }
+  // Convenience constructors
+  static HostBridgeCapabilities Full() { return {Capability::Full}; }
+  static HostBridgeCapabilities Sandbox() { return {Capability::Sandbox}; }
+  static HostBridgeCapabilities Minimal() { return {Capability::Minimal}; }
 
-  static HostBridgeCapabilities Sandbox() {
-    HostBridgeCapabilities caps;
-    caps.fileIO = false;
-    caps.processExec = false;
-    caps.hotkeyControl = false;
-    caps.windowControl = false;
-    caps.automationControl = false;
-    caps.browserControl = false;
-    caps.inputRemapping = false;
-    return caps;
+  // Check capability
+  bool has(Capability test) const { return havel::compiler::hasCapability(caps, test); }
+  
+  // Set capability
+  void set(Capability cap, bool enabled = true) {
+    if (enabled) {
+      caps = caps | cap;
+    } else {
+      caps = caps & ~cap;
+    }
   }
 
-  static HostBridgeCapabilities Minimal() {
-    HostBridgeCapabilities caps;
-    caps.ioControl = true;  // Only basic IO
-    caps.fileIO = false;
-    caps.processExec = false;
-    caps.windowControl = false;
-    caps.hotkeyControl = false;
-    caps.modeControl = false;
-    caps.clipboardAccess = false;
-    caps.screenshotAccess = false;
-    caps.asyncOps = true;
-    caps.audioControl = false;
-    caps.brightnessControl = false;
-    caps.automationControl = false;
-    caps.browserControl = false;
-    caps.textChunkerAccess = false;
-    caps.inputRemapping = false;
-    caps.altTabControl = false;
-    return caps;
-  }
-
-  // Get required capabilities for a module
-  static std::set<std::string> getRequiredCapabilities(const std::string &moduleName) {
-    if (moduleName == "io") return {"ioControl"};
-    if (moduleName == "file") return {"fileIO"};
-    if (moduleName == "process") return {"processExec"};
-    if (moduleName == "window") return {"windowControl"};
-    if (moduleName == "hotkey") return {"hotkeyControl"};
-    if (moduleName == "mode") return {"modeControl"};
-    if (moduleName == "clipboard") return {"clipboardAccess"};
-    if (moduleName == "screenshot") return {"screenshotAccess"};
-    if (moduleName == "async") return {"asyncOps"};
-    if (moduleName == "audio") return {"audioControl"};
-    if (moduleName == "brightness") return {"brightnessControl"};
-    if (moduleName == "automation") return {"automationControl"};
-    if (moduleName == "browser") return {"browserControl"};
-    if (moduleName == "textchunker") return {"textChunkerAccess"};
-    if (moduleName == "mapmanager") return {"inputRemapping"};
-    if (moduleName == "alttab") return {"altTabControl"};
-    return {};
-  }
-
-  // Check if capability is enabled
-  bool hasCapability(const std::string &cap) const {
-    if (cap == "ioControl") return ioControl;
-    if (cap == "fileIO") return fileIO;
-    if (cap == "processExec") return processExec;
-    if (cap == "windowControl") return windowControl;
-    if (cap == "hotkeyControl") return hotkeyControl;
-    if (cap == "modeControl") return modeControl;
-    if (cap == "clipboardAccess") return clipboardAccess;
-    if (cap == "screenshotAccess") return screenshotAccess;
-    if (cap == "asyncOps") return asyncOps;
-    if (cap == "audioControl") return audioControl;
-    if (cap == "brightnessControl") return brightnessControl;
-    if (cap == "automationControl") return automationControl;
-    if (cap == "browserControl") return browserControl;
-    if (cap == "textChunkerAccess") return textChunkerAccess;
-    if (cap == "inputRemapping") return inputRemapping;
-    if (cap == "altTabControl") return altTabControl;
-    return false;
+  // Module capability requirements
+  static Capability requiredForModule(const std::string &name) {
+    if (name == "io") return Capability::IO;
+    if (name == "file") return Capability::FileIO;
+    if (name == "process") return Capability::ProcessExec;
+    if (name == "window") return Capability::WindowControl;
+    if (name == "hotkey") return Capability::HotkeyControl;
+    if (name == "mode") return Capability::ModeControl;
+    if (name == "clipboard") return Capability::ClipboardAccess;
+    if (name == "screenshot") return Capability::ScreenshotAccess;
+    if (name == "async") return Capability::AsyncOps;
+    if (name == "audio") return Capability::AudioControl;
+    if (name == "brightness") return Capability::BrightnessControl;
+    if (name == "automation") return Capability::AutomationControl;
+    if (name == "browser") return Capability::BrowserControl;
+    if (name == "textchunker") return Capability::TextChunkerAccess;
+    if (name == "mapmanager") return Capability::InputRemapping;
+    if (name == "alttab") return Capability::AltTabControl;
+    return Capability::None;
   }
 };
 

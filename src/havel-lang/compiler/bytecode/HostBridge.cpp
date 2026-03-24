@@ -10,6 +10,8 @@
 #include "../../../gui/ClipboardManager.hpp"
 #include "../../../host/async/AsyncService.hpp"
 #include "../../../host/audio/AudioService.hpp"
+#include "../../../host/automation/AutomationService.hpp"
+#include "../../../host/browser/BrowserService.hpp"
 #include "../../../host/brightness/BrightnessService.hpp"
 #include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
@@ -262,6 +264,82 @@ void HostBridge::install() {
   options.host_functions["brightness.setTemp"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleBrightnessSetTemp(args);
+      };
+
+  // ==========================================================================
+  // Automation handlers
+  // ==========================================================================
+  options.host_functions["automation.createAutoClicker"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationCreateAutoClicker(args);
+      };
+  options.host_functions["automation.createAutoRunner"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationCreateAutoRunner(args);
+      };
+  options.host_functions["automation.createAutoKeyPresser"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationCreateAutoKeyPresser(args);
+      };
+  options.host_functions["automation.hasTask"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationHasTask(args);
+      };
+  options.host_functions["automation.removeTask"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationRemoveTask(args);
+      };
+  options.host_functions["automation.stopAll"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAutomationStopAll(args);
+      };
+
+  // ==========================================================================
+  // Browser handlers
+  // ==========================================================================
+  options.host_functions["browser.connect"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserConnect(args);
+      };
+  options.host_functions["browser.connectFirefox"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserConnectFirefox(args);
+      };
+  options.host_functions["browser.disconnect"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserDisconnect(args);
+      };
+  options.host_functions["browser.isConnected"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserIsConnected(args);
+      };
+  options.host_functions["browser.open"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserOpen(args);
+      };
+  options.host_functions["browser.newTab"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserNewTab(args);
+      };
+  options.host_functions["browser.goto"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserGoto(args);
+      };
+  options.host_functions["browser.back"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserBack(args);
+      };
+  options.host_functions["browser.forward"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserForward(args);
+      };
+  options.host_functions["browser.reload"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserReload(args);
+      };
+  options.host_functions["browser.listTabs"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleBrowserListTabs(args);
       };
 
   // Run vm_setup callbacks
@@ -1048,6 +1126,250 @@ BytecodeValue HostBridge::handleBrightnessSetTemp(const std::vector<BytecodeValu
   havel::host::BrightnessService brightnessService(ctx_->brightnessManager);
   brightnessService.setTemperature(static_cast<int>(temperature), static_cast<int>(monitorIndex));
   return BytecodeValue(true);
+}
+
+// ============================================================================
+// Automation Handlers - uses AutomationService
+// ============================================================================
+
+BytecodeValue HostBridge::handleAutomationCreateAutoClicker(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("automation.createAutoClicker() requires a task name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("automation.createAutoClicker() requires a string name");
+  }
+
+  std::string button = "left";
+  int intervalMs = 100;
+
+  if (args.size() > 1) {
+    if (auto *s = std::get_if<std::string>(&args[1])) {
+      button = *s;
+    }
+  }
+  if (args.size() > 2) {
+    if (auto *v = std::get_if<int64_t>(&args[2])) {
+      intervalMs = static_cast<int>(*v);
+    }
+  }
+
+  // Note: AutomationService requires IO, which may not be available in all contexts
+  // For now, return false to indicate not available
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleAutomationCreateAutoRunner(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("automation.createAutoRunner() requires a task name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("automation.createAutoRunner() requires a string name");
+  }
+
+  std::string direction = "right";
+  int intervalMs = 50;
+
+  if (args.size() > 1) {
+    if (auto *s = std::get_if<std::string>(&args[1])) {
+      direction = *s;
+    }
+  }
+  if (args.size() > 2) {
+    if (auto *v = std::get_if<int64_t>(&args[2])) {
+      intervalMs = static_cast<int>(*v);
+    }
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleAutomationCreateAutoKeyPresser(const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) {
+    throw std::runtime_error("automation.createAutoKeyPresser() requires name and key");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  const std::string *key = std::get_if<std::string>(&args[1]);
+  if (!name || !key) {
+    throw std::runtime_error("automation.createAutoKeyPresser() requires string arguments");
+  }
+
+  int intervalMs = 100;
+  if (args.size() > 2) {
+    if (auto *v = std::get_if<int64_t>(&args[2])) {
+      intervalMs = static_cast<int>(*v);
+    }
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleAutomationHasTask(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("automation.hasTask() requires a task name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("automation.hasTask() requires a string name");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleAutomationRemoveTask(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("automation.removeTask() requires a task name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("automation.removeTask() requires a string name");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleAutomationStopAll(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(false);
+}
+
+// ============================================================================
+// Browser Handlers - uses BrowserService
+// ============================================================================
+
+BytecodeValue HostBridge::handleBrowserConnect(const std::vector<BytecodeValue> &args) {
+  std::string browserUrl = "http://localhost:9222";
+
+  if (!args.empty()) {
+    if (auto *s = std::get_if<std::string>(&args[0])) {
+      browserUrl = *s;
+    }
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.connect(browserUrl));
+}
+
+BytecodeValue HostBridge::handleBrowserConnectFirefox(const std::vector<BytecodeValue> &args) {
+  int port = 2828;
+
+  if (!args.empty()) {
+    if (auto *v = std::get_if<int64_t>(&args[0])) {
+      port = static_cast<int>(*v);
+    }
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.connectFirefox(port));
+}
+
+BytecodeValue HostBridge::handleBrowserDisconnect(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::BrowserService browser;
+  browser.disconnect();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleBrowserIsConnected(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.isConnected());
+}
+
+BytecodeValue HostBridge::handleBrowserOpen(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("browser.open() requires a URL");
+  }
+
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  if (!url) {
+    throw std::runtime_error("browser.open() requires a string URL");
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.open(*url));
+}
+
+BytecodeValue HostBridge::handleBrowserNewTab(const std::vector<BytecodeValue> &args) {
+  std::string url;
+
+  if (!args.empty()) {
+    if (auto *s = std::get_if<std::string>(&args[0])) {
+      url = *s;
+    }
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.newTab(url));
+}
+
+BytecodeValue HostBridge::handleBrowserGoto(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("browser.goto() requires a URL");
+  }
+
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  if (!url) {
+    throw std::runtime_error("browser.goto() requires a string URL");
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.gotoUrl(*url));
+}
+
+BytecodeValue HostBridge::handleBrowserBack(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.back());
+}
+
+BytecodeValue HostBridge::handleBrowserForward(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.forward());
+}
+
+BytecodeValue HostBridge::handleBrowserReload(const std::vector<BytecodeValue> &args) {
+  bool ignoreCache = false;
+
+  if (!args.empty()) {
+    if (auto *b = std::get_if<bool>(&args[0])) {
+      ignoreCache = *b;
+    }
+  }
+
+  havel::host::BrowserService browser;
+  return BytecodeValue(browser.reload(ignoreCache));
+}
+
+BytecodeValue HostBridge::handleBrowserListTabs(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::BrowserService browser;
+  auto tabs = browser.listTabs();
+
+  // Create array of tab objects
+  auto *vm = static_cast<VM *>(ctx_->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto arr = vm->createHostArray();
+  for (const auto &tab : tabs) {
+    auto tabObj = vm->createHostObject();
+    vm->setHostObjectField(tabObj, "id", BytecodeValue(static_cast<int64_t>(tab.id)));
+    vm->setHostObjectField(tabObj, "title", BytecodeValue(tab.title));
+    vm->setHostObjectField(tabObj, "url", BytecodeValue(tab.url));
+    vm->setHostObjectField(tabObj, "type", BytecodeValue(tab.type));
+    vm->pushHostArrayValue(arr, BytecodeValue(tabObj));
+  }
+  return BytecodeValue(arr);
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

@@ -4,8 +4,8 @@
  * ARCHITECTURE:
  * - HostBridge composes specialized bridge modules
  * - Each module handles a specific capability domain
- * - Capabilities can be gated for sandboxing
- * - ModuleLoader provides lazy loading and import system
+ * - Execution policy is OPTIONAL (for embedding/sandboxing)
+ * - Default: FULL ACCESS (no friction for normal users)
  */
 #include "HostBridge.hpp"
 #include "ModularHostBridges.hpp"
@@ -13,14 +13,14 @@
 namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
-    : ctx_(&ctx), caps_(HostBridgeCapabilities::Full()), moduleLoader_(*ctx_) {
+    : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
   initBridges();
 }
 
 HostBridge::HostBridge(const havel::HostContext &ctx,
-                       const HostBridgeCapabilities &caps)
-    : ctx_(&ctx), caps_(caps), moduleLoader_(*ctx_) {
-  moduleLoader_.setCapabilities(caps);
+                       const ExecutionPolicy &policy)
+    : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
+  moduleLoader_.setExecutionPolicy(policy);
   initBridges();
 }
 
@@ -65,42 +65,16 @@ void HostBridge::install() {
   options_.host_functions.reserve(64);
   vm_setup_callbacks_.reserve(16);
 
-  // Install modular bridges based on capabilities
-  if (ioBridge_ && caps_.has(Capability::IO)) {
-    ioBridge_->install(options_);
-  }
-  if (systemBridge_) {
-    if (caps_.has(Capability::FileIO) || caps_.has(Capability::ProcessExec)) {
-      systemBridge_->install(options_);
-    }
-  }
-  if (uiBridge_) {
-    if (caps_.has(Capability::WindowControl) || caps_.has(Capability::ClipboardAccess) || caps_.has(Capability::ScreenshotAccess)) {
-      uiBridge_->install(options_);
-    }
-  }
-  if (inputBridge_) {
-    if (caps_.has(Capability::HotkeyControl) || caps_.has(Capability::InputRemapping) || caps_.has(Capability::AltTabControl)) {
-      inputBridge_->install(options_);
-    }
-  }
-  if (mediaBridge_) {
-    if (caps_.has(Capability::AudioControl) || caps_.has(Capability::BrightnessControl)) {
-      mediaBridge_->install(options_);
-    }
-  }
-  if (asyncBridge_ && caps_.has(Capability::AsyncOps)) {
-    asyncBridge_->install(options_);
-  }
-  if (automationBridge_ && caps_.has(Capability::AutomationControl)) {
-    automationBridge_->install(options_);
-  }
-  if (browserBridge_ && caps_.has(Capability::BrowserControl)) {
-    browserBridge_->install(options_);
-  }
-  if (toolsBridge_ && caps_.has(Capability::TextChunkerAccess)) {
-    toolsBridge_->install(options_);
-  }
+  // Install all bridge modules (policy checks happen at call time if needed)
+  ioBridge_->install(options_);
+  systemBridge_->install(options_);
+  uiBridge_->install(options_);
+  inputBridge_->install(options_);
+  mediaBridge_->install(options_);
+  asyncBridge_->install(options_);
+  automationBridge_->install(options_);
+  browserBridge_->install(options_);
+  toolsBridge_->install(options_);
 
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
@@ -122,8 +96,8 @@ std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {
 
 std::shared_ptr<HostBridge>
 createHostBridge(const havel::HostContext &ctx,
-                 const HostBridgeCapabilities &caps) {
-  return std::make_shared<HostBridge>(ctx, caps);
+                 const ExecutionPolicy &policy) {
+  return std::make_shared<HostBridge>(ctx, policy);
 }
 
 bool HostBridge::import(const std::string &importSpec) {

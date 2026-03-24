@@ -3,8 +3,8 @@
 #include "../../runtime/HostContext.hpp"
 #include "Pipeline.hpp"
 #include "VM.hpp"
-#include "ModuleLoader.hpp"
-#include "ExecutionPolicy.hpp"
+#include "../../../host/module/ModuleLoader.hpp"
+#include "../../../host/module/ExecutionPolicy.hpp"
 
 #include <memory>
 #include <string>

@@ -13,6 +13,7 @@
 #include "../../../host/automation/AutomationService.hpp"
 #include "../../../host/browser/BrowserService.hpp"
 #include "../../../host/brightness/BrightnessService.hpp"
+#include "../../../host/chunker/TextChunkerService.hpp"
 #include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
 #include "../../../host/io/IOService.hpp"
@@ -340,6 +341,58 @@ void HostBridge::install() {
   options.host_functions["browser.listTabs"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleBrowserListTabs(args);
+      };
+
+  // ==========================================================================
+  // TextChunker handlers
+  // ==========================================================================
+  options.host_functions["textchunker.setText"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerSetText(args);
+      };
+  options.host_functions["textchunker.getText"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetText(args);
+      };
+  options.host_functions["textchunker.setChunkSize"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerSetChunkSize(args);
+      };
+  options.host_functions["textchunker.getTotalChunks"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetTotalChunks(args);
+      };
+  options.host_functions["textchunker.getCurrentChunk"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetCurrentChunk(args);
+      };
+  options.host_functions["textchunker.setCurrentChunk"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerSetCurrentChunk(args);
+      };
+  options.host_functions["textchunker.getChunk"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetChunk(args);
+      };
+  options.host_functions["textchunker.getNextChunk"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetNextChunk(args);
+      };
+  options.host_functions["textchunker.getPreviousChunk"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGetPreviousChunk(args);
+      };
+  options.host_functions["textchunker.goToFirst"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGoToFirst(args);
+      };
+  options.host_functions["textchunker.goToLast"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerGoToLast(args);
+      };
+  options.host_functions["textchunker.clear"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleTextChunkerClear(args);
       };
 
   // Run vm_setup callbacks
@@ -1370,6 +1423,112 @@ BytecodeValue HostBridge::handleBrowserListTabs(const std::vector<BytecodeValue>
     vm->pushHostArrayValue(arr, BytecodeValue(tabObj));
   }
   return BytecodeValue(arr);
+}
+
+// ============================================================================
+// TextChunker Handlers - uses TextChunkerService
+// ============================================================================
+
+namespace {
+  havel::host::TextChunkerService g_textChunker;
+}
+
+BytecodeValue HostBridge::handleTextChunkerSetText(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("textchunker.setText() requires text");
+  }
+
+  const std::string *text = std::get_if<std::string>(&args[0]);
+  if (!text) {
+    throw std::runtime_error("textchunker.setText() requires a string");
+  }
+
+  g_textChunker.setText(*text);
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetText(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(g_textChunker.getText());
+}
+
+BytecodeValue HostBridge::handleTextChunkerSetChunkSize(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("textchunker.setChunkSize() requires a size");
+  }
+
+  int64_t size = 20000;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    size = std::get<int64_t>(args[0]);
+  }
+
+  g_textChunker.setChunkSize(static_cast<size_t>(size));
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetTotalChunks(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(static_cast<int64_t>(g_textChunker.getTotalChunks()));
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetCurrentChunk(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(static_cast<int64_t>(g_textChunker.getCurrentChunk()));
+}
+
+BytecodeValue HostBridge::handleTextChunkerSetCurrentChunk(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("textchunker.setCurrentChunk() requires a chunk index");
+  }
+
+  int64_t index = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    index = std::get<int64_t>(args[0]);
+  }
+
+  g_textChunker.setCurrentChunk(static_cast<int>(index));
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("textchunker.getChunk() requires a chunk index");
+  }
+
+  int64_t index = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    index = std::get<int64_t>(args[0]);
+  }
+
+  return BytecodeValue(g_textChunker.getChunk(static_cast<int>(index)));
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetNextChunk(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(g_textChunker.getNextChunk());
+}
+
+BytecodeValue HostBridge::handleTextChunkerGetPreviousChunk(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(g_textChunker.getPreviousChunk());
+}
+
+BytecodeValue HostBridge::handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  g_textChunker.goToFirst();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  g_textChunker.goToLast();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleTextChunkerClear(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  g_textChunker.clear();
+  return BytecodeValue(true);
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <optional>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -561,31 +562,26 @@ void VM::registerDefaultHostFunctions() {
       });
 
   // Enhanced sleep() with duration string support
-  registerHostFunction("sleep", 1, [](const std::vector<BytecodeValue> &args) {
-    long long duration_ms = 0;
+  registerHostFunction(
+      "sleep", 1, [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          throw std::runtime_error("sleep() requires one argument");
+        }
 
-    if (std::holds_alternative<int64_t>(args[0])) {
-      duration_ms = std::get<int64_t>(args[0]);
-    } else if (std::holds_alternative<double>(args[0])) {
-      duration_ms = static_cast<long long>(std::get<double>(args[0]));
-    } else if (std::holds_alternative<std::string>(args[0])) {
-      // Import ParseDuration from MouseController
-      auto duration = havel::ParseDuration(std::get<std::string>(args[0]));
-      if (!duration) {
-        throw std::runtime_error("sleep(): invalid duration format");
-      }
-      duration_ms = *duration;
-    } else {
-      throw std::runtime_error("sleep(): expects number or string");
-    }
+        auto duration_ms = parseDuration(args[0]);
+        if (!duration_ms) {
+          throw std::runtime_error(
+              "sleep(): invalid duration format. Use numbers (ms) or strings "
+              "like '1s', '500ms', '2.5m', '1h'");
+        }
 
-    if (duration_ms < 0) {
-      throw std::runtime_error("sleep(): duration cannot be negative");
-    }
+        if (*duration_ms < 0) {
+          throw std::runtime_error("sleep(): duration cannot be negative");
+        }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
-    return BytecodeValue(nullptr);
-  });
+        std::this_thread::sleep_for(std::chrono::milliseconds(*duration_ms));
+        return BytecodeValue(nullptr);
+      });
 
   // Type conversion builtins
   registerHostFunction("int", 1, [](const std::vector<BytecodeValue> &args) {
@@ -1078,6 +1074,11 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::PUSH_NULL: {
+    push(BytecodeValue(nullptr));
+    break;
+  }
+
   case OpCode::ADD:
   case OpCode::SUB:
   case OpCode::MUL:
@@ -1092,6 +1093,30 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::GTE: {
     BytecodeValue right = pop();
     BytecodeValue left = pop();
+
+    // Handle null comparisons explicitly
+    if (isNull(left) || isNull(right)) {
+      bool result = false;
+      switch (instruction.opcode) {
+      case OpCode::EQ:
+        result = isNull(left) && isNull(right);
+        break;
+      case OpCode::NEQ:
+        result = !(isNull(left) && isNull(right));
+        break;
+      case OpCode::LT:
+      case OpCode::LTE:
+      case OpCode::GT:
+      case OpCode::GTE:
+        // Null cannot be ordered with anything
+        result = false;
+        break;
+      default:
+        throw std::runtime_error("Invalid comparison opcode with null");
+      }
+      push(result);
+      break;
+    }
 
     if (std::holds_alternative<int64_t>(left) &&
         std::holds_alternative<int64_t>(right)) {
@@ -1230,20 +1255,20 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::AND: {
     BytecodeValue right = pop();
     BytecodeValue left = pop();
-    push(getValue<bool>(left) && getValue<bool>(right));
+    push(isTruthy(left) && isTruthy(right));
     break;
   }
 
   case OpCode::OR: {
     BytecodeValue right = pop();
     BytecodeValue left = pop();
-    push(getValue<bool>(left) || getValue<bool>(right));
+    push(isTruthy(left) || isTruthy(right));
     break;
   }
 
   case OpCode::NOT: {
     BytecodeValue value = pop();
-    push(!getValue<bool>(value));
+    push(!isTruthy(value));
     break;
   }
 
@@ -1256,7 +1281,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::JUMP_IF_FALSE: {
     uint32_t target = std::get<uint32_t>(instruction.operands[0]);
     BytecodeValue condition = pop();
-    if (!getValue<bool>(condition)) {
+    if (!isTruthy(condition)) {
       currentFrame().ip = target;
     }
     break;
@@ -1265,7 +1290,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::JUMP_IF_TRUE: {
     uint32_t target = std::get<uint32_t>(instruction.operands[0]);
     BytecodeValue condition = pop();
-    if (getValue<bool>(condition)) {
+    if (isTruthy(condition)) {
       currentFrame().ip = target;
     }
     break;
@@ -1803,6 +1828,104 @@ VMImage VM::createImageFromRGBA(int width, int height,
 
 std::unique_ptr<BytecodeInterpreter> createVM() {
   return std::make_unique<VM>();
+}
+
+// Value utility functions
+bool VM::isNull(const BytecodeValue &value) const {
+  return std::holds_alternative<std::nullptr_t>(value);
+}
+
+bool VM::isTruthy(const BytecodeValue &value) {
+  // Step 1: null is always falsy
+  if (isNull(value)) {
+    return false;
+  }
+
+  // Step 2: boolean values follow their own truthiness
+  if (std::holds_alternative<bool>(value)) {
+    return std::get<bool>(value);
+  }
+
+  // Step 3: numeric values: 0 is falsy, non-zero is truthy
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::get<int64_t>(value) != 0;
+  }
+  if (std::holds_alternative<double>(value)) {
+    return std::get<double>(value) != 0.0;
+  }
+
+  // Step 4: empty string is falsy, non-empty is truthy
+  if (std::holds_alternative<std::string>(value)) {
+    return !std::get<std::string>(value).empty();
+  }
+
+  // Step 5: arrays are truthy if non-empty
+  if (std::holds_alternative<ArrayRef>(value)) {
+    auto *array = heap_.array(std::get<ArrayRef>(value).id);
+    return array && !array->empty();
+  }
+
+  // Step 6: objects are always truthy (even if empty)
+  if (std::holds_alternative<ObjectRef>(value)) {
+    return true;
+  }
+
+  // Step 7: sets are truthy if non-empty
+  if (std::holds_alternative<SetRef>(value)) {
+    // Note: Sets aren't fully implemented yet, but assume truthy if they exist
+    return true;
+  }
+
+  // Step 8: functions are always truthy
+  if (std::holds_alternative<FunctionObject>(value) ||
+      std::holds_alternative<HostFunctionRef>(value) ||
+      std::holds_alternative<ClosureRef>(value)) {
+    return true;
+  }
+
+  // Step 9: constant pool indices should never appear here, but treat as falsy
+  if (std::holds_alternative<uint32_t>(value)) {
+    return false;
+  }
+
+  // Default: should not reach here, but be conservative
+  return false;
+}
+
+// Duration parsing utility
+std::optional<int64_t> VM::parseDuration(const BytecodeValue &value) const {
+  if (std::holds_alternative<int64_t>(value)) {
+    return std::get<int64_t>(value);
+  }
+
+  if (std::holds_alternative<double>(value)) {
+    return static_cast<int64_t>(std::get<double>(value));
+  }
+
+  if (std::holds_alternative<std::string>(value)) {
+    const std::string &duration_str = std::get<std::string>(value);
+
+    // Parse duration strings like "1s", "500ms", "2.5m", "1h"
+    static const std::regex duration_regex(R"(^(\d+(?:\.\d+)?)(ms|s|m|h)$)");
+    std::smatch match;
+
+    if (std::regex_match(duration_str, match, duration_regex)) {
+      double number = std::stod(match[1].str());
+      std::string unit = match[2].str();
+
+      if (unit == "ms") {
+        return static_cast<int64_t>(number);
+      } else if (unit == "s") {
+        return static_cast<int64_t>(number * 1000.0);
+      } else if (unit == "m") {
+        return static_cast<int64_t>(number * 60.0 * 1000.0);
+      } else if (unit == "h") {
+        return static_cast<int64_t>(number * 60.0 * 60.0 * 1000.0);
+      }
+    }
+  }
+
+  return std::nullopt;
 }
 
 } // namespace havel::compiler

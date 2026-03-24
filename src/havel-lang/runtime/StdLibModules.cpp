@@ -116,6 +116,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // Browser
   bridge.options().host_global_names.insert("browser");
+
+  // TextChunker
+  bridge.options().host_global_names.insert("textchunker");
 }
 
 } // namespace havel

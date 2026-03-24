@@ -146,6 +146,20 @@ private:
   BytecodeValue handleBrowserReload(const std::vector<BytecodeValue> &args);
   BytecodeValue handleBrowserListTabs(const std::vector<BytecodeValue> &args);
 
+  // Handler methods - TextChunker
+  BytecodeValue handleTextChunkerSetText(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetText(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerSetChunkSize(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetTotalChunks(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetCurrentChunk(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerSetCurrentChunk(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetNextChunk(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGetPreviousChunk(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTextChunkerClear(const std::vector<BytecodeValue> &args);
+
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id,

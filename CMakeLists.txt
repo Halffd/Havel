@@ -263,12 +263,42 @@ endif()
 # ==============================================================================
 # SOURCE FILE COLLECTION
 # ==============================================================================
-# Core sources (always required)
+# ==============================================================================
+# NATIVE EXTENSIONS (loaded via dlopen)
+# ==============================================================================
+
+# Image extension (OpenCV-based)
+if(OpenCV_FOUND)
+    add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
+    target_include_directories(image_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${OpenCV_INCLUDE_DIRS}
+    )
+    target_link_libraries(image_extension PRIVATE ${OpenCV_LIBS})
+    set_target_properties(image_extension PROPERTIES PREFIX "")
+endif()
+
+# OCR extension (Tesseract-based)
+if(TESSERACT_FOUND AND LEPTONICA_FOUND)
+    add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
+    target_include_directories(ocr_extension PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${TESSERACT_INCLUDE_DIRS}
+        ${LEPTONICA_INCLUDE_DIRS}
+    )
+    target_link_libraries(ocr_extension PRIVATE ${TESSERACT_LIBRARIES} ${LEPTONICA_LIBRARIES})
+    target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
+    set_target_properties(ocr_extension PROPERTIES PREFIX "")
+endif()
+
+# ==============================================================================
+# CORE sources (always required)
 file(GLOB_RECURSE CORE_SOURCES
     "src/core/*.cpp"
     "src/core/io/*.cpp"
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
+    "src/extensions/ExtensionLoader.cpp"
     "src/host/app/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"

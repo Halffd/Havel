@@ -5,205 +5,163 @@
 #include "VM.hpp"
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <functional>
 
 namespace havel::compiler {
 
 /**
- * HostBridge - Bridges VM host functions to injected services
+ * HostBridgeCapabilities - Capability gating for security/sandboxing
+ *
+ * Controls which host features are available to scripts.
+ * Used for:
+ * - Sandboxing untrusted scripts
+ * - Partial embedding (headless mode, CLI-only)
+ * - User permission prompts
+ */
+struct HostBridgeCapabilities {
+  bool ioControl = true;              // send, mouse, keyboard
+  bool fileIO = true;                 // readFile, writeFile
+  bool processExec = true;            // execute, getpid
+  bool windowControl = true;          // window operations
+  bool hotkeyControl = true;          // hotkey registration
+  bool modeControl = true;            // mode system
+  bool clipboardAccess = true;        // clipboard get/set
+  bool screenshotAccess = true;       // screenshots
+  bool asyncOps = true;               // sleep, timers
+  bool audioControl = true;           // volume, mute
+  bool brightnessControl = true;      // brightness, temperature
+  bool automationControl = true;      // auto-clicker, automation
+  bool browserControl = true;         // browser automation
+  bool textChunkerAccess = true;      // text chunking
+  bool inputRemapping = true;         // key remapping, macros
+  bool altTabControl = true;          // window switcher
+
+  // Convenience presets
+  static HostBridgeCapabilities Full() { return {}; }
+
+  static HostBridgeCapabilities Sandbox() {
+    HostBridgeCapabilities caps;
+    caps.fileIO = false;
+    caps.processExec = false;
+    caps.hotkeyControl = false;
+    caps.windowControl = false;
+    caps.automationControl = false;
+    caps.browserControl = false;
+    caps.inputRemapping = false;
+    return caps;
+  }
+
+  static HostBridgeCapabilities Minimal() {
+    HostBridgeCapabilities caps;
+    caps.ioControl = true;  // Only basic IO
+    caps.fileIO = false;
+    caps.processExec = false;
+    caps.windowControl = false;
+    caps.hotkeyControl = false;
+    caps.modeControl = false;
+    caps.clipboardAccess = false;
+    caps.screenshotAccess = false;
+    caps.asyncOps = true;
+    caps.audioControl = false;
+    caps.brightnessControl = false;
+    caps.automationControl = false;
+    caps.browserControl = false;
+    caps.textChunkerAccess = false;
+    caps.inputRemapping = false;
+    caps.altTabControl = false;
+    return caps;
+  }
+};
+
+/**
+ * Forward declarations for modular bridge components
+ */
+class IOBridge;
+class SystemBridge;
+class UIBridge;
+class InputBridge;
+class MediaBridge;
+class AsyncBridge;
+class AutomationBridge;
+class BrowserBridge;
+class ToolsBridge;
+
+/**
+ * HostBridge - Composite bridge delegating to modular components
  *
  * ARCHITECTURE:
- * - Dependencies are INJECTED via HostContext (not pulled from registry)
- * - Embedders provide custom capabilities via ctx.caps
- * - No hidden dependencies or global state
- *
- * USAGE:
- *   HostContext ctx;
- *   ctx.io = std::make_shared<IO>();
- *   ctx.caps["custom"] = std::make_shared<MyCustomCap>();
- *
- *   auto bridge = std::make_unique<HostBridge>(vm, ctx);
- *   bridge->install();
+ * - HostBridge composes specialized bridge modules
+ * - Each module handles a specific capability domain
+ * - Capabilities can be gated for sandboxing
+ * - Easy to test individual modules
+ * - Easy to embed with partial features
  */
 class HostBridge : public std::enable_shared_from_this<HostBridge> {
 public:
-  HostBridge(const havel::HostContext &ctx);
+  explicit HostBridge(const havel::HostContext &ctx);
+  explicit HostBridge(const havel::HostContext &ctx,
+                      const HostBridgeCapabilities &caps);
   ~HostBridge();
 
   void install();
   void clear();
-  void shutdown(); // Explicit shutdown to clear containers before exit
+  void shutdown();
 
-  // Accessors for stdlib registration
+  // Accessors
   PipelineOptions &options() { return options_; }
   const PipelineOptions &options() const { return options_; }
-
-  // Get context (for embedders to inspect/modify)
   const HostContext &context() const { return *ctx_; }
+  const HostBridgeCapabilities &capabilities() const { return caps_; }
 
-  // Register custom module (embedder extension point)
+  // Module registration
   void registerModule(const HostModule &module);
-
-  // Add vm_setup callback (accumulates with previous callbacks)
   void addVmSetup(std::function<void(VM &)> setupFn);
 
-private:
-  const havel::HostContext *ctx_;
-  PipelineOptions options_;
+  // Capability management
+  void setCapabilities(const HostBridgeCapabilities &caps) { caps_ = caps; }
+  bool hasCapability(const std::string &name) const;
 
-  // Accumulated vm_setup callbacks
-  std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
-
-  // Registered modules
-  std::vector<HostModule> modules_;
-
-  // Handler methods - IO
-  BytecodeValue handleSend(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMouseMove(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMouseClick(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleGetMousePosition(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - File System
-  BytecodeValue handleFileRead(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleFileWrite(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleFileExists(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleFileSize(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleFileDelete(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Process
-  BytecodeValue handleProcessExecute(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleProcessGetPid(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleProcessGetPpid(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Window
-  BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowOn(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Hotkey
-  BytecodeValue handleHotkeyRegister(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleHotkeyTrigger(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Mode
-  BytecodeValue handleModeDefine(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleModeSet(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleModeTick(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Clipboard
-  BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Screenshot
-  BytecodeValue handleScreenshotFull(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleScreenshotMonitor(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleScreenshotWindow(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleScreenshotRegion(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Async/Timer
-  BytecodeValue handleSleep(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTimeNow(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Audio
-  BytecodeValue handleAudioGetVolume(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAudioSetVolume(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAudioToggleMute(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAudioSetMute(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAudioIsMuted(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Brightness
-  BytecodeValue handleBrightnessGet(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrightnessSet(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrightnessGetTemp(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrightnessSetTemp(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Automation
-  BytecodeValue handleAutomationCreateAutoClicker(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAutomationCreateAutoRunner(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAutomationCreateAutoKeyPresser(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAutomationHasTask(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAutomationRemoveTask(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAutomationStopAll(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - Browser
-  BytecodeValue handleBrowserConnect(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserConnectFirefox(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserDisconnect(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserIsConnected(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserOpen(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserNewTab(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserGoto(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserBack(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserForward(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserReload(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleBrowserListTabs(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - TextChunker
-  BytecodeValue handleTextChunkerSetText(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetText(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerSetChunkSize(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetTotalChunks(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetCurrentChunk(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerSetCurrentChunk(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetChunk(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetNextChunk(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGetPreviousChunk(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGoToFirst(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleTextChunkerClear(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - MapManager (input remapping)
-  BytecodeValue handleMapManagerMap(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerRemap(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerUnmap(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerClearAll(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerEnableAutofire(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerDisableAutofire(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerEnableTurbo(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerDisableTurbo(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerCreateProfile(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerSwitchProfile(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleMapManagerGetCurrentProfile(const std::vector<BytecodeValue> &args);
-
-  // Handler methods - AltTab (window switcher)
-  BytecodeValue handleAltTabShow(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabHide(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabToggle(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabNext(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabPrevious(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabSelect(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleAltTabGetWindows(const std::vector<BytecodeValue> &args);
-
-  // Callback management through VM (internal - not exposed as host functions)
-  CallbackId registerCallback(const BytecodeValue &closure);
-  BytecodeValue invokeCallback(CallbackId id,
-                               const std::vector<BytecodeValue> &args = {});
-  void releaseCallback(CallbackId id);
-
+  // Mode binding state (for mode system)
   struct ModeBinding {
     std::optional<CallbackId> condition_id;
     std::optional<CallbackId> enter_id;
     std::optional<CallbackId> exit_id;
   };
 
+private:
+  const havel::HostContext *ctx_;
+  PipelineOptions options_;
+  HostBridgeCapabilities caps_;
+
+  std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
+  std::vector<HostModule> modules_;
+
+  // Mode system state
   std::unordered_map<std::string, ModeBinding> mode_bindings_;
   std::vector<std::string> mode_definition_order_;
   std::unordered_map<CallbackId, std::string> hotkey_binding_keys_;
+
+  // Modular bridge components
+  std::unique_ptr<IOBridge> ioBridge_;
+  std::unique_ptr<SystemBridge> systemBridge_;
+  std::unique_ptr<UIBridge> uiBridge_;
+  std::unique_ptr<InputBridge> inputBridge_;
+  std::unique_ptr<MediaBridge> mediaBridge_;
+  std::unique_ptr<AsyncBridge> asyncBridge_;
+  std::unique_ptr<AutomationBridge> automationBridge_;
+  std::unique_ptr<BrowserBridge> browserBridge_;
+  std::unique_ptr<ToolsBridge> toolsBridge_;
+
+  // Initialize bridge modules
+  void initBridges();
 };
 
-/**
- * Create HostBridge with injected context
- *
- * This is the primary factory function for embedders.
- */
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx);
+std::shared_ptr<HostBridge>
+createHostBridge(const havel::HostContext &ctx,
+                 const HostBridgeCapabilities &caps);
 
 } // namespace havel::compiler

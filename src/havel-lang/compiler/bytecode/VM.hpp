@@ -214,6 +214,11 @@ public:
   void releaseCallback(CallbackId id);
   bool isValidCallback(CallbackId id) const;
 
+  // Value utility functions
+  bool isNull(const BytecodeValue &value) const;
+  bool isTruthy(const BytecodeValue &value);
+  std::optional<int64_t> parseDuration(const BytecodeValue &value) const;
+
   // Image helpers - create GC-managed images
   VMImage createImage(int width, int height, int stride, PixelFormat format,
                       const uint8_t *data);

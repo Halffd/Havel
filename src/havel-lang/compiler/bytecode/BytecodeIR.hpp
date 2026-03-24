@@ -33,6 +33,7 @@ enum class OpCode : uint8_t {
   POP,
   DUP,
   SWAP,
+  PUSH_NULL,
 
   // Arithmetic operations
   ADD,
@@ -82,7 +83,7 @@ enum class OpCode : uint8_t {
   // Spread operator
   SPREAD,
   SPREAD_CALL,
-  
+
   // Type conversion
   AS_TYPE,
   TO_INT,
@@ -122,10 +123,11 @@ struct HostFunctionRef {
   std::string name;
 };
 
-using BytecodeValue = std::variant<
-    std::nullptr_t, bool, int64_t, double, std::string,
-    uint32_t, // Index into constant pool
-    FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef, HostFunctionRef>;
+using BytecodeValue =
+    std::variant<std::nullptr_t, bool, int64_t, double, std::string,
+                 uint32_t, // Index into constant pool
+                 FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
+                 HostFunctionRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;
@@ -249,8 +251,8 @@ protected:
 
 public:
   Hybrid(std::unique_ptr<BytecodeCompiler> comp,
-                        std::unique_ptr<BytecodeInterpreter> interp,
-                        std::unique_ptr<JITCompiler> jcomp = nullptr);
+         std::unique_ptr<BytecodeInterpreter> interp,
+         std::unique_ptr<JITCompiler> jcomp = nullptr);
 
   virtual ~Hybrid() = default;
 

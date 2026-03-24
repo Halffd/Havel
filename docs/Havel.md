@@ -63,7 +63,7 @@ move(100, 200)
 Import module functions directly into current scope:
 
 ```havel
-use io, media, filemanager
+use io.*, media.*, fs.*
 
 // Direct access without module.method()
 move(10, 0)     // instead of mouse.move(10, 0)

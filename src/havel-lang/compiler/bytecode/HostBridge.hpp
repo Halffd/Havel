@@ -160,6 +160,28 @@ private:
   BytecodeValue handleTextChunkerGoToLast(const std::vector<BytecodeValue> &args);
   BytecodeValue handleTextChunkerClear(const std::vector<BytecodeValue> &args);
 
+  // Handler methods - MapManager (input remapping)
+  BytecodeValue handleMapManagerMap(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerRemap(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerUnmap(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerClearAll(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerEnableAutofire(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerDisableAutofire(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerEnableTurbo(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerDisableTurbo(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerCreateProfile(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerSwitchProfile(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleMapManagerGetCurrentProfile(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - AltTab (window switcher)
+  BytecodeValue handleAltTabShow(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabHide(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabToggle(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabNext(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabPrevious(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabSelect(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAltTabGetWindows(const std::vector<BytecodeValue> &args);
+
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id,

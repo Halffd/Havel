@@ -119,6 +119,12 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // TextChunker
   bridge.options().host_global_names.insert("textchunker");
+
+  // MapManager (input remapping)
+  bridge.options().host_global_names.insert("mapmanager");
+
+  // AltTab (window switcher)
+  bridge.options().host_global_names.insert("alttab");
 }
 
 } // namespace havel

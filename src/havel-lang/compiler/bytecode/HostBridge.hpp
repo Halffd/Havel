@@ -125,6 +125,27 @@ private:
   BytecodeValue handleBrightnessGetTemp(const std::vector<BytecodeValue> &args);
   BytecodeValue handleBrightnessSetTemp(const std::vector<BytecodeValue> &args);
 
+  // Handler methods - Automation
+  BytecodeValue handleAutomationCreateAutoClicker(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAutomationCreateAutoRunner(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAutomationCreateAutoKeyPresser(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAutomationHasTask(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAutomationRemoveTask(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAutomationStopAll(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Browser
+  BytecodeValue handleBrowserConnect(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserConnectFirefox(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserDisconnect(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserIsConnected(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserOpen(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserNewTab(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserGoto(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserBack(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserForward(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserReload(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrowserListTabs(const std::vector<BytecodeValue> &args);
+
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id,

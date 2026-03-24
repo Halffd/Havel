@@ -110,6 +110,12 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // Brightness
   bridge.options().host_global_names.insert("brightness");
+
+  // Automation
+  bridge.options().host_global_names.insert("automation");
+
+  // Browser
+  bridge.options().host_global_names.insert("browser");
 }
 
 } // namespace havel

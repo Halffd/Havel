@@ -17,9 +17,11 @@
 #include "../../../host/filesystem/FileSystemService.hpp"
 #include "../../../host/hotkey/HotkeyService.hpp"
 #include "../../../host/io/IOService.hpp"
+#include "../../../host/io/MapManagerService.hpp"
 #include "../../../host/process/ProcessService.hpp"
 #include "../../../host/screenshot/ScreenshotService.hpp"
 #include "../../../host/window/WindowService.hpp"
+#include "../../../host/window/AltTabService.hpp"
 #include <QClipboard>
 #include <fstream>
 #include <sstream>
@@ -393,6 +395,86 @@ void HostBridge::install() {
   options.host_functions["textchunker.clear"] =
       [self](const std::vector<BytecodeValue> &args) {
         return self->handleTextChunkerClear(args);
+      };
+
+  // ==========================================================================
+  // MapManager handlers (input remapping)
+  // ==========================================================================
+  options.host_functions["mapmanager.map"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerMap(args);
+      };
+  options.host_functions["mapmanager.remap"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerRemap(args);
+      };
+  options.host_functions["mapmanager.unmap"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerUnmap(args);
+      };
+  options.host_functions["mapmanager.clearAll"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerClearAll(args);
+      };
+  options.host_functions["mapmanager.enableAutofire"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerEnableAutofire(args);
+      };
+  options.host_functions["mapmanager.disableAutofire"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerDisableAutofire(args);
+      };
+  options.host_functions["mapmanager.enableTurbo"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerEnableTurbo(args);
+      };
+  options.host_functions["mapmanager.disableTurbo"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerDisableTurbo(args);
+      };
+  options.host_functions["mapmanager.createProfile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerCreateProfile(args);
+      };
+  options.host_functions["mapmanager.switchProfile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerSwitchProfile(args);
+      };
+  options.host_functions["mapmanager.getCurrentProfile"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleMapManagerGetCurrentProfile(args);
+      };
+
+  // ==========================================================================
+  // AltTab handlers (window switcher)
+  // ==========================================================================
+  options.host_functions["alttab.show"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabShow(args);
+      };
+  options.host_functions["alttab.hide"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabHide(args);
+      };
+  options.host_functions["alttab.toggle"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabToggle(args);
+      };
+  options.host_functions["alttab.next"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabNext(args);
+      };
+  options.host_functions["alttab.previous"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabPrevious(args);
+      };
+  options.host_functions["alttab.select"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabSelect(args);
+      };
+  options.host_functions["alttab.getWindows"] =
+      [self](const std::vector<BytecodeValue> &args) {
+        return self->handleAltTabGetWindows(args);
       };
 
   // Run vm_setup callbacks
@@ -1529,6 +1611,230 @@ BytecodeValue HostBridge::handleTextChunkerClear(const std::vector<BytecodeValue
   (void)args;
   g_textChunker.clear();
   return BytecodeValue(true);
+}
+
+// ============================================================================
+// MapManager Handlers - uses MapManagerService (requires IO)
+// ============================================================================
+
+BytecodeValue HostBridge::handleMapManagerMap(const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) {
+    throw std::runtime_error("mapmanager.map() requires sourceKey and targetKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  const std::string *targetKey = std::get_if<std::string>(&args[1]);
+  if (!sourceKey || !targetKey) {
+    throw std::runtime_error("mapmanager.map() requires string arguments");
+  }
+
+  int id = 0;
+  if (args.size() > 2) {
+    if (auto *v = std::get_if<int64_t>(&args[2])) {
+      id = static_cast<int>(*v);
+    }
+  }
+
+  // MapManagerService requires IO - not available in all contexts
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerRemap(const std::vector<BytecodeValue> &args) {
+  if (args.size() < 2) {
+    throw std::runtime_error("mapmanager.remap() requires two keys");
+  }
+
+  const std::string *key1 = std::get_if<std::string>(&args[0]);
+  const std::string *key2 = std::get_if<std::string>(&args[1]);
+  if (!key1 || !key2) {
+    throw std::runtime_error("mapmanager.remap() requires string arguments");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerUnmap(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.unmap() requires a sourceKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  if (!sourceKey) {
+    throw std::runtime_error("mapmanager.unmap() requires a string argument");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerClearAll(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerEnableAutofire(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.enableAutofire() requires a sourceKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  if (!sourceKey) {
+    throw std::runtime_error("mapmanager.enableAutofire() requires a string argument");
+  }
+
+  int intervalMs = 100;
+  if (args.size() > 1) {
+    if (auto *v = std::get_if<int64_t>(&args[1])) {
+      intervalMs = static_cast<int>(*v);
+    }
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerDisableAutofire(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.disableAutofire() requires a sourceKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  if (!sourceKey) {
+    throw std::runtime_error("mapmanager.disableAutofire() requires a string argument");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerEnableTurbo(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.enableTurbo() requires a sourceKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  if (!sourceKey) {
+    throw std::runtime_error("mapmanager.enableTurbo() requires a string argument");
+  }
+
+  int intervalMs = 50;
+  if (args.size() > 1) {
+    if (auto *v = std::get_if<int64_t>(&args[1])) {
+      intervalMs = static_cast<int>(*v);
+    }
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerDisableTurbo(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.disableTurbo() requires a sourceKey");
+  }
+
+  const std::string *sourceKey = std::get_if<std::string>(&args[0]);
+  if (!sourceKey) {
+    throw std::runtime_error("mapmanager.disableTurbo() requires a string argument");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerCreateProfile(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.createProfile() requires a profile name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("mapmanager.createProfile() requires a string argument");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerSwitchProfile(const std::vector<BytecodeValue> &args) {
+  if (args.empty()) {
+    throw std::runtime_error("mapmanager.switchProfile() requires a profile name");
+  }
+
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("mapmanager.switchProfile() requires a string argument");
+  }
+
+  return BytecodeValue(false);
+}
+
+BytecodeValue HostBridge::handleMapManagerGetCurrentProfile(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  return BytecodeValue(std::string("default"));
+}
+
+// ============================================================================
+// AltTab Handlers - uses AltTabService
+// ============================================================================
+
+BytecodeValue HostBridge::handleAltTabShow(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.show();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabHide(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.hide();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabToggle(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.toggle();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabNext(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.next();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabPrevious(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.previous();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabSelect(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  altTab.select();
+  return BytecodeValue(true);
+}
+
+BytecodeValue HostBridge::handleAltTabGetWindows(const std::vector<BytecodeValue> &args) {
+  (void)args;
+  havel::host::AltTabService altTab;
+  auto windows = altTab.getWindows();
+
+  auto *vm = static_cast<VM *>(ctx_->vm);
+  if (!vm) {
+    return BytecodeValue(nullptr);
+  }
+
+  auto arr = vm->createHostArray();
+  for (const auto &win : windows) {
+    auto winObj = vm->createHostObject();
+    vm->setHostObjectField(winObj, "title", BytecodeValue(win.title));
+    vm->setHostObjectField(winObj, "className", BytecodeValue(win.className));
+    vm->setHostObjectField(winObj, "processName", BytecodeValue(win.processName));
+    vm->setHostObjectField(winObj, "windowId", BytecodeValue(static_cast<int64_t>(win.windowId)));
+    vm->setHostObjectField(winObj, "active", BytecodeValue(win.active));
+    vm->pushHostArrayValue(arr, BytecodeValue(winObj));
+  }
+  return BytecodeValue(arr);
 }
 
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {

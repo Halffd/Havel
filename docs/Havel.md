@@ -56,8 +56,8 @@ move(100, 200)
 - `exit()` - Exit application
 - `read(path)` - File operations
 - `write(path, content)` - File operations
-- `click([button])` - Mouse actions
-- `move(x, y)` - Mouse positioning
+- `click(button, state)` - Mouse actions
+- `move(x, y, speed, acceleration)` - Mouse positioning
 
 ### 2. Use Statement Flattening (Structured Path)
 Import module functions directly into current scope:
@@ -498,7 +498,7 @@ Havel provides comprehensive built-in modules for common automation tasks:
 #### IO Module (Input/Output)
 ```havel
 // Direct access
-use io
+use io.*
 mouseMove(100, 200)     // Move mouse
 click()                  // Click mouse
 send("hello")            // Send keystrokes
@@ -519,7 +519,7 @@ scroll(dy, dx)           // Scroll
 #### Media Module (Media Control)
 ```havel
 // Direct access
-use media
+use media.*
 play()                   // Play/pause
 pause()                  // Pause playback
 stop()                   // Stop playback
@@ -530,7 +530,7 @@ previous()               // Previous track
 #### Filemanager Module (File Operations)
 ```havel
 // Direct access
-use fs
+use fs.*
 read("/path/to/file")           // Read file
 write("/path/to/file", "content") // Write file
 exists("/path/to/file")         // Check existence
@@ -540,7 +540,7 @@ size("/path/to/file")           // Get file size
 #### Clipboard Module (Clipboard Operations)
 ```havel
 // Direct access
-use clipboard
+use clipboard.*
 get()                    // Get clipboard content
 set("text")              // Set clipboard content
 clear()                  // Clear clipboard
@@ -563,7 +563,7 @@ print($Clipboard)        // Get clipboard
 #### Math Module (Mathematical Functions)
 ```havel
 // Direct access
-use math
+use math.*
 
 // Basic arithmetic
 abs(-5.5)                  // Absolute value: 5.5
@@ -608,7 +608,7 @@ max(3, 1, 4, 2)            // Maximum: 4.0
 clamp(2.5, 1, 3)           // Clamp value: 2.5
 lerp(0, 10, 0.5)           // Linear interpolation: 5.0
 
-// Random numbers
+// Random numbers using urandom
 random()                   // Random float [0, 1)
 random(10)                 // Random float [0, 10)
 random(5, 10)              // Random float [5, 10)

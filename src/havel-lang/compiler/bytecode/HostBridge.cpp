@@ -5,6 +5,7 @@
  * - HostBridge composes specialized bridge modules
  * - Each module handles a specific capability domain
  * - Capabilities can be gated for sandboxing
+ * - ModuleLoader provides lazy loading and import system
  */
 #include "HostBridge.hpp"
 #include "ModularHostBridges.hpp"
@@ -12,13 +13,14 @@
 namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
-    : ctx_(&ctx), caps_(HostBridgeCapabilities::Full()) {
+    : ctx_(&ctx), caps_(HostBridgeCapabilities::Full()), moduleLoader_(*ctx_) {
   initBridges();
 }
 
 HostBridge::HostBridge(const havel::HostContext &ctx,
                        const HostBridgeCapabilities &caps)
-    : ctx_(&ctx), caps_(caps) {
+    : ctx_(&ctx), caps_(caps), moduleLoader_(*ctx_) {
+  moduleLoader_.setCapabilities(caps);
   initBridges();
 }
 
@@ -142,6 +144,13 @@ std::shared_ptr<HostBridge>
 createHostBridge(const havel::HostContext &ctx,
                  const HostBridgeCapabilities &caps) {
   return std::make_shared<HostBridge>(ctx, caps);
+}
+
+bool HostBridge::import(const std::string &importSpec) {
+  if (!ctx_->vm) {
+    return false;
+  }
+  return moduleLoader_.import(importSpec, *ctx_->vm);
 }
 
 } // namespace havel::compiler

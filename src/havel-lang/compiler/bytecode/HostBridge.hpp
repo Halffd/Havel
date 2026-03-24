@@ -3,6 +3,8 @@
 #include "../../runtime/HostContext.hpp"
 #include "Pipeline.hpp"
 #include "VM.hpp"
+#include "ModuleLoader.hpp"
+#include "HostBridgeCapabilities.hpp"
 
 #include <memory>
 #include <string>
@@ -11,70 +13,6 @@
 #include <functional>
 
 namespace havel::compiler {
-
-/**
- * HostBridgeCapabilities - Capability gating for security/sandboxing
- *
- * Controls which host features are available to scripts.
- * Used for:
- * - Sandboxing untrusted scripts
- * - Partial embedding (headless mode, CLI-only)
- * - User permission prompts
- */
-struct HostBridgeCapabilities {
-  bool ioControl = true;              // send, mouse, keyboard
-  bool fileIO = true;                 // readFile, writeFile
-  bool processExec = true;            // execute, getpid
-  bool windowControl = true;          // window operations
-  bool hotkeyControl = true;          // hotkey registration
-  bool modeControl = true;            // mode system
-  bool clipboardAccess = true;        // clipboard get/set
-  bool screenshotAccess = true;       // screenshots
-  bool asyncOps = true;               // sleep, timers
-  bool audioControl = true;           // volume, mute
-  bool brightnessControl = true;      // brightness, temperature
-  bool automationControl = true;      // auto-clicker, automation
-  bool browserControl = true;         // browser automation
-  bool textChunkerAccess = true;      // text chunking
-  bool inputRemapping = true;         // key remapping, macros
-  bool altTabControl = true;          // window switcher
-
-  // Convenience presets
-  static HostBridgeCapabilities Full() { return {}; }
-
-  static HostBridgeCapabilities Sandbox() {
-    HostBridgeCapabilities caps;
-    caps.fileIO = false;
-    caps.processExec = false;
-    caps.hotkeyControl = false;
-    caps.windowControl = false;
-    caps.automationControl = false;
-    caps.browserControl = false;
-    caps.inputRemapping = false;
-    return caps;
-  }
-
-  static HostBridgeCapabilities Minimal() {
-    HostBridgeCapabilities caps;
-    caps.ioControl = true;  // Only basic IO
-    caps.fileIO = false;
-    caps.processExec = false;
-    caps.windowControl = false;
-    caps.hotkeyControl = false;
-    caps.modeControl = false;
-    caps.clipboardAccess = false;
-    caps.screenshotAccess = false;
-    caps.asyncOps = true;
-    caps.audioControl = false;
-    caps.brightnessControl = false;
-    caps.automationControl = false;
-    caps.browserControl = false;
-    caps.textChunkerAccess = false;
-    caps.inputRemapping = false;
-    caps.altTabControl = false;
-    return caps;
-  }
-};
 
 /**
  * Forward declarations for modular bridge components
@@ -121,8 +59,15 @@ public:
   void addVmSetup(std::function<void(VM &)> setupFn);
 
   // Capability management
-  void setCapabilities(const HostBridgeCapabilities &caps) { caps_ = caps; }
+  void setCapabilities(const HostBridgeCapabilities &caps) { caps_ = caps; moduleLoader_.setCapabilities(caps); }
   bool hasCapability(const std::string &name) const;
+
+  // Module loading (lazy loading)
+  ModuleLoader &moduleLoader() { return moduleLoader_; }
+  const ModuleLoader &moduleLoader() const { return moduleLoader_; }
+
+  // Import system
+  bool import(const std::string &importSpec);
 
   // Mode binding state (for mode system)
   struct ModeBinding {
@@ -138,6 +83,9 @@ private:
 
   std::vector<std::function<void(VM &)>> vm_setup_callbacks_;
   std::vector<HostModule> modules_;
+
+  // Module loader (lazy loading, capability gating)
+  ModuleLoader moduleLoader_;
 
   // Mode system state
   std::unordered_map<std::string, ModeBinding> mode_bindings_;

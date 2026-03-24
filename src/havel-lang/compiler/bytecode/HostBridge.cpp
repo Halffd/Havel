@@ -8,7 +8,7 @@
  * - Default: FULL ACCESS (no friction for normal users)
  */
 #include "HostBridge.hpp"
-#include "ModularHostBridges.hpp"
+#include "../../../host/module/ModularHostBridges.hpp"
 
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"

@@ -281,6 +281,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/host/hotkey/*.cpp"
     "src/host/io/*.cpp"
     "src/host/media/*.cpp"
+    "src/host/module/*.cpp"
     "src/host/mode/*.cpp"
     "src/host/network/*.cpp"
     "src/host/process/*.cpp"

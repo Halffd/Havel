@@ -15,9 +15,10 @@
  * - ToolsBridge: text chunker
  */
 
-#include "../../runtime/HostContext.hpp"
-#include "Pipeline.hpp"
-#include "VM.hpp"
+#include "runtime/HostContext.hpp"
+#include "ExecutionPolicy.hpp"
+#include "havel-lang/compiler/bytecode/Pipeline.hpp"
+#include "havel-lang/compiler/bytecode/VM.hpp"
 
 #include <memory>
 #include <string>

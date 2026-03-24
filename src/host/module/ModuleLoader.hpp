@@ -11,8 +11,8 @@
  * NOT a security layer - just loading mechanics.
  */
 
-#include "VM.hpp"
-#include "../../runtime/HostContext.hpp"
+#include "havel-lang/compiler/bytecode/VM.hpp"
+#include "runtime/HostContext.hpp"
 #include "ExecutionPolicy.hpp"
 
 #include <memory>

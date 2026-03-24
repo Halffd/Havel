@@ -1,0 +1,180 @@
+/*
+ * HotkeyModule.cpp
+ *
+ * Hotkey module implementation using VApi system.
+ * Provides hotkey operations with clean host service integration.
+ */
+#include "HotkeyModule.hpp"
+#include "../../host/hotkey/HotkeyService.hpp"
+
+using namespace havel::compiler;
+
+namespace havel::stdlib {
+
+void registerHotkeyModule(VMApi &api) {
+  // Note: HotkeyService requires HotkeyManager instance
+  // This would need to be passed from the application context
+  // For now, we'll create a placeholder that would be initialized properly
+
+  // Register hotkey functions
+
+  // hotkey.register(key, callback) - Register a hotkey
+  api.registerFunction(
+      "hotkey.register",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error("hotkey.register() requires exactly two "
+                                   "arguments (key, callback)");
+        }
+
+        std::string key = api.toString(args[0]);
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // static havel::host::HotkeyService service(hotkeyManager);
+        //
+        // // Store callback reference for execution
+        // static std::unordered_map<int, BytecodeValue> hotkeyCallbacks;
+        // static int nextHotkeyId = 1;
+        //
+        // int hotkeyId = nextHotkeyId++;
+        // hotkeyCallbacks[hotkeyId] = args[1];  // Store callback function
+        //
+        // bool success = service.registerHotkey(key, [hotkeyId]() {
+        //     // Execute stored callback when hotkey is triggered
+        //     if (hotkeyCallbacks.find(hotkeyId) != hotkeyCallbacks.end()) {
+        //         // This would need VM context to execute the callback
+        //         // For now, this is a placeholder
+        //     }
+        // }, hotkeyId);
+        //
+        // return api.makeNumber(success ? hotkeyId : 0);
+
+        // Placeholder for now
+        return api.makeNumber(0);
+      });
+
+  // hotkey.unregister(id) - Unregister a hotkey
+  api.registerFunction(
+      "hotkey.unregister",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "hotkey.unregister() requires exactly one argument (hotkeyId)");
+        }
+
+        int hotkeyId = static_cast<int>(api.toNumber(args[0]));
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // bool success = service.unregisterHotkey(hotkeyId);
+        //
+        // // Remove stored callback
+        // hotkeyCallbacks.erase(hotkeyId);
+        //
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // hotkey.enable(id) - Enable a hotkey
+  api.registerFunction(
+      "hotkey.enable",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "hotkey.enable() requires exactly one argument (hotkeyId)");
+        }
+
+        int hotkeyId = static_cast<int>(api.toNumber(args[0]));
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // bool success = service.enableHotkey(hotkeyId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // hotkey.disable(id) - Disable a hotkey
+  api.registerFunction(
+      "hotkey.disable",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "hotkey.disable() requires exactly one argument (hotkeyId)");
+        }
+
+        int hotkeyId = static_cast<int>(api.toNumber(args[0]));
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // bool success = service.disableHotkey(hotkeyId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // hotkey.list() - List all registered hotkeys
+  api.registerFunction(
+      "hotkey.list",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("hotkey.list() takes no arguments");
+        }
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // auto hotkeys = service.listHotkeys();
+        // auto result = api.makeArray();
+        //
+        // for (const auto& info : hotkeys) {
+        //     auto hotkeyObj = api.makeObject();
+        //     api.setField(hotkeyObj, "id", api.makeNumber(info.id));
+        //     api.setField(hotkeyObj, "key", api.makeString(info.key));
+        //     api.setField(hotkeyObj, "condition",
+        //     api.makeString(info.condition)); api.setField(hotkeyObj,
+        //     "enabled", api.makeBool(info.enabled)); api.setField(hotkeyObj,
+        //     "type", api.makeString(info.type)); api.arrayPush(result,
+        //     hotkeyObj);
+        // }
+        //
+        // return result;
+
+        // Placeholder for now
+        return api.makeArray();
+      });
+
+  // hotkey.isEnabled(id) - Check if hotkey is enabled
+  api.registerFunction(
+      "hotkey.isEnabled",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "hotkey.isEnabled() requires exactly one argument (hotkeyId)");
+        }
+
+        int hotkeyId = static_cast<int>(api.toNumber(args[0]));
+
+        // TODO: Initialize HotkeyService with proper HotkeyManager
+        // bool enabled = service.isHotkeyEnabled(hotkeyId);
+        // return api.makeBool(enabled);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // Create hotkey object with methods
+  auto hotkeyObj = api.makeObject();
+
+  // Add methods
+  api.setField(hotkeyObj, "register", api.makeFunction("hotkey.register"));
+  api.setField(hotkeyObj, "unregister", api.makeFunction("hotkey.unregister"));
+  api.setField(hotkeyObj, "enable", api.makeFunction("hotkey.enable"));
+  api.setField(hotkeyObj, "disable", api.makeFunction("hotkey.disable"));
+  api.setField(hotkeyObj, "list", api.makeFunction("hotkey.list"));
+  api.setField(hotkeyObj, "isEnabled", api.makeFunction("hotkey.isEnabled"));
+
+  // Register global hotkey object
+  api.setGlobal("hotkey", hotkeyObj);
+}
+
+} // namespace havel::stdlib

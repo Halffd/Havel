@@ -10,6 +10,10 @@
 #include "HostBridge.hpp"
 #include "ModularHostBridges.hpp"
 
+#include "../../../host/media/MediaService.hpp"
+#include "../../../host/network/NetworkService.hpp"
+#include "../../../host/app/AppService.hpp"
+
 namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
@@ -37,6 +41,8 @@ void HostBridge::shutdown() {
   uiBridge_.reset();
   inputBridge_.reset();
   mediaBridge_.reset();
+  networkBridge_.reset();
+  appBridge_.reset();
   asyncBridge_.reset();
   automationBridge_.reset();
   browserBridge_.reset();
@@ -55,6 +61,8 @@ void HostBridge::initBridges() {
   uiBridge_ = std::make_unique<UIBridge>(ctx_);
   inputBridge_ = std::make_unique<InputBridge>(ctx_);
   mediaBridge_ = std::make_unique<MediaBridge>(ctx_);
+  networkBridge_ = std::make_unique<NetworkBridge>(ctx_);
+  appBridge_ = std::make_unique<AppBridge>(ctx_);
   asyncBridge_ = std::make_unique<AsyncBridge>(ctx_);
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
   browserBridge_ = std::make_unique<BrowserBridge>(ctx_);
@@ -71,6 +79,8 @@ void HostBridge::install() {
   uiBridge_->install(options_);
   inputBridge_->install(options_);
   mediaBridge_->install(options_);
+  networkBridge_->install(options_);
+  appBridge_->install(options_);
   asyncBridge_->install(options_);
   automationBridge_->install(options_);
   browserBridge_->install(options_);

@@ -20,6 +20,8 @@ class SystemBridge;
 class UIBridge;
 class InputBridge;
 class MediaBridge;
+class NetworkBridge;
+class AppBridge;
 class AsyncBridge;
 class AutomationBridge;
 class BrowserBridge;
@@ -97,6 +99,8 @@ private:
   std::unique_ptr<UIBridge> uiBridge_;
   std::unique_ptr<InputBridge> inputBridge_;
   std::unique_ptr<MediaBridge> mediaBridge_;
+  std::unique_ptr<NetworkBridge> networkBridge_;
+  std::unique_ptr<AppBridge> appBridge_;
   std::unique_ptr<AsyncBridge> asyncBridge_;
   std::unique_ptr<AutomationBridge> automationBridge_;
   std::unique_ptr<BrowserBridge> browserBridge_;

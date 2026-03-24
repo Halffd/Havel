@@ -3,11 +3,6 @@
 
 #include "../compiler/bytecode/HostBridge.hpp"
 #include "../compiler/bytecode/VMApi.hpp"
-#include "../stdlib/FileSystemModule.hpp"
-#include "../stdlib/HotkeyModule.hpp"
-#include "../stdlib/NewClipboardModule.hpp"
-#include "../stdlib/NewTimerModule.hpp"
-#include "../stdlib/WindowModule.hpp"
 
 namespace havel::stdlib {
 void registerMathModule(compiler::VMApi &api);           // MathModule
@@ -21,12 +16,6 @@ void registerFileModule(compiler::VMApi &api);           // FileModule
 void registerPhysicsModule(compiler::VMApi &api);        // PhysicsModule
 void registerProcessModule(havel::compiler::VMApi &api); // ProcessModule
 void registerRegexModule(havel::compiler::VMApi &api);   // RegexModule
-void registerNewClipboardModule(
-    havel::compiler::VMApi &api); // NewClipboardModule
-void registerFileSystemModule(havel::compiler::VMApi &api); // FileSystemModule
-void registerWindowModule(havel::compiler::VMApi &api);     // WindowModule
-void registerHotkeyModule(havel::compiler::VMApi &api);     // HotkeyModule
-void registerNewTimerModule(havel::compiler::VMApi &api);   // NewTimerModule
 } // namespace havel::stdlib
 
 namespace havel {
@@ -48,14 +37,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerPhysicsModule(*api); // PhysicsModule
   stdlib::registerProcessModule(*api); // ProcessModule
   stdlib::registerRegexModule(*api);   // RegexModule
-  // stdlib::registerNewClipboardModule(*api); // NewClipboardModule
-  // stdlib::registerFileSystemModule(*api);   // FileSystemModule
-  // stdlib::registerWindowModule(*api);       // WindowModule
-  // stdlib::registerHotkeyModule(*api);       // HotkeyModule
-  // stdlib::registerNewTimerModule(*api);     // NewTimerModule
 
   // Add math, string, array, object, time, utility, type, file, physics,
-  // process, regex, clipboard, filesystem, window, hotkey, and timer constants
+  // process, regex constants
   // to host_global_names so compiler knows about them
   bridge.options().host_global_names.insert("PI");
   bridge.options().host_global_names.insert("E");
@@ -80,11 +64,6 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("process");
   bridge.options().host_global_names.insert("Regex");
   bridge.options().host_global_names.insert("regex");
-  bridge.options().host_global_names.insert("clipboard");
-  bridge.options().host_global_names.insert("fs");
-  bridge.options().host_global_names.insert("window");
-  bridge.options().host_global_names.insert("hotkey");
-  bridge.options().host_global_names.insert("timer");
   bridge.options().host_global_names.insert("keys");
   bridge.options().host_global_names.insert("items");
   bridge.options().host_global_names.insert("list");

@@ -112,6 +112,19 @@ private:
   BytecodeValue handleSleep(const std::vector<BytecodeValue> &args);
   BytecodeValue handleTimeNow(const std::vector<BytecodeValue> &args);
 
+  // Handler methods - Audio
+  BytecodeValue handleAudioGetVolume(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAudioSetVolume(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAudioToggleMute(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAudioSetMute(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleAudioIsMuted(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Brightness
+  BytecodeValue handleBrightnessGet(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrightnessSet(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrightnessGetTemp(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleBrightnessSetTemp(const std::vector<BytecodeValue> &args);
+
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id,

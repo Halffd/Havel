@@ -1,0 +1,448 @@
+/*
+ * FileSystemModule.cpp
+ *
+ * File system module implementation using VApi system.
+ * Provides file and directory operations with clean host service integration.
+ */
+#include "FileSystemModule.hpp"
+#include "../../host/filesystem/FileSystemService.hpp"
+
+using namespace havel::compiler;
+
+namespace havel::stdlib {
+
+void registerFileSystemModule(VMApi &api) {
+  // Create file system service instance
+  static havel::host::FileSystemService fs;
+
+  // Register file operations
+
+  // fs.readFile(path) - Read entire file contents
+  api.registerFunction(
+      "fs.readFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.readFile() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string content = fs.readFile(path);
+        return api.makeString(content);
+      });
+
+  // fs.writeFile(path, content) - Write content to file
+  api.registerFunction(
+      "fs.writeFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error(
+              "fs.writeFile() requires exactly two arguments (path, content)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string content = api.toString(args[1]);
+        bool success = fs.writeFile(path, content);
+        return api.makeBool(success);
+      });
+
+  // fs.appendFile(path, content) - Append content to file
+  api.registerFunction(
+      "fs.appendFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error(
+              "fs.appendFile() requires exactly two arguments (path, content)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string content = api.toString(args[1]);
+        bool success = fs.appendFile(path, content);
+        return api.makeBool(success);
+      });
+
+  // fs.deleteFile(path) - Delete a file
+  api.registerFunction(
+      "fs.deleteFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.deleteFile() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool success = fs.deleteFile(path);
+        return api.makeBool(success);
+      });
+
+  // fs.copyFile(from, to) - Copy a file
+  api.registerFunction(
+      "fs.copyFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error(
+              "fs.copyFile() requires exactly two arguments (from, to)");
+        }
+
+        std::string from = api.toString(args[0]);
+        std::string to = api.toString(args[1]);
+        bool success = fs.copyFile(from, to);
+        return api.makeBool(success);
+      });
+
+  // fs.moveFile(from, to) - Move/rename a file
+  api.registerFunction(
+      "fs.moveFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error(
+              "fs.moveFile() requires exactly two arguments (from, to)");
+        }
+
+        std::string from = api.toString(args[0]);
+        std::string to = api.toString(args[1]);
+        bool success = fs.moveFile(from, to);
+        return api.makeBool(success);
+      });
+
+  // Register directory operations
+
+  // fs.listDirectory(path) - List directory contents
+  api.registerFunction(
+      "fs.listDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.listDirectory() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        auto files = fs.listDirectory(path);
+
+        auto result = api.makeArray();
+        for (const auto &file : files) {
+          auto fileInfo = api.makeObject();
+          api.setField(fileInfo, "name", api.makeString(file.name));
+          api.setField(fileInfo, "path", api.makeString(file.path));
+          api.setField(fileInfo, "isFile", api.makeBool(file.isFile));
+          api.setField(fileInfo, "isDirectory", api.makeBool(file.isDirectory));
+          api.setField(fileInfo, "size", api.makeNumber(file.size));
+          api.setField(fileInfo, "modifiedTime",
+                       api.makeNumber(file.modifiedTime));
+
+          api.arrayPush(result, fileInfo);
+        }
+
+        return result;
+      });
+
+  // fs.createDirectory(path) - Create a directory
+  api.registerFunction(
+      "fs.createDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.createDirectory() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool success = fs.createDirectory(path);
+        return api.makeBool(success);
+      });
+
+  // fs.createDirectories(path) - Create directories recursively
+  api.registerFunction(
+      "fs.createDirectories",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.createDirectories() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool success = fs.createDirectories(path);
+        return api.makeBool(success);
+      });
+
+  // fs.deleteDirectory(path) - Delete a directory
+  api.registerFunction(
+      "fs.deleteDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.deleteDirectory() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool success = fs.deleteDirectory(path);
+        return api.makeBool(success);
+      });
+
+  // Register file info operations
+
+  // fs.getFileInfo(path) - Get file info
+  api.registerFunction(
+      "fs.getFileInfo",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.getFileInfo() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        auto info = fs.getFileInfo(path);
+
+        auto result = api.makeObject();
+        api.setField(result, "name", api.makeString(info.name));
+        api.setField(result, "path", api.makeString(info.path));
+        api.setField(result, "isFile", api.makeBool(info.isFile));
+        api.setField(result, "isDirectory", api.makeBool(info.isDirectory));
+        api.setField(result, "size", api.makeNumber(info.size));
+        api.setField(result, "modifiedTime", api.makeNumber(info.modifiedTime));
+
+        return result;
+      });
+
+  // fs.exists(path) - Check if path exists
+  api.registerFunction(
+      "fs.exists",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.exists() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool exists = fs.exists(path);
+        return api.makeBool(exists);
+      });
+
+  // fs.isFile(path) - Check if path is a file
+  api.registerFunction(
+      "fs.isFile",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.isFile() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool isFile = fs.isFile(path);
+        return api.makeBool(isFile);
+      });
+
+  // fs.isDirectory(path) - Check if path is a directory
+  api.registerFunction(
+      "fs.isDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.isDirectory() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool isDirectory = fs.isDirectory(path);
+        return api.makeBool(isDirectory);
+      });
+
+  // fs.getFileSize(path) - Get file size in bytes
+  api.registerFunction(
+      "fs.getFileSize",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.getFileSize() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        int64_t size = fs.getFileSize(path);
+        return api.makeNumber(size);
+      });
+
+  // fs.getModifiedTime(path) - Get file modified time
+  api.registerFunction(
+      "fs.getModifiedTime",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.getModifiedTime() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        int64_t time = fs.getModifiedTime(path);
+        return api.makeNumber(time);
+      });
+
+  // Register path operations
+
+  // fs.joinPath(base, path) - Join path components
+  api.registerFunction(
+      "fs.joinPath",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 2) {
+          throw std::runtime_error(
+              "fs.joinPath() requires exactly two arguments (base, path)");
+        }
+
+        std::string base = api.toString(args[0]);
+        std::string path = api.toString(args[1]);
+        std::string joined =
+            havel::host::FileSystemService::joinPath(base, path);
+        return api.makeString(joined);
+      });
+
+  // fs.absolutePath(path) - Get absolute path
+  api.registerFunction(
+      "fs.absolutePath",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.absolutePath() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string absolute =
+            havel::host::FileSystemService::absolutePath(path);
+        return api.makeString(absolute);
+      });
+
+  // fs.parentPath(path) - Get parent directory
+  api.registerFunction(
+      "fs.parentPath",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.parentPath() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string parent = havel::host::FileSystemService::parentPath(path);
+        return api.makeString(parent);
+      });
+
+  // fs.fileName(path) - Get file name from path
+  api.registerFunction(
+      "fs.fileName",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.fileName() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string name = havel::host::FileSystemService::fileName(path);
+        return api.makeString(name);
+      });
+
+  // fs.extension(path) - Get file extension
+  api.registerFunction(
+      "fs.extension",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.extension() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        std::string ext = havel::host::FileSystemService::extension(path);
+        return api.makeString(ext);
+      });
+
+  // fs.currentDirectory() - Get current working directory
+  api.registerFunction(
+      "fs.currentDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("fs.currentDirectory() takes no arguments");
+        }
+
+        std::string cwd = havel::host::FileSystemService::currentDirectory();
+        return api.makeString(cwd);
+      });
+
+  // fs.setCurrentDirectory(path) - Change current working directory
+  api.registerFunction(
+      "fs.setCurrentDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "fs.setCurrentDirectory() requires exactly one argument (path)");
+        }
+
+        std::string path = api.toString(args[0]);
+        bool success =
+            havel::host::FileSystemService::setCurrentDirectory(path);
+        return api.makeBool(success);
+      });
+
+  // fs.homeDirectory() - Get home directory
+  api.registerFunction(
+      "fs.homeDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("fs.homeDirectory() takes no arguments");
+        }
+
+        std::string home = havel::host::FileSystemService::homeDirectory();
+        return api.makeString(home);
+      });
+
+  // fs.tempDirectory() - Get temp directory
+  api.registerFunction(
+      "fs.tempDirectory",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("fs.tempDirectory() takes no arguments");
+        }
+
+        std::string temp = havel::host::FileSystemService::tempDirectory();
+        return api.makeString(temp);
+      });
+
+  // Create fs object with methods
+  auto fsObj = api.makeObject();
+
+  // Add file methods
+  api.setField(fsObj, "readFile", api.makeFunction("fs.readFile"));
+  api.setField(fsObj, "writeFile", api.makeFunction("fs.writeFile"));
+  api.setField(fsObj, "appendFile", api.makeFunction("fs.appendFile"));
+  api.setField(fsObj, "deleteFile", api.makeFunction("fs.deleteFile"));
+  api.setField(fsObj, "copyFile", api.makeFunction("fs.copyFile"));
+  api.setField(fsObj, "moveFile", api.makeFunction("fs.moveFile"));
+
+  // Add directory methods
+  api.setField(fsObj, "listDirectory", api.makeFunction("fs.listDirectory"));
+  api.setField(fsObj, "createDirectory",
+               api.makeFunction("fs.createDirectory"));
+  api.setField(fsObj, "createDirectories",
+               api.makeFunction("fs.createDirectories"));
+  api.setField(fsObj, "deleteDirectory",
+               api.makeFunction("fs.deleteDirectory"));
+
+  // Add info methods
+  api.setField(fsObj, "getFileInfo", api.makeFunction("fs.getFileInfo"));
+  api.setField(fsObj, "exists", api.makeFunction("fs.exists"));
+  api.setField(fsObj, "isFile", api.makeFunction("fs.isFile"));
+  api.setField(fsObj, "isDirectory", api.makeFunction("fs.isDirectory"));
+  api.setField(fsObj, "getFileSize", api.makeFunction("fs.getFileSize"));
+  api.setField(fsObj, "getModifiedTime",
+               api.makeFunction("fs.getModifiedTime"));
+
+  // Add path methods
+  api.setField(fsObj, "joinPath", api.makeFunction("fs.joinPath"));
+  api.setField(fsObj, "absolutePath", api.makeFunction("fs.absolutePath"));
+  api.setField(fsObj, "parentPath", api.makeFunction("fs.parentPath"));
+  api.setField(fsObj, "fileName", api.makeFunction("fs.fileName"));
+  api.setField(fsObj, "extension", api.makeFunction("fs.extension"));
+  api.setField(fsObj, "currentDirectory",
+               api.makeFunction("fs.currentDirectory"));
+  api.setField(fsObj, "setCurrentDirectory",
+               api.makeFunction("fs.setCurrentDirectory"));
+  api.setField(fsObj, "homeDirectory", api.makeFunction("fs.homeDirectory"));
+  api.setField(fsObj, "tempDirectory", api.makeFunction("fs.tempDirectory"));
+
+  // Register global fs object
+  api.setGlobal("fs", fsObj);
+}
+
+} // namespace havel::stdlib

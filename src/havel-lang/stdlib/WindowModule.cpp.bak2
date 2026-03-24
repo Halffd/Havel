@@ -1,0 +1,294 @@
+/*
+ * WindowModule.cpp
+ *
+ * Window module implementation using VApi system.
+ * Provides window operations with clean host service integration.
+ */
+#include "WindowModule.hpp"
+#include "../../host/window/WindowService.hpp"
+
+using namespace havel::compiler;
+
+namespace havel::stdlib {
+
+void registerWindowModule(VMApi &api) {
+  // Note: WindowService requires WindowManager instance
+  // This would need to be passed from the application context
+  // For now, we'll create a placeholder that would be initialized properly
+
+  // Register window query functions
+
+  // window.getActive() - Get active window ID
+  api.registerFunction(
+      "window.getActive",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("window.getActive() takes no arguments");
+        }
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // static havel::host::WindowService service(windowManager);
+        // uint64_t windowId = service.getActiveWindow();
+        // return api.makeNumber(windowId);
+
+        // Placeholder for now
+        return api.makeNumber(0);
+      });
+
+  // window.getActiveInfo() - Get active window info
+  api.registerFunction(
+      "window.getActiveInfo",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("window.getActiveInfo() takes no arguments");
+        }
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // auto info = service.getActiveWindowInfo();
+        // auto result = api.makeObject();
+        // if (info.valid) {
+        //     api.setField(result, "id", api.makeNumber(info.id));
+        //     api.setField(result, "title", api.makeString(info.title));
+        //     api.setField(result, "className",
+        //     api.makeString(info.className)); api.setField(result,
+        //     "processId", api.makeNumber(info.processId));
+        //     api.setField(result, "x", api.makeNumber(info.x));
+        //     api.setField(result, "y", api.makeNumber(info.y));
+        //     api.setField(result, "width", api.makeNumber(info.width));
+        //     api.setField(result, "height", api.makeNumber(info.height));
+        //     api.setField(result, "minimized", api.makeBool(info.minimized));
+        //     api.setField(result, "maximized", api.makeBool(info.maximized));
+        //     api.setField(result, "fullscreen",
+        //     api.makeBool(info.fullscreen)); api.setField(result, "focused",
+        //     api.makeBool(info.focused)); api.setField(result, "desktop",
+        //     api.makeNumber(info.desktop));
+        // }
+        // return result;
+
+        // Placeholder for now
+        return api.makeObject();
+      });
+
+  // window.getAll() - Get all windows
+  api.registerFunction(
+      "window.getAll",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (!args.empty()) {
+          throw std::runtime_error("window.getAll() takes no arguments");
+        }
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // auto windows = service.getAllWindows();
+        // auto result = api.makeArray();
+        // for (const auto& info : windows) {
+        //     auto windowObj = api.makeObject();
+        //     api.setField(windowObj, "id", api.makeNumber(info.id));
+        //     api.setField(windowObj, "title", api.makeString(info.title));
+        //     api.setField(windowObj, "className",
+        //     api.makeString(info.className)); api.setField(windowObj,
+        //     "processId", api.makeNumber(info.processId));
+        //     api.setField(windowObj, "x", api.makeNumber(info.x));
+        //     api.setField(windowObj, "y", api.makeNumber(info.y));
+        //     api.setField(windowObj, "width", api.makeNumber(info.width));
+        //     api.setField(windowObj, "height", api.makeNumber(info.height));
+        //     api.setField(windowObj, "minimized",
+        //     api.makeBool(info.minimized)); api.setField(windowObj,
+        //     "maximized", api.makeBool(info.maximized));
+        //     api.setField(windowObj, "fullscreen",
+        //     api.makeBool(info.fullscreen)); api.setField(windowObj,
+        //     "focused", api.makeBool(info.focused)); api.setField(windowObj,
+        //     "desktop", api.makeNumber(info.desktop)); api.arrayPush(result,
+        //     windowObj);
+        // }
+        // return result;
+
+        // Placeholder for now
+        return api.makeArray();
+      });
+
+  // Register window control functions
+
+  // window.focus(id) - Focus a window
+  api.registerFunction(
+      "window.focus",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "window.focus() requires exactly one argument (windowId)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.focusWindow(windowId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.close(id) - Close a window
+  api.registerFunction(
+      "window.close",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "window.close() requires exactly one argument (windowId)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.closeWindow(windowId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.move(id, x, y) - Move window to position
+  api.registerFunction(
+      "window.move",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 3) {
+          throw std::runtime_error("window.move() requires exactly three "
+                                   "arguments (windowId, x, y)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+        int x = static_cast<int>(api.toNumber(args[1]));
+        int y = static_cast<int>(api.toNumber(args[2]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.moveWindow(windowId, x, y);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.resize(id, width, height) - Resize window
+  api.registerFunction(
+      "window.resize",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 3) {
+          throw std::runtime_error("window.resize() requires exactly three "
+                                   "arguments (windowId, width, height)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+        int width = static_cast<int>(api.toNumber(args[1]));
+        int height = static_cast<int>(api.toNumber(args[2]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.resizeWindow(windowId, width, height);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.moveResize(id, x, y, width, height) - Move and resize window
+  api.registerFunction(
+      "window.moveResize",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 5) {
+          throw std::runtime_error("window.moveResize() requires exactly five "
+                                   "arguments (windowId, x, y, width, height)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+        int x = static_cast<int>(api.toNumber(args[1]));
+        int y = static_cast<int>(api.toNumber(args[2]));
+        int width = static_cast<int>(api.toNumber(args[3]));
+        int height = static_cast<int>(api.toNumber(args[4]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.moveResizeWindow(windowId, x, y, width,
+        // height); return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.maximize(id) - Maximize window
+  api.registerFunction(
+      "window.maximize",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "window.maximize() requires exactly one argument (windowId)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.maximizeWindow(windowId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.minimize(id) - Minimize window
+  api.registerFunction(
+      "window.minimize",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "window.minimize() requires exactly one argument (windowId)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.minimizeWindow(windowId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // window.restore(id) - Restore minimized window
+  api.registerFunction(
+      "window.restore",
+      [&api](const std::vector<BytecodeValue> &args) -> BytecodeValue {
+        if (args.size() != 1) {
+          throw std::runtime_error(
+              "window.restore() requires exactly one argument (windowId)");
+        }
+
+        uint64_t windowId = static_cast<uint64_t>(api.toNumber(args[0]));
+
+        // TODO: Initialize WindowService with proper WindowManager
+        // bool success = service.restoreWindow(windowId);
+        // return api.makeBool(success);
+
+        // Placeholder for now
+        return api.makeBool(false);
+      });
+
+  // Create window object with methods
+  auto windowObj = api.makeObject();
+
+  // Add query methods
+  api.setField(windowObj, "getActive", api.makeFunction("window.getActive"));
+  api.setField(windowObj, "getActiveInfo",
+               api.makeFunction("window.getActiveInfo"));
+  api.setField(windowObj, "getAll", api.makeFunction("window.getAll"));
+
+  // Add control methods
+  api.setField(windowObj, "focus", api.makeFunction("window.focus"));
+  api.setField(windowObj, "close", api.makeFunction("window.close"));
+  api.setField(windowObj, "move", api.makeFunction("window.move"));
+  api.setField(windowObj, "resize", api.makeFunction("window.resize"));
+  api.setField(windowObj, "moveResize", api.makeFunction("window.moveResize"));
+  api.setField(windowObj, "maximize", api.makeFunction("window.maximize"));
+  api.setField(windowObj, "minimize", api.makeFunction("window.minimize"));
+  api.setField(windowObj, "restore", api.makeFunction("window.restore"));
+
+  // Register global window object
+  api.setGlobal("window", windowObj);
+}
+
+} // namespace havel::stdlib

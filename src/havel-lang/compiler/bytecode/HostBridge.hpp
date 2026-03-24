@@ -60,29 +60,49 @@ private:
   // Registered modules
   std::vector<HostModule> modules_;
 
-  // Handler methods
-  BytecodeValue
-  handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
-  BytecodeValue
-  handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleWindowOn(const std::vector<BytecodeValue> &args);
+  // Handler methods - IO
   BytecodeValue handleSend(const std::vector<BytecodeValue> &args);
   BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args);
   BytecodeValue handleMouseMove(const std::vector<BytecodeValue> &args);
   BytecodeValue handleMouseClick(const std::vector<BytecodeValue> &args);
   BytecodeValue handleGetMousePosition(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - File System
+  BytecodeValue handleFileRead(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleFileWrite(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleFileExists(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleFileSize(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleFileDelete(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Process
+  BytecodeValue handleProcessExecute(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleProcessGetPid(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleProcessGetPpid(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Window
+  BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleWindowOn(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Hotkey
   BytecodeValue handleHotkeyRegister(const std::vector<BytecodeValue> &args);
   BytecodeValue handleHotkeyTrigger(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Mode
   BytecodeValue handleModeDefine(const std::vector<BytecodeValue> &args);
   BytecodeValue handleModeSet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleModeTick(const std::vector<BytecodeValue> &args);
-  BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Clipboard
   BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args);
   BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args);
+
+  // Handler methods - Screenshot
   BytecodeValue handleScreenshotFull(const std::vector<BytecodeValue> &args);
   BytecodeValue handleScreenshotMonitor(const std::vector<BytecodeValue> &args);
   BytecodeValue handleScreenshotWindow(const std::vector<BytecodeValue> &args);

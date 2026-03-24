@@ -1,10 +1,9 @@
-/* TimeModule.cpp - VM-native stdlib module */
+/* TimeModule.cpp - VM-native stdlib module (pure timestamp operations) */
 #include "TimeModule.hpp"
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
-#include <thread>
 
 using havel::compiler::BytecodeValue;
 using havel::compiler::VMApi;
@@ -12,6 +11,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register time module with VMApi (stable API layer)
+// NOTE: time.sleep is now provided by the host layer (AsyncService)
 void registerTimeModule(VMApi &api) {
   // Get current timestamp
   api.registerFunction("time.now", [](const std::vector<BytecodeValue> &args) {
@@ -45,28 +45,6 @@ void registerTimeModule(VMApi &api) {
         return BytecodeValue(ss.str());
       });
 
-  // Sleep for specified milliseconds
-  api.registerFunction(
-      "time.sleep", [](const std::vector<BytecodeValue> &args) {
-        if (args.empty())
-          throw std::runtime_error("time.sleep() requires milliseconds");
-
-        int64_t ms = 0;
-        if (std::holds_alternative<int64_t>(args[0])) {
-          ms = std::get<int64_t>(args[0]);
-        } else if (std::holds_alternative<double>(args[0])) {
-          ms = static_cast<int64_t>(std::get<double>(args[0]));
-        } else if (std::holds_alternative<std::string>(args[0])) {
-          ms = std::stoll(std::get<std::string>(args[0]));
-        } else {
-          throw std::runtime_error(
-              "time.sleep() requires numeric milliseconds");
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-        return BytecodeValue(nullptr);
-      });
-
   // Advanced: time.hour - get current hour
   api.registerFunction("time.hour", [](const std::vector<BytecodeValue> &args) {
     auto now = std::chrono::system_clock::now();
@@ -93,11 +71,10 @@ void registerTimeModule(VMApi &api) {
         return BytecodeValue(static_cast<int64_t>(tm->tm_sec));
       });
 
-  // Register time object
+  // Register time object (no sleep - that's in host layer)
   auto timeObj = api.makeObject();
   api.setField(timeObj, "now", api.makeFunctionRef("time.now"));
   api.setField(timeObj, "format", api.makeFunctionRef("time.format"));
-  api.setField(timeObj, "sleep", api.makeFunctionRef("time.sleep"));
   api.setField(timeObj, "hour", api.makeFunctionRef("time.hour"));
   api.setField(timeObj, "minute", api.makeFunctionRef("time.minute"));
   api.setField(timeObj, "second", api.makeFunctionRef("time.second"));

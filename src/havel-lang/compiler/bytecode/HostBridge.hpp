@@ -108,6 +108,10 @@ private:
   BytecodeValue handleScreenshotWindow(const std::vector<BytecodeValue> &args);
   BytecodeValue handleScreenshotRegion(const std::vector<BytecodeValue> &args);
 
+  // Handler methods - Async/Timer
+  BytecodeValue handleSleep(const std::vector<BytecodeValue> &args);
+  BytecodeValue handleTimeNow(const std::vector<BytecodeValue> &args);
+
   // Callback management through VM (internal - not exposed as host functions)
   CallbackId registerCallback(const BytecodeValue &closure);
   BytecodeValue invokeCallback(CallbackId id,

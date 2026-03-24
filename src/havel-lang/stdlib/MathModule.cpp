@@ -7,7 +7,7 @@ using havel::compiler::VMApi;
 namespace havel::stdlib {
 
 // Register math module with VMApi (stable API layer)
-void registerModule(VMApi &api) {
+void registerMathModule(VMApi &api) {
   // Helper: convert BytecodeValue to double
   auto toNum = [](const BytecodeValue &v) -> double {
     if (std::holds_alternative<int64_t>(v))

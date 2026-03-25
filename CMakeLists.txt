@@ -412,6 +412,9 @@ target_include_directories(image_extension PRIVATE
 target_link_libraries(image_extension PRIVATE ${OPENCV_ESSENTIAL_LIBS})
 set_target_properties(image_extension PROPERTIES
     PREFIX ""
+    C_STANDARD 11
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
     CXX_VISIBILITY_PRESET default
     VISIBILITY_INLINES_HIDDEN OFF
 )

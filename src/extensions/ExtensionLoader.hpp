@@ -1,23 +1,22 @@
 #pragma once
 
 /**
- * ExtensionLoader.hpp - Load and manage native extensions
+ * ExtensionLoader.hpp - Pure dlopen-based extension loading
  *
- * Loads .so/.dll extensions via dlopen and initializes them.
- * Extensions register directly with VM - no HostBridge involvement.
+ * SINGLE RESPONSIBILITY: Load/unload .so files via dlopen.
+ * Does NOT handle:
+ * - Registry (that's ModuleRegistry)
+ * - Capability checks (that's CapabilityManager)
+ * - Type conversion (that's ExtensionAPI wrapper)
+ *
+ * This separation prevents ModuleLoader from becoming god object v2.
  */
 
-#include "ExtensionAPI.hpp"
-#include "../havel-lang/compiler/bytecode/VM.hpp"
+#include "HavelCAPI.h"
 
-#include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
-
-#ifdef HAVE_DLFCN_H
-#include <dlfcn.h>
-#endif
+#include <memory>
 
 namespace havel {
 
@@ -28,36 +27,35 @@ struct LoadedExtension {
   std::string name;
   std::string path;
   void* handle = nullptr;
-  ExtensionInfo info;
   bool isLoaded = false;
+  
+  /* IMPORTANT: We do NOT support hot unload.
+   * Once loaded, extension stays loaded until process exit.
+   * 
+   * Why?
+   * - dlclose() + dangling function pointers = crash
+   * - Python doesn't truly unload extensions either
+   * - Marked as "experimental" if we ever add it
+   */
 };
 
 /**
- * ExtensionLoader - Manage native extension lifecycle
+ * ExtensionLoader - Minimal dlopen wrapper
  */
-class ExtensionLoader : public ExtensionAPI {
+class ExtensionLoader {
 public:
-  explicit ExtensionLoader(compiler::VM& vm);
+  ExtensionLoader();
   ~ExtensionLoader();
   
-  // ==========================================================================
-  // Extension loading
-  // ==========================================================================
+  /* ==========================================================================
+   * Loading (single responsibility)
+   * ========================================================================== */
   
   /// Load extension from path
-  /// @param path Path to .so/.dll file
-  /// @return true if loaded successfully
   bool loadExtension(const std::string& path);
   
   /// Load extension by name (searches standard paths)
-  /// @param name Extension name (e.g., "image", "ocr")
-  /// @return true if loaded successfully
   bool loadExtensionByName(const std::string& name);
-  
-  /// Unload extension
-  /// @param name Extension name
-  /// @return true if unloaded successfully
-  bool unloadExtension(const std::string& name);
   
   /// Check if extension is loaded
   bool isLoaded(const std::string& name) const;
@@ -65,35 +63,25 @@ public:
   /// Get list of loaded extensions
   std::vector<std::string> getLoadedExtensions() const;
   
-  // ==========================================================================
-  // ExtensionAPI implementation (for extensions to register)
-  // ==========================================================================
+  /* ==========================================================================
+   * Search paths
+   * ========================================================================== */
   
-  void registerModule(const ExtensionModule& module) override;
-  compiler::VM* getVM() override { return &vm_; }
-  
-  ExtensionValue createArray(const std::vector<ExtensionValue>& values) override;
-  ExtensionValue createObject(const std::vector<std::pair<std::string, ExtensionValue>>& fields) override;
-  
-  // ==========================================================================
-  // Search paths
-  // ==========================================================================
-  
-  /// Add search path for extensions
   void addSearchPath(const std::string& path);
-  
-  /// Get standard search paths
   static std::vector<std::string> getStandardSearchPaths();
-
+  
+  /* ==========================================================================
+   * NO UNLOAD
+   * 
+   * Hot unload is intentionally NOT supported.
+   * See LoadedExtension comment for why.
+   * ========================================================================== */
+  
 private:
-  compiler::VM& vm_;
-  std::unordered_map<std::string, LoadedExtension> loadedExtensions_;
+  std::vector<LoadedExtension> loadedExtensions_;
   std::vector<std::string> searchPaths_;
   
-  /// Find extension by name in search paths
   std::string findExtension(const std::string& name) const;
-  
-  /// Get extension suffix for current platform
   static std::string getExtensionSuffix();
 };
 

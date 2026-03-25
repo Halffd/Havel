@@ -231,6 +231,32 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  // Type system declarations - register type names in scope
+  case ast::NodeType::StructDeclaration: {
+    const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
+    // Register struct type name in current scope
+    // For now, just skip - full type system requires semantic analysis pass
+    break;
+  }
+
+  case ast::NodeType::EnumDeclaration: {
+    const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
+    // Register enum type name in current scope
+    break;
+  }
+
+  case ast::NodeType::TraitDeclaration: {
+    const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(statement);
+    // Register trait name in current scope
+    break;
+  }
+
+  case ast::NodeType::ImplDeclaration: {
+    const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
+    // Register impl block - methods are added to type
+    break;
+  }
+
   default:
     break;
   }

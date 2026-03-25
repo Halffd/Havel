@@ -18,14 +18,14 @@ namespace havel::compiler {
 
 HostBridge::HostBridge(const havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>(*ctx_->vm);
+  extensionLoader_ = std::make_unique<ExtensionLoader>();
   initBridges();
 }
 
 HostBridge::HostBridge(const havel::HostContext &ctx,
                        const ExecutionPolicy &policy)
     : ctx_(&ctx), policy_(policy), moduleLoader_(*ctx_) {
-  extensionLoader_ = std::make_unique<ExtensionLoader>(*ctx_->vm);
+  extensionLoader_ = std::make_unique<ExtensionLoader>();
   moduleLoader_.setExecutionPolicy(policy);
   initBridges();
 }
@@ -97,13 +97,6 @@ void HostBridge::install() {
     }
     std::string name = std::get<std::string>(args[0]);
     return BytecodeValue(self->extensionLoader_->loadExtensionByName(name));
-  };
-  options_.host_functions["extension.unload"] = [self](const std::vector<BytecodeValue>& args) {
-    if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
-      return BytecodeValue(false);
-    }
-    std::string name = std::get<std::string>(args[0]);
-    return BytecodeValue(self->extensionLoader_->unloadExtension(name));
   };
   options_.host_functions["extension.isLoaded"] = [self](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<std::string>(args[0])) {

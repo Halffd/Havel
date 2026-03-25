@@ -511,6 +511,33 @@ Last updated: 2026-03-25
 
 ## Latest Changes
 
+### Iteration Protocol (2026-03-25) - ARCHITECTURAL FIX
+**Proper iterator protocol instead of special-casing:**
+- `ITER_NEW` opcode: creates iterator from any iterable
+- `ITER_NEXT` opcode: returns `{value, done}` object
+- Unified `GCHeap::Iterator` struct
+- Works with: **Array**, **String**, **Object** (extensible to File, Generator, etc.)
+
+```havel
+for x in [1, 2, 3] { ... }      // Array iteration
+for c in "hello" { ... }         // String (char by char)
+for key in {a: 1, b: 2} { ... }  // Object (key by key)
+```
+
+**Desugaring:**
+```
+for x in obj { body }
+
+Becomes:
+  let __iter = iter(obj)
+  while (true) {
+    let __result = __iter.next()
+    if (__result.done) break
+    let x = __result.value
+    body
+  }
+```
+
 ### For-In Loops & Dot Notation (2026-03-25)
 - **For-in loops**: `for element in array { ... }`
   - LexicalResolver support for iterator scope
@@ -528,7 +555,7 @@ Last updated: 2026-03-25
 - Added E_CHARGE for elementary charge
 
 **Known Issues:**
-- For-in loops only work with arrays (strings/objects need type-specific iteration)
 - Interpolation variable scope resolution may have issues (mini-parser scope)
 - `any.*` dispatch needs string/array functions in HostBridge options_
-- Arrays print as `array[N]` not values
+- Arrays print as `array[N]` not values (need toString/__repr__)
+- Object iteration order is undefined (hash map iteration)

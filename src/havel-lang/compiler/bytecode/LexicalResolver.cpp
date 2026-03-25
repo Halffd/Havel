@@ -186,6 +186,28 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::ForStatement: {
+    const auto &for_stmt = static_cast<const ast::ForStatement &>(statement);
+    // Resolve the iterable expression in the current scope
+    if (for_stmt.iterable) {
+      resolveExpression(*for_stmt.iterable);
+    }
+    // Create a new scope for the loop body
+    beginScope();
+    // Declare iterator variables in the loop scope
+    for (const auto &iter : for_stmt.iterators) {
+      if (iter) {
+        declareLocal(iter->symbol, iter.get());
+      }
+    }
+    // Resolve the body
+    if (for_stmt.body) {
+      resolveStatement(*for_stmt.body);
+    }
+    endScope();
+    break;
+  }
+
   case ast::NodeType::BlockStatement: {
     beginScope();
     const auto &block = static_cast<const ast::BlockStatement &>(statement);

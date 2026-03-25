@@ -1408,6 +1408,20 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::ARRAY_LEN: {
+    BytecodeValue container = pop();
+    if (!std::holds_alternative<ArrayRef>(container)) {
+      throw std::runtime_error("ARRAY_LEN expects array container");
+    }
+    uint32_t id = std::get<ArrayRef>(container).id;
+    auto *array = heap_.array(id);
+    if (!array) {
+      throw std::runtime_error("ARRAY_LEN unknown array id");
+    }
+    push(BytecodeValue(static_cast<int64_t>(array->size())));
+    break;
+  }
+
   case OpCode::ARRAY_GET: {
     BytecodeValue index_or_key = pop();
     BytecodeValue container = pop();

@@ -405,14 +405,100 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::ArrayLiteral: {
     const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
-    emit(OpCode::ARRAY_NEW);
+    
+    // Check if array contains spread expressions
+    bool hasSpread = false;
     for (const auto &element : array.elements) {
-      if (!element) {
-        throw std::runtime_error("Array literal contains null element");
+      if (element && element->kind == ast::NodeType::SpreadExpression) {
+        hasSpread = true;
+        break;
       }
-      emit(OpCode::DUP);
-      compileExpression(*element);
-      emit(OpCode::ARRAY_PUSH);
+    }
+    
+    if (!hasSpread) {
+      // Simple case: no spread, use standard compilation
+      emit(OpCode::ARRAY_NEW);
+      for (const auto &element : array.elements) {
+        if (!element) {
+          throw std::runtime_error("Array literal contains null element");
+        }
+        emit(OpCode::DUP);
+        compileExpression(*element);
+        emit(OpCode::ARRAY_PUSH);
+      }
+    } else {
+      // Complex case: has spread, build array element by element
+      emit(OpCode::ARRAY_NEW);
+      uint32_t resultSlot = next_local_index++;
+      reserveLocalSlot(resultSlot);
+      emit(OpCode::STORE_VAR, resultSlot);
+      
+      for (const auto &element : array.elements) {
+        if (!element) {
+          throw std::runtime_error("Array literal contains null element");
+        }
+        if (element->kind == ast::NodeType::SpreadExpression) {
+          const auto &spread = static_cast<const ast::SpreadExpression &>(*element);
+          if (!spread.target) {
+            throw std::runtime_error("Spread expression missing target");
+          }
+          // Compile spread target
+          compileExpression(*spread.target);
+          uint32_t spreadArrSlot = next_local_index++;
+          reserveLocalSlot(spreadArrSlot);
+          emit(OpCode::STORE_VAR, spreadArrSlot);
+          
+          // Get length
+          emit(OpCode::LOAD_VAR, spreadArrSlot);
+          emit(OpCode::ARRAY_LEN);
+          uint32_t lenSlot = next_local_index++;
+          reserveLocalSlot(lenSlot);
+          emit(OpCode::STORE_VAR, lenSlot);
+          
+          // Initialize index
+          uint32_t idxSlot = next_local_index++;
+          reserveLocalSlot(idxSlot);
+          emit(OpCode::LOAD_CONST, addConstant(int64_t(0)));
+          emit(OpCode::STORE_VAR, idxSlot);
+          
+          uint32_t loopStart = static_cast<uint32_t>(current_function->instructions.size());
+          
+          // Check if idx < len (continue loop if true)
+          emit(OpCode::LOAD_VAR, idxSlot);
+          emit(OpCode::LOAD_VAR, lenSlot);
+          emit(OpCode::LT);
+          uint32_t endJump = emitJump(OpCode::JUMP_IF_FALSE);
+          
+          // Get array element and push to result array
+          emit(OpCode::LOAD_VAR, resultSlot);  // Load result array
+          emit(OpCode::LOAD_VAR, spreadArrSlot);
+          emit(OpCode::LOAD_VAR, idxSlot);
+          emit(OpCode::ARRAY_GET);
+          // Stack: result_array, element
+          emit(OpCode::ARRAY_PUSH);
+          // Stack: result_array
+          emit(OpCode::STORE_VAR, resultSlot);  // Save result array back
+          
+          // Increment index
+          emit(OpCode::LOAD_VAR, idxSlot);
+          emit(OpCode::LOAD_CONST, addConstant(int64_t(1)));
+          emit(OpCode::ADD);
+          emit(OpCode::STORE_VAR, idxSlot);
+          
+          emit(OpCode::JUMP, loopStart);
+          
+          uint32_t loopEnd = static_cast<uint32_t>(current_function->instructions.size());
+          patchJump(endJump, loopEnd);
+        } else {
+          emit(OpCode::LOAD_VAR, resultSlot);
+          compileExpression(*element);
+          emit(OpCode::ARRAY_PUSH);
+          emit(OpCode::STORE_VAR, resultSlot);
+        }
+      }
+      
+      // Load result array for final use
+      emit(OpCode::LOAD_VAR, resultSlot);
     }
     break;
   }
@@ -881,6 +967,16 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     compileExpression(*index.object);
     compileExpression(*index.index);
     emit(OpCode::ARRAY_GET);
+    break;
+  }
+
+  case ast::NodeType::SpreadExpression: {
+    const auto &spread = static_cast<const ast::SpreadExpression &>(expression);
+    if (!spread.target) {
+      throw std::runtime_error("Spread expression missing target");
+    }
+    compileExpression(*spread.target);
+    emit(OpCode::SPREAD);
     break;
   }
 

@@ -360,6 +360,14 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::SpreadExpression: {
+    const auto &spread = static_cast<const ast::SpreadExpression &>(expression);
+    if (spread.target) {
+      resolveExpression(*spread.target);
+    }
+    break;
+  }
+
   case ast::NodeType::InterpolatedStringExpression: {
     const auto &interp = static_cast<const ast::InterpolatedStringExpression &>(expression);
     // Resolve each expression segment in the current scope

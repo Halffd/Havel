@@ -66,16 +66,16 @@ Tracking implementation progress against docs/Havel.md specification.
 |--------|--------|-------|
 | `io` | ✅ | send, keyDown, keyUp, suspend |
 | `media` | ⚠️ | Basic play/pause |
-| `fs` | ❌ | File operations |
+| `fs` | ✅ | read, write, exists, size, delete |
 | `clipboard` | ✅ | get, set, clear, send |
 | `time` | ⚠️ | Basic time functions |
-| `window` | ⚠️ | Limited window management |
+| `window` | ✅ | active, close, resize, move, focus, min, max |
 | `mouse` | ✅ | click, move, scroll |
 | `math` | ✅ | Full math library |
 | `strings` | ✅ | String methods |
 | `array` | ✅ | Array methods |
 | `display` | ❌ | Monitor information |
-| `process` | ❌ | Process management |
+| `process` | ✅ | find, exists, kill, nice, getpid, getppid, execute |
 | `http` | ❌ | HTTP client |
 | `browser` | ❌ | Browser automation (CDP) |
 | `audio` | ❌ | Audio/volume control |
@@ -472,10 +472,10 @@ Tracking implementation progress against docs/Havel.md specification.
 |----------|-------------|---------|---------|-------|------------|
 | Core Language | 8 | 2 | 6 | 16 | 50% |
 | Type System | 0 | 0 | 7 | 7 | 0% |
-| Standard Library | 5 | 3 | 13 | 21 | 24% |
+| Standard Library | 8 | 3 | 10 | 21 | 38% |
 | Hotkey System | 4 | 1 | 9 | 14 | 29% |
 | Mode System | 1 | 1 | 10 | 12 | 8% |
-| Window System | 3 | 2 | 8 | 13 | 23% |
+| Window System | 7 | 2 | 4 | 13 | 54% |
 | Concurrency | 0 | 0 | 5 | 5 | 0% |
 | Script Lifecycle | 0 | 0 | 5 | 5 | 0% |
 | Input System | 5 | 0 | 8 | 13 | 38% |
@@ -487,9 +487,9 @@ Tracking implementation progress against docs/Havel.md specification.
 ### Priority TODO
 
 1. **High Priority** (Core functionality)
-   - [ ] Window management module (`window.*`)
-   - [ ] Process module (`process.*`)
-   - [ ] File system module (`fs.*`)
+   - [x] Window management module (`window.*`)
+   - [x] Process module (`process.*`)
+   - [x] File system module (`fs.*`)
    - [ ] HTTP client module (`http.*`)
    - [ ] Browser automation (`browser.*`)
 
@@ -507,4 +507,4 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
-Last updated: 2026-03-24
+Last updated: 2026-03-24 (High priority modules complete: window, process, fs)

@@ -63,15 +63,20 @@ public:
 
 private:
   const HostContext *ctx_;
+  // File operations
   static BytecodeValue handleFileRead(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleFileWrite(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleFileExists(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleFileSize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleFileDelete(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // Process operations
   static BytecodeValue handleProcessExecute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessGetPid(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessGetPpid(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessFind(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleProcessExists(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleProcessKill(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleProcessNice(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**
@@ -84,14 +89,21 @@ public:
 
 private:
   const HostContext *ctx_;
+  // Window operations
   static BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMove(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowMoveToMonitor(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowMoveToNextMonitor(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowFocus(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMinimize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMaximize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // Clipboard operations
   static BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleClipboardClear(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // Screenshot operations
   static BytecodeValue handleScreenshotFull(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleScreenshotMonitor(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };

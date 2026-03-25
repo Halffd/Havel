@@ -82,6 +82,12 @@ public:
     /// @return true on success
     static bool sendSignal(int32_t pid, int signal);
 
+    /// Set process priority (nice value)
+    /// @param pid Process ID
+    /// @param nice Nice value (-20 to 19)
+    /// @return true on success
+    static bool setNice(int32_t pid, int nice);
+
     /// Terminate process gracefully
     /// @param pid Process ID
     /// @param timeout_ms Timeout in milliseconds

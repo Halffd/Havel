@@ -153,6 +153,15 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["process.find"] = [ctx = ctx_](const auto &args) {
     return handleProcessFind(args, ctx);
   };
+  options.host_functions["process.exists"] = [ctx = ctx_](const auto &args) {
+    return handleProcessExists(args, ctx);
+  };
+  options.host_functions["process.kill"] = [ctx = ctx_](const auto &args) {
+    return handleProcessKill(args, ctx);
+  };
+  options.host_functions["process.nice"] = [ctx = ctx_](const auto &args) {
+    return handleProcessNice(args, ctx);
+  };
 }
 
 BytecodeValue SystemBridge::handleFileRead(const std::vector<BytecodeValue> &args,
@@ -291,6 +300,72 @@ BytecodeValue SystemBridge::handleProcessFind(const std::vector<BytecodeValue> &
   return BytecodeValue(arr);
 }
 
+BytecodeValue SystemBridge::handleProcessExists(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    throw std::runtime_error("process.exists() requires a process name or PID");
+  }
+  if (std::holds_alternative<int64_t>(args[0])) {
+    int32_t pid = static_cast<int32_t>(std::get<int64_t>(args[0]));
+    return BytecodeValue(havel::host::ProcessService::isProcessAlive(pid));
+  }
+  const std::string *name = std::get_if<std::string>(&args[0]);
+  if (!name) {
+    throw std::runtime_error("process.exists() requires a string or number");
+  }
+  return BytecodeValue(havel::host::ProcessService::processExists(*name));
+}
+
+BytecodeValue SystemBridge::handleProcessKill(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("process.kill() requires PID and signal");
+  }
+  int32_t pid = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    pid = static_cast<int32_t>(std::get<int64_t>(args[0]));
+  } else {
+    throw std::runtime_error("process.kill() requires a number PID");
+  }
+  const std::string *sig = std::get_if<std::string>(&args[1]);
+  if (!sig) {
+    throw std::runtime_error("process.kill() requires a string signal");
+  }
+  int signal_num = 15; // Default SIGTERM
+  if (*sig == "SIGKILL" || *sig == "kill") signal_num = 9;
+  else if (*sig == "SIGTERM" || *sig == "term") signal_num = 15;
+  else if (*sig == "SIGHUP" || *sig == "hangup") signal_num = 1;
+  else if (*sig == "SIGINT" || *sig == "int") signal_num = 2;
+  return BytecodeValue(havel::host::ProcessService::sendSignal(pid, signal_num));
+}
+
+BytecodeValue SystemBridge::handleProcessNice(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("process.nice() requires PID and nice value");
+  }
+  int32_t pid = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    pid = static_cast<int32_t>(std::get<int64_t>(args[0]));
+  } else {
+    throw std::runtime_error("process.nice() requires a number PID");
+  }
+  int64_t nice = 0;
+  if (std::holds_alternative<int64_t>(args[1])) {
+    nice = std::get<int64_t>(args[1]);
+  } else {
+    throw std::runtime_error("process.nice() requires a number nice value");
+  }
+  // Nice range: -20 (highest priority) to 19 (lowest)
+  if (nice < -20 || nice > 19) {
+    throw std::runtime_error("process.nice() nice value must be between -20 and 19");
+  }
+  return BytecodeValue(havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
+}
+
 // ============================================================================
 // UIBridge Implementation
 // ============================================================================
@@ -305,11 +380,23 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.resize"] = [ctx = ctx_](const auto &args) {
     return handleWindowResize(args, ctx);
   };
+  options.host_functions["window.move"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMove(args, ctx);
+  };
   options.host_functions["window.moveToMonitor"] = [ctx = ctx_](const auto &args) {
     return handleWindowMoveToMonitor(args, ctx);
   };
   options.host_functions["window.moveToNextMonitor"] = [ctx = ctx_](const auto &args) {
     return handleWindowMoveToNextMonitor(args, ctx);
+  };
+  options.host_functions["window.focus"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFocus(args, ctx);
+  };
+  options.host_functions["window.min"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMinimize(args, ctx);
+  };
+  options.host_functions["window.max"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMaximize(args, ctx);
   };
   options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
     return handleClipboardGet(args, ctx);
@@ -412,6 +499,67 @@ BytecodeValue UIBridge::handleWindowMoveToNextMonitor(const std::vector<Bytecode
   // TODO: Implement move to next monitor
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.moveWindowToMonitor(0, 0));
+}
+
+BytecodeValue UIBridge::handleWindowMove(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.size() < 3 || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  int x = 0, y = 0;
+  if (auto *v = std::get_if<int64_t>(&args[1]))
+    x = static_cast<int>(*v);
+  if (auto *v = std::get_if<int64_t>(&args[2]))
+    y = static_cast<int>(*v);
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.moveWindow(wid, x, y));
+}
+
+BytecodeValue UIBridge::handleWindowFocus(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.focusWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowMinimize(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.minimizeWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowMaximize(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.maximizeWindow(wid));
 }
 
 BytecodeValue UIBridge::handleClipboardGet(const std::vector<BytecodeValue> &args,

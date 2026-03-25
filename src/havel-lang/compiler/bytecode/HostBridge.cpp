@@ -141,6 +141,10 @@ void HostBridge::addVmSetup(std::function<void(VM &)> setupFn) {
   vm_setup_callbacks_.push_back(std::move(setupFn));
 }
 
+void HostBridge::registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn) {
+  options_.host_functions[fullName] = std::move(fn);
+}
+
 std::shared_ptr<HostBridge> createHostBridge(const havel::HostContext &ctx) {
   return std::make_shared<HostBridge>(ctx);
 }

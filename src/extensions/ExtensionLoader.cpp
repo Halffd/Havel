@@ -5,6 +5,7 @@
  * No registry, no capability checks, no type conversion.
  */
 #include "ExtensionLoader.hpp"
+#include "HavelCAPI.h"
 
 #include <algorithm>
 #include <cstring>
@@ -13,6 +14,9 @@
 #ifdef HAVE_DLFCN_H
 #include <dlfcn.h>
 #endif
+
+/* Forward declaration - HavelAPI is implemented in HavelAPI.cpp */
+extern "C" HavelAPI* getHavelAPI(void);
 
 namespace havel {
 
@@ -147,16 +151,18 @@ bool ExtensionLoader::loadExtension(const std::string& path) {
   }
   ext.name = name;
   
-  /* 
-   * IMPORTANT: We do NOT call initFn here.
-   * The extension registers its functions via HostBridge.
-   * We just load the .so and track it.
-   * 
-   * This separates:
-   * - Loading (ExtensionLoader)
-   * - Registration (HostBridge/ModuleRegistry)
+  /*
+   * Call extension init function with HavelAPI
+   * Extension registers its functions via the API
    */
-  
+  HavelAPI* api = getHavelAPI();
+  if (api) {
+    initFn(api);
+    printf("[ExtensionLoader] Extension '%s' initialized\n", name.c_str());
+  } else {
+    fprintf(stderr, "[ExtensionLoader] Failed to get HavelAPI\n");
+  }
+
   loadedExtensions_.push_back(std::move(ext));
   return true;
 #else

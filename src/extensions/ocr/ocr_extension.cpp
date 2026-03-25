@@ -2,7 +2,7 @@
  * ocr_extension.cpp - Native OCR extension using Tesseract
  *
  * Uses C ABI (HavelCAPI.h) for stability.
- * Requests host services via API - does NOT access OS directly.
+ * All functions are static C functions - no captures in lambdas.
  */
 
 #include "HavelCAPI.h"
@@ -14,6 +14,7 @@
 
 #include <unordered_map>
 #include <memory>
+#include <cstdio>
 
 namespace {
 
@@ -23,121 +24,103 @@ std::unordered_map<int64_t, std::unique_ptr<tesseract::TessBaseAPI>> g_ocrEngine
 int64_t g_nextEngineId = 1;
 
 void cleanupEngine(void* ptr) {
-  int64_t id = reinterpret_cast<int64_t>(ptr);
-  auto it = g_ocrEngines.find(id);
-  if (it != g_ocrEngines.end()) {
-    it->second->End();
-    g_ocrEngines.erase(it);
-  }
+    int64_t id = reinterpret_cast<int64_t>(ptr);
+    auto it = g_ocrEngines.find(id);
+    if (it != g_ocrEngines.end()) {
+        it->second->End();
+        g_ocrEngines.erase(it);
+    }
 }
 #endif
 
-} // anonymous namespace
+/* Static C functions - no captures */
 
-HAVEL_EXTENSION(ocr) {
 #ifdef HAVE_TESSERACT
-  
-  /* ocr.init(lang) -> handle */
-  api->register_function("ocr", "init", [](int argc, HavelValue** argv) {
+static HavelValue* ocr_init(int argc, HavelValue** argv) {
     const char* lang = "eng";
-    if (argc >= 1 && api->get_string(argv[0])) {
-      lang = api->get_string(argv[0]);
+    if (argc >= 1 && havel_get_type(argv[0]) == HAVEL_STRING) {
+        lang = havel_get_string(argv[0]);
     }
     
     auto* tessApi = new tesseract::TessBaseAPI();
     if (tessApi->Init(nullptr, lang)) {
-      delete tessApi;
-      return api->new_int(0);  /* 0 = invalid handle */
+        delete tessApi;
+        return havel_new_int(0);  /* 0 = invalid handle */
     }
     
     int64_t id = g_nextEngineId++;
     g_ocrEngines[id] = std::unique_ptr<tesseract::TessBaseAPI>(tessApi);
     
-    return api->new_handle(reinterpret_cast<void*>(id), cleanupEngine);
-  });
-  
-  /* ocr.close(handle) -> bool */
-  api->register_function("ocr", "close", [](int argc, HavelValue** argv) {
-    if (argc < 1) {
-      return api->new_bool(0);
-    }
+    return havel_new_handle(reinterpret_cast<void*>(id), cleanupEngine);
+}
+
+static HavelValue* ocr_close(int argc, HavelValue** argv) {
+    if (argc < 1) return havel_new_bool(0);
     
-    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
     auto it = g_ocrEngines.find(id);
     if (it == g_ocrEngines.end()) {
-      return api->new_bool(0);
+        return havel_new_bool(0);
     }
     
     it->second->End();
     g_ocrEngines.erase(it);
     
-    return api->new_bool(1);
-  });
-  
-  /* ocr.recognizeFile(handle, path) -> string */
-  api->register_function("ocr", "recognizeFile", [](int argc, HavelValue** argv) {
-    if (argc < 2) {
-      return api->new_string("");
-    }
+    return havel_new_bool(1);
+}
+
+static HavelValue* ocr_recognizeFile(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_string("");
     
-    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
-    const char* path = api->get_string(argv[1]);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    const char* path = havel_get_string(argv[1]);
     
-    if (!path) {
-      return api->new_string("");
-    }
+    if (!path) return havel_new_string("");
     
     auto engineIt = g_ocrEngines.find(id);
     if (engineIt == g_ocrEngines.end()) {
-      return api->new_string("");
+        return havel_new_string("");
     }
     
     auto* tessApi = engineIt->second.get();
     
     /* Load image */
-    pix* image = pixRead(path);
+    Pix* image = pixRead(path);
     if (!image) {
-      return api->new_string("");
+        return havel_new_string("");
     }
     
     tessApi->SetImage(image);
     
     /* Recognize text */
     char* text = tessApi->GetUTF8Text();
-    std::string result(text ? text : "");
+    HavelValue* result = havel_new_string(text ? text : "");
     
-    if (text) {
-      delete[] text;
-    }
+    if (text) delete[] text;
     pixDestroy(&image);
     
-    return api->new_string(result.c_str());
-  });
-  
-  /* ocr.confidence(handle, path) -> float */
-  api->register_function("ocr", "confidence", [](int argc, HavelValue** argv) {
-    if (argc < 2) {
-      return api->new_float(-1.0);
-    }
+    return result;
+}
+
+static HavelValue* ocr_confidence(int argc, HavelValue** argv) {
+    if (argc < 2) return havel_new_float(-1.0);
     
-    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
-    const char* path = api->get_string(argv[1]);
+    int64_t id = reinterpret_cast<int64_t>(havel_get_handle(argv[0]));
+    const char* path = havel_get_string(argv[1]);
     
-    if (!path) {
-      return api->new_float(-1.0);
-    }
+    if (!path) return havel_new_float(-1.0);
     
     auto engineIt = g_ocrEngines.find(id);
     if (engineIt == g_ocrEngines.end()) {
-      return api->new_float(-1.0);
+        return havel_new_float(-1.0);
     }
     
     auto* tessApi = engineIt->second.get();
     
     /* Load image */
-    pix* image = pixRead(path);
+    Pix* image = pixRead(path);
     if (!image) {
-      return api->new_float(-1.0);
+        return havel_new_float(-1.0);
     }
     
     tessApi->SetImage(image);
@@ -147,43 +130,51 @@ HAVEL_EXTENSION(ocr) {
     
     pixDestroy(&image);
     
-    return api->new_float(static_cast<double>(confidence));
-  });
-  
-  /* ocr.getAvailableLanguages() -> string (comma-separated) */
-  api->register_function("ocr", "getAvailableLanguages", [](int argc, HavelValue** argv) {
-    (void)argc;
-    (void)argv;
+    return havel_new_float(static_cast<double>(confidence));
+}
+
+static HavelValue* ocr_getAvailableLanguages(int argc, HavelValue** argv) {
+    (void)argc; (void)argv;
     /* Return common languages */
-    return api->new_string("eng,deu,fra,spa,ita,por,nld");
-  });
-  
+    return havel_new_string("eng,deu,fra,spa,ita,por,nld");
+}
+
 #else
-  /* Tesseract not available - stub functions */
-  
-  api->register_function("ocr", "init", [](int argc, HavelValue** argv) {
+/* Tesseract not available - stub functions */
+
+static HavelValue* ocr_init(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
-    return api->new_int(0);
-  });
-  
-  api->register_function("ocr", "close", [](int argc, HavelValue** argv) {
+    return havel_new_int(0);
+}
+
+static HavelValue* ocr_close(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
-    return api->new_bool(0);
-  });
-  
-  api->register_function("ocr", "recognizeFile", [](int argc, HavelValue** argv) {
+    return havel_new_bool(0);
+}
+
+static HavelValue* ocr_recognizeFile(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
-    return api->new_string("");
-  });
-  
-  api->register_function("ocr", "confidence", [](int argc, HavelValue** argv) {
+    return havel_new_string("");
+}
+
+static HavelValue* ocr_confidence(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
-    return api->new_float(-1.0);
-  });
-  
-  api->register_function("ocr", "getAvailableLanguages", [](int argc, HavelValue** argv) {
+    return havel_new_float(-1.0);
+}
+
+static HavelValue* ocr_getAvailableLanguages(int argc, HavelValue** argv) {
     (void)argc; (void)argv;
-    return api->new_string("");
-  });
+    return havel_new_string("");
+}
 #endif
+
+} /* anonymous namespace */
+
+extern "C" void havel_extension_init(HavelAPI* api) {
+    /* Register all OCR functions */
+    api->register_function("ocr", "init", ocr_init);
+    api->register_function("ocr", "close", ocr_close);
+    api->register_function("ocr", "recognizeFile", ocr_recognizeFile);
+    api->register_function("ocr", "confidence", ocr_confidence);
+    api->register_function("ocr", "getAvailableLanguages", ocr_getAvailableLanguages);
 }

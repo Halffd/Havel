@@ -6,6 +6,7 @@
 #include "../../../host/module/ModuleLoader.hpp"
 #include "../../../host/module/ExecutionPolicy.hpp"
 #include "../../../extensions/ExtensionLoader.hpp"
+#include "../../../extensions/HavelCAPI.h"
 
 #include <memory>
 #include <string>
@@ -72,6 +73,9 @@ public:
   ExtensionLoader &extensionLoader() { return *extensionLoader_; }
   const ExtensionLoader &extensionLoader() const { return *extensionLoader_; }
   void loadExtension(const std::string &name);
+  
+  // Extension function registration (C API)
+  void registerExtensionFunction(const std::string &fullName, BytecodeHostFunction fn);
 
   // Import system
   bool import(const std::string &importSpec);

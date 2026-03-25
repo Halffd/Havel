@@ -407,6 +407,7 @@ set(COMMON_LIBS
 add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
 target_include_directories(image_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
     ${OpenCV_INCLUDE_DIRS}
 )
 target_link_libraries(image_extension PRIVATE ${OPENCV_ESSENTIAL_LIBS})
@@ -423,12 +424,20 @@ set_target_properties(image_extension PROPERTIES
 add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
 target_include_directories(ocr_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
     ${TESSERACT_INCLUDE_DIRS}
     ${LEPTONICA_INCLUDE_DIRS}
 )
 target_link_libraries(ocr_extension PRIVATE ${TESSERACT_LIBRARIES} ${LEPTONICA_LIBRARIES})
 target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
-set_target_properties(ocr_extension PROPERTIES PREFIX "")
+set_target_properties(ocr_extension PROPERTIES
+    PREFIX ""
+    C_STANDARD 11
+    CXX_STANDARD 23
+    C_VISIBILITY_PRESET default
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+)
 
 # ==============================================================================
 # MAIN EXECUTABLE

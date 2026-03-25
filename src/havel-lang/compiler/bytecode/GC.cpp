@@ -103,6 +103,34 @@ uint32_t GCHeap::createIterator(const BytecodeValue &iterable) {
   return ref.id;
 }
 
+// Struct type registration
+uint32_t GCHeap::registerStructType(const std::string& name, const std::vector<std::string>& fields) {
+  uint32_t id = static_cast<uint32_t>(structTypes_.size());
+  structTypes_.push_back(StructType{name, fields});
+  return id;
+}
+
+// Struct allocation
+StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
+  const uint32_t id = next_array_id_++;
+  structs_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue(nullptr));
+  return StructRef{.id = id, .typeId = typeId};
+}
+
+// Enum type registration
+uint32_t GCHeap::registerEnumType(const std::string& name, const std::vector<std::string>& variants) {
+  uint32_t id = static_cast<uint32_t>(enumTypes_.size());
+  enumTypes_.push_back(EnumType{name, variants});
+  return id;
+}
+
+// Enum allocation
+EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
+  const uint32_t id = next_array_id_++;
+  enums_[id] = {tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue(nullptr))};
+  return EnumRef{.id = id, .tag = tag, .typeId = typeId};
+}
+
 BytecodeValue GCHeap::iteratorNext(uint32_t id) {
   auto *iter = iterator(id);
   if (!iter) {

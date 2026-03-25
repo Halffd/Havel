@@ -79,6 +79,17 @@ enum class OpCode : uint8_t {
   RANGE_NEW,      // Create range: start..end or start..step..end
   RANGE_STEP_NEW, // Create range with step
   
+  // Struct operations (compact storage, field access by index)
+  STRUCT_NEW,     // Create struct with field count
+  STRUCT_GET,     // Get field by index
+  STRUCT_SET,     // Set field by index
+  
+  // Enum operations (tagged union)
+  ENUM_NEW,       // Create enum variant (tag + payload count)
+  ENUM_TAG,       // Get enum tag
+  ENUM_PAYLOAD,   // Get payload by index
+  ENUM_MATCH,     // Pattern match on enum
+  
   // Iteration protocol
   ITER_NEW,     // Create iterator from iterable
   ITER_NEXT,    // Get next {value, done} from iterator
@@ -135,6 +146,19 @@ struct RangeRef {
   uint32_t id = 0;
 };
 
+// Struct: compact field storage (fields stored as array, type info separate)
+struct StructRef {
+  uint32_t id = 0;      // GC object id for the field array
+  uint32_t typeId = 0;  // Type registry index
+};
+
+// Enum: tagged union (tag + payload array)
+struct EnumRef {
+  uint32_t id = 0;      // GC object id for the payload array
+  uint32_t tag = 0;     // Variant tag
+  uint32_t typeId = 0;  // Type registry index
+};
+
 struct IteratorRef {
   uint32_t id = 0;
 };
@@ -147,7 +171,7 @@ using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t, // Index into constant pool
                  FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
-                 RangeRef, IteratorRef, HostFunctionRef>;
+                 RangeRef, StructRef, EnumRef, IteratorRef, HostFunctionRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

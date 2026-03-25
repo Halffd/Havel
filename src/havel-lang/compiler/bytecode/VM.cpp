@@ -435,6 +435,64 @@ bool VM::isInRange(RangeRef range_ref, int64_t value) {
   }
 }
 
+// Struct helpers
+uint32_t VM::registerStructType(const std::string& name, const std::vector<std::string>& fields) {
+  return heap_.registerStructType(name, fields);
+}
+
+StructRef VM::createStruct(uint32_t typeId, size_t fieldCount) {
+  return heap_.allocateStruct(typeId, fieldCount);
+}
+
+BytecodeValue VM::getStructField(StructRef struct_ref, size_t index) {
+  auto it = heap_.structs_.find(struct_ref.id);
+  if (it == heap_.structs_.end() || index >= it->second.size()) {
+    return BytecodeValue(nullptr);
+  }
+  return it->second[index];
+}
+
+void VM::setStructField(StructRef struct_ref, size_t index, const BytecodeValue& value) {
+  auto it = heap_.structs_.find(struct_ref.id);
+  if (it == heap_.structs_.end() || index >= it->second.size()) {
+    return;
+  }
+  it->second[index] = value;
+}
+
+uint32_t VM::getStructTypeId(StructRef struct_ref) {
+  return struct_ref.typeId;
+}
+
+// Enum helpers
+uint32_t VM::registerEnumType(const std::string& name, const std::vector<std::string>& variants) {
+  return heap_.registerEnumType(name, variants);
+}
+
+EnumRef VM::createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
+  return heap_.allocateEnum(typeId, tag, payloadCount);
+}
+
+uint32_t VM::getEnumTag(EnumRef enum_ref) {
+  return enum_ref.tag;
+}
+
+BytecodeValue VM::getEnumPayload(EnumRef enum_ref, size_t index) {
+  auto it = heap_.enums_.find(enum_ref.id);
+  if (it == heap_.enums_.end() || index >= it->second.second.size()) {
+    return BytecodeValue(nullptr);
+  }
+  return it->second.second[index];
+}
+
+void VM::setEnumPayload(EnumRef enum_ref, size_t index, const BytecodeValue& value) {
+  auto it = heap_.enums_.find(enum_ref.id);
+  if (it == heap_.enums_.end() || index >= it->second.second.size()) {
+    return;
+  }
+  it->second.second[index] = value;
+}
+
 // Membership helpers
 bool VM::arrayContains(ArrayRef array_ref, const BytecodeValue& value) {
   auto *array = heap_.array(array_ref.id);
@@ -1582,6 +1640,89 @@ void VM::executeInstruction(const Instruction &instruction) {
     int64_t start = std::get<int64_t>(pop());
     RangeRef rangeRef = heap_.allocateRange(start, end, step);
     push(BytecodeValue(rangeRef));
+    break;
+  }
+
+  // Struct operations
+  case OpCode::STRUCT_NEW: {
+    // Operands: typeId (uint32), fieldCount (uint32)
+    uint32_t typeId = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t fieldCount = std::get<uint32_t>(instruction.operands[1]);
+    StructRef structRef = heap_.allocateStruct(typeId, fieldCount);
+    push(BytecodeValue(structRef));
+    break;
+  }
+
+  case OpCode::STRUCT_GET: {
+    // Pop: struct ref, index
+    BytecodeValue indexVal = pop();
+    BytecodeValue structVal = pop();
+    if (!std::holds_alternative<StructRef>(structVal) || !std::holds_alternative<int64_t>(indexVal)) {
+      throw std::runtime_error("STRUCT_GET expects struct and int index");
+    }
+    auto structRef = std::get<StructRef>(structVal);
+    size_t index = static_cast<size_t>(std::get<int64_t>(indexVal));
+    push(heap_.structs_.at(structRef.id).at(index));
+    break;
+  }
+
+  case OpCode::STRUCT_SET: {
+    // Pop: struct ref, index, value
+    BytecodeValue value = pop();
+    BytecodeValue indexVal = pop();
+    BytecodeValue structVal = pop();
+    if (!std::holds_alternative<StructRef>(structVal) || !std::holds_alternative<int64_t>(indexVal)) {
+      throw std::runtime_error("STRUCT_SET expects struct, int index, and value");
+    }
+    auto structRef = std::get<StructRef>(structVal);
+    size_t index = static_cast<size_t>(std::get<int64_t>(indexVal));
+    heap_.structs_.at(structRef.id).at(index) = value;
+    break;
+  }
+
+  // Enum operations
+  case OpCode::ENUM_NEW: {
+    // Operands: typeId (uint32), tag (uint32), payloadCount (uint32)
+    uint32_t typeId = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t tag = std::get<uint32_t>(instruction.operands[1]);
+    uint32_t payloadCount = std::get<uint32_t>(instruction.operands[2]);
+    EnumRef enumRef = heap_.allocateEnum(typeId, tag, payloadCount);
+    push(BytecodeValue(enumRef));
+    break;
+  }
+
+  case OpCode::ENUM_TAG: {
+    BytecodeValue enumVal = pop();
+    if (!std::holds_alternative<EnumRef>(enumVal)) {
+      throw std::runtime_error("ENUM_TAG expects enum");
+    }
+    auto enumRef = std::get<EnumRef>(enumVal);
+    push(BytecodeValue(static_cast<int64_t>(enumRef.tag)));
+    break;
+  }
+
+  case OpCode::ENUM_PAYLOAD: {
+    BytecodeValue indexVal = pop();
+    BytecodeValue enumVal = pop();
+    if (!std::holds_alternative<EnumRef>(enumVal) || !std::holds_alternative<int64_t>(indexVal)) {
+      throw std::runtime_error("ENUM_PAYLOAD expects enum and int index");
+    }
+    auto enumRef = std::get<EnumRef>(enumVal);
+    size_t index = static_cast<size_t>(std::get<int64_t>(indexVal));
+    push(heap_.enums_.at(enumRef.id).second.at(index));
+    break;
+  }
+
+  case OpCode::ENUM_MATCH: {
+    // Pop: enum ref, expected tag
+    BytecodeValue tagVal = pop();
+    BytecodeValue enumVal = pop();
+    if (!std::holds_alternative<EnumRef>(enumVal) || !std::holds_alternative<int64_t>(tagVal)) {
+      throw std::runtime_error("ENUM_MATCH expects enum and int tag");
+    }
+    auto enumRef = std::get<EnumRef>(enumVal);
+    int64_t expectedTag = std::get<int64_t>(tagVal);
+    push(BytecodeValue(enumRef.tag == static_cast<uint32_t>(expectedTag)));
     break;
   }
 

@@ -175,6 +175,20 @@ public:
   // Range helpers
   bool isInRange(RangeRef range_ref, int64_t value);
 
+  // Struct helpers
+  uint32_t registerStructType(const std::string& name, const std::vector<std::string>& fields);
+  StructRef createStruct(uint32_t typeId, size_t fieldCount);
+  BytecodeValue getStructField(StructRef struct_ref, size_t index);
+  void setStructField(StructRef struct_ref, size_t index, const BytecodeValue& value);
+  uint32_t getStructTypeId(StructRef struct_ref);
+  
+  // Enum helpers
+  uint32_t registerEnumType(const std::string& name, const std::vector<std::string>& variants);
+  EnumRef createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
+  uint32_t getEnumTag(EnumRef enum_ref);
+  BytecodeValue getEnumPayload(EnumRef enum_ref, size_t index);
+  void setEnumPayload(EnumRef enum_ref, size_t index, const BytecodeValue& value);
+
   // Membership helpers
   bool arrayContains(ArrayRef array_ref, const BytecodeValue& value);
   bool objectHasKey(ObjectRef object_ref, const std::string& key);

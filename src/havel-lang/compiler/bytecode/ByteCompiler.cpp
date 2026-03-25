@@ -344,18 +344,18 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::InterpolatedStringExpression: {
     const auto &interp = static_cast<const ast::InterpolatedStringExpression &>(expression);
-    
+
     // Build interpolated string by concatenating segments
     // Start with empty string
     emit(OpCode::LOAD_CONST, addConstant(std::string("")));
-    
+
     for (const auto &segment : interp.segments) {
       if (segment.isString) {
         // Push string segment
         emit(OpCode::LOAD_CONST, addConstant(segment.stringValue));
         emit(OpCode::STRING_CONCAT);
       } else {
-        // Evaluate expression and convert to string
+        // Evaluate pre-parsed expression and convert to string
         compileExpression(*segment.expression);
         emit(OpCode::TO_STRING);
         emit(OpCode::STRING_CONCAT);
@@ -501,9 +501,36 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (!binary.left || !binary.right) {
       throw std::runtime_error("Malformed binary expression");
     }
-    compileExpression(*binary.left);
-    compileExpression(*binary.right);
-    emit(toBytecodeOperator(binary.operator_));
+    
+    // Special handling for 'in' and 'not in' - compile as host function call
+    if (binary.operator_ == ast::BinaryOperator::In || 
+        binary.operator_ == ast::BinaryOperator::NotIn) {
+      compileExpression(*binary.left);   // value to check
+      compileExpression(*binary.right);  // container
+      std::string fnName = binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{fnName, static_cast<uint32_t>(2)});
+    } else {
+      compileExpression(*binary.left);
+      compileExpression(*binary.right);
+      emit(toBytecodeOperator(binary.operator_));
+    }
+    break;
+  }
+
+  case ast::NodeType::RangeExpression: {
+    const auto &range = static_cast<const ast::RangeExpression &>(expression);
+    if (!range.start || !range.end) {
+      throw std::runtime_error("Malformed range expression");
+    }
+    compileExpression(*range.start);
+    compileExpression(*range.end);
+    
+    if (range.step) {
+      compileExpression(*range.step);
+      emit(OpCode::RANGE_STEP_NEW);
+    } else {
+      emit(OpCode::RANGE_NEW);
+    }
     break;
   }
 
@@ -1037,54 +1064,69 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     throw std::runtime_error("Malformed for statement");
   }
 
-  // For now, support single iterator only
-  if (statement.iterators.size() > 1) {
-    throw std::runtime_error("For-in loop with multiple iterators not yet supported in bytecode");
+  bool multiVar = statement.iterators.size() > 1;
+  
+  // Get iterator variable slots
+  std::vector<uint32_t> iterSlots;
+  for (const auto &iter : statement.iterators) {
+    uint32_t slot = declarationSlot(*iter);
+    reserveLocalSlot(slot);
+    iterSlots.push_back(slot);
   }
 
-  // Get the iterator variable slot
-  uint32_t iterSlot = declarationSlot(*statement.iterators[0]);
-  reserveLocalSlot(iterSlot);
-  
   // Compile iterable and create iterator: iter(iterable)
   compileExpression(*statement.iterable);
   emit(OpCode::ITER_NEW);
-  
+
   // Create temp variable for iterator
   uint32_t iterVarSlot = next_local_index++;
   reserveLocalSlot(iterVarSlot);
   emit(OpCode::STORE_VAR, iterVarSlot);
-  
+
   uint32_t loop_start =
       static_cast<uint32_t>(current_function->instructions.size());
-  
+
   // Call iterator.next()
   emit(OpCode::LOAD_VAR, iterVarSlot);
   emit(OpCode::ITER_NEXT);
-  
+
   // Store result in temp
   uint32_t resultSlot = next_local_index++;
   reserveLocalSlot(resultSlot);
   emit(OpCode::STORE_VAR, resultSlot);
-  
+
   // Check result.done - if true, exit loop
   emit(OpCode::LOAD_VAR, resultSlot);
   emit(OpCode::LOAD_CONST, addConstant(std::string("done")));
   emit(OpCode::OBJECT_GET);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
-  
-  // Get result.value and store in iterator variable
+
+  // Get result.value
   emit(OpCode::LOAD_VAR, resultSlot);
   emit(OpCode::LOAD_CONST, addConstant(std::string("value")));
   emit(OpCode::OBJECT_GET);
-  emit(OpCode::STORE_VAR, iterSlot);
   
+  if (multiVar && iterSlots.size() >= 2) {
+    // For multi-variable iteration: first var gets key, second gets value
+    // The iterator returns the key, we need to look up the value from the iterable
+    emit(OpCode::STORE_VAR, iterSlots[0]);  // Store key in first var
+    
+    // Look up value: iterable[key]
+    compileExpression(*statement.iterable);  // Reload iterable
+    emit(OpCode::LOAD_VAR, iterSlots[0]);    // Load key
+    emit(OpCode::OBJECT_GET);                // Get value
+    emit(OpCode::STORE_VAR, iterSlots[1]);   // Store value in second var
+  } else {
+    // Single variable - just store the value (key for objects)
+    emit(OpCode::STORE_VAR, iterSlots[0]);
+  }
+
   // Execute body
   compileStatement(*statement.body);
-  
+
   // Jump back to loop start
   emit(OpCode::JUMP, loop_start);
-  
+
   // Patch end jump
   uint32_t loop_end =
       static_cast<uint32_t>(current_function->instructions.size());

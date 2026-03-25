@@ -9,11 +9,13 @@ void GCHeap::reset() {
   arrays_.clear();
   objects_.clear();
   sets_.clear();
+  ranges_.clear();
   iterators_.clear();
   next_closure_id_ = 1;
   next_array_id_ = 1;
   next_object_id_ = 1;
   next_set_id_ = 1;
+  next_range_id_ = 1;
   next_iterator_id_ = 1;
   allocations_since_last_ = 0;
   external_roots_.clear();
@@ -44,6 +46,26 @@ SetRef GCHeap::allocateSet() {
   const uint32_t id = next_set_id_++;
   sets_[id] = {};
   return SetRef{.id = id};
+}
+
+RangeRef GCHeap::allocateRange(int64_t start, int64_t end, int64_t step) {
+  const uint32_t id = next_range_id_++;
+  Range range;
+  range.start = start;
+  range.end = end;
+  range.step = step;
+  ranges_[id] = range;
+  return RangeRef{.id = id};
+}
+
+GCHeap::Range *GCHeap::range(uint32_t id) {
+  auto it = ranges_.find(id);
+  return it == ranges_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::Range *GCHeap::range(uint32_t id) const {
+  auto it = ranges_.find(id);
+  return it == ranges_.end() ? nullptr : &it->second;
 }
 
 IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
@@ -117,7 +139,24 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = nullptr;
     } else {
+      // For objects, return just the key (like Python's for key in dict)
+      // Multi-variable iteration will extract key/value from the iterator result
       value = iter->keys[iter->index++];
+    }
+  } else if (std::holds_alternative<RangeRef>(iter->iterable)) {
+    auto *r = range(std::get<RangeRef>(iter->iterable).id);
+    if (!r) {
+      done = true;
+      value = nullptr;
+    } else {
+      int64_t current = r->start + (iter->index * r->step);
+      if ((r->step > 0 && current >= r->end) || (r->step < 0 && current <= r->end)) {
+        done = true;
+        value = nullptr;
+      } else {
+        value = BytecodeValue(current);
+        iter->index++;
+      }
     }
   } else {
     // Unknown type, just return done

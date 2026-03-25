@@ -334,6 +334,17 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::InterpolatedStringExpression: {
+    const auto &interp = static_cast<const ast::InterpolatedStringExpression &>(expression);
+    // Resolve each expression segment in the current scope
+    for (const auto &segment : interp.segments) {
+      if (!segment.isString && segment.expression) {
+        resolveExpression(*segment.expression);
+      }
+    }
+    break;
+  }
+
   default:
     break;
   }

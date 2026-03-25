@@ -235,6 +235,10 @@ std::string opcodeName(OpCode opcode) {
     return "ITER_NEW";
   case OpCode::ITER_NEXT:
     return "ITER_NEXT";
+  case OpCode::RANGE_NEW:
+    return "RANGE_NEW";
+  case OpCode::RANGE_STEP_NEW:
+    return "RANGE_STEP_NEW";
   case OpCode::SET_NEW:
     return "SET_NEW";
   case OpCode::OBJECT_NEW:

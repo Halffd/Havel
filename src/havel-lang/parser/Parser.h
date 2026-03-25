@@ -48,16 +48,16 @@ private:
     bool inInputContext = false;      // Inside hotkey block (bare expressions are input)
     bool allowBraceSugar = true;       // Allow expr { ... } as call sugar
   };
-  
+
   ParserContext context;
 
   // Debug options
   DebugOptions debug;
-  
+
   // Error handling
   std::vector<CompilerError> errors;
   RecoveryMode recoveryMode = RecoveryMode::None;
-  
+
   void reportError(const std::string& message);
   void reportErrorAt(const Token& token, const std::string& message);
   void synchronize();  // Panic mode recovery

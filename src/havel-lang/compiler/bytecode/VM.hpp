@@ -172,11 +172,23 @@ public:
                             BytecodeValue value);
   BytecodeValue removeHostArrayValue(ArrayRef array_ref, size_t index);
 
+  // Range helpers
+  bool isInRange(RangeRef range_ref, int64_t value);
+
+  // Membership helpers
+  bool arrayContains(ArrayRef array_ref, const BytecodeValue& value);
+  bool objectHasKey(ObjectRef object_ref, const std::string& key);
+  
+  // Iterator helpers
+  IteratorRef createIterator(const BytecodeValue& iterable);
+  BytecodeValue iteratorNext(IteratorRef iterRef);
+
   // Object helpers
   std::vector<std::string> getHostObjectKeys(ObjectRef object_ref);
   std::vector<std::pair<std::string, BytecodeValue>>
   getHostObjectEntries(ObjectRef object_ref);
   bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
+  BytecodeValue getHostObjectField(ObjectRef object_ref, const std::string &key);
   bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
   void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
   void setHostObjectSealed(ObjectRef object_ref, bool sealed);

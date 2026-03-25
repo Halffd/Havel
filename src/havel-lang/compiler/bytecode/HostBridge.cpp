@@ -187,6 +187,101 @@ void HostBridge::install() {
   registerAnyMethod("map");
   registerAnyMethod("reduce");
 
+  // any.in(value, container) - membership test
+  options_.host_functions["any.in"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(false);
+    }
+    const auto& value = args[0];
+    const auto& container = args[1];
+    
+    // Check based on container type
+    if (std::holds_alternative<ArrayRef>(container)) {
+      return BytecodeValue(ctx_->vm->arrayContains(std::get<ArrayRef>(container), value));
+    } else if (std::holds_alternative<std::string>(container)) {
+      const auto& str = std::get<std::string>(container);
+      if (std::holds_alternative<std::string>(value)) {
+        const auto& substr = std::get<std::string>(value);
+        return BytecodeValue(str.find(substr) != std::string::npos);
+      }
+      return BytecodeValue(false);
+    } else if (std::holds_alternative<ObjectRef>(container)) {
+      if (std::holds_alternative<std::string>(value)) {
+        const auto& key = std::get<std::string>(value);
+        return BytecodeValue(ctx_->vm->objectHasKey(std::get<ObjectRef>(container), key));
+      }
+      return BytecodeValue(false);
+    } else if (std::holds_alternative<RangeRef>(container)) {
+      if (!std::holds_alternative<int64_t>(value)) {
+        return BytecodeValue(false);
+      }
+      int64_t val = std::get<int64_t>(value);
+      return BytecodeValue(ctx_->vm->isInRange(std::get<RangeRef>(container), val));
+    }
+    return BytecodeValue(false);
+  };
+
+  // any.not_in(value, container) - negated membership test
+  options_.host_functions["any.not_in"] = [this](const std::vector<BytecodeValue>& args) {
+    auto result = options_.host_functions["any.in"](args);
+    if (std::holds_alternative<bool>(result)) {
+      return BytecodeValue(!std::get<bool>(result));
+    }
+    return BytecodeValue(true);  // If in() failed, not_in is true
+  };
+
+  // any(iterable, predicate) - check if any element satisfies predicate
+  options_.host_functions["any"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(false);
+    }
+    
+    const auto& iterable = args[0];
+    const auto& predicate = args[1];
+    
+    // Predicate should be a function
+    if (!std::holds_alternative<HostFunctionRef>(predicate)) {
+      return BytecodeValue(false);
+    }
+    
+    const std::string& fnName = std::get<HostFunctionRef>(predicate).name;
+    
+    // Create iterator
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+    
+    // Iterate and check predicate
+    while (true) {
+      auto result = ctx_->vm->iteratorNext(iterRef);
+      
+      // Check if done using helper
+      if (!std::holds_alternative<ObjectRef>(result)) {
+        return BytecodeValue(false);
+      }
+      auto resultObjRef = std::get<ObjectRef>(result);
+      
+      // Get done flag
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal)) {
+        return BytecodeValue(false);  // Reached end, no match found
+      }
+      
+      // Get value
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      if (std::holds_alternative<std::nullptr_t>(valueVal)) {
+        continue;
+      }
+      
+      // Call predicate with value
+      std::vector<BytecodeValue> predArgs;
+      predArgs.push_back(valueVal);
+      auto predResult = ctx_->vm->callHostFunction(BytecodeValue(HostFunctionRef{fnName}), predArgs);
+      
+      if (std::holds_alternative<bool>(predResult) && std::get<bool>(predResult)) {
+        return BytecodeValue(true);  // Found a match
+      }
+    }
+  };
+
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));

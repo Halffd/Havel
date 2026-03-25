@@ -9,10 +9,12 @@ void GCHeap::reset() {
   arrays_.clear();
   objects_.clear();
   sets_.clear();
+  iterators_.clear();
   next_closure_id_ = 1;
   next_array_id_ = 1;
   next_object_id_ = 1;
   next_set_id_ = 1;
+  next_iterator_id_ = 1;
   allocations_since_last_ = 0;
   external_roots_.clear();
   next_external_root_id_ = 1;
@@ -42,6 +44,93 @@ SetRef GCHeap::allocateSet() {
   const uint32_t id = next_set_id_++;
   sets_[id] = {};
   return SetRef{.id = id};
+}
+
+IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
+  const uint32_t id = next_iterator_id_++;
+  Iterator iter;
+  iter.iterable = iterable;
+  iter.index = 0;
+  
+  // For objects, pre-compute keys
+  if (std::holds_alternative<ObjectRef>(iterable)) {
+    auto *obj = object(std::get<ObjectRef>(iterable).id);
+    if (obj) {
+      for (const auto &[key, _] : *obj) {
+        iter.keys.push_back(key);
+      }
+    }
+  }
+  
+  iterators_[id] = std::move(iter);
+  return IteratorRef{.id = id};
+}
+
+GCHeap::Iterator *GCHeap::iterator(uint32_t id) {
+  auto it = iterators_.find(id);
+  return it == iterators_.end() ? nullptr : &it->second;
+}
+
+const GCHeap::Iterator *GCHeap::iterator(uint32_t id) const {
+  auto it = iterators_.find(id);
+  return it == iterators_.end() ? nullptr : &it->second;
+}
+
+uint32_t GCHeap::createIterator(const BytecodeValue &iterable) {
+  IteratorRef ref = allocateIterator(iterable);
+  return ref.id;
+}
+
+BytecodeValue GCHeap::iteratorNext(uint32_t id) {
+  auto *iter = iterator(id);
+  if (!iter) {
+    // Return {value: null, done: true}
+    auto resultObj = allocateObject();
+    auto *obj = object(resultObj.id);
+    (*obj)["value"] = BytecodeValue(nullptr);
+    (*obj)["done"] = BytecodeValue(true);
+    return BytecodeValue(resultObj);
+  }
+  
+  bool done = false;
+  BytecodeValue value;
+  
+  // Dispatch based on iterable type
+  if (std::holds_alternative<ArrayRef>(iter->iterable)) {
+    auto *arr = array(std::get<ArrayRef>(iter->iterable).id);
+    if (!arr || iter->index >= arr->size()) {
+      done = true;
+      value = nullptr;
+    } else {
+      value = (*arr)[iter->index++];
+    }
+  } else if (std::holds_alternative<std::string>(iter->iterable)) {
+    const auto &str = std::get<std::string>(iter->iterable);
+    if (iter->index >= str.length()) {
+      done = true;
+      value = std::string("");
+    } else {
+      value = std::string(1, str[iter->index++]);
+    }
+  } else if (std::holds_alternative<ObjectRef>(iter->iterable)) {
+    if (iter->index >= iter->keys.size()) {
+      done = true;
+      value = nullptr;
+    } else {
+      value = iter->keys[iter->index++];
+    }
+  } else {
+    // Unknown type, just return done
+    done = true;
+    value = nullptr;
+  }
+  
+  // Return {value, done}
+  auto resultObj = allocateObject();
+  auto *obj = object(resultObj.id);
+  (*obj)["value"] = value;
+  (*obj)["done"] = BytecodeValue(done);
+  return BytecodeValue(resultObj);
 }
 
 GCHeap::RuntimeClosure *GCHeap::closure(uint32_t id) {

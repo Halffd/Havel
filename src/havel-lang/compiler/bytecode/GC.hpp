@@ -32,18 +32,32 @@ public:
     std::vector<std::shared_ptr<UpvalueCell>> upvalues;
   };
 
+  // Iterator for iteration protocol
+  struct Iterator {
+    BytecodeValue iterable;  // The original iterable (array, string, object)
+    size_t index = 0;        // Current position
+    std::vector<std::string> keys;  // For object iteration
+  };
+
   void reset();
 
   ClosureRef allocateClosure(RuntimeClosure closure);
   ArrayRef allocateArray();
   ObjectRef allocateObject();
   SetRef allocateSet();
+  IteratorRef allocateIterator(const BytecodeValue &iterable);
 
   RuntimeClosure *closure(uint32_t id);
   const RuntimeClosure *closure(uint32_t id) const;
   std::vector<BytecodeValue> *array(uint32_t id);
   std::unordered_map<std::string, BytecodeValue> *object(uint32_t id);
   std::unordered_map<std::string, BytecodeValue> *set(uint32_t id);
+  Iterator *iterator(uint32_t id);
+  const Iterator *iterator(uint32_t id) const;
+
+  // Iteration protocol
+  uint32_t createIterator(const BytecodeValue &iterable);
+  BytecodeValue iteratorNext(uint32_t id);
 
   void setAllocationBudget(size_t value) { allocation_budget_ = value; }
 
@@ -83,10 +97,12 @@ private:
       objects_;
   std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
       sets_;
+  std::unordered_map<uint32_t, Iterator> iterators_;
   uint32_t next_closure_id_ = 1;
   uint32_t next_array_id_ = 1;
   uint32_t next_object_id_ = 1;
   uint32_t next_set_id_ = 1;
+  uint32_t next_iterator_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;
   std::unordered_map<uint64_t, BytecodeValue> external_roots_;

@@ -50,12 +50,15 @@ Tracking implementation progress against docs/Havel.md specification.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Type annotations | ❌ | |
-| Struct definitions | ❌ | |
-| Enum definitions | ❌ | |
-| Sum types | ❌ | |
+| Struct definitions | ⚠️ | Syntax parsed, VM opcodes added |
+| Enum definitions | ⚠️ | Syntax parsed, VM opcodes added |
+| Sum types | ⚠️ | Via enum with payload |
 | Type checking modes | ❌ | none/warn/strict |
 | Trait system | ❌ | Interface-based polymorphism |
-| `implements()` check | ❌ | |
+| `implements()` | ⚠️ | Placeholder (returns false) |
+| `type.of()` | ✅ | Runtime type inspection |
+| `type.is()` | ✅ | Type checking |
+| Pattern matching (`match`) | ⚠️ | Basic equality matching |
 
 ---
 
@@ -284,7 +287,12 @@ Tracking implementation progress against docs/Havel.md specification.
 | Spread operator | ❌ | `...obj`, `...arr` |
 | Struct methods | ❌ | |
 | `Type()` constructor | ❌ | `MousePos(10, 20)` |
-| `implements()` | ❌ | Trait check |
+| `implements()` | ⚠️ | Placeholder |
+| `newStruct()` | ❌ | Removed - use VM opcodes |
+| `getField()` | ❌ | Removed - use VM opcodes |
+| `newEnum()` | ❌ | Removed - use VM opcodes |
+| `getVariant()` | ❌ | Removed - use VM opcodes |
+| `getPayload()` | ❌ | Removed - use VM opcodes |
 
 ---
 
@@ -471,7 +479,7 @@ Tracking implementation progress against docs/Havel.md specification.
 | Category | Implemented | Partial | Missing | Total | % Complete |
 |----------|-------------|---------|---------|-------|------------|
 | Core Language | 8 | 2 | 6 | 16 | 50% |
-| Type System | 0 | 0 | 7 | 7 | 0% |
+| Type System | 2 | 4 | 4 | 10 | 20% |
 | Standard Library | 8 | 3 | 10 | 21 | 38% |
 | Hotkey System | 4 | 1 | 9 | 14 | 29% |
 | Mode System | 1 | 1 | 10 | 12 | 8% |
@@ -490,12 +498,16 @@ Tracking implementation progress against docs/Havel.md specification.
    - [x] Window management module (`window.*`)
    - [x] Process module (`process.*`)
    - [x] File system module (`fs.*`)
-   - [ ] HTTP client module (`http.*`)
+   - [x] HTTP client module (`http.*`)
    - [ ] Browser automation (`browser.*`)
+   - [ ] Struct field syntax (`obj.field` → index access)
+   - [ ] Enum pattern matching (`match e { Ok(x) => ... }`)
 
 2. **Medium Priority** (Quality of life)
-   - [ ] Type system implementation
-   - [ ] Concurrency primitives
+   - [x] Iteration protocol (for-in loops)
+   - [x] Match expression
+   - [ ] Type system implementation (compile-time tracking)
+   - [ ] Concurrency primitives (`spawn {}`)
    - [ ] Script lifecycle hooks
    - [ ] Configuration system improvements
 
@@ -510,6 +522,32 @@ Tracking implementation progress against docs/Havel.md specification.
 Last updated: 2026-03-25
 
 ## Latest Changes
+
+### Struct/Enum VM Opcodes (2026-03-25) - ARCHITECTURAL FIX
+**Moved struct/enum from HostBridge hacks to proper VM opcodes:**
+
+**BEFORE** (wrong layer - runtime hacks):
+- `newStruct()`, `getField()` - string-based field access
+- `newEnum()`, `getVariant()`, `getPayload()` - `__variant` string tags
+- Used `unordered_map<string, Value>` for storage
+
+**AFTER** (correct layer - VM + Compiler):
+- `STRUCT_NEW`, `STRUCT_GET`, `STRUCT_SET` opcodes
+- `ENUM_NEW`, `ENUM_TAG`, `ENUM_PAYLOAD`, `ENUM_MATCH` opcodes
+- Compact storage: `vector<Value>` with field indices
+- Type registry in GCHeap for struct/enum definitions
+
+**Benefits:**
+- Fast field access by index (not string hash lookup)
+- Compiler can validate field access
+- Proper type safety foundation
+- Pattern matching ready (`ENUM_MATCH` opcode)
+
+### Match Expression (2026-03-25)
+- `match value { pattern => expr, _ => default }` syntax
+- Compiles to equality checks with jumps
+- Supports default case (`_ =>`)
+- Ready for enum pattern matching (via `ENUM_MATCH`)
 
 ### Iteration Protocol (2026-03-25) - ARCHITECTURAL FIX
 **Proper iterator protocol instead of special-casing:**

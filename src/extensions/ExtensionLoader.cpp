@@ -97,12 +97,21 @@ bool ExtensionLoader::loadExtension(const std::string& path) {
   // Load the shared library
   void* handle = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
   if (!handle) {
+    // Debug: print error
+    const char* err = dlerror();
+    if (err) {
+      fprintf(stderr, "[ExtensionLoader] dlopen failed for %s: %s\n", path.c_str(), err);
+    }
     return false;
   }
   
   // Get the initialization function
   auto initFn = reinterpret_cast<ExtensionInitFn>(dlsym(handle, "havel_extension_init"));
   if (!initFn) {
+    const char* err = dlerror();
+    if (err) {
+      fprintf(stderr, "[ExtensionLoader] dlsym failed for %s: %s\n", path.c_str(), err);
+    }
     dlclose(handle);
     return false;
   }
@@ -145,7 +154,9 @@ bool ExtensionLoader::loadExtension(const std::string& path) {
 }
 
 bool ExtensionLoader::loadExtensionByName(const std::string& name) {
+  fprintf(stderr, "[ExtensionLoader] Looking for extension: %s\n", name.c_str());
   std::string path = findExtension(name);
+  fprintf(stderr, "[ExtensionLoader] Found path: %s\n", path.empty() ? "(not found)" : path.c_str());
   if (path.empty()) {
     return false;
   }

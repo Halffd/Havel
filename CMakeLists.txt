@@ -264,34 +264,6 @@ endif()
 # SOURCE FILE COLLECTION
 # ==============================================================================
 # ==============================================================================
-# NATIVE EXTENSIONS (loaded via dlopen)
-# ==============================================================================
-
-# Image extension (OpenCV-based)
-if(OpenCV_FOUND)
-    add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
-    target_include_directories(image_extension PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${OpenCV_INCLUDE_DIRS}
-    )
-    target_link_libraries(image_extension PRIVATE ${OpenCV_LIBS})
-    set_target_properties(image_extension PROPERTIES PREFIX "")
-endif()
-
-# OCR extension (Tesseract-based)
-if(TESSERACT_FOUND AND LEPTONICA_FOUND)
-    add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
-    target_include_directories(ocr_extension PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${TESSERACT_INCLUDE_DIRS}
-        ${LEPTONICA_INCLUDE_DIRS}
-    )
-    target_link_libraries(ocr_extension PRIVATE ${TESSERACT_LIBRARIES} ${LEPTONICA_LIBRARIES})
-    target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
-    set_target_properties(ocr_extension PROPERTIES PREFIX "")
-endif()
-
-# ==============================================================================
 # CORE sources (always required)
 file(GLOB_RECURSE CORE_SOURCES
     "src/core/*.cpp"
@@ -426,6 +398,34 @@ set(COMMON_LIBS
     Qt6::Core
     Qt6::Widgets
 )
+
+# ==============================================================================
+# NATIVE EXTENSIONS (MODULE libraries loaded via dlopen)
+# ==============================================================================
+
+# Image extension (OpenCV-based)
+add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
+target_include_directories(image_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(image_extension PRIVATE ${OPENCV_ESSENTIAL_LIBS})
+set_target_properties(image_extension PROPERTIES
+    PREFIX ""
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+)
+
+# OCR extension (Tesseract-based)
+add_library(ocr_extension MODULE src/extensions/ocr/ocr_extension.cpp)
+target_include_directories(ocr_extension PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${TESSERACT_INCLUDE_DIRS}
+    ${LEPTONICA_INCLUDE_DIRS}
+)
+target_link_libraries(ocr_extension PRIVATE ${TESSERACT_LIBRARIES} ${LEPTONICA_LIBRARIES})
+target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
+set_target_properties(ocr_extension PROPERTIES PREFIX "")
 
 # ==============================================================================
 # MAIN EXECUTABLE

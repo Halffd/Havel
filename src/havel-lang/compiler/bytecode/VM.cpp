@@ -1422,6 +1422,32 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // Iteration protocol: iter(obj) → iterator
+  case OpCode::ITER_NEW: {
+    BytecodeValue iterable = pop();
+    
+    // Create iterator based on type
+    IteratorRef iterRef;
+    iterRef.id = heap_.createIterator(iterable);
+    push(BytecodeValue(iterRef));
+    break;
+  }
+
+  // Iteration protocol: iterator.next() → {value, done}
+  case OpCode::ITER_NEXT: {
+    BytecodeValue iterator_val = pop();
+    if (!std::holds_alternative<IteratorRef>(iterator_val)) {
+      throw std::runtime_error("ITER_NEXT expects iterator");
+    }
+    
+    uint32_t id = std::get<IteratorRef>(iterator_val).id;
+    auto result = heap_.iteratorNext(id);
+    
+    // result is {value, done} object
+    push(result);
+    break;
+  }
+
   case OpCode::ARRAY_GET: {
     BytecodeValue index_or_key = pop();
     BytecodeValue container = pop();

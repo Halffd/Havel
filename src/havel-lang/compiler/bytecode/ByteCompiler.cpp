@@ -979,49 +979,45 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
     throw std::runtime_error("For-in loop with multiple iterators not yet supported in bytecode");
   }
 
-  // Get the iterator variable slot and reserve it first
+  // Get the iterator variable slot
   uint32_t iterSlot = declarationSlot(*statement.iterators[0]);
   reserveLocalSlot(iterSlot);
   
-  // Compile the iterable expression and store in temp variable
+  // Compile iterable and create iterator: iter(iterable)
   compileExpression(*statement.iterable);
-  uint32_t iterableSlot = next_local_index++;
-  emit(OpCode::STORE_VAR, iterableSlot);
+  emit(OpCode::ITER_NEW);
   
-  // Create index variable for iteration
-  uint32_t indexSlot = next_local_index++;
-  reserveLocalSlot(indexSlot);
-  
-  // Initialize index = 0
-  emit(OpCode::LOAD_CONST, addConstant(int64_t(0)));
-  emit(OpCode::STORE_VAR, indexSlot);
+  // Create temp variable for iterator
+  uint32_t iterVarSlot = next_local_index++;
+  reserveLocalSlot(iterVarSlot);
+  emit(OpCode::STORE_VAR, iterVarSlot);
   
   uint32_t loop_start =
       static_cast<uint32_t>(current_function->instructions.size());
   
-  // Load index and length, compare: if index >= length, exit loop
-  emit(OpCode::LOAD_VAR, indexSlot);  // Load index
-  emit(OpCode::LOAD_VAR, iterableSlot);
-  emit(OpCode::ARRAY_LEN);  // Get length
-  emit(OpCode::GTE);  // index >= length?
+  // Call iterator.next()
+  emit(OpCode::LOAD_VAR, iterVarSlot);
+  emit(OpCode::ITER_NEXT);
+  
+  // Store result in temp
+  uint32_t resultSlot = next_local_index++;
+  reserveLocalSlot(resultSlot);
+  emit(OpCode::STORE_VAR, resultSlot);
+  
+  // Check result.done - if true, exit loop
+  emit(OpCode::LOAD_VAR, resultSlot);
+  emit(OpCode::LOAD_CONST, addConstant(std::string("done")));
+  emit(OpCode::OBJECT_GET);
   uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
   
-  // Get element at index: iterable[index]
-  emit(OpCode::LOAD_VAR, iterableSlot);
-  emit(OpCode::LOAD_VAR, indexSlot);
-  emit(OpCode::ARRAY_GET);
-  
-  // Store in iterator variable
+  // Get result.value and store in iterator variable
+  emit(OpCode::LOAD_VAR, resultSlot);
+  emit(OpCode::LOAD_CONST, addConstant(std::string("value")));
+  emit(OpCode::OBJECT_GET);
   emit(OpCode::STORE_VAR, iterSlot);
   
   // Execute body
   compileStatement(*statement.body);
-  
-  // Increment index
-  emit(OpCode::LOAD_VAR, indexSlot);
-  emit(OpCode::LOAD_CONST, addConstant(int64_t(1)));
-  emit(OpCode::ADD);
-  emit(OpCode::STORE_VAR, indexSlot);
   
   // Jump back to loop start
   emit(OpCode::JUMP, loop_start);

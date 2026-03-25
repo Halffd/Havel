@@ -507,9 +507,18 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
-Last updated: 2026-03-24
+Last updated: 2026-03-25
 
 ## Latest Changes
+
+### For-In Loops & Dot Notation (2026-03-25)
+- **For-in loops**: `for element in array { ... }`
+  - LexicalResolver support for iterator scope
+  - Bytecode compiler with proper slot allocation
+  - ARRAY_LEN opcode for iteration
+- **Module names lowercase**: `use io`, `use string` (not IO, String)
+- **Dot notation**: `str.trim()` calls `string.trim` via `any.*` dispatch
+- **String interpolation**: `$var` syntax (lexer converts to `${var}`)
 
 ### String Interpolation & Dot Notation (2026-03-24)
 - Added `${expr}` interpolation syntax
@@ -519,6 +528,7 @@ Last updated: 2026-03-24
 - Added E_CHARGE for elementary charge
 
 **Known Issues:**
-- Interpolation variable scope resolution broken (mini-parser issue)
-- `any.*` dispatch needs string/array functions in HostBridge
+- For-in loops only work with arrays (strings/objects need type-specific iteration)
+- Interpolation variable scope resolution may have issues (mini-parser scope)
+- `any.*` dispatch needs string/array functions in HostBridge options_
 - Arrays print as `array[N]` not values

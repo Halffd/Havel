@@ -1,0 +1,3 @@
+// Test print with literal
+
+print("hello world")

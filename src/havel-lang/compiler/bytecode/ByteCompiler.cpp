@@ -859,6 +859,41 @@ void ByteCompiler::compileCallExpression(
       }
 
       if (typeName != "any") {
+        // Check if this is a module.function call (like http.get, network.post)
+        // In this case, the module name is just a namespace prefix, not an object to pass
+        std::string fullMethodName = typeName + "." + property->symbol;
+        
+        // Check if this is a registered host function with the full name
+        if (host_builtin_names_.find(fullMethodName) != host_builtin_names_.end()) {
+          // This is a module.function call - don't pass the module as an argument
+          // Just compile the arguments and call the function directly
+          for (const auto &arg : expression.args) {
+            if (!arg) {
+              throw std::runtime_error(
+                  "Call expression contains null argument");
+            }
+            compileExpression(*arg);
+          }
+
+          // Compile kwargs as object if present
+          uint32_t totalArgs = arg_count;
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            for (const auto &kwarg : expression.kwargs) {
+              emit(OpCode::DUP);
+              compileExpression(*kwarg.value);
+              emit(OpCode::OBJECT_SET, kwarg.name);
+            }
+            totalArgs++;
+          }
+
+          // Call the host function directly
+          emit(OpCode::CALL_HOST,
+               std::vector<BytecodeValue>{fullMethodName, totalArgs});
+          return;
+        }
+        
+        // Otherwise, treat as prototype method (pass object as first arg)
         methodName = typeName + "." + property->symbol;
 
         // Check if this is a registered prototype method
@@ -874,7 +909,7 @@ void ByteCompiler::compileCallExpression(
             }
             compileExpression(*arg);
           }
-          
+
           // Compile kwargs as object if present
           uint32_t totalArgs = arg_count + 1;  // +1 for object (self/this)
           if (hasKwargs) {
@@ -893,6 +928,43 @@ void ByteCompiler::compileCallExpression(
           return;
         }
       } else {
+        // For variables, check if this is a module.function call (like http.get)
+        // In this case, don't pass the module as an argument
+        const auto *ident = static_cast<const ast::Identifier *>(member.object.get());
+        if (ident) {
+          std::string fullMethodName = ident->symbol + "." + property->symbol;
+          
+          // Check if this is a registered host function with the full name
+          if (host_builtin_names_.find(fullMethodName) != host_builtin_names_.end()) {
+            // This is a module.function call - don't pass the module as an argument
+            // Just compile the arguments and call the function directly
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+
+            // Compile kwargs as object if present
+            uint32_t totalArgs = arg_count;
+            if (hasKwargs) {
+              emit(OpCode::OBJECT_NEW);
+              for (const auto &kwarg : expression.kwargs) {
+                emit(OpCode::DUP);
+                compileExpression(*kwarg.value);
+                emit(OpCode::OBJECT_SET, kwarg.name);
+              }
+              totalArgs++;
+            }
+
+            // Call the host function directly
+            emit(OpCode::CALL_HOST,
+                 std::vector<BytecodeValue>{fullMethodName, totalArgs});
+            return;
+          }
+        }
+        
         // For variables, emit runtime method dispatch via any.*
         // First compile the object to get its value
         compileExpression(*member.object);
@@ -904,7 +976,7 @@ void ByteCompiler::compileCallExpression(
           }
           compileExpression(*arg);
         }
-        
+
         // Compile kwargs as object if present
         uint32_t totalArgs = arg_count + 1;  // +1 for object (self/this)
         if (hasKwargs) {

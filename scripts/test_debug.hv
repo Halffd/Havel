@@ -1,3 +1,10 @@
-// Debug test to check what's available
-// Try to access the timer object directly
-fs.writeFile("/tmp/debug_test.txt", "Script started");
+// Debug test - check if strings work at all
+
+let s = "test"
+print(s)
+print(len(s))
+
+// Check type
+let t = type(s)
+print("Type: ")
+print(t)

@@ -83,7 +83,7 @@ void registerUtilityModule(VMApi &api) {
     return BytecodeValue(result);
   });
 
-  // type(value) - Get type of value
+  // type(value) - Get type of value (alias for type.of)
   api.registerFunction("type", [](const std::vector<BytecodeValue> &args) {
     if (args.empty())
       throw std::runtime_error("type() requires an argument");
@@ -93,11 +93,11 @@ void registerUtilityModule(VMApi &api) {
     if (std::holds_alternative<std::nullptr_t>(arg))
       return BytecodeValue(std::string("null"));
     if (std::holds_alternative<bool>(arg))
-      return BytecodeValue(std::string("boolean"));
+      return BytecodeValue(std::string("bool"));
     if (std::holds_alternative<int64_t>(arg))
-      return BytecodeValue(std::string("number"));
+      return BytecodeValue(std::string("int"));
     if (std::holds_alternative<double>(arg))
-      return BytecodeValue(std::string("number"));
+      return BytecodeValue(std::string("num"));
     if (std::holds_alternative<std::string>(arg))
       return BytecodeValue(std::string("string"));
     if (std::holds_alternative<ArrayRef>(arg))

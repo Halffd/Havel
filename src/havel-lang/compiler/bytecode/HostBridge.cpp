@@ -306,7 +306,7 @@ void HostBridge::install() {
     if (std::holds_alternative<std::nullptr_t>(val)) return BytecodeValue(std::string("null"));
     if (std::holds_alternative<bool>(val)) return BytecodeValue(std::string("bool"));
     if (std::holds_alternative<int64_t>(val)) return BytecodeValue(std::string("int"));
-    if (std::holds_alternative<double>(val)) return BytecodeValue(std::string("float"));
+    if (std::holds_alternative<double>(val)) return BytecodeValue(std::string("num"));
     if (std::holds_alternative<std::string>(val)) return BytecodeValue(std::string("string"));
     if (std::holds_alternative<ArrayRef>(val)) return BytecodeValue(std::string("array"));
     if (std::holds_alternative<ObjectRef>(val)) return BytecodeValue(std::string("object"));
@@ -326,7 +326,7 @@ void HostBridge::install() {
     if (typeName == "null") return BytecodeValue(std::holds_alternative<std::nullptr_t>(val));
     if (typeName == "bool") return BytecodeValue(std::holds_alternative<bool>(val));
     if (typeName == "int") return BytecodeValue(std::holds_alternative<int64_t>(val));
-    if (typeName == "float") return BytecodeValue(std::holds_alternative<double>(val));
+    if (typeName == "num" || typeName == "float") return BytecodeValue(std::holds_alternative<double>(val));
     if (typeName == "string") return BytecodeValue(std::holds_alternative<std::string>(val));
     if (typeName == "array") return BytecodeValue(std::holds_alternative<ArrayRef>(val));
     if (typeName == "object") return BytecodeValue(std::holds_alternative<ObjectRef>(val));
@@ -338,6 +338,98 @@ void HostBridge::install() {
     // For now, return false for all checks
     (void)args;
     return BytecodeValue(false);
+  };
+
+  // Object methods
+  options_.host_functions["object.add"] = [ctx = ctx_](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 3) {
+      return BytecodeValue(false);
+    }
+    if (!std::holds_alternative<ObjectRef>(args[0]) || !std::holds_alternative<std::string>(args[1])) {
+      return BytecodeValue(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return BytecodeValue(false);
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    std::string key = std::get<std::string>(args[1]);
+    vm->setHostObjectField(objRef, key, args[2]);
+    return BytecodeValue(true);
+  };
+
+  options_.host_functions["object.remove"] = [ctx = ctx_](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(false);
+    }
+    if (!std::holds_alternative<ObjectRef>(args[0]) || !std::holds_alternative<std::string>(args[1])) {
+      return BytecodeValue(false);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return BytecodeValue(false);
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    std::string key = std::get<std::string>(args[1]);
+    return BytecodeValue(vm->deleteHostObjectField(objRef, key));
+  };
+
+  options_.host_functions["object.keys"] = [ctx = ctx_](const std::vector<BytecodeValue>& args) {
+    if (args.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    auto keys = vm->getHostObjectKeys(objRef);
+    auto arr = vm->createHostArray();
+    for (const auto& key : keys) {
+      vm->pushHostArrayValue(arr, BytecodeValue(key));
+    }
+    return BytecodeValue(arr);
+  };
+
+  options_.host_functions["object.values"] = [ctx = ctx_](const std::vector<BytecodeValue>& args) {
+    if (args.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    auto entries = vm->getHostObjectEntries(objRef);
+    auto arr = vm->createHostArray();
+    for (const auto& [key, value] : entries) {
+      vm->pushHostArrayValue(arr, value);
+    }
+    return BytecodeValue(arr);
+  };
+
+  options_.host_functions["object.items"] = [ctx = ctx_](const std::vector<BytecodeValue>& args) {
+    if (args.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    auto entries = vm->getHostObjectEntries(objRef);
+    auto arr = vm->createHostArray();
+    for (const auto& [key, value] : entries) {
+      auto entryObj = vm->createHostObject();
+      vm->setHostObjectField(entryObj, "key", BytecodeValue(key));
+      vm->setHostObjectField(entryObj, "value", value);
+      vm->pushHostArrayValue(arr, BytecodeValue(entryObj));
+    }
+    return BytecodeValue(arr);
   };
 
   // Run vm_setup callbacks

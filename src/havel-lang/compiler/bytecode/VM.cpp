@@ -2019,6 +2019,150 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // Array intrinsics (VM-level operations)
+  case OpCode::ARRAY_POP: {
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_POP expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr || arr->empty()) {
+      push(BytecodeValue(nullptr));
+    } else {
+      push(arr->back());
+      arr->pop_back();
+    }
+    break;
+  }
+
+  case OpCode::ARRAY_HAS: {
+    BytecodeValue value = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_HAS expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(BytecodeValue(false));
+    } else {
+      bool found = false;
+      for (const auto& elem : *arr) {
+        if (valuesEqual(elem, value)) {
+          found = true;
+          break;
+        }
+      }
+      push(BytecodeValue(found));
+    }
+    break;
+  }
+
+  case OpCode::ARRAY_FIND: {
+    BytecodeValue value = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_FIND expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(BytecodeValue(int64_t(-1)));
+    } else {
+      int64_t foundIdx = -1;
+      for (size_t i = 0; i < arr->size(); i++) {
+        if (valuesEqual((*arr)[i], value)) {
+          foundIdx = static_cast<int64_t>(i);
+          break;
+        }
+      }
+      push(BytecodeValue(foundIdx));
+    }
+    break;
+  }
+
+  // String intrinsics (VM-level operations)
+  case OpCode::STRING_LEN: {
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str)) {
+      throw std::runtime_error("STRING_LEN expects string");
+    }
+    push(BytecodeValue(int64_t(std::get<std::string>(str).length())));
+    break;
+  }
+
+  case OpCode::STRING_UPPER: {
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str)) {
+      throw std::runtime_error("STRING_UPPER expects string");
+    }
+    std::string s = std::get<std::string>(str);
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    push(BytecodeValue(s));
+    break;
+  }
+
+  case OpCode::STRING_LOWER: {
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str)) {
+      throw std::runtime_error("STRING_LOWER expects string");
+    }
+    std::string s = std::get<std::string>(str);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    push(BytecodeValue(s));
+    break;
+  }
+
+  case OpCode::STRING_TRIM: {
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str)) {
+      throw std::runtime_error("STRING_TRIM expects string");
+    }
+    std::string s = std::get<std::string>(str);
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) {
+      push(BytecodeValue(std::string("")));
+    } else {
+      size_t end = s.find_last_not_of(" \t\n\r");
+      push(BytecodeValue(s.substr(start, end - start + 1)));
+    }
+    break;
+  }
+
+  case OpCode::STRING_HAS: {
+    BytecodeValue substr = pop();
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str) || !std::holds_alternative<std::string>(substr)) {
+      throw std::runtime_error("STRING_HAS expects strings");
+    }
+    const std::string& s = std::get<std::string>(str);
+    const std::string& sub = std::get<std::string>(substr);
+    push(BytecodeValue(s.find(sub) != std::string::npos));
+    break;
+  }
+
+  case OpCode::STRING_STARTS: {
+    BytecodeValue prefix = pop();
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str) || !std::holds_alternative<std::string>(prefix)) {
+      throw std::runtime_error("STRING_STARTS expects strings");
+    }
+    const std::string& s = std::get<std::string>(str);
+    const std::string& pre = std::get<std::string>(prefix);
+    push(BytecodeValue(s.size() >= pre.size() && s.compare(0, pre.size(), pre) == 0));
+    break;
+  }
+
+  case OpCode::STRING_ENDS: {
+    BytecodeValue suffix = pop();
+    BytecodeValue str = pop();
+    if (!std::holds_alternative<std::string>(str) || !std::holds_alternative<std::string>(suffix)) {
+      throw std::runtime_error("STRING_ENDS expects strings");
+    }
+    const std::string& s = std::get<std::string>(str);
+    const std::string& suf = std::get<std::string>(suffix);
+    push(BytecodeValue(s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0));
+    break;
+  }
+
   // Spread operator - spread array elements
   case OpCode::SPREAD: {
     BytecodeValue value = pop();

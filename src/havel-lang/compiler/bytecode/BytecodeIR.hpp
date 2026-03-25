@@ -97,6 +97,24 @@ enum class OpCode : uint8_t {
   OBJECT_HAS,     // Check if key exists
   OBJECT_DELETE,  // Delete key from object
   
+  // Array operations (additional VM intrinsics)
+  ARRAY_POP,      // Pop element from array
+  ARRAY_HAS,      // Check if array has value
+  ARRAY_FIND,     // Find index of value
+  
+  // String operations (VM intrinsics)
+  STRING_LEN,     // Get string length
+  STRING_UPPER,   // Convert to uppercase
+  STRING_LOWER,   // Convert to lowercase
+  STRING_TRIM,    // Trim whitespace
+  STRING_SUB,     // Substring
+  STRING_FIND,    // Find substring
+  STRING_HAS,     // Check if contains substring
+  STRING_STARTS,  // Check if starts with
+  STRING_ENDS,    // Check if ends with
+  STRING_SPLIT,   // Split by delimiter
+  STRING_REPLACE, // Replace substring
+  
   // Iteration protocol
   ITER_NEW,     // Create iterator from iterable
   ITER_NEXT,    // Get next {value, done} from iterator

@@ -28,6 +28,19 @@ static std::string getTypeName(const BytecodeValue& value) {
   return "unknown";
 }
 
+// Helper function to compare two BytecodeValues for equality
+static bool valuesEqual(const BytecodeValue& a, const BytecodeValue& b) {
+  if (a.index() != b.index()) return false;
+  if (std::holds_alternative<std::nullptr_t>(a)) return true;
+  if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
+  if (std::holds_alternative<int64_t>(a)) return std::get<int64_t>(a) == std::get<int64_t>(b);
+  if (std::holds_alternative<double>(a)) return std::get<double>(a) == std::get<double>(b);
+  if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
+  if (std::holds_alternative<ArrayRef>(a)) return std::get<ArrayRef>(a).id == std::get<ArrayRef>(b).id;
+  if (std::holds_alternative<ObjectRef>(a)) return std::get<ObjectRef>(a).id == std::get<ObjectRef>(b).id;
+  return false;
+}
+
 HostBridge::HostBridge(const havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<ExtensionLoader>();
@@ -182,13 +195,14 @@ void HostBridge::install() {
   
   // Register all any.* methods
   registerAnyMethod("len");
+  registerAnyMethod("has");
+  registerAnyMethod("find");
   registerAnyMethod("trim");
   registerAnyMethod("upper");
   registerAnyMethod("lower");
   registerAnyMethod("includes");
   registerAnyMethod("startswith");
   registerAnyMethod("endswith");
-  registerAnyMethod("find");
   registerAnyMethod("replace");
   registerAnyMethod("split");
   registerAnyMethod("join");
@@ -201,6 +215,80 @@ void HostBridge::install() {
   registerAnyMethod("filter");
   registerAnyMethod("map");
   registerAnyMethod("reduce");
+
+  // Array methods (for any.* dispatch fallback)
+  options_.host_functions["array.len"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    return BytecodeValue(int64_t(ctx_->vm->getHostArrayLength(std::get<ArrayRef>(args[0]))));
+  };
+  options_.host_functions["array.push"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    ctx_->vm->pushHostArrayValue(std::get<ArrayRef>(args[0]), args[1]);
+    return args[0];
+  };
+  options_.host_functions["array.pop"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    return ctx_->vm->popHostArrayValue(std::get<ArrayRef>(args[0]));
+  };
+  options_.host_functions["array.has"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(false);
+    return BytecodeValue(ctx_->vm->arrayContains(std::get<ArrayRef>(args[0]), args[1]));
+  };
+  options_.host_functions["array.find"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(int64_t(-1));
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      if (valuesEqual(ctx_->vm->getHostArrayValue(arrRef, i), args[1])) {
+        return BytecodeValue(int64_t(i));
+      }
+    }
+    return BytecodeValue(int64_t(-1));
+  };
+
+  // String methods (for any.* dispatch fallback)
+  options_.host_functions["string.len"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    return BytecodeValue(int64_t(std::get<std::string>(args[0]).length()));
+  };
+  options_.host_functions["string.trim"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) return BytecodeValue(std::string(""));
+    size_t end = s.find_last_not_of(" \t\n\r");
+    return BytecodeValue(s.substr(start, end - start + 1));
+  };
+  options_.host_functions["string.upper"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    return BytecodeValue(s);
+  };
+  options_.host_functions["string.lower"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return BytecodeValue(s);
+  };
+  options_.host_functions["string.includes"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1])) return BytecodeValue(false);
+    const std::string& s = std::get<std::string>(args[0]);
+    const std::string& sub = std::get<std::string>(args[1]);
+    return BytecodeValue(s.find(sub) != std::string::npos);
+  };
+  options_.host_functions["string.startswith"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1])) return BytecodeValue(false);
+    const std::string& s = std::get<std::string>(args[0]);
+    const std::string& pre = std::get<std::string>(args[1]);
+    return BytecodeValue(s.size() >= pre.size() && s.compare(0, pre.size(), pre) == 0);
+  };
+  options_.host_functions["string.endswith"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<std::string>(args[0]) || !std::holds_alternative<std::string>(args[1])) return BytecodeValue(false);
+    const std::string& s = std::get<std::string>(args[0]);
+    const std::string& suf = std::get<std::string>(args[1]);
+    return BytecodeValue(s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
+  };
 
   // any.in(value, container) - membership test
   options_.host_functions["any.in"] = [this](const std::vector<BytecodeValue>& args) {

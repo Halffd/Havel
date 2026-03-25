@@ -263,6 +263,26 @@ std::string opcodeName(OpCode opcode) {
     return "OBJECT_HAS";
   case OpCode::OBJECT_DELETE:
     return "OBJECT_DELETE";
+  case OpCode::ARRAY_POP:
+    return "ARRAY_POP";
+  case OpCode::ARRAY_HAS:
+    return "ARRAY_HAS";
+  case OpCode::ARRAY_FIND:
+    return "ARRAY_FIND";
+  case OpCode::STRING_LEN:
+    return "STRING_LEN";
+  case OpCode::STRING_UPPER:
+    return "STRING_UPPER";
+  case OpCode::STRING_LOWER:
+    return "STRING_LOWER";
+  case OpCode::STRING_TRIM:
+    return "STRING_TRIM";
+  case OpCode::STRING_HAS:
+    return "STRING_HAS";
+  case OpCode::STRING_STARTS:
+    return "STRING_STARTS";
+  case OpCode::STRING_ENDS:
+    return "STRING_ENDS";
   case OpCode::SET_NEW:
     return "SET_NEW";
   case OpCode::OBJECT_NEW:

@@ -1128,7 +1128,101 @@ void ByteCompiler::compileCallExpression(
             return;
           }
         }
-        
+
+        // Check for array.* VM intrinsics
+        if (typeName == "array") {
+          if (property->symbol == "len" || property->symbol == "length") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::ARRAY_LEN);
+            return;
+          } else if (property->symbol == "push") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::ARRAY_PUSH);
+            return;
+          } else if (property->symbol == "pop") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::ARRAY_POP);
+            return;
+          } else if (property->symbol == "has") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::ARRAY_HAS);
+            return;
+          } else if (property->symbol == "find") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::ARRAY_FIND);
+            return;
+          }
+        }
+
+        // Check for string.* VM intrinsics
+        if (typeName == "string") {
+          if (property->symbol == "len" || property->symbol == "length") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_LEN);
+            return;
+          } else if (property->symbol == "upper") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_UPPER);
+            return;
+          } else if (property->symbol == "lower") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_LOWER);
+            return;
+          } else if (property->symbol == "trim") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_TRIM);
+            return;
+          } else if (property->symbol == "includes" || property->symbol == "has") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_HAS);
+            return;
+          } else if (property->symbol == "startswith" || property->symbol == "starts") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_STARTS);
+            return;
+          } else if (property->symbol == "endswith" || property->symbol == "ends") {
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::STRING_ENDS);
+            return;
+          }
+        }
+
         // Check if this is a module.function call (like http.get, network.post)
         // In this case, the module name is just a namespace prefix, not an object to pass
         std::string fullMethodName = typeName + "." + property->symbol;

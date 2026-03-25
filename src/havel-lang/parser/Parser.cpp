@@ -3413,16 +3413,25 @@ Parser::parseCallExpression(std::unique_ptr<havel::ast::Expression> callee) {
       break;
     }
 
-    // Check for spread operator
-    std::unique_ptr<havel::ast::Expression> arg;
-    if (at().type == havel::TokenType::Spread) {
-      advance(); // consume '...'
-      auto target = parseExpression();
-      arg = std::make_unique<havel::ast::SpreadExpression>(std::move(target));
+    // Check for keyword argument: name=value
+    if (at().type == havel::TokenType::Identifier && at(1).type == havel::TokenType::Assign) {
+      // This is a keyword argument
+      std::string name = advance().value;  // consume identifier
+      advance();  // consume '='
+      auto value = parseExpression();
+      call->kwargs.push_back(havel::ast::KeywordArg(name, std::move(value)));
     } else {
-      arg = parseExpression();
+      // Positional argument (possibly with spread)
+      std::unique_ptr<havel::ast::Expression> arg;
+      if (at().type == havel::TokenType::Spread) {
+        advance(); // consume '...'
+        auto target = parseExpression();
+        arg = std::make_unique<havel::ast::SpreadExpression>(std::move(target));
+      } else {
+        arg = parseExpression();
+      }
+      call->args.push_back(std::move(arg));
     }
-    call->args.push_back(std::move(arg));
 
     // Skip newlines after argument
     while (at().type == havel::TokenType::NewLine) {

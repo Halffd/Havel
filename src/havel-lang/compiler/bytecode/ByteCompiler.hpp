@@ -115,6 +115,7 @@ private:
         // Type system
         "type.of", "type.is", "type.as",
         "implements", "newStruct", "getField",
+        "newEnum", "getVariant", "getPayload",
         // Browser module
         "browser.connect", "browser.connectFirefox",
         "browser.disconnect", "browser.isConnected",

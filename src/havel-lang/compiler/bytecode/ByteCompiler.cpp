@@ -320,14 +320,13 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
-    // Register struct type with its fields
+    // Register struct type with its fields at compile time
     std::vector<std::string> fieldNames;
     for (const auto& field : structDecl.definition.fields) {
       fieldNames.push_back(field.name);
     }
-    // Store in type registry (will be accessed via HostBridge)
-    // For now, just create a constructor function registration
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
+    // Type registration happens at runtime via host function for now
+    // TODO: Move to compile-time type registry
     break;
   }
 
@@ -338,21 +337,16 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     for (const auto& variant : enumDecl.definition.variants) {
       variantNames.push_back(variant.name);
     }
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
   case ast::NodeType::TraitDeclaration: {
     const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(statement);
-    // Register trait with its method signatures
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
   case ast::NodeType::ImplDeclaration: {
     const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-    // Register method implementations for type
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
@@ -449,6 +443,64 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       compileExpression(*pair.second);
       emit(OpCode::OBJECT_SET, pair.first);
     }
+    break;
+  }
+
+  case ast::NodeType::MatchExpression: {
+    const auto &match = static_cast<const ast::MatchExpression &>(expression);
+    
+    // Compile the value to match on
+    if (!match.value) {
+      throw std::runtime_error("Match expression missing value");
+    }
+    compileExpression(*match.value);
+    
+    // Store match value in temp variable
+    uint32_t matchSlot = next_local_index++;
+    reserveLocalSlot(matchSlot);
+    emit(OpCode::STORE_VAR, matchSlot);
+    
+    std::vector<uint32_t> caseJumps;
+    
+    // Compile each case
+    for (const auto &casePair : match.cases) {
+      const auto &pattern = casePair.first;
+      const auto &result = casePair.second;
+      
+      // For enum matching, use ENUM_MATCH opcode
+      // For now, use simple equality comparison
+      emit(OpCode::LOAD_VAR, matchSlot);
+      compileExpression(*pattern);
+      emit(OpCode::EQ);
+      
+      // Jump to result if not equal
+      caseJumps.push_back(emitJump(OpCode::JUMP_IF_FALSE));
+      
+      // Compile result expression
+      compileExpression(*result);
+      
+      // Jump to end
+      caseJumps.push_back(emitJump(OpCode::JUMP));
+    }
+    
+    // Compile default case
+    uint32_t defaultTarget = static_cast<uint32_t>(current_function->instructions.size());
+    if (match.defaultCase) {
+      compileExpression(*match.defaultCase);
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    }
+    
+    uint32_t endTarget = static_cast<uint32_t>(current_function->instructions.size());
+    
+    // Patch all jumps
+    for (size_t i = 0; i < caseJumps.size(); i += 2) {
+      // Patch equality check jump to next case or default
+      patchJump(caseJumps[i], defaultTarget);
+      // Patch result jump to end
+      patchJump(caseJumps[i + 1], endTarget);
+    }
+    
     break;
   }
 

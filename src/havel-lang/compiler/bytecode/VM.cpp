@@ -1681,6 +1681,16 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // String concatenation
+  case OpCode::STRING_CONCAT: {
+    BytecodeValue right = pop();
+    BytecodeValue left = pop();
+    std::string leftStr = toString(left);
+    std::string rightStr = toString(right);
+    push(BytecodeValue(leftStr + rightStr));
+    break;
+  }
+
   // toBool() builtin
   case OpCode::TO_BOOL: {
     BytecodeValue value = pop();

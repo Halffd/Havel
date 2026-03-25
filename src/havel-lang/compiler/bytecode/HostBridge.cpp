@@ -16,6 +16,18 @@
 
 namespace havel::compiler {
 
+// Helper function to get type name from BytecodeValue
+static std::string getTypeName(const BytecodeValue& value) {
+  if (std::holds_alternative<std::nullptr_t>(value)) return "null";
+  if (std::holds_alternative<bool>(value)) return "bool";
+  if (std::holds_alternative<int64_t>(value)) return "int";
+  if (std::holds_alternative<double>(value)) return "float";
+  if (std::holds_alternative<std::string>(value)) return "string";
+  if (std::holds_alternative<ArrayRef>(value)) return "array";
+  if (std::holds_alternative<ObjectRef>(value)) return "object";
+  return "unknown";
+}
+
 HostBridge::HostBridge(const havel::HostContext &ctx)
     : ctx_(&ctx), policy_(ExecutionPolicy::DefaultPolicy()), moduleLoader_(*ctx_) {
   extensionLoader_ = std::make_unique<ExtensionLoader>();
@@ -126,6 +138,54 @@ void HostBridge::install() {
     self->extensionLoader_->addSearchPath(path);
     return BytecodeValue(true);
   };
+
+  // Register any.* dispatch methods for runtime type-based method calls
+  auto registerAnyMethod = [self, &options = options_](const std::string& methodName) {
+    options.host_functions["any." + methodName] = [self, methodName](const std::vector<BytecodeValue>& args) {
+      if (args.empty()) {
+        return BytecodeValue(nullptr);
+      }
+      
+      // Determine type and dispatch to appropriate module
+      std::string type = getTypeName(args[0]);
+      std::string modulePrefix;
+      if (type == "string") modulePrefix = "string";
+      else if (type == "array") modulePrefix = "array";
+      else if (type == "object") modulePrefix = "object";
+      else return BytecodeValue(nullptr);
+      
+      std::string fullName = modulePrefix + "." + methodName;
+      
+      // Look up and call the appropriate function
+      auto it = self->options_.host_functions.find(fullName);
+      if (it != self->options_.host_functions.end()) {
+        return it->second(args);
+      }
+      return BytecodeValue(nullptr);
+    };
+  };
+  
+  // Register all any.* methods
+  registerAnyMethod("len");
+  registerAnyMethod("trim");
+  registerAnyMethod("upper");
+  registerAnyMethod("lower");
+  registerAnyMethod("includes");
+  registerAnyMethod("startswith");
+  registerAnyMethod("endswith");
+  registerAnyMethod("find");
+  registerAnyMethod("replace");
+  registerAnyMethod("split");
+  registerAnyMethod("join");
+  registerAnyMethod("sub");
+  registerAnyMethod("push");
+  registerAnyMethod("pop");
+  registerAnyMethod("get");
+  registerAnyMethod("set");
+  registerAnyMethod("sort");
+  registerAnyMethod("filter");
+  registerAnyMethod("map");
+  registerAnyMethod("reduce");
 
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {

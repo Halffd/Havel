@@ -20,12 +20,16 @@ void registerPhysicsModule(VMApi &api) {
   api.setGlobal("R", BytecodeValue(8.314462618)); // Gas constant (J/(mol⋅K))
   api.setGlobal("ME", BytecodeValue(9.1093837015e-31));  // Electron mass (kg)
   api.setGlobal("MP", BytecodeValue(1.67262192369e-27)); // Proton mass (kg)
-  api.setGlobal("E", BytecodeValue(1.602176634e-19)); // Elementary charge (C)
+  api.setGlobal("E_CHARGE", BytecodeValue(1.602176634e-19)); // Elementary charge (C)
   api.setGlobal("H", BytecodeValue(6.62607015e-34));  // Planck constant (J⋅s)
   api.setGlobal("EPS0",
                 BytecodeValue(8.8541878128e-12)); // Vacuum permittivity (F/m)
   api.setGlobal("MU0",
                 BytecodeValue(1.25663706212e-6)); // Vacuum permeability (N/A²)
+  
+  // Math constants
+  api.setGlobal("PI", BytecodeValue(3.14159265358979323846));
+  api.setGlobal("E", BytecodeValue(2.71828182845904523536)); // Euler's number
 
   // Physics functions
 

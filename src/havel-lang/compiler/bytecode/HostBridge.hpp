@@ -129,6 +129,15 @@ private:
   std::unique_ptr<BrowserBridge> browserBridge_;
   std::unique_ptr<ToolsBridge> toolsBridge_;
 
+  // Type registry for struct/enum/trait definitions
+  struct TypeRegistry {
+    std::unordered_map<std::string, std::vector<std::string>> structFields;
+    std::unordered_map<std::string, std::vector<std::string>> enumVariants;
+    std::unordered_map<std::string, std::vector<std::string>> traitMethods;
+    std::unordered_map<std::string, std::string> implMethods;  // "Type.method" -> fn
+  };
+  TypeRegistry typeRegistry;
+
   // Initialize bridge modules
   void initBridges();
 };

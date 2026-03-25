@@ -1,0 +1,30 @@
+// Test struct runtime support using helper functions
+
+print("=== Struct Runtime Tests ===\n")
+
+// Test 1: Create struct using newStruct helper
+print("1. Testing newStruct():")
+let structName = "Vec2"
+let fields = ["x", "y"]
+let vec = newStruct(structName, fields, 10, 20)
+print("  Created Vec2 struct")
+print("")
+
+// Test 2: Access struct fields
+print("2. Testing getField():")
+let x = getField(vec, "x")
+let y = getField(vec, "y")
+print("  vec.x = ")
+print(x)
+print("  vec.y = ")
+print(y)
+print("")
+
+// Test 3: Type tag
+print("3. Testing type tag:")
+let typeName = getField(vec, "__type")
+print("  __type = ")
+print(typeName)
+print("")
+
+print("=== Struct Tests Complete ===")

@@ -340,6 +340,71 @@ void HostBridge::install() {
     return BytecodeValue(false);
   };
 
+  // Struct constructor helper
+  options_.host_functions["newStruct"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(nullptr);
+    }
+    // First arg is struct name, second is field names array, rest are values
+    auto *vm = static_cast<VM *>(ctx_->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    // Get struct name
+    if (!std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    std::string structName = std::get<std::string>(args[0]);
+    
+    // Get field names from second arg (should be array of strings)
+    if (!std::holds_alternative<ArrayRef>(args[1])) {
+      return BytecodeValue(nullptr);
+    }
+    auto fieldNamesRef = std::get<ArrayRef>(args[1]);
+    
+    // Create object with fields
+    auto obj = vm->createHostObject();
+    
+    // Match field names with values
+    size_t fieldCount = vm->getHostArrayLength(fieldNamesRef);
+    for (size_t i = 0; i < fieldCount && (i + 2) < args.size(); i++) {
+      auto fieldNameVal = vm->getHostArrayValue(fieldNamesRef, i);
+      if (std::holds_alternative<std::string>(fieldNameVal)) {
+        std::string fieldName = std::get<std::string>(fieldNameVal);
+        vm->setHostObjectField(obj, fieldName, args[i + 2]);
+      }
+    }
+    
+    // Store type tag
+    vm->setHostObjectField(obj, "__type", BytecodeValue(structName));
+    
+    return BytecodeValue(obj);
+  };
+
+  // Struct field access helper
+  options_.host_functions["getField"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx_->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    // First arg is object, second is field name
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<std::string>(args[1])) {
+      return BytecodeValue(nullptr);
+    }
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    std::string fieldName = std::get<std::string>(args[1]);
+    
+    if (!vm->hasHostObjectField(objRef, fieldName)) {
+      return BytecodeValue(nullptr);
+    }
+    return vm->getHostObjectField(objRef, fieldName);
+  };
+
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));

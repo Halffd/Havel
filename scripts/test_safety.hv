@@ -1,0 +1,4 @@
+// Test __ key safety - should fail immediately
+
+let obj = {}
+object.set(obj, "__proto__", "evil")

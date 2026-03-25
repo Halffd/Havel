@@ -425,6 +425,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::DUP);
         compileExpression(*element);
         emit(OpCode::ARRAY_PUSH);
+        emit(OpCode::POP);  // Remove duplicate array from stack (ARRAY_PUSH pushes container back)
       }
     } else {
       // Complex case: has spread, build array element by element
@@ -1165,6 +1166,17 @@ void ByteCompiler::compileCallExpression(
               compileExpression(*arg);
             }
             emit(OpCode::ARRAY_FIND);
+            return;
+          } else if (property->symbol == "map" || property->symbol == "filter" ||
+                     property->symbol == "reduce" || property->symbol == "foreach" ||
+                     property->symbol == "sort") {
+            // Higher-order functions - compile as host function call
+            // First arg is array, rest are args (including callback)
+            for (const auto &arg : expression.args) {
+              if (!arg) throw std::runtime_error("Call expression contains null argument");
+              compileExpression(*arg);
+            }
+            emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array." + property->symbol, static_cast<uint32_t>(expression.args.size())});
             return;
           }
         }

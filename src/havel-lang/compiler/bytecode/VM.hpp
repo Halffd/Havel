@@ -211,6 +211,10 @@ public:
   BytecodeValue callHostFunction(const BytecodeValue &fn,
                                  const std::vector<BytecodeValue> &args);
 
+  // General function call (handles both VM closures and host functions)
+  BytecodeValue callFunction(const BytecodeValue &fn,
+                             const std::vector<BytecodeValue> &args);
+
   // Prototype system - methods on types
   void registerPrototypeMethod(const std::string &typeName,
                                const std::string &methodName,

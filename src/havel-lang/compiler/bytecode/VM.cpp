@@ -38,7 +38,7 @@ static bool valuesEqual(const BytecodeValue& a, const BytecodeValue& b) {
   return false;
 }
 
-// Internal toString with cycle detection and depth limit
+// Internal toString with depth limit only (no cycle detection - confuses users)
 std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
                              std::unordered_set<uint32_t> &visitedIds,
                              int depth);
@@ -47,7 +47,7 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
                              std::unordered_set<uint32_t> &visitedIds,
                              int depth) {
   // Depth limit to prevent stack overflow
-  if (depth > 32) {
+  if (depth > 8) {
     return "...";
   }
 
@@ -86,12 +86,6 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
     if (!arr) {
       return "array[]";
     }
-    // Cycle detection using array ID
-    uint32_t arrId = std::get<ArrayRef>(value).id;
-    if (visitedIds.count(arrId) > 0) {
-      return "<cycle>";
-    }
-    visitedIds.insert(arrId);
 
     std::string result = "[";
     for (size_t i = 0; i < arr->size(); ++i) {
@@ -100,7 +94,6 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
       result += toStringInternal((*arr)[i], heap, visitedIds, depth + 1);
     }
     result += "]";
-    visitedIds.erase(arrId);
     return result;
   }
   if (std::holds_alternative<ObjectRef>(value)) {
@@ -111,12 +104,6 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
     if (!obj) {
       return "object{}";
     }
-    // Cycle detection using object ID
-    uint32_t objId = std::get<ObjectRef>(value).id;
-    if (visitedIds.count(objId) > 0) {
-      return "<cycle>";
-    }
-    visitedIds.insert(objId);
 
     std::string result = "{";
     bool first = true;
@@ -128,7 +115,6 @@ std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
                 "\": " + toStringInternal(val, heap, visitedIds, depth + 1);
     }
     result += "}";
-    visitedIds.erase(objId);
     return result;
   }
   if (std::holds_alternative<SetRef>(value)) {
@@ -589,6 +575,18 @@ BytecodeValue VM::callHostFunction(const BytecodeValue &fn,
   return BytecodeValue(nullptr);
 }
 
+// General function call (handles both VM closures and host functions)
+BytecodeValue VM::callFunction(const BytecodeValue &fn,
+                               const std::vector<BytecodeValue> &args) {
+  // Host function
+  if (std::holds_alternative<HostFunctionRef>(fn)) {
+    return callHostFunction(fn, args);
+  }
+  
+  // VM Closure or FunctionObject - call directly
+  return call(fn, args);
+}
+
 // Prototype system - methods on types
 void VM::registerPrototypeMethod(const std::string &typeName,
                                  const std::string &methodName,
@@ -659,6 +657,7 @@ std::optional<BytecodeValue> VM::externalRootValue(uint64_t root_id) const {
 }
 
 void VM::registerDefaultHostFunctions() {
+  // Register print as both host function AND global (for closure access)
   registerHostFunction("print", [this](const std::vector<BytecodeValue> &args) {
     // Check if last arg is kwargs object (has end= or delim=)
     std::string delim = " ";
@@ -692,6 +691,8 @@ void VM::registerDefaultHostFunctions() {
     std::cout << end;
     return BytecodeValue(nullptr);
   });
+  // Also add to globals for closure access
+  setGlobal("print", BytecodeValue(HostFunctionRef{"print"}));
 
   // fmt(format_string, ...) - Python-style string formatting
   registerHostFunction("fmt", [this](const std::vector<BytecodeValue> &args) {
@@ -1010,6 +1011,17 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   if (frames.size() >= max_call_depth_) {
     throw std::runtime_error("Stack overflow: maximum call depth " +
                              std::to_string(max_call_depth_) + " reached");
+  }
+
+  // Handle host function call
+  if (std::holds_alternative<HostFunctionRef>(callee_value)) {
+    const auto &name = std::get<HostFunctionRef>(callee_value).name;
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      throw std::runtime_error("Host function not found: " + name);
+    }
+    stack.push(it->second(args));
+    return;
   }
 
   uint32_t function_index = 0;
@@ -2338,8 +2350,10 @@ void VM::executeInstruction(const Instruction &instruction) {
 // ============================================================================
 
 CallbackId VM::registerCallback(const BytecodeValue &closure) {
-  if (!std::holds_alternative<ClosureRef>(closure)) {
-    throw std::runtime_error("registerCallback expects a closure");
+  // Accept both ClosureRef and FunctionObject
+  if (!std::holds_alternative<ClosureRef>(closure) && 
+      !std::holds_alternative<FunctionObject>(closure)) {
+    throw std::runtime_error("registerCallback expects a closure or function");
   }
 
   // Pin the closure as an external root (GC will not collect it)

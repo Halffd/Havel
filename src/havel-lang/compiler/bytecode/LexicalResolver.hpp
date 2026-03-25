@@ -61,6 +61,7 @@ private:
       "system.gc",  "system.gcStats",  "system_gc",
       "system_gcStats"};
   std::unordered_set<std::string> host_globals_{
+      "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "io", "system", "hotkey", "mode", "process"};
 
   void collectTopLevelFunctions(const ast::Program &program);

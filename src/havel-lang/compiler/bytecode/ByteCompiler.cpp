@@ -271,6 +271,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileWhileStatement(static_cast<const ast::WhileStatement &>(statement));
     break;
 
+  case ast::NodeType::ForStatement:
+    compileForStatement(static_cast<const ast::ForStatement &>(statement));
+    break;
+
   case ast::NodeType::BlockStatement:
     compileBlockStatement(static_cast<const ast::BlockStatement &>(statement));
     break;
@@ -849,7 +853,7 @@ void ByteCompiler::compileCallExpression(
           return;
         }
       } else {
-        // For variables, emit runtime method dispatch
+        // For variables, emit runtime method dispatch via any.*
         // First compile the object to get its value
         compileExpression(*member.object);
 
@@ -861,8 +865,8 @@ void ByteCompiler::compileCallExpression(
           compileExpression(*arg);
         }
 
-        // Emit CALL_HOST with method name and arg count
-        // The runtime will determine the type and call the appropriate method
+        // Emit CALL_HOST with any.* method name
+        // The HostBridge any.* dispatcher will determine type and call appropriate method
         methodName = "any." + property->symbol;
         emit(OpCode::CALL_HOST,
              std::vector<BytecodeValue>{methodName, arg_count + 1});
@@ -960,6 +964,69 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   compileStatement(*statement.body);
   emit(OpCode::JUMP, loop_start);
 
+  uint32_t loop_end =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(end_jump, loop_end);
+}
+
+void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
+  if (statement.iterators.empty() || !statement.iterable || !statement.body) {
+    throw std::runtime_error("Malformed for statement");
+  }
+
+  // For now, support single iterator only
+  if (statement.iterators.size() > 1) {
+    throw std::runtime_error("For-in loop with multiple iterators not yet supported in bytecode");
+  }
+
+  // Get the iterator variable slot and reserve it first
+  uint32_t iterSlot = declarationSlot(*statement.iterators[0]);
+  reserveLocalSlot(iterSlot);
+  
+  // Compile the iterable expression and store in temp variable
+  compileExpression(*statement.iterable);
+  uint32_t iterableSlot = next_local_index++;
+  emit(OpCode::STORE_VAR, iterableSlot);
+  
+  // Create index variable for iteration
+  uint32_t indexSlot = next_local_index++;
+  reserveLocalSlot(indexSlot);
+  
+  // Initialize index = 0
+  emit(OpCode::LOAD_CONST, addConstant(int64_t(0)));
+  emit(OpCode::STORE_VAR, indexSlot);
+  
+  uint32_t loop_start =
+      static_cast<uint32_t>(current_function->instructions.size());
+  
+  // Load index and length, compare: if index >= length, exit loop
+  emit(OpCode::LOAD_VAR, indexSlot);  // Load index
+  emit(OpCode::LOAD_VAR, iterableSlot);
+  emit(OpCode::ARRAY_LEN);  // Get length
+  emit(OpCode::GTE);  // index >= length?
+  uint32_t end_jump = emitJump(OpCode::JUMP_IF_TRUE);
+  
+  // Get element at index: iterable[index]
+  emit(OpCode::LOAD_VAR, iterableSlot);
+  emit(OpCode::LOAD_VAR, indexSlot);
+  emit(OpCode::ARRAY_GET);
+  
+  // Store in iterator variable
+  emit(OpCode::STORE_VAR, iterSlot);
+  
+  // Execute body
+  compileStatement(*statement.body);
+  
+  // Increment index
+  emit(OpCode::LOAD_VAR, indexSlot);
+  emit(OpCode::LOAD_CONST, addConstant(int64_t(1)));
+  emit(OpCode::ADD);
+  emit(OpCode::STORE_VAR, indexSlot);
+  
+  // Jump back to loop start
+  emit(OpCode::JUMP, loop_start);
+  
+  // Patch end jump
   uint32_t loop_end =
       static_cast<uint32_t>(current_function->instructions.size());
   patchJump(end_jump, loop_end);

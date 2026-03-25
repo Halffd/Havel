@@ -73,6 +73,7 @@ enum class OpCode : uint8_t {
   ARRAY_GET,
   ARRAY_SET,
   ARRAY_PUSH,
+  ARRAY_LEN,
   SET_NEW,
 
   // Object operations

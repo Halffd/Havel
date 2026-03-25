@@ -229,6 +229,8 @@ std::string opcodeName(OpCode opcode) {
     return "ARRAY_SET";
   case OpCode::ARRAY_PUSH:
     return "ARRAY_PUSH";
+  case OpCode::ARRAY_LEN:
+    return "ARRAY_LEN";
   case OpCode::SET_NEW:
     return "SET_NEW";
   case OpCode::OBJECT_NEW:

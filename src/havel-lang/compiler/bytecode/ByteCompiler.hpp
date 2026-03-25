@@ -71,6 +71,7 @@ private:
     void compileCallExpression(const ast::CallExpression& expression);
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);
+    void compileForStatement(const ast::ForStatement& statement);
     void compileBlockStatement(const ast::BlockStatement& block);
     std::optional<std::string> getCalleeName(const ast::Expression& callee) const;
     const ResolvedBinding* bindingFor(const ast::Identifier& id) const;
@@ -138,9 +139,8 @@ private:
     };
     std::unordered_set<std::string> host_global_names_{
         "window", "io", "system", "hotkey", "mode", "process",
-        "String", "string", "Array", "array", "Object", "object",
-        "Type", "type", "Utility", "utility", "Regex", "regex",
-        "Physics", "physics", "Time", "time", "Math", "math"
+        "string", "array", "object", "type", "utility", "regex",
+        "physics", "time", "math"
     };
 };
 

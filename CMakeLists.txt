@@ -403,6 +403,15 @@ set(COMMON_LIBS
 # NATIVE EXTENSIONS (MODULE libraries loaded via dlopen)
 # ==============================================================================
 
+# Extension runtime library (shared by all extensions)
+add_library(havel_extension_runtime STATIC
+    src/extensions/HavelValue.cpp
+)
+target_include_directories(havel_extension_runtime PUBLIC
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/src/extensions
+)
+
 # Image extension (OpenCV-based)
 add_library(image_extension MODULE src/extensions/image/image_extension.cpp)
 target_include_directories(image_extension PRIVATE
@@ -410,7 +419,10 @@ target_include_directories(image_extension PRIVATE
     ${CMAKE_SOURCE_DIR}/src/extensions
     ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(image_extension PRIVATE ${OPENCV_ESSENTIAL_LIBS})
+target_link_libraries(image_extension PRIVATE 
+    havel_extension_runtime
+    ${OPENCV_ESSENTIAL_LIBS}
+)
 set_target_properties(image_extension PROPERTIES
     PREFIX ""
     C_STANDARD 11
@@ -428,7 +440,11 @@ target_include_directories(ocr_extension PRIVATE
     ${TESSERACT_INCLUDE_DIRS}
     ${LEPTONICA_INCLUDE_DIRS}
 )
-target_link_libraries(ocr_extension PRIVATE ${TESSERACT_LIBRARIES} ${LEPTONICA_LIBRARIES})
+target_link_libraries(ocr_extension PRIVATE 
+    havel_extension_runtime
+    ${TESSERACT_LIBRARIES} 
+    ${LEPTONICA_LIBRARIES}
+)
 target_compile_definitions(ocr_extension PRIVATE HAVE_TESSERACT)
 set_target_properties(ocr_extension PROPERTIES
     PREFIX ""

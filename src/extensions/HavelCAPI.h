@@ -15,39 +15,18 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "HavelValue.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * HavelValue - Opaque value handle
- *
- * Extensions don't see VM internals.
- * Values are passed by handle, not by value.
- */
-typedef struct HavelValue HavelValue;
-
-/**
- * Value type tags
- */
-typedef enum HavelValueType {
-    HAVEL_NULL = 0,
-    HAVEL_BOOL = 1,
-    HAVEL_INT = 2,
-    HAVEL_FLOAT = 3,
-    HAVEL_STRING = 4,
-    HAVEL_ARRAY = 5,
-    HAVEL_OBJECT = 6,
-    HAVEL_HANDLE = 7  /* Opaque handle for resources */
-} HavelValueType;
-
-/**
  * Function signature for extension exports
  * 
  * @param argc Number of arguments
  * @param argv Array of argument values
- * @return Result value (must be freed by VM)
+ * @return Result value (ownership transferred to VM)
  */
 typedef HavelValue* (*HavelNativeFn)(int argc, HavelValue** argv);
 
@@ -65,15 +44,17 @@ typedef struct HavelAPI {
     /* Module registration */
     void (*register_function)(const char* module, const char* name, HavelNativeFn fn);
     
-    /* Value creation */
+    /* Value creation - delegates to HavelValue.h functions */
     HavelValue* (*new_null)(void);
     HavelValue* (*new_bool)(int b);
     HavelValue* (*new_int)(int64_t i);
     HavelValue* (*new_float)(double f);
     HavelValue* (*new_string)(const char* s);
-    HavelValue* (*new_handle)(void* ptr, void (*destructor)(void*));
+    HavelValue* (*new_handle)(void* ptr, HavelHandleDestructor destructor);
+    HavelValue* (*new_array)(size_t initial_capacity);
+    HavelValue* (*new_object)(void);
     
-    /* Value access */
+    /* Value access - delegates to HavelValue.h functions */
     HavelValueType (*get_type)(HavelValue* v);
     int (*get_bool)(HavelValue* v);
     int64_t (*get_int)(HavelValue* v);
@@ -82,18 +63,18 @@ typedef struct HavelAPI {
     void* (*get_handle)(HavelValue* v);
     
     /* Array operations */
-    HavelValue* (*new_array)(size_t initial_capacity);
     size_t (*array_length)(HavelValue* arr);
     HavelValue* (*array_get)(HavelValue* arr, size_t index);
     void (*array_push)(HavelValue* arr, HavelValue* v);
     
     /* Object operations */
-    HavelValue* (*new_object)(void);
     void (*object_set)(HavelValue* obj, const char* key, HavelValue* v);
     HavelValue* (*object_get)(HavelValue* obj, const char* key);
     
     /* Memory management */
     void (*free_value)(HavelValue* v);
+    void (*incref)(HavelValue* v);
+    void (*decref)(HavelValue* v);
     
     /* Host services (sandboxed access) */
     void* (*get_host_service)(const char* name);  /* Returns service interface or NULL */

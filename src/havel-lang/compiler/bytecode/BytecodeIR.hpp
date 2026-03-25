@@ -90,6 +90,13 @@ enum class OpCode : uint8_t {
   ENUM_PAYLOAD,   // Get payload by index
   ENUM_MATCH,     // Pattern match on enum
   
+  // Object operations (VM intrinsics)
+  OBJECT_KEYS,    // Get array of keys
+  OBJECT_VALUES,  // Get array of values
+  OBJECT_ENTRIES, // Get array of [key, value] pairs
+  OBJECT_HAS,     // Check if key exists
+  OBJECT_DELETE,  // Delete key from object
+  
   // Iteration protocol
   ITER_NEW,     // Create iterator from iterable
   ITER_NEXT,    // Get next {value, done} from iterator

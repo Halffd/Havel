@@ -1,80 +1,61 @@
-// Comprehensive test for Havel type system and features
+// Test type system and type declarations
 
-print("=== Havel Type System Tests ===\n")
+print("=== Type System Tests ===\n")
 
-// Test 1: Struct definition and registration
-print("1. Struct Definition:")
-struct Vec2 {
-    x
-    y
-}
-struct Point3D {
-    x
-    y
-    z
-}
-print("   ✓ Vec2 and Point3D structs defined\n")
-
-// Test 2: Enum definition
-print("2. Enum Definition:")
-enum Color {
-    Red
-    Green
-    Blue
-}
-enum Status {
-    Ok(value)
-    Err(message)
-}
-print("   ✓ Color and Status enums defined\n")
-
-// Test 3: Objects and arrays
-print("3. Objects and Arrays:")
-let myObject = { name: "test", value: 42, active: true }
-print("   Object: " + myObject.name + " = " + myObject.value)
-
-let myArray = [1, 2, 3, 4, 5]
-print("   Array length: " + myArray.length)
-print("   Array[2]: " + myArray[2])
-
-let nestedObj = { 
-    user: { name: "Alice", age: 30 },
-    scores: [95, 87, 92]
-}
-print("   Nested: " + nestedObj.user.name + " scored " + nestedObj.scores[0])
+// Test 1: type.of()
+print("1. Testing type.of():")
+print("  type.of(42): ")
+print(type.of(42))
+print("  type.of(3.14): ")
+print(type.of(3.14))
+print("  type.of('hello'): ")
+print(type.of("hello"))
+let arr = [1,2,3]
+print("  type.of(array): ")
+print(type.of(arr))
 print("")
 
-// Test 4: Error handling
-print("4. Error Handling:")
-try {
-    result = 10 / 0
-    print("   Division result: " + result)
-} catch (e) {
-    print("   Caught error: " + e)
+// Test 2: type.is()
+print("2. Testing type.is():")
+print("  type.is(42, 'int'): ")
+print(type.is(42, "int"))
+print("  type.is(3.14, 'float'): ")
+print(type.is(3.14, "float"))
+print("  type.is('hello', 'string'): ")
+print(type.is("hello", "string"))
+print("")
+
+// Test 3: Struct declaration
+print("3. Testing struct declaration:")
+struct Vec2 {
+  x: Num
+  y: Num
 }
+print("  Struct Vec2 declared successfully")
+print("")
 
-try {
-    undefinedVar
-} catch (e) {
-    print("   Caught undefined variable error\n")
+// Test 4: Enum declaration
+print("4. Testing enum declaration:")
+enum Color {
+  Red
+  Green
+  Blue
 }
+print("  Enum Color declared successfully")
+print("")
 
-// Test 5: Type checking with objects
-print("5. Type Operations:")
-let testObj = { x: 10, y: 20 }
-print("   Object keys accessible: x=" + testObj.x + ", y=" + testObj.y)
+// Test 5: Trait declaration
+print("5. Testing trait declaration:")
+trait Drawable {
+  fn draw()
+}
+print("  Trait Drawable declared successfully")
+print("")
 
-// Test 6: Array operations
-print("\n6. Array Operations:")
-let nums = [1, 2, 3, 4, 5]
-print("   Original: " + nums.length + " elements")
+// Test 6: implements()
+print("6. Testing implements():")
+print("  implements(42, 'Drawable'): ")
+print(implements(42, "Drawable"))
+print("")
 
-// Map test
-let doubled = map(nums, fn(n) -> n * 2)
-print("   Doubled: " + doubled[0] + ", " + doubled[1] + ", " + doubled[2])
-
-// Filter test
-let evens = filter(nums, fn(n) -> n % 2 == 0)
-print("   Evens: " + evens.length + " elements")
-
-print("\n=== All Tests Completed ===")
+print("=== Type Tests Complete ===")

@@ -251,6 +251,86 @@ private:
 };
 
 /**
+ * AudioBridge - Audio control
+ */
+class AudioBridge : public BridgeModule {
+public:
+  explicit AudioBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleGetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSetVolume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIsMuted(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSetMute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleToggleMute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * DisplayBridge - Display/monitor info
+ */
+class DisplayBridge : public BridgeModule {
+public:
+  explicit DisplayBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleGetMonitors(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleGetPrimary(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleGetCount(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * ConfigBridge - Configuration access
+ */
+class ConfigBridge : public BridgeModule {
+public:
+  explicit ConfigBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSave(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * ModeBridge - Mode management
+ */
+class ModeBridge : public BridgeModule {
+public:
+  explicit ModeBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleGetCurrent(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleGetPrevious(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * TimerBridge - Timer operations
+ */
+class TimerBridge : public BridgeModule {
+public:
+  explicit TimerBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleAfter(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleEvery(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
+ * AsyncBridge - Async operations (already exists, just adding to header)
+ */
+
+/**
  * AppBridge - Application and system info
  */
 class AppBridge : public BridgeModule {

@@ -22,6 +22,10 @@
 #include "host/network/NetworkService.hpp"
 #include "host/app/AppService.hpp"
 #include "window/WindowManager.hpp"
+#include "core/DisplayManager.hpp"
+#include "core/ConfigManager.hpp"
+#include "core/ModeManager.hpp"
+#include "media/AudioManager.hpp"
 
 #include <QClipboard>
 #include <fstream>
@@ -1554,6 +1558,330 @@ BytecodeValue NetworkBridge::handleNetworkDownload(const std::vector<BytecodeVal
   } catch (...) {
     return BytecodeValue(false);
   }
+}
+
+// ============================================================================
+// AudioBridge Implementation
+// ============================================================================
+
+void AudioBridge::install(PipelineOptions &options) {
+  options.host_functions["audio.getVolume"] = [ctx = ctx_](const auto &args) {
+    return handleGetVolume(args, ctx);
+  };
+  options.host_functions["audio.setVolume"] = [ctx = ctx_](const auto &args) {
+    return handleSetVolume(args, ctx);
+  };
+  options.host_functions["audio.isMuted"] = [ctx = ctx_](const auto &args) {
+    return handleIsMuted(args, ctx);
+  };
+  options.host_functions["audio.setMute"] = [ctx = ctx_](const auto &args) {
+    return handleSetMute(args, ctx);
+  };
+  options.host_functions["audio.toggleMute"] = [ctx = ctx_](const auto &args) {
+    return handleToggleMute(args, ctx);
+  };
+}
+
+BytecodeValue AudioBridge::handleGetVolume(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(1.0);  // Default volume
+  }
+  return BytecodeValue(ctx->audioManager->getVolume());
+}
+
+BytecodeValue AudioBridge::handleSetVolume(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<double>(args[0])) {
+    throw std::runtime_error("audio.setVolume() requires a number");
+  }
+  double volume = std::get<double>(args[0]);
+  return BytecodeValue(ctx->audioManager->setVolume(volume));
+}
+
+BytecodeValue AudioBridge::handleIsMuted(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  return BytecodeValue(ctx->audioManager->isMuted());
+}
+
+BytecodeValue AudioBridge::handleSetMute(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<bool>(args[0])) {
+    throw std::runtime_error("audio.setMute() requires a boolean");
+  }
+  bool muted = std::get<bool>(args[0]);
+  return BytecodeValue(ctx->audioManager->setMute(muted));
+}
+
+BytecodeValue AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->audioManager) {
+    return BytecodeValue(false);
+  }
+  return BytecodeValue(ctx->audioManager->toggleMute());
+}
+
+// ============================================================================
+// DisplayBridge Implementation
+// ============================================================================
+
+void DisplayBridge::install(PipelineOptions &options) {
+  options.host_functions["display.getMonitors"] = [ctx = ctx_](const auto &args) {
+    return handleGetMonitors(args, ctx);
+  };
+  options.host_functions["display.getPrimary"] = [ctx = ctx_](const auto &args) {
+    return handleGetPrimary(args, ctx);
+  };
+  options.host_functions["display.getCount"] = [ctx = ctx_](const auto &args) {
+    return handleGetCount(args, ctx);
+  };
+}
+
+BytecodeValue DisplayBridge::handleGetMonitors(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  (void)args;
+  if (!ctx) return BytecodeValue(nullptr);
+  // Return array of monitor info objects
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return BytecodeValue(nullptr);
+  
+  auto monitors = havel::DisplayManager::GetMonitors();
+  auto arr = vm->createHostArray();
+  
+  for (const auto& mon : monitors) {
+    auto obj = vm->createHostObject();
+    vm->setHostObjectField(obj, "name", BytecodeValue(mon.name));
+    vm->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(mon.x)));
+    vm->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(mon.y)));
+    vm->setHostObjectField(obj, "width", BytecodeValue(static_cast<int64_t>(mon.width)));
+    vm->setHostObjectField(obj, "height", BytecodeValue(static_cast<int64_t>(mon.height)));
+    vm->setHostObjectField(obj, "isPrimary", BytecodeValue(mon.isPrimary));
+    vm->pushHostArrayValue(arr, BytecodeValue(obj));
+  }
+  
+  return BytecodeValue(arr);
+}
+
+BytecodeValue DisplayBridge::handleGetPrimary(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  (void)args;
+  if (!ctx) return BytecodeValue(nullptr);
+  auto *vm = static_cast<VM *>(ctx->vm);
+  if (!vm) return BytecodeValue(nullptr);
+  
+  auto mon = havel::DisplayManager::GetPrimaryMonitor();
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "name", BytecodeValue(mon.name));
+  vm->setHostObjectField(obj, "x", BytecodeValue(static_cast<int64_t>(mon.x)));
+  vm->setHostObjectField(obj, "y", BytecodeValue(static_cast<int64_t>(mon.y)));
+  vm->setHostObjectField(obj, "width", BytecodeValue(static_cast<int64_t>(mon.width)));
+  vm->setHostObjectField(obj, "height", BytecodeValue(static_cast<int64_t>(mon.height)));
+  vm->setHostObjectField(obj, "isPrimary", BytecodeValue(mon.isPrimary));
+  
+  return BytecodeValue(obj);
+}
+
+BytecodeValue DisplayBridge::handleGetCount(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  auto monitors = havel::DisplayManager::GetMonitors();
+  return BytecodeValue(static_cast<int64_t>(monitors.size()));
+}
+
+// ============================================================================
+// ConfigBridge Implementation
+// ============================================================================
+
+void ConfigBridge::install(PipelineOptions &options) {
+  options.host_functions["config.get"] = [ctx = ctx_](const auto &args) {
+    return handleGet(args, ctx);
+  };
+  options.host_functions["config.set"] = [ctx = ctx_](const auto &args) {
+    return handleSet(args, ctx);
+  };
+  options.host_functions["config.save"] = [ctx = ctx_](const auto &args) {
+    return handleSave(args, ctx);
+  };
+}
+
+BytecodeValue ConfigBridge::handleGet(const std::vector<BytecodeValue> &args,
+                                      const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("config.get() requires key and default value");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("config.get() key must be a string");
+  }
+  
+  std::string key = std::get<std::string>(args[0]);
+  auto& config = havel::Configs::Get();
+  
+  // Return value based on default type
+  if (std::holds_alternative<std::string>(args[1])) {
+    std::string def = std::get<std::string>(args[1]);
+    return BytecodeValue(config.Get(key, def));
+  } else if (std::holds_alternative<int64_t>(args[1])) {
+    int64_t def = std::get<int64_t>(args[1]);
+    return BytecodeValue(config.Get(key, def));
+  } else if (std::holds_alternative<double>(args[1])) {
+    double def = std::get<double>(args[1]);
+    return BytecodeValue(config.Get(key, def));
+  } else if (std::holds_alternative<bool>(args[1])) {
+    bool def = std::get<bool>(args[1]);
+    return BytecodeValue(config.Get(key, def));
+  }
+  
+  return BytecodeValue(nullptr);
+}
+
+BytecodeValue ConfigBridge::handleSet(const std::vector<BytecodeValue> &args,
+                                      const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("config.set() requires key and value");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("config.set() key must be a string");
+  }
+  
+  std::string key = std::get<std::string>(args[0]);
+  auto& config = havel::Configs::Get();
+  
+  bool save = (args.size() > 2 && std::holds_alternative<bool>(args[2]) && std::get<bool>(args[2]));
+  
+  if (std::holds_alternative<std::string>(args[1])) {
+    config.Set(key, std::get<std::string>(args[1]), save);
+  } else if (std::holds_alternative<int64_t>(args[1])) {
+    config.Set(key, std::get<int64_t>(args[1]), save);
+  } else if (std::holds_alternative<double>(args[1])) {
+    config.Set(key, std::get<double>(args[1]), save);
+  } else if (std::holds_alternative<bool>(args[1])) {
+    config.Set(key, std::get<bool>(args[1]), save);
+  }
+  
+  return BytecodeValue(true);
+}
+
+BytecodeValue ConfigBridge::handleSave(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  auto& config = havel::Configs::Get();
+  config.Save();
+  return BytecodeValue(true);
+}
+
+// ============================================================================
+// ModeBridge Implementation
+// ============================================================================
+
+void ModeBridge::install(PipelineOptions &options) {
+  options.host_functions["mode.current"] = [ctx = ctx_](const auto &args) {
+    return handleGetCurrent(args, ctx);
+  };
+  options.host_functions["mode.set"] = [ctx = ctx_](const auto &args) {
+    return handleSet(args, ctx);
+  };
+  options.host_functions["mode.previous"] = [ctx = ctx_](const auto &args) {
+    return handleGetPrevious(args, ctx);
+  };
+}
+
+BytecodeValue ModeBridge::handleGetCurrent(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->modeManager) {
+    return BytecodeValue(std::string(""));
+  }
+  return BytecodeValue(ctx->modeManager->getCurrentMode());
+}
+
+BytecodeValue ModeBridge::handleSet(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->modeManager) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("mode.set() requires a mode name string");
+  }
+  std::string modeName = std::get<std::string>(args[0]);
+  ctx->modeManager->setMode(modeName);
+  return BytecodeValue(true);
+}
+
+BytecodeValue ModeBridge::handleGetPrevious(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->modeManager) {
+    return BytecodeValue(std::string(""));
+  }
+  return BytecodeValue(ctx->modeManager->getPreviousMode());
+}
+
+// ============================================================================
+// TimerBridge Implementation
+// ============================================================================
+
+void TimerBridge::install(PipelineOptions &options) {
+  // Timer functions are available but require closure support for callbacks
+  // For now, use sleep() for simple delays
+  options.host_functions["timer.after"] = [ctx = ctx_](const auto &args) {
+    return handleAfter(args, ctx);
+  };
+  options.host_functions["timer.every"] = [ctx = ctx_](const auto &args) {
+    return handleEvery(args, ctx);
+  };
+}
+
+BytecodeValue TimerBridge::handleAfter(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    throw std::runtime_error("timer.after() requires delay_ms");
+  }
+  
+  if (!std::holds_alternative<int64_t>(args[0])) {
+    throw std::runtime_error("timer.after() delay must be an integer");
+  }
+  
+  int64_t delay_ms = std::get<int64_t>(args[0]);
+  
+  // Simple implementation: just sleep
+  // For callback support, use: sleep(delay_ms); callback()
+  if (ctx && ctx->asyncService) {
+    ctx->asyncService->sleep(static_cast<int>(delay_ms));
+  } else {
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+  }
+  
+  return BytecodeValue(nullptr);
+}
+
+BytecodeValue TimerBridge::handleEvery(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  // timer.every requires closure/callback support
+  // For now, just return without doing anything
+  // Users should use a while loop with sleep instead:
+  // while (true) { body; sleep(interval); }
+  throw std::runtime_error("timer.every() requires closure support - use while loop with sleep() instead");
 }
 
 // ============================================================================

@@ -1,113 +1,57 @@
-// Test Module Registration System
+// Test new modules: display, config, mode, audio
 
-print("=== Testing Module System ===\n")
+print("=== Testing New Modules ===\n")
 
-// Test 1: Check if modules are loaded
-print("Test 1: Module Availability\n")
+// Test 1: Display module
+print("1. Display module:")
+let monitorCount = display.getCount()
+print("  Monitor count: ")
+print(monitorCount)
 
-// Window module
-try {
-    let activeWindow = window.active()
-    print("✓ Window module loaded")
-} catch e {
-    print("✗ Window module not available:", e)
-}
+let monitors = display.getMonitors()
+print("  Monitors: ")
+print(monitors)
 
-// IO module
-try {
-    print("✓ IO module loaded")
-    // Don't actually send keys, just check module exists
-} catch e {
-    print("✗ IO module not available:", e)
-}
+let primary = display.getPrimary()
+print("  Primary: ")
+print(primary)
+print("")
 
-// Media module
-try {
-    print("✓ Media module loaded")
-} catch e {
-    print("✗ Media module not available:", e)
-}
+// Test 2: Config module
+print("2. Config module:")
+let brightness = config.get("General.Brightness", 1.0)
+print("  Brightness: ")
+print(brightness)
 
-// Test 2: File module
-print("\nTest 2: File Module\n")
-try {
-    let exists = file.exists("/tmp")
-    print("✓ File module works, /tmp exists:", exists)
-} catch e {
-    print("✗ File module error:", e)
-}
+config.set("General.TestValue", "hello", false)
+let testVal = config.get("General.TestValue", "default")
+print("  Test value: ")
+print(testVal)
 
-// Test 3: String module
-print("\nTest 3: String Module\n")
-let testStr = "hello world"
-let upper = string.upper(testStr)
-let lower = string.lower(upper)
-print("Original:", testStr)
-print("Upper:", upper)
-print("Lower:", lower)
+config.save()
+print("  Config saved")
+print("")
 
-// Test 4: Math module
-print("\nTest 4: Math Module\n")
-print("PI:", math.PI)
-print("sqrt(16):", math.sqrt(16))
-print("abs(-5):", math.abs(-5))
-print("sin(0):", math.sin(0))
+// Test 3: Mode module
+print("3. Mode module:")
+let currentMode = mode.current()
+print("  Current mode: ")
+print(currentMode)
 
-// Test 5: Array module
-print("\nTest 5: Array Module\n")
-let arr = [3, 1, 4, 1, 5, 9, 2, 6]
-print("Original:", arr)
-arr.sort()
-print("Sorted:", arr)
-print("Min:", array.min(arr))
-print("Max:", array.max(arr))
+let prevMode = mode.previous()
+print("  Previous mode: ")
+print(prevMode)
+print("")
 
-// Test 6: Process module
-print("\nTest 6: Process Module\n")
-try {
-    let procs = process.list()
-    print("✓ Process module works, running processes:", procs.length)
-} catch e {
-    print("✗ Process module error:", e)
-}
+// Test 4: Audio module
+print("4. Audio module:")
+let volume = audio.getVolume()
+print("  Volume: ")
+print(volume)
 
-// Test 7: System module  
-print("\nTest 7: System Module\n")
-try {
-    let platform = system.platform()
-    print("✓ System module works, platform:", platform)
-} catch e {
-    print("✗ System module error:", e)
-}
+let muted = audio.isMuted()
+print("  Muted: ")
+print(muted)
+print("")
 
-// Test 8: Timer module
-print("\nTest 8: Timer Module\n")
-try {
-    print("✓ Timer module loaded")
-    // Don't actually start timers in test
-} catch e {
-    print("✗ Timer module error:", e)
-}
-
-// Test 9: Config module
-print("\nTest 9: Config Module\n")
-try {
-    config {
-        testValue = "test123"
-    }
-    let val = config.get("testValue")
-    print("✓ Config module works, testValue:", val)
-} catch e {
-    print("✗ Config module error:", e)
-}
-
-// Test 10: HTTP module (if available)
-print("\nTest 10: HTTP Module\n")
-try {
-    print("✓ HTTP module loaded")
-    // Don't actually make HTTP requests in test
-} catch e {
-    print("✗ HTTP module not available:", e)
-}
-
-print("\n=== All Module Tests Complete ===\n")
+print("=== Tests Complete ===")

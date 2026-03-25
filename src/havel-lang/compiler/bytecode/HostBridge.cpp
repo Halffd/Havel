@@ -56,6 +56,11 @@ void HostBridge::shutdown() {
   inputBridge_.reset();
   mediaBridge_.reset();
   networkBridge_.reset();
+  audioBridge_.reset();
+  displayBridge_.reset();
+  configBridge_.reset();
+  modeBridge_.reset();
+  timerBridge_.reset();
   appBridge_.reset();
   asyncBridge_.reset();
   automationBridge_.reset();
@@ -77,6 +82,11 @@ void HostBridge::initBridges() {
   inputBridge_ = std::make_unique<InputBridge>(ctx_);
   mediaBridge_ = std::make_unique<MediaBridge>(ctx_);
   networkBridge_ = std::make_unique<NetworkBridge>(ctx_);
+  audioBridge_ = std::make_unique<AudioBridge>(ctx_);
+  displayBridge_ = std::make_unique<DisplayBridge>(ctx_);
+  configBridge_ = std::make_unique<ConfigBridge>(ctx_);
+  modeBridge_ = std::make_unique<ModeBridge>(ctx_);
+  timerBridge_ = std::make_unique<TimerBridge>(ctx_);
   appBridge_ = std::make_unique<AppBridge>(ctx_);
   asyncBridge_ = std::make_unique<AsyncBridge>(ctx_);
   automationBridge_ = std::make_unique<AutomationBridge>(ctx_);
@@ -95,6 +105,11 @@ void HostBridge::install() {
   inputBridge_->install(options_);
   mediaBridge_->install(options_);
   networkBridge_->install(options_);
+  audioBridge_->install(options_);
+  displayBridge_->install(options_);
+  configBridge_->install(options_);
+  modeBridge_->install(options_);
+  timerBridge_->install(options_);
   appBridge_->install(options_);
   asyncBridge_->install(options_);
   automationBridge_->install(options_);
@@ -280,6 +295,49 @@ void HostBridge::install() {
         return BytecodeValue(true);  // Found a match
       }
     }
+  };
+
+  // Type system functions
+  options_.host_functions["type.of"] = [](const std::vector<BytecodeValue>& args) {
+    if (args.empty()) {
+      return BytecodeValue(std::string("null"));
+    }
+    const auto& val = args[0];
+    if (std::holds_alternative<std::nullptr_t>(val)) return BytecodeValue(std::string("null"));
+    if (std::holds_alternative<bool>(val)) return BytecodeValue(std::string("bool"));
+    if (std::holds_alternative<int64_t>(val)) return BytecodeValue(std::string("int"));
+    if (std::holds_alternative<double>(val)) return BytecodeValue(std::string("float"));
+    if (std::holds_alternative<std::string>(val)) return BytecodeValue(std::string("string"));
+    if (std::holds_alternative<ArrayRef>(val)) return BytecodeValue(std::string("array"));
+    if (std::holds_alternative<ObjectRef>(val)) return BytecodeValue(std::string("object"));
+    if (std::holds_alternative<RangeRef>(val)) return BytecodeValue(std::string("range"));
+    return BytecodeValue(std::string("unknown"));
+  };
+
+  options_.host_functions["type.is"] = [](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(false);
+    }
+    const auto& val = args[0];
+    if (!std::holds_alternative<std::string>(args[1])) {
+      return BytecodeValue(false);
+    }
+    std::string typeName = std::get<std::string>(args[1]);
+    if (typeName == "null") return BytecodeValue(std::holds_alternative<std::nullptr_t>(val));
+    if (typeName == "bool") return BytecodeValue(std::holds_alternative<bool>(val));
+    if (typeName == "int") return BytecodeValue(std::holds_alternative<int64_t>(val));
+    if (typeName == "float") return BytecodeValue(std::holds_alternative<double>(val));
+    if (typeName == "string") return BytecodeValue(std::holds_alternative<std::string>(val));
+    if (typeName == "array") return BytecodeValue(std::holds_alternative<ArrayRef>(val));
+    if (typeName == "object") return BytecodeValue(std::holds_alternative<ObjectRef>(val));
+    return BytecodeValue(false);
+  };
+
+  options_.host_functions["implements"] = [](const std::vector<BytecodeValue>& args) {
+    // Placeholder - full trait system requires type metadata
+    // For now, return false for all checks
+    (void)args;
+    return BytecodeValue(false);
   };
 
   // Run vm_setup callbacks

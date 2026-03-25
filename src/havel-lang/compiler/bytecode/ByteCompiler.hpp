@@ -99,6 +99,22 @@ private:
         "http.get", "http.post", "http.download",
         "network.get", "network.post", "network.download",
         "network.isOnline", "network.getExternalIp",
+        // Audio module
+        "audio.getVolume", "audio.setVolume",
+        "audio.isMuted", "audio.setMute", "audio.toggleMute",
+        // Display module
+        "display.getMonitors", "display.getPrimary", "display.getCount",
+        // Config module
+        "config.get", "config.set", "config.save",
+        // Mode module
+        "mode.current", "mode.set", "mode.previous",
+        // Timer module
+        "timer.after", "timer.every",
+        // Async module
+        "async.run", "async.await",
+        // Type system
+        "type.of", "type.is", "type.as",
+        "implements",
         // String module
         "string.len", "string.lower", "string.upper", "string.trim",
         "string.sub", "string.find", "string.replace", "string.split",

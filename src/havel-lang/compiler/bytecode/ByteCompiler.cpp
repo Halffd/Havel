@@ -211,11 +211,45 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   }
 
   if (function.body) {
-    compileBlockStatement(*function.body);
+    // Compile all statements except the last
+    const auto &stmts = function.body->body;
+    if (!stmts.empty()) {
+      // Compile all but last statement normally
+      for (size_t i = 0; i < stmts.size() - 1; i++) {
+        if (stmts[i]) {
+          compileStatement(*stmts[i]);
+        }
+      }
+      
+      // Last statement: if it's an expression statement, return its value (Rust-like implicit return)
+      const auto &lastStmt = stmts.back();
+      if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
+        const auto &exprStmt = static_cast<const ast::ExpressionStatement &>(*lastStmt);
+        if (exprStmt.expression) {
+          compileExpression(*exprStmt.expression);
+          emit(OpCode::RETURN);
+        } else {
+          emit(OpCode::LOAD_CONST, addConstant(nullptr));
+          emit(OpCode::RETURN);
+        }
+      } else if (lastStmt) {
+        // Last statement is not an expression - compile it and add implicit return
+        compileStatement(*lastStmt);
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+        emit(OpCode::RETURN);
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+        emit(OpCode::RETURN);
+      }
+    } else {
+      // Empty function body
+      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      emit(OpCode::RETURN);
+    }
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    emit(OpCode::RETURN);
   }
-
-  emit(OpCode::LOAD_CONST, addConstant(nullptr));
-  emit(OpCode::RETURN);
   leaveFunction();
 }
 

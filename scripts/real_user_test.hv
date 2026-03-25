@@ -2,13 +2,12 @@
 // Tests: fs, io, string methods, loops, conditionals
 
 // Write test log file
-let logPath = "/tmp/test.log"
-writeFile(logPath, "[ERROR] Failed to connect\n[ERROR] Crash detected\n[INFO] Exited normally\n[WARN] Low memory")
+writeFile("/tmp/test.log", "[ERROR] Failed to connect\n[ERROR] Crash detected\n[INFO] Exited normally\n[WARN] Low memory")
 
 print("=== Log Analyzer Test ===")
 
 // Read and process log file
-let content = readFile(logPath)
+let content = readFile("/tmp/test.log")
 let contentLen = len(content)
 print("Content length: ")
 print(contentLen)
@@ -47,13 +46,13 @@ if (hasWarnings) {
   print("Found warnings in log file")
 }
 
-// Test string operations
+// Test string operations with dot notation
 let testStr = "  Hello World  "
-let trimmed = String.trim(testStr)
-let upper = String.upper(testStr)
-let lower = String.lower(testStr)
-let contains = String.includes(testStr, "World")
-let startsWith = String.startswith(trimmed, "Hello")
+let trimmed = testStr.trim()
+let upper = testStr.upper()
+let lower = testStr.lower()
+let contains = testStr.includes("World")
+let startsWith = trimmed.startswith("Hello")
 
 print("\n=== String Tests ===")
 print("Original: ")
@@ -84,7 +83,7 @@ let eVal = E
 print("\n=== Math Tests ===")
 print("PI: ")
 print(piVal)
-print("E: ")
+print("E (Euler): ")
 print(eVal)
 
 // Test time

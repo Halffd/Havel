@@ -80,6 +80,9 @@ enum class OpCode : uint8_t {
   OBJECT_GET,
   OBJECT_SET,
 
+  // String operations
+  STRING_CONCAT,
+
   // Spread operator
   SPREAD,
   SPREAD_CALL,

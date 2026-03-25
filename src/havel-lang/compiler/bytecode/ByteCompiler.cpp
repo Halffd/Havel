@@ -338,6 +338,28 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::InterpolatedStringExpression: {
+    const auto &interp = static_cast<const ast::InterpolatedStringExpression &>(expression);
+    
+    // Build interpolated string by concatenating segments
+    // Start with empty string
+    emit(OpCode::LOAD_CONST, addConstant(std::string("")));
+    
+    for (const auto &segment : interp.segments) {
+      if (segment.isString) {
+        // Push string segment
+        emit(OpCode::LOAD_CONST, addConstant(segment.stringValue));
+        emit(OpCode::STRING_CONCAT);
+      } else {
+        // Evaluate expression and convert to string
+        compileExpression(*segment.expression);
+        emit(OpCode::TO_STRING);
+        emit(OpCode::STRING_CONCAT);
+      }
+    }
+    break;
+  }
+
   case ast::NodeType::BooleanLiteral: {
     const auto &boolean = static_cast<const ast::BooleanLiteral &>(expression);
     emit(OpCode::LOAD_CONST, addConstant(boolean.value));

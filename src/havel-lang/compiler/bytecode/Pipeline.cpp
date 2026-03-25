@@ -237,6 +237,8 @@ std::string opcodeName(OpCode opcode) {
     return "OBJECT_GET";
   case OpCode::OBJECT_SET:
     return "OBJECT_SET";
+  case OpCode::STRING_CONCAT:
+    return "STRING_CONCAT";
   case OpCode::PRINT:
     return "PRINT";
   case OpCode::DEBUG:

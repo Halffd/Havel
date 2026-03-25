@@ -56,6 +56,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("regex");
   bridge.options().host_global_names.insert("Physics");
   bridge.options().host_global_names.insert("physics");
+  bridge.options().host_global_names.insert("E_CHARGE");
   bridge.options().host_global_names.insert("Time");
   bridge.options().host_global_names.insert("time");
 

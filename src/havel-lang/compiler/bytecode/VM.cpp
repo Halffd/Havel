@@ -526,15 +526,84 @@ std::optional<BytecodeValue> VM::externalRootValue(uint64_t root_id) const {
 
 void VM::registerDefaultHostFunctions() {
   registerHostFunction("print", [this](const std::vector<BytecodeValue> &args) {
-    for (size_t i = 0; i < args.size(); ++i) {
-      if (i > 0) {
-        std::cout << ' ';
+    // Check if last arg is kwargs object (has end= or delim=)
+    std::string delim = " ";
+    std::string end = "\n";
+    size_t argCount = args.size();
+    
+    // Check for kwargs object as last argument
+    if (!args.empty() && std::holds_alternative<ObjectRef>(args.back())) {
+      auto *kwargsObj = heap_.object(std::get<ObjectRef>(args.back()).id);
+      if (kwargsObj) {
+        auto itEnd = kwargsObj->find("end");
+        if (itEnd != kwargsObj->end() && std::holds_alternative<std::string>(itEnd->second)) {
+          end = std::get<std::string>(itEnd->second);
+        }
+        auto itDelim = kwargsObj->find("delim");
+        if (itDelim != kwargsObj->end() && std::holds_alternative<std::string>(itDelim->second)) {
+          delim = std::get<std::string>(itDelim->second);
+        }
+        argCount--;  // Don't count kwargs as a value to print
       }
-      // Use simple toString without heap for now to debug
-      std::cout << toString(args[i]);
     }
-    std::cout << std::endl;
+    
+    // Print values with delimiter
+    for (size_t i = 0; i < argCount; ++i) {
+      if (i > 0) {
+        std::cout << delim;
+      }
+      // Use heap-aware toString for proper array/object formatting
+      std::cout << toString(args[i], &heap_);
+    }
+    std::cout << end;
     return BytecodeValue(nullptr);
+  });
+
+  // fmt(format_string, ...) - Python-style string formatting
+  registerHostFunction("fmt", [this](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) {
+      throw std::runtime_error("fmt() requires at least a format string");
+    }
+    
+    // Get format string
+    if (!std::holds_alternative<std::string>(args[0])) {
+      throw std::runtime_error("fmt() format must be a string");
+    }
+    std::string formatStr = std::get<std::string>(args[0]);
+    
+    // Convert args to strings for formatting
+    std::vector<std::string> argStrings;
+    for (size_t i = 1; i < args.size(); ++i) {
+      argStrings.push_back(toString(args[i], &heap_));
+    }
+    
+    // Simple format string processing: {} placeholders
+    std::string result;
+    size_t argIndex = 0;
+    size_t pos = 0;
+    
+    while (pos < formatStr.size()) {
+      size_t placeholder = formatStr.find("{}", pos);
+      if (placeholder == std::string::npos) {
+        // No more placeholders, append rest of string
+        result += formatStr.substr(pos);
+        break;
+      }
+      
+      // Append text before placeholder
+      result += formatStr.substr(pos, placeholder - pos);
+      
+      // Replace placeholder with argument
+      if (argIndex < argStrings.size()) {
+        result += argStrings[argIndex++];
+      } else {
+        result += "{}";  // No more args, keep placeholder
+      }
+      
+      pos = placeholder + 2;  // Skip past {}
+    }
+    
+    return BytecodeValue(result);
   });
 
   registerHostFunction("clock_ms", 0, [](const std::vector<BytecodeValue> &) {
@@ -1767,7 +1836,7 @@ void VM::executeInstruction(const Instruction &instruction) {
 
   case OpCode::PRINT: {
     BytecodeValue value = pop();
-    std::cout << toString(value) << std::endl;
+    std::cout << toString(value, &heap_) << std::endl;
     break;
   }
 

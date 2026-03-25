@@ -779,6 +779,7 @@ void ByteCompiler::compileCallExpression(
   }
 
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
+  bool hasKwargs = !expression.kwargs.empty();
 
   // Check for method call on primitive (prototype method)
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
@@ -838,7 +839,7 @@ void ByteCompiler::compileCallExpression(
           // Compile the object (push as first argument)
           compileExpression(*member.object);
 
-          // Compile remaining arguments
+          // Compile positional arguments
           for (const auto &arg : expression.args) {
             if (!arg) {
               throw std::runtime_error(
@@ -846,10 +847,22 @@ void ByteCompiler::compileCallExpression(
             }
             compileExpression(*arg);
           }
+          
+          // Compile kwargs as object if present
+          uint32_t totalArgs = arg_count + 1;  // +1 for object (self/this)
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            for (const auto &kwarg : expression.kwargs) {
+              emit(OpCode::DUP);
+              compileExpression(*kwarg.value);
+              emit(OpCode::OBJECT_SET, kwarg.name);
+            }
+            totalArgs++;
+          }
 
           // Call the prototype method (object is already first arg)
           emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{methodName, arg_count + 1});
+               std::vector<BytecodeValue>{methodName, totalArgs});
           return;
         }
       } else {
@@ -857,19 +870,31 @@ void ByteCompiler::compileCallExpression(
         // First compile the object to get its value
         compileExpression(*member.object);
 
-        // Compile remaining arguments
+        // Compile positional arguments
         for (const auto &arg : expression.args) {
           if (!arg) {
             throw std::runtime_error("Call expression contains null argument");
           }
           compileExpression(*arg);
         }
+        
+        // Compile kwargs as object if present
+        uint32_t totalArgs = arg_count + 1;  // +1 for object (self/this)
+        if (hasKwargs) {
+          emit(OpCode::OBJECT_NEW);
+          for (const auto &kwarg : expression.kwargs) {
+            emit(OpCode::DUP);
+            compileExpression(*kwarg.value);
+            emit(OpCode::OBJECT_SET, kwarg.name);
+          }
+          totalArgs++;
+        }
 
         // Emit CALL_HOST with any.* method name
         // The HostBridge any.* dispatcher will determine type and call appropriate method
         methodName = "any." + property->symbol;
         emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{methodName, arg_count + 1});
+             std::vector<BytecodeValue>{methodName, totalArgs});
         return;
       }
     }
@@ -891,8 +916,21 @@ void ByteCompiler::compileCallExpression(
         }
         compileExpression(*arg);
       }
+      
+      // Compile kwargs as object if present
+      uint32_t totalArgs = arg_count;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        totalArgs++;
+      }
+      
       emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{binding->name, arg_count});
+           std::vector<BytecodeValue>{binding->name, totalArgs});
       return;
     }
   }
@@ -907,8 +945,21 @@ void ByteCompiler::compileCallExpression(
         }
         compileExpression(*arg);
       }
+      
+      // Compile kwargs as object if present
+      uint32_t totalArgs = arg_count;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        totalArgs++;
+      }
+      
       emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{*callee_name, arg_count});
+           std::vector<BytecodeValue>{*callee_name, totalArgs});
       return;
     }
   }
@@ -920,6 +971,18 @@ void ByteCompiler::compileCallExpression(
     }
     compileExpression(*arg);
   }
+  
+  // Compile kwargs as object if present
+  if (hasKwargs) {
+    emit(OpCode::OBJECT_NEW);
+    for (const auto &kwarg : expression.kwargs) {
+      emit(OpCode::DUP);
+      compileExpression(*kwarg.value);
+      emit(OpCode::OBJECT_SET, kwarg.name);
+    }
+    arg_count++;
+  }
+  
   emit(OpCode::CALL, arg_count);
 }
 

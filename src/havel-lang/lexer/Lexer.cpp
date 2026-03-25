@@ -209,6 +209,10 @@ Token Lexer::scanString() {
   // Skip opening quote
   char quote = source[position - 1];
   int braceDepth = 0; // Tracks depth inside ${ ... }
+  
+  // Single quotes = literal string (no interpolation)
+  // Double quotes = interpolated string
+  bool allowInterpolation = (quote == '"');
 
   while (!isAtEnd()) {
     char c = peek();
@@ -250,8 +254,8 @@ Token Lexer::scanString() {
         value += escaped;
         break;
       }
-    } else if (c == '$') {
-      // Found interpolation marker
+    } else if (c == '$' && allowInterpolation) {
+      // Found interpolation marker (only in double-quoted strings)
       hasInterpolation = true;
       value += advance(); // $
 

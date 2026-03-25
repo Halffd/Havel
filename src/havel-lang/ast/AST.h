@@ -752,20 +752,33 @@ struct PipelineExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Keyword argument for function calls: name=value
+struct KeywordArg {
+  std::string name;
+  std::unique_ptr<Expression> value;
+  
+  KeywordArg() = default;
+  KeywordArg(std::string n, std::unique_ptr<Expression> v)
+      : name(std::move(n)), value(std::move(v)) {}
+};
+
 // Call Expression (send("Hello"))
 struct CallExpression : public Expression {
   std::unique_ptr<Expression> callee;
   std::vector<std::unique_ptr<Expression>> args;
+  std::vector<KeywordArg> kwargs;  // Keyword arguments
 
   CallExpression(std::unique_ptr<Expression> cal,
-                 std::vector<std::unique_ptr<Expression>> ags = {})
-      : callee(std::move(cal)), args(std::move(ags)) {
+                 std::vector<std::unique_ptr<Expression>> ags = {},
+                 std::vector<KeywordArg> kws = {})
+      : callee(std::move(cal)), args(std::move(ags)), kwargs(std::move(kws)) {
     kind = NodeType::CallExpression;
   }
 
   std::string toString() const override {
     return "CallExpr{" + (callee ? callee->toString() : "nullptr") + "(" +
-           std::to_string(args.size()) + " args)}";
+           std::to_string(args.size()) + " args, " +
+           std::to_string(kwargs.size()) + " kwargs)}";
   }
 
   void accept(ASTVisitor &visitor) const override;

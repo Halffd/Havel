@@ -93,6 +93,10 @@ bool ProcessService::sendSignal(int32_t pid, int signal) {
     return havel::ProcessManager::sendSignal(pid, signal);
 }
 
+bool ProcessService::setNice(int32_t pid, int nice) {
+    return havel::ProcessManager::setProcessNice(pid, nice);
+}
+
 bool ProcessService::terminateProcess(int32_t pid, int timeout_ms) {
     return havel::ProcessManager::terminateProcess(pid, timeout_ms);
 }

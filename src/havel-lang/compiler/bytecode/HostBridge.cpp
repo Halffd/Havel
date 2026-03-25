@@ -405,6 +405,96 @@ void HostBridge::install() {
     return vm->getHostObjectField(objRef, fieldName);
   };
 
+  // Enum variant constructor helper
+  options_.host_functions["newEnum"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx_->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    // First arg is enum name, second is variant name, rest are payload values
+    if (!std::holds_alternative<std::string>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<std::string>(args[1])) {
+      return BytecodeValue(nullptr);
+    }
+    
+    std::string enumName = std::get<std::string>(args[0]);
+    std::string variantName = std::get<std::string>(args[1]);
+    
+    // Create enum instance object
+    auto obj = vm->createHostObject();
+    
+    // Store enum type and variant
+    vm->setHostObjectField(obj, "__enum", BytecodeValue(enumName));
+    vm->setHostObjectField(obj, "__variant", BytecodeValue(variantName));
+    
+    // Store payload if any
+    if (args.size() > 2) {
+      auto payloadArr = vm->createHostArray();
+      for (size_t i = 2; i < args.size(); i++) {
+        vm->pushHostArrayValue(payloadArr, args[i]);
+      }
+      vm->setHostObjectField(obj, "__payload", BytecodeValue(payloadArr));
+    }
+    
+    return BytecodeValue(obj);
+  };
+
+  // Enum variant accessor
+  options_.host_functions["getVariant"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx_->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    auto objRef = std::get<ObjectRef>(args[0]);
+    
+    if (!vm->hasHostObjectField(objRef, "__variant")) {
+      return BytecodeValue(nullptr);
+    }
+    return vm->getHostObjectField(objRef, "__variant");
+  };
+
+  // Enum payload accessor
+  options_.host_functions["getPayload"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) {
+      return BytecodeValue(nullptr);
+    }
+    auto *vm = static_cast<VM *>(ctx_->vm);
+    if (!vm) return BytecodeValue(nullptr);
+    
+    if (!std::holds_alternative<ObjectRef>(args[0])) {
+      return BytecodeValue(nullptr);
+    }
+    if (!std::holds_alternative<int64_t>(args[1])) {
+      return BytecodeValue(nullptr);
+    }
+    
+    auto objRef = std::get<ObjectRef>(args[0]);
+    int64_t index = std::get<int64_t>(args[1]);
+    
+    if (!vm->hasHostObjectField(objRef, "__payload")) {
+      return BytecodeValue(nullptr);
+    }
+    auto payloadVal = vm->getHostObjectField(objRef, "__payload");
+    if (!std::holds_alternative<ArrayRef>(payloadVal)) {
+      return BytecodeValue(nullptr);
+    }
+    auto payloadRef = std::get<ArrayRef>(payloadVal);
+    
+    if (index < 0 || static_cast<size_t>(index) >= vm->getHostArrayLength(payloadRef)) {
+      return BytecodeValue(nullptr);
+    }
+    return vm->getHostArrayValue(payloadRef, static_cast<size_t>(index));
+  };
+
   // Run vm_setup callbacks
   for (auto &setupFn : vm_setup_callbacks_) {
     setupFn(*static_cast<VM *>(ctx_->vm));

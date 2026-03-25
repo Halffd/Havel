@@ -8,7 +8,7 @@
  * - color operations
  */
 
-#include "../extensions/ExtensionAPI.hpp"
+#include "extensions/ExtensionAPI.hpp"
 
 #include <opencv2/opencv.hpp>
 #include <unordered_map>

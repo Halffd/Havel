@@ -7,11 +7,11 @@
  * - confidence scores
  */
 
-#include "../extensions/ExtensionAPI.hpp"
+#include "extensions/ExtensionAPI.hpp"
 
 #ifdef HAVE_TESSERACT
 #include <tesseract/baseapi.h>
-#include <tesseract/strngs.h>
+#include <leptonica/allheaders.h>
 #endif
 
 #include <unordered_map>
@@ -82,8 +82,8 @@ HAVEL_EXTENSION(ocr) {
       return havel::ExtensionValue(std::string(""));
     }
     
-    int64_t* engineId = std::get_if<int64_t>(&args[0]);
-    int64_t* imageId = std::get_if<int64_t>(&args[1]);
+    const int64_t* engineId = std::get_if<int64_t>(&args[0]);
+    const int64_t* imageId = std::get_if<int64_t>(&args[1]);
     
     if (!engineId || !imageId) {
       return havel::ExtensionValue(std::string(""));
@@ -109,7 +109,7 @@ HAVEL_EXTENSION(ocr) {
       return havel::ExtensionValue(std::string(""));
     }
     
-    int64_t* engineId = std::get_if<int64_t>(&args[0]);
+    const int64_t* engineId = std::get_if<int64_t>(&args[0]);
     const std::string* path = std::get_if<std::string>(&args[1]);
     
     if (!engineId || !path) {
@@ -148,7 +148,7 @@ HAVEL_EXTENSION(ocr) {
       return havel::ExtensionValue(-1.0);
     }
     
-    int64_t* engineId = std::get_if<int64_t>(&args[0]);
+    const int64_t* engineId = std::get_if<int64_t>(&args[0]);
     const std::string* path = std::get_if<std::string>(&args[1]);
     
     if (!engineId || !path) {
@@ -187,7 +187,7 @@ HAVEL_EXTENSION(ocr) {
       return havel::ExtensionValue(false);
     }
     
-    int64_t* engineId = std::get_if<int64_t>(&args[0]);
+    const int64_t* engineId = std::get_if<int64_t>(&args[0]);
     const std::string* name = std::get_if<std::string>(&args[1]);
     const std::string* value = std::get_if<std::string>(&args[2]);
     

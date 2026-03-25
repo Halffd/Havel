@@ -215,6 +215,7 @@ void HostBridge::install() {
   registerAnyMethod("filter");
   registerAnyMethod("map");
   registerAnyMethod("reduce");
+  registerAnyMethod("foreach");
 
   // Array methods (for any.* dispatch fallback)
   options_.host_functions["array.len"] = [this](const std::vector<BytecodeValue>& args) {
@@ -245,8 +246,83 @@ void HostBridge::install() {
     }
     return BytecodeValue(int64_t(-1));
   };
+  options_.host_functions["array.map"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    auto resultRef = ctx_->vm->createHostArray();
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      auto mapped = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      ctx_->vm->pushHostArrayValue(resultRef, mapped);
+    }
+    return BytecodeValue(resultRef);
+  };
+  options_.host_functions["array.filter"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    auto resultRef = ctx_->vm->createHostArray();
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      auto keep = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      if (std::holds_alternative<bool>(keep) && std::get<bool>(keep)) {
+        ctx_->vm->pushHostArrayValue(resultRef, elem);
+      }
+    }
+    return BytecodeValue(resultRef);
+  };
+  options_.host_functions["array.reduce"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 3 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    BytecodeValue acc = args[2];
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      acc = ctx_->vm->callHostFunction(args[1], {acc, elem, BytecodeValue(int64_t(i))});
+    }
+    return acc;
+  };
+  options_.host_functions["array.foreach"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+    }
+    return BytecodeValue(nullptr);
+  };
+  options_.host_functions["array.sort"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      for (size_t j = 0; j < len - i - 1; j++) {
+        auto a = ctx_->vm->getHostArrayValue(arrRef, j);
+        auto b = ctx_->vm->getHostArrayValue(arrRef, j + 1);
+        bool swap = false;
+        if (args.size() >= 2) {
+          auto cmp = ctx_->vm->callHostFunction(args[1], {a, b});
+          if (std::holds_alternative<bool>(cmp)) {
+            swap = std::get<bool>(cmp);
+          }
+        } else {
+          if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b)) {
+            swap = std::get<int64_t>(a) > std::get<int64_t>(b);
+          }
+        }
+        if (swap) {
+          auto temp = a;
+          ctx_->vm->setHostArrayValue(arrRef, j, b);
+          ctx_->vm->setHostArrayValue(arrRef, j + 1, temp);
+        }
+      }
+    }
+    return BytecodeValue(arrRef);
+  };
 
-  // String methods (for any.* dispatch fallback)
+  // any.in(value, container) - membership test
   options_.host_functions["string.len"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
     return BytecodeValue(int64_t(std::get<std::string>(args[0]).length()));
@@ -288,6 +364,87 @@ void HostBridge::install() {
     const std::string& s = std::get<std::string>(args[0]);
     const std::string& suf = std::get<std::string>(args[1]);
     return BytecodeValue(s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
+  };
+
+  // Array higher-order functions (for any.* dispatch)
+  options_.host_functions["array.map"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    // args[1] should be a callback function
+    auto resultRef = ctx_->vm->createHostArray();
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      auto mapped = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      ctx_->vm->pushHostArrayValue(resultRef, mapped);
+    }
+    return BytecodeValue(resultRef);
+  };
+  options_.host_functions["array.filter"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    auto resultRef = ctx_->vm->createHostArray();
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      auto keep = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      if (std::holds_alternative<bool>(keep) && std::get<bool>(keep)) {
+        ctx_->vm->pushHostArrayValue(resultRef, elem);
+      }
+    }
+    return BytecodeValue(resultRef);
+  };
+  options_.host_functions["array.reduce"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 3 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    BytecodeValue acc = args[2];  // Initial accumulator
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      acc = ctx_->vm->callHostFunction(args[1], {acc, elem, BytecodeValue(int64_t(i))});
+    }
+    return acc;
+  };
+  options_.host_functions["array.foreach"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2 || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
+      ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+    }
+    return BytecodeValue(nullptr);
+  };
+  options_.host_functions["array.sort"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);
+    auto arrRef = std::get<ArrayRef>(args[0]);
+    // Simple bubble sort for now
+    size_t len = ctx_->vm->getHostArrayLength(arrRef);
+    for (size_t i = 0; i < len; i++) {
+      for (size_t j = 0; j < len - i - 1; j++) {
+        auto a = ctx_->vm->getHostArrayValue(arrRef, j);
+        auto b = ctx_->vm->getHostArrayValue(arrRef, j + 1);
+        bool swap = false;
+        if (args.size() >= 2) {
+          // Custom comparator
+          auto cmp = ctx_->vm->callHostFunction(args[1], {a, b});
+          if (std::holds_alternative<bool>(cmp)) {
+            swap = std::get<bool>(cmp);
+          }
+        } else {
+          // Default comparison (numbers)
+          if (std::holds_alternative<int64_t>(a) && std::holds_alternative<int64_t>(b)) {
+            swap = std::get<int64_t>(a) > std::get<int64_t>(b);
+          }
+        }
+        if (swap) {
+          auto temp = a;
+          ctx_->vm->setHostArrayValue(arrRef, j, b);
+          ctx_->vm->setHostArrayValue(arrRef, j + 1, temp);
+        }
+      }
+    }
+    return BytecodeValue(arrRef);
   };
 
   // any.in(value, container) - membership test

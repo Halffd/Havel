@@ -1912,6 +1912,12 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (!keyStr) {
       throw std::runtime_error("OBJECT_SET expects string/number/bool key");
     }
+    
+    // Safety: reject __ prefixed keys (reserved for internal use)
+    if (keyStr->size() >= 2 && (*keyStr)[0] == '_' && (*keyStr)[1] == '_') {
+      throw std::runtime_error("OBJECT_SET: keys starting with '__' are reserved");
+    }
+    
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
       throw std::runtime_error("OBJECT_SET unknown object id");

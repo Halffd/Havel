@@ -131,6 +131,7 @@ private:
         "array.insert", "array.remove", "array.slice", "array.concat",
         "array.find", "array.filter", "array.map", "array.reduce",
         "array.sort", "array.reverse", "array.includes", "array.join",
+        "array.foreach",
         // Math module
         "math.abs", "math.ceil", "math.floor", "math.round",
         "math.sin", "math.cos", "math.tan", "math.asin", "math.acos", "math.atan",

@@ -1,24 +1,32 @@
 /*
  * image_extension.cpp - Native image processing extension
  *
- * Provides image operations via OpenCV:
- * - load, save
- * - resize, crop, rotate
- * - filters (blur, sharpen, edge detection)
- * - color operations
+ * Uses C ABI (HavelCAPI.h) for stability.
+ * Requests host services via API - does NOT access OS directly.
+ *
+ * This maintains the sandbox model:
+ * - Extensions request services from HostBridge
+ * - HostBridge enforces capability checks
+ * - Extensions don't bypass security
  */
 
-#include "extensions/ExtensionAPI.hpp"
+#include "HavelCAPI.h"
 
 #include <opencv2/opencv.hpp>
 #include <unordered_map>
 #include <memory>
+#include <cstdio>
 
 namespace {
 
-// Simple image handle system
+/* Image handle system - opaque handles for VM */
 std::unordered_map<int64_t, std::shared_ptr<cv::Mat>> g_images;
 int64_t g_nextImageId = 1;
+
+void cleanupImage(void* ptr) {
+  int64_t id = reinterpret_cast<int64_t>(ptr);
+  g_images.erase(id);
+}
 
 int64_t storeImage(const cv::Mat& img) {
   int64_t id = g_nextImageId++;
@@ -34,264 +42,210 @@ cv::Mat* getImage(int64_t id) {
   return it->second.get();
 }
 
-void removeImage(int64_t id) {
-  g_images.erase(id);
-}
-
 } // anonymous namespace
 
 HAVEL_EXTENSION(image) {
-  // ==========================================================================
-  // Image loading/saving
-  // ==========================================================================
+  /* 
+   * Register functions using C API.
+   * No C++ wrappers - pure C ABI for stability.
+   */
   
-  api.addFunction("image", "load", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(nullptr);
+  /* image.load(path) -> handle */
+  api->register_function("image", "load", [](int argc, HavelValue** argv) {
+    if (argc < 1) {
+      return api->new_null();
     }
     
-    const std::string* path = std::get_if<std::string>(&args[0]);
+    const char* path = api->get_string(argv[0]);
     if (!path) {
-      return havel::ExtensionValue(nullptr);
+      return api->new_null();
     }
     
-    cv::Mat img = cv::imread(*path);
+    cv::Mat img = cv::imread(path);
     if (img.empty()) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);  /* 0 = invalid handle */
     }
     
-    return havel::ExtensionValue(storeImage(img));
+    int64_t id = storeImage(img);
+    return api->new_handle(reinterpret_cast<void*>(id), cleanupImage);
   });
   
-  api.addFunction("image", "save", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.size() < 2) {
-      return havel::ExtensionValue(false);
+  /* image.save(handle, path) -> bool */
+  api->register_function("image", "save", [](int argc, HavelValue** argv) {
+    if (argc < 2) {
+      return api->new_bool(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    const std::string* path = std::get_if<std::string>(&args[1]);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    const char* path = api->get_string(argv[1]);
     
-    if (!id || !path) {
-      return havel::ExtensionValue(false);
+    if (!path) {
+      return api->new_bool(0);
     }
     
-    cv::Mat* img = getImage(*id);
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(false);
+      return api->new_bool(0);
     }
     
-    return havel::ExtensionValue(cv::imwrite(*path, *img));
+    return api->new_bool(cv::imwrite(path, *img) ? 1 : 0);
   });
   
-  // ==========================================================================
-  // Image properties
-  // ==========================================================================
-  
-  api.addFunction("image", "width", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.width(handle) -> int */
+  api->register_function("image", "width", [](int argc, HavelValue** argv) {
+    if (argc < 1) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    if (!id) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
-    return havel::ExtensionValue(static_cast<int64_t>(img->cols));
+    return api->new_int(img->cols);
   });
   
-  api.addFunction("image", "height", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.height(handle) -> int */
+  api->register_function("image", "height", [](int argc, HavelValue** argv) {
+    if (argc < 1) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    if (!id) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
-    return havel::ExtensionValue(static_cast<int64_t>(img->rows));
+    return api->new_int(img->rows);
   });
   
-  // ==========================================================================
-  // Image transformations
-  // ==========================================================================
-  
-  api.addFunction("image", "resize", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.size() < 3) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.resize(handle, width, height) -> new_handle */
+  api->register_function("image", "resize", [](int argc, HavelValue** argv) {
+    if (argc < 3) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    const int64_t* width = std::get_if<int64_t>(&args[1]);
-    const int64_t* height = std::get_if<int64_t>(&args[2]);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    int64_t width = api->get_int(argv[1]);
+    int64_t height = api->get_int(argv[2]);
     
-    if (!id || !width || !height) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
     cv::Mat resized;
-    cv::resize(*img, resized, cv::Size(*width, *height));
+    cv::resize(*img, resized, cv::Size(width, height));
     
-    return havel::ExtensionValue(storeImage(resized));
+    int64_t newId = storeImage(resized);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
   
-  api.addFunction("image", "rotate", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.size() < 2) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.rotate(handle, angle) -> new_handle */
+  api->register_function("image", "rotate", [](int argc, HavelValue** argv) {
+    if (argc < 2) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    const double* angle = std::get_if<double>(&args[1]);
-    if (!angle) {
-      const int64_t* angleInt = std::get_if<int64_t>(&args[1]);
-      if (angleInt) {
-        angle = new double(static_cast<double>(*angleInt));
-      }
-    }
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    double angle = api->get_float(argv[1]);
     
-    if (!id || !angle) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
     cv::Point2f center(img->cols / 2.0, img->rows / 2.0);
-    cv::Mat rot = cv::getRotationMatrix2D(center, *angle, 1.0);
+    cv::Mat rot = cv::getRotationMatrix2D(center, angle, 1.0);
     cv::Mat rotated;
     cv::warpAffine(*img, rotated, rot, img->size());
     
-    return havel::ExtensionValue(storeImage(rotated));
+    int64_t newId = storeImage(rotated);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
   
-  api.addFunction("image", "crop", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.size() < 5) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.crop(handle, x, y, w, h) -> new_handle */
+  api->register_function("image", "crop", [](int argc, HavelValue** argv) {
+    if (argc < 5) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    const int64_t* x = std::get_if<int64_t>(&args[1]);
-    const int64_t* y = std::get_if<int64_t>(&args[2]);
-    const int64_t* w = std::get_if<int64_t>(&args[3]);
-    const int64_t* h = std::get_if<int64_t>(&args[4]);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    int64_t x = api->get_int(argv[1]);
+    int64_t y = api->get_int(argv[2]);
+    int64_t w = api->get_int(argv[3]);
+    int64_t h = api->get_int(argv[4]);
     
-    if (!id || !x || !y || !w || !h) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
-    cv::Rect roi(*x, *y, *w, *h);
+    cv::Rect roi(x, y, w, h);
     cv::Mat cropped = (*img)(roi);
     
-    return havel::ExtensionValue(storeImage(cropped));
+    int64_t newId = storeImage(cropped);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
   
-  // ==========================================================================
-  // Filters
-  // ==========================================================================
-  
-  api.addFunction("image", "blur", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.size() < 2) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.blur(handle, ksize) -> new_handle */
+  api->register_function("image", "blur", [](int argc, HavelValue** argv) {
+    if (argc < 2) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    const int64_t* ksize = std::get_if<int64_t>(&args[1]);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    int64_t ksize = api->get_int(argv[1]);
     
-    if (!id || !ksize) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
     cv::Mat blurred;
-    cv::blur(*img, blurred, cv::Size(*ksize, *ksize));
+    cv::blur(*img, blurred, cv::Size(ksize, ksize));
     
-    return havel::ExtensionValue(storeImage(blurred));
+    int64_t newId = storeImage(blurred);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
   
-  api.addFunction("image", "grayscale", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.grayscale(handle) -> new_handle */
+  api->register_function("image", "grayscale", [](int argc, HavelValue** argv) {
+    if (argc < 1) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    if (!id) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
     cv::Mat gray;
     cv::cvtColor(*img, gray, cv::COLOR_BGR2GRAY);
     
-    return havel::ExtensionValue(storeImage(gray));
+    int64_t newId = storeImage(gray);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
   
-  api.addFunction("image", "edges", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+  /* image.edges(handle) -> new_handle */
+  api->register_function("image", "edges", [](int argc, HavelValue** argv) {
+    if (argc < 1) {
+      return api->new_int(0);
     }
     
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    if (!id) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
-    }
-    
-    cv::Mat* img = getImage(*id);
+    int64_t id = reinterpret_cast<int64_t>(api->get_handle(argv[0]));
+    cv::Mat* img = getImage(id);
     if (!img) {
-      return havel::ExtensionValue(static_cast<int64_t>(0));
+      return api->new_int(0);
     }
     
     cv::Mat edges;
     cv::Canny(*img, edges, 100, 200);
     
-    return havel::ExtensionValue(storeImage(edges));
-  });
-  
-  // ==========================================================================
-  // Cleanup
-  // ==========================================================================
-  
-  api.addFunction("image", "free", [](const std::vector<havel::ExtensionValue>& args) {
-    if (args.empty()) {
-      return havel::ExtensionValue(false);
-    }
-    
-    const int64_t* id = std::get_if<int64_t>(&args[0]);
-    if (!id) {
-      return havel::ExtensionValue(false);
-    }
-    
-    removeImage(*id);
-    return havel::ExtensionValue(true);
+    int64_t newId = storeImage(edges);
+    return api->new_handle(reinterpret_cast<void*>(newId), cleanupImage);
   });
 }

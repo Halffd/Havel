@@ -271,6 +271,8 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
     "src/extensions/ExtensionLoader.cpp"
+    "src/havel-lang/compiler/bytecode/HavelAPI.cpp"
+    "src/havel-lang/compiler/bytecode/HavelValue.cpp"
     "src/host/app/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"
@@ -580,6 +582,7 @@ endif()
 target_include_directories(havel PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/extensions
     ${X11_INCLUDE_DIR}
     ${XI_INCLUDE_DIR}
     ${DBUS_INCLUDE_DIRS}

@@ -1440,13 +1440,35 @@ void ByteCompiler::compileCallExpression(
   }
 
   compileExpression(*expression.callee);
+  
+  // Compile arguments, handling spread expressions
+  uint32_t actualArgCount = 0;
   for (const auto &arg : expression.args) {
     if (!arg) {
       throw std::runtime_error("Call expression contains null argument");
     }
-    compileExpression(*arg);
+    if (arg->kind == ast::NodeType::SpreadExpression) {
+      const auto &spread = static_cast<const ast::SpreadExpression &>(*arg);
+      // Handle spread over array literal: expand at compile time
+      if (spread.target && spread.target->kind == ast::NodeType::ArrayLiteral) {
+        const auto &arrLit = static_cast<const ast::ArrayLiteral &>(*spread.target);
+        for (const auto &elem : arrLit.elements) {
+          if (elem) {
+            compileExpression(*elem);
+            actualArgCount++;
+          }
+        }
+      } else {
+        // Dynamic spread not yet supported - skip for now
+        // TODO: Implement runtime spread expansion
+        throw std::runtime_error("Spread operator in function calls only supports array literals for now");
+      }
+    } else {
+      compileExpression(*arg);
+      actualArgCount++;
+    }
   }
-  
+
   // Compile kwargs as object if present
   if (hasKwargs) {
     emit(OpCode::OBJECT_NEW);
@@ -1455,10 +1477,10 @@ void ByteCompiler::compileCallExpression(
       compileExpression(*kwarg.value);
       emit(OpCode::OBJECT_SET, kwarg.name);
     }
-    arg_count++;
+    actualArgCount++;
   }
-  
-  emit(OpCode::CALL, arg_count);
+
+  emit(OpCode::CALL, actualArgCount);
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {

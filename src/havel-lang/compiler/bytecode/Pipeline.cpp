@@ -404,6 +404,10 @@ BytecodeSmokeResult runBytecodePipeline(
   VM *vm = options.vm_override ? options.vm_override : &owned_vm;
   for (const auto &[name, fn] : options.host_functions) {
     vm->registerHostFunction(name, fn);
+    // Also add to globals if it's a host global (so LOAD_GLOBAL can find it)
+    if (options.host_global_names.count(name) > 0) {
+      vm->setGlobal(name, BytecodeValue(HostFunctionRef{name}));
+    }
   }
   if (options.vm_setup) {
     options.vm_setup(*vm);

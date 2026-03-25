@@ -253,7 +253,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      auto mapped = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      auto mapped = ctx_->vm->callFunction(args[1], {elem});
       ctx_->vm->pushHostArrayValue(resultRef, mapped);
     }
     return BytecodeValue(resultRef);
@@ -265,7 +265,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      auto keep = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      auto keep = ctx_->vm->callFunction(args[1], {elem});
       if (std::holds_alternative<bool>(keep) && std::get<bool>(keep)) {
         ctx_->vm->pushHostArrayValue(resultRef, elem);
       }
@@ -279,7 +279,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      acc = ctx_->vm->callHostFunction(args[1], {acc, elem, BytecodeValue(int64_t(i))});
+      acc = ctx_->vm->callFunction(args[1], {acc, elem});
     }
     return acc;
   };
@@ -289,7 +289,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      ctx_->vm->callFunction(args[1], {elem});
     }
     return BytecodeValue(nullptr);
   };
@@ -303,7 +303,7 @@ void HostBridge::install() {
         auto b = ctx_->vm->getHostArrayValue(arrRef, j + 1);
         bool swap = false;
         if (args.size() >= 2) {
-          auto cmp = ctx_->vm->callHostFunction(args[1], {a, b});
+          auto cmp = ctx_->vm->callFunction(args[1], {a, b});
           if (std::holds_alternative<bool>(cmp)) {
             swap = std::get<bool>(cmp);
           }
@@ -375,7 +375,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      auto mapped = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      auto mapped = ctx_->vm->callFunction(args[1], {elem});
       ctx_->vm->pushHostArrayValue(resultRef, mapped);
     }
     return BytecodeValue(resultRef);
@@ -387,7 +387,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      auto keep = ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      auto keep = ctx_->vm->callFunction(args[1], {elem});
       if (std::holds_alternative<bool>(keep) && std::get<bool>(keep)) {
         ctx_->vm->pushHostArrayValue(resultRef, elem);
       }
@@ -401,7 +401,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      acc = ctx_->vm->callHostFunction(args[1], {acc, elem, BytecodeValue(int64_t(i))});
+      acc = ctx_->vm->callFunction(args[1], {acc, elem});
     }
     return acc;
   };
@@ -411,7 +411,7 @@ void HostBridge::install() {
     size_t len = ctx_->vm->getHostArrayLength(arrRef);
     for (size_t i = 0; i < len; i++) {
       auto elem = ctx_->vm->getHostArrayValue(arrRef, i);
-      ctx_->vm->callHostFunction(args[1], {elem, BytecodeValue(int64_t(i))});
+      ctx_->vm->callFunction(args[1], {elem});
     }
     return BytecodeValue(nullptr);
   };
@@ -427,7 +427,7 @@ void HostBridge::install() {
         bool swap = false;
         if (args.size() >= 2) {
           // Custom comparator
-          auto cmp = ctx_->vm->callHostFunction(args[1], {a, b});
+          auto cmp = ctx_->vm->callFunction(args[1], {a, b});
           if (std::holds_alternative<bool>(cmp)) {
             swap = std::get<bool>(cmp);
           }
@@ -534,7 +534,7 @@ void HostBridge::install() {
       // Call predicate with value
       std::vector<BytecodeValue> predArgs;
       predArgs.push_back(valueVal);
-      auto predResult = ctx_->vm->callHostFunction(BytecodeValue(HostFunctionRef{fnName}), predArgs);
+      auto predResult = ctx_->vm->callFunction(BytecodeValue(HostFunctionRef{fnName}), predArgs);
       
       if (std::holds_alternative<bool>(predResult) && std::get<bool>(predResult)) {
         return BytecodeValue(true);  // Found a match

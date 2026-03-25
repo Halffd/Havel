@@ -507,4 +507,18 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
-Last updated: 2026-03-24 (High priority modules complete: window, process, fs)
+Last updated: 2026-03-24
+
+## Latest Changes
+
+### String Interpolation & Dot Notation (2026-03-24)
+- Added `${expr}` interpolation syntax
+- Added dot notation: `str.trim()`, `arr.len()`
+- Added `any.*` runtime dispatch for type-based method calls
+- Fixed E constant (now Euler's number 2.718...)
+- Added E_CHARGE for elementary charge
+
+**Known Issues:**
+- Interpolation variable scope resolution broken (mini-parser issue)
+- `any.*` dispatch needs string/array functions in HostBridge
+- Arrays print as `array[N]` not values

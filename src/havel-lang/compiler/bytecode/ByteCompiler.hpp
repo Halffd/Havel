@@ -114,7 +114,13 @@ private:
         "async.run", "async.await",
         // Type system
         "type.of", "type.is", "type.as",
-        "implements",
+        "implements", "newStruct", "getField",
+        // Browser module
+        "browser.connect", "browser.connectFirefox",
+        "browser.disconnect", "browser.isConnected",
+        "browser.open", "browser.newTab",
+        "browser.goto", "browser.back", "browser.forward", "browser.reload",
+        "browser.listTabs",
         // String module
         "string.len", "string.lower", "string.upper", "string.trim",
         "string.sub", "string.find", "string.replace", "string.split",

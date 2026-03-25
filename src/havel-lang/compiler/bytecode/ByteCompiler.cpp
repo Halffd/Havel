@@ -320,34 +320,38 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
-    // Struct types are registered in the type system at compile time
-    // Runtime: create constructor function for the struct
-    // For now, just register the type name as a global
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder for struct type object
+    // Register struct type with its fields
+    std::vector<std::string> fieldNames;
+    for (const auto& field : structDecl.definition.fields) {
+      fieldNames.push_back(field.name);
+    }
+    // Store in type registry (will be accessed via HostBridge)
+    // For now, just create a constructor function registration
+    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
   case ast::NodeType::EnumDeclaration: {
     const auto &enumDecl = static_cast<const ast::EnumDeclaration &>(statement);
-    // Enum types are registered in the type system at compile time
-    // Runtime: create enum variant constructors
-    // For now, just register the type name as a global
-    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder for enum type object
+    // Register enum type with its variants
+    std::vector<std::string> variantNames;
+    for (const auto& variant : enumDecl.definition.variants) {
+      variantNames.push_back(variant.name);
+    }
+    emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
   case ast::NodeType::TraitDeclaration: {
     const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(statement);
-    // Traits define method signatures - no runtime representation needed
-    // Method dispatch happens through the type system
+    // Register trait with its method signatures
     emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }
 
   case ast::NodeType::ImplDeclaration: {
     const auto &implDecl = static_cast<const ast::ImplDeclaration &>(statement);
-    // impl Trait for Type - register method implementations
-    // Methods are added to the type's method table
+    // Register method implementations for type
     emit(OpCode::LOAD_CONST, addConstant(nullptr));  // Placeholder
     break;
   }

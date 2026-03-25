@@ -1,0 +1,5 @@
+// Minimal object.set test
+
+let obj = {}
+object.set(obj, "a", 1)
+print(object.keys(obj))

@@ -253,6 +253,16 @@ std::string opcodeName(OpCode opcode) {
     return "ENUM_PAYLOAD";
   case OpCode::ENUM_MATCH:
     return "ENUM_MATCH";
+  case OpCode::OBJECT_KEYS:
+    return "OBJECT_KEYS";
+  case OpCode::OBJECT_VALUES:
+    return "OBJECT_VALUES";
+  case OpCode::OBJECT_ENTRIES:
+    return "OBJECT_ENTRIES";
+  case OpCode::OBJECT_HAS:
+    return "OBJECT_HAS";
+  case OpCode::OBJECT_DELETE:
+    return "OBJECT_DELETE";
   case OpCode::SET_NEW:
     return "SET_NEW";
   case OpCode::OBJECT_NEW:

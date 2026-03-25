@@ -527,7 +527,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::DUP);
       compileExpression(*pair.second);
-      emit(OpCode::OBJECT_SET, pair.first);
+      emit(OpCode::LOAD_CONST, addConstant(pair.first));
+      emit(OpCode::OBJECT_SET);
     }
     break;
   }
@@ -1046,6 +1047,88 @@ void ByteCompiler::compileCallExpression(
       }
 
       if (typeName != "any") {
+        // Check for object.* VM intrinsics (object.keys, object.values, etc.)
+        if (typeName == "object") {
+          if (property->symbol == "keys") {
+            // object.keys(obj) → OBJECT_KEYS opcode
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+            emit(OpCode::OBJECT_KEYS);
+            return;
+          } else if (property->symbol == "values") {
+            // object.values(obj) → OBJECT_VALUES opcode
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+            emit(OpCode::OBJECT_VALUES);
+            return;
+          } else if (property->symbol == "entries") {
+            // object.entries(obj) → OBJECT_ENTRIES opcode
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+            emit(OpCode::OBJECT_ENTRIES);
+            return;
+          } else if (property->symbol == "has") {
+            // object.has(obj, key) → OBJECT_HAS opcode
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+            emit(OpCode::OBJECT_HAS);
+            return;
+          } else if (property->symbol == "del") {
+            // object.del(obj, key) → OBJECT_DELETE opcode
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
+            }
+            emit(OpCode::OBJECT_DELETE);
+            return;
+          } else if (property->symbol == "set") {
+            // object.set(obj, key, value) → OBJECT_SET opcode
+            // Stack: [..., obj, value, key] → pops all, pushes obj
+            if (expression.args.size() < 3) {
+              throw std::runtime_error("object.set() requires 3 arguments");
+            }
+            compileExpression(*expression.args[0]);  // obj
+            compileExpression(*expression.args[2]);  // value
+            compileExpression(*expression.args[1]);  // key
+            emit(OpCode::OBJECT_SET);
+            emit(OpCode::POP);  // Remove obj from stack, keep void
+            return;
+          } else if (property->symbol == "get") {
+            // object.get(obj, key) → OBJECT_GET opcode
+            // Stack: [..., obj, key] → pops both, pushes value
+            if (expression.args.size() < 2) {
+              throw std::runtime_error("object.get() requires 2 arguments");
+            }
+            compileExpression(*expression.args[0]);  // obj
+            compileExpression(*expression.args[1]);  // key
+            emit(OpCode::OBJECT_GET);
+            return;
+          }
+        }
+        
         // Check if this is a module.function call (like http.get, network.post)
         // In this case, the module name is just a namespace prefix, not an object to pass
         std::string fullMethodName = typeName + "." + property->symbol;

@@ -1899,32 +1899,123 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::OBJECT_SET: {
-    std::optional<std::string> key;
-    BytecodeValue value = nullptr;
-    BytecodeValue object = nullptr;
-    if (!instruction.operands.empty()) {
-      value = pop();
-      object = pop();
-      key = keyFromValue(instruction.operands[0]);
-    } else {
-      value = pop();
-      BytecodeValue key_value = pop();
-      object = pop();
-      key = keyFromValue(key_value);
-    }
-
+    // Stack: [..., obj, value, key] → pops all, pushes obj
+    // This allows chaining: obj { DUP, val1, "k1", SET, val2, "k2", SET, ... }
+    BytecodeValue key = pop();
+    BytecodeValue value = pop();
+    BytecodeValue object = pop();
+    
     if (!std::holds_alternative<ObjectRef>(object)) {
       throw std::runtime_error("OBJECT_SET expects object container");
     }
-
-    if (!key) {
+    auto keyStr = keyFromValue(key);
+    if (!keyStr) {
       throw std::runtime_error("OBJECT_SET expects string/number/bool key");
     }
     auto *obj = heap_.object(std::get<ObjectRef>(object).id);
     if (!obj) {
       throw std::runtime_error("OBJECT_SET unknown object id");
     }
-    (*obj)[*key] = value;
+    (*obj)[*keyStr] = value;
+    push(object);  // Return the object for chaining
+    break;
+  }
+
+  // Object intrinsics (VM-level operations)
+  case OpCode::OBJECT_KEYS: {
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_KEYS expects object");
+    }
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
+      throw std::runtime_error("OBJECT_KEYS unknown object id");
+    }
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    for (const auto& [key, _] : *obj) {
+      arr->push_back(BytecodeValue(key));
+    }
+    push(BytecodeValue(arrRef));
+    break;
+  }
+
+  case OpCode::OBJECT_VALUES: {
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_VALUES expects object");
+    }
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
+      throw std::runtime_error("OBJECT_VALUES unknown object id");
+    }
+    auto arrRef = heap_.allocateArray();
+    auto *arr = heap_.array(arrRef.id);
+    for (const auto& [_, value] : *obj) {
+      arr->push_back(value);
+    }
+    push(BytecodeValue(arrRef));
+    break;
+  }
+
+  case OpCode::OBJECT_ENTRIES: {
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_ENTRIES expects object");
+    }
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
+      throw std::runtime_error("OBJECT_ENTRIES unknown object id");
+    }
+    auto arrRef = heap_.allocateArray();
+    for (const auto& [key, value] : *obj) {
+      // Create [key, value] tuple as array
+      auto tupleRef = heap_.allocateArray();
+      auto *tuple = heap_.array(tupleRef.id);
+      tuple->push_back(BytecodeValue(key));
+      tuple->push_back(value);
+      auto *arr = heap_.array(arrRef.id);
+      arr->push_back(BytecodeValue(tupleRef));
+    }
+    push(BytecodeValue(arrRef));
+    break;
+  }
+
+  case OpCode::OBJECT_HAS: {
+    BytecodeValue keyValue = pop();
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_HAS expects object");
+    }
+    auto key = keyFromValue(keyValue);
+    if (!key) {
+      throw std::runtime_error("OBJECT_HAS expects string/number/bool key");
+    }
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
+      push(BytecodeValue(false));
+    } else {
+      push(BytecodeValue(obj->find(*key) != obj->end()));
+    }
+    break;
+  }
+
+  case OpCode::OBJECT_DELETE: {
+    BytecodeValue keyValue = pop();
+    BytecodeValue object = pop();
+    if (!std::holds_alternative<ObjectRef>(object)) {
+      throw std::runtime_error("OBJECT_DELETE expects object");
+    }
+    auto key = keyFromValue(keyValue);
+    if (!key) {
+      throw std::runtime_error("OBJECT_DELETE expects string/number/bool key");
+    }
+    auto *obj = heap_.object(std::get<ObjectRef>(object).id);
+    if (!obj) {
+      push(BytecodeValue(false));
+    } else {
+      push(BytecodeValue(obj->erase(*key) > 0));
+    }
     break;
   }
 

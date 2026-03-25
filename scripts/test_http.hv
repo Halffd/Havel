@@ -1,0 +1,45 @@
+// Test all HTTP module functions
+
+print("=== HTTP Module Tests ===\n")
+
+// Test 1: http.get
+print("1. Testing http.get:")
+let url = "https://httpbin.org/get"
+let response = http.get(url, 5000)
+if (response) {
+  print("  Success! Length: ")
+  print(len(response))
+} else {
+  print("  Failed")
+}
+print("")
+
+// Test 2: network.isOnline
+print("2. Testing network.isOnline:")
+let online = network.isOnline()
+print("  Online: ")
+print(online)
+print("")
+
+// Test 3: http.download
+print("3. Testing http.download:")
+let downloadUrl = "https://httpbin.org/bytes/100"
+let downloadPath = "/tmp/test_download.bin"
+let downloadSuccess = http.download(downloadUrl, downloadPath, 5000)
+print("  Download success: ")
+print(downloadSuccess)
+
+// Check if file exists
+let fileExistsResult = fileExists(downloadPath)
+print("  File exists: ")
+print(fileExistsResult)
+
+// Get file size
+if (fileExistsResult) {
+  let fSize = fileSize(downloadPath)
+  print("  File size: ")
+  print(fSize)
+}
+print("")
+
+print("=== HTTP Tests Complete ===")

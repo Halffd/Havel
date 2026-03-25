@@ -1,0 +1,5 @@
+// Test fileExists with literal
+
+let exists = fileExists("/tmp")
+print("exists: ")
+print(exists)

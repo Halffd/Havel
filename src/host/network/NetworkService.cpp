@@ -16,6 +16,12 @@ static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
   return total_size;
 }
 
+// Callback for curl to write data to file
+static size_t WriteFileCallback(void *contents, size_t size, size_t nmemb,
+                                FILE *userp) {
+  return fwrite(contents, size, nmemb, userp);
+}
+
 struct NetworkService::Impl {
   CURL *curl = nullptr;
 
@@ -133,6 +139,48 @@ HttpResponse NetworkService::post(const std::string &url,
                                   const std::string &content_type,
                                   int timeout_ms) {
   return impl_->make_request(url, "POST", data, content_type, timeout_ms);
+}
+
+bool NetworkService::download(const std::string &url, const std::string &path,
+                              int timeout_ms) {
+  if (!impl_->curl) {
+    return false;
+  }
+
+  curl_easy_reset(impl_->curl);
+
+  // Set URL
+  curl_easy_setopt(impl_->curl, CURLOPT_URL, url.c_str());
+
+  // Set timeout
+  curl_easy_setopt(impl_->curl, CURLOPT_TIMEOUT_MS, timeout_ms);
+
+  // Set follow redirects
+  curl_easy_setopt(impl_->curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+  // Open file for writing
+  FILE *fp = fopen(path.c_str(), "wb");
+  if (!fp) {
+    return false;
+  }
+
+  // Write response to file
+  curl_easy_setopt(impl_->curl, CURLOPT_WRITEFUNCTION, WriteFileCallback);
+  curl_easy_setopt(impl_->curl, CURLOPT_WRITEDATA, fp);
+
+  // Perform download
+  CURLcode res = curl_easy_perform(impl_->curl);
+
+  // Close file
+  fclose(fp);
+
+  // Clean up on failure
+  if (res != CURLE_OK) {
+    remove(path.c_str());
+    return false;
+  }
+
+  return true;
 }
 
 bool NetworkService::isOnline() const { return impl_->is_online(); }

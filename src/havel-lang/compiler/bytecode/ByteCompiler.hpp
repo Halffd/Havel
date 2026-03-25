@@ -95,6 +95,10 @@ private:
         // Core functions
         "print", "sleep_ms", "clock_ms",
         "system.gc", "system.gcStats", "system_gc", "system_gcStats",
+        // HTTP module
+        "http.get", "http.post", "http.download",
+        "network.get", "network.post", "network.download",
+        "network.isOnline", "network.getExternalIp",
         // String module
         "string.len", "string.lower", "string.upper", "string.trim",
         "string.sub", "string.find", "string.replace", "string.split",

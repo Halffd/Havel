@@ -1418,6 +1418,18 @@ BytecodeValue MediaBridge::handleMediaGetAvailablePlayers(const std::vector<Byte
 // ============================================================================
 
 void NetworkBridge::install(PipelineOptions &options) {
+  // HTTP module (aliases for network.*)
+  options.host_functions["http.get"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkGet(args, ctx);
+  };
+  options.host_functions["http.post"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkPost(args, ctx);
+  };
+  options.host_functions["http.download"] = [ctx = ctx_](const auto &args) {
+    return handleNetworkDownload(args, ctx);
+  };
+  
+  // Legacy network.* names
   options.host_functions["network.get"] = [ctx = ctx_](const auto &args) {
     return handleNetworkGet(args, ctx);
   };
@@ -1436,26 +1448,31 @@ BytecodeValue NetworkBridge::handleNetworkGet(const std::vector<BytecodeValue> &
                                               const HostContext *ctx) {
   (void)ctx;
   if (args.empty()) {
-    throw std::runtime_error("network.get() requires a URL");
+    throw std::runtime_error("http.get() requires a URL");
   }
-  const std::string *url = std::get_if<std::string>(&args[0]);
-  if (!url) {
-    throw std::runtime_error("network.get() requires a string URL");
+  
+  // Try to get string from variant
+  std::string url;
+  if (std::holds_alternative<std::string>(args[0])) {
+    url = std::get<std::string>(args[0]);
+  } else {
+    throw std::runtime_error("http.get() requires a string URL, got type index " + std::to_string(args[0].index()));
   }
+  
   int timeout_ms = 30000;
   if (args.size() > 1 && std::holds_alternative<int64_t>(args[1])) {
     timeout_ms = static_cast<int>(std::get<int64_t>(args[1]));
   }
   try {
     havel::host::NetworkService net;
-    auto response = net.get(*url, timeout_ms);
+    auto response = net.get(url, timeout_ms);
     if (response.success) {
       return BytecodeValue(response.body);
     } else {
       return BytecodeValue(nullptr);
     }
-  } catch (...) {
-    return BytecodeValue(nullptr);
+  } catch (const std::exception& e) {
+    throw std::runtime_error(std::string("http.get() failed: ") + e.what());
   }
 }
 
@@ -1512,6 +1529,30 @@ BytecodeValue NetworkBridge::handleNetworkGetExternalIp(const std::vector<Byteco
     return BytecodeValue(net.getExternalIp());
   } catch (...) {
     return BytecodeValue(std::string(""));
+  }
+}
+
+BytecodeValue NetworkBridge::handleNetworkDownload(const std::vector<BytecodeValue> &args,
+                                                   const HostContext *ctx) {
+  (void)ctx;
+  if (args.size() < 2) {
+    throw std::runtime_error("http.download() requires URL and path");
+  }
+  const std::string *url = std::get_if<std::string>(&args[0]);
+  const std::string *path = std::get_if<std::string>(&args[1]);
+  if (!url || !path) {
+    throw std::runtime_error("http.download() requires string URL and path");
+  }
+  int timeout_ms = 30000;
+  if (args.size() > 2 && std::holds_alternative<int64_t>(args[2])) {
+    timeout_ms = static_cast<int>(std::get<int64_t>(args[2]));
+  }
+  try {
+    havel::host::NetworkService net;
+    bool success = net.download(*url, *path, timeout_ms);
+    return BytecodeValue(success);
+  } catch (...) {
+    return BytecodeValue(false);
   }
 }
 

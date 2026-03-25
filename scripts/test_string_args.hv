@@ -1,0 +1,10 @@
+// Test to see if string args work with print
+
+let msg = "Hello World"
+print(msg)
+print("Direct string")
+
+// Test fileExists which takes a string
+let exists = fileExists("/tmp")
+print("fileExists result: ")
+print(exists)

@@ -245,6 +245,7 @@ private:
   const HostContext *ctx_;
   static BytecodeValue handleNetworkGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleNetworkPost(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleNetworkDownload(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleNetworkIsOnline(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleNetworkGetExternalIp(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };

@@ -54,6 +54,14 @@ public:
                     const std::string &content_type = "application/json",
                     int timeout_ms = 30000);
 
+  /// Download file to disk
+  /// @param url URL to download from
+  /// @param path Local file path to save
+  /// @param timeout_ms Timeout in milliseconds
+  /// @return true on success, false on error
+  bool download(const std::string &url, const std::string &path,
+                int timeout_ms = 30000);
+
   // ==========================================================================
   // Connectivity
   // ==========================================================================

@@ -3368,6 +3368,13 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       lookahead++;
     }
     auto nextTok = at(lookahead);
+    
+    // Empty braces {} in expression context = empty object literal
+    if (nextTok.type == havel::TokenType::CloseBrace) {
+      auto obj = parseObjectLiteral();
+      return parsePostfixExpression(std::move(obj));
+    }
+    
     // Object keys can be identifiers, strings, or keywords (like 'config')
     bool isObject = (nextTok.type == havel::TokenType::Identifier ||
                      nextTok.type == havel::TokenType::String ||

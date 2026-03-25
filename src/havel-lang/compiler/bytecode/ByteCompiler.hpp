@@ -115,6 +115,9 @@ private:
         // Type system
         "type.of", "type.is", "type.as",
         "implements",
+        // Object module
+        "object.add", "object.remove",
+        "object.keys", "object.values", "object.items",
         // Browser module
         "browser.connect", "browser.connectFirefox",
         "browser.disconnect", "browser.isConnected",

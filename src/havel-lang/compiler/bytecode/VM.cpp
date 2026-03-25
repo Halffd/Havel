@@ -1983,7 +1983,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     if (typeName == "int" || typeName == "Int") {
       push(toInt(value));
     } else if (typeName == "float" || typeName == "Float" ||
-               typeName == "double") {
+               typeName == "double" || typeName == "num" || typeName == "Num") {
       push(toFloat(value));
     } else if (typeName == "string" || typeName == "String") {
       push(BytecodeValue(toString(value)));
@@ -2053,7 +2053,7 @@ void VM::executeInstruction(const Instruction &instruction) {
     } else if (std::holds_alternative<int64_t>(value)) {
       typeName = "int";
     } else if (std::holds_alternative<double>(value)) {
-      typeName = "float";
+      typeName = "num";  // Renamed from "float" to "num" per docs
     } else if (std::holds_alternative<std::string>(value)) {
       typeName = "string";
     } else if (std::holds_alternative<ArrayRef>(value)) {

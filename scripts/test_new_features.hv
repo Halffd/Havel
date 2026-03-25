@@ -1,78 +1,43 @@
-// Test new language features
+// Test all new features
 
-// Test fn(){} function expressions
-let add = fn(a, b) {
-  return a + b
-}
+print("=== Testing New Features ===\n")
 
-let multiply = fn(x, y) { x * y }
+// Test 1: Object methods
+print("1. Testing object methods:")
+let obj = {}
+object.add(obj, "a", 1)
+object.add(obj, "b", 2)
+object.add(obj, "c", 3)
+print("  Object keys: ")
+print(object.keys(obj))
+print("  Object values: ")
+print(object.values(obj))
+print("  Object items: ")
+print(object.items(obj))
 
-// Test function expressions with closures
-let makeCounter = fn() {
-  let count = 0
-  return fn() { 
-    count = count + 1
-    return count
-  }
-}
+// Remove a key
+object.remove(obj, "b")
+print("  After removing 'b':")
+print("  Keys: ")
+print(object.keys(obj))
+print("")
 
-// Test set literals
-let mySet = #{1, 2, 3, 2, 4}
-let anotherSet = #{ "hello", "world", "hello" }
+// Test 2: type() alias and num type
+print("2. Testing type() and num type:")
+print("  type(42): ")
+print(type(42))
+print("  type(3.14): ")
+print(type(3.14))
+print("  type.is(3.14, 'num'): ")
+print(type.is(3.14, "num"))
+print("  type.is(3.14, 'float'): ")
+print(type.is(3.14, "float"))
+print("")
 
-// Test array destructuring
-let numbers = [10, 20, 30]
-let [first, second, third] = numbers
+// Test 3: type.of() returns num
+print("3. Testing type.of() returns 'num':")
+print("  type.of(3.14): ")
+print(type.of(3.14))
+print("")
 
-// Test object destructuring  
-let person = { name: "Alice", age: 25, city: "NYC" }
-let {name, age} = person
-
-// Test nested destructuring
-let data = { user: { id: 123, name: "Bob" }, score: 95 }
-let {user: {id, name: userName}} = data
-
-// Test combining features
-let processData = fn(arr) {
-  let [head, ...tail] = arr  // Note: rest pattern not yet implemented
-  let processed = #{head}
-  return processed
-}
-
-// Test the zoom example from the request
-zoom = {
-  level: 1.0,
-  in: fn() { level += 0.1 },
-  out: fn() { level -= 0.1 }
-}
-
-// Test calling functions
-let sum = add(5, 3)
-let product = multiply(4, 7)
-
-// Test counter
-let counter = makeCounter()
-let count1 = counter()
-let count2 = counter()
-
-// Print results (if print function exists)
-print("Function expressions work:")
-print("sum:", sum)
-print("product:", product)
-print("counter:", count1, count2)
-
-print("Destructuring works:")
-print("first:", first, "second:", second, "third:", third)
-print("name:", name, "age:", age)
-print("user id:", id, "username:", userName)
-
-print("Sets work:")
-print("mySet:", mySet)
-print("anotherSet:", anotherSet)
-
-print("Zoom object:")
-print("zoom level:", zoom.level)
-zoom.in()
-print("after zoom in:", zoom.level)
-zoom.out()
-print("after zoom out:", zoom.level)
+print("=== All Tests Complete ===")

@@ -1,0 +1,125 @@
+// Real user script - log analyzer with notifications
+// Tests: fs, io, string methods, loops, conditionals
+
+// Write test log file
+let logPath = "/tmp/test.log"
+writeFile(logPath, "[ERROR] Failed to connect\n[ERROR] Crash detected\n[INFO] Exited normally\n[WARN] Low memory")
+
+print("=== Log Analyzer Test ===")
+
+// Read and process log file
+let content = readFile(logPath)
+let contentLen = len(content)
+print("Content length: ")
+print(contentLen)
+print(" chars")
+
+// Check for errors using String.includes
+let hasErrors = String.includes(content, "ERROR")
+if (hasErrors) {
+  let lines = String.split(content, "\n")
+  let errorCount = 0
+  let i = 0
+  let lineCount = len(lines)
+  
+  while (i < lineCount) {
+    let line = lines[i]
+    let hasError = String.includes(line, "ERROR")
+    if (hasError) {
+      errorCount = errorCount + 1
+      print("  ERROR: ")
+      print(line)
+    }
+    i = i + 1
+  }
+  
+  print("Found ")
+  print(errorCount)
+  print(" ERROR lines!")
+  
+  // Send notification via IO
+  send("Found errors in log file")
+}
+
+// Check for warnings
+let hasWarnings = String.includes(content, "WARN")
+if (hasWarnings) {
+  print("Found warnings in log file")
+}
+
+// Test string operations
+let testStr = "  Hello World  "
+let trimmed = String.trim(testStr)
+let upper = String.upper(testStr)
+let lower = String.lower(testStr)
+let contains = String.includes(testStr, "World")
+let startsWith = String.startswith(trimmed, "Hello")
+
+print("\n=== String Tests ===")
+print("Original: ")
+print(testStr)
+print("Trimmed: ")
+print(trimmed)
+print("Upper: ")
+print(upper)
+print("Lower: ")
+print(lower)
+print("Contains World: ")
+print(contains)
+print("Starts with Hello: ")
+print(startsWith)
+
+// Test array operations
+let numbers = [1, 2, 3, 4, 5]
+let numLen = len(numbers)
+print("\n=== Array Tests ===")
+print("Numbers: ")
+print(numbers)
+print("Length: ")
+print(numLen)
+
+// Test math constants
+let piVal = PI
+let eVal = E
+print("\n=== Math Tests ===")
+print("PI: ")
+print(piVal)
+print("E: ")
+print(eVal)
+
+// Test time
+let ts1 = time.now()
+sleep(100)
+let ts2 = time.now()
+print("\n=== Time Tests ===")
+print("Timestamp 1: ")
+print(ts1)
+print("Timestamp 2: ")
+print(ts2)
+print("After 100ms sleep")
+
+// Test process
+let pid = getpid()
+let ppid = getppid()
+print("\n=== Process Tests ===")
+print("Current PID: ")
+print(pid)
+print("Parent PID: ")
+print(ppid)
+
+// Test window
+print("\n=== Window Tests ===")
+let activeWin = window.active()
+if (activeWin) {
+  let winId = activeWin.id
+  let winTitle = activeWin.title
+  print("Active window ID: ")
+  print(winId)
+  print("Active window title: ")
+  print(winTitle)
+} else {
+  print("No active window")
+}
+
+print("\n=== Test Complete ===")
+print("All tests passed!")

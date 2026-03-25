@@ -13,6 +13,31 @@
 namespace havel::compiler {
 
 namespace {
+// Helper function to compare two BytecodeValues for equality
+static bool valuesEqual(const BytecodeValue& a, const BytecodeValue& b) {
+  // Compare variant indices first for type check
+  if (a.index() != b.index()) return false;
+  
+  if (std::holds_alternative<std::nullptr_t>(a)) return true;
+  if (std::holds_alternative<bool>(a)) return std::get<bool>(a) == std::get<bool>(b);
+  if (std::holds_alternative<int64_t>(a)) return std::get<int64_t>(a) == std::get<int64_t>(b);
+  if (std::holds_alternative<double>(a)) return std::get<double>(a) == std::get<double>(b);
+  if (std::holds_alternative<std::string>(a)) return std::get<std::string>(a) == std::get<std::string>(b);
+  
+  // For reference types, compare IDs
+  if (std::holds_alternative<ArrayRef>(a)) {
+    return std::get<ArrayRef>(a).id == std::get<ArrayRef>(b).id;
+  }
+  if (std::holds_alternative<ObjectRef>(a)) {
+    return std::get<ObjectRef>(a).id == std::get<ObjectRef>(b).id;
+  }
+  if (std::holds_alternative<RangeRef>(a)) {
+    return std::get<RangeRef>(a).id == std::get<RangeRef>(b).id;
+  }
+  
+  return false;
+}
+
 // Internal toString with cycle detection and depth limit
 std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
                              std::unordered_set<uint32_t> &visitedIds,
@@ -398,6 +423,47 @@ BytecodeValue VM::removeHostArrayValue(ArrayRef array_ref, size_t index) {
   return value;
 }
 
+// Range helpers
+bool VM::isInRange(RangeRef range_ref, int64_t value) {
+  auto *r = heap_.range(range_ref.id);
+  if (!r) return false;
+  
+  if (r->step > 0) {
+    return value >= r->start && value < r->end && (value - r->start) % r->step == 0;
+  } else {
+    return value <= r->start && value > r->end && (r->start - value) % (-r->step) == 0;
+  }
+}
+
+// Membership helpers
+bool VM::arrayContains(ArrayRef array_ref, const BytecodeValue& value) {
+  auto *array = heap_.array(array_ref.id);
+  if (!array) return false;
+  for (const auto& item : *array) {
+    if (valuesEqual(item, value)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool VM::objectHasKey(ObjectRef object_ref, const std::string& key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object) return false;
+  return object->find(key) != object->end();
+}
+
+// Iterator helpers
+IteratorRef VM::createIterator(const BytecodeValue& iterable) {
+  IteratorRef ref;
+  ref.id = heap_.createIterator(iterable);
+  return ref;
+}
+
+BytecodeValue VM::iteratorNext(IteratorRef iterRef) {
+  return heap_.iteratorNext(iterRef.id);
+}
+
 // Object helpers
 std::vector<std::string> VM::getHostObjectKeys(ObjectRef object_ref) {
   auto *object = heap_.object(object_ref.id);
@@ -425,6 +491,16 @@ bool VM::hasHostObjectField(ObjectRef object_ref, const std::string &key) {
   if (!object)
     return false;
   return object->find(key) != object->end();
+}
+
+BytecodeValue VM::getHostObjectField(ObjectRef object_ref, const std::string &key) {
+  auto *object = heap_.object(object_ref.id);
+  if (!object)
+    return BytecodeValue(nullptr);
+  auto it = object->find(key);
+  if (it == object->end())
+    return BytecodeValue(nullptr);
+  return it->second;
 }
 
 bool VM::deleteHostObjectField(ObjectRef object_ref, const std::string &key) {
@@ -1488,6 +1564,24 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("ARRAY_LEN unknown array id");
     }
     push(BytecodeValue(static_cast<int64_t>(array->size())));
+    break;
+  }
+
+  // Range creation: start..end or start..step..end
+  case OpCode::RANGE_NEW: {
+    int64_t end = std::get<int64_t>(pop());
+    int64_t start = std::get<int64_t>(pop());
+    RangeRef rangeRef = heap_.allocateRange(start, end, 1);
+    push(BytecodeValue(rangeRef));
+    break;
+  }
+
+  case OpCode::RANGE_STEP_NEW: {
+    int64_t step = std::get<int64_t>(pop());
+    int64_t end = std::get<int64_t>(pop());
+    int64_t start = std::get<int64_t>(pop());
+    RangeRef rangeRef = heap_.allocateRange(start, end, step);
+    push(BytecodeValue(rangeRef));
     break;
   }
 

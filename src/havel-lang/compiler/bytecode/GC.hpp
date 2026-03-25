@@ -34,9 +34,16 @@ public:
 
   // Iterator for iteration protocol
   struct Iterator {
-    BytecodeValue iterable;  // The original iterable (array, string, object)
+    BytecodeValue iterable;  // The original iterable (array, string, object, range)
     size_t index = 0;        // Current position
     std::vector<std::string> keys;  // For object iteration
+  };
+  
+  // Range for range-based iteration
+  struct Range {
+    int64_t start = 0;
+    int64_t end = 0;
+    int64_t step = 1;
   };
 
   void reset();
@@ -45,6 +52,7 @@ public:
   ArrayRef allocateArray();
   ObjectRef allocateObject();
   SetRef allocateSet();
+  RangeRef allocateRange(int64_t start, int64_t end, int64_t step);
   IteratorRef allocateIterator(const BytecodeValue &iterable);
 
   RuntimeClosure *closure(uint32_t id);
@@ -52,6 +60,8 @@ public:
   std::vector<BytecodeValue> *array(uint32_t id);
   std::unordered_map<std::string, BytecodeValue> *object(uint32_t id);
   std::unordered_map<std::string, BytecodeValue> *set(uint32_t id);
+  Range *range(uint32_t id);
+  const Range *range(uint32_t id) const;
   Iterator *iterator(uint32_t id);
   const Iterator *iterator(uint32_t id) const;
 
@@ -97,11 +107,13 @@ private:
       objects_;
   std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
       sets_;
+  std::unordered_map<uint32_t, Range> ranges_;
   std::unordered_map<uint32_t, Iterator> iterators_;
   uint32_t next_closure_id_ = 1;
   uint32_t next_array_id_ = 1;
   uint32_t next_object_id_ = 1;
   uint32_t next_set_id_ = 1;
+  uint32_t next_range_id_ = 1;
   uint32_t next_iterator_id_ = 1;
   size_t allocation_budget_ = 1024;
   size_t allocations_since_last_ = 0;

@@ -75,6 +75,10 @@ enum class OpCode : uint8_t {
   ARRAY_PUSH,
   ARRAY_LEN,
   
+  // Range operations
+  RANGE_NEW,      // Create range: start..end or start..step..end
+  RANGE_STEP_NEW, // Create range with step
+  
   // Iteration protocol
   ITER_NEW,     // Create iterator from iterable
   ITER_NEXT,    // Get next {value, done} from iterator
@@ -127,6 +131,10 @@ struct SetRef {
   uint32_t id = 0;
 };
 
+struct RangeRef {
+  uint32_t id = 0;
+};
+
 struct IteratorRef {
   uint32_t id = 0;
 };
@@ -139,7 +147,7 @@ using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t, // Index into constant pool
                  FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
-                 IteratorRef, HostFunctionRef>;
+                 RangeRef, IteratorRef, HostFunctionRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

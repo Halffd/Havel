@@ -86,7 +86,8 @@ private:
 
   std::stack<BytecodeValue> stack;
   std::vector<BytecodeValue> locals;
-  std::deque<CallFrame> frames;
+  std::vector<CallFrame> frame_arena_;
+  size_t frame_count_ = 0;
   GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
@@ -119,7 +120,8 @@ private:
   struct ExecutionState {
     std::stack<BytecodeValue> stack;
     std::vector<BytecodeValue> locals;
-    std::deque<CallFrame> frames;
+    std::vector<CallFrame> frames;
+    size_t frame_count = 0;
   };
   ExecutionState saveState() const;
   void restoreState(const ExecutionState &state);
@@ -136,7 +138,8 @@ private:
   void processPendingCalls();
   BytecodeValue callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args);
   void executeInstruction(const Instruction &instruction);
-  void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
+  void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
+              bool advance_caller_ip = true);
   void doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);  // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);

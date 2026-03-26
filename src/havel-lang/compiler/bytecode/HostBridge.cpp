@@ -216,6 +216,12 @@ void HostBridge::install() {
   registerAnyMethod("map");
   registerAnyMethod("reduce");
   registerAnyMethod("foreach");
+  registerAnyMethod("send");
+  registerAnyMethod("pause");
+  registerAnyMethod("resume");
+  registerAnyMethod("stop");
+  registerAnyMethod("cancel");
+  registerAnyMethod("running");
 
   // Array methods (for any.* dispatch fallback)
   options_.host_functions["array.len"] = [this](const std::vector<BytecodeValue>& args) {

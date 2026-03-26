@@ -170,14 +170,13 @@ void registerArrayModule(VMApi &api) {
           throw std::runtime_error("array.map() first argument must be array");
 
         auto arrRef = std::get<ArrayRef>(args[0]);
+        const auto &mapper = args[1];
         size_t len = api.getArrayLength(args[0]);
 
         auto result = api.makeArray();
         for (size_t i = 0; i < len; ++i) {
           auto val = api.getArrayValue(arrRef, i);
-          // Note: This is a simplified map - real implementation would need
-          // function calling
-          api.push(result, val);
+          api.push(result, api.callFunction(mapper, {val}));
         }
         return BytecodeValue(result);
       });
@@ -192,13 +191,15 @@ void registerArrayModule(VMApi &api) {
                                "array.filter() first argument must be array");
 
                          auto arrRef = std::get<ArrayRef>(args[0]);
+                         const auto &predicate = args[1];
                          size_t len = api.getArrayLength(args[0]);
 
                          auto result = api.makeArray();
                          for (size_t i = 0; i < len; ++i) {
                            auto val = api.getArrayValue(arrRef, i);
-                           // Simplified filter - include all non-null values
-                           if (!std::holds_alternative<std::nullptr_t>(val)) {
+                           auto keep = api.callFunction(predicate, {val});
+                           if (std::holds_alternative<bool>(keep) &&
+                               std::get<bool>(keep)) {
                              api.push(result, val);
                            }
                          }

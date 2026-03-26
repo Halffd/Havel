@@ -4,10 +4,12 @@
 #include "havel-lang/parser/Parser.h"
 
 #include <cstdint>
+#include <deque>
 #include <exception>
 #include <iostream>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -237,6 +239,270 @@ int runCase(const std::string &name, const std::string &source, int64_t expected
     if (!result.snapshot.artifact_path.empty()) {
       std::cout << "[SNAPSHOT] " << name << ": " << result.snapshot.artifact_path
                 << std::endl;
+    }
+
+    std::cout << "[PASS] " << name << std::endl;
+    return 0;
+  } catch (const std::exception &e) {
+    std::cerr << "[FAIL] " << name << ": exception: " << e.what()
+              << std::endl;
+    return 1;
+  }
+}
+
+int runAsyncCase(const std::string &name, const std::string &source,
+                 int64_t expected, bool dump_bytecode,
+                 const std::string &snapshot_dir) {
+  try {
+    if (dump_bytecode) {
+      dumpBytecode(name, source);
+    }
+
+    havel::compiler::PipelineOptions options;
+    options.compile_unit_name = name;
+    options.snapshot_dir = snapshot_dir;
+    options.write_snapshot_artifact = !snapshot_dir.empty();
+    options.host_global_names.insert("async");
+    options.host_global_names.insert("thread");
+    options.host_global_names.insert("interval");
+    options.host_global_names.insert("timeout");
+
+    havel::compiler::VM *vm_ptr = nullptr;
+    uint64_t next_task_id = 1;
+    std::unordered_map<std::string, BytecodeValue> task_results;
+    std::unordered_map<std::string, std::deque<BytecodeValue>> channels;
+    std::unordered_map<std::string, BytecodeValue> thread_callbacks;
+    std::unordered_map<std::string, bool> thread_running;
+    std::unordered_map<std::string, bool> thread_paused;
+    std::unordered_map<std::string, BytecodeValue> interval_callbacks;
+    std::unordered_map<std::string, bool> interval_running;
+    std::unordered_map<std::string, bool> interval_paused;
+    std::unordered_map<std::string, BytecodeValue> timeout_callbacks;
+    std::unordered_map<std::string, bool> timeout_running;
+
+    options.vm_setup = [&](havel::compiler::VM &vm) { vm_ptr = &vm; };
+
+    options.host_functions["async.run"] =
+        [&](const std::vector<BytecodeValue> &args) {
+          if (!vm_ptr) {
+            throw std::runtime_error("async.run vm unavailable");
+          }
+          if (args.empty()) {
+            throw std::runtime_error("async.run requires callback");
+          }
+          std::string task_id = "task-" + std::to_string(next_task_id++);
+          task_results[task_id] = vm_ptr->call(args[0], {});
+          return BytecodeValue(task_id);
+        };
+    options.host_functions["async.await"] =
+        [&](const std::vector<BytecodeValue> &args) {
+          if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+            throw std::runtime_error("async.await requires task id");
+          }
+          const auto &task_id = std::get<std::string>(args[0]);
+          auto it = task_results.find(task_id);
+          if (it == task_results.end()) {
+            return BytecodeValue(nullptr);
+          }
+          return it->second;
+        };
+    options.host_functions["async.channel"] =
+        [&](const std::vector<BytecodeValue> &args) {
+          if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+            throw std::runtime_error("async.channel requires name");
+          }
+          channels[std::get<std::string>(args[0])];
+          return BytecodeValue(true);
+        };
+    options.host_functions["async.send"] =
+        [&](const std::vector<BytecodeValue> &args) {
+          if (args.size() < 2 || !std::holds_alternative<std::string>(args[0])) {
+            throw std::runtime_error("async.send requires name + value");
+          }
+          channels[std::get<std::string>(args[0])].push_back(args[1]);
+          return BytecodeValue(true);
+        };
+    options.host_functions["async.receive"] =
+        [&](const std::vector<BytecodeValue> &args) {
+          if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+            throw std::runtime_error("async.receive requires name");
+          }
+          auto &queue = channels[std::get<std::string>(args[0])];
+          if (queue.empty()) {
+            return BytecodeValue(nullptr);
+          }
+          auto value = queue.front();
+          queue.pop_front();
+          return value;
+        };
+    options.host_functions["async.tryReceive"] =
+        options.host_functions["async.receive"];
+
+    options.host_functions["thread"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty()) {
+        throw std::runtime_error("thread requires callback");
+      }
+      std::string id = "thread-" + std::to_string(next_task_id++);
+      thread_callbacks[id] = args[0];
+      thread_running[id] = true;
+      thread_paused[id] = false;
+      auto obj = vm_ptr->createHostObject();
+      vm_ptr->setHostObjectField(obj, "__kind", BytecodeValue(std::string("thread")));
+      vm_ptr->setHostObjectField(obj, "__id", BytecodeValue(id));
+      return BytecodeValue(obj);
+    };
+    options.host_functions["thread.send"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.size() < 2 || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) {
+        return BytecodeValue(false);
+      }
+      auto obj = std::get<havel::compiler::ObjectRef>(args[0]);
+      auto idv = vm_ptr->getHostObjectField(obj, "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      const auto &id = std::get<std::string>(idv);
+      if (!thread_running[id] || thread_paused[id]) return BytecodeValue(false);
+      (void)vm_ptr->call(thread_callbacks[id], {args[1]});
+      return BytecodeValue(true);
+    };
+    options.host_functions["thread.pause"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      thread_paused[std::get<std::string>(idv)] = true;
+      return BytecodeValue(true);
+    };
+    options.host_functions["thread.resume"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      thread_paused[std::get<std::string>(idv)] = false;
+      return BytecodeValue(true);
+    };
+    options.host_functions["thread.stop"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      thread_running[std::get<std::string>(idv)] = false;
+      return BytecodeValue(true);
+    };
+    options.host_functions["thread.running"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      return BytecodeValue(thread_running[std::get<std::string>(idv)]);
+    };
+
+    options.host_functions["interval"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.size() < 2) throw std::runtime_error("interval requires delay + callback");
+      std::string id = "interval-" + std::to_string(next_task_id++);
+      interval_callbacks[id] = args[1];
+      interval_running[id] = true;
+      interval_paused[id] = false;
+      (void)vm_ptr->call(interval_callbacks[id], {});
+      auto obj = vm_ptr->createHostObject();
+      vm_ptr->setHostObjectField(obj, "__kind", BytecodeValue(std::string("interval")));
+      vm_ptr->setHostObjectField(obj, "__id", BytecodeValue(id));
+      return BytecodeValue(obj);
+    };
+    options.host_functions["interval.pause"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      interval_paused[std::get<std::string>(idv)] = true;
+      return BytecodeValue(true);
+    };
+    options.host_functions["interval.resume"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      interval_paused[std::get<std::string>(idv)] = false;
+      if (interval_running[std::get<std::string>(idv)]) {
+        (void)vm_ptr->call(interval_callbacks[std::get<std::string>(idv)], {});
+      }
+      return BytecodeValue(true);
+    };
+    options.host_functions["interval.stop"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      interval_running[std::get<std::string>(idv)] = false;
+      return BytecodeValue(true);
+    };
+
+    options.host_functions["timeout"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.size() < 2) throw std::runtime_error("timeout requires delay + callback");
+      std::string id = "timeout-" + std::to_string(next_task_id++);
+      timeout_callbacks[id] = args[1];
+      timeout_running[id] = true;
+      (void)vm_ptr->call(timeout_callbacks[id], {});
+      timeout_running[id] = false;
+      auto obj = vm_ptr->createHostObject();
+      vm_ptr->setHostObjectField(obj, "__kind", BytecodeValue(std::string("timeout")));
+      vm_ptr->setHostObjectField(obj, "__id", BytecodeValue(id));
+      return BytecodeValue(obj);
+    };
+    options.host_functions["timeout.cancel"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto idv = vm_ptr->getHostObjectField(std::get<havel::compiler::ObjectRef>(args[0]), "__id");
+      if (!std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      timeout_running[std::get<std::string>(idv)] = false;
+      return BytecodeValue(true);
+    };
+
+    options.host_functions["object.send"] = options.host_functions["thread.send"];
+    options.host_functions["object.pause"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto obj = std::get<havel::compiler::ObjectRef>(args[0]);
+      auto kind = vm_ptr->getHostObjectField(obj, "__kind");
+      if (!std::holds_alternative<std::string>(kind)) return BytecodeValue(false);
+      if (std::get<std::string>(kind) == "thread") return options.host_functions["thread.pause"](args);
+      if (std::get<std::string>(kind) == "interval") return options.host_functions["interval.pause"](args);
+      return BytecodeValue(false);
+    };
+    options.host_functions["object.resume"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto obj = std::get<havel::compiler::ObjectRef>(args[0]);
+      auto kind = vm_ptr->getHostObjectField(obj, "__kind");
+      if (!std::holds_alternative<std::string>(kind)) return BytecodeValue(false);
+      if (std::get<std::string>(kind) == "thread") return options.host_functions["thread.resume"](args);
+      if (std::get<std::string>(kind) == "interval") return options.host_functions["interval.resume"](args);
+      return BytecodeValue(false);
+    };
+    options.host_functions["object.stop"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto obj = std::get<havel::compiler::ObjectRef>(args[0]);
+      auto kind = vm_ptr->getHostObjectField(obj, "__kind");
+      if (!std::holds_alternative<std::string>(kind)) return BytecodeValue(false);
+      if (std::get<std::string>(kind) == "thread") return options.host_functions["thread.stop"](args);
+      if (std::get<std::string>(kind) == "interval") return options.host_functions["interval.stop"](args);
+      return BytecodeValue(false);
+    };
+    options.host_functions["object.cancel"] = options.host_functions["timeout.cancel"];
+    options.host_functions["object.running"] = [&](const std::vector<BytecodeValue> &args) {
+      if (!vm_ptr || args.empty() || !std::holds_alternative<havel::compiler::ObjectRef>(args[0])) return BytecodeValue(false);
+      auto obj = std::get<havel::compiler::ObjectRef>(args[0]);
+      auto kind = vm_ptr->getHostObjectField(obj, "__kind");
+      auto idv = vm_ptr->getHostObjectField(obj, "__id");
+      if (!std::holds_alternative<std::string>(kind) || !std::holds_alternative<std::string>(idv)) return BytecodeValue(false);
+      const auto &kindv = std::get<std::string>(kind);
+      const auto &id = std::get<std::string>(idv);
+      if (kindv == "thread") return BytecodeValue(thread_running[id]);
+      if (kindv == "interval") return BytecodeValue(interval_running[id]);
+      if (kindv == "timeout") return BytecodeValue(timeout_running[id]);
+      return BytecodeValue(false);
+    };
+    options.host_functions["any.send"] = options.host_functions["object.send"];
+    options.host_functions["any.pause"] = options.host_functions["object.pause"];
+    options.host_functions["any.resume"] = options.host_functions["object.resume"];
+    options.host_functions["any.stop"] = options.host_functions["object.stop"];
+    options.host_functions["any.cancel"] = options.host_functions["object.cancel"];
+    options.host_functions["any.running"] = options.host_functions["object.running"];
+
+    const auto result =
+        havel::compiler::runBytecodePipeline(source, "__main__", options);
+    if (!equalsInt(result.return_value, expected)) {
+      std::cerr << "[FAIL] " << name << ": expected " << expected
+                << " but got non-matching result" << std::endl;
+      return 1;
     }
 
     std::cout << "[PASS] " << name << std::endl;
@@ -568,6 +834,106 @@ fn outer(x) {
 
 return outer(21)
 )havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("hof-named-top-level-function", R"havel(
+fn noise(v) {
+    return v + 100
+}
+
+fn double(v) {
+    return v * 2
+}
+
+let nums = [1, 2, 3]
+let out = nums.map(double)
+return out[2]
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  failures += runCase("lambda-in-call", R"havel(
+let nums = [1, 2, 3]
+let out = nums.map((x) => x * 3)
+return out[1]
+)havel", 6, dump_bytecode, snapshot_dir);
+
+  failures += runCase("method-chaining-array-hof", R"havel(
+let nums = [1, 2, 3, 4]
+return nums.map((x) => x * 2).filter((x) => x > 4).reduce((a, b) => a + b, 0)
+)havel", 14, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("async-run-await-closure", R"havel(
+fn makeTask(seed) {
+    fn run() {
+        return seed + 1
+    }
+    return run
+}
+
+let task = async.run(makeTask(41))
+return await task
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("async-channel-closure-value", R"havel(
+async.channel("jobs")
+async.send("jobs", fn(x) { return x + 1 })
+let cb = async.receive("jobs")
+return cb(41)
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("thread-send", R"havel(
+let worker = thread(fn(msg) { return msg + 1 })
+worker.pause()
+worker.resume()
+worker.send(41)
+if worker.running() {
+    return 1
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("thread-block-sugar", R"havel(
+let value = 0
+let worker = thread {
+    value += 1
+}
+worker.send(0)
+return value
+)havel", 1, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("interval-timeout-controls", R"havel(
+let hits = 0
+let timer = interval(100, fn() { hits += 1 })
+timer.pause()
+timer.resume()
+timer.stop()
+let t = timeout(100, fn() { hits += 10 })
+t.cancel()
+return hits
+)havel", 11, dump_bytecode, snapshot_dir);
+
+  failures += runAsyncCase("interval-timeout-block-sugar", R"havel(
+let hits = 0
+let i = interval 100 {
+    hits += 1
+}
+i.stop()
+let t = timeout 10 {
+    hits += 10
+}
+t.cancel()
+return hits
+)havel", 11, dump_bytecode, snapshot_dir);
+
+  failures += runCase("const-tuple-destructure", R"havel(
+const (a, b, c) = (5, 7, 9)
+let total = a + b + c
+return total
+)havel", 21, dump_bytecode, snapshot_dir);
+
+  failures += runCase("struct-vm-basic", R"havel(
+struct Point { x, y }
+let p = Point(10, 32)
+return struct.get(p, "y")
+)havel", 32, dump_bytecode, snapshot_dir);
 
   failures += runCase("closure-return", R"havel(
 fn makeGetter(v) {

@@ -113,6 +113,15 @@ private:
   const CallFrame &currentFrame() const;
   CallFrame &currentFrame();
   BytecodeValue getConstant(uint32_t index);
+
+  // State snapshot for re-entrant calls (HOF callbacks)
+  struct ExecutionState {
+    std::stack<BytecodeValue> stack;
+    std::vector<BytecodeValue> locals;
+    std::vector<CallFrame> frames;
+  };
+  ExecutionState saveState() const;
+  void restoreState(const ExecutionState &state);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
   void runDispatchLoop(size_t stop_frame_depth);

@@ -286,17 +286,17 @@ template <typename T> T VM::getValue(const BytecodeValue &value) {
 }
 
 const VM::CallFrame &VM::currentFrame() const {
-  if (frames.empty()) {
+  if (frame_count_ == 0) {
     throw std::runtime_error("No active call frame");
   }
-  return frames.back();
+  return frame_arena_[frame_count_ - 1];
 }
 
 VM::CallFrame &VM::currentFrame() {
-  if (frames.empty()) {
+  if (frame_count_ == 0) {
     throw std::runtime_error("No active call frame");
   }
-  return frames.back();
+  return frame_arena_[frame_count_ - 1];
 }
 
 BytecodeValue VM::getConstant(uint32_t index) {
@@ -307,14 +307,16 @@ VM::ExecutionState VM::saveState() const {
   ExecutionState state;
   state.stack = stack;
   state.locals = locals;
-  state.frames = frames;
+  state.frames = frame_arena_;
+  state.frame_count = frame_count_;
   return state;
 }
 
 void VM::restoreState(const ExecutionState &state) {
   stack = state.stack;
   locals = state.locals;
-  frames = state.frames;
+  frame_arena_ = state.frames;
+  frame_count_ = state.frame_count;
 }
 
 void VM::scheduleCall(const BytecodeValue &fn, const std::vector<BytecodeValue> &args, BytecodeValue &result, bool &completed) {
@@ -324,7 +326,7 @@ void VM::scheduleCall(const BytecodeValue &fn, const std::vector<BytecodeValue> 
 void VM::processPendingCalls() {
   // Process all pending calls - just doCall, let outer loop execute
   for (auto &call : pending_calls) {
-    doCall(call.fn, call.args);
+    doCall(call.fn, call.args, false);
   }
   pending_calls.clear();
 }
@@ -333,23 +335,11 @@ void VM::processPendingCalls() {
 // Minimal state isolation: just save/restore stack size
 BytecodeValue VM::callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args) {
   size_t savedStackSize = stack.size();
-  size_t savedFrameCount = frames.size();
-  std::vector<uint32_t> savedInstructionPointers;
-  savedInstructionPointers.reserve(savedFrameCount);
-  for (size_t i = 0; i < savedFrameCount; ++i) {
-    savedInstructionPointers.push_back(frames[i].ip);
-  }
+  size_t savedFrameCount = frame_count_;
   
   // Execute callback
-  doCall(fn, args);
+  doCall(fn, args, false);
   runDispatchLoop(savedFrameCount);
-
-  // Trampoline safety: callback execution must never advance caller frames.
-  // Restore caller IPs in case nested dispatch touched them.
-  for (size_t i = 0; i < savedInstructionPointers.size() && i < frames.size();
-       ++i) {
-    frames[i].ip = savedInstructionPointers[i];
-  }
   
   // Get result from stack top
   BytecodeValue result;
@@ -1113,7 +1103,7 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
     stack.pop();
   }
   locals.clear();
-  frames.clear();
+  frame_count_ = 0;
   heap_.reset();
   struct_type_ids_by_name_.clear();
   open_upvalues.clear();
@@ -1121,7 +1111,12 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
   opcode_counts_.fill(0);
   executed_instructions_ = 0;
 
-  frames.push_back(CallFrame{entry, 0, 0, 0});
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
+  }
+  frame_count_++;
   locals.resize(entry->local_count);
 
   if (!args.empty()) {
@@ -1154,14 +1149,14 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
 }
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
-  while (frames.size() > stop_frame_depth) {
+  while (frame_count_ > stop_frame_depth) {
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!
     // doCall() may cause vector reallocation, invalidating all references/indices.
-    size_t active_frame_idx = frames.size() - 1;
+    size_t active_frame_idx = frame_count_ - 1;
     
     // Capture frame data by value - do NOT keep references!
-    const auto* function = frames[active_frame_idx].function;
-    uint32_t ip = frames[active_frame_idx].ip;
+    const auto* function = frame_arena_[active_frame_idx].function;
+    uint32_t ip = frame_arena_[active_frame_idx].ip;
     uint32_t previous_ip = ip;
 
     if (ip >= function->instructions.size()) {
@@ -1191,10 +1186,10 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
     processPendingCalls();
 
     // CRITICAL: Re-fetch frame AFTER executeInstruction (vector may have reallocated)
-    if (frames.size() > stop_frame_depth) {
-      active_frame_idx = frames.size() - 1;
-      if (frames[active_frame_idx].ip == previous_ip) {
-        frames[active_frame_idx].ip++;
+    if (frame_count_ > stop_frame_depth) {
+      active_frame_idx = frame_count_ - 1;
+      if (frame_arena_[active_frame_idx].ip == previous_ip) {
+        frame_arena_[active_frame_idx].ip++;
       }
     }
   }
@@ -1207,8 +1202,8 @@ BytecodeValue VM::call(const BytecodeValue &callee_value,
         "VM::call requires an active bytecode chunk (run execute first)");
   }
 
-  const size_t base_depth = frames.size();
-  doCall(callee_value, args);
+  const size_t base_depth = frame_count_;
+  doCall(callee_value, args, false);
   runDispatchLoop(base_depth);
 
   if (stack.empty()) {
@@ -1221,7 +1216,8 @@ BytecodeValue VM::call(const BytecodeValue &callee_value,
 
 void VM::setDebugMode(bool enabled) { debug_mode = enabled; }
 
-void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
+void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
+                bool advance_caller_ip) {
   if (std::holds_alternative<HostFunctionRef>(callee_value)) {
     const auto &name = std::get<HostFunctionRef>(callee_value).name;
     auto it = host_functions.find(name);
@@ -1232,7 +1228,7 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
     return;
   }
 
-  if (frames.size() >= max_call_depth_) {
+  if (frame_count_ >= max_call_depth_) {
     throw std::runtime_error("Stack overflow: maximum call depth " +
                              std::to_string(max_call_depth_) + " reached");
   }
@@ -1283,13 +1279,18 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   }
 
   // Advance caller IP now so RETURN resumes at the next instruction.
-  if (!frames.empty()) {
+  if (advance_caller_ip && frame_count_ > 0) {
     currentFrame().ip++;
   }
 
   size_t base = locals.size();
   locals.resize(base + callee->local_count, nullptr);
-  frames.push_back(CallFrame{callee, 0, base, closure_id});
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{callee, 0, base, closure_id});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{callee, 0, base, closure_id};
+  }
+  frame_count_++;
 
   for (uint32_t i = 0; i < args.size(); i++) {
     locals[base + i] = std::move(args[i]);
@@ -1407,8 +1408,9 @@ std::vector<BytecodeValue> VM::stackValuesForRoots() const {
 
 std::vector<uint32_t> VM::activeClosureIdsForRoots() const {
   std::vector<uint32_t> closure_ids;
-  closure_ids.reserve(frames.size());
-  for (const auto &frame : frames) {
+  closure_ids.reserve(frame_count_);
+  for (size_t i = 0; i < frame_count_; ++i) {
+    const auto &frame = frame_arena_[i];
     if (frame.closure_id != 0) {
       closure_ids.push_back(frame.closure_id);
     }
@@ -1462,7 +1464,7 @@ void VM::executeInstruction(const Instruction &instruction) {
   };
 
   auto doReturn = [this, &pop, &push]() {
-    if (frames.empty()) {
+    if (frame_count_ == 0) {
       return;
     }
 
@@ -1471,8 +1473,8 @@ void VM::executeInstruction(const Instruction &instruction) {
       ret = pop();
     }
 
-    auto finished = frames.back();
-    frames.pop_back();
+    auto finished = frame_arena_[frame_count_ - 1];
+    frame_count_--;
 
     closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
                        static_cast<uint32_t>(locals.size()));

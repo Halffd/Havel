@@ -114,6 +114,13 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
   auto &scope = ctx.scopes.back();
   auto it = scope.find(name);
   if (it != scope.end()) {
+    // Duplicate declaration in same scope - report error with source location
+    std::string msg = "Duplicate declaration: '" + name + "' already defined in this scope";
+    if (declaration) {
+      msg += " at " + std::to_string(declaration->line) + ":" + 
+             std::to_string(declaration->column);
+    }
+    errors_.push_back(msg);
     return it->second.slot;
   }
 

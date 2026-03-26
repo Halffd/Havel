@@ -62,7 +62,8 @@ void Parser::synchronizeTo(havel::TokenType type) {
 
 [[noreturn]] void Parser::failAt(const havel::Token &token,
                                  const std::string &message) {
-  throw havel::parser::ParseError(token.line, token.column, message);
+  throw havel::parser::ParseError(token.line, token.column, message,
+                                  token.length == 0 ? 1 : token.length);
 }
 
 const havel::Token& Parser::at(size_t offset) const {

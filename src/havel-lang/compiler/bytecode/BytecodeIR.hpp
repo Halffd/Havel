@@ -64,6 +64,10 @@ enum class OpCode : uint8_t {
   TAIL_CALL,  // Tail call optimization - reuse current frame
   CALL_HOST,
   RETURN,
+  TRY_ENTER,      // Install exception handler (catch ip)
+  TRY_EXIT,       // Remove active exception handler
+  LOAD_EXCEPTION, // Push current exception object
+  THROW,          // Throw exception object
 
   // Function operations
   DEFINE_FUNC,

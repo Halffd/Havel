@@ -77,11 +77,17 @@ private:
     std::vector<std::shared_ptr<GCHeap::UpvalueCell>> upvalues;
   };
 
+  struct TryHandler {
+    uint32_t catch_ip = 0;
+    size_t stack_depth = 0;
+  };
+
   struct CallFrame {
     const BytecodeFunction *function = nullptr;
     size_t ip = 0;
     size_t locals_base = 0;
     uint32_t closure_id = 0;
+    std::vector<TryHandler> try_stack;
   };
 
   std::stack<BytecodeValue> stack;
@@ -94,6 +100,8 @@ private:
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
+  bool has_current_exception_ = false;
+  BytecodeValue current_exception_ = nullptr;
 
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> function
@@ -142,6 +150,7 @@ private:
               bool advance_caller_ip = true);
   void doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);  // TCO
   void runDispatchLoop(size_t stop_frame_depth);
+  bool handleScriptThrow(const BytecodeValue &value);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
   std::vector<BytecodeValue> stackValuesForRoots() const;
   std::vector<uint32_t> activeClosureIdsForRoots() const;

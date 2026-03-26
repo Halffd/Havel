@@ -223,6 +223,83 @@ void HostBridge::install() {
   registerAnyMethod("cancel");
   registerAnyMethod("running");
 
+  // Generic iterable HOFs (array/string/object/set/range/tuple-as-array)
+  auto truthy = [](const BytecodeValue &value) -> bool {
+    if (std::holds_alternative<std::nullptr_t>(value)) return false;
+    if (std::holds_alternative<bool>(value)) return std::get<bool>(value);
+    if (std::holds_alternative<int64_t>(value)) return std::get<int64_t>(value) != 0;
+    if (std::holds_alternative<double>(value)) return std::get<double>(value) != 0.0;
+    if (std::holds_alternative<std::string>(value)) return !std::get<std::string>(value).empty();
+    return true;
+  };
+
+  options_.host_functions["any.map"] = [this](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) return BytecodeValue(nullptr);
+    auto out = ctx_->vm->createHostArray();
+    auto iter = ctx_->vm->createIterator(args[0]);
+    while (true) {
+      auto step = ctx_->vm->iteratorNext(iter);
+      if (!std::holds_alternative<ObjectRef>(step)) break;
+      auto stepObj = std::get<ObjectRef>(step);
+      auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+      if (std::holds_alternative<bool>(done) && std::get<bool>(done)) break;
+      auto value = ctx_->vm->getHostObjectField(stepObj, "value");
+      auto mapped = ctx_->vm->callFunction(args[1], {value});
+      ctx_->vm->pushHostArrayValue(out, mapped);
+    }
+    return BytecodeValue(out);
+  };
+
+  options_.host_functions["any.filter"] = [this, truthy](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) return BytecodeValue(nullptr);
+    auto out = ctx_->vm->createHostArray();
+    auto iter = ctx_->vm->createIterator(args[0]);
+    while (true) {
+      auto step = ctx_->vm->iteratorNext(iter);
+      if (!std::holds_alternative<ObjectRef>(step)) break;
+      auto stepObj = std::get<ObjectRef>(step);
+      auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+      if (std::holds_alternative<bool>(done) && std::get<bool>(done)) break;
+      auto value = ctx_->vm->getHostObjectField(stepObj, "value");
+      auto keep = ctx_->vm->callFunction(args[1], {value});
+      if (truthy(keep)) {
+        ctx_->vm->pushHostArrayValue(out, value);
+      }
+    }
+    return BytecodeValue(out);
+  };
+
+  options_.host_functions["any.reduce"] = [this](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 3) return BytecodeValue(nullptr);
+    BytecodeValue acc = args[2];
+    auto iter = ctx_->vm->createIterator(args[0]);
+    while (true) {
+      auto step = ctx_->vm->iteratorNext(iter);
+      if (!std::holds_alternative<ObjectRef>(step)) break;
+      auto stepObj = std::get<ObjectRef>(step);
+      auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+      if (std::holds_alternative<bool>(done) && std::get<bool>(done)) break;
+      auto value = ctx_->vm->getHostObjectField(stepObj, "value");
+      acc = ctx_->vm->callFunction(args[1], {acc, value});
+    }
+    return acc;
+  };
+
+  options_.host_functions["any.foreach"] = [this](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2) return BytecodeValue(nullptr);
+    auto iter = ctx_->vm->createIterator(args[0]);
+    while (true) {
+      auto step = ctx_->vm->iteratorNext(iter);
+      if (!std::holds_alternative<ObjectRef>(step)) break;
+      auto stepObj = std::get<ObjectRef>(step);
+      auto done = ctx_->vm->getHostObjectField(stepObj, "done");
+      if (std::holds_alternative<bool>(done) && std::get<bool>(done)) break;
+      auto value = ctx_->vm->getHostObjectField(stepObj, "value");
+      (void)ctx_->vm->callFunction(args[1], {value});
+    }
+    return BytecodeValue(nullptr);
+  };
+
   // Array methods (for any.* dispatch fallback)
   options_.host_functions["array.len"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<ArrayRef>(args[0])) return BytecodeValue(nullptr);

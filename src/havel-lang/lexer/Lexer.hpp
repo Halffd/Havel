@@ -29,11 +29,13 @@ struct CompilerError {
 
 class LexError : public std::runtime_error {
 public:
-  LexError(size_t line, size_t column, const std::string &message)
-      : std::runtime_error(message), line(line), column(column) {}
+  LexError(size_t line, size_t column, const std::string &message,
+           size_t length = 1)
+      : std::runtime_error(message), line(line), column(column), length(length) {}
 
   size_t line;
   size_t column;
+  size_t length;
 };
 
 enum class TokenType {
@@ -145,16 +147,20 @@ struct Token {
   std::string raw;
   size_t line;
   size_t column;
+  size_t length;
 
   Token(const std::string &value, TokenType type, const std::string &raw,
-        size_t line, size_t column)
-      : value(value), type(type), raw(raw), line(line), column(column) {}
+        size_t line, size_t column, size_t length = 0)
+      : value(value), type(type), raw(raw), line(line), column(column),
+        length(length == 0 ? (raw.empty() ? value.length() : raw.length())
+                           : length) {}
 
   std::string toString() const {
     return "Token(type=" + std::to_string(static_cast<int>(type)) +
            ", value=\"" + value + "\", raw=\"" + raw +
            "\", line=" + std::to_string(line) +
-           ", column=" + std::to_string(column) + ")";
+           ", column=" + std::to_string(column) +
+           ", length=" + std::to_string(length) + ")";
   }
 };
 

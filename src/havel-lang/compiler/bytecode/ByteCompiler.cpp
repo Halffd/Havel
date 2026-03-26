@@ -517,6 +517,21 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     }
     break;
 
+  case ast::NodeType::TryExpression:
+    compileTryStatement(static_cast<const ast::TryExpression &>(statement));
+    break;
+
+  case ast::NodeType::ThrowStatement: {
+    const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
+    if (throw_stmt.value) {
+      compileExpression(*throw_stmt.value);
+    } else {
+      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    }
+    emit(OpCode::THROW);
+    break;
+  }
+
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
@@ -556,6 +571,62 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   default:
     throw std::runtime_error("Unsupported statement in bytecode compiler: " +
                              statement.toString());
+  }
+}
+
+void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
+  if (!statement.tryBody) {
+    throw std::runtime_error("try statement missing body");
+  }
+
+  const uint32_t try_enter_index =
+      static_cast<uint32_t>(current_function->instructions.size());
+  emit(OpCode::TRY_ENTER, static_cast<uint32_t>(0)); // patched later
+
+  compileStatement(*statement.tryBody);
+  emit(OpCode::TRY_EXIT);
+
+  if (statement.finallyBlock) {
+    compileStatement(*statement.finallyBlock);
+  }
+  const uint32_t jump_after_try = emitJump(OpCode::JUMP);
+
+  const uint32_t catch_ip =
+      static_cast<uint32_t>(current_function->instructions.size());
+  if (try_enter_index >= current_function->instructions.size()) {
+    throw std::runtime_error("Invalid TRY_ENTER patch index");
+  }
+  current_function->instructions[try_enter_index].operands[0] = catch_ip;
+
+  std::vector<uint32_t> end_jumps;
+
+  if (statement.catchBody) {
+    if (statement.catchVariable) {
+      const uint32_t catch_slot = declarationSlot(*statement.catchVariable);
+      reserveLocalSlot(catch_slot);
+      emit(OpCode::LOAD_EXCEPTION);
+      emit(OpCode::STORE_VAR, catch_slot);
+    }
+    compileStatement(*statement.catchBody);
+    if (statement.finallyBlock) {
+      compileStatement(*statement.finallyBlock);
+    }
+    end_jumps.push_back(emitJump(OpCode::JUMP));
+  } else if (statement.finallyBlock) {
+    const uint32_t exception_slot = next_local_index;
+    reserveLocalSlot(exception_slot);
+    emit(OpCode::LOAD_EXCEPTION);
+    emit(OpCode::STORE_VAR, exception_slot);
+    compileStatement(*statement.finallyBlock);
+    emit(OpCode::LOAD_VAR, exception_slot);
+    emit(OpCode::THROW);
+  }
+
+  const uint32_t end_ip =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(jump_after_try, end_ip);
+  for (const uint32_t jump : end_jumps) {
+    patchJump(jump, end_ip);
   }
 }
 
@@ -1255,42 +1326,39 @@ void ByteCompiler::compileCallExpression(
       compileExpression(*member.object);
       if (property->symbol == "map") {
         if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error("array.map() requires 1 callback argument");
+          throw std::runtime_error("map() requires 1 callback argument");
         }
         compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST,
-             std::vector<BytecodeValue>{"array.map", static_cast<uint32_t>(2)});
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.map",
+                                                           static_cast<uint32_t>(2)});
         return;
       }
       if (property->symbol == "filter") {
         if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error(
-              "array.filter() requires 1 callback argument");
+          throw std::runtime_error("filter() requires 1 callback argument");
         }
         compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.filter",
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.filter",
                                                            static_cast<uint32_t>(2)});
         return;
       }
       if (property->symbol == "reduce") {
         if (expression.args.size() != 2 || !expression.args[0] ||
             !expression.args[1]) {
-          throw std::runtime_error(
-              "array.reduce() requires callback and initial value");
+          throw std::runtime_error("reduce() requires callback and initial value");
         }
         compileExpression(*expression.args[0]);
         compileExpression(*expression.args[1]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.reduce",
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.reduce",
                                                            static_cast<uint32_t>(3)});
         return;
       }
       if (property->symbol == "foreach") {
         if (expression.args.size() != 1 || !expression.args[0]) {
-          throw std::runtime_error(
-              "array.foreach() requires 1 callback argument");
+          throw std::runtime_error("foreach() requires 1 callback argument");
         }
         compileExpression(*expression.args[0]);
-        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.foreach",
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.foreach",
                                                            static_cast<uint32_t>(2)});
         return;
       }
@@ -1303,7 +1371,7 @@ void ByteCompiler::compileCallExpression(
       }
       emit(OpCode::CALL_HOST,
            std::vector<BytecodeValue>{
-               "array.sort", static_cast<uint32_t>(expression.args.size() + 1)});
+               "any.sort", static_cast<uint32_t>(expression.args.size() + 1)});
       return;
     }
 

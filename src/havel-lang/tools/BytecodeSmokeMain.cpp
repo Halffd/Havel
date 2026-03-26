@@ -79,6 +79,14 @@ std::string opcodeName(havel::compiler::OpCode opcode) {
     return "CALL_HOST";
   case OpCode::RETURN:
     return "RETURN";
+  case OpCode::TRY_ENTER:
+    return "TRY_ENTER";
+  case OpCode::TRY_EXIT:
+    return "TRY_EXIT";
+  case OpCode::LOAD_EXCEPTION:
+    return "LOAD_EXCEPTION";
+  case OpCode::THROW:
+    return "THROW";
   case OpCode::CLOSURE:
     return "CLOSURE";
   case OpCode::ARRAY_NEW:
@@ -963,6 +971,55 @@ fn outer() {
 let f = outer()
 return f()
 )havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("try-catch-throw-object", R"havel(
+fn test() {
+    try {
+        throw {code: 41}
+    } catch (e) {
+        return e.code + 1
+    }
+}
+return test()
+)havel", 42, dump_bytecode, snapshot_dir);
+
+  failures += runCase("try-finally-runs", R"havel(
+let x = 0
+try {
+    x = 1
+} finally {
+    x += 1
+}
+return x
+)havel", 2, dump_bytecode, snapshot_dir);
+
+  failures += runCase("throw-across-frames", R"havel(
+fn inner() {
+    throw 7
+}
+fn outer() {
+    inner()
+    return 0
+}
+try {
+    return outer()
+} catch (e) {
+    return e
+}
+)havel", 7, dump_bytecode, snapshot_dir);
+
+  failures += runCase("iterable-hof-string-and-object", R"havel(
+let chars = "ab".map((c) => c)
+let keys = {a: 1, b: 2}.map((k) => k)
+if chars[0] == "a" {
+    if keys.find("a") >= 0 {
+        if keys.find("b") >= 0 {
+            return 1
+        }
+    }
+}
+return 0
+)havel", 1, dump_bytecode, snapshot_dir);
 
   failures += runCase("assignment-local", R"havel(
 let x = 1

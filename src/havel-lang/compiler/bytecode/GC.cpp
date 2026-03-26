@@ -207,9 +207,20 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       done = true;
       value = nullptr;
     } else {
-      // For objects, return just the key (like Python's for key in dict)
-      // Multi-variable iteration will extract key/value from the iterator result
-      value = iter->keys[iter->index++];
+      // For objects, return the value (not the key)
+      // Use object.keys()/values()/entries() for explicit control
+      auto *obj = object(std::get<ObjectRef>(iter->iterable).id);
+      if (obj && iter->index < iter->keys.size()) {
+        const auto& key = iter->keys[iter->index++];
+        auto it = obj->find(key);
+        if (it != obj->end()) {
+          value = it->second;
+        } else {
+          value = nullptr;
+        }
+      } else {
+        value = nullptr;
+      }
     }
   } else if (std::holds_alternative<SetRef>(iter->iterable)) {
     if (iter->index >= iter->keys.size()) {

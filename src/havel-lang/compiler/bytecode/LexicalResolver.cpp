@@ -396,9 +396,31 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::AssignmentExpression: {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
-    if (assignment.target) {
+    
+    // Handle assignment target - may be implicit declaration
+    if (assignment.target && assignment.target->kind == ast::NodeType::Identifier) {
+      const auto &ident = static_cast<const ast::Identifier &>(*assignment.target);
+      auto binding = resolveIdentifier(ident.symbol);
+      
+      if (!binding) {
+        // Implicit declaration on first assignment (Option C)
+        // Declare as local variable in current scope
+        uint32_t slot = declareLocal(ident.symbol, &ident, false);
+        // Record the binding so ByteCompiler can find it
+        ResolvedBinding newBinding;
+        newBinding.kind = ResolvedBindingKind::Local;
+        newBinding.slot = slot;
+        newBinding.name = ident.symbol;
+        noteIdentifierBinding(ident, newBinding);
+      } else {
+        // Variable exists, just note the binding
+        noteIdentifierBinding(ident, *binding);
+      }
+    } else if (assignment.target) {
       resolveExpression(*assignment.target);
     }
+    
+    // Resolve right side
     if (assignment.value) {
       resolveExpression(*assignment.value);
     }
@@ -556,6 +578,18 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
 
     if (builtins_.find(name) != builtins_.end()) {
       return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
+    }
+
+    // Check for implicitly declared global variables
+    if (!function_stack_.empty() && !function_stack_[0].scopes.empty()) {
+      for (size_t sc = function_stack_[0].scopes.size(); sc > 0; --sc) {
+        const auto &scope = function_stack_[0].scopes[sc - 1];
+        auto it = scope.find(name);
+        if (it != scope.end()) {
+          return ResolvedBinding{ResolvedBindingKind::Local, it->second.slot,
+                                 0, name, it->second.is_const};
+        }
+      }
     }
 
     return std::nullopt;

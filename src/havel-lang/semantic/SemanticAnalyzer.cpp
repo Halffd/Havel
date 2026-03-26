@@ -352,13 +352,13 @@ void SemanticAnalyzer::visitExpression(const ast::Expression& expr) {
         case ast::NodeType::Identifier: {
             const auto& ident = static_cast<const ast::Identifier&>(expr);
             const Symbol* sym = symbolTable_.lookup(ident.symbol);
-            
+
             if (!sym) {
-                if (mode_ == SemanticMode::Strict) {
-                    reportError(SemanticErrorKind::UndefinedVariable,
-                               "Undefined variable: " + ident.symbol,
-                               expr.line, expr.column);
-                }
+                // Reading undefined variable is always an error
+                // (implicit declaration only applies to assignments)
+                reportError(SemanticErrorKind::UndefinedVariable,
+                           "Undefined variable: " + ident.symbol,
+                           expr.line, expr.column);
             } else if (sym->kind == SymbolKind::Function) {
                 // Using function name without call - might be valid (function pointer)
                 // or error depending on context
@@ -548,17 +548,38 @@ void SemanticAnalyzer::validateAssignmentTarget(const ast::Expression& target) {
     // Rule 3: Prevent procedure name on left side of assignment
     if (target.kind == ast::NodeType::Identifier) {
         const auto& ident = static_cast<const ast::Identifier&>(target);
-        const Symbol* sym = symbolTable_.lookup(ident.symbol);
         
-        if (!sym) {
-            reportError(SemanticErrorKind::UndefinedVariable,
-                       "Undefined variable: " + ident.symbol,
-                       target.line, target.column);
-        } else if (sym->kind == SymbolKind::Function) {
+        // Check if variable exists in current scope (for implicit declaration)
+        const Symbol* currentScopeSym = symbolTable_.lookupInCurrentScope(ident.symbol);
+        
+        // Also check outer scopes (for reassignment of outer variables)
+        const Symbol* anyScopeSym = symbolTable_.lookup(ident.symbol);
+
+        if (!currentScopeSym) {
+            // Variable not in current scope - check if it's a function in outer scope
+            if (anyScopeSym && anyScopeSym->kind == SymbolKind::Function) {
+                reportError(SemanticErrorKind::InvalidAssignment,
+                           "Cannot assign to function '" + ident.symbol + "'",
+                           target.line, target.column);
+                return;
+            }
+            
+            // Implicit declaration on first assignment (Option C)
+            // Declare as mutable variable in current scope
+            SymbolAttributes attrs;
+            attrs.isMutable = true;
+            attrs.isInitialized = true;
+            attrs.line = target.line;
+            attrs.column = target.column;
+            
+            symbolTable_.define(ident.symbol, SymbolKind::Variable, 
+                               HavelType::any(), attrs);
+        } else if (currentScopeSym->kind == SymbolKind::Function) {
             reportError(SemanticErrorKind::InvalidAssignment,
                        "Cannot assign to function '" + ident.symbol + "'",
                        target.line, target.column);
         }
+        // else: variable exists in current scope, reassignment is OK
     }
 }
 

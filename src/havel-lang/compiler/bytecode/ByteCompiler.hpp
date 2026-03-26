@@ -83,6 +83,13 @@ private:
     void leaveFunction();
     void resetLocals();
 
+    // Tail call optimization - track tail position context
+    void enterTailPosition();
+    void exitTailPosition();
+    bool isInTailPosition() const;
+    bool wasTailCall() const;
+    void clearTailCallFlag();
+
     std::unique_ptr<BytecodeChunk> chunk;
     std::unique_ptr<BytecodeFunction> current_function;
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
@@ -174,6 +181,10 @@ private:
         "string", "array", "object", "type", "utility", "regex",
         "physics", "time", "math"
     };
+    
+    // Tail call optimization state
+    bool in_tail_position_ = false;
+    bool emitted_tail_call_ = false;
 };
 
 } // namespace havel::compiler

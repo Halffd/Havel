@@ -122,6 +122,18 @@ private:
   };
   ExecutionState saveState() const;
   void restoreState(const ExecutionState &state);
+  
+  // Callback queue for non-reentrant execution
+  struct PendingCall {
+    BytecodeValue fn;
+    std::vector<BytecodeValue> args;
+    BytecodeValue *result;  // Pointer to store result
+    bool *completed;        // Flag to signal completion
+  };
+  std::vector<PendingCall> pending_calls;
+  void scheduleCall(const BytecodeValue &fn, const std::vector<BytecodeValue> &args, BytecodeValue &result, bool &completed);
+  void processPendingCalls();
+  BytecodeValue callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
   void runDispatchLoop(size_t stop_frame_depth);

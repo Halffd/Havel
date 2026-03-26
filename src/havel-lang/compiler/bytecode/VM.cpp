@@ -313,6 +313,45 @@ void VM::restoreState(const ExecutionState &state) {
   frames = state.frames;
 }
 
+void VM::scheduleCall(const BytecodeValue &fn, const std::vector<BytecodeValue> &args, BytecodeValue &result, bool &completed) {
+  pending_calls.push_back({fn, args, &result, &completed});
+}
+
+void VM::processPendingCalls() {
+  // Process all pending calls - just doCall, let outer loop execute
+  for (auto &call : pending_calls) {
+    doCall(call.fn, call.args);
+  }
+  pending_calls.clear();
+}
+
+// Synchronous call for host functions - executes callback and returns result
+// Minimal state isolation: just save/restore stack size
+BytecodeValue VM::callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args) {
+  size_t savedStackSize = stack.size();
+  size_t savedFrameCount = frames.size();
+  
+  // Execute callback
+  doCall(fn, args);
+  runDispatchLoop(savedFrameCount);
+  
+  // Get result from stack top
+  BytecodeValue result;
+  if (stack.empty()) {
+    result = nullptr;
+  } else {
+    result = stack.top();
+    stack.pop();
+  }
+  
+  // Just ensure stack is at expected size
+  while (stack.size() > savedStackSize) {
+    stack.pop();
+  }
+  
+  return result;
+}
+
 void VM::registerHostFunction(const std::string &name,
                               BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
@@ -597,15 +636,8 @@ BytecodeValue VM::callFunction(const BytecodeValue &fn,
     return callHostFunction(fn, args);
   }
 
-  // VM Closure or FunctionObject - execute the call
-  // Debug: check what type we got
-  if (std::holds_alternative<FunctionObject>(fn)) {
-    // FunctionObject - this is a top-level function referenced by name
-  } else if (std::holds_alternative<ClosureRef>(fn)) {
-    // ClosureRef - this is a closure
-  }
-  
-  return call(fn, args);
+  // VM Closure or FunctionObject - use synchronous call with state isolation
+  return callFunctionSync(fn, args);
 }
 
 // Prototype system - methods on types
@@ -990,6 +1022,10 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
           "' at ip=" + std::to_string(frame.ip) + " (source " +
           formatSourceLocation(*frame.function, frame.ip) + "): " + e.what());
     }
+    
+    // Process any pending calls scheduled by host functions
+    processPendingCalls();
+    
     if (!frames.empty() && active_frame == &currentFrame() &&
         currentFrame().ip == previous_ip) {
       currentFrame().ip++;

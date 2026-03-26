@@ -551,7 +551,10 @@ BytecodeSmokeResult runBytecodePipeline(
     std::string formatted = e.what();
     static const std::regex unresolved_re(
         R"(Lexical resolution failed:\s*Unresolved identifier '([^']+)'\s*at\s*([0-9]+):([0-9]+))");
+    static const std::regex duplicate_re(
+        R"(Lexical resolution failed:\s*Duplicate declaration:\s*'([^']+)'\s*already defined.*?at\s*([0-9]+):([0-9]+))");
     std::smatch unresolved_match;
+    std::smatch duplicate_match;
     if (std::regex_search(formatted, unresolved_match, unresolved_re) &&
         unresolved_match.size() >= 4) {
       const std::string symbol = unresolved_match[1].str();
@@ -561,6 +564,15 @@ BytecodeSmokeResult runBytecodePipeline(
           "SemanticError", "undefined variable '" + symbol + "'",
           options.compile_unit_name, source, line, column,
           std::max<size_t>(1, symbol.size()), "not found in this scope");
+    } else if (std::regex_search(formatted, duplicate_match, duplicate_re) &&
+               duplicate_match.size() >= 4) {
+      const std::string symbol = duplicate_match[1].str();
+      const size_t line = static_cast<size_t>(std::stoul(duplicate_match[2].str()));
+      const size_t column = static_cast<size_t>(std::stoul(duplicate_match[3].str()));
+      formatted = formatDiagnostic(
+          "SemanticError", "duplicate declaration '" + symbol + "'",
+          options.compile_unit_name, source, line, column,
+          std::max<size_t>(1, symbol.size()), "already defined in this scope");
     }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = "<not-emitted>";

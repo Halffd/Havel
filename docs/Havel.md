@@ -613,6 +613,50 @@ hypot(3, 4)                // Hypotenuse: 5.0
 hypot(1, 2, 2)             // Multi-dimensional hypotenuse
 ```
 
+#### Async Module (Concurrency)
+```havel
+// Direct access
+use async.*
+
+// Timing
+sleep(1000)                // Sleep for 1000ms
+let ts = time.now()        // Current timestamp (ms)
+
+// Task spawning (requires closure support)
+let taskId = async.run(fn() {
+    // Background task
+    sleep(500)
+    print("Done!")
+})
+
+// Task management
+async.await(taskId)        // Wait for task completion
+async.cancel(taskId)       // Cancel running task
+let running = async.isRunning(taskId)
+
+// Channel communication
+async.channel("mychan")    // Create channel
+async.send("mychan", "Hello")  // Send value
+let msg = async.receive("mychan")  // Blocking receive
+let msg2 = async.tryReceive("mychan")  // Non-blocking receive
+async.channel.close("mychan")  // Close channel
+```
+
+**Async Features:**
+- `sleep(ms)` - Delay execution (also available as global)
+- `time.now()` - Current timestamp in milliseconds
+- `async.run(fn)` - Spawn background task (returns task ID)
+- `async.await(taskId)` - Block until task completes
+- `async.cancel(taskId)` - Cancel running task
+- `async.isRunning(taskId)` - Check if task is still running
+- `async.channel(name)` - Create named channel
+- `async.send(name, value)` - Send value to channel
+- `async.receive(name)` - Blocking receive from channel
+- `async.tryReceive(name)` - Non-blocking receive (returns "" if empty)
+- `async.channel.close(name)` - Close channel
+
+**Note:** `async.run()` currently requires closure support to execute VM functions. Until then, it can spawn placeholder tasks.
+
 #### Array Methods
 
 Arrays provide built-in methods for transformation and manipulation:
@@ -697,6 +741,25 @@ list()                    // List all windows
 focus("title")             // Focus window
 min()                     // Minimize window
 max()                     // Maximize window
+```
+
+**WindowMonitor Integration:**
+Conditional hotkeys now use `WindowMonitor` for efficient window information caching. This provides:
+- Faster condition evaluation (cached vs. repeated X11 calls)
+- Automatic window info updates (100ms poll interval)
+- Transparent fallback to IO if WindowMonitor unavailable
+
+```havel
+// Conditional hotkeys benefit from WindowMonitor caching
+F1 when title == "Firefox" => {
+    // Window info retrieved from cache (fast!)
+    print("Firefox is active")
+}
+
+when mode gaming && exe == "steam" {
+    // Both conditions use cached window info
+    F2 => print("Gaming on Steam")
+}
 ```
 
 ### Basic Hotkey

@@ -1190,36 +1190,6 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
                                  toString(thrown.value, &heap_));
       }
       continue;
-    } catch (const std::exception& e) {
-      const std::string original = e.what();
-      if (original.rfind("RuntimeError:", 0) == 0) {
-        throw;
-      }
-
-      std::ostringstream out;
-      out << "RuntimeError: " << original;
-      out << "\n  at " << formatSourceLocation(*function, ip);
-      out << "\n  in function '" << function->name << "'";
-
-      for (size_t i = frame_count_; i-- > 1;) {
-        const auto &caller = frame_arena_[i - 1];
-        if (!caller.function) {
-          continue;
-        }
-        size_t caller_ip = caller.ip;
-        if (caller_ip > 0) {
-          caller_ip -= 1;
-        }
-        if (caller.function->instructions.empty()) {
-          caller_ip = 0;
-        } else if (caller_ip >= caller.function->instructions.size()) {
-          caller_ip = caller.function->instructions.size() - 1;
-        }
-        out << "\n  called from function '" << caller.function->name << "' at "
-            << formatSourceLocation(*caller.function, caller_ip);
-      }
-
-      throw std::runtime_error(out.str());
     }
 
     processPendingCalls();
@@ -1248,6 +1218,7 @@ bool VM::handleScriptThrow(const BytecodeValue &value) {
         stack.pop();
       }
 
+      // Jump to catch block (finally is compiled into the catch block if it exists)
       frame.ip = handler.catch_ip;
       return true;
     }
@@ -1262,6 +1233,7 @@ bool VM::handleScriptThrow(const BytecodeValue &value) {
     }
   }
 
+  // No handler found - exception is uncaught
   return false;
 }
 
@@ -1719,13 +1691,13 @@ void VM::executeInstruction(const Instruction &instruction) {
         break;
       case OpCode::DIV:
         if (r == 0) {
-          throw std::runtime_error("Division by zero");
+          throw ScriptThrow{BytecodeValue("Division by zero")};
         }
         push(l / r);
         break;
       case OpCode::MOD:
         if (r == 0) {
-          throw std::runtime_error("Modulo by zero");
+          throw ScriptThrow{BytecodeValue("Modulo by zero")};
         }
         push(l % r);
         break;
@@ -1776,7 +1748,7 @@ void VM::executeInstruction(const Instruction &instruction) {
         break;
       case OpCode::DIV:
         if (r == 0.0) {
-          throw std::runtime_error("Division by zero");
+          throw ScriptThrow{BytecodeValue("Division by zero")};
         }
         push(l / r);
         break;
@@ -1935,13 +1907,18 @@ void VM::executeInstruction(const Instruction &instruction) {
   }
 
   case OpCode::TRY_ENTER: {
-    if (instruction.operands.empty() ||
+    if (instruction.operands.size() < 1 ||
         !std::holds_alternative<uint32_t>(instruction.operands[0])) {
       throw std::runtime_error("TRY_ENTER expects catch ip operand");
     }
     const uint32_t catch_ip = std::get<uint32_t>(instruction.operands[0]);
+    uint32_t finally_ip = 0;
+    if (instruction.operands.size() >= 2 &&
+        std::holds_alternative<uint32_t>(instruction.operands[1])) {
+      finally_ip = std::get<uint32_t>(instruction.operands[1]);
+    }
     currentFrame().try_stack.push_back(
-        TryHandler{.catch_ip = catch_ip, .stack_depth = stack.size()});
+        TryHandler{.catch_ip = catch_ip, .finally_ip = finally_ip, .finally_return_ip = 0, .stack_depth = stack.size()});
     break;
   }
 

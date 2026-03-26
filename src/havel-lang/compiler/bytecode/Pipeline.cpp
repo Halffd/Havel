@@ -269,6 +269,14 @@ std::string opcodeName(OpCode opcode) {
     return "ARRAY_HAS";
   case OpCode::ARRAY_FIND:
     return "ARRAY_FIND";
+  case OpCode::ARRAY_MAP:
+    return "ARRAY_MAP";
+  case OpCode::ARRAY_FILTER:
+    return "ARRAY_FILTER";
+  case OpCode::ARRAY_REDUCE:
+    return "ARRAY_REDUCE";
+  case OpCode::ARRAY_FOREACH:
+    return "ARRAY_FOREACH";
   case OpCode::STRING_LEN:
     return "STRING_LEN";
   case OpCode::STRING_UPPER:

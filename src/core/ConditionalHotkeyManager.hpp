@@ -18,6 +18,7 @@ namespace havel {
 // Forward declarations
 class IO;
 class EventListener;
+class WindowMonitor;
 
 /**
  * ConditionalHotkey - A hotkey with a condition
@@ -123,6 +124,9 @@ public:
   // Set mode manager for automatic mode updates
   void setModeManager(std::weak_ptr<class ModeManager> mgr) { modeManager = mgr; }
 
+  // Set window monitor for efficient window info caching
+  void setWindowMonitor(std::shared_ptr<WindowMonitor> monitor) { windowMonitor = monitor; }
+
   // Set interpreter for expression evaluation
 
   // Debug options
@@ -164,6 +168,9 @@ private:
 
   // Mode manager (weak reference to avoid circular dependency)
   std::weak_ptr<class ModeManager> modeManager;
+
+  // Window monitor for efficient window info caching
+  std::shared_ptr<WindowMonitor> windowMonitor;
 
   // Mode management
   static std::mutex modeMutex;

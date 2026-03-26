@@ -788,6 +788,37 @@ void AsyncBridge::install(PipelineOptions &options) {
   options.host_functions["time.now"] = [ctx = ctx_](const auto &args) {
     return handleTimeNow(args, ctx);
   };
+  
+  // Async module functions
+  options.host_functions["async.run"] = [ctx = ctx_](const auto &args) {
+    return handleAsyncRun(args, ctx);
+  };
+  options.host_functions["async.await"] = [ctx = ctx_](const auto &args) {
+    return handleAsyncAwait(args, ctx);
+  };
+  options.host_functions["async.cancel"] = [ctx = ctx_](const auto &args) {
+    return handleAsyncCancel(args, ctx);
+  };
+  options.host_functions["async.isRunning"] = [ctx = ctx_](const auto &args) {
+    return handleAsyncIsRunning(args, ctx);
+  };
+  
+  // Channel functions
+  options.host_functions["async.channel"] = [ctx = ctx_](const auto &args) {
+    return handleChannelCreate(args, ctx);
+  };
+  options.host_functions["async.send"] = [ctx = ctx_](const auto &args) {
+    return handleChannelSend(args, ctx);
+  };
+  options.host_functions["async.receive"] = [ctx = ctx_](const auto &args) {
+    return handleChannelReceive(args, ctx);
+  };
+  options.host_functions["async.tryReceive"] = [ctx = ctx_](const auto &args) {
+    return handleChannelTryReceive(args, ctx);
+  };
+  options.host_functions["async.channel.close"] = [ctx = ctx_](const auto &args) {
+    return handleChannelClose(args, ctx);
+  };
 }
 
 BytecodeValue AsyncBridge::handleSleep(const std::vector<BytecodeValue> &args,
@@ -821,6 +852,188 @@ BytecodeValue AsyncBridge::handleTimeNow(const std::vector<BytecodeValue> &args,
   auto now = std::chrono::system_clock::now();
   auto timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
   return BytecodeValue(static_cast<int64_t>(timestamp));
+}
+
+// Async task handlers
+BytecodeValue AsyncBridge::handleAsyncRun(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.run() requires a function argument");
+  }
+  
+  // For now, we can't pass VM closures to AsyncService
+  // This requires callback infrastructure
+  // Return a placeholder task ID
+  if (ctx && ctx->asyncService) {
+    std::string taskId = ctx->asyncService->spawn([]() {
+      // Placeholder - in real implementation would execute the closure
+    });
+    return BytecodeValue(taskId);
+  }
+  
+  return BytecodeValue(nullptr);
+}
+
+BytecodeValue AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.await() requires a task ID");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.await() requires a string task ID");
+  }
+  
+  std::string taskId = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    bool completed = ctx->asyncService->await(taskId);
+    return BytecodeValue(completed);
+  }
+  
+  return BytecodeValue(false);
+}
+
+BytecodeValue AsyncBridge::handleAsyncCancel(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.cancel() requires a task ID");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.cancel() requires a string task ID");
+  }
+  
+  std::string taskId = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    bool cancelled = ctx->asyncService->cancel(taskId);
+    return BytecodeValue(cancelled);
+  }
+  
+  return BytecodeValue(false);
+}
+
+BytecodeValue AsyncBridge::handleAsyncIsRunning(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.isRunning() requires a task ID");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.isRunning() requires a string task ID");
+  }
+  
+  std::string taskId = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    bool running = ctx->asyncService->isRunning(taskId);
+    return BytecodeValue(running);
+  }
+  
+  return BytecodeValue(false);
+}
+
+// Channel handlers
+BytecodeValue AsyncBridge::handleChannelCreate(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.channel() requires a channel name");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.channel() requires a string name");
+  }
+  
+  std::string name = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    bool created = ctx->asyncService->createChannel(name);
+    return BytecodeValue(created);
+  }
+  
+  return BytecodeValue(false);
+}
+
+BytecodeValue AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.size() < 2) {
+    throw std::runtime_error("async.send() requires channel name and value");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.send() requires a string channel name");
+  }
+  
+  std::string name = std::get<std::string>(args[0]);
+  std::string value = toString(args[1]);
+  
+  if (ctx && ctx->asyncService) {
+    bool sent = ctx->asyncService->send(name, value);
+    return BytecodeValue(sent);
+  }
+  
+  return BytecodeValue(false);
+}
+
+BytecodeValue AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.receive() requires a channel name");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.receive() requires a string channel name");
+  }
+  
+  std::string name = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    std::string value = ctx->asyncService->receive(name);
+    return BytecodeValue(value);
+  }
+  
+  return BytecodeValue(std::string(""));
+}
+
+BytecodeValue AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeValue> &args,
+                                                   const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.tryReceive() requires a channel name");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.tryReceive() requires a string channel name");
+  }
+  
+  std::string name = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    std::string value = ctx->asyncService->tryReceive(name);
+    return BytecodeValue(value);
+  }
+  
+  return BytecodeValue(std::string(""));
+}
+
+BytecodeValue AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  if (args.empty()) {
+    throw std::runtime_error("async.channel.close() requires a channel name");
+  }
+  
+  if (!std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("async.channel.close() requires a string channel name");
+  }
+  
+  std::string name = std::get<std::string>(args[0]);
+  
+  if (ctx && ctx->asyncService) {
+    bool closed = ctx->asyncService->closeChannel(name);
+    return BytecodeValue(closed);
+  }
+  
+  return BytecodeValue(false);
 }
 
 // ============================================================================

@@ -226,8 +226,14 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
       if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
         const auto &exprStmt = static_cast<const ast::ExpressionStatement &>(*lastStmt);
         if (exprStmt.expression) {
-          compileExpression(*exprStmt.expression);
-          emit(OpCode::RETURN);
+          // TCO: Check if last expression is a call - if so, use TAIL_CALL instead of CALL+RETURN
+          if (exprStmt.expression->kind == ast::NodeType::CallExpression) {
+            const auto &callExpr = static_cast<const ast::CallExpression &>(*exprStmt.expression);
+            compileCallExpressionTail(callExpr);  // Emit TAIL_CALL instead of CALL
+          } else {
+            compileExpression(*exprStmt.expression);
+            emit(OpCode::RETURN);
+          }
         } else {
           emit(OpCode::LOAD_CONST, addConstant(nullptr));
           emit(OpCode::RETURN);
@@ -1534,6 +1540,88 @@ void ByteCompiler::compileCallExpression(
   }
 
   emit(OpCode::CALL, actualArgCount);
+}
+
+// Compile call expression in tail position - emits TAIL_CALL instead of CALL
+void ByteCompiler::compileCallExpressionTail(
+    const ast::CallExpression &expression) {
+  if (!expression.callee) {
+    throw std::runtime_error("Call expression missing callee");
+  }
+
+  uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
+  bool hasKwargs = !expression.kwargs.empty();
+
+  // For now, only handle simple function calls (not method calls or host functions)
+  // Method calls and host functions use RETURN after the call, which is fine
+  if (expression.callee->kind == ast::NodeType::Identifier) {
+    const auto &callee_id =
+        static_cast<const ast::Identifier &>(*expression.callee);
+    const auto *binding = bindingFor(callee_id);
+    if (!binding) {
+      throw std::runtime_error("Missing lexical binding for callee: " +
+                               callee_id.symbol);
+    }
+
+    // Only use TAIL_CALL for user-defined functions (not builtins)
+    if (binding->kind == ResolvedBindingKind::Local ||
+        binding->kind == ResolvedBindingKind::Upvalue ||
+        binding->kind == ResolvedBindingKind::GlobalFunction) {
+      // Load callee
+      switch (binding->kind) {
+        case ResolvedBindingKind::Local:
+          emit(OpCode::LOAD_VAR, binding->slot);
+          break;
+        case ResolvedBindingKind::Upvalue:
+          emit(OpCode::LOAD_UPVALUE, binding->slot);
+          break;
+        case ResolvedBindingKind::GlobalFunction: {
+          auto it = top_level_function_indices_by_name_.find(binding->name);
+          if (it == top_level_function_indices_by_name_.end()) {
+            throw std::runtime_error("Missing function index for: " +
+                                     binding->name);
+          }
+          emit(OpCode::LOAD_CONST,
+               addConstant(FunctionObject{.function_index = it->second}));
+          break;
+        }
+        default:
+          break;
+      }
+
+      // Compile arguments
+      uint32_t actualArgCount = 0;
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        if (arg->kind == ast::NodeType::SpreadExpression) {
+          throw std::runtime_error("Spread not supported in tail calls");
+        } else {
+          compileExpression(*arg);
+          actualArgCount++;
+        }
+      }
+
+      // Compile kwargs as object if present
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        actualArgCount++;
+      }
+
+      // Emit TAIL_CALL instead of CALL+RETURN
+      emit(OpCode::TAIL_CALL, actualArgCount);
+      return;
+    }
+  }
+
+  // For non-tail-call-optimized cases, just use regular CALL + implicit RETURN
+  compileCallExpression(expression);
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {

@@ -12,11 +12,13 @@ namespace havel::parser {
 
 class ParseError : public std::runtime_error {
 public:
-  ParseError(size_t line, size_t column, const std::string &message)
-      : std::runtime_error(message), line(line), column(column) {}
+  ParseError(size_t line, size_t column, const std::string &message,
+             size_t length = 1)
+      : std::runtime_error(message), line(line), column(column), length(length) {}
 
   size_t line;
   size_t column;
+  size_t length;
 };
 
 // Error recovery mode

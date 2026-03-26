@@ -288,6 +288,34 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::TryExpression: {
+    const auto &try_stmt = static_cast<const ast::TryExpression &>(statement);
+    if (try_stmt.tryBody) {
+      resolveStatement(*try_stmt.tryBody);
+    }
+    if (try_stmt.catchBody) {
+      beginScope();
+      if (try_stmt.catchVariable) {
+        declareLocal(try_stmt.catchVariable->symbol, try_stmt.catchVariable.get(),
+                     false);
+      }
+      resolveStatement(*try_stmt.catchBody);
+      endScope();
+    }
+    if (try_stmt.finallyBlock) {
+      resolveStatement(*try_stmt.finallyBlock);
+    }
+    break;
+  }
+
+  case ast::NodeType::ThrowStatement: {
+    const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
+    if (throw_stmt.value) {
+      resolveExpression(*throw_stmt.value);
+    }
+    break;
+  }
+
   // Type system declarations - register type names in scope
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
@@ -325,7 +353,9 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     const auto &id = static_cast<const ast::Identifier &>(expression);
     auto binding = resolveIdentifier(id.symbol);
     if (!binding) {
-      errors_.push_back("Unresolved identifier: " + id.symbol);
+      errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +
+                        std::to_string(id.line) + ":" +
+                        std::to_string(id.column));
       return;
     }
     noteIdentifierBinding(id, *binding);

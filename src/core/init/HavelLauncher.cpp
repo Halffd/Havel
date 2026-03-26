@@ -184,6 +184,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
           info("Executing startup script with bytecode VM: {}", cfg.scriptFile);
 
           havel::compiler::PipelineOptions options = hostBridge->options();
+          options.compile_unit_name = cfg.scriptFile;
           options.vm_override = bytecodeVM;
 
           // Enable bytecode debug output if requested
@@ -315,6 +316,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
+      options.compile_unit_name = cfg.scriptFile;
       options.vm_override = bytecodeVM;
 
       auto vmResult =
@@ -406,6 +408,7 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       havel::registerStdLibWithVM(*bridge);
 
       havel::compiler::PipelineOptions options = bridge->options();
+      options.compile_unit_name = cfg.scriptFile;
       options.vm_override = &tempVm;
 
       // Copy VM's host functions to options for compiler and execution

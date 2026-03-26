@@ -73,6 +73,7 @@ private:
     void compileExpression(const ast::Expression& expression);
     void compileHotkeyBinding(const ast::HotkeyBinding& binding);
     void compileInputStatement(const ast::InputStatement& statement);
+    void compileTryStatement(const ast::TryExpression& statement);
     void compileCallExpression(const ast::CallExpression& expression);
     void compileCallExpressionTail(const ast::CallExpression& expression);  // TCO
     void compileIfStatement(const ast::IfStatement& statement);

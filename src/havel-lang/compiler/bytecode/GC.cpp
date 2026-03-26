@@ -82,6 +82,16 @@ IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
         iter.keys.push_back(key);
       }
     }
+  } else if (std::holds_alternative<SetRef>(iterable)) {
+    auto *setObj = set(std::get<SetRef>(iterable).id);
+    if (setObj) {
+      for (const auto &[key, present] : *setObj) {
+        if (std::holds_alternative<bool>(present) && !std::get<bool>(present)) {
+          continue;
+        }
+        iter.keys.push_back(key);
+      }
+    }
   }
   
   iterators_[id] = std::move(iter);
@@ -199,6 +209,13 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
     } else {
       // For objects, return just the key (like Python's for key in dict)
       // Multi-variable iteration will extract key/value from the iterator result
+      value = iter->keys[iter->index++];
+    }
+  } else if (std::holds_alternative<SetRef>(iter->iterable)) {
+    if (iter->index >= iter->keys.size()) {
+      done = true;
+      value = nullptr;
+    } else {
       value = iter->keys[iter->index++];
     }
   } else if (std::holds_alternative<RangeRef>(iter->iterable)) {

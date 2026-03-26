@@ -38,6 +38,10 @@ static bool valuesEqual(const BytecodeValue& a, const BytecodeValue& b) {
   return false;
 }
 
+struct ScriptThrow final {
+  BytecodeValue value;
+};
+
 // Internal toString with depth limit only (no cycle detection - confuses users)
 std::string toStringInternal(const BytecodeValue &value, GCHeap *heap,
                              std::unordered_set<uint32_t> &visitedIds,
@@ -1107,6 +1111,8 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
   heap_.reset();
   struct_type_ids_by_name_.clear();
   open_upvalues.clear();
+  has_current_exception_ = false;
+  current_exception_ = nullptr;
   registerDefaultHostGlobals();
   opcode_counts_.fill(0);
   executed_instructions_ = 0;
@@ -1178,9 +1184,42 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         executed_instructions_++;
       }
       executeInstruction(instruction);
+    } catch (const ScriptThrow &thrown) {
+      if (!handleScriptThrow(thrown.value)) {
+        throw std::runtime_error("Uncaught exception: " +
+                                 toString(thrown.value, &heap_));
+      }
+      continue;
     } catch (const std::exception& e) {
-      throw std::runtime_error(
-          "Runtime error in function at ip=" + std::to_string(ip) + "): " + e.what());
+      const std::string original = e.what();
+      if (original.rfind("RuntimeError:", 0) == 0) {
+        throw;
+      }
+
+      std::ostringstream out;
+      out << "RuntimeError: " << original;
+      out << "\n  at " << formatSourceLocation(*function, ip);
+      out << "\n  in function '" << function->name << "'";
+
+      for (size_t i = frame_count_; i-- > 1;) {
+        const auto &caller = frame_arena_[i - 1];
+        if (!caller.function) {
+          continue;
+        }
+        size_t caller_ip = caller.ip;
+        if (caller_ip > 0) {
+          caller_ip -= 1;
+        }
+        if (caller.function->instructions.empty()) {
+          caller_ip = 0;
+        } else if (caller_ip >= caller.function->instructions.size()) {
+          caller_ip = caller.function->instructions.size() - 1;
+        }
+        out << "\n  called from function '" << caller.function->name << "' at "
+            << formatSourceLocation(*caller.function, caller_ip);
+      }
+
+      throw std::runtime_error(out.str());
     }
 
     processPendingCalls();
@@ -1193,6 +1232,37 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
       }
     }
   }
+}
+
+bool VM::handleScriptThrow(const BytecodeValue &value) {
+  has_current_exception_ = true;
+  current_exception_ = value;
+
+  while (frame_count_ > 0) {
+    auto &frame = frame_arena_[frame_count_ - 1];
+    if (!frame.try_stack.empty()) {
+      const auto handler = frame.try_stack.back();
+      frame.try_stack.pop_back();
+
+      while (stack.size() > handler.stack_depth) {
+        stack.pop();
+      }
+
+      frame.ip = handler.catch_ip;
+      return true;
+    }
+
+    auto finished = frame;
+    frame_count_--;
+
+    closeFrameUpvalues(static_cast<uint32_t>(finished.locals_base),
+                       static_cast<uint32_t>(locals.size()));
+    if (locals.size() >= finished.locals_base) {
+      locals.resize(finished.locals_base);
+    }
+  }
+
+  return false;
 }
 
 BytecodeValue VM::call(const BytecodeValue &callee_value,
@@ -1862,6 +1932,38 @@ void VM::executeInstruction(const Instruction &instruction) {
   case OpCode::RETURN: {
     doReturn();
     break;
+  }
+
+  case OpCode::TRY_ENTER: {
+    if (instruction.operands.empty() ||
+        !std::holds_alternative<uint32_t>(instruction.operands[0])) {
+      throw std::runtime_error("TRY_ENTER expects catch ip operand");
+    }
+    const uint32_t catch_ip = std::get<uint32_t>(instruction.operands[0]);
+    currentFrame().try_stack.push_back(
+        TryHandler{.catch_ip = catch_ip, .stack_depth = stack.size()});
+    break;
+  }
+
+  case OpCode::TRY_EXIT: {
+    if (!currentFrame().try_stack.empty()) {
+      currentFrame().try_stack.pop_back();
+    }
+    break;
+  }
+
+  case OpCode::LOAD_EXCEPTION: {
+    if (has_current_exception_) {
+      push(current_exception_);
+    } else {
+      push(nullptr);
+    }
+    break;
+  }
+
+  case OpCode::THROW: {
+    BytecodeValue thrown = pop();
+    throw ScriptThrow{std::move(thrown)};
   }
 
   case OpCode::CLOSURE: {

@@ -2,11 +2,14 @@
 
 #include "ByteCompiler.hpp"
 #include "VM.hpp"
+#include "../../lexer/Lexer.hpp"
 #include "../../parser/Parser.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <regex>
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -46,6 +49,127 @@ std::string sanitizeFileStem(const std::string &value) {
     out.push_back('_');
   }
   return out;
+}
+
+std::string displayNameForUnit(const std::string &compile_unit_name) {
+  return compile_unit_name.empty() ? "<memory>" : compile_unit_name;
+}
+
+std::string sourceLineAt(const std::string &source, size_t one_based_line) {
+  if (one_based_line == 0) {
+    return {};
+  }
+  std::istringstream stream(source);
+  std::string line;
+  size_t current = 1;
+  while (std::getline(stream, line)) {
+    if (current == one_based_line) {
+      if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+      }
+      for (char &ch : line) {
+        if (!std::isprint(static_cast<unsigned char>(ch))) {
+          ch = ' ';
+        }
+      }
+      return line;
+    }
+    ++current;
+  }
+  return {};
+}
+
+std::string formatCaretLine(size_t column, size_t length,
+                            const std::string &annotation) {
+  const size_t safe_col = std::max<size_t>(1, column);
+  const size_t safe_len = std::max<size_t>(1, length);
+  std::string out = "   | ";
+  out.append(safe_col - 1, ' ');
+  out.append(safe_len, '^');
+  if (!annotation.empty()) {
+    out += " ";
+    out += annotation;
+  }
+  return out;
+}
+
+std::string formatDiagnostic(const std::string &kind,
+                             const std::string &message,
+                             const std::string &compile_unit_name,
+                             const std::string &source, size_t line,
+                             size_t column, size_t length,
+                             const std::string &annotation = "") {
+  std::ostringstream out;
+  out << kind << ": " << message << "\n";
+  out << "  --> " << displayNameForUnit(compile_unit_name) << ":" << line
+      << ":" << column << "\n";
+  out << "   |\n";
+  const std::string source_line = sourceLineAt(source, line);
+  out << line << " | " << source_line << "\n";
+  out << formatCaretLine(column, length, annotation);
+  return out.str();
+}
+
+std::string enrichRuntimeError(const std::string &runtime_error,
+                               const std::string &compile_unit_name,
+                               const std::string &source) {
+  std::smatch match;
+  static const std::regex at_re(R"(\n\s*at\s+([0-9]+):([0-9]+))");
+  if (!std::regex_search(runtime_error, match, at_re) || match.size() < 3) {
+    return runtime_error;
+  }
+
+  const size_t line = static_cast<size_t>(std::stoul(match[1].str()));
+  const size_t column = static_cast<size_t>(std::stoul(match[2].str()));
+
+  std::string first_line = runtime_error;
+  std::string tail;
+  if (const auto nl = runtime_error.find('\n'); nl != std::string::npos) {
+    first_line = runtime_error.substr(0, nl);
+    tail = runtime_error.substr(nl);
+  }
+
+  // Remove the first "at x:y" line from tail; we replace it with full source span.
+  tail = std::regex_replace(tail, at_re, "", std::regex_constants::format_first_only);
+  static const std::regex caller_line_re(
+      R"(\n\s*called from function '[^']+' at [0-9]+:[0-9]+)");
+  tail = std::regex_replace(tail, caller_line_re, "");
+  while (!tail.empty() && tail.front() == '\n') {
+    tail.erase(tail.begin());
+  }
+
+  std::ostringstream out;
+  out << first_line << "\n";
+  out << "  --> " << displayNameForUnit(compile_unit_name) << ":" << line
+      << ":" << column << "\n";
+  out << "   |\n";
+  const std::string source_line = sourceLineAt(source, line);
+  out << line << " | " << source_line << "\n";
+  out << formatCaretLine(column, 1, "runtime error");
+
+  // Expand each "called from ... at L:C" frame with source snippet.
+  static const std::regex caller_re(
+      R"(called from function '([^']+)' at ([0-9]+):([0-9]+))");
+  std::sregex_iterator it(runtime_error.begin(), runtime_error.end(), caller_re);
+  std::sregex_iterator end;
+  for (; it != end; ++it) {
+    const std::string fn = (*it)[1].str();
+    const size_t frame_line = static_cast<size_t>(std::stoul((*it)[2].str()));
+    const size_t frame_col = static_cast<size_t>(std::stoul((*it)[3].str()));
+    out << "\n";
+    out << "  called from function '" << fn << "'\n";
+    out << "  --> " << displayNameForUnit(compile_unit_name) << ":"
+        << frame_line << ":" << frame_col << "\n";
+    out << "   |\n";
+    const std::string frame_source = sourceLineAt(source, frame_line);
+    out << frame_line << " | " << frame_source << "\n";
+    out << formatCaretLine(frame_col, 1, "call site");
+  }
+
+  if (!tail.empty()) {
+    out << "\n" << tail;
+  }
+  return out.str();
 }
 
 std::string formatResolverSnapshot(const LexicalResolutionResult &resolution) {
@@ -219,6 +343,14 @@ std::string opcodeName(OpCode opcode) {
     return "CALL_HOST";
   case OpCode::RETURN:
     return "RETURN";
+  case OpCode::TRY_ENTER:
+    return "TRY_ENTER";
+  case OpCode::TRY_EXIT:
+    return "TRY_EXIT";
+  case OpCode::LOAD_EXCEPTION:
+    return "LOAD_EXCEPTION";
+  case OpCode::THROW:
+    return "THROW";
   case OpCode::DEFINE_FUNC:
     return "DEFINE_FUNC";
   case OpCode::CLOSURE:
@@ -380,9 +512,21 @@ BytecodeSmokeResult runBytecodePipeline(
   };
 
   parser::Parser parser;
-  auto program = parser.produceAST(source);
+  std::unique_ptr<ast::Program> program;
+  try {
+    program = parser.produceAST(source);
+  } catch (const havel::LexError &e) {
+    throw std::runtime_error(formatDiagnostic(
+        "LexerError", e.what(), options.compile_unit_name, source, e.line,
+        e.column, e.length, "unexpected token"));
+  } catch (const parser::ParseError &e) {
+    throw std::runtime_error(formatDiagnostic(
+        "ParseError", e.what(), options.compile_unit_name, source, e.line,
+        e.column, e.length, "here"));
+  }
   if (!program) {
-    throw std::runtime_error("Bytecode smoke pipeline failed: parser returned null AST");
+    throw std::runtime_error(
+        "Bytecode pipeline failed: parser returned null AST");
   }
 
   ByteCompiler compiler;
@@ -404,10 +548,24 @@ BytecodeSmokeResult runBytecodePipeline(
     result.snapshot.bytecode = formatBytecodeSnapshot(*chunk);
     result.snapshot.artifact_path = writeSnapshotArtifact(result, "");
   } catch (const std::exception &e) {
+    std::string formatted = e.what();
+    static const std::regex unresolved_re(
+        R"(Lexical resolution failed:\s*Unresolved identifier '([^']+)'\s*at\s*([0-9]+):([0-9]+))");
+    std::smatch unresolved_match;
+    if (std::regex_search(formatted, unresolved_match, unresolved_re) &&
+        unresolved_match.size() >= 4) {
+      const std::string symbol = unresolved_match[1].str();
+      const size_t line = static_cast<size_t>(std::stoul(unresolved_match[2].str()));
+      const size_t column = static_cast<size_t>(std::stoul(unresolved_match[3].str()));
+      formatted = formatDiagnostic(
+          "SemanticError", "undefined variable '" + symbol + "'",
+          options.compile_unit_name, source, line, column,
+          std::max<size_t>(1, symbol.size()), "not found in this scope");
+    }
     result.snapshot.resolver = formatResolverSnapshot(compiler.lexicalResolution());
     result.snapshot.bytecode = "<not-emitted>";
-    result.snapshot.artifact_path = writeSnapshotArtifact(result, e.what());
-    throw;
+    result.snapshot.artifact_path = writeSnapshotArtifact(result, formatted);
+    throw std::runtime_error(formatted);
   }
 
   VM owned_vm;
@@ -422,7 +580,12 @@ BytecodeSmokeResult runBytecodePipeline(
   if (options.vm_setup) {
     options.vm_setup(*vm);
   }
-  result.return_value = vm->execute(*chunk, entry_function);
+  try {
+    result.return_value = vm->execute(*chunk, entry_function);
+  } catch (const std::exception &e) {
+    throw std::runtime_error(
+        enrichRuntimeError(e.what(), options.compile_unit_name, source));
+  }
   return result;
 }
 

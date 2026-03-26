@@ -1,4 +1,6 @@
 #include "Lexer.hpp"
+#include <cctype>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 
@@ -139,8 +141,15 @@ bool Lexer::isHotkeyChar(char c) const {
 
 Token Lexer::makeToken(const std::string &value, TokenType type,
                        const std::string &raw) {
-  return Token(value, type, raw.empty() ? value : raw, line,
-               column - value.length());
+  const std::string tokenRaw = raw.empty() ? value : raw;
+  const size_t tokenLength = tokenRaw.length() == 0 ? 1 : tokenRaw.length();
+  size_t tokenColumn = column;
+  if (tokenColumn > tokenLength) {
+    tokenColumn -= tokenLength;
+  } else {
+    tokenColumn = 1;
+  }
+  return Token(value, type, tokenRaw, line, tokenColumn, tokenLength);
 }
 
 void Lexer::skipWhitespace() {
@@ -829,8 +838,17 @@ std::vector<Token> Lexer::tokenize() {
     }
 
     // Handle unrecognized characters
-    throw havel::LexError(line, column,
-                          "Unrecognized character '" + std::string(1, c) + "'");
+    const size_t error_col = column > 0 ? column - 1 : 1;
+    std::ostringstream repr;
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isprint(uc)) {
+      repr << "'" << c << "'";
+    } else {
+      repr << "'\\x" << std::hex << std::setw(2) << std::setfill('0')
+           << static_cast<int>(uc) << "'";
+    }
+    throw havel::LexError(line, error_col,
+                          "Unexpected character " + repr.str(), 1);
   }
 
   // Add EOF token

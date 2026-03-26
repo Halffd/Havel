@@ -52,7 +52,9 @@ ByteCompiler::compile(const ast::Program &program) {
   chunk = std::make_unique<BytecodeChunk>();
   compiled_functions.clear();
   function_indices_by_node_.clear();
+  lambda_indices_by_node_.clear();
   top_level_function_indices_by_name_.clear();
+  top_level_struct_names_.clear();
 
   LexicalResolver resolver(host_builtin_names_, host_global_names_);
   lexical_resolution_ = resolver.resolve(program);
@@ -64,11 +66,17 @@ ByteCompiler::compile(const ast::Program &program) {
   // Reserve function indices so forward references and recursion emit stable
   // function objects.
   std::vector<const ast::FunctionDeclaration *> declared_functions;
+  std::vector<const ast::LambdaExpression *> declared_lambdas;
   declared_functions.reserve(program.body.size());
 
   uint32_t next_function_index = 0;
   for (const auto &statement : program.body) {
     if (!statement || statement->kind != ast::NodeType::FunctionDeclaration) {
+      if (statement && statement->kind == ast::NodeType::StructDeclaration) {
+        const auto &decl =
+            static_cast<const ast::StructDeclaration &>(*statement);
+        top_level_struct_names_.insert(decl.name);
+      }
       continue;
     }
     const auto &decl =
@@ -86,6 +94,7 @@ ByteCompiler::compile(const ast::Program &program) {
       continue;
     }
     collectFunctionDeclarations(*statement, declared_functions);
+    collectLambdaExpressions(*statement, declared_lambdas);
   }
 
   for (const auto *decl : declared_functions) {
@@ -99,6 +108,19 @@ ByteCompiler::compile(const ast::Program &program) {
     function_indices_by_node_[decl] = next_function_index++;
   }
 
+  for (const auto *lambda : declared_lambdas) {
+    if (!lambda) {
+      continue;
+    }
+    if (lambda_indices_by_node_.find(lambda) != lambda_indices_by_node_.end()) {
+      continue;
+    }
+    lambda_indices_by_node_[lambda] = next_function_index++;
+  }
+
+  const uint32_t main_function_index = next_function_index++;
+  compiled_functions.resize(main_function_index + 1);
+
   // Compile all declared functions (top-level + nested) before __main__.
   for (const auto *decl : declared_functions) {
     if (!decl) {
@@ -107,7 +129,14 @@ ByteCompiler::compile(const ast::Program &program) {
     compileFunction(*decl);
   }
 
-  enterFunction(BytecodeFunction("__main__", 0, 0));
+  for (const auto *lambda : declared_lambdas) {
+    if (!lambda) {
+      continue;
+    }
+    compileLambda(*lambda);
+  }
+
+  enterFunction(BytecodeFunction("__main__", 0, 0), main_function_index);
 
   for (const auto &statement : program.body) {
     if (!statement) {
@@ -126,6 +155,9 @@ ByteCompiler::compile(const ast::Program &program) {
   leaveFunction();
 
   for (auto &function : compiled_functions) {
+    if (!function) {
+      throw std::runtime_error("Missing compiled function for reserved slot");
+    }
     chunk->addFunction(std::move(*function));
   }
 
@@ -195,9 +227,16 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     throw std::runtime_error("Function declaration missing name");
   }
 
+  auto index_it = function_indices_by_node_.find(&function);
+  if (index_it == function_indices_by_node_.end()) {
+    throw std::runtime_error("Missing function index for declaration: " +
+                             function.name->symbol);
+  }
+
   enterFunction(
       BytecodeFunction(function.name->symbol,
-                       static_cast<uint32_t>(function.parameters.size()), 0));
+                       static_cast<uint32_t>(function.parameters.size()), 0),
+      index_it->second);
   auto upvalues_it = lexical_resolution_.function_upvalues.find(&function);
   if (upvalues_it != lexical_resolution_.function_upvalues.end()) {
     current_function->upvalues = upvalues_it->second;
@@ -269,6 +308,66 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   leaveFunction();
 }
 
+void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
+  auto index_it = lambda_indices_by_node_.find(&lambda);
+  if (index_it == lambda_indices_by_node_.end()) {
+    throw std::runtime_error("Missing function index for lambda expression");
+  }
+
+  enterFunction(BytecodeFunction("<lambda>",
+                                 static_cast<uint32_t>(lambda.parameters.size()),
+                                 0),
+                index_it->second);
+
+  auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
+  if (upvalues_it != lexical_resolution_.lambda_upvalues.end()) {
+    current_function->upvalues = upvalues_it->second;
+  }
+
+  for (const auto &param : lambda.parameters) {
+    if (!param || !param->paramName) {
+      throw std::runtime_error("Lambda parameter missing identifier");
+    }
+    reserveLocalSlot(declarationSlot(*param->paramName));
+  }
+
+  if (lambda.body) {
+    if (lambda.body->kind == ast::NodeType::ExpressionStatement) {
+      const auto &expr_stmt =
+          static_cast<const ast::ExpressionStatement &>(*lambda.body);
+      if (expr_stmt.expression) {
+        enterTailPosition();
+        clearTailCallFlag();
+        compileExpression(*expr_stmt.expression);
+        exitTailPosition();
+        if (!wasTailCall()) {
+          emit(OpCode::RETURN);
+        }
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+        emit(OpCode::RETURN);
+      }
+    } else if (lambda.body->kind == ast::NodeType::ReturnStatement) {
+      enterTailPosition();
+      compileStatement(*lambda.body);
+      exitTailPosition();
+    } else {
+      enterTailPosition();
+      clearTailCallFlag();
+      compileStatement(*lambda.body);
+      exitTailPosition();
+      if (!wasTailCall()) {
+        emit(OpCode::RETURN);
+      }
+    }
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    emit(OpCode::RETURN);
+  }
+
+  leaveFunction();
+}
+
 void ByteCompiler::compileStatement(const ast::Statement &statement) {
   auto source_scope = atNode(statement);
   switch (statement.kind) {
@@ -287,21 +386,69 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::LetDeclaration: {
     const auto &let = static_cast<const ast::LetDeclaration &>(statement);
-    auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get());
-    if (!identifier) {
-      throw std::runtime_error(
-          "Bytecode compiler only supports identifier patterns for let");
+    if (auto *identifier =
+            dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
+      if (let.value) {
+        compileExpression(*let.value);
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+
+      uint32_t slot = declarationSlot(*identifier);
+      reserveLocalSlot(slot);
+      emit(OpCode::STORE_VAR, slot);
+      break;
     }
 
-    if (let.value) {
-      compileExpression(*let.value);
-    } else {
-      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    if (let.pattern && let.pattern->kind == ast::NodeType::ListPattern) {
+      const auto &pattern =
+          static_cast<const ast::ArrayPattern &>(*let.pattern);
+      if (!let.value) {
+        throw std::runtime_error("Tuple/array destructuring requires a value");
+      }
+
+      bool optimized_tuple_literal = let.value->kind == ast::NodeType::TupleExpression;
+      const ast::TupleExpression *tuple_value = optimized_tuple_literal
+          ? static_cast<const ast::TupleExpression *>(let.value.get())
+          : nullptr;
+
+      uint32_t temp_slot = next_local_index;
+      if (!optimized_tuple_literal) {
+        reserveLocalSlot(temp_slot);
+        compileExpression(*let.value);
+        emit(OpCode::STORE_VAR, temp_slot);
+      }
+
+      for (size_t i = 0; i < pattern.elements.size(); ++i) {
+        const auto *element_id =
+            pattern.elements[i]
+                ? dynamic_cast<const ast::Identifier *>(pattern.elements[i].get())
+                : nullptr;
+        if (!element_id) {
+          throw std::runtime_error(
+              "Tuple destructuring currently supports identifier elements only");
+        }
+        const uint32_t slot = declarationSlot(*element_id);
+        reserveLocalSlot(slot);
+        if (optimized_tuple_literal) {
+          if (tuple_value && i < tuple_value->elements.size() &&
+              tuple_value->elements[i]) {
+            compileExpression(*tuple_value->elements[i]);
+          } else {
+            emit(OpCode::LOAD_CONST, addConstant(nullptr));
+          }
+        } else {
+          emit(OpCode::LOAD_VAR, temp_slot);
+          emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(i)));
+          emit(OpCode::ARRAY_GET);
+        }
+        emit(OpCode::STORE_VAR, slot);
+      }
+      break;
     }
 
-    uint32_t slot = declarationSlot(*identifier);
-    reserveLocalSlot(slot);
-    emit(OpCode::STORE_VAR, slot);
+    throw std::runtime_error(
+        "Bytecode compiler supports let patterns: identifier and tuple/array");
     break;
   }
 
@@ -373,13 +520,16 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
   // Type system declarations - register types at compile time
   case ast::NodeType::StructDeclaration: {
     const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
-    // Register struct type with its fields at compile time
-    std::vector<std::string> fieldNames;
-    for (const auto& field : structDecl.definition.fields) {
-      fieldNames.push_back(field.name);
+    // Runtime registration: struct.define("Name", ["field1", ...])
+    emit(OpCode::LOAD_CONST, addConstant(structDecl.name));
+    emit(OpCode::ARRAY_NEW);
+    for (const auto &field : structDecl.definition.fields) {
+      emit(OpCode::LOAD_CONST, addConstant(field.name));
+      emit(OpCode::ARRAY_PUSH);
     }
-    // Type registration happens at runtime via host function for now
-    // TODO: Move to compile-time type registry
+    emit(OpCode::CALL_HOST,
+         std::vector<BytecodeValue>{"struct.define", static_cast<uint32_t>(2)});
+    emit(OpCode::POP);
     break;
   }
 
@@ -556,6 +706,19 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     }
     break;
   }
+  case ast::NodeType::TupleExpression: {
+    const auto &tuple = static_cast<const ast::TupleExpression &>(expression);
+    emit(OpCode::ARRAY_NEW);
+    for (const auto &element : tuple.elements) {
+      if (!element) {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      } else {
+        compileExpression(*element);
+      }
+      emit(OpCode::ARRAY_PUSH);
+    }
+    break;
+  }
 
   case ast::NodeType::SetExpression: {
     const auto &set = static_cast<const ast::SetExpression &>(expression);
@@ -647,49 +810,18 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::LambdaExpression: {
     const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
-
-    // Create bytecode function for lambda
-    BytecodeFunction func("<lambda>",
-                          static_cast<uint8_t>(lambda.parameters.size()), 0);
-
-    // Enter function context
-    enterFunction(std::move(func));
-
-    // Add parameters as locals
-    for (size_t i = 0; i < lambda.parameters.size(); ++i) {
-      const auto &param = lambda.parameters[i];
-      // Declare local by reserving slot
-      reserveLocalSlot(next_local_index++);
+    auto it = lambda_indices_by_node_.find(&lambda);
+    if (it == lambda_indices_by_node_.end()) {
+      throw std::runtime_error("Missing function index for lambda expression");
     }
-
-    // Compile function body
-    if (lambda.body) {
-      compileStatement(*lambda.body);
-      // If body is expression statement, result is already on stack
-      // Otherwise, return null
-      if (lambda.body->kind != ast::NodeType::ExpressionStatement) {
-        emit(OpCode::LOAD_CONST, addConstant(nullptr));
-      }
+    auto upvalues_it = lexical_resolution_.lambda_upvalues.find(&lambda);
+    if (upvalues_it != lexical_resolution_.lambda_upvalues.end() &&
+        !upvalues_it->second.empty()) {
+      emit(OpCode::CLOSURE, it->second);
     } else {
-      emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      emit(OpCode::LOAD_CONST,
+           addConstant(FunctionObject{.function_index = it->second}));
     }
-    emit(OpCode::RETURN);
-
-    // Leave function context
-    leaveFunction();
-
-    // Load closure
-    const auto &compiled_func = compiled_functions.back();
-    uint32_t function_index = 0;
-    for (size_t i = 0; i < compiled_functions.size(); ++i) {
-      if (&compiled_functions[i] == &compiled_func) {
-        function_index = static_cast<uint32_t>(i);
-        break;
-      }
-    }
-    emit(OpCode::LOAD_CONST,
-         addConstant(FunctionObject{.function_index = function_index}));
-    emit(OpCode::CLOSURE, function_index);
     break;
   }
 
@@ -830,6 +962,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                                    : nullptr;
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
+      if (binding.is_const) {
+        throw std::runtime_error("Cannot assign to const binding: " +
+                                 binding.name);
+      }
       emit(OpCode::DUP);
       if (binding.kind == ResolvedBindingKind::Local) {
         emit(OpCode::STORE_VAR, binding.slot);
@@ -841,6 +977,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     };
 
     auto emitLoadIdentifier = [&](const ResolvedBinding &binding) {
+      if (binding.is_const && assignment.operator_ != "=") {
+        throw std::runtime_error("Cannot mutate const binding: " +
+                                 binding.name);
+      }
       if (binding.kind == ResolvedBindingKind::Local) {
         emit(OpCode::LOAD_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
@@ -1035,6 +1175,18 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::AwaitExpression: {
+    const auto &await_expr =
+        static_cast<const ast::AwaitExpression &>(expression);
+    if (!await_expr.argument) {
+      throw std::runtime_error("Await expression missing argument");
+    }
+    compileExpression(*await_expr.argument);
+    emit(OpCode::CALL_HOST,
+         std::vector<BytecodeValue>{"async.await", static_cast<uint32_t>(1)});
+    break;
+  }
+
   default:
     throw std::runtime_error("Unsupported expression in bytecode compiler: " +
                              expression.toString());
@@ -1050,12 +1202,141 @@ void ByteCompiler::compileCallExpression(
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
   bool hasKwargs = !expression.kwargs.empty();
 
+  if (expression.callee->kind == ast::NodeType::Identifier) {
+    const auto &callee_id =
+        static_cast<const ast::Identifier &>(*expression.callee);
+    const auto *binding = bindingFor(callee_id);
+    if (binding && binding->kind == ResolvedBindingKind::Builtin &&
+        top_level_struct_names_.find(callee_id.symbol) !=
+            top_level_struct_names_.end()) {
+      emit(OpCode::LOAD_CONST, addConstant(callee_id.symbol));
+      uint32_t totalArgs = 1; // type name
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+        totalArgs++;
+      }
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{"struct.new", totalArgs});
+      return;
+    }
+  }
+
   // Check for method call on primitive (prototype method)
   if (expression.callee->kind == ast::NodeType::MemberExpression) {
     const auto &member =
         static_cast<const ast::MemberExpression &>(*expression.callee);
     auto *property =
         dynamic_cast<const ast::Identifier *>(member.property.get());
+    if (!member.object || !property) {
+      throw std::runtime_error("Unsupported member call expression");
+    }
+
+    // Array higher-order methods should work for both simple receivers
+    // (nums.map(...)) and chained receivers (nums.sort().map(...)).
+    bool is_array_module_call = false;
+    if (member.object->kind == ast::NodeType::Identifier) {
+      const auto &receiver_id =
+          static_cast<const ast::Identifier &>(*member.object);
+      if (const auto *receiver_binding = bindingFor(receiver_id)) {
+        if (receiver_binding->kind == ResolvedBindingKind::HostGlobal &&
+            receiver_binding->name == "array") {
+          is_array_module_call = true;
+        }
+      }
+    }
+
+    if (!is_array_module_call &&
+        (property->symbol == "map" || property->symbol == "filter" ||
+        property->symbol == "reduce" || property->symbol == "foreach" ||
+        property->symbol == "sort")) {
+      compileExpression(*member.object);
+      if (property->symbol == "map") {
+        if (expression.args.size() != 1 || !expression.args[0]) {
+          throw std::runtime_error("array.map() requires 1 callback argument");
+        }
+        compileExpression(*expression.args[0]);
+        emit(OpCode::CALL_HOST,
+             std::vector<BytecodeValue>{"array.map", static_cast<uint32_t>(2)});
+        return;
+      }
+      if (property->symbol == "filter") {
+        if (expression.args.size() != 1 || !expression.args[0]) {
+          throw std::runtime_error(
+              "array.filter() requires 1 callback argument");
+        }
+        compileExpression(*expression.args[0]);
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.filter",
+                                                           static_cast<uint32_t>(2)});
+        return;
+      }
+      if (property->symbol == "reduce") {
+        if (expression.args.size() != 2 || !expression.args[0] ||
+            !expression.args[1]) {
+          throw std::runtime_error(
+              "array.reduce() requires callback and initial value");
+        }
+        compileExpression(*expression.args[0]);
+        compileExpression(*expression.args[1]);
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.reduce",
+                                                           static_cast<uint32_t>(3)});
+        return;
+      }
+      if (property->symbol == "foreach") {
+        if (expression.args.size() != 1 || !expression.args[0]) {
+          throw std::runtime_error(
+              "array.foreach() requires 1 callback argument");
+        }
+        compileExpression(*expression.args[0]);
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.foreach",
+                                                           static_cast<uint32_t>(2)});
+        return;
+      }
+      // sort
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+      }
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{
+               "array.sort", static_cast<uint32_t>(expression.args.size() + 1)});
+      return;
+    }
+
+    const bool is_simple_receiver =
+        member.object->kind == ast::NodeType::StringLiteral ||
+        member.object->kind == ast::NodeType::ArrayLiteral ||
+        member.object->kind == ast::NodeType::ObjectLiteral ||
+        member.object->kind == ast::NodeType::Identifier;
+
+    // Method chaining path: receiver is an arbitrary expression (e.g.
+    // nums.map(f).filter(g)). Route through dynamic any.* dispatch.
+    if (!is_simple_receiver) {
+      compileExpression(*member.object);
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+      }
+      uint32_t totalArgs = arg_count + 1;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        totalArgs++;
+      }
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{"any." + property->symbol, totalArgs});
+      return;
+    }
 
     // Check if object is a literal or identifier (variable)
     bool isPrimitiveObject =
@@ -1797,6 +2078,227 @@ void ByteCompiler::collectFunctionDeclarations(
   }
 }
 
+void ByteCompiler::collectLambdaExpressions(
+    const ast::Statement &statement,
+    std::vector<const ast::LambdaExpression *> &out) const {
+  switch (statement.kind) {
+  case ast::NodeType::ExpressionStatement: {
+    const auto &expr_statement =
+        static_cast<const ast::ExpressionStatement &>(statement);
+    if (expr_statement.expression) {
+      collectLambdaExpressions(*expr_statement.expression, out);
+    }
+    break;
+  }
+  case ast::NodeType::LetDeclaration: {
+    const auto &let_statement =
+        static_cast<const ast::LetDeclaration &>(statement);
+    if (let_statement.value) {
+      collectLambdaExpressions(*let_statement.value, out);
+    }
+    break;
+  }
+  case ast::NodeType::ReturnStatement: {
+    const auto &return_statement =
+        static_cast<const ast::ReturnStatement &>(statement);
+    if (return_statement.argument) {
+      collectLambdaExpressions(*return_statement.argument, out);
+    }
+    break;
+  }
+  case ast::NodeType::BlockStatement: {
+    const auto &block_statement =
+        static_cast<const ast::BlockStatement &>(statement);
+    for (const auto &nested : block_statement.body) {
+      if (nested) {
+        collectLambdaExpressions(*nested, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::IfStatement: {
+    const auto &if_statement = static_cast<const ast::IfStatement &>(statement);
+    if (if_statement.condition) {
+      collectLambdaExpressions(*if_statement.condition, out);
+    }
+    if (if_statement.consequence) {
+      collectLambdaExpressions(*if_statement.consequence, out);
+    }
+    if (if_statement.alternative) {
+      collectLambdaExpressions(*if_statement.alternative, out);
+    }
+    break;
+  }
+  case ast::NodeType::WhileStatement: {
+    const auto &while_statement =
+        static_cast<const ast::WhileStatement &>(statement);
+    if (while_statement.condition) {
+      collectLambdaExpressions(*while_statement.condition, out);
+    }
+    if (while_statement.body) {
+      collectLambdaExpressions(*while_statement.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::ForStatement: {
+    const auto &for_statement = static_cast<const ast::ForStatement &>(statement);
+    if (for_statement.iterable) {
+      collectLambdaExpressions(*for_statement.iterable, out);
+    }
+    if (for_statement.body) {
+      collectLambdaExpressions(*for_statement.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::FunctionDeclaration: {
+    const auto &function =
+        static_cast<const ast::FunctionDeclaration &>(statement);
+    if (function.body) {
+      for (const auto &nested : function.body->body) {
+        if (nested) {
+          collectLambdaExpressions(*nested, out);
+        }
+      }
+    }
+    break;
+  }
+  default:
+    break;
+  }
+}
+
+void ByteCompiler::collectLambdaExpressions(
+    const ast::Expression &expression,
+    std::vector<const ast::LambdaExpression *> &out) const {
+  switch (expression.kind) {
+  case ast::NodeType::LambdaExpression: {
+    const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
+    out.push_back(&lambda);
+    if (lambda.body) {
+      collectLambdaExpressions(*lambda.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::BinaryExpression: {
+    const auto &binary = static_cast<const ast::BinaryExpression &>(expression);
+    if (binary.left) {
+      collectLambdaExpressions(*binary.left, out);
+    }
+    if (binary.right) {
+      collectLambdaExpressions(*binary.right, out);
+    }
+    break;
+  }
+  case ast::NodeType::CallExpression: {
+    const auto &call = static_cast<const ast::CallExpression &>(expression);
+    if (call.callee) {
+      collectLambdaExpressions(*call.callee, out);
+    }
+    for (const auto &arg : call.args) {
+      if (arg) {
+        collectLambdaExpressions(*arg, out);
+      }
+    }
+    for (const auto &kwarg : call.kwargs) {
+      if (kwarg.value) {
+        collectLambdaExpressions(*kwarg.value, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::AssignmentExpression: {
+    const auto &assignment =
+        static_cast<const ast::AssignmentExpression &>(expression);
+    if (assignment.target) {
+      collectLambdaExpressions(*assignment.target, out);
+    }
+    if (assignment.value) {
+      collectLambdaExpressions(*assignment.value, out);
+    }
+    break;
+  }
+  case ast::NodeType::MemberExpression: {
+    const auto &member = static_cast<const ast::MemberExpression &>(expression);
+    if (member.object) {
+      collectLambdaExpressions(*member.object, out);
+    }
+    break;
+  }
+  case ast::NodeType::IndexExpression: {
+    const auto &index = static_cast<const ast::IndexExpression &>(expression);
+    if (index.object) {
+      collectLambdaExpressions(*index.object, out);
+    }
+    if (index.index) {
+      collectLambdaExpressions(*index.index, out);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayLiteral: {
+    const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
+    for (const auto &element : array.elements) {
+      if (element) {
+        collectLambdaExpressions(*element, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::SetExpression: {
+    const auto &set = static_cast<const ast::SetExpression &>(expression);
+    for (const auto &element : set.elements) {
+      if (element) {
+        collectLambdaExpressions(*element, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::ObjectLiteral: {
+    const auto &object = static_cast<const ast::ObjectLiteral &>(expression);
+    for (const auto &pair : object.pairs) {
+      if (pair.second) {
+        collectLambdaExpressions(*pair.second, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::SpreadExpression: {
+    const auto &spread = static_cast<const ast::SpreadExpression &>(expression);
+    if (spread.target) {
+      collectLambdaExpressions(*spread.target, out);
+    }
+    break;
+  }
+  case ast::NodeType::InterpolatedStringExpression: {
+    const auto &interp =
+        static_cast<const ast::InterpolatedStringExpression &>(expression);
+    for (const auto &segment : interp.segments) {
+      if (!segment.isString && segment.expression) {
+        collectLambdaExpressions(*segment.expression, out);
+      }
+    }
+    break;
+  }
+  case ast::NodeType::AwaitExpression: {
+    const auto &await_expr =
+        static_cast<const ast::AwaitExpression &>(expression);
+    if (await_expr.argument) {
+      collectLambdaExpressions(*await_expr.argument, out);
+    }
+    break;
+  }
+  case ast::NodeType::AsyncExpression: {
+    const auto &async_expr =
+        static_cast<const ast::AsyncExpression &>(expression);
+    if (async_expr.body) {
+      collectLambdaExpressions(*async_expr.body, out);
+    }
+    break;
+  }
+  default:
+    break;
+  }
+}
+
 std::optional<std::string>
 ByteCompiler::getCalleeName(const ast::Expression &callee) const {
   if (callee.kind == ast::NodeType::Identifier) {
@@ -1842,12 +2344,14 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
   }
 }
 
-void ByteCompiler::enterFunction(BytecodeFunction &&function) {
+void ByteCompiler::enterFunction(BytecodeFunction &&function,
+                                 std::optional<uint32_t> slot) {
   if (current_function) {
     throw std::runtime_error("Nested function compilation is not supported");
   }
 
   current_function = std::make_unique<BytecodeFunction>(std::move(function));
+  current_function_slot_ = slot;
   resetLocals();
 }
 
@@ -1857,7 +2361,16 @@ void ByteCompiler::leaveFunction() {
   }
 
   current_function->local_count = next_local_index;
-  compiled_functions.push_back(std::move(current_function));
+  if (current_function_slot_.has_value()) {
+    const uint32_t slot = *current_function_slot_;
+    if (slot >= compiled_functions.size()) {
+      compiled_functions.resize(slot + 1);
+    }
+    compiled_functions[slot] = std::move(current_function);
+  } else {
+    compiled_functions.push_back(std::move(current_function));
+  }
+  current_function_slot_.reset();
   resetLocals();
 }
 

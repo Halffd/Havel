@@ -92,6 +92,7 @@ private:
       open_upvalues;
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
+  std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
 
   // Prototype system - methods on types (String, Array, Object)
   // Maps type name -> method name -> function
@@ -163,7 +164,7 @@ public:
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
 
-  void setMaxCallDepth(size_t value) { max_call_depth_ = value; }
+  void setMaxCallDepth(size_t value);
   void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }
   uint64_t executedInstructionCount() const { return executed_instructions_; }
   uint64_t opcodeCount(OpCode opcode) const {

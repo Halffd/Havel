@@ -62,8 +62,13 @@ private:
     void patchJump(uint32_t jump_instruction_index, uint32_t target);
 
     void compileFunction(const ast::FunctionDeclaration& function);
+    void compileLambda(const ast::LambdaExpression& lambda);
     void collectFunctionDeclarations(const ast::Statement& statement,
                                      std::vector<const ast::FunctionDeclaration*>& out) const;
+    void collectLambdaExpressions(const ast::Statement& statement,
+                                  std::vector<const ast::LambdaExpression*>& out) const;
+    void collectLambdaExpressions(const ast::Expression& expression,
+                                  std::vector<const ast::LambdaExpression*>& out) const;
     void compileStatement(const ast::Statement& statement);
     void compileExpression(const ast::Expression& expression);
     void compileHotkeyBinding(const ast::HotkeyBinding& binding);
@@ -79,7 +84,7 @@ private:
     uint32_t declarationSlot(const ast::Identifier& id) const;
     void reserveLocalSlot(uint32_t slot);
 
-    void enterFunction(BytecodeFunction&& function);
+    void enterFunction(BytecodeFunction&& function, std::optional<uint32_t> slot = std::nullopt);
     void leaveFunction();
     void resetLocals();
 
@@ -95,7 +100,11 @@ private:
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
     std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
         function_indices_by_node_;
+    std::unordered_map<const ast::LambdaExpression *, uint32_t>
+        lambda_indices_by_node_;
+    std::optional<uint32_t> current_function_slot_;
     std::unordered_map<std::string, uint32_t> top_level_function_indices_by_name_;
+    std::unordered_set<std::string> top_level_struct_names_;
     uint32_t next_local_index = 0;
     std::optional<SourceLocation> current_source_location_;
     LexicalResolutionResult lexical_resolution_;
@@ -120,7 +129,14 @@ private:
         // Timer module
         "timer.after", "timer.every",
         // Async module
-        "async.run", "async.await",
+        "async.run", "async.await", "async.cancel", "async.isRunning",
+        "async.channel", "async.send", "async.receive", "async.tryReceive",
+        "async.channel.close",
+        "thread", "thread.send", "thread.pause", "thread.resume", "thread.stop",
+        "thread.running", "interval", "interval.pause", "interval.resume",
+        "interval.stop", "timeout", "timeout.cancel",
+        // Struct module (VM-backed structs)
+        "struct.define", "struct.new", "struct.get", "struct.set",
         // Type system
         "type.of", "type.is", "type.as",
         "implements",
@@ -172,12 +188,15 @@ private:
         "any.startswith", "any.endswith", "any.find", "any.replace",
         "any.split", "any.join", "any.sub",
         "any.push", "any.pop", "any.get", "any.set", "any.sort",
-        "any.filter", "any.map", "any.reduce"
+        "any.filter", "any.map", "any.reduce",
+        "any.send", "any.pause", "any.resume", "any.stop",
+        "any.cancel", "any.running"
     };
     std::unordered_set<std::string> host_global_names_{
         "print", "sleep", "sleep_ms", "clock_ms", "clock_ns", "clock_us",
         "assert", "time.now",
-        "window", "io", "system", "hotkey", "mode", "process",
+        "window", "io", "system", "hotkey", "mode", "process", "async", "struct",
+        "thread", "interval", "timeout",
         "string", "array", "object", "type", "utility", "regex",
         "physics", "time", "math"
     };

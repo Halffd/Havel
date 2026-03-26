@@ -258,6 +258,10 @@ VM::VM(const havel::HostContext &ctx) {
   registerDefaultHostFunctions();
 }
 
+void VM::setMaxCallDepth(size_t value) {
+  max_call_depth_ = value;
+}
+
 VM::~VM() {
   if (heap_.externalRootCount() > 0) {
     std::cerr << "[VM][GC] Warning: " << heap_.externalRootCount()
@@ -330,10 +334,22 @@ void VM::processPendingCalls() {
 BytecodeValue VM::callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args) {
   size_t savedStackSize = stack.size();
   size_t savedFrameCount = frames.size();
+  std::vector<uint32_t> savedInstructionPointers;
+  savedInstructionPointers.reserve(savedFrameCount);
+  for (size_t i = 0; i < savedFrameCount; ++i) {
+    savedInstructionPointers.push_back(frames[i].ip);
+  }
   
   // Execute callback
   doCall(fn, args);
   runDispatchLoop(savedFrameCount);
+
+  // Trampoline safety: callback execution must never advance caller frames.
+  // Restore caller IPs in case nested dispatch touched them.
+  for (size_t i = 0; i < savedInstructionPointers.size() && i < frames.size();
+       ++i) {
+    frames[i].ip = savedInstructionPointers[i];
+  }
   
   // Get result from stack top
   BytecodeValue result;
@@ -948,6 +964,105 @@ void VM::registerDefaultHostFunctions() {
   };
   registerSystemGcStats("system.gcStats");
   registerSystemGcStats("system_gcStats");
+
+  registerHostFunction(
+      "struct.define", [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() != 2 || !std::holds_alternative<std::string>(args[0]) ||
+            !std::holds_alternative<ArrayRef>(args[1])) {
+          throw std::runtime_error(
+              "struct.define(name, fields) expects (string, array)");
+        }
+        const auto &name = std::get<std::string>(args[0]);
+        auto *field_array = heap_.array(std::get<ArrayRef>(args[1]).id);
+        if (!field_array) {
+          throw std::runtime_error("struct.define received invalid fields array");
+        }
+        std::vector<std::string> fields;
+        fields.reserve(field_array->size());
+        for (const auto &value : *field_array) {
+          if (!std::holds_alternative<std::string>(value)) {
+            throw std::runtime_error(
+                "struct.define fields must contain only strings");
+          }
+          fields.push_back(std::get<std::string>(value));
+        }
+        uint32_t type_id = registerStructType(name, fields);
+        struct_type_ids_by_name_[name] = type_id;
+        return BytecodeValue(static_cast<int64_t>(type_id));
+      });
+
+  registerHostFunction(
+      "struct.new", [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          throw std::runtime_error(
+              "struct.new(type, ...values) requires a type argument");
+        }
+        uint32_t type_id = 0;
+        if (std::holds_alternative<int64_t>(args[0])) {
+          type_id = static_cast<uint32_t>(std::get<int64_t>(args[0]));
+        } else if (std::holds_alternative<std::string>(args[0])) {
+          const auto &name = std::get<std::string>(args[0]);
+          auto it = struct_type_ids_by_name_.find(name);
+          if (it == struct_type_ids_by_name_.end()) {
+            throw std::runtime_error("Unknown struct type: " + name);
+          }
+          type_id = it->second;
+        } else {
+          throw std::runtime_error("struct.new type must be string or int");
+        }
+
+        const size_t field_count = heap_.structFieldCount(type_id);
+        StructRef ref = createStruct(type_id, field_count);
+        const size_t provided = args.size() - 1;
+        for (size_t i = 0; i < provided && i < field_count; ++i) {
+          setStructField(ref, i, args[i + 1]);
+        }
+        return BytecodeValue(ref);
+      });
+
+  registerHostFunction(
+      "struct.get", [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() != 2 || !std::holds_alternative<StructRef>(args[0])) {
+          throw std::runtime_error("struct.get(struct, field) expects struct");
+        }
+        StructRef ref = std::get<StructRef>(args[0]);
+        size_t index = 0;
+        if (std::holds_alternative<int64_t>(args[1])) {
+          index = static_cast<size_t>(std::get<int64_t>(args[1]));
+        } else if (std::holds_alternative<std::string>(args[1])) {
+          auto idx = heap_.structFieldIndex(ref.typeId, std::get<std::string>(args[1]));
+          if (!idx.has_value()) {
+            return BytecodeValue(nullptr);
+          }
+          index = *idx;
+        } else {
+          throw std::runtime_error("struct.get field must be string or int");
+        }
+        return getStructField(ref, index);
+      });
+
+  registerHostFunction(
+      "struct.set", [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() != 3 || !std::holds_alternative<StructRef>(args[0])) {
+          throw std::runtime_error(
+              "struct.set(struct, field, value) expects struct");
+        }
+        StructRef ref = std::get<StructRef>(args[0]);
+        size_t index = 0;
+        if (std::holds_alternative<int64_t>(args[1])) {
+          index = static_cast<size_t>(std::get<int64_t>(args[1]));
+        } else if (std::holds_alternative<std::string>(args[1])) {
+          auto idx = heap_.structFieldIndex(ref.typeId, std::get<std::string>(args[1]));
+          if (!idx.has_value()) {
+            throw std::runtime_error("Unknown struct field name");
+          }
+          index = *idx;
+        } else {
+          throw std::runtime_error("struct.set field must be string or int");
+        }
+        setStructField(ref, index, args[2]);
+        return BytecodeValue(ref);
+      });
 }
 
 void VM::registerDefaultHostGlobals() {
@@ -956,6 +1071,13 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(system_obj, "gcStats",
                      HostFunctionRef{.name = "system.gcStats"});
   setGlobal("system", system_obj);
+
+  auto struct_obj = heap_.allocateObject();
+  setHostObjectField(struct_obj, "define", HostFunctionRef{.name = "struct.define"});
+  setHostObjectField(struct_obj, "new", HostFunctionRef{.name = "struct.new"});
+  setHostObjectField(struct_obj, "get", HostFunctionRef{.name = "struct.get"});
+  setHostObjectField(struct_obj, "set", HostFunctionRef{.name = "struct.set"});
+  setGlobal("struct", struct_obj);
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,
@@ -993,6 +1115,7 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
   locals.clear();
   frames.clear();
   heap_.reset();
+  struct_type_ids_by_name_.clear();
   open_upvalues.clear();
   registerDefaultHostGlobals();
   opcode_counts_.fill(0);
@@ -2307,13 +2430,10 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     auto resultRef = heap_.allocateArray();
     auto *result = heap_.array(resultRef.id);
-    size_t savedFrameCount = frames.size();
     uint64_t resultRootId = pinExternalRoot(BytecodeValue(resultRef));
 
     for (size_t i = 0; i < arr->size(); i++) {
-      doCall(fn, {(*arr)[i]});
-      runDispatchLoop(savedFrameCount);
-      BytecodeValue mapped = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+      BytecodeValue mapped = callFunctionSync(fn, {(*arr)[i]});
       result->push_back(mapped);
     }
 
@@ -2336,13 +2456,10 @@ void VM::executeInstruction(const Instruction &instruction) {
 
     auto resultRef = heap_.allocateArray();
     auto *result = heap_.array(resultRef.id);
-    size_t savedFrameCount = frames.size();
     uint64_t resultRootId = pinExternalRoot(BytecodeValue(resultRef));
 
     for (size_t i = 0; i < arr->size(); i++) {
-      doCall(fn, {(*arr)[i]});
-      runDispatchLoop(savedFrameCount);
-      BytecodeValue predResult = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+      BytecodeValue predResult = callFunctionSync(fn, {(*arr)[i]});
       if (std::holds_alternative<bool>(predResult) && std::get<bool>(predResult)) {
         result->push_back((*arr)[i]);
       }
@@ -2367,12 +2484,8 @@ void VM::executeInstruction(const Instruction &instruction) {
     }
 
     BytecodeValue acc = initial;
-    size_t savedFrameCount = frames.size();
-
     for (size_t i = 0; i < arr->size(); i++) {
-      doCall(fn, {acc, (*arr)[i]});
-      runDispatchLoop(savedFrameCount);
-      acc = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+      acc = callFunctionSync(fn, {acc, (*arr)[i]});
     }
 
     push(acc);
@@ -2391,12 +2504,8 @@ void VM::executeInstruction(const Instruction &instruction) {
       break;
     }
 
-    size_t savedFrameCount = frames.size();
-
     for (size_t i = 0; i < arr->size(); i++) {
-      doCall(fn, {(*arr)[i]});
-      runDispatchLoop(savedFrameCount);
-      if (!stack.empty()) { stack.pop(); }
+      (void)callFunctionSync(fn, {(*arr)[i]});
     }
 
     push(BytecodeValue(nullptr));

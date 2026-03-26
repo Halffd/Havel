@@ -993,20 +993,19 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
 
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   while (frames.size() > stop_frame_depth) {
-    auto *active_frame = &currentFrame();
-    size_t previous_ip = active_frame->ip;
+    size_t active_frame_idx = frames.size() - 1;
+    uint32_t previous_ip = frames[active_frame_idx].ip;
 
-    auto &frame = *active_frame;
-    if (frame.ip >= frame.function->instructions.size()) {
+    if (frames[active_frame_idx].ip >= frames[active_frame_idx].function->instructions.size()) {
       stack.push(nullptr);
       executeInstruction(Instruction{OpCode::RETURN});
       continue;
     }
 
-    const auto &instruction = frame.function->instructions[frame.ip];
+    const auto& instruction = frames[active_frame_idx].function->instructions[frames[active_frame_idx].ip];
 
     if (debug_mode) {
-      std::cout << "IP: " << frame.ip
+      std::cout << "IP: " << frames[active_frame_idx].ip
                 << " OP: " << static_cast<int>(instruction.opcode) << std::endl;
     }
 
@@ -1016,19 +1015,20 @@ void VM::runDispatchLoop(size_t stop_frame_depth) {
         executed_instructions_++;
       }
       executeInstruction(instruction);
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
       throw std::runtime_error(
-          "Runtime error in function '" + frame.function->name +
-          "' at ip=" + std::to_string(frame.ip) + " (source " +
-          formatSourceLocation(*frame.function, frame.ip) + "): " + e.what());
+          "Runtime error in function '" + frames[active_frame_idx].function->name +
+          "' at ip=" + std::to_string(frames[active_frame_idx].ip) + " (source " +
+          formatSourceLocation(*frames[active_frame_idx].function, frames[active_frame_idx].ip) + "): " + e.what());
     }
-    
-    // Process any pending calls scheduled by host functions
+
     processPendingCalls();
-    
-    if (!frames.empty() && active_frame == &currentFrame() &&
-        currentFrame().ip == previous_ip) {
-      currentFrame().ip++;
+
+    if (frames.size() > stop_frame_depth) {
+      active_frame_idx = frames.size() - 1;
+      if (frames[active_frame_idx].ip == previous_ip) {
+        frames[active_frame_idx].ip++;
+      }
     }
   }
 }

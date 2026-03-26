@@ -129,6 +129,11 @@ struct VMApi {
     vm.registerHostFunction(name, arity, std::move(fn));
   }
 
+  BytecodeValue callFunction(const BytecodeValue &fn,
+                             const std::vector<BytecodeValue> &args = {}) {
+    return vm.callFunction(fn, args);
+  }
+
   // Prototype method registration
   void registerPrototypeMethod(const std::string &typeName,
                                const std::string &methodName,

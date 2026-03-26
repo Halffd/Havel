@@ -79,6 +79,8 @@ private:
 
   struct TryHandler {
     uint32_t catch_ip = 0;
+    uint32_t finally_ip = 0;  // 0 if no finally block
+    uint32_t finally_return_ip = 0;  // Where to go after finally (catch_ip or re-throw)
     size_t stack_depth = 0;
   };
 

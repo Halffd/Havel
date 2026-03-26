@@ -581,22 +581,39 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
 
   const uint32_t try_enter_index =
       static_cast<uint32_t>(current_function->instructions.size());
-  emit(OpCode::TRY_ENTER, static_cast<uint32_t>(0)); // patched later
+  // Emit TRY_ENTER with placeholder operands (catch_ip and finally_ip patched later)
+  emit(OpCode::TRY_ENTER, std::vector<BytecodeValue>{
+      static_cast<uint32_t>(0),  // catch_ip - patched later
+      static_cast<uint32_t>(0)   // finally_ip - patched later (0 if no finally)
+  });
 
   compileStatement(*statement.tryBody);
   emit(OpCode::TRY_EXIT);
 
+  // Finally block location (executed after try body on normal exit)
+  uint32_t finally_ip = 0;
+  uint32_t finally_end_ip = 0;
   if (statement.finallyBlock) {
+    finally_ip = static_cast<uint32_t>(current_function->instructions.size());
     compileStatement(*statement.finallyBlock);
+    finally_end_ip = static_cast<uint32_t>(current_function->instructions.size());
+    // After finally on normal exit, jump to end
   }
+
   const uint32_t jump_after_try = emitJump(OpCode::JUMP);
 
+  // Catch block location
   const uint32_t catch_ip =
       static_cast<uint32_t>(current_function->instructions.size());
+  
+  // Patch TRY_ENTER with catch_ip and finally_ip
   if (try_enter_index >= current_function->instructions.size()) {
     throw std::runtime_error("Invalid TRY_ENTER patch index");
   }
   current_function->instructions[try_enter_index].operands[0] = catch_ip;
+  if (finally_ip != 0) {
+    current_function->instructions[try_enter_index].operands[1] = finally_ip;
+  }
 
   std::vector<uint32_t> end_jumps;
 
@@ -608,11 +625,13 @@ void ByteCompiler::compileTryStatement(const ast::TryExpression &statement) {
       emit(OpCode::STORE_VAR, catch_slot);
     }
     compileStatement(*statement.catchBody);
+    // After catch, execute finally if it exists and wasn't already executed
     if (statement.finallyBlock) {
       compileStatement(*statement.finallyBlock);
     }
     end_jumps.push_back(emitJump(OpCode::JUMP));
   } else if (statement.finallyBlock) {
+    // No catch block - save exception, run finally, re-throw
     const uint32_t exception_slot = next_local_index;
     reserveLocalSlot(exception_slot);
     emit(OpCode::LOAD_EXCEPTION);

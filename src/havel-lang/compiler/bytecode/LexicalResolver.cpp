@@ -224,8 +224,17 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   {
     const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
     if (fn.name) {
-      // Allow nested function references from the surrounding function scope.
-      declareLocal(fn.name->symbol, fn.name.get());
+      // Check if this is a top-level function (in program body, not nested)
+      if (top_level_functions_.count(fn.name->symbol) > 0) {
+        // Top-level function - create GlobalFunction binding
+        ResolvedBinding binding;
+        binding.kind = ResolvedBindingKind::GlobalFunction;
+        binding.name = fn.name->symbol;
+        result_.identifier_bindings[fn.name.get()] = binding;
+      } else {
+        // Nested function - declare as local
+        declareLocal(fn.name->symbol, fn.name.get());
+      }
     }
     resolveFunctionDeclaration(fn);
     break;

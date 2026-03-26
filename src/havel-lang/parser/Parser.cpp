@@ -319,6 +319,44 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   }
   case havel::TokenType::Identifier: {
+    // Sugar forms:
+    //   thread { ... }            -> thread(fn() { ... })
+    //   interval <ms> { ... }     -> interval(<ms>, fn() { ... })
+    //   timeout <ms> { ... }      -> timeout(<ms>, fn() { ... })
+    if (at().value == "thread" && at(1).type == havel::TokenType::OpenBrace) {
+      advance(); // consume "thread"
+      auto body = parseBlockStatement();
+      auto lambda = std::make_unique<havel::ast::LambdaExpression>();
+      lambda->body = std::move(body);
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      args.push_back(std::move(lambda));
+      auto call = std::make_unique<havel::ast::CallExpression>(
+          std::make_unique<havel::ast::Identifier>("thread"), std::move(args));
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
+    }
+
+    if ((at().value == "interval" || at().value == "timeout") &&
+        at(1).type != havel::TokenType::OpenBrace) {
+      const std::string async_kind = at().value;
+      advance(); // consume "interval" / "timeout"
+      auto delay = parseExpression();
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      if (at().type != havel::TokenType::OpenBrace) {
+        failAt(at(), "Expected block body after " + async_kind + " delay");
+      }
+      auto body = parseBlockStatement();
+      auto lambda = std::make_unique<havel::ast::LambdaExpression>();
+      lambda->body = std::move(body);
+      std::vector<std::unique_ptr<havel::ast::Expression>> args;
+      args.push_back(std::move(delay));
+      args.push_back(std::move(lambda));
+      auto call = std::make_unique<havel::ast::CallExpression>(
+          std::make_unique<havel::ast::Identifier>(async_kind), std::move(args));
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
+    }
+
     // Check for config section FIRST: identifier [args...] { key = value }
     // Look ahead to find OpenBrace (skipping potential args)
     // This must come before hotkey checking to avoid parsing as function call
@@ -415,6 +453,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
 
     // Not a hotkey binding, parse as expression
     auto expr = parseExpression();
+
+    // Require statement terminator: semicolon or newline
+    // Prevents accidental expression chaining across lines:
+    //   print("a")
+    //   print("b")
+    if (at().type != havel::TokenType::Semicolon &&
+        at().type != havel::TokenType::NewLine &&
+        at().type != havel::TokenType::EOF_TOKEN &&
+        at().type != havel::TokenType::CloseBrace) {
+      failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");
+    }
+
+    if (at().type == havel::TokenType::Semicolon) {
+      advance();
+    }
+
     return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
   }
   case havel::TokenType::Let:
@@ -611,6 +665,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
   }
   }
+
+  return nullptr;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
@@ -2050,6 +2106,36 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
   if (at().type == havel::TokenType::OpenBracket) {
     // Array destructuring: let [a, b] = arr
     pattern = parseArrayPattern();
+  } else if (at().type == havel::TokenType::OpenParen) {
+    // Tuple destructuring: let (a, b) = tuple
+    advance(); // consume '('
+    std::vector<std::unique_ptr<havel::ast::Expression>> elements;
+    while (notEOF() && at().type != havel::TokenType::CloseParen) {
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      if (at().type == havel::TokenType::CloseParen) {
+        break;
+      }
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Tuple destructuring expects identifiers");
+      }
+      elements.push_back(
+          std::make_unique<havel::ast::Identifier>(advance().value));
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+      if (at().type == havel::TokenType::Comma) {
+        advance();
+      } else if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ',' or ')' in tuple destructuring");
+      }
+    }
+    if (at().type != havel::TokenType::CloseParen) {
+      failAt(at(), "Expected ')' to close tuple destructuring");
+    }
+    advance(); // consume ')'
+    pattern = std::make_unique<havel::ast::ArrayPattern>(std::move(elements));
   } else if (at().type == havel::TokenType::OpenBrace) {
     // Object destructuring: let {x, y} = obj
     pattern = parseObjectPattern();
@@ -2854,6 +2940,16 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
   return left;
 }
 std::unique_ptr<havel::ast::Expression> Parser::parseUnary() {
+  if (at().type == havel::TokenType::Identifier && at().value == "await") {
+    auto awaitTok = advance();
+    auto argument = parseUnary();
+    auto awaitExpr =
+        std::make_unique<havel::ast::AwaitExpression>(std::move(argument));
+    awaitExpr->line = awaitTok.line;
+    awaitExpr->column = awaitTok.column;
+    return awaitExpr;
+  }
+
   if (at().type == havel::TokenType::PlusPlus ||
       at().type == havel::TokenType::MinusMinus) {
     auto op = (at().type == havel::TokenType::PlusPlus)

@@ -179,6 +179,20 @@ private:
   static BytecodeValue handleChannelReceive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleChannelTryReceive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleChannelClose(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+
+  // Thread/Timer controls
+  static BytecodeValue handleThreadCreate(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleThreadSend(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleThreadPause(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleThreadResume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleThreadStop(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleThreadRunning(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIntervalCreate(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIntervalPause(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIntervalResume(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIntervalStop(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleTimeoutCreate(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleTimeoutCancel(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

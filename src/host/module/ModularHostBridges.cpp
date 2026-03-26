@@ -31,8 +31,79 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <atomic>
+#include <deque>
+#include <mutex>
+#include <unordered_map>
 
 namespace havel::compiler {
+
+namespace {
+
+struct AsyncTaskRecord {
+  bool running = false;
+  bool completed = false;
+  bool cancelled = false;
+  BytecodeValue result = nullptr;
+  std::string error;
+};
+
+struct ChannelRecord {
+  std::deque<BytecodeValue> queue;
+  bool closed = false;
+};
+
+struct ThreadRecord {
+  CallbackId callback = INVALID_CALLBACK_ID;
+  bool running = true;
+  bool paused = false;
+};
+
+struct TimerRecord {
+  CallbackId callback = INVALID_CALLBACK_ID;
+  bool running = true;
+  bool paused = false;
+  bool repeating = false;
+  int64_t delay_ms = 0;
+  std::string task_id;
+};
+
+std::mutex g_async_mutex;
+std::mutex g_vm_invoke_mutex;
+std::atomic<uint64_t> g_next_task_id{1};
+std::unordered_map<std::string, AsyncTaskRecord> g_async_tasks;
+std::unordered_map<std::string, ChannelRecord> g_async_channels;
+std::unordered_map<std::string, ThreadRecord> g_threads;
+std::unordered_map<std::string, TimerRecord> g_timers;
+
+std::string allocateTaskId() {
+  return "task-" + std::to_string(g_next_task_id.fetch_add(1));
+}
+
+ObjectRef makeHandleObject(VM *vm, const std::string &kind,
+                           const std::string &id) {
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "__kind", BytecodeValue(kind));
+  vm->setHostObjectField(obj, "__id", BytecodeValue(id));
+  return obj;
+}
+
+std::optional<std::pair<std::string, std::string>>
+extractHandle(const std::vector<BytecodeValue> &args, VM *vm, size_t index = 0) {
+  if (!vm || index >= args.size() || !std::holds_alternative<ObjectRef>(args[index])) {
+    return std::nullopt;
+  }
+  ObjectRef obj = std::get<ObjectRef>(args[index]);
+  BytecodeValue kind = vm->getHostObjectField(obj, "__kind");
+  BytecodeValue id = vm->getHostObjectField(obj, "__id");
+  if (!std::holds_alternative<std::string>(kind) ||
+      !std::holds_alternative<std::string>(id)) {
+    return std::nullopt;
+  }
+  return std::make_pair(std::get<std::string>(kind), std::get<std::string>(id));
+}
+
+} // namespace
 
 // ============================================================================
 // IOBridge Implementation
@@ -819,6 +890,91 @@ void AsyncBridge::install(PipelineOptions &options) {
   options.host_functions["async.channel.close"] = [ctx = ctx_](const auto &args) {
     return handleChannelClose(args, ctx);
   };
+
+  // Concurrency primitives
+  options.host_functions["thread"] = [ctx = ctx_](const auto &args) {
+    return handleThreadCreate(args, ctx);
+  };
+  options.host_functions["thread.send"] = [ctx = ctx_](const auto &args) {
+    return handleThreadSend(args, ctx);
+  };
+  options.host_functions["thread.pause"] = [ctx = ctx_](const auto &args) {
+    return handleThreadPause(args, ctx);
+  };
+  options.host_functions["thread.resume"] = [ctx = ctx_](const auto &args) {
+    return handleThreadResume(args, ctx);
+  };
+  options.host_functions["thread.stop"] = [ctx = ctx_](const auto &args) {
+    return handleThreadStop(args, ctx);
+  };
+  options.host_functions["thread.running"] = [ctx = ctx_](const auto &args) {
+    return handleThreadRunning(args, ctx);
+  };
+  options.host_functions["interval"] = [ctx = ctx_](const auto &args) {
+    return handleIntervalCreate(args, ctx);
+  };
+  options.host_functions["interval.pause"] = [ctx = ctx_](const auto &args) {
+    return handleIntervalPause(args, ctx);
+  };
+  options.host_functions["interval.resume"] = [ctx = ctx_](const auto &args) {
+    return handleIntervalResume(args, ctx);
+  };
+  options.host_functions["interval.stop"] = [ctx = ctx_](const auto &args) {
+    return handleIntervalStop(args, ctx);
+  };
+  options.host_functions["timeout"] = [ctx = ctx_](const auto &args) {
+    return handleTimeoutCreate(args, ctx);
+  };
+  options.host_functions["timeout.cancel"] = [ctx = ctx_](const auto &args) {
+    return handleTimeoutCancel(args, ctx);
+  };
+
+  // Method-style dispatch via any.*
+  options.host_functions["object.send"] = [ctx = ctx_](const auto &args) {
+    return handleThreadSend(args, ctx);
+  };
+  options.host_functions["object.pause"] = [ctx = ctx_](const auto &args) {
+    auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
+    if (!handle.has_value()) return BytecodeValue(false);
+    if (handle->first == "thread") return handleThreadPause(args, ctx);
+    if (handle->first == "interval") return handleIntervalPause(args, ctx);
+    return BytecodeValue(false);
+  };
+  options.host_functions["object.resume"] = [ctx = ctx_](const auto &args) {
+    auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
+    if (!handle.has_value()) return BytecodeValue(false);
+    if (handle->first == "thread") return handleThreadResume(args, ctx);
+    if (handle->first == "interval") return handleIntervalResume(args, ctx);
+    return BytecodeValue(false);
+  };
+  options.host_functions["object.stop"] = [ctx = ctx_](const auto &args) {
+    auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
+    if (!handle.has_value()) return BytecodeValue(false);
+    if (handle->first == "thread") return handleThreadStop(args, ctx);
+    if (handle->first == "interval") return handleIntervalStop(args, ctx);
+    return BytecodeValue(false);
+  };
+  options.host_functions["object.cancel"] = [ctx = ctx_](const auto &args) {
+    auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
+    if (!handle.has_value() || handle->first != "timeout") return BytecodeValue(false);
+    return handleTimeoutCancel(args, ctx);
+  };
+  options.host_functions["object.running"] = [ctx = ctx_](const auto &args) {
+    auto handle = extractHandle(args, static_cast<VM *>(ctx->vm));
+    if (!handle.has_value()) return BytecodeValue(false);
+    if (handle->first == "thread") return handleThreadRunning(args, ctx);
+    if (handle->first == "interval") {
+      std::lock_guard<std::mutex> lock(g_async_mutex);
+      auto it = g_timers.find(handle->second);
+      return BytecodeValue(it != g_timers.end() && it->second.running);
+    }
+    if (handle->first == "timeout") {
+      std::lock_guard<std::mutex> lock(g_async_mutex);
+      auto it = g_timers.find(handle->second);
+      return BytecodeValue(it != g_timers.end() && it->second.running);
+    }
+    return BytecodeValue(false);
+  };
 }
 
 BytecodeValue AsyncBridge::handleSleep(const std::vector<BytecodeValue> &args,
@@ -860,18 +1016,43 @@ BytecodeValue AsyncBridge::handleAsyncRun(const std::vector<BytecodeValue> &args
   if (args.empty()) {
     throw std::runtime_error("async.run() requires a function argument");
   }
-  
-  // For now, we can't pass VM closures to AsyncService
-  // This requires callback infrastructure
-  // Return a placeholder task ID
-  if (ctx && ctx->asyncService) {
-    std::string taskId = ctx->asyncService->spawn([]() {
-      // Placeholder - in real implementation would execute the closure
-    });
-    return BytecodeValue(taskId);
+
+  if (!ctx || !ctx->vm) {
+    throw std::runtime_error("async.run() requires an active VM context");
   }
-  
-  return BytecodeValue(nullptr);
+
+  // Execute VM callback immediately and persist result under a task id.
+  // This removes placeholder behavior and allows async.await() to return
+  // actual closure results while keeping VM interaction single-threaded.
+  auto *vm = static_cast<VM *>(ctx->vm);
+  std::string taskId = allocateTaskId();
+  AsyncTaskRecord record;
+  record.running = true;
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_async_tasks[taskId] = record;
+  }
+
+  try {
+    CallbackId callback = vm->registerCallback(args[0]);
+    BytecodeValue result = vm->invokeCallback(callback, {});
+    vm->releaseCallback(callback);
+
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto &task = g_async_tasks[taskId];
+    task.running = false;
+    task.completed = true;
+    task.result = std::move(result);
+  } catch (const std::exception &e) {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto &task = g_async_tasks[taskId];
+    task.running = false;
+    task.completed = true;
+    task.error = e.what();
+  }
+
+  return BytecodeValue(taskId);
 }
 
 BytecodeValue AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &args,
@@ -886,6 +1067,18 @@ BytecodeValue AsyncBridge::handleAsyncAwait(const std::vector<BytecodeValue> &ar
   
   std::string taskId = std::get<std::string>(args[0]);
   
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_tasks.find(taskId);
+    if (it != g_async_tasks.end()) {
+      if (!it->second.error.empty()) {
+        throw std::runtime_error("async.await() task failed: " +
+                                 it->second.error);
+      }
+      return it->second.result;
+    }
+  }
+
   if (ctx && ctx->asyncService) {
     bool completed = ctx->asyncService->await(taskId);
     return BytecodeValue(completed);
@@ -905,7 +1098,17 @@ BytecodeValue AsyncBridge::handleAsyncCancel(const std::vector<BytecodeValue> &a
   }
   
   std::string taskId = std::get<std::string>(args[0]);
-  
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_tasks.find(taskId);
+    if (it != g_async_tasks.end()) {
+      it->second.cancelled = true;
+      it->second.running = false;
+      return BytecodeValue(true);
+    }
+  }
+
   if (ctx && ctx->asyncService) {
     bool cancelled = ctx->asyncService->cancel(taskId);
     return BytecodeValue(cancelled);
@@ -925,7 +1128,15 @@ BytecodeValue AsyncBridge::handleAsyncIsRunning(const std::vector<BytecodeValue>
   }
   
   std::string taskId = std::get<std::string>(args[0]);
-  
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_tasks.find(taskId);
+    if (it != g_async_tasks.end()) {
+      return BytecodeValue(it->second.running);
+    }
+  }
+
   if (ctx && ctx->asyncService) {
     bool running = ctx->asyncService->isRunning(taskId);
     return BytecodeValue(running);
@@ -946,13 +1157,17 @@ BytecodeValue AsyncBridge::handleChannelCreate(const std::vector<BytecodeValue> 
   }
   
   std::string name = std::get<std::string>(args[0]);
-  
-  if (ctx && ctx->asyncService) {
-    bool created = ctx->asyncService->createChannel(name);
-    return BytecodeValue(created);
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto &channel = g_async_channels[name];
+    channel.closed = false;
   }
-  
-  return BytecodeValue(false);
+
+  if (ctx && ctx->asyncService) {
+    (void)ctx->asyncService->createChannel(name);
+  }
+  return BytecodeValue(true);
 }
 
 BytecodeValue AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &args,
@@ -966,14 +1181,20 @@ BytecodeValue AsyncBridge::handleChannelSend(const std::vector<BytecodeValue> &a
   }
   
   std::string name = std::get<std::string>(args[0]);
-  std::string value = toString(args[1]);
-  
-  if (ctx && ctx->asyncService) {
-    bool sent = ctx->asyncService->send(name, value);
-    return BytecodeValue(sent);
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_channels.find(name);
+    if (it == g_async_channels.end() || it->second.closed) {
+      return BytecodeValue(false);
+    }
+    it->second.queue.push_back(args[1]);
   }
-  
-  return BytecodeValue(false);
+
+  if (ctx && ctx->asyncService) {
+    (void)ctx->asyncService->send(name, toString(args[1]));
+  }
+  return BytecodeValue(true);
 }
 
 BytecodeValue AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue> &args,
@@ -987,13 +1208,17 @@ BytecodeValue AsyncBridge::handleChannelReceive(const std::vector<BytecodeValue>
   }
   
   std::string name = std::get<std::string>(args[0]);
-  
-  if (ctx && ctx->asyncService) {
-    std::string value = ctx->asyncService->receive(name);
-    return BytecodeValue(value);
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_channels.find(name);
+    if (it == g_async_channels.end() || it->second.queue.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    BytecodeValue value = it->second.queue.front();
+    it->second.queue.pop_front();
+    return value;
   }
-  
-  return BytecodeValue(std::string(""));
 }
 
 BytecodeValue AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeValue> &args,
@@ -1007,13 +1232,17 @@ BytecodeValue AsyncBridge::handleChannelTryReceive(const std::vector<BytecodeVal
   }
   
   std::string name = std::get<std::string>(args[0]);
-  
-  if (ctx && ctx->asyncService) {
-    std::string value = ctx->asyncService->tryReceive(name);
-    return BytecodeValue(value);
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_channels.find(name);
+    if (it == g_async_channels.end() || it->second.queue.empty()) {
+      return BytecodeValue(nullptr);
+    }
+    BytecodeValue value = it->second.queue.front();
+    it->second.queue.pop_front();
+    return value;
   }
-  
-  return BytecodeValue(std::string(""));
 }
 
 BytecodeValue AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &args,
@@ -1027,13 +1256,299 @@ BytecodeValue AsyncBridge::handleChannelClose(const std::vector<BytecodeValue> &
   }
   
   std::string name = std::get<std::string>(args[0]);
-  
-  if (ctx && ctx->asyncService) {
-    bool closed = ctx->asyncService->closeChannel(name);
-    return BytecodeValue(closed);
+
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_async_channels.find(name);
+    if (it == g_async_channels.end()) {
+      return BytecodeValue(false);
+    }
+    it->second.closed = true;
+    it->second.queue.clear();
   }
-  
-  return BytecodeValue(false);
+
+  if (ctx && ctx->asyncService) {
+    (void)ctx->asyncService->closeChannel(name);
+  }
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleThreadCreate(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  if (!ctx || !ctx->vm || args.empty()) {
+    throw std::runtime_error("thread(fn) requires VM context and callback");
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  CallbackId callback = vm->registerCallback(args[0]);
+  const std::string id = allocateTaskId();
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_threads[id] = ThreadRecord{.callback = callback, .running = true, .paused = false};
+  }
+  return BytecodeValue(makeHandleObject(vm, "thread", id));
+}
+
+BytecodeValue AsyncBridge::handleThreadSend(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  if (!ctx || !ctx->vm || args.size() < 2) {
+    throw std::runtime_error("thread.send(handle, message) requires 2 args");
+  }
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "thread") {
+    return BytecodeValue(false);
+  }
+
+  ThreadRecord record;
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    auto it = g_threads.find(handle->second);
+    if (it == g_threads.end() || !it->second.running || it->second.paused) {
+      return BytecodeValue(false);
+    }
+    record = it->second;
+  }
+
+  {
+    std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+    (void)vm->invokeCallback(record.callback, {args[1]});
+  }
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleThreadPause(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "thread") {
+    return BytecodeValue(false);
+  }
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_threads.find(handle->second);
+  if (it == g_threads.end()) return BytecodeValue(false);
+  it->second.paused = true;
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleThreadResume(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "thread") {
+    return BytecodeValue(false);
+  }
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_threads.find(handle->second);
+  if (it == g_threads.end()) return BytecodeValue(false);
+  it->second.paused = false;
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleThreadStop(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "thread") {
+    return BytecodeValue(false);
+  }
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_threads.find(handle->second);
+  if (it == g_threads.end()) return BytecodeValue(false);
+  if (vm) {
+    vm->releaseCallback(it->second.callback);
+  }
+  it->second.running = false;
+  it->second.paused = false;
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleThreadRunning(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "thread") {
+    return BytecodeValue(false);
+  }
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_threads.find(handle->second);
+  return BytecodeValue(it != g_threads.end() && it->second.running);
+}
+
+BytecodeValue AsyncBridge::handleIntervalCreate(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  if (!ctx || !ctx->vm || args.size() < 2) {
+    throw std::runtime_error("interval(ms, fn) requires delay and callback");
+  }
+  int64_t delay_ms = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    delay_ms = std::get<int64_t>(args[0]);
+  } else if (std::holds_alternative<double>(args[0])) {
+    delay_ms = static_cast<int64_t>(std::get<double>(args[0]));
+  } else {
+    throw std::runtime_error("interval delay must be number");
+  }
+  if (delay_ms < 1) delay_ms = 1;
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  const CallbackId callback = vm->registerCallback(args[1]);
+  const std::string id = allocateTaskId();
+
+  TimerRecord timer{.callback = callback,
+                    .running = true,
+                    .paused = false,
+                    .repeating = true,
+                    .delay_ms = delay_ms,
+                    .task_id = ""};
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_timers[id] = timer;
+  }
+
+  if (ctx->asyncService) {
+    std::string task_id = ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
+      auto *vm_local = static_cast<VM *>(ctx->vm);
+      while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+        bool should_run = false;
+        {
+          std::lock_guard<std::mutex> lock(g_async_mutex);
+          auto it = g_timers.find(id);
+          if (it == g_timers.end() || !it->second.running) {
+            break;
+          }
+          should_run = !it->second.paused;
+        }
+        if (!should_run || !vm_local) {
+          continue;
+        }
+        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+        try {
+          (void)vm_local->invokeCallback(callback, {});
+        } catch (...) {
+          // Keep timer alive; script side can stop it explicitly.
+        }
+      }
+    });
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_timers[id].task_id = task_id;
+  }
+
+  return BytecodeValue(makeHandleObject(vm, "interval", id));
+}
+
+BytecodeValue AsyncBridge::handleIntervalPause(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_timers.find(handle->second);
+  if (it == g_timers.end()) return BytecodeValue(false);
+  it->second.paused = true;
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleIntervalResume(const std::vector<BytecodeValue> &args,
+                                                const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_timers.find(handle->second);
+  if (it == g_timers.end()) return BytecodeValue(false);
+  it->second.paused = false;
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleIntervalStop(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "interval") return BytecodeValue(false);
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_timers.find(handle->second);
+  if (it == g_timers.end()) return BytecodeValue(false);
+  it->second.running = false;
+  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
+    (void)ctx->asyncService->cancel(it->second.task_id);
+  }
+  if (vm) {
+    vm->releaseCallback(it->second.callback);
+  }
+  return BytecodeValue(true);
+}
+
+BytecodeValue AsyncBridge::handleTimeoutCreate(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  if (!ctx || !ctx->vm || args.size() < 2) {
+    throw std::runtime_error("timeout(ms, fn) requires delay and callback");
+  }
+  int64_t delay_ms = 0;
+  if (std::holds_alternative<int64_t>(args[0])) {
+    delay_ms = std::get<int64_t>(args[0]);
+  } else if (std::holds_alternative<double>(args[0])) {
+    delay_ms = static_cast<int64_t>(std::get<double>(args[0]));
+  } else {
+    throw std::runtime_error("timeout delay must be number");
+  }
+  if (delay_ms < 1) delay_ms = 1;
+
+  auto *vm = static_cast<VM *>(ctx->vm);
+  const CallbackId callback = vm->registerCallback(args[1]);
+  const std::string id = allocateTaskId();
+  {
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_timers[id] = TimerRecord{.callback = callback,
+                               .running = true,
+                               .paused = false,
+                               .repeating = false,
+                               .delay_ms = delay_ms,
+                               .task_id = ""};
+  }
+
+  if (ctx->asyncService) {
+    std::string task_id = ctx->asyncService->spawn([ctx, id, callback, delay_ms]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+      auto *vm_local = static_cast<VM *>(ctx->vm);
+      bool should_run = false;
+      {
+        std::lock_guard<std::mutex> lock(g_async_mutex);
+        auto it = g_timers.find(id);
+        if (it != g_timers.end() && it->second.running && !it->second.paused) {
+          should_run = true;
+          it->second.running = false;
+        }
+      }
+      if (should_run && vm_local) {
+        std::lock_guard<std::mutex> invoke_lock(g_vm_invoke_mutex);
+        try {
+          (void)vm_local->invokeCallback(callback, {});
+        } catch (...) {}
+      }
+    });
+    std::lock_guard<std::mutex> lock(g_async_mutex);
+    g_timers[id].task_id = task_id;
+  }
+
+  return BytecodeValue(makeHandleObject(vm, "timeout", id));
+}
+
+BytecodeValue AsyncBridge::handleTimeoutCancel(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  auto *vm = ctx && ctx->vm ? static_cast<VM *>(ctx->vm) : nullptr;
+  auto handle = extractHandle(args, vm);
+  if (!handle.has_value() || handle->first != "timeout") return BytecodeValue(false);
+  std::lock_guard<std::mutex> lock(g_async_mutex);
+  auto it = g_timers.find(handle->second);
+  if (it == g_timers.end()) return BytecodeValue(false);
+  it->second.running = false;
+  if (ctx && ctx->asyncService && !it->second.task_id.empty()) {
+    (void)ctx->asyncService->cancel(it->second.task_id);
+  }
+  if (vm) {
+    vm->releaseCallback(it->second.callback);
+  }
+  return BytecodeValue(true);
 }
 
 // ============================================================================

@@ -69,6 +69,7 @@ private:
     void compileHotkeyBinding(const ast::HotkeyBinding& binding);
     void compileInputStatement(const ast::InputStatement& statement);
     void compileCallExpression(const ast::CallExpression& expression);
+    void compileCallExpressionTail(const ast::CallExpression& expression);  // TCO
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);
     void compileForStatement(const ast::ForStatement& statement);
@@ -93,7 +94,8 @@ private:
     LexicalResolutionResult lexical_resolution_;
     std::unordered_set<std::string> host_builtin_names_{
         // Core functions
-        "print", "sleep_ms", "clock_ms",
+        "print", "sleep_ms", "clock_ms", "clock_ns", "clock_us",
+        "assert",
         "system.gc", "system.gcStats", "system_gc", "system_gcStats",
         // HTTP module
         "http.get", "http.post", "http.download",
@@ -166,7 +168,8 @@ private:
         "any.filter", "any.map", "any.reduce"
     };
     std::unordered_set<std::string> host_global_names_{
-        "print", "sleep", "sleep_ms", "clock_ms", "time.now",
+        "print", "sleep", "sleep_ms", "clock_ms", "clock_ns", "clock_us",
+        "assert", "time.now",
         "window", "io", "system", "hotkey", "mode", "process",
         "string", "array", "object", "type", "utility", "regex",
         "physics", "time", "math"

@@ -61,6 +61,7 @@ enum class OpCode : uint8_t {
   JUMP_IF_FALSE,
   JUMP_IF_TRUE,
   CALL,
+  TAIL_CALL,  // Tail call optimization - reuse current frame
   CALL_HOST,
   RETURN,
 

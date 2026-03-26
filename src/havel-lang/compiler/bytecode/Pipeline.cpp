@@ -213,6 +213,8 @@ std::string opcodeName(OpCode opcode) {
     return "JUMP_IF_TRUE";
   case OpCode::CALL:
     return "CALL";
+  case OpCode::TAIL_CALL:
+    return "TAIL_CALL";
   case OpCode::CALL_HOST:
     return "CALL_HOST";
   case OpCode::RETURN:

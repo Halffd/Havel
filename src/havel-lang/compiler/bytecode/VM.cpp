@@ -849,6 +849,45 @@ void VM::registerDefaultHostFunctions() {
     return BytecodeValue(toFloat(args[0]));
   });
 
+  // Instrumentation: assert(condition, message?)
+  registerHostFunction("assert", [](const std::vector<BytecodeValue> &args) {
+    if (args.empty()) {
+      throw std::runtime_error("assert() requires at least a condition argument");
+    }
+    bool condition = false;
+    if (std::holds_alternative<bool>(args[0])) {
+      condition = std::get<bool>(args[0]);
+    } else if (std::holds_alternative<int64_t>(args[0])) {
+      condition = std::get<int64_t>(args[0]) != 0;
+    }
+    if (!condition) {
+      std::string msg = "Assertion failed";
+      if (args.size() > 1 && std::holds_alternative<std::string>(args[1])) {
+        msg = std::get<std::string>(args[1]);
+      }
+      throw std::runtime_error(msg);
+    }
+    return BytecodeValue(nullptr);
+  });
+
+  // Performance: clock_ns() - high-resolution clock in nanoseconds
+  registerHostFunction("clock_ns", 0, [](const std::vector<BytecodeValue> &) {
+    const auto now = std::chrono::time_point_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now())
+                         .time_since_epoch()
+                         .count();
+    return BytecodeValue(static_cast<int64_t>(now));
+  });
+
+  // Performance: clock_us() - clock in microseconds
+  registerHostFunction("clock_us", 0, [](const std::vector<BytecodeValue> &) {
+    const auto now = std::chrono::time_point_cast<std::chrono::microseconds>(
+                         std::chrono::steady_clock::now())
+                         .time_since_epoch()
+                         .count();
+    return BytecodeValue(static_cast<int64_t>(now));
+  });
+
   registerHostFunction("str", 1, [](const std::vector<BytecodeValue> &args) {
     return BytecodeValue(toString(args[0]));
   });
@@ -1131,6 +1170,75 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
 
   for (uint32_t i = 0; i < args.size(); i++) {
     locals[base + i] = std::move(args[i]);
+  }
+}
+
+void VM::doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
+  // Tail call optimization: reuse current frame instead of pushing new one
+  if (std::holds_alternative<HostFunctionRef>(callee_value)) {
+    const auto &name = std::get<HostFunctionRef>(callee_value).name;
+    auto it = host_functions.find(name);
+    if (it == host_functions.end()) {
+      throw std::runtime_error("Host function not found: " + name);
+    }
+    // For host functions, just call and push result (no frame manipulation needed)
+    stack.push(it->second(args));
+    return;
+  }
+
+  uint32_t function_index = 0;
+  uint32_t closure_id = 0;
+  if (std::holds_alternative<FunctionObject>(callee_value)) {
+    function_index = std::get<FunctionObject>(callee_value).function_index;
+  } else if (std::holds_alternative<ClosureRef>(callee_value)) {
+    closure_id = std::get<ClosureRef>(callee_value).id;
+    auto *closure = heap_.closure(closure_id);
+    if (!closure) {
+      throw std::runtime_error("Closure not found: " +
+                               std::to_string(closure_id));
+    }
+    function_index = closure->function_index;
+  } else {
+    throw std::runtime_error("TAIL_CALL expects function or closure as callee");
+  }
+
+  const auto *callee = current_chunk->getFunction(function_index);
+  if (!callee) {
+    throw std::runtime_error("Function index not found: " +
+                             std::to_string(function_index));
+  }
+
+  if (args.size() != callee->param_count) {
+    throw std::runtime_error("Argument count mismatch for tail call to function index " +
+                             std::to_string(function_index) + " (expected " +
+                             std::to_string(callee->param_count) + ", got " +
+                             std::to_string(args.size()) + ")");
+  }
+
+  // TCO: Reuse current frame - update function, reset IP, adjust locals
+  auto& current_frame = currentFrame();
+  size_t old_base = current_frame.locals_base;
+  
+  // Update frame to point to new function
+  current_frame.function = callee;
+  current_frame.ip = 0;
+  current_frame.closure_id = closure_id;
+  // Keep same locals base
+  
+  // Resize locals if needed (reuse existing space)
+  size_t new_locals_needed = old_base + callee->local_count;
+  if (locals.size() < new_locals_needed) {
+    locals.resize(new_locals_needed, nullptr);
+  }
+  
+  // Set up arguments in the reused frame (at old_base)
+  for (uint32_t i = 0; i < args.size(); i++) {
+    locals[old_base + i] = std::move(args[i]);
+  }
+  
+  // Clear remaining locals from old function
+  for (size_t i = old_base + args.size(); i < new_locals_needed; i++) {
+    locals[i] = nullptr;
   }
 }
 
@@ -1591,6 +1699,23 @@ void VM::executeInstruction(const Instruction &instruction) {
     BytecodeValue callee_value = pop();
 
     doCall(callee_value, std::move(args));
+    break;
+  }
+
+  case OpCode::TAIL_CALL: {
+    // Tail call optimization: reuse current frame instead of pushing new one
+    uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
+    if (stack.size() < static_cast<size_t>(arg_count) + 1) {
+      throw std::runtime_error("Stack underflow during TAIL_CALL");
+    }
+
+    std::vector<BytecodeValue> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+    BytecodeValue callee_value = pop();
+
+    doTailCall(callee_value, std::move(args));
     break;
   }
 

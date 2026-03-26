@@ -136,6 +136,7 @@ private:
   BytecodeValue callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);
+  void doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);  // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
   std::vector<BytecodeValue> stackValuesForRoots() const;

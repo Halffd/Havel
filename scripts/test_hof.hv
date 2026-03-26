@@ -2,8 +2,8 @@
 
 fn double(x) { return x * 2 }
 fn isEven(x) { return x % 2 == 0 }
-fn add(acc, x) { return acc + x }
-fn printItem(x) { print("    ") print(x) }
+fn add(acc, x = 1) { return acc + x }
+fn printItem(x) { print("    "); print(x) }
 fn compare(a, b) { return a > b }
 
 print("=== Array Higher-Order Functions Test ===\n")
@@ -25,8 +25,8 @@ print("")
 
 // Test reduce
 print("3. Testing reduce:")
-let sum = nums.reduce(add, 0)
-print("  [1,2,3,4].reduce(add, 0): ")
+let sum = nums.reduce(add, 10)
+print("add: ")
 print(sum)
 print("")
 
@@ -43,8 +43,8 @@ let sorted = unsorted.sort()
 print("  [4,1,3,2].sort(): ")
 print(sorted)
 
-let desc = unsorted.sort(compare)
-print("  [4,1,3,2].sort(compare desc): ")
+let desc = unsorted.sort(compare).map(x => x + 1)
+print("sort+map: ")
 print(desc)
 print("")
 

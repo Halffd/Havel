@@ -214,7 +214,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     // Compile all statements except the last
     const auto &stmts = function.body->body;
     if (!stmts.empty()) {
-      // Compile all but last statement normally
+      // Compile all but last statement normally (not in tail position)
       for (size_t i = 0; i < stmts.size() - 1; i++) {
         if (stmts[i]) {
           compileStatement(*stmts[i]);
@@ -226,12 +226,13 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
       if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
         const auto &exprStmt = static_cast<const ast::ExpressionStatement &>(*lastStmt);
         if (exprStmt.expression) {
-          // TCO: Check if last expression is a call - if so, use TAIL_CALL instead of CALL+RETURN
-          if (exprStmt.expression->kind == ast::NodeType::CallExpression) {
-            const auto &callExpr = static_cast<const ast::CallExpression &>(*exprStmt.expression);
-            compileCallExpressionTail(callExpr);  // Emit TAIL_CALL instead of CALL
-          } else {
-            compileExpression(*exprStmt.expression);
+          // TCO: Enter tail position for the last expression
+          enterTailPosition();
+          clearTailCallFlag();
+          compileExpression(*exprStmt.expression);
+          exitTailPosition();
+          // TCO: Only emit RETURN if we didn't emit TAIL_CALL
+          if (!wasTailCall()) {
             emit(OpCode::RETURN);
           }
         } else {
@@ -239,13 +240,19 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
           emit(OpCode::RETURN);
         }
       } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
-        // Last statement is an explicit return - compile it normally (it already emits RETURN)
+        // Last statement is an explicit return - compile with tail position
+        enterTailPosition();
         compileStatement(*lastStmt);
+        exitTailPosition();
       } else if (lastStmt) {
-        // Last statement is not an expression or return - compile it and add implicit return
+        // Last statement is not an expression or return - compile in tail position and add implicit return
+        enterTailPosition();
         compileStatement(*lastStmt);
-        emit(OpCode::LOAD_CONST, addConstant(nullptr));
-        emit(OpCode::RETURN);
+        exitTailPosition();
+        // Only emit RETURN if the statement didn't already return (via tail call branches)
+        if (!wasTailCall()) {
+          emit(OpCode::RETURN);
+        }
       } else {
         emit(OpCode::LOAD_CONST, addConstant(nullptr));
         emit(OpCode::RETURN);
@@ -270,7 +277,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         static_cast<const ast::ExpressionStatement &>(statement);
     if (expr_stmt.expression) {
       compileExpression(*expr_stmt.expression);
-      emit(OpCode::POP);
+      // TCO: Don't POP if in tail position (value is return value)
+      if (!in_tail_position_) {
+        emit(OpCode::POP);
+      }
     }
     break;
   }
@@ -579,51 +589,51 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::MatchExpression: {
     const auto &match = static_cast<const ast::MatchExpression &>(expression);
-    
+
     // Compile the value to match on
     if (!match.value) {
       throw std::runtime_error("Match expression missing value");
     }
     compileExpression(*match.value);
-    
+
     // Store match value in temp variable
     uint32_t matchSlot = next_local_index++;
     reserveLocalSlot(matchSlot);
     emit(OpCode::STORE_VAR, matchSlot);
-    
+
     std::vector<uint32_t> caseJumps;
-    
+
     // Compile each case
     for (const auto &casePair : match.cases) {
       const auto &pattern = casePair.first;
       const auto &result = casePair.second;
-      
+
       // For enum matching, use ENUM_MATCH opcode
       // For now, use simple equality comparison
       emit(OpCode::LOAD_VAR, matchSlot);
       compileExpression(*pattern);
       emit(OpCode::EQ);
-      
+
       // Jump to result if not equal
       caseJumps.push_back(emitJump(OpCode::JUMP_IF_FALSE));
-      
-      // Compile result expression
+
+      // Compile result expression - TCO: inherit tail position
       compileExpression(*result);
-      
+
       // Jump to end
       caseJumps.push_back(emitJump(OpCode::JUMP));
     }
-    
-    // Compile default case
+
+    // Compile default case - TCO: inherit tail position
     uint32_t defaultTarget = static_cast<uint32_t>(current_function->instructions.size());
     if (match.defaultCase) {
       compileExpression(*match.defaultCase);
     } else {
       emit(OpCode::LOAD_CONST, addConstant(nullptr));
     }
-    
+
     uint32_t endTarget = static_cast<uint32_t>(current_function->instructions.size());
-    
+
     // Patch all jumps
     for (size_t i = 0; i < caseJumps.size(); i += 2) {
       // Patch equality check jump to next case or default
@@ -631,7 +641,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       // Patch result jump to end
       patchJump(caseJumps[i + 1], endTarget);
     }
-    
+
     break;
   }
 
@@ -1539,89 +1549,20 @@ void ByteCompiler::compileCallExpression(
     actualArgCount++;
   }
 
-  emit(OpCode::CALL, actualArgCount);
-}
-
-// Compile call expression in tail position - emits TAIL_CALL instead of CALL
-void ByteCompiler::compileCallExpressionTail(
-    const ast::CallExpression &expression) {
-  if (!expression.callee) {
-    throw std::runtime_error("Call expression missing callee");
-  }
-
-  uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
-  bool hasKwargs = !expression.kwargs.empty();
-
-  // For now, only handle simple function calls (not method calls or host functions)
-  // Method calls and host functions use RETURN after the call, which is fine
-  if (expression.callee->kind == ast::NodeType::Identifier) {
-    const auto &callee_id =
-        static_cast<const ast::Identifier &>(*expression.callee);
+  // TCO: Emit TAIL_CALL if in tail position and callee is a user-defined function
+  if (in_tail_position_ && expression.callee->kind == ast::NodeType::Identifier) {
+    const auto &callee_id = static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
-    if (!binding) {
-      throw std::runtime_error("Missing lexical binding for callee: " +
-                               callee_id.symbol);
-    }
-
-    // Only use TAIL_CALL for user-defined functions (not builtins)
-    if (binding->kind == ResolvedBindingKind::Local ||
-        binding->kind == ResolvedBindingKind::Upvalue ||
-        binding->kind == ResolvedBindingKind::GlobalFunction) {
-      // Load callee
-      switch (binding->kind) {
-        case ResolvedBindingKind::Local:
-          emit(OpCode::LOAD_VAR, binding->slot);
-          break;
-        case ResolvedBindingKind::Upvalue:
-          emit(OpCode::LOAD_UPVALUE, binding->slot);
-          break;
-        case ResolvedBindingKind::GlobalFunction: {
-          auto it = top_level_function_indices_by_name_.find(binding->name);
-          if (it == top_level_function_indices_by_name_.end()) {
-            throw std::runtime_error("Missing function index for: " +
-                                     binding->name);
-          }
-          emit(OpCode::LOAD_CONST,
-               addConstant(FunctionObject{.function_index = it->second}));
-          break;
-        }
-        default:
-          break;
-      }
-
-      // Compile arguments
-      uint32_t actualArgCount = 0;
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
-        }
-        if (arg->kind == ast::NodeType::SpreadExpression) {
-          throw std::runtime_error("Spread not supported in tail calls");
-        } else {
-          compileExpression(*arg);
-          actualArgCount++;
-        }
-      }
-
-      // Compile kwargs as object if present
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
-        }
-        actualArgCount++;
-      }
-
-      // Emit TAIL_CALL instead of CALL+RETURN
+    if (binding && (binding->kind == ResolvedBindingKind::Local ||
+                    binding->kind == ResolvedBindingKind::Upvalue ||
+                    binding->kind == ResolvedBindingKind::GlobalFunction)) {
       emit(OpCode::TAIL_CALL, actualArgCount);
+      emitted_tail_call_ = true;
       return;
     }
   }
 
-  // For non-tail-call-optimized cases, just use regular CALL + implicit RETURN
-  compileCallExpression(expression);
+  emit(OpCode::CALL, actualArgCount);
 }
 
 void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
@@ -1632,7 +1573,19 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
   compileExpression(*statement.condition);
   uint32_t else_jump = emitJump(OpCode::JUMP_IF_FALSE);
 
+  // TCO: If we're in tail position, both branches are also in tail position
+  // But we need to track if EACH branch emits a tail call
+  bool was_tail = in_tail_position_;
+  enterTailPosition();
+  clearTailCallFlag();
   compileStatement(*statement.consequence);
+  bool consequence_was_tail = wasTailCall();
+  exitTailPosition();
+  
+  // If consequence didn't emit tail call, emit RETURN
+  if (was_tail && !consequence_was_tail) {
+    emit(OpCode::RETURN);
+  }
 
   if (statement.alternative) {
     uint32_t end_jump = emitJump(OpCode::JUMP);
@@ -1640,14 +1593,39 @@ void ByteCompiler::compileIfStatement(const ast::IfStatement &statement) {
         static_cast<uint32_t>(current_function->instructions.size());
     patchJump(else_jump, else_target);
 
+    enterTailPosition();
+    clearTailCallFlag();
     compileStatement(*statement.alternative);
+    bool alternative_was_tail = wasTailCall();
+    exitTailPosition();
+    
+    // If alternative didn't emit tail call, emit RETURN
+    if (was_tail && !alternative_was_tail) {
+      emit(OpCode::RETURN);
+    }
+    
     uint32_t end_target =
         static_cast<uint32_t>(current_function->instructions.size());
     patchJump(end_jump, end_target);
+    
+    // TCO: Only set tail call flag if BOTH branches emitted tail calls
+    if (was_tail && consequence_was_tail && alternative_was_tail) {
+      emitted_tail_call_ = true;
+    }
   } else {
     uint32_t target =
         static_cast<uint32_t>(current_function->instructions.size());
     patchJump(else_jump, target);
+    
+    // If there's no alternative, we can't do TCO (the if might not execute)
+    if (was_tail) {
+      emitted_tail_call_ = false;
+    }
+  }
+  
+  // Restore tail position state
+  if (was_tail) {
+    enterTailPosition();
   }
 }
 
@@ -1745,11 +1723,22 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
 }
 
 void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
-  for (const auto &statement : block.body) {
-    if (!statement) {
+  const auto &stmts = block.body;
+  if (stmts.empty()) {
+    return;
+  }
+  
+  // Compile all but last statement (not in tail position)
+  for (size_t i = 0; i < stmts.size() - 1; i++) {
+    if (!stmts[i]) {
       continue;
     }
-    compileStatement(*statement);
+    compileStatement(*stmts[i]);
+  }
+  
+  // Last statement: inherit tail position
+  if (stmts.back()) {
+    compileStatement(*stmts.back());
   }
 }
 
@@ -1873,6 +1862,17 @@ void ByteCompiler::leaveFunction() {
 }
 
 void ByteCompiler::resetLocals() { next_local_index = 0; }
+
+// Tail call optimization - track tail position context
+void ByteCompiler::enterTailPosition() { in_tail_position_ = true; }
+
+void ByteCompiler::exitTailPosition() { in_tail_position_ = false; }
+
+bool ByteCompiler::isInTailPosition() const { return in_tail_position_; }
+
+bool ByteCompiler::wasTailCall() const { return emitted_tail_call_; }
+
+void ByteCompiler::clearTailCallFlag() { emitted_tail_call_ = false; }
 
 // Compile hotkey binding: hotkey => action
 void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {

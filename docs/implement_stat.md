@@ -197,6 +197,11 @@ Tracking implementation progress against docs/Havel.md specification.
 | `timeout` | ❌ | One-shot timer |
 | Message passing | ❌ | thread.send() |
 | `pause/resume/stop` | ❌ | Thread control |
+| `async.run()` | ⚠️ | Task spawning (placeholder) |
+| `async.await()` | ✅ | Wait for task |
+| `async.cancel()` | ✅ | Cancel task |
+| `async.isRunning()` | ✅ | Check status |
+| Channels | ✅ | send/receive/tryReceive |
 
 ---
 
@@ -230,6 +235,11 @@ Tracking implementation progress against docs/Havel.md specification.
 | `exit()` | ❌ | Exit application |
 | `read()` | ❌ | File read |
 | `write()` | ❌ | File write |
+| `assert()` | ✅ | Runtime assertions |
+| `clock_ms()` | ✅ | Millisecond timing |
+| `clock_us()` | ✅ | Microsecond timing |
+| `clock_ns()` | ✅ | Nanosecond timing |
+| `time.now()` | ✅ | Timestamp (ms) |
 
 ### Input Shortcuts
 | Feature | Status | Notes |
@@ -261,10 +271,11 @@ Tracking implementation progress against docs/Havel.md specification.
 | `.sort()` | ✅ | With comparator |
 | `.sorted()` | ✅ | Non-mutating |
 | `.sortByKey()` | ✅ | Object sorting |
-| `.map()` | ❌ | |
-| `.filter()` | ❌ | |
-| `.reduce()` | ❌ | |
-| `.find()` | ❌ | |
+| `.map()` | ✅ | VM opcode |
+| `.filter()` | ✅ | VM opcode |
+| `.reduce()` | ✅ | VM opcode |
+| `.foreach()` | ✅ | VM opcode |
+| `.find()` | ✅ | |
 | `.some()` | ❌ | |
 | `.every()` | ❌ | |
 | `.includes()` | ❌ | |
@@ -478,19 +489,29 @@ Tracking implementation progress against docs/Havel.md specification.
 
 | Category | Implemented | Partial | Missing | Total | % Complete |
 |----------|-------------|---------|---------|-------|------------|
-| Core Language | 8 | 2 | 6 | 16 | 50% |
+| Core Language | 10 | 2 | 4 | 16 | 63% |
 | Type System | 2 | 4 | 4 | 10 | 20% |
-| Standard Library | 8 | 3 | 10 | 21 | 38% |
+| Standard Library | 11 | 3 | 7 | 21 | 52% |
 | Hotkey System | 4 | 1 | 9 | 14 | 29% |
 | Mode System | 1 | 1 | 10 | 12 | 8% |
 | Window System | 7 | 2 | 4 | 13 | 54% |
-| Concurrency | 0 | 0 | 5 | 5 | 0% |
+| Concurrency | 3 | 0 | 2 | 5 | 60% |
 | Script Lifecycle | 0 | 0 | 5 | 5 | 0% |
 | Input System | 5 | 0 | 8 | 13 | 38% |
-| String/Array/Object | 8 | 1 | 14 | 23 | 35% |
+| String/Array/Object | 15 | 1 | 7 | 23 | 65% |
 | Math | 13 | 0 | 7 | 20 | 65% |
 | Configuration | 1 | 1 | 6 | 8 | 13% |
 | Advanced Features | 0 | 0 | 35+ | 35+ | 0% |
+
+### Recent Progress (2026-03-25 to 2026-03-26)
+- ✅ **HOF VM Opcodes** - ARRAY_MAP, ARRAY_FILTER, ARRAY_REDUCE, ARRAY_FOREACH
+- ✅ **TCO** - TAIL_CALL opcode with proper tail position detection
+- ✅ **Async Module** - Task spawning, channels, timing functions
+- ✅ **Instrumentation** - assert(), clock_ns/us/ms()
+- ✅ **VM Dispatch Loop Fix** - Fixed dangling reference bug
+- ✅ **Closures** - Fixed global capture for HOF callbacks
+- ✅ **Implicit Return** - Rust-like last expression return
+- ✅ **WindowMonitor Integration** - Cached window info for conditional hotkeys
 
 ### Priority TODO
 
@@ -499,13 +520,17 @@ Tracking implementation progress against docs/Havel.md specification.
    - [x] Process module (`process.*`)
    - [x] File system module (`fs.*`)
    - [x] HTTP client module (`http.*`)
+   - [x] Async module (`async.*`)
+   - [x] Array HOFs (`array.map/filter/reduce/foreach`)
    - [ ] Browser automation (`browser.*`)
    - [ ] Struct field syntax (`obj.field` → index access)
    - [ ] Enum pattern matching (`match e { Ok(x) => ... }`)
+   - [ ] `async.run()` with VM closure execution
 
 2. **Medium Priority** (Quality of life)
    - [x] Iteration protocol (for-in loops)
    - [x] Match expression
+   - [x] Tail call optimization (TCO)
    - [ ] Type system implementation (compile-time tracking)
    - [ ] Concurrency primitives (`spawn {}`)
    - [ ] Script lifecycle hooks
@@ -519,9 +544,144 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
-Last updated: 2026-03-25
+Last updated: 2026-03-26
 
 ## Latest Changes
+
+### Async Module & WindowMonitor Integration (2026-03-26)
+**Async Module Implementation:**
+- `async.run(fn)` - Spawn background task (returns task ID)
+- `async.await(taskId)` - Wait for task completion
+- `async.cancel(taskId)` - Cancel running task
+- `async.isRunning(taskId)` - Check task status
+- `async.channel(name)` - Create named channel
+- `async.send(name, value)` - Send value to channel
+- `async.receive(name)` - Blocking receive
+- `async.tryReceive(name)` - Non-blocking receive
+- `async.channel.close(name)` - Close channel
+- `sleep(ms)` - Delay execution (also available as global)
+- `time.now()` - Current timestamp (milliseconds)
+
+**Implementation:**
+- AsyncBridge in `ModularHostBridges.cpp/.hpp`
+- Uses existing `AsyncService` (std::thread-based)
+- All functions registered as host functions
+
+**WindowMonitor Integration:**
+- ConditionalHotkeyManager now uses WindowMonitor for cached window info
+- Faster condition evaluation (no repeated X11 calls)
+- Falls back to IO if WindowMonitor unavailable
+- 100ms poll interval for automatic updates
+
+**Known Limitation:**
+- `async.run()` can't execute VM closures yet (requires callback infrastructure)
+
+### TCO (Tail Call Optimization) (2026-03-26)
+**TAIL_CALL Opcode:**
+- Reuses current frame instead of pushing new one
+- No stack growth for tail-recursive functions
+- Tested: `sum_tail(100000, 0) = 5000050000` ✓ (no stack overflow)
+
+**Compiler Support:**
+- Tail position tracking (`in_tail_position_`, `emitted_tail_call_`)
+- Propagates through if/else branches
+- Propagates through match expressions
+- Propagates through block statements (last statement)
+- Only emits RETURN if no TAIL_CALL was emitted
+
+**Test Results:**
+```havel
+fn sum_tail(n, acc) {
+  if n == 0 { acc } else { sum_tail(n - 1, acc + n) }
+}
+sum_tail(100000, 0)  // → 5000050000 ✓
+```
+
+### HOF VM Opcodes (2026-03-26) - ARCHITECTURAL FIX
+**Moved HOFs from HostBridge to VM opcodes:**
+
+**VM Opcodes Added:**
+- `ARRAY_MAP` - Map function over array
+- `ARRAY_FILTER` - Filter array by predicate
+- `ARRAY_REDUCE` - Reduce array to single value
+- `ARRAY_FOREACH` - Execute function for each element
+
+**Implementation:**
+- Opcodes execute callbacks with proper frame isolation
+- Result arrays pinned during execution (no GC issues)
+- Stack layout: `[..., array, fn] → [..., result]`
+
+**Compiler Changes:**
+- `array.map/filter/reduce/foreach` emit VM opcodes
+- Works for both array literals and variables
+- Fixed top-level function resolution (GlobalFunction binding)
+
+**Test Results:**
+```havel
+fn double(x) { x * 2 }
+[1, 2, 3].map(double)  // → [2, 4, 6] ✓
+
+fn isEven(x) { x % 2 == 0 }
+[1, 2, 3, 4].filter(isEven)  // → [2, 4] ✓
+
+fn add(acc, x) { acc + x }
+[1, 2, 3, 4].reduce(add, 0)  // → 10 ✓
+```
+
+### VM Dispatch Loop Fix (2026-03-26)
+**Fixed dangling reference bug in `runDispatchLoop`:**
+- Changed `frames` from `std::vector` to `std::deque` for reference stability
+- Re-fetch frame index after `executeInstruction()` (vector may reallocate)
+- Proper tail call detection and RETURN emission
+
+**Root Cause:**
+- `auto& frame = frames[active_frame_idx]` became invalid after vector reallocation
+- Nested calls (HOF callbacks) triggered reallocation
+- Outer loop's IP was corrupted
+
+### Instrumentation Functions (2026-03-26)
+**Added:**
+- `assert(condition, message?)` - Runtime assertions with optional message
+- `clock_ms()` - Millisecond-resolution timing
+- `clock_us()` - Microsecond-resolution timing
+- `clock_ns()` - Nanosecond-resolution timing
+
+**Test Results:**
+```havel
+assert(true, "assert works")
+let start = clock_ns()
+// ... code to benchmark ...
+let end = clock_ns()
+print(end - start)  // Execution time in ns
+```
+
+### Rust-like Implicit Return (2026-03-25)
+**Functions automatically return last expression:**
+```havel
+fn add(a, b) { a + b }  // Returns a + b
+fn double(x) { x * 2 }  // Returns x * 2
+```
+
+**Implementation:**
+- Last expression statement in function body
+- No explicit `return` keyword needed
+- Explicit `return` still supported
+
+### Closures Capture Globals (2026-03-25)
+**Fixed closure environment capture:**
+- Closures now correctly resolve globals like `print`
+- Nested functions work in HOF callbacks
+- `LOAD_GLOBAL` opcode for global access
+
+**Test Results:**
+```havel
+fn printAndDouble(x) {
+  print("x=")  // Accesses global print
+  print(x)
+  return x * 2
+}
+[1, 2].map(printAndDouble)  // ✓ Works correctly
+```
 
 ### Struct/Enum VM Opcodes (2026-03-25) - ARCHITECTURAL FIX
 **Moved struct/enum from HostBridge hacks to proper VM opcodes:**

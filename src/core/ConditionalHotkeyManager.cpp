@@ -3,6 +3,7 @@
 #include "ModeManager.hpp"
 #include "io/EventListener.hpp"
 #include "utils/Logger.hpp"
+#include "window/WindowMonitor.hpp"
 #include <algorithm>
 #include <chrono>
 
@@ -591,14 +592,26 @@ bool ConditionalHotkeyManager::EvaluateConditionInternal(const std::string& cond
     }
   }
 
-  // Get window info - prefer WindowMonitor, fallback to IO
+  // Get window info - prefer WindowMonitor for cached data, fallback to IO
   std::string currentTitle;
   std::string currentClass;
   std::string currentExe;
 
-  // Get window info from IO (interpreter not available)
-  currentTitle = io->GetActiveWindowTitle();
-  currentClass = io->GetActiveWindowClass();
+  if (windowMonitor) {
+    // Use cached window info from WindowMonitor (much faster)
+    auto windowInfo = windowMonitor->GetActiveWindowInfo();
+    if (windowInfo.has_value()) {
+      currentTitle = windowInfo->title;
+      currentClass = windowInfo->windowClass;
+      currentExe = windowInfo->processName;
+    }
+  }
+  
+  // Fallback to IO if WindowMonitor not available or no cached data
+  if (currentTitle.empty()) {
+    currentTitle = io->GetActiveWindowTitle();
+    currentClass = io->GetActiveWindowClass();
+  }
 
   // Syntax: window.title == '' or window.title==''
   if (condition.find("window.title ==") != std::string::npos ||

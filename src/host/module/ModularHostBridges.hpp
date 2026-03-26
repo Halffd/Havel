@@ -166,6 +166,19 @@ private:
   const HostContext *ctx_;
   static BytecodeValue handleSleep(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleTimeNow(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  
+  // Async task functions
+  static BytecodeValue handleAsyncRun(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAsyncAwait(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAsyncCancel(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAsyncIsRunning(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  
+  // Channel functions
+  static BytecodeValue handleChannelCreate(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleChannelSend(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleChannelReceive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleChannelTryReceive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleChannelClose(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

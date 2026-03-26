@@ -167,6 +167,9 @@ private:
   parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
   TokenType getBinaryOperatorToken(ast::BinaryOperator op);
 
+  // Helper to create Identifier with source location
+  std::unique_ptr<ast::Identifier> makeIdentifier(const Token &token);
+
   // Condition combination helpers
   std::unique_ptr<ast::Expression>
   combineConditions(std::unique_ptr<ast::Expression> left,

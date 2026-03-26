@@ -14,6 +14,10 @@ void Parser::reportErrorAt(const Token& token, const std::string& message) {
   errors.push_back(err);
 }
 
+std::unique_ptr<ast::Identifier> Parser::makeIdentifier(const Token &token) {
+  return std::make_unique<ast::Identifier>(token.value, token.line, token.column);
+}
+
 void Parser::synchronize() {
   // Panic mode recovery - skip tokens until we find a statement boundary
   advance(); // Skip the current token that caused the error
@@ -680,7 +684,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
     failAt(at(), "Expected function name after 'fn'");
   }
-  auto name = std::make_unique<havel::ast::Identifier>(advance().value);
+  auto name = makeIdentifier(advance());
 
   if (at().type != havel::TokenType::OpenParen) {
     failAt(at(), "Expected '(' after function name");
@@ -699,7 +703,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     if (at().type != havel::TokenType::Identifier) {
       failAt(at(), "Expected identifier in parameter list");
     }
-    auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+    auto paramName = makeIdentifier(advance());
 
     // Check for type annotation (paramName: Type)
     std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
@@ -1160,7 +1164,7 @@ std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::Str
       std::vector<std::unique_ptr<ast::FunctionParameter>> params;
       while (at().type != havel::TokenType::CloseParen && notEOF()) {
         if (at().type == havel::TokenType::Identifier) {
-          auto paramName = std::make_unique<ast::Identifier>(advance().value);
+          auto paramName = makeIdentifier(advance());
           params.push_back(std::make_unique<ast::FunctionParameter>(std::move(paramName)));
         }
         if (at().type == havel::TokenType::Comma) {
@@ -1282,7 +1286,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
   if (at().type != havel::TokenType::Identifier) {
     failAt(at(), "Expected trait name after 'trait'");
   }
-  auto traitName = std::make_unique<havel::ast::Identifier>(advance().value);
+  auto traitName = makeIdentifier(advance());
 
   // Parse opening brace
   if (at().type != havel::TokenType::OpenBrace) {
@@ -1311,7 +1315,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
     if (at().type != havel::TokenType::Identifier) {
       failAt(at(), "Expected method name");
     }
-    auto methodName = std::make_unique<havel::ast::Identifier>(advance().value);
+    auto methodName = makeIdentifier(advance());
 
     // Parse parameters
     if (at().type != havel::TokenType::OpenParen) {
@@ -1322,7 +1326,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTraitDeclaration() {
     std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
     while (at().type != havel::TokenType::CloseParen && notEOF()) {
       if (at().type == havel::TokenType::Identifier) {
-        auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+        auto paramName = makeIdentifier(advance());
         params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
       }
       if (at().type == havel::TokenType::Comma) {
@@ -1363,7 +1367,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
   if (at().type != havel::TokenType::Identifier) {
     failAt(at(), "Expected trait name after 'impl'");
   }
-  auto traitName = std::make_unique<havel::ast::Identifier>(advance().value);
+  auto traitName = makeIdentifier(advance());
 
   // Expect 'for' keyword
   if (at().type != havel::TokenType::For) {
@@ -1375,7 +1379,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplDeclaration() {
   if (at().type != havel::TokenType::Identifier) {
     failAt(at(), "Expected type name after 'for'");
   }
-  auto typeName = std::make_unique<havel::ast::Identifier>(advance().value);
+  auto typeName = makeIdentifier(advance());
 
   // Parse opening brace
   if (at().type != havel::TokenType::OpenBrace) {
@@ -1461,7 +1465,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
     if (at().type == havel::TokenType::OpenParen) {
       advance(); // consume '('
       if (at().type == havel::TokenType::Identifier) {
-        catchVariable = std::make_unique<havel::ast::Identifier>(advance().value);
+        catchVariable = makeIdentifier(advance());
       }
       if (at().type != havel::TokenType::CloseParen) {
         failAt(at(), "Expected ')' after catch variable");
@@ -1469,7 +1473,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseTryStatement() {
       advance(); // consume ')'
     } else if (at().type == havel::TokenType::Identifier) {
       // Old syntax without parentheses
-      catchVariable = std::make_unique<havel::ast::Identifier>(advance().value);
+      catchVariable = makeIdentifier(advance());
     }
 
     // Parse catch body
@@ -1673,7 +1677,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
       failAt(at(), "Expected first iterator variable in parentheses");
     }
     iterators.push_back(
-        std::make_unique<havel::ast::Identifier>(advance().value));
+        makeIdentifier(advance()));
 
     // Parse additional iterators separated by commas
     while (at().type == havel::TokenType::Comma) {
@@ -1688,7 +1692,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
         failAt(at(), "Expected iterator variable after comma");
       }
       iterators.push_back(
-          std::make_unique<havel::ast::Identifier>(advance().value));
+          makeIdentifier(advance()));
     }
 
     // Skip newlines before closing paren or 'in'
@@ -1709,7 +1713,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
       failAt(at(), "Expected iterator variable after 'for'");
     }
     iterators.push_back(
-        std::make_unique<havel::ast::Identifier>(advance().value));
+        makeIdentifier(advance()));
   }
 
   if (at().type != havel::TokenType::In) {
@@ -2122,7 +2126,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
         failAt(at(), "Tuple destructuring expects identifiers");
       }
       elements.push_back(
-          std::make_unique<havel::ast::Identifier>(advance().value));
+          makeIdentifier(advance()));
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }
@@ -2142,7 +2146,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLetDeclaration() {
     pattern = parseObjectPattern();
   } else if (at().type == havel::TokenType::Identifier) {
     // Regular variable: let x = value
-    pattern = std::make_unique<havel::ast::Identifier>(advance().value);
+    pattern = makeIdentifier(advance());
   } else {
     failAt(at(), "Expected identifier, '[' or '{' after '" + std::string(isConst ? "const" : "let") + "'");
   }
@@ -3189,7 +3193,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       advance(); // consume identifier
       advance(); // consume '=>'
       std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
-      auto paramName = std::make_unique<havel::ast::Identifier>(identTk.value);
+      auto paramName = makeIdentifier(identTk);
       paramName->line = identTk.line;
       paramName->column = identTk.column;
       params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
@@ -3198,7 +3202,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     // Otherwise it's a normal identifier expression
     identTk = advance();
     std::unique_ptr<havel::ast::Expression> expr =
-        std::make_unique<havel::ast::Identifier>(identTk.value);
+        makeIdentifier(identTk);
     expr->line = identTk.line;
     expr->column = identTk.column;
 
@@ -3275,7 +3279,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       if (at().type != havel::TokenType::Identifier) {
         failAt(at(), "Expected identifier in function parameter list");
       }
-      auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+      auto paramName = makeIdentifier(advance());
 
       // Check for default value
       std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
@@ -3332,7 +3336,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       size_t paramSavePos = position;
       bool validParamList = true;
       while (at().type == havel::TokenType::Identifier) {
-        auto paramName = std::make_unique<havel::ast::Identifier>(advance().value);
+        auto paramName = makeIdentifier(advance());
         params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
         if (at().type == havel::TokenType::Comma) {
           advance();
@@ -3605,7 +3609,7 @@ Parser::parseMemberExpression(std::unique_ptr<havel::ast::Expression> object) {
 
   auto member = std::make_unique<havel::ast::MemberExpression>();
   member->object = std::move(object);
-  member->property = std::make_unique<havel::ast::Identifier>(property.value);
+  member->property = makeIdentifier(property);
   member->line = dotTok.line;
   member->column = dotTok.column;
 
@@ -3888,7 +3892,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseArrayPattern() {
     std::unique_ptr<havel::ast::Expression> element;
 
     if (at().type == havel::TokenType::Identifier) {
-      element = std::make_unique<havel::ast::Identifier>(advance().value);
+      element = makeIdentifier(advance());
     } else if (at().type == havel::TokenType::OpenBracket) {
       element = parseArrayPattern(); // Nested array pattern
     } else if (at().type == havel::TokenType::OpenBrace) {
@@ -3938,6 +3942,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
 
     // Parse property key
     std::string key;
+    Token keyToken = at();  // Copy current token
     if (at().type == havel::TokenType::Identifier) {
       key = advance().value;
     } else {
@@ -3951,7 +3956,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
 
       // Parse the pattern for this property
       if (at().type == havel::TokenType::Identifier) {
-        pattern = std::make_unique<havel::ast::Identifier>(advance().value);
+        pattern = makeIdentifier(advance());
       } else if (at().type == havel::TokenType::OpenBracket) {
         pattern = parseArrayPattern(); // Nested array pattern
       } else if (at().type == havel::TokenType::OpenBrace) {
@@ -3962,7 +3967,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectPattern() {
       }
     } else {
       // Default: property name becomes variable name
-      pattern = std::make_unique<havel::ast::Identifier>(key);
+      pattern = makeIdentifier(keyToken);
     }
 
     properties.push_back({key, std::move(pattern)});

@@ -465,8 +465,11 @@ struct Program : public Statement {
 struct Identifier : public Expression {
   std::string symbol;
 
-  Identifier(const std::string &sym) : symbol(sym) {
+  Identifier(const std::string &sym, size_t ln = 0, size_t col = 0)
+      : symbol(sym) {
     kind = NodeType::Identifier;
+    line = ln;
+    column = col;
   }
 
   std::string toString() const override { return "Identifier{" + symbol + "}"; }

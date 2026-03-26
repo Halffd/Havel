@@ -299,6 +299,20 @@ BytecodeValue VM::getConstant(uint32_t index) {
   return currentFrame().function->constants[index];
 }
 
+VM::ExecutionState VM::saveState() const {
+  ExecutionState state;
+  state.stack = stack;
+  state.locals = locals;
+  state.frames = frames;
+  return state;
+}
+
+void VM::restoreState(const ExecutionState &state) {
+  stack = state.stack;
+  locals = state.locals;
+  frames = state.frames;
+}
+
 void VM::registerHostFunction(const std::string &name,
                               BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
@@ -578,12 +592,19 @@ BytecodeValue VM::callHostFunction(const BytecodeValue &fn,
 // General function call (handles both VM closures and host functions)
 BytecodeValue VM::callFunction(const BytecodeValue &fn,
                                const std::vector<BytecodeValue> &args) {
-  // Host function
+  // Host function - direct call
   if (std::holds_alternative<HostFunctionRef>(fn)) {
     return callHostFunction(fn, args);
   }
+
+  // VM Closure or FunctionObject - execute the call
+  // Debug: check what type we got
+  if (std::holds_alternative<FunctionObject>(fn)) {
+    // FunctionObject - this is a top-level function referenced by name
+  } else if (std::holds_alternative<ClosureRef>(fn)) {
+    // ClosureRef - this is a closure
+  }
   
-  // VM Closure or FunctionObject - call directly
   return call(fn, args);
 }
 
@@ -1044,6 +1065,11 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args) {
   if (!callee) {
     throw std::runtime_error("Function index not found: " +
                              std::to_string(function_index));
+  }
+  
+  // Debug
+  if (std::holds_alternative<FunctionObject>(callee_value)) {
+    // Check if function is valid
   }
 
   if (args.size() != callee->param_count) {

@@ -220,7 +220,7 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
           compileStatement(*stmts[i]);
         }
       }
-      
+
       // Last statement: if it's an expression statement, return its value (Rust-like implicit return)
       const auto &lastStmt = stmts.back();
       if (lastStmt && lastStmt->kind == ast::NodeType::ExpressionStatement) {
@@ -232,8 +232,11 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
           emit(OpCode::LOAD_CONST, addConstant(nullptr));
           emit(OpCode::RETURN);
         }
+      } else if (lastStmt && lastStmt->kind == ast::NodeType::ReturnStatement) {
+        // Last statement is an explicit return - compile it normally (it already emits RETURN)
+        compileStatement(*lastStmt);
       } else if (lastStmt) {
-        // Last statement is not an expression - compile it and add implicit return
+        // Last statement is not an expression or return - compile it and add implicit return
         compileStatement(*lastStmt);
         emit(OpCode::LOAD_CONST, addConstant(nullptr));
         emit(OpCode::RETURN);

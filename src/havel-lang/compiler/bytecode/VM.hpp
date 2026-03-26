@@ -86,7 +86,7 @@ private:
 
   std::stack<BytecodeValue> stack;
   std::vector<BytecodeValue> locals;
-  std::vector<CallFrame> frames;
+  std::deque<CallFrame> frames;
   GCHeap heap_;
   std::unordered_map<uint32_t, std::shared_ptr<GCHeap::UpvalueCell>>
       open_upvalues;
@@ -118,7 +118,7 @@ private:
   struct ExecutionState {
     std::stack<BytecodeValue> stack;
     std::vector<BytecodeValue> locals;
-    std::vector<CallFrame> frames;
+    std::deque<CallFrame> frames;
   };
   ExecutionState saveState() const;
   void restoreState(const ExecutionState &state);

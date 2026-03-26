@@ -101,7 +101,11 @@ enum class OpCode : uint8_t {
   ARRAY_POP,      // Pop element from array
   ARRAY_HAS,      // Check if array has value
   ARRAY_FIND,     // Find index of value
-  
+  ARRAY_MAP,      // Map function over array
+  ARRAY_FILTER,   // Filter array by predicate
+  ARRAY_REDUCE,   // Reduce array to single value
+  ARRAY_FOREACH,  // Execute function for each element
+
   // String operations (VM intrinsics)
   STRING_LEN,     // Get string length
   STRING_UPPER,   // Convert to uppercase

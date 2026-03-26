@@ -1167,16 +1167,14 @@ void ByteCompiler::compileCallExpression(
           }
         }
 
-        // Check for array.* VM intrinsics
-        if (typeName == "array") {
+        // Check for array.* VM intrinsics (for variables too - VM checks type at runtime)
+        if (typeName == "array" || typeName == "any") {
           if (property->symbol == "len" || property->symbol == "length") {
-            for (const auto &arg : expression.args) {
-              if (!arg) throw std::runtime_error("Call expression contains null argument");
-              compileExpression(*arg);
-            }
+            compileExpression(*member.object);
             emit(OpCode::ARRAY_LEN);
             return;
           } else if (property->symbol == "push") {
+            compileExpression(*member.object);
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -1184,13 +1182,11 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::ARRAY_PUSH);
             return;
           } else if (property->symbol == "pop") {
-            for (const auto &arg : expression.args) {
-              if (!arg) throw std::runtime_error("Call expression contains null argument");
-              compileExpression(*arg);
-            }
+            compileExpression(*member.object);
             emit(OpCode::ARRAY_POP);
             return;
           } else if (property->symbol == "has") {
+            compileExpression(*member.object);
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -1198,22 +1194,40 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::ARRAY_HAS);
             return;
           } else if (property->symbol == "find") {
+            compileExpression(*member.object);
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
             }
             emit(OpCode::ARRAY_FIND);
             return;
-          } else if (property->symbol == "map" || property->symbol == "filter" ||
-                     property->symbol == "reduce" || property->symbol == "foreach" ||
-                     property->symbol == "sort") {
-            // Higher-order functions - compile as host function call
-            // First arg is array, rest are args (including callback)
+          } else if (property->symbol == "map") {
+            compileExpression(*member.object);
+            compileExpression(*expression.args[0]);
+            emit(OpCode::ARRAY_MAP);
+            return;
+          } else if (property->symbol == "filter") {
+            compileExpression(*member.object);
+            compileExpression(*expression.args[0]);
+            emit(OpCode::ARRAY_FILTER);
+            return;
+          } else if (property->symbol == "reduce") {
+            compileExpression(*member.object);
+            compileExpression(*expression.args[0]);
+            compileExpression(*expression.args[1]);
+            emit(OpCode::ARRAY_REDUCE);
+            return;
+          } else if (property->symbol == "foreach") {
+            compileExpression(*member.object);
+            compileExpression(*expression.args[0]);
+            emit(OpCode::ARRAY_FOREACH);
+            return;
+          } else if (property->symbol == "sort") {
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
             }
-            emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array." + property->symbol, static_cast<uint32_t>(expression.args.size())});
+            emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"array.sort", static_cast<uint32_t>(expression.args.size())});
             return;
           }
         }

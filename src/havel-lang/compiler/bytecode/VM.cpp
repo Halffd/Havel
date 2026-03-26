@@ -2159,6 +2159,120 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  // Array higher-order functions (VM intrinsics)
+  case OpCode::ARRAY_MAP: {
+    BytecodeValue fn = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_MAP expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(BytecodeValue(nullptr));
+      break;
+    }
+    if (!std::holds_alternative<FunctionObject>(fn) && !std::holds_alternative<ClosureRef>(fn)) {
+      throw std::runtime_error("ARRAY_MAP expects function/closure");
+    }
+
+    auto resultRef = heap_.allocateArray();
+    auto *result = heap_.array(resultRef.id);
+    size_t savedFrameCount = frames.size();
+    uint64_t resultRootId = pinExternalRoot(BytecodeValue(resultRef));
+
+    for (size_t i = 0; i < arr->size(); i++) {
+      doCall(fn, {(*arr)[i]});
+      runDispatchLoop(savedFrameCount);
+      BytecodeValue mapped = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+      result->push_back(mapped);
+    }
+
+    unpinExternalRoot(resultRootId);
+    push(BytecodeValue(resultRef));
+    break;
+  }
+
+  case OpCode::ARRAY_FILTER: {
+    BytecodeValue fn = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_FILTER expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(BytecodeValue(nullptr));
+      break;
+    }
+
+    auto resultRef = heap_.allocateArray();
+    auto *result = heap_.array(resultRef.id);
+    size_t savedFrameCount = frames.size();
+    uint64_t resultRootId = pinExternalRoot(BytecodeValue(resultRef));
+
+    for (size_t i = 0; i < arr->size(); i++) {
+      doCall(fn, {(*arr)[i]});
+      runDispatchLoop(savedFrameCount);
+      BytecodeValue predResult = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+      if (std::holds_alternative<bool>(predResult) && std::get<bool>(predResult)) {
+        result->push_back((*arr)[i]);
+      }
+    }
+
+    unpinExternalRoot(resultRootId);
+    push(BytecodeValue(resultRef));
+    break;
+  }
+
+  case OpCode::ARRAY_REDUCE: {
+    BytecodeValue initial = pop();
+    BytecodeValue fn = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_REDUCE expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(initial);
+      break;
+    }
+
+    BytecodeValue acc = initial;
+    size_t savedFrameCount = frames.size();
+
+    for (size_t i = 0; i < arr->size(); i++) {
+      doCall(fn, {acc, (*arr)[i]});
+      runDispatchLoop(savedFrameCount);
+      acc = stack.empty() ? nullptr : [&]() { auto v = stack.top(); stack.pop(); return v; }();
+    }
+
+    push(acc);
+    break;
+  }
+
+  case OpCode::ARRAY_FOREACH: {
+    BytecodeValue fn = pop();
+    BytecodeValue array = pop();
+    if (!std::holds_alternative<ArrayRef>(array)) {
+      throw std::runtime_error("ARRAY_FOREACH expects array");
+    }
+    auto *arr = heap_.array(std::get<ArrayRef>(array).id);
+    if (!arr) {
+      push(BytecodeValue(nullptr));
+      break;
+    }
+
+    size_t savedFrameCount = frames.size();
+
+    for (size_t i = 0; i < arr->size(); i++) {
+      doCall(fn, {(*arr)[i]});
+      runDispatchLoop(savedFrameCount);
+      if (!stack.empty()) { stack.pop(); }
+    }
+
+    push(BytecodeValue(nullptr));
+    break;
+  }
+
   // String intrinsics (VM-level operations)
   case OpCode::STRING_LEN: {
     BytecodeValue str = pop();

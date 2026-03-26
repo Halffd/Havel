@@ -24,6 +24,7 @@ struct ResolvedBinding {
   uint32_t slot = 0;
   uint32_t scope_distance = 0;
   std::string name;
+  bool is_const = false;
 };
 
 struct LexicalResolutionResult {
@@ -31,6 +32,8 @@ struct LexicalResolutionResult {
   std::unordered_map<const ast::Identifier *, uint32_t> declaration_slots;
   std::unordered_map<const ast::FunctionDeclaration *, std::vector<UpvalueDescriptor>>
       function_upvalues;
+  std::unordered_map<const ast::LambdaExpression *, std::vector<UpvalueDescriptor>>
+      lambda_upvalues;
 };
 
 class LexicalResolver {
@@ -45,8 +48,12 @@ public:
 
 private:
   struct FunctionContext {
-    const ast::FunctionDeclaration *owner = nullptr;
-    std::vector<std::unordered_map<std::string, uint32_t>> scopes;
+    struct LocalSymbol {
+      uint32_t slot = 0;
+      bool is_const = false;
+    };
+    const ast::ASTNode *owner = nullptr;
+    std::vector<std::unordered_map<std::string, LocalSymbol>> scopes;
     std::unordered_map<std::string, uint32_t> upvalue_slots;
     std::vector<UpvalueDescriptor> upvalues;
     uint32_t next_slot = 0;
@@ -55,6 +62,7 @@ private:
   LexicalResolutionResult result_;
   std::vector<std::string> errors_;
   std::unordered_set<std::string> top_level_functions_;
+  std::unordered_set<std::string> top_level_structs_;
   std::vector<FunctionContext> function_stack_;
   std::unordered_set<std::string> builtins_{
       "print",      "sleep_ms",        "clock_ms",
@@ -62,20 +70,24 @@ private:
       "system_gcStats"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
-      "window", "io", "system", "hotkey", "mode", "process"};
+      "window", "io", "system", "hotkey", "mode", "process", "async",
+      "thread", "interval", "timeout", "struct"};
 
   void collectTopLevelFunctions(const ast::Program &program);
+  void collectTopLevelStructs(const ast::Program &program);
 
-  void beginFunction(const ast::FunctionDeclaration *function);
+  void beginFunction(const ast::ASTNode *function);
   void endFunction();
   void beginScope();
   void endScope();
   uint32_t declareLocal(const std::string &name,
-                        const ast::Identifier *declaration = nullptr);
+                        const ast::Identifier *declaration = nullptr,
+                        bool is_const = false);
 
   void resolveStatement(const ast::Statement &statement);
   void resolveExpression(const ast::Expression &expression);
   void resolveFunctionDeclaration(const ast::FunctionDeclaration &function);
+  void resolveLambdaExpression(const ast::LambdaExpression &lambda);
 
   std::optional<ResolvedBinding> resolveIdentifier(const std::string &name);
   std::optional<ResolvedBinding> resolveIdentifierInFunction(

@@ -6,9 +6,11 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   result_ = {};
   errors_.clear();
   top_level_functions_.clear();
+  top_level_structs_.clear();
   function_stack_.clear();
 
   collectTopLevelFunctions(program);
+  collectTopLevelStructs(program);
 
   for (const auto &statement : program.body) {
     if (!statement) {
@@ -51,7 +53,17 @@ void LexicalResolver::collectTopLevelFunctions(const ast::Program &program) {
   }
 }
 
-void LexicalResolver::beginFunction(const ast::FunctionDeclaration *function) {
+void LexicalResolver::collectTopLevelStructs(const ast::Program &program) {
+  for (const auto &statement : program.body) {
+    if (!statement || statement->kind != ast::NodeType::StructDeclaration) {
+      continue;
+    }
+    const auto &decl = static_cast<const ast::StructDeclaration &>(*statement);
+    top_level_structs_.insert(decl.name);
+  }
+}
+
+void LexicalResolver::beginFunction(const ast::ASTNode *function) {
   function_stack_.push_back(FunctionContext{});
   auto &ctx = function_stack_.back();
   ctx.owner = function;
@@ -65,7 +77,13 @@ void LexicalResolver::endFunction() {
 
   const auto &ctx = function_stack_.back();
   if (ctx.owner) {
-    result_.function_upvalues[ctx.owner] = ctx.upvalues;
+    if (ctx.owner->kind == ast::NodeType::FunctionDeclaration) {
+      result_.function_upvalues[static_cast<const ast::FunctionDeclaration *>(
+          ctx.owner)] = ctx.upvalues;
+    } else if (ctx.owner->kind == ast::NodeType::LambdaExpression) {
+      result_.lambda_upvalues[static_cast<const ast::LambdaExpression *>(
+          ctx.owner)] = ctx.upvalues;
+    }
   }
 
   function_stack_.pop_back();
@@ -86,7 +104,8 @@ void LexicalResolver::endScope() {
 }
 
 uint32_t LexicalResolver::declareLocal(const std::string &name,
-                                       const ast::Identifier *declaration) {
+                                       const ast::Identifier *declaration,
+                                       bool is_const) {
   auto &ctx = function_stack_.back();
   if (ctx.scopes.empty()) {
     beginScope();
@@ -95,11 +114,12 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
   auto &scope = ctx.scopes.back();
   auto it = scope.find(name);
   if (it != scope.end()) {
-    return it->second;
+    return it->second.slot;
   }
 
   uint32_t slot = ctx.next_slot++;
-  scope[name] = slot;
+  scope[name] =
+      FunctionContext::LocalSymbol{.slot = slot, .is_const = is_const};
   if (declaration) {
     result_.declaration_slots[declaration] = slot;
   }
@@ -112,7 +132,7 @@ void LexicalResolver::resolveFunctionDeclaration(
 
   for (const auto &param : function.parameters) {
     if (param && param->paramName) {
-      declareLocal(param->paramName->symbol, param->paramName.get());
+      declareLocal(param->paramName->symbol, param->paramName.get(), false);
     }
   }
 
@@ -122,6 +142,23 @@ void LexicalResolver::resolveFunctionDeclaration(
         resolveStatement(*statement);
       }
     }
+  }
+
+  endFunction();
+}
+
+void LexicalResolver::resolveLambdaExpression(
+    const ast::LambdaExpression &lambda) {
+  beginFunction(&lambda);
+
+  for (const auto &param : lambda.parameters) {
+    if (param && param->paramName) {
+      declareLocal(param->paramName->symbol, param->paramName.get(), false);
+    }
+  }
+
+  if (lambda.body) {
+    resolveStatement(*lambda.body);
   }
 
   endFunction();
@@ -148,7 +185,18 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     if (identifier) {
       // Always allocate a new slot for `let` declarations.
       // This preserves lexical shadowing across nested blocks.
-      declareLocal(identifier->symbol, identifier);
+      declareLocal(identifier->symbol, identifier, let.isConst);
+    } else if (let.pattern && let.pattern->kind == ast::NodeType::ListPattern) {
+      const auto &tuple_pattern =
+          static_cast<const ast::ArrayPattern &>(*let.pattern);
+      for (const auto &element : tuple_pattern.elements) {
+        auto *element_id =
+            element ? dynamic_cast<const ast::Identifier *>(element.get())
+                    : nullptr;
+        if (element_id) {
+          declareLocal(element_id->symbol, element_id, let.isConst);
+        }
+      }
     }
     break;
   }
@@ -197,7 +245,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     // Declare iterator variables in the loop scope
     for (const auto &iter : for_stmt.iterators) {
       if (iter) {
-        declareLocal(iter->symbol, iter.get());
+        declareLocal(iter->symbol, iter.get(), false);
       }
     }
     // Resolve the body
@@ -233,7 +281,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
         result_.identifier_bindings[fn.name.get()] = binding;
       } else {
         // Nested function - declare as local
-        declareLocal(fn.name->symbol, fn.name.get());
+        declareLocal(fn.name->symbol, fn.name.get(), false);
       }
     }
     resolveFunctionDeclaration(fn);
@@ -349,6 +397,16 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::TupleExpression: {
+    const auto &tuple = static_cast<const ast::TupleExpression &>(expression);
+    for (const auto &element : tuple.elements) {
+      if (element) {
+        resolveExpression(*element);
+      }
+    }
+    break;
+  }
+
   case ast::NodeType::SetExpression: {
     const auto &set = static_cast<const ast::SetExpression &>(expression);
     for (const auto &element : set.elements) {
@@ -388,6 +446,30 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::LambdaExpression: {
+    const auto &lambda = static_cast<const ast::LambdaExpression &>(expression);
+    resolveLambdaExpression(lambda);
+    break;
+  }
+
+  case ast::NodeType::AwaitExpression: {
+    const auto &await_expr =
+        static_cast<const ast::AwaitExpression &>(expression);
+    if (await_expr.argument) {
+      resolveExpression(*await_expr.argument);
+    }
+    break;
+  }
+
+  case ast::NodeType::AsyncExpression: {
+    const auto &async_expr =
+        static_cast<const ast::AsyncExpression &>(expression);
+    if (async_expr.body) {
+      resolveStatement(*async_expr.body);
+    }
+    break;
+  }
+
   default:
     break;
   }
@@ -415,23 +497,28 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
       continue;
     }
 
-    return ResolvedBinding{ResolvedBindingKind::Local, it->second,
+    return ResolvedBinding{ResolvedBindingKind::Local, it->second.slot,
                            static_cast<uint32_t>(function_stack_.size() - 1 -
                                                  function_index),
-                           name};
+                           name, it->second.is_const};
   }
 
   if (function_index == 0) {
+    if (top_level_structs_.find(name) != top_level_structs_.end()) {
+      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
+    }
     if (top_level_functions_.find(name) != top_level_functions_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name};
+      return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name,
+                             false};
     }
 
     if (host_globals_.find(name) != host_globals_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name};
+      return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name,
+                             false};
     }
 
     if (builtins_.find(name) != builtins_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name};
+      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
     }
 
     return std::nullopt;
@@ -453,7 +540,7 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
     return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
                            static_cast<uint32_t>(function_stack_.size() - 1 -
                                                  function_index),
-                           name};
+                           name, enclosing->is_const};
   }
 
   uint32_t upvalue_slot =
@@ -461,7 +548,7 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
   return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
                          static_cast<uint32_t>(function_stack_.size() - 1 -
                                                function_index),
-                         name};
+                         name, enclosing->is_const};
 }
 
 uint32_t LexicalResolver::addUpvalue(size_t function_index,

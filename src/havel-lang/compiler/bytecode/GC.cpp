@@ -117,6 +117,36 @@ StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
   return StructRef{.id = id, .typeId = typeId};
 }
 
+std::optional<uint32_t> GCHeap::findStructTypeId(const std::string& name) const {
+  for (uint32_t i = 0; i < structTypes_.size(); ++i) {
+    if (structTypes_[i].name == name) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
+size_t GCHeap::structFieldCount(uint32_t typeId) const {
+  if (typeId >= structTypes_.size()) {
+    return 0;
+  }
+  return structTypes_[typeId].fieldNames.size();
+}
+
+std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
+                                               const std::string& field) const {
+  if (typeId >= structTypes_.size()) {
+    return std::nullopt;
+  }
+  const auto &fields = structTypes_[typeId].fieldNames;
+  for (size_t i = 0; i < fields.size(); ++i) {
+    if (fields[i] == field) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
 // Enum type registration
 uint32_t GCHeap::registerEnumType(const std::string& name, const std::vector<std::string>& variants) {
   uint32_t id = static_cast<uint32_t>(enumTypes_.size());

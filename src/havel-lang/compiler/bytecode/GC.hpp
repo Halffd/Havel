@@ -70,6 +70,9 @@ public:
   // Struct operations
   uint32_t registerStructType(const std::string& name, const std::vector<std::string>& fields);
   StructRef allocateStruct(uint32_t typeId, size_t fieldCount);
+  std::optional<uint32_t> findStructTypeId(const std::string& name) const;
+  size_t structFieldCount(uint32_t typeId) const;
+  std::optional<size_t> structFieldIndex(uint32_t typeId, const std::string& field) const;
 
   // Enum operations
   uint32_t registerEnumType(const std::string& name, const std::vector<std::string>& variants);

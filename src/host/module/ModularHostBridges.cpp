@@ -26,6 +26,7 @@
 #include "core/ConfigManager.hpp"
 #include "core/ModeManager.hpp"
 #include "core/HotkeyManager.hpp"
+#include "core/IO.hpp"
 #include "media/AudioManager.hpp"
 
 #include <QClipboard>
@@ -752,7 +753,7 @@ BytecodeValue InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue>
     return BytecodeValue(false);
   }
   
-  if (!ctx || !ctx->hotkeyManager || !ctx->vm) {
+  if (!ctx || !ctx->hotkeyManager || !ctx->vm || !ctx->io) {
     return BytecodeValue(false);
   }
   
@@ -767,11 +768,23 @@ BytecodeValue InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue>
   // Register the closure as a callback
   CallbackId callbackId = ctx->vm->registerCallback(args[1]);
   
+  // Get HotkeyExecutor for thread-safe execution
+  auto *executor = ctx->io->GetHotkeyExecutor();
+  
   // Register hotkey with callback
-  bool success = ctx->hotkeyManager->AddHotkey(hotkeyStr, [ctx, callbackId]() {
-    // Invoke the callback when hotkey is pressed
-    if (ctx && ctx->vm) {
-      ctx->vm->invokeCallback(callbackId, {});
+  bool success = ctx->hotkeyManager->AddHotkey(hotkeyStr, [ctx, callbackId, executor]() {
+    // Submit callback to HotkeyExecutor for thread-safe execution
+    if (executor) {
+      executor->submit([ctx, callbackId]() {
+        if (ctx && ctx->vm) {
+          ctx->vm->invokeCallback(callbackId, {});
+        }
+      });
+    } else {
+      // Fallback: invoke directly (not thread-safe)
+      if (ctx && ctx->vm) {
+        ctx->vm->invokeCallback(callbackId, {});
+      }
     }
   });
   

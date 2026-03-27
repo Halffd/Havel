@@ -52,8 +52,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("type");
   bridge.options().host_global_names.insert("Utility");
   bridge.options().host_global_names.insert("utility");
-  bridge.options().host_global_names.insert("Regex");
   bridge.options().host_global_names.insert("regex");
+  bridge.options().host_global_names.insert("Regex");
   bridge.options().host_global_names.insert("Physics");
   bridge.options().host_global_names.insert("physics");
   bridge.options().host_global_names.insert("E_CHARGE");

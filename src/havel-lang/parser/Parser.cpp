@@ -1758,15 +1758,40 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     advance();
   }
 
-  // Check for loop count: loop 5 { ... }
-  if (at().type == havel::TokenType::Number) {
-    countExpr = parseExpression();
+  // Check for loop count: loop 5 { ... } or loop n { ... }
+  // We need to peek ahead to see if the next token is a number or identifier
+  // followed by an opening brace (not an operator)
+  if ((at().type == havel::TokenType::Number || at().type == havel::TokenType::Identifier) &&
+      !notEOF()) {
+    // Peek ahead to check if this is followed by { or an operator
+    size_t savedPos = position;
     
-    // Skip newlines before body
+    // Skip the count expression
+    if (at().type == havel::TokenType::Number || at().type == havel::TokenType::Identifier) {
+      advance();
+    }
+    
+    // Skip newlines
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-  } else if (at().type == havel::TokenType::While) {
+    
+    // If followed by {, this is a count-based loop
+    if (at().type == havel::TokenType::OpenBrace) {
+      position = savedPos;  // Restore position
+      countExpr = parseExpression();
+      
+      // Skip newlines before body (again, after parsing expression)
+      while (at().type == havel::TokenType::NewLine) {
+        advance();
+      }
+    } else {
+      position = savedPos;  // Restore position, not a count-based loop
+    }
+  }
+  
+  // Check for "while condition"
+  if (at().type == havel::TokenType::While) {
     advance(); // consume "while"
 
     // Parse condition expression

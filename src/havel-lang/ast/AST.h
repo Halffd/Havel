@@ -322,6 +322,7 @@ enum class BinaryOperator {
   In,         // membership: x in [1,2,3]
   NotIn,      // negated membership: x not in [1,2,3]
   Matches,    // regex match: title matches ".*Steam.*"
+  Tilde,      // regex match shorthand: title ~ /pattern/ or title ~ "string"
   Nullish,    // ?? nullish coalescing: x ?? default
   ConfigAppend  // >> config operator
 };

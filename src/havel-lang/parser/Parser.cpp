@@ -2897,6 +2897,19 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalAnd() {
 std::unique_ptr<havel::ast::Expression> Parser::parseEquality() {
   auto left = parseComparison();
 
+  // Regex match: ~ /pattern/ or ~ "string"
+  if (at().type == havel::TokenType::Tilde) {
+    auto tildeTok = at();
+    advance();
+    auto right = parseRange();
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left),
+                                                              havel::ast::BinaryOperator::Tilde,
+                                                              std::move(right));
+    bin->line = tildeTok.line;
+    bin->column = tildeTok.column;
+    left = std::move(bin);
+  }
+
   while (at().type == havel::TokenType::Equals ||
          at().type == havel::TokenType::NotEquals) {
     auto opTok = at();  // Save operator token location
@@ -3234,6 +3247,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     } else {
       failAt(tk, "Shell command requires expression: $ (cmd), $! [array], or $! var");
     }
+  }
+
+  case havel::TokenType::This: {
+    advance();
+    return std::make_unique<havel::ast::ThisExpression>();
   }
 
   case havel::TokenType::InterpolatedString: {

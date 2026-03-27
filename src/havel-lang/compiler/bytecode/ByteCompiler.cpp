@@ -37,6 +37,10 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::AND;
   case ast::BinaryOperator::Or:
     return OpCode::OR;
+  case ast::BinaryOperator::Matches:
+  case ast::BinaryOperator::Tilde:
+    // Regex matching - will be compiled as host function call
+    return OpCode::NOP;  // Placeholder - actual implementation in compileExpression
   case ast::BinaryOperator::Nullish:
     // Nullish coalescing needs special handling - can't use simple OR
     // Will be compiled inline in compileExpression
@@ -1303,6 +1307,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::ThisExpression: {
+    // `this` keyword - load current object reference
+    // For now, compile as LOAD_GLOBAL "this"
+    // Full implementation needs proper `this` binding in object methods
+    emit(OpCode::LOAD_GLOBAL, "this");
+    break;
+  }
+
   case ast::NodeType::BinaryExpression: {
     const auto &binary = static_cast<const ast::BinaryExpression &>(expression);
     if (!binary.left || !binary.right) {
@@ -1316,6 +1328,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       compileExpression(*binary.right);  // container
       std::string fnName = binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{fnName, static_cast<uint32_t>(2)});
+    } else if (binary.operator_ == ast::BinaryOperator::Matches ||
+               binary.operator_ == ast::BinaryOperator::Tilde) {
+      // Regex/string matching - compile as host function call
+      compileExpression(*binary.left);   // string to match
+      compileExpression(*binary.right);  // pattern
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.matches", static_cast<uint32_t>(2)});
     } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
       // TODO: Proper nullish coalescing needs JUMP_IF_NULL opcode
       // For now, treat as OR (falsy coalescing)

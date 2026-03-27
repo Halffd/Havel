@@ -3219,6 +3219,218 @@ signal test = ...   // Signal data freed
 
 ---
 
+## Latest Features (2026-03-27)
+
+### Default Parameters
+
+Functions can have default parameter values:
+
+```havel
+fn greet(name = "World") {
+    print("Hello, " + name)
+}
+
+greet()        // "Hello, World"
+greet("Havel") // "Hello, Havel"
+
+fn add(x, y = 10) {
+    print(x + y)
+}
+
+add(5)      // 15
+add(5, 20)  // 25
+```
+
+**Supported default values:**
+- Number literals: `fn f(x = 5)`
+- String literals: `fn f(name = "World")`
+- Boolean literals: `fn f(flag = true)`
+
+### Variadic Functions
+
+Functions can accept variable number of arguments using `...args`:
+
+```havel
+fn sum(...args) {
+    let total = 0
+    for n in args {
+        total = total + n
+    }
+    print(total)
+}
+
+sum(1, 2, 3)        // 6
+sum(10, 20, 30, 40) // 100
+sum()               // 0
+
+fn printAll(first, ...rest) {
+    print(first)
+    for x in rest {
+        print(x)
+    }
+}
+
+printAll("a", "b", "c", "d")
+// "a"
+// ["b", "c", "d"]
+```
+
+**Rules:**
+- Variadic parameter must be last
+- Extra arguments packed into array
+- Can combine with default parameters
+
+### Power Operator (**)
+
+Exponentiation with `**`:
+
+```havel
+print(2 ** 3)    // 8
+print(2.0 ** 3)  // 8.0
+print(16 ** 0.5) // 4.0 (square root)
+```
+
+### Integer Division (\)
+
+Integer division with `\`:
+
+```havel
+print(7 \ 2)  // 3 (integer result)
+print(8 \ 3)  // 2
+```
+
+### Ternary Operator (? :)
+
+Conditional expressions:
+
+```havel
+let x = true ? 1 : 2
+print(x)  // 1
+
+let y = false ? "yes" : "no"
+print(y)  // "no"
+
+// Nested ternary
+let level = 5
+let status = level > 10 ? "high" : level > 5 ? "medium" : "low"
+```
+
+### Increment/Decrement Operators
+
+Prefix and postfix increment/decrement:
+
+```havel
+let x = 5
+++x  // x = 6, returns 6
+x++  // x = 7, returns 6
+
+let y = 10
+--y  // y = 9, returns 9
+y--  // y = 8, returns 9
+```
+
+### Compound Assignment
+
+Shorthand for arithmetic assignment:
+
+```havel
+let x = 10
+x += 5   // x = 15
+x -= 3   // x = 12
+x *= 2   // x = 24
+x /= 4   // x = 6
+x %= 4   // x = 2
+x **= 2  // x = 36
+```
+
+### Multiline Strings
+
+Triple-quoted strings for multiline text:
+
+```havel
+let msg = """
+Hello
+World
+This is a multiline string
+"""
+print(msg)
+
+// With interpolation
+let name = "Havel"
+let greeting = """
+Hello ${name}!
+Welcome.
+"""
+```
+
+**Features:**
+- Preserves newlines
+- Supports escape sequences
+- Supports string interpolation `${expr}`
+
+### Implicit Variable Declaration
+
+Variables can be declared by first assignment (no `let` required):
+
+```havel
+x = 5          // Implicit declaration
+x = x + 1      // Reassignment
+
+fn test() {
+    y = 10     // Function-local implicit
+}
+
+loop while x < 10 {
+    x = x + 1  // Loop-local implicit
+}
+```
+
+**Note:** Reading a variable before assignment still errors:
+```havel
+z = z + 1  // Error: undefined variable 'z'
+```
+
+### Destructuring in Lambda Parameters
+
+Lambda parameters can destructure objects and arrays:
+
+```havel
+// Object destructuring
+let obj = {x: 1, y: 2}
+let fn = ({x, y}) => {
+    print(x + y)  // 3
+}
+fn(obj)
+
+// Array destructuring
+let arr = [1, 2]
+let fn = ([a, b]) => {
+    print(a * b)  // 2
+}
+fn(arr)
+
+// Nested destructuring
+let nested = {user: {name: "Alice"}}
+let fn = ({user: {name}}) => {
+    print(name)  // "Alice"
+}
+fn(nested)
+```
+
+### AST Source Locations
+
+Error messages now include precise source locations:
+
+```
+SemanticError: duplicate declaration 'nums'
+  --> file.hv:4:5
+   |
+4 | let nums = [1,2,3]
+   |     ^^^^ already defined in this scope
+```
+
+---
+
 ## ShellExecutor Architecture
 
 Structured shell execution with result objects:

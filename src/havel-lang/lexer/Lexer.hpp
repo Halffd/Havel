@@ -117,6 +117,7 @@ enum class TokenType {
   Tilde,      // ~ regex match shorthand
   True,        // boolean literal true
   False,       // boolean literal false
+  Null,        // null literal
   Assign,
   PlusAssign,
   MinusAssign,

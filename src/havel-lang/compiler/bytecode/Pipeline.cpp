@@ -331,12 +331,16 @@ std::string opcodeName(OpCode opcode) {
     return "OR";
   case OpCode::NOT:
     return "NOT";
+  case OpCode::IS_NULL:
+    return "IS_NULL";
   case OpCode::JUMP:
     return "JUMP";
   case OpCode::JUMP_IF_FALSE:
     return "JUMP_IF_FALSE";
   case OpCode::JUMP_IF_TRUE:
     return "JUMP_IF_TRUE";
+  case OpCode::JUMP_IF_NULL:
+    return "JUMP_IF_NULL";
   case OpCode::CALL:
     return "CALL";
   case OpCode::TAIL_CALL:

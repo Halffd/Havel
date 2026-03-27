@@ -57,11 +57,13 @@ enum class OpCode : uint8_t {
   AND,
   OR,
   NOT,
+  IS_NULL,      // Check if value is null or undefined
 
   // Control flow
   JUMP,
   JUMP_IF_FALSE,
   JUMP_IF_TRUE,
+  JUMP_IF_NULL,  // Jump only if null or undefined (for ?? operator)
   CALL,
   TAIL_CALL,  // Tail call optimization - reuse current frame
   CALL_HOST,

@@ -110,6 +110,7 @@ enum class NodeType {
   InterpolatedStringExpression, // "Hello ${name}"
   NumberLiteral,                // 42, 3.14
   BooleanLiteral,               // true, false
+  NullLiteral,                  // null
   AtomLiteral,                  // :ok, :error (like Elixir atoms)
   Identifier,                   // variable names
   HotkeyLiteral,                // F1, Ctrl+V
@@ -918,6 +919,19 @@ struct BooleanLiteral : public Expression {
 
   std::string toString() const override {
     return "BooleanLiteral{" + std::string(value ? "true" : "false") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Null Literal (null)
+struct NullLiteral : public Expression {
+  NullLiteral() {
+    kind = NodeType::NullLiteral;
+  }
+
+  std::string toString() const override {
+    return "null";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2340,6 +2354,7 @@ public:
   virtual void visitNumberLiteral(const NumberLiteral &node) = 0;
 
   virtual void visitBooleanLiteral(const BooleanLiteral &node) = 0;
+  virtual void visitNullLiteral(const NullLiteral &node) = 0;
 
   virtual void visitIdentifier(const Identifier &node) = 0;
   virtual void visitThisExpression(const ThisExpression &node) = 0;
@@ -2491,6 +2506,10 @@ inline void NumberLiteral::accept(ASTVisitor &visitor) const {
 
 inline void HotkeyLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitHotkeyLiteral(*this);
+}
+
+inline void NullLiteral::accept(ASTVisitor &visitor) const {
+  visitor.visitNullLiteral(*this);
 }
 
 inline void ExpressionStatement::accept(ASTVisitor &visitor) const {

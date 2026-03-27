@@ -3326,6 +3326,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     return std::make_unique<havel::ast::BooleanLiteral>(false);
   }
 
+  case havel::TokenType::Null: {
+    advance();
+    return std::make_unique<havel::ast::NullLiteral>();
+  }
+
   case havel::TokenType::Mode:
   case havel::TokenType::Config:
   case havel::TokenType::Devices:

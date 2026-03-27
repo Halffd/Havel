@@ -1762,26 +1762,33 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
   // We need to peek ahead to see if the next token is a number or identifier
   // followed by an opening brace (not an operator)
   if ((at().type == havel::TokenType::Number || at().type == havel::TokenType::Identifier) &&
-      !notEOF()) {
+      notEOF()) {
     // Peek ahead to check if this is followed by { or an operator
     size_t savedPos = position;
-    
+
     // Skip the count expression
     if (at().type == havel::TokenType::Number || at().type == havel::TokenType::Identifier) {
       advance();
     }
-    
+
     // Skip newlines
     while (at().type == havel::TokenType::NewLine) {
       advance();
     }
-    
+
     // If followed by {, this is a count-based loop
     if (at().type == havel::TokenType::OpenBrace) {
       position = savedPos;  // Restore position
-      countExpr = parseExpression();
-      
-      // Skip newlines before body (again, after parsing expression)
+      // Parse just the count value, not a full expression that might consume the brace
+      if (at().type == havel::TokenType::Number) {
+        countExpr = std::make_unique<havel::ast::NumberLiteral>(std::stod(at().value));
+        advance();
+      } else if (at().type == havel::TokenType::Identifier) {
+        countExpr = std::make_unique<havel::ast::Identifier>(at().value, at().line, at().column);
+        advance();
+      }
+
+      // Skip newlines before body
       while (at().type == havel::TokenType::NewLine) {
         advance();
       }

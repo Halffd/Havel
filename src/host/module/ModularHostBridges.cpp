@@ -2547,6 +2547,14 @@ BytecodeValue ConfigBridge::handleSave(const std::vector<BytecodeValue> &args,
 // ============================================================================
 
 void ModeBridge::install(PipelineOptions &options) {
+  // mode() - returns current mode name (for comparisons like mode == "gaming")
+  options.host_functions["mode"] = [ctx = ctx_](const auto &args) {
+    (void)args;
+    if (!ctx || !ctx->modeManager) {
+      return BytecodeValue(std::string(""));
+    }
+    return BytecodeValue(ctx->modeManager->getCurrentMode());
+  };
   options.host_functions["mode.current"] = [ctx = ctx_](const auto &args) {
     return handleGetCurrent(args, ctx);
   };

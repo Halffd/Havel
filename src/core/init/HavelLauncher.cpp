@@ -428,6 +428,9 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
       options.host_global_names.insert("sleep_ms");
       options.host_global_names.insert("system.gc");
       options.host_global_names.insert("system_gc");
+      options.host_global_names.insert("mode");
+      options.host_global_names.insert("print");
+      options.host_global_names.insert("assert");
 
       // Use the same VM for execution (so it has all the registered functions)
       options.vm_override = &tempVm;

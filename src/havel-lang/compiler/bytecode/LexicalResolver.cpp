@@ -386,6 +386,36 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::WhenBlockStatement: {
+    const auto &when_stmt = static_cast<const ast::WhenBlock &>(statement);
+    // Resolve condition
+    if (when_stmt.condition) {
+      resolveExpression(*when_stmt.condition);
+    }
+    // Resolve statements in a new scope
+    beginScope();
+    for (const auto &stmt : when_stmt.statements) {
+      if (stmt) {
+        resolveStatement(*stmt);
+      }
+    }
+    endScope();
+    break;
+  }
+
+  case ast::NodeType::ModeBlock: {
+    const auto &mode_stmt = static_cast<const ast::ModeBlock &>(statement);
+    // Resolve statements in a new scope
+    beginScope();
+    for (const auto &stmt : mode_stmt.statements) {
+      if (stmt) {
+        resolveStatement(*stmt);
+      }
+    }
+    endScope();
+    break;
+  }
+
   case ast::NodeType::ThrowStatement: {
     const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
     if (throw_stmt.value) {

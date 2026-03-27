@@ -448,6 +448,12 @@ struct BinaryExpression : public Expression {
       return "not in";
     case BinaryOperator::Matches:
       return "matches";
+    case BinaryOperator::Tilde:
+      return "~";
+    case BinaryOperator::IntDiv:
+      return "\\";
+    case BinaryOperator::Nullish:
+      return "??";
     case BinaryOperator::ConfigAppend:
       return ">>";
     }

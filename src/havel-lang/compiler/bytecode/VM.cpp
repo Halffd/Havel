@@ -1918,6 +1918,23 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::IS_NULL: {
+    BytecodeValue value = pop();
+    bool isNull = std::holds_alternative<std::nullptr_t>(value);
+    push(BytecodeValue(isNull));
+    break;
+  }
+
+  case OpCode::JUMP_IF_NULL: {
+    uint32_t target = std::get<uint32_t>(instruction.operands[0]);
+    BytecodeValue value = pop();
+    // Only jump on null/undefined, not on all falsy values
+    if (std::holds_alternative<std::nullptr_t>(value)) {
+      currentFrame().ip = target;
+    }
+    break;
+  }
+
   case OpCode::CALL: {
     uint32_t arg_count = std::get<uint32_t>(instruction.operands[0]);
     if (stack.size() < static_cast<size_t>(arg_count) + 1) {

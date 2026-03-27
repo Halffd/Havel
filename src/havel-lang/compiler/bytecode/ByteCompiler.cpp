@@ -202,7 +202,7 @@ uint32_t ByteCompiler::addConstant(const BytecodeValue &value) {
 
 uint32_t ByteCompiler::emitJump(OpCode op) {
   if (op != OpCode::JUMP && op != OpCode::JUMP_IF_FALSE &&
-      op != OpCode::JUMP_IF_TRUE) {
+      op != OpCode::JUMP_IF_TRUE && op != OpCode::JUMP_IF_NULL) {
     throw std::runtime_error("Invalid jump opcode");
   }
 
@@ -1046,6 +1046,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::NullLiteral: {
+    emit(OpCode::LOAD_CONST, addConstant(nullptr));
+    break;
+  }
+
   case ast::NodeType::ArrayLiteral: {
     const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
     
@@ -1335,11 +1340,25 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       compileExpression(*binary.right);  // pattern
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"regex_search", static_cast<uint32_t>(2)});
     } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
-      // TODO: Proper nullish coalescing needs JUMP_IF_NULL opcode
-      // For now, treat as OR (falsy coalescing)
+      // Nullish coalescing: left ?? right
+      // Evaluate left side
       compileExpression(*binary.left);
+
+      // Duplicate the value (we need it for both the null check and potential result)
+      emit(OpCode::DUP);
+
+      // Jump to right side if left is null/undefined (this pops the duplicate)
+      uint32_t jumpToRight = emitJump(OpCode::JUMP_IF_NULL);
+
+      // Left is not null - the original value is still on stack, just skip the right side
+      uint32_t done = emitJump(OpCode::JUMP);
+
+      // Left was null - evaluate right side (the null was already popped by JUMP_IF_NULL)
+      patchJump(jumpToRight, static_cast<uint32_t>(current_function->instructions.size()));
       compileExpression(*binary.right);
-      emit(OpCode::OR);
+
+      // Done
+      patchJump(done, static_cast<uint32_t>(current_function->instructions.size()));
     } else {
       compileExpression(*binary.left);
       compileExpression(*binary.right);

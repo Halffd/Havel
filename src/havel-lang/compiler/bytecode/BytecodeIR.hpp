@@ -240,6 +240,9 @@ struct BytecodeFunction {
   std::vector<UpvalueDescriptor> upvalues;
   uint32_t param_count;
   uint32_t local_count;
+  // Default parameter values (indexed by param index, empty if no default)
+  // Stored as constant values for simple defaults
+  std::vector<std::optional<BytecodeValue>> default_values;
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}

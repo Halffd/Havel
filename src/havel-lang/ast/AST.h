@@ -88,6 +88,7 @@ enum class NodeType {
   ConfigBlock,      // config { ... }
   DevicesBlock,     // devices { ... }
   ModesBlock,       // modes { ... }
+  ModeBlock,        // mode name { ... } (shorthand for when mode == "name")
   SignalDefinition, // signal name = expression
   GroupDefinition,  // group name { modes: [...] }
   ConfigSection,    // any_identifier { ... }
@@ -1898,6 +1899,24 @@ struct ModesBlock : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Simple Mode Block (mode name { statements })
+// Shorthand for: when mode == "name" { statements }
+struct ModeBlock : public Statement {
+  std::string modeName;
+  std::vector<std::unique_ptr<Statement>> statements;
+
+  ModeBlock(const std::string& name, std::vector<std::unique_ptr<Statement>> stmts = {})
+      : modeName(name), statements(std::move(stmts)) {
+    kind = NodeType::ModeBlock;
+  }
+
+  std::string toString() const override {
+    return "ModeBlock{" + modeName + ", " + std::to_string(statements.size()) + " stmts}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Signal Definition (signal name = expression)
 struct SignalDefinition : public Statement {
   std::string name;
@@ -2355,6 +2374,7 @@ public:
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
   virtual void visitDevicesBlock(const DevicesBlock &node) = 0;
   virtual void visitModesBlock(const ModesBlock &node) = 0;
+  virtual void visitModeBlock(const ModeBlock &node) = 0;
   virtual void visitSignalDefinition(const SignalDefinition &node) = 0;
   virtual void visitGroupDefinition(const GroupDefinition &node) = 0;
   virtual void visitConfigSection(const ConfigSection &node) = 0;
@@ -2556,6 +2576,10 @@ inline void DevicesBlock::accept(ASTVisitor &visitor) const {
 
 inline void ModesBlock::accept(ASTVisitor &visitor) const {
   visitor.visitModesBlock(*this);
+}
+
+inline void ModeBlock::accept(ASTVisitor &visitor) const {
+  visitor.visitModeBlock(*this);
 }
 
 inline void SignalDefinition::accept(ASTVisitor &visitor) const {

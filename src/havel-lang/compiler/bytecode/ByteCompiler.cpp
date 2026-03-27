@@ -749,6 +749,42 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileWhenBlock(static_cast<const ast::WhenBlock &>(statement));
     break;
 
+  case ast::NodeType::ModeBlock: {
+    // Simple mode block: mode name { statements }
+    // Compile as: when mode == "name" { statements }
+    const auto &modeBlock = static_cast<const ast::ModeBlock &>(statement);
+    
+    // Compile condition: mode == "modeName"
+    // Call mode() host function to get current mode
+    emit(OpCode::LOAD_CONST, addConstant(std::string("mode")));
+    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"mode", static_cast<uint32_t>(0)});
+    
+    // Load the mode name to compare against
+    emit(OpCode::LOAD_CONST, addConstant(modeBlock.modeName));
+    
+    // Compare: mode() == "modeName"
+    emit(OpCode::EQ);
+    
+    // Store condition result
+    uint32_t condSlot = next_local_index++;
+    reserveLocalSlot(condSlot);
+    emit(OpCode::STORE_VAR, condSlot);
+    
+    // Jump to end if condition is false
+    uint32_t endJump = emitJump(OpCode::JUMP_IF_FALSE);
+    
+    // Compile statements in the mode block
+    for (const auto &stmt : modeBlock.statements) {
+      if (stmt) {
+        compileStatement(*stmt);
+      }
+    }
+    
+    // Patch the jump
+    patchJump(endJump, static_cast<uint32_t>(current_function->instructions.size()));
+    break;
+  }
+
   case ast::NodeType::ThrowStatement: {
     const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
     if (throw_stmt.value) {

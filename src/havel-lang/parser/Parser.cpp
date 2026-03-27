@@ -556,7 +556,21 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     }
   case havel::TokenType::Mode:
     if (at(1).type == havel::TokenType::Identifier && at(2).type == havel::TokenType::OpenBrace) {
-      return parseModeDefinition();
+      // Check if this is a simple mode block or full mode definition
+      // Full definition starts with: priority, condition, enter, exit, on
+      size_t savedPos = position;
+      advance(); advance(); advance();  // skip mode, name, {
+      while (at().type == havel::TokenType::NewLine) advance();
+      bool isFullDefinition = (at().type == havel::TokenType::Identifier && 
+                               (at().value == "priority" || at().value == "condition" || 
+                                at().value == "enter" || at().value == "exit" || at().value == "on"));
+      position = savedPos;  // restore position
+      
+      if (isFullDefinition) {
+        return parseModeDefinition();
+      } else {
+        return parseModeBlock();
+      }
     }
     {
       auto expr = parseExpression();
@@ -4377,6 +4391,56 @@ std::unique_ptr<havel::ast::Statement> Parser::parseModeDefinition() {
   modeDef.onOpenBlock = std::move(onOpenBlock);
   modes.push_back(std::move(modeDef));
   return std::make_unique<havel::ast::ModesBlock>(std::move(modes));
+}
+
+// Parse simple mode block: mode name { statements }
+// Shorthand for: when mode == "name" { statements }
+std::unique_ptr<havel::ast::Statement> Parser::parseModeBlock() {
+  advance(); // consume 'mode'
+
+  // Parse mode name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected mode name after 'mode'");
+  }
+  std::string modeName = at().value;
+  advance();
+
+  // Parse opening brace
+  if (at().type != havel::TokenType::OpenBrace) {
+    failAt(at(), "Expected '{' after mode name");
+  }
+  advance(); // consume '{'
+
+  // Parse statements until closing brace
+  std::vector<std::unique_ptr<havel::ast::Statement>> statements;
+  while (notEOF() && at().type != havel::TokenType::CloseBrace) {
+    if (at().type == havel::TokenType::NewLine || at().type == havel::TokenType::Semicolon) {
+      advance();
+      continue;
+    }
+
+    try {
+      auto stmt = parseStatement();
+      if (stmt) {
+        statements.push_back(std::move(stmt));
+      }
+    } catch (const std::exception &e) {
+      if (havel::debugging::debug_parser) {
+        havel::error("Parse error in mode block: {} at position {}", e.what(), position);
+      }
+      synchronize();
+      if (notEOF() == false) {
+        break;
+      }
+    }
+  }
+
+  if (at().type != havel::TokenType::CloseBrace) {
+    failAt(at(), "Expected '}' to close mode block");
+  }
+  advance(); // consume '}'
+
+  return std::make_unique<havel::ast::ModeBlock>(modeName, std::move(statements));
 }
 
 // Parse signal definition: signal name = expression

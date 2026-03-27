@@ -271,8 +271,8 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/core/net/*.cpp"
     "src/core/process/*.cpp"
     "src/extensions/ExtensionLoader.cpp"
-    "src/havel-lang/compiler/bytecode/HavelAPI.cpp"
-    "src/havel-lang/compiler/bytecode/HavelValue.cpp"
+    # "src/havel-lang/compiler/bytecode/HavelAPI.cpp"  # C API - disabled
+    # "src/havel-lang/compiler/bytecode/HavelValue.cpp"  # C API - disabled
     "src/host/app/*.cpp"
     "src/host/async/*.cpp"
     "src/host/audio/*.cpp"

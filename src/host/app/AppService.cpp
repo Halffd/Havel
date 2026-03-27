@@ -15,6 +15,9 @@
 #include <sys/sysinfo.h>
 #endif
 
+// POSIX environ for getEnvVars
+extern char **environ;
+
 namespace havel::host {
 
 struct AppService::Impl {
@@ -159,7 +162,6 @@ bool AppService::setEnv(const std::string &name, const std::string &value) {
 
 std::vector<std::string> AppService::getEnvVars() const {
   std::vector<std::string> vars;
-  extern char **environ;
   for (char **env = environ; *env; ++env) {
     vars.push_back(std::string(*env));
   }

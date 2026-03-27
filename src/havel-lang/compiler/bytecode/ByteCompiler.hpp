@@ -75,6 +75,7 @@ private:
     void compileStatement(const ast::Statement& statement);
     void compileExpression(const ast::Expression& expression);
     void compileHotkeyBinding(const ast::HotkeyBinding& binding);
+    void compileWhenBlock(const ast::WhenBlock& whenBlock);
     void compileInputStatement(const ast::InputStatement& statement);
     void compileTryStatement(const ast::TryExpression& statement);
     void compileCallExpression(const ast::CallExpression& expression);

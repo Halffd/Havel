@@ -372,7 +372,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         return parseConfigSection();
       }
       if (tok.type != havel::TokenType::Identifier &&
-          tok.type != havel::TokenType::String &&
+          tok.type != havel::TokenType::String && tok.type != havel::TokenType::MultilineString &&
           tok.type != havel::TokenType::Number) {
         break;
       }
@@ -591,7 +591,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     } else if (at().type == havel::TokenType::Identifier) {
       // Just an identifier - parse as primary expression (e.g., $ firefox)
       cmdExpr = parsePrimaryExpression();
-    } else if (at().type == havel::TokenType::String) {
+    } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
       // String literal for shell command
       cmdExpr = parsePrimaryExpression();
     } else {
@@ -614,7 +614,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
         nextCmdExpr = parseExpression();
       } else if (at().type == havel::TokenType::Identifier) {
         nextCmdExpr = parsePrimaryExpression();
-      } else if (at().type == havel::TokenType::String) {
+      } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
         nextCmdExpr = parsePrimaryExpression();
       } else {
         failAt(at(), "Pipe requires valid shell command");
@@ -638,7 +638,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       // - Identifier: lmb, rmb, m, r, w
       // - Number: :500 sleep
       // - OpenBrace: {Key}
-      if (at().type == havel::TokenType::String ||
+      if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
           at().type == havel::TokenType::Number ||
           at().type == havel::TokenType::OpenBrace ||
           (at().type == havel::TokenType::Identifier && 
@@ -784,7 +784,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseSleepStatement() {
   
   // Parse duration - can be number, string, or time format
   std::string duration;
-  if (at().type == havel::TokenType::Number || at().type == havel::TokenType::String) {
+  if (at().type == havel::TokenType::Number || at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
     duration = advance().value;
   } else {
     // Try to parse as identifier (for unquoted strings like :1h30m)
@@ -827,7 +827,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseInputStatement() {
     }
     
     // Check for string: "text"
-    if (at().type == havel::TokenType::String) {
+    if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
       cmd.type = havel::ast::InputCommand::SendText;
       cmd.text = advance().value;
       commands.push_back(cmd);
@@ -935,7 +935,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseImplicitInputStatement() {
     }
 
     // Check for string: "text"
-    if (at().type == havel::TokenType::String) {
+    if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
       cmd.type = havel::ast::InputCommand::SendText;
       cmd.text = advance().value;
       commands.push_back(cmd);
@@ -2203,7 +2203,7 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
         std::string condType = advance().value;
         if (condType == "title" || condType == "class" ||
             condType == "process") {
-          if (at().type == havel::TokenType::String ||
+          if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
               at().type == havel::TokenType::Identifier) {
             binding->conditions.push_back(condType + " " + advance().value);
           }
@@ -2489,7 +2489,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseUseStatement() {
   }
 
   // Syntax 1: use "file.hv" - import script file
-  if (at().type == havel::TokenType::String) {
+  if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
     std::string filePath = advance().value;
     return std::make_unique<havel::ast::UseStatement>(filePath, std::vector<std::string>{"*"});
   }
@@ -3097,6 +3097,11 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     return std::make_unique<havel::ast::StringLiteral>(tk.value);
   }
 
+  case havel::TokenType::MultilineString: {
+    advance();
+    return std::make_unique<havel::ast::StringLiteral>(tk.value);
+  }
+
   case havel::TokenType::Backtick: {
     advance();
     return std::make_unique<havel::ast::BacktickExpression>(tk.value);
@@ -3522,7 +3527,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     
     // Object keys can be identifiers, strings, or keywords (like 'config')
     bool isObject = (nextTok.type == havel::TokenType::Identifier ||
-                     nextTok.type == havel::TokenType::String ||
+                     nextTok.type == havel::TokenType::String || nextTok.type == havel::TokenType::MultilineString ||
                      nextTok.type == havel::TokenType::Config ||
                      nextTok.type == havel::TokenType::Devices ||
                      nextTok.type == havel::TokenType::Modes ||
@@ -3770,7 +3775,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parseObjectLiteral() {
         at().type == havel::TokenType::Modes ||
         at().type == havel::TokenType::Mode) {
       key = advance().value;
-    } else if (at().type == havel::TokenType::String) {
+    } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
       key = advance().value;
     } else {
       failAt(at(), "Expected identifier, string, or spread for object literal");
@@ -4070,7 +4075,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
         size_t savePos = position;
         auto next = at(1);
         bool isObject = (next.type == havel::TokenType::Identifier ||
-                         next.type == havel::TokenType::String) &&
+                         next.type == havel::TokenType::String || next.type == havel::TokenType::MultilineString) &&
                         at(2).type == havel::TokenType::Colon;
         position = savePos; // restore
         if (!isObject) {
@@ -4098,7 +4103,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       size_t savePos = position;
       auto next = at(1);
       bool isObject = (next.type == havel::TokenType::Identifier ||
-                       next.type == havel::TokenType::String) &&
+                       next.type == havel::TokenType::String || next.type == havel::TokenType::MultilineString) &&
                       at(2).type == havel::TokenType::Colon;
       position = savePos; // restore
       std::vector<std::unique_ptr<havel::ast::Expression>> args;
@@ -4114,7 +4119,7 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       }
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
-    } else if ((at().type == havel::TokenType::String ||
+    } else if ((at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
                at().type == havel::TokenType::Number ||
                at().type == havel::TokenType::Identifier ||
                at().type == havel::TokenType::InterpolatedString) &&
@@ -4460,7 +4465,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseConfigSection() {
   while (notEOF() && at().type != havel::TokenType::OpenBrace &&
          at().type != havel::TokenType::NewLine) {
     if (at().type == havel::TokenType::Identifier ||
-        at().type == havel::TokenType::String ||
+        at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
         at().type == havel::TokenType::Number) {
       args.push_back(at().value);
       advance();
@@ -4539,7 +4544,7 @@ Parser::parseKeyValueBlock() {
         at().type == havel::TokenType::Devices ||
         at().type == havel::TokenType::Modes) {
       key = advance().value;
-    } else if (at().type == havel::TokenType::String) {
+    } else if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString) {
       key = advance().value;
     } else {
       failAt(at(), "Expected identifier, keyword, or string as key");

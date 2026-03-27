@@ -75,6 +75,7 @@ enum class TokenType {
   Identifier,
   Number,
   String,
+  MultilineString,  // """...""" multiline strings
   InterpolatedString,
   Backtick,      // `command` for shell output
   RegexLiteral,  // /pattern/ for regex
@@ -207,6 +208,7 @@ private:
 
   Token scanNumber();
   Token scanString();
+  Token scanMultilineString();
   Token scanBacktick();
   Token scanRegexLiteral();
   Token scanShellCommand(bool captureOutput = false);

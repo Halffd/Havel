@@ -316,6 +316,106 @@ Token Lexer::scanString() {
   return makeToken(value, type, raw);
 }
 
+Token Lexer::scanMultilineString() {
+  std::string value;
+  std::string raw;
+  bool hasInterpolation = false;
+  int braceDepth = 0;  // Tracks depth inside ${ ... }
+
+  // Skip opening """ (already consumed by caller)
+  // Multiline strings support interpolation like regular double-quoted strings
+  
+  // Skip initial newline if present (for """\n... style)
+  if (!isAtEnd() && peek() == '\n') {
+    advance();
+    raw += '\n';
+  }
+
+  while (!isAtEnd()) {
+    // Check for closing """
+    if (peek() == '"' && 
+        position + 2 < source.length() &&
+        source[position + 1] == '"' && 
+        source[position + 2] == '"') {
+      break;
+    }
+
+    char c = peek();
+    raw += c;
+
+    if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
+      // Process escape sequences
+      advance();  // consume backslash
+      raw += peek();
+
+      char escaped = advance();
+      switch (escaped) {
+      case 'n':
+        value += '\n';
+        break;
+      case 't':
+        value += '\t';
+        break;
+      case 'r':
+        value += '\r';
+        break;
+      case '\\':
+        value += '\\';
+        break;
+      case '"':
+        value += '"';
+        break;
+      case '\'':
+        value += '\'';
+        break;
+      default:
+        value += '\\';
+        value += escaped;
+        break;
+      }
+    } else if (c == '$' && braceDepth == 0) {
+      // Interpolation in multiline strings
+      hasInterpolation = true;
+      value += advance();  // $
+
+      if (peek() == '{') {
+        value += advance();  // {
+        braceDepth++;
+      } else if (isAlpha(peek()) || peek() == '_') {
+        value += '{';
+        while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
+          value += advance();
+        }
+        value += '}';
+      }
+    } else {
+      char consumed = advance();
+      value += consumed;
+
+      if (braceDepth > 0) {
+        if (consumed == '{') {
+          braceDepth++;
+        } else if (consumed == '}') {
+          braceDepth--;
+        }
+      }
+    }
+  }
+
+  if (isAtEnd()) {
+    reportError("Unterminated multiline string");
+    return makeToken(value, TokenType::MultilineString, raw);
+  }
+
+  // Consume closing """
+  advance();
+  advance();
+  advance();
+
+  TokenType type = hasInterpolation ? TokenType::InterpolatedString : TokenType::MultilineString;
+  return makeToken(value, type, raw);
+}
+
 Token Lexer::scanBacktick() {
   std::string value;
   std::string raw;
@@ -515,7 +615,17 @@ std::vector<Token> Lexer::tokenize() {
 
     // Handle strings
     if (c == '"' || c == '\'') {
-      tokens.push_back(scanString());
+      // Check for multiline string """
+      if (c == '"' && 
+          position + 2 < source.length() &&
+          source[position] == '"' && 
+          source[position + 1] == '"') {
+        advance();  // consume first " (second one)
+        advance();  // consume second " (third one)
+        tokens.push_back(scanMultilineString());
+      } else {
+        tokens.push_back(scanString());
+      }
       if (debug_lexer) {
         std::cout << "LEX: " << tokens.back().toString() << std::endl;
       }

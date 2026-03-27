@@ -158,9 +158,23 @@ void LexicalResolver::resolveLambdaExpression(
     const ast::LambdaExpression &lambda) {
   beginFunction(&lambda);
 
-  for (const auto &param : lambda.parameters) {
+  // For lambda parameters, allocate slots in order:
+  // - Each parameter gets a slot (0, 1, 2... for params)
+  // - Pattern params also allocate additional slots for extracted values
+  for (size_t i = 0; i < lambda.parameters.size(); i++) {
+    const auto &param = lambda.parameters[i];
     if (param && param->pattern) {
-      collectPatternIdentifiers(*param->pattern);
+      if (param->pattern->kind == ast::NodeType::Identifier) {
+        // Simple identifier - allocate one slot for this param
+        const auto &ident = static_cast<const ast::Identifier &>(*param->pattern);
+        declareLocal(ident.symbol, &ident, false);
+      } else {
+        // Pattern - allocate slot for parameter value (using temp name)
+        // The extracted values will get subsequent slots
+        declareLocal("_p" + std::to_string(i), nullptr, false);
+        // Then allocate slots for extracted values
+        collectPatternIdentifiers(*param->pattern);
+      }
     }
   }
 

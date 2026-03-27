@@ -372,12 +372,13 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
 
 // Compile a parameter pattern - extracts fields from parameter into locals
 // paramIndex is the slot where the parameter value is stored
+// For patterns, we allocate NEW slots for extracted values (not using declarationSlot)
 void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
                                            uint32_t paramIndex) {
   switch (pattern.kind) {
   case ast::NodeType::Identifier: {
-    // Simple identifier parameter - parameter is already in the correct slot
-    // Just reserve it
+    // Simple identifier parameter - reserve the slot for this parameter
+    // The value will be placed here by CALL
     const auto &ident = static_cast<const ast::Identifier &>(pattern);
     reserveLocalSlot(declarationSlot(ident));
     break;
@@ -385,6 +386,9 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
 
   case ast::NodeType::ObjectPattern: {
     // Object destructuring: { x, y: alias }
+    // First, reserve the slot for the parameter itself
+    reserveLocalSlot(paramIndex);
+    
     const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
     for (const auto &prop : objPat.properties) {
       const std::string &key = prop.first;
@@ -403,6 +407,9 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
 
   case ast::NodeType::ArrayPattern: {
     // Array destructuring: [a, b]
+    // First, reserve the slot for the parameter itself
+    reserveLocalSlot(paramIndex);
+    
     const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
     for (size_t i = 0; i < arrPat.elements.size(); i++) {
       const auto &elemPattern = arrPat.elements[i];
@@ -427,7 +434,7 @@ void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
 void ByteCompiler::compileParameterPatternValue(const ast::Expression &pattern) {
   switch (pattern.kind) {
   case ast::NodeType::Identifier: {
-    // Store value into identifier's slot
+    // Store value into the identifier's declared slot
     const auto &ident = static_cast<const ast::Identifier &>(pattern);
     emit(OpCode::STORE_VAR, declarationSlot(ident));
     break;
@@ -435,8 +442,7 @@ void ByteCompiler::compileParameterPatternValue(const ast::Expression &pattern) 
   case ast::NodeType::ObjectPattern: {
     // Nested object pattern - value is on stack, extract fields
     const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
-    uint32_t tempSlot = next_local_index;
-    reserveLocalSlot(tempSlot);
+    uint32_t tempSlot = next_local_index++;
     emit(OpCode::STORE_VAR, tempSlot);
     
     for (const auto &prop : objPat.properties) {
@@ -455,8 +461,7 @@ void ByteCompiler::compileParameterPatternValue(const ast::Expression &pattern) 
   case ast::NodeType::ArrayPattern: {
     // Nested array pattern - value is on stack, extract elements
     const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
-    uint32_t tempSlot = next_local_index;
-    reserveLocalSlot(tempSlot);
+    uint32_t tempSlot = next_local_index++;
     emit(OpCode::STORE_VAR, tempSlot);
     
     for (size_t i = 0; i < arrPat.elements.size(); i++) {

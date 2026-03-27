@@ -326,3 +326,7 @@ havel_vm_destroy(vm);
 ```
 
 See [include/Havel-cAPI.h](include/Havel-cAPI.h) for the full C API.
+
+### Wayland support
+Future plan is embedding it into a compositor
+Havel-wm currently in developme

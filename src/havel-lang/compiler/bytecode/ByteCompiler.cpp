@@ -3042,8 +3042,11 @@ void ByteCompiler::reserveLocalSlot(uint32_t slot) {
 
 void ByteCompiler::enterFunction(BytecodeFunction &&function,
                                  std::optional<uint32_t> slot) {
+  // Support nested functions by saving current function context
   if (current_function) {
-    throw std::runtime_error("Nested function compilation is not supported");
+    // Save current function state for nesting
+    saved_functions_.push_back(std::make_pair(
+        std::move(current_function), current_function_slot_));
   }
 
   current_function = std::make_unique<BytecodeFunction>(std::move(function));
@@ -3067,7 +3070,16 @@ void ByteCompiler::leaveFunction() {
     compiled_functions.push_back(std::move(current_function));
   }
   current_function_slot_.reset();
-  resetLocals();
+  
+  // Restore previous function context if nested
+  if (!saved_functions_.empty()) {
+    auto saved = std::move(saved_functions_.back());
+    saved_functions_.pop_back();
+    current_function = std::move(saved.first);
+    current_function_slot_ = saved.second;
+  } else {
+    resetLocals();
+  }
 }
 
 void ByteCompiler::resetLocals() { next_local_index = 0; }

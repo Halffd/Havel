@@ -67,6 +67,7 @@ enum class TokenType {
   Enum,       // enum
   Trait,      // trait
   Impl,       // impl
+  This,       // this - current object reference
   On,
   Off,
   When,

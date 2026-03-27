@@ -606,6 +606,15 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::UpdateExpression: {
+    const auto &update_expr =
+        static_cast<const ast::UpdateExpression &>(expression);
+    if (update_expr.argument) {
+      resolveExpression(*update_expr.argument);
+    }
+    break;
+  }
+
   default:
     break;
   }

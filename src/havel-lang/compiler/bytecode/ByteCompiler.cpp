@@ -1394,6 +1394,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emitCompound(OpCode::DIV);
       break;
     }
+    if (assignment.operator_ == "%=") {
+      emitCompound(OpCode::MOD);
+      break;
+    }
+    if (assignment.operator_ == "**=") {
+      emitCompound(OpCode::POW);
+      break;
+    }
 
     throw std::runtime_error("Unsupported assignment operator: " +
                              assignment.operator_);
@@ -1446,6 +1454,78 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     compileExpression(*await_expr.argument);
     emit(OpCode::CALL_HOST,
          std::vector<BytecodeValue>{"async.await", static_cast<uint32_t>(1)});
+    break;
+  }
+
+  case ast::NodeType::UpdateExpression: {
+    const auto &update_expr =
+        static_cast<const ast::UpdateExpression &>(expression);
+    if (!update_expr.argument) {
+      throw std::runtime_error("Update expression missing argument");
+    }
+    
+    // The argument must be an identifier
+    const auto *target_id =
+        dynamic_cast<const ast::Identifier *>(update_expr.argument.get());
+    if (!target_id) {
+      throw std::runtime_error("Update expression argument must be an identifier");
+    }
+    
+    const auto *binding = bindingFor(*target_id);
+    if (!binding) {
+      throw std::runtime_error("Missing lexical binding for update expression: " +
+                               target_id->symbol);
+    }
+    
+    bool isIncrement = (update_expr.operator_ == 
+                       ast::UpdateExpression::Operator::Increment);
+    
+    if (update_expr.isPrefix) {
+      // Prefix: ++x or --x
+      // Load, modify, store, return new value
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
+        // Can't update host globals
+        throw std::runtime_error("Cannot update host global: " + target_id->symbol);
+      } else if (binding->kind == ResolvedBindingKind::GlobalFunction) {
+        throw std::runtime_error("Cannot update function: " + target_id->symbol);
+      } else if (binding->kind == ResolvedBindingKind::Builtin) {
+        throw std::runtime_error("Cannot update builtin: " + target_id->symbol);
+      } else {
+        throw std::runtime_error("Cannot update variable with binding kind: " + 
+                                std::to_string(static_cast<int>(binding->kind)));
+      }
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(1)));
+      emit(isIncrement ? OpCode::ADD : OpCode::SUB);
+      emit(OpCode::DUP);  // Save result for return value
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::STORE_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::STORE_UPVALUE, binding->slot);
+      }
+    } else {
+      // Postfix: x++ or x--
+      // Load, dup, modify, store, pop new value, return old value
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::LOAD_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::LOAD_UPVALUE, binding->slot);
+      } else {
+        throw std::runtime_error("Cannot update non-local variable");
+      }
+      emit(OpCode::DUP);  // Save old value
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(1)));
+      emit(isIncrement ? OpCode::ADD : OpCode::SUB);
+      if (binding->kind == ResolvedBindingKind::Local) {
+        emit(OpCode::STORE_VAR, binding->slot);
+      } else if (binding->kind == ResolvedBindingKind::Upvalue) {
+        emit(OpCode::STORE_UPVALUE, binding->slot);
+      }
+      emit(OpCode::POP);  // Remove new value, leave old value on stack
+    }
     break;
   }
 

@@ -2288,7 +2288,7 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
 
 void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
   if (!statement.body) {
-    throw std::runtime_error("Malformed loop statement");
+    throw std::runtime_error("Malformed loop statement: body is null");
   }
 
   // Check if this is a count-based loop: loop 5 { ... }

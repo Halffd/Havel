@@ -1059,6 +1059,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
+    
+    // Global scope access (::identifier)
+    if (id.isGlobalScope) {
+      emit(OpCode::LOAD_GLOBAL, id.symbol);
+      break;
+    }
+    
     const auto *binding = bindingFor(id);
     if (!binding) {
       throw std::runtime_error("Missing lexical binding for identifier: " +
@@ -1257,6 +1264,13 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (assignment.operator_ == "=") {
       compileExpression(*assignment.value);
       if (target_id) {
+        // Check for global scope assignment (::x = value)
+        if (assignment.isGlobalScope) {
+          emit(OpCode::DUP);
+          emit(OpCode::STORE_GLOBAL, target_id->symbol);
+          break;
+        }
+        
         const auto *binding = bindingFor(*target_id);
         if (!binding) {
           throw std::runtime_error(

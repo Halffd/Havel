@@ -285,6 +285,8 @@ std::string opcodeName(OpCode opcode) {
     return "LOAD_CONST";
   case OpCode::LOAD_GLOBAL:
     return "LOAD_GLOBAL";
+  case OpCode::STORE_GLOBAL:
+    return "STORE_GLOBAL";
   case OpCode::LOAD_VAR:
     return "LOAD_VAR";
   case OpCode::STORE_VAR:

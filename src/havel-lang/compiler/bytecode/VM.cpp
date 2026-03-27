@@ -1546,6 +1546,16 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::STORE_GLOBAL: {
+    if (instruction.operands.empty() ||
+        !std::holds_alternative<std::string>(instruction.operands[0])) {
+      throw std::runtime_error("STORE_GLOBAL expects string operand");
+    }
+    const auto &name = std::get<std::string>(instruction.operands[0]);
+    globals[name] = pop();
+    break;
+  }
+
   case OpCode::LOAD_VAR: {
     uint32_t var_index = std::get<uint32_t>(instruction.operands[0]);
     uint32_t abs = toAbsoluteLocal(var_index);

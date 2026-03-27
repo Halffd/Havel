@@ -466,15 +466,18 @@ struct Program : public Statement {
 // Identifier
 struct Identifier : public Expression {
   std::string symbol;
+  bool isGlobalScope;  // true for ::identifier (global scope assignment)
 
   Identifier(const std::string &sym, size_t ln = 0, size_t col = 0)
-      : symbol(sym) {
+      : symbol(sym), isGlobalScope(false) {
     kind = NodeType::Identifier;
     line = ln;
     column = col;
   }
 
-  std::string toString() const override { return "Identifier{" + symbol + "}"; }
+  std::string toString() const override {
+    return std::string(isGlobalScope ? "::" : "") + "Identifier{" + symbol + "}";
+  }
 
   void accept(ASTVisitor &visitor) const override;
 };
@@ -2093,20 +2096,25 @@ struct RangeExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Assignment Expression (identifier = value)
+// Assignment Expression (identifier = value or ::identifier = value)
 struct AssignmentExpression : public Expression {
   std::unique_ptr<Expression> target; // What we're assigning to
   std::unique_ptr<Expression> value;  // The new value
   std::string operator_;              // "=" for now
+  bool isGlobalScope;                 // true for ::x = value
 
   AssignmentExpression(std::unique_ptr<Expression> t,
-                       std::unique_ptr<Expression> v, std::string op = "=")
-      : target(std::move(t)), value(std::move(v)), operator_(std::move(op)) {
+                       std::unique_ptr<Expression> v, std::string op = "=",
+                       bool globalScope = false)
+      : target(std::move(t)), value(std::move(v)), operator_(std::move(op)),
+        isGlobalScope(globalScope) {
     kind = NodeType::AssignmentExpression;
   }
 
   std::string toString() const override {
-    return "AssignmentExpression{" + (target ? target->toString() : "nullptr") +
+    std::string prefix = isGlobalScope ? "::" : "";
+    return "AssignmentExpression{" + prefix +
+           (target ? target->toString() : "nullptr") +
            " " + operator_ + " " + (value ? value->toString() : "nullptr") +
            "}";
   }

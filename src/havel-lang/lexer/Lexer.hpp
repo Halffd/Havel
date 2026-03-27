@@ -83,6 +83,7 @@ enum class TokenType {
   Hotkey,
   Arrow,         // => (fat arrow for lambdas)
   ReturnType,    // -> (thin arrow for return types)
+  GlobalScope,   // :: (global scope assignment)
   BinaryOp,
   OpenParen,
   CloseParen,

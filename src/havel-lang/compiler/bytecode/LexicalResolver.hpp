@@ -88,6 +88,7 @@ private:
   void resolveExpression(const ast::Expression &expression);
   void resolveFunctionDeclaration(const ast::FunctionDeclaration &function);
   void resolveLambdaExpression(const ast::LambdaExpression &lambda);
+  void collectPatternIdentifiers(const ast::Expression &pattern);
 
   std::optional<ResolvedBinding> resolveIdentifier(const std::string &name);
   std::optional<ResolvedBinding> resolveIdentifierInFunction(

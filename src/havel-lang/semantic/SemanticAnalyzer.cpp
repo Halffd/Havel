@@ -206,12 +206,8 @@ void SemanticAnalyzer::visitStatement(const ast::Statement& stmt) {
             
             // Register parameters
             for (const auto& param : funcDecl.parameters) {
-                if (param->paramName) {
-                    SymbolAttributes attrs;
-                    attrs.isMutable = false;  // Parameters are immutable
-                    attrs.isInitialized = true;
-                    symbolTable_.define(param->paramName->symbol, SymbolKind::Parameter,
-                                       HavelType::any(), attrs);
+                if (param && param->pattern) {
+                    registerParameterPattern(*param->pattern);
                 }
             }
             
@@ -841,6 +837,41 @@ bool SemanticAnalyzer::isKnownModuleFunction(const std::string& module, const st
 
 bool SemanticAnalyzer::isKnownBuiltin(const std::string& name) const {
     return knownBuiltins_.count(name) > 0;
+}
+
+// Register all identifiers in a parameter pattern as function parameters
+void SemanticAnalyzer::registerParameterPattern(const ast::Expression &pattern) {
+    switch (pattern.kind) {
+    case ast::NodeType::Identifier: {
+        const auto &ident = static_cast<const ast::Identifier &>(pattern);
+        SymbolAttributes attrs;
+        attrs.isMutable = false;  // Parameters are immutable
+        attrs.isInitialized = true;
+        attrs.line = ident.line;
+        attrs.column = ident.column;
+        symbolTable_.define(ident.symbol, SymbolKind::Parameter,
+                           HavelType::any(), attrs);
+        break;
+    }
+    case ast::NodeType::ObjectPattern: {
+        const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+        for (const auto &prop : objPat.properties) {
+            registerParameterPattern(*prop.second);
+        }
+        break;
+    }
+    case ast::NodeType::ArrayPattern: {
+        const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+        for (const auto &elem : arrPat.elements) {
+            if (elem) {
+                registerParameterPattern(*elem);
+            }
+        }
+        break;
+    }
+    default:
+        break;
+    }
 }
 
 void SemanticAnalyzer::enterScope(const std::string& name) {

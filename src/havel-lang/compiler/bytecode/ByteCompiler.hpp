@@ -63,6 +63,9 @@ private:
 
     void compileFunction(const ast::FunctionDeclaration& function);
     void compileLambda(const ast::LambdaExpression& lambda);
+    void compileParameterPattern(const ast::Expression& pattern, uint32_t paramIndex);
+    void compileParameterPatternValue(const ast::Expression& pattern);
+    void collectParameterPatternSlots(const ast::Expression& pattern);
     void collectFunctionDeclarations(const ast::Statement& statement,
                                      std::vector<const ast::FunctionDeclaration*>& out) const;
     void collectLambdaExpressions(const ast::Statement& statement,

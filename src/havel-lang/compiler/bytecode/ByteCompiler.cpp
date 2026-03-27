@@ -243,10 +243,10 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
   }
 
   for (const auto &param : function.parameters) {
-    if (!param || !param->paramName) {
-      throw std::runtime_error("Function parameter missing identifier");
+    if (!param || !param->pattern) {
+      throw std::runtime_error("Function parameter missing pattern");
     }
-    reserveLocalSlot(declarationSlot(*param->paramName));
+    collectParameterPatternSlots(*param->pattern);
   }
 
   if (function.body) {
@@ -324,11 +324,13 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     current_function->upvalues = upvalues_it->second;
   }
 
-  for (const auto &param : lambda.parameters) {
-    if (!param || !param->paramName) {
-      throw std::runtime_error("Lambda parameter missing identifier");
+  // Compile parameter patterns - emit destructuring code for each parameter
+  for (size_t i = 0; i < lambda.parameters.size(); i++) {
+    const auto &param = lambda.parameters[i];
+    if (!param || !param->pattern) {
+      throw std::runtime_error("Lambda parameter missing pattern");
     }
-    reserveLocalSlot(declarationSlot(*param->paramName));
+    compileParameterPattern(*param->pattern, static_cast<uint32_t>(i));
   }
 
   if (lambda.body) {
@@ -366,6 +368,141 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
   }
 
   leaveFunction();
+}
+
+// Compile a parameter pattern - extracts fields from parameter into locals
+// paramIndex is the slot where the parameter value is stored
+void ByteCompiler::compileParameterPattern(const ast::Expression &pattern,
+                                           uint32_t paramIndex) {
+  switch (pattern.kind) {
+  case ast::NodeType::Identifier: {
+    // Simple identifier parameter - parameter is already in the correct slot
+    // Just reserve it
+    const auto &ident = static_cast<const ast::Identifier &>(pattern);
+    reserveLocalSlot(declarationSlot(ident));
+    break;
+  }
+
+  case ast::NodeType::ObjectPattern: {
+    // Object destructuring: { x, y: alias }
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    for (const auto &prop : objPat.properties) {
+      const std::string &key = prop.first;
+      const auto &valuePattern = prop.second;
+
+      // Emit: LOAD_VAR paramIndex, LOAD_CONST key, OBJECT_GET
+      emit(OpCode::LOAD_VAR, paramIndex);
+      emit(OpCode::LOAD_CONST, addConstant(key));
+      emit(OpCode::OBJECT_GET);
+
+      // Recursively compile the value pattern - result is on stack
+      compileParameterPatternValue(*valuePattern);
+    }
+    break;
+  }
+
+  case ast::NodeType::ArrayPattern: {
+    // Array destructuring: [a, b]
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    for (size_t i = 0; i < arrPat.elements.size(); i++) {
+      const auto &elemPattern = arrPat.elements[i];
+
+      // Emit: LOAD_VAR paramIndex, LOAD_CONST index, ARRAY_GET
+      emit(OpCode::LOAD_VAR, paramIndex);
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(i)));
+      emit(OpCode::ARRAY_GET);
+
+      // Recursively compile the element pattern - result is on stack
+      compileParameterPatternValue(*elemPattern);
+    }
+    break;
+  }
+
+  default:
+    throw std::runtime_error("Unsupported parameter pattern type");
+  }
+}
+
+// Compile a parameter pattern value - expects value on stack, stores into local
+void ByteCompiler::compileParameterPatternValue(const ast::Expression &pattern) {
+  switch (pattern.kind) {
+  case ast::NodeType::Identifier: {
+    // Store value into identifier's slot
+    const auto &ident = static_cast<const ast::Identifier &>(pattern);
+    emit(OpCode::STORE_VAR, declarationSlot(ident));
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    // Nested object pattern - value is on stack, extract fields
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    uint32_t tempSlot = next_local_index;
+    reserveLocalSlot(tempSlot);
+    emit(OpCode::STORE_VAR, tempSlot);
+    
+    for (const auto &prop : objPat.properties) {
+      const std::string &key = prop.first;
+      const auto &valuePattern = prop.second;
+
+      // Emit: LOAD_VAR tempSlot, LOAD_CONST key, OBJECT_GET
+      emit(OpCode::LOAD_VAR, tempSlot);
+      emit(OpCode::LOAD_CONST, addConstant(key));
+      emit(OpCode::OBJECT_GET);
+
+      compileParameterPatternValue(*valuePattern);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    // Nested array pattern - value is on stack, extract elements
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    uint32_t tempSlot = next_local_index;
+    reserveLocalSlot(tempSlot);
+    emit(OpCode::STORE_VAR, tempSlot);
+    
+    for (size_t i = 0; i < arrPat.elements.size(); i++) {
+      const auto &elemPattern = arrPat.elements[i];
+
+      // Emit: LOAD_VAR tempSlot, LOAD_CONST index, ARRAY_GET
+      emit(OpCode::LOAD_VAR, tempSlot);
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(i)));
+      emit(OpCode::ARRAY_GET);
+
+      compileParameterPatternValue(*elemPattern);
+    }
+    break;
+  }
+  default:
+    throw std::runtime_error("Unsupported parameter pattern value type");
+  }
+}
+
+// Collect all declaration slots from a parameter pattern (for function declarations)
+void ByteCompiler::collectParameterPatternSlots(const ast::Expression &pattern) {
+  switch (pattern.kind) {
+  case ast::NodeType::Identifier: {
+    const auto &ident = static_cast<const ast::Identifier &>(pattern);
+    reserveLocalSlot(declarationSlot(ident));
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    for (const auto &prop : objPat.properties) {
+      collectParameterPatternSlots(*prop.second);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    for (const auto &elem : arrPat.elements) {
+      if (elem) {
+        collectParameterPatternSlots(*elem);
+      }
+    }
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 void ByteCompiler::compileStatement(const ast::Statement &statement) {

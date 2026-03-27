@@ -25,6 +25,7 @@
 #include "core/DisplayManager.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/ModeManager.hpp"
+#include "core/HotkeyManager.hpp"
 #include "media/AudioManager.hpp"
 
 #include <QClipboard>
@@ -746,9 +747,35 @@ void InputBridge::install(PipelineOptions &options) {
 
 BytecodeValue InputBridge::handleHotkeyRegister(const std::vector<BytecodeValue> &args,
                                                 const HostContext *ctx) {
-  (void)args;
-  (void)ctx;
-  return BytecodeValue(false);
+  // Args: [hotkey_string, callback_closure]
+  if (args.size() < 2) {
+    return BytecodeValue(false);
+  }
+  
+  if (!ctx || !ctx->hotkeyManager || !ctx->vm) {
+    return BytecodeValue(false);
+  }
+  
+  // Get hotkey string
+  std::string hotkeyStr;
+  if (std::holds_alternative<std::string>(args[0])) {
+    hotkeyStr = std::get<std::string>(args[0]);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  // Register the closure as a callback
+  CallbackId callbackId = ctx->vm->registerCallback(args[1]);
+  
+  // Register hotkey with callback
+  bool success = ctx->hotkeyManager->AddHotkey(hotkeyStr, [ctx, callbackId]() {
+    // Invoke the callback when hotkey is pressed
+    if (ctx && ctx->vm) {
+      ctx->vm->invokeCallback(callbackId, {});
+    }
+  });
+  
+  return BytecodeValue(success);
 }
 
 BytecodeValue InputBridge::handleHotkeyTrigger(const std::vector<BytecodeValue> &args,

@@ -745,6 +745,10 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileTryStatement(static_cast<const ast::TryExpression &>(statement));
     break;
 
+  case ast::NodeType::WhenBlockStatement:
+    compileWhenBlock(static_cast<const ast::WhenBlock &>(statement));
+    break;
+
   case ast::NodeType::ThrowStatement: {
     const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
     if (throw_stmt.value) {
@@ -889,6 +893,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
   case ast::NodeType::StringLiteral: {
     const auto &str = static_cast<const ast::StringLiteral &>(expression);
     emit(OpCode::LOAD_CONST, addConstant(str.value));
+    break;
+  }
+
+  case ast::NodeType::HotkeyLiteral: {
+    const auto &hotkey = static_cast<const ast::HotkeyLiteral &>(expression);
+    emit(OpCode::LOAD_CONST, addConstant(hotkey.combination));
     break;
   }
 
@@ -2961,30 +2971,72 @@ bool ByteCompiler::wasTailCall() const { return emitted_tail_call_; }
 
 void ByteCompiler::clearTailCallFlag() { emitted_tail_call_ = false; }
 
+// Compile when block: when condition { statements }
+void ByteCompiler::compileWhenBlock(const ast::WhenBlock &whenBlock) {
+  // Compile the condition expression
+  if (whenBlock.condition) {
+    compileExpression(*whenBlock.condition);
+  } else {
+    emit(OpCode::LOAD_CONST, addConstant(true));  // Default to true if no condition
+  }
+  
+  // Store condition result
+  uint32_t condSlot = next_local_index++;
+  reserveLocalSlot(condSlot);
+  emit(OpCode::STORE_VAR, condSlot);
+  
+  // Jump to end if condition is false
+  uint32_t endJump = emitJump(OpCode::JUMP_IF_FALSE);
+  
+  // Compile statements in the when block
+  for (const auto &stmt : whenBlock.statements) {
+    if (stmt) {
+      compileStatement(*stmt);
+    }
+  }
+  
+  // Patch the jump
+  patchJump(endJump, static_cast<uint32_t>(current_function->instructions.size()));
+}
+
 // Compile hotkey binding: hotkey => action
 void ByteCompiler::compileHotkeyBinding(const ast::HotkeyBinding &binding) {
-  // Compile the action (body)
-  if (binding.action) {
-    compileStatement(*binding.action);
-  }
-
-  // For each hotkey in the binding, register it
+  // For each hotkey in the binding
   for (const auto &hotkeyExpr : binding.hotkeys) {
     if (!hotkeyExpr)
       continue;
 
-    // Hotkey expression should be a string or identifier
-    // We need to call hotkey.register(hotkey_string, callback_function)
-    // The callback is a closure that wraps the action
-
-    // For now, emit a host function call to hotkey.register
-    // The hotkey string needs to be evaluated
+    // Compile the hotkey string
     compileExpression(*hotkeyExpr);
 
-    // The action body was already compiled above
-    // We need to create a closure for the callback
-    // This is complex - for now we'll emit a placeholder
-    // TODO: Properly implement hotkey registration with closures
+    // Create a closure for the action
+    // The action becomes a lambda that will be called when hotkey is pressed
+    
+    // First, compile the action into a nested lambda function
+    // We need to create a new function for the callback
+    
+    // For now, wrap the action in a simple lambda
+    // The action is compiled as a statement block
+    
+    // Create a lambda: () => { action }
+    // This requires creating a new function in the chunk
+    
+    // For simplicity, we'll use a workaround:
+    // Compile the action as a statement, then create a closure that calls it
+    // This is a placeholder - proper implementation needs nested function support
+    
+    // Emit a placeholder closure (will be replaced with proper implementation)
+    emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+    
+    // Call hotkey.register(hotkey_string, callback)
+    emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"hotkey.register", 2});
+    emit(OpCode::POP);  // Discard result
+  }
+  
+  // Handle conditions if present (for when blocks)
+  if (!binding.conditions.empty()) {
+    // Conditions are handled by ConditionalHotkeyManager
+    // For now, just register the hotkey and let the conditional manager handle it
   }
 }
 

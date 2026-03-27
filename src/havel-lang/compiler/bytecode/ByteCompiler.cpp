@@ -785,6 +785,82 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::ModesBlock: {
+    // Full mode definition: mode name [priority N] { condition = ...; enter { ... }; exit { ... } }
+    const auto &modesBlock = static_cast<const ast::ModesBlock &>(statement);
+    
+    for (const auto &modeDef : modesBlock.modes) {
+      // Register mode with ModeManager at runtime
+      // mode.register(name, priority, condition, enter, exit, onEnterFrom, onExitTo, ...)
+      
+      // Load mode name
+      emit(OpCode::LOAD_CONST, addConstant(modeDef.name));
+      
+      // Load priority
+      emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(modeDef.priority)));
+      
+      // Compile condition expression (or null if not provided)
+      if (modeDef.condition) {
+        compileExpression(*modeDef.condition);
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Create closures for enter/exit blocks
+      // For now, we'll compile them inline and create closures
+      // This is a simplified implementation - full implementation needs nested functions
+      
+      // Compile enter block as inline code wrapped in closure
+      if (modeDef.enterBlock) {
+        // Create a closure for enter block
+        // For simplicity, we'll emit a placeholder
+        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Compile exit block
+      if (modeDef.exitBlock) {
+        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Load onEnterFrom mode name (or null)
+      if (!modeDef.onEnterFrom.empty()) {
+        emit(OpCode::LOAD_CONST, addConstant(modeDef.onEnterFrom));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Compile onEnterFrom block
+      if (modeDef.onEnterFromBlock) {
+        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Load onExitTo mode name (or null)
+      if (!modeDef.onExitTo.empty()) {
+        emit(OpCode::LOAD_CONST, addConstant(modeDef.onExitTo));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Compile onExitTo block
+      if (modeDef.onExitToBlock) {
+        emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+      } else {
+        emit(OpCode::LOAD_CONST, addConstant(nullptr));
+      }
+      
+      // Call mode.register(name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom, onExitToMode, onExitTo)
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"mode.register", static_cast<uint32_t>(9)});
+      emit(OpCode::POP);  // Discard result
+    }
+    break;
+  }
+
   case ast::NodeType::ThrowStatement: {
     const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
     if (throw_stmt.value) {

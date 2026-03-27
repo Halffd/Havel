@@ -3043,18 +3043,13 @@ $ "cmd1 | cmd2"            // Piped commands (Unix pipes)
 Multiple syntaxes for regex matching:
 
 ```havel
-// Tilde operator (shorthand)
-if title ~ /YouTube/ {
+// Tilde operator with regex (shorthand)
+if title ~ /^YouTube - .*/ {
     print("YouTube detected")
 }
 
-// Matches keyword
-if title matches /.*Game.*/ {
-    print("Game window")
-}
-
-// String patterns (escaped)
-if title ~ ".*Steam.*" {
+// String patterns, check if string contains
+if title ~ "Steam" {
     print("Steam detected")
 }
 ```

@@ -1314,10 +1314,19 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
   }
 
   // Allow fewer arguments than parameters (for default parameters)
-  if (args.size() > callee->param_count) {
+  // For variadic functions, allow MORE arguments than parameters
+  if (callee->variadic_param_index == UINT32_MAX && args.size() > callee->param_count) {
     throw std::runtime_error("Argument count mismatch calling function index " +
                              std::to_string(function_index) + " (expected at most " +
                              std::to_string(callee->param_count) + ", got " +
+                             std::to_string(args.size()) + ")");
+  }
+  
+  // For variadic functions, require at least as many args as non-variadic params
+  if (callee->variadic_param_index != UINT32_MAX && args.size() < callee->variadic_param_index) {
+    throw std::runtime_error("Argument count mismatch calling function index " +
+                             std::to_string(function_index) + " (expected at least " +
+                             std::to_string(callee->variadic_param_index) + ", got " +
                              std::to_string(args.size()) + ")");
   }
 
@@ -1336,8 +1345,17 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
   frame_count_++;
 
   // Initialize parameter slots: provided args first, then defaults
+  // Handle variadic parameters: pack extra args into array
   for (uint32_t i = 0; i < callee->param_count; i++) {
-    if (i < args.size()) {
+    if (callee->variadic_param_index != UINT32_MAX && i == callee->variadic_param_index) {
+      // Variadic parameter: pack remaining args into array
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t j = i; j < args.size(); j++) {
+        arr->push_back(std::move(args[j]));
+      }
+      locals[base + i] = BytecodeValue(arrRef);
+    } else if (i < args.size()) {
       locals[base + i] = std::move(args[i]);
     } else if (i < callee->default_values.size() && callee->default_values[i].has_value()) {
       locals[base + i] = callee->default_values[i].value();
@@ -1383,10 +1401,19 @@ void VM::doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args)
   }
 
   // Allow fewer arguments than parameters (for default parameters)
-  if (args.size() > callee->param_count) {
+  // For variadic functions, allow MORE arguments than parameters
+  if (callee->variadic_param_index == UINT32_MAX && args.size() > callee->param_count) {
     throw std::runtime_error("Argument count mismatch for tail call to function index " +
                              std::to_string(function_index) + " (expected at most " +
                              std::to_string(callee->param_count) + ", got " +
+                             std::to_string(args.size()) + ")");
+  }
+  
+  // For variadic functions, require at least as many args as non-variadic params
+  if (callee->variadic_param_index != UINT32_MAX && args.size() < callee->variadic_param_index) {
+    throw std::runtime_error("Argument count mismatch for tail call to function index " +
+                             std::to_string(function_index) + " (expected at least " +
+                             std::to_string(callee->variadic_param_index) + ", got " +
                              std::to_string(args.size()) + ")");
   }
 
@@ -1407,8 +1434,17 @@ void VM::doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args)
   }
 
   // Set up arguments in the reused frame (at old_base): provided args first, then defaults
+  // Handle variadic parameters: pack extra args into array
   for (uint32_t i = 0; i < callee->param_count; i++) {
-    if (i < args.size()) {
+    if (callee->variadic_param_index != UINT32_MAX && i == callee->variadic_param_index) {
+      // Variadic parameter: pack remaining args into array
+      auto arrRef = heap_.allocateArray();
+      auto *arr = heap_.array(arrRef.id);
+      for (size_t j = i; j < args.size(); j++) {
+        arr->push_back(std::move(args[j]));
+      }
+      locals[old_base + i] = BytecodeValue(arrRef);
+    } else if (i < args.size()) {
       locals[old_base + i] = std::move(args[i]);
     } else if (i < callee->default_values.size() && callee->default_values[i].has_value()) {
       locals[old_base + i] = callee->default_values[i].value();

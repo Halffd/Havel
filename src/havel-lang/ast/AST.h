@@ -503,16 +503,18 @@ struct FunctionParameter : public ASTNode {
   std::unique_ptr<Expression> pattern;  // Identifier or destructuring pattern
   std::optional<std::unique_ptr<Expression>> defaultValue;
   std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation;  // Optional type annotation
+  bool isVariadic = false;  // true for ...args (variadic parameter)
 
   FunctionParameter(std::unique_ptr<Expression> pat,
                     std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
-                    std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt)
-      : pattern(std::move(pat)), defaultValue(std::move(defVal)), typeAnnotation(std::move(typeAnn)) {
+                    std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt,
+                    bool variadic = false)
+      : pattern(std::move(pat)), defaultValue(std::move(defVal)), typeAnnotation(std::move(typeAnn)), isVariadic(variadic) {
     kind = NodeType::FunctionParameter;
   }
 
   std::string toString() const override {
-    std::string result = pattern ? pattern->toString() : "nullptr";
+    std::string result = (isVariadic ? "..." : "") + (pattern ? pattern->toString() : "nullptr");
     if (typeAnnotation) {
       result += ": " + (*typeAnnotation)->toString();
     }

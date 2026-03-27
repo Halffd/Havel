@@ -99,6 +99,8 @@ enum class TokenType {
   Multiply,
   Divide,
   Modulo,
+  Power,        // ** power operator
+  Backslash,    // \ integer division
   PlusPlus,
   MinusMinus, // Increment/Decrement
   Equals,
@@ -121,6 +123,7 @@ enum class TokenType {
   DivideAssign,
   ModuloAssign,  // %=
   PowerAssign,   // **=
+  Nullish,       // ?? nullish coalescing
   Pipe,
   Comment,
   NewLine,

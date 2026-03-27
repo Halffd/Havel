@@ -19,6 +19,8 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::MOD;
   case ast::BinaryOperator::Pow:
     return OpCode::POW;
+  case ast::BinaryOperator::IntDiv:
+    return OpCode::DIV;  // Integer division uses same opcode, VM handles type
   case ast::BinaryOperator::Equal:
     return OpCode::EQ;
   case ast::BinaryOperator::NotEqual:
@@ -35,6 +37,10 @@ OpCode toBytecodeOperator(ast::BinaryOperator op) {
     return OpCode::AND;
   case ast::BinaryOperator::Or:
     return OpCode::OR;
+  case ast::BinaryOperator::Nullish:
+    // Nullish coalescing needs special handling - can't use simple OR
+    // Will be compiled inline in compileExpression
+    return OpCode::NOP;  // Placeholder - actual implementation in compileExpression
   default:
     throw std::runtime_error(
         "Unsupported binary operator in bytecode compiler");
@@ -1120,14 +1126,20 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (!binary.left || !binary.right) {
       throw std::runtime_error("Malformed binary expression");
     }
-    
+
     // Special handling for 'in' and 'not in' - compile as host function call
-    if (binary.operator_ == ast::BinaryOperator::In || 
+    if (binary.operator_ == ast::BinaryOperator::In ||
         binary.operator_ == ast::BinaryOperator::NotIn) {
       compileExpression(*binary.left);   // value to check
       compileExpression(*binary.right);  // container
       std::string fnName = binary.operator_ == ast::BinaryOperator::In ? "any.in" : "any.not_in";
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{fnName, static_cast<uint32_t>(2)});
+    } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
+      // TODO: Proper nullish coalescing needs JUMP_IF_NULL opcode
+      // For now, treat as OR (falsy coalescing)
+      compileExpression(*binary.left);
+      compileExpression(*binary.right);
+      emit(OpCode::OR);
     } else {
       compileExpression(*binary.left);
       compileExpression(*binary.right);
@@ -1526,6 +1538,32 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       emit(OpCode::POP);  // Remove new value, leave old value on stack
     }
+    break;
+  }
+
+  case ast::NodeType::TernaryExpression: {
+    const auto &ternary =
+        static_cast<const ast::TernaryExpression &>(expression);
+    if (!ternary.condition || !ternary.trueValue || !ternary.falseValue) {
+      throw std::runtime_error("Ternary expression missing components");
+    }
+    
+    // Compile condition
+    compileExpression(*ternary.condition);
+    
+    // Jump to false branch if condition is false
+    uint32_t false_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    
+    // Compile true branch
+    compileExpression(*ternary.trueValue);
+    uint32_t end_jump = emitJump(OpCode::JUMP);
+    
+    // Patch false jump and compile false branch
+    patchJump(false_jump, static_cast<uint32_t>(current_function->instructions.size()));
+    compileExpression(*ternary.falseValue);
+    
+    // Patch end jump
+    patchJump(end_jump, static_cast<uint32_t>(current_function->instructions.size()));
     break;
   }
 

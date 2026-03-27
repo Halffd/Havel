@@ -71,7 +71,8 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {'?', TokenType::Question},    {'|', TokenType::Pipe},
     {'+', TokenType::Plus},        {'-', TokenType::Minus},
     {'*', TokenType::Multiply},    {'/', TokenType::Divide},
-    {'%', TokenType::Modulo},      {'\n', TokenType::NewLine},
+    {'%', TokenType::Modulo},      {'\\', TokenType::Backslash},
+    {'\n', TokenType::NewLine},
     {'!', TokenType::Not},         {'_', TokenType::Underscore},
     {'~', TokenType::Tilde}};
 
@@ -761,7 +762,7 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
     if (c == '*' && peek() == '*') {
-      // Check for **= (power assign)
+      // Check for **= (power assign) or ** (power)
       size_t look = position + 1;
       if (look < source.length() && source[look] == '=') {
         advance();  // consume first *
@@ -772,7 +773,26 @@ std::vector<Token> Lexer::tokenize() {
           std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }
         continue;
+      } else {
+        advance();  // consume first *
+        advance();  // consume second *
+        tokens.push_back(makeToken("**", TokenType::Power));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
       }
+    }
+
+    // Handle ?? (nullish coalescing)
+    if (c == '?' && peek() == '?') {
+      advance();
+      advance();
+      tokens.push_back(makeToken("??", TokenType::Nullish));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
     }
 
     // Handle == and !=

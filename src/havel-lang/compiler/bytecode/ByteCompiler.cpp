@@ -248,11 +248,39 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     current_function->upvalues = upvalues_it->second;
   }
 
+  // Collect default parameter values (for simple constant defaults)
   for (const auto &param : function.parameters) {
     if (!param || !param->pattern) {
       throw std::runtime_error("Function parameter missing pattern");
     }
     collectParameterPatternSlots(*param->pattern);
+    
+    // Store default value if present (only simple literals for now)
+    if (param->defaultValue.has_value()) {
+      // For now, only handle simple literal defaults
+      // Expression defaults like b = a + 1 would need runtime evaluation
+      const auto &defaultExpr = param->defaultValue.value();
+      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+        const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
+        if (isIntegerLiteral(num.value)) {
+          current_function->default_values.push_back(
+              static_cast<int64_t>(num.value));
+        } else {
+          current_function->default_values.push_back(num.value);
+        }
+      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(str.value);
+      } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
+        const auto &boolean = static_cast<const ast::BooleanLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(boolean.value);
+      } else {
+        // For complex defaults, store null - would need runtime evaluation
+        current_function->default_values.push_back(std::nullopt);
+      }
+    } else {
+      current_function->default_values.push_back(std::nullopt);
+    }
   }
 
   if (function.body) {
@@ -330,13 +358,37 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     current_function->upvalues = upvalues_it->second;
   }
 
-  // Compile parameter patterns - emit destructuring code for each parameter
+  // Collect default parameter values for lambda
   for (size_t i = 0; i < lambda.parameters.size(); i++) {
     const auto &param = lambda.parameters[i];
     if (!param || !param->pattern) {
       throw std::runtime_error("Lambda parameter missing pattern");
     }
     compileParameterPattern(*param->pattern, static_cast<uint32_t>(i));
+    
+    // Store default value if present
+    if (param->defaultValue.has_value()) {
+      const auto &defaultExpr = param->defaultValue.value();
+      if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
+        const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
+        if (isIntegerLiteral(num.value)) {
+          current_function->default_values.push_back(
+              static_cast<int64_t>(num.value));
+        } else {
+          current_function->default_values.push_back(num.value);
+        }
+      } else if (defaultExpr->kind == ast::NodeType::StringLiteral) {
+        const auto &str = static_cast<const ast::StringLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(str.value);
+      } else if (defaultExpr->kind == ast::NodeType::BooleanLiteral) {
+        const auto &boolean = static_cast<const ast::BooleanLiteral &>(*defaultExpr);
+        current_function->default_values.push_back(boolean.value);
+      } else {
+        current_function->default_values.push_back(std::nullopt);
+      }
+    } else {
+      current_function->default_values.push_back(std::nullopt);
+    }
   }
 
   if (lambda.body) {

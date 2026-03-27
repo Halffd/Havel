@@ -1313,9 +1313,10 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
     // Check if function is valid
   }
 
-  if (args.size() != callee->param_count) {
+  // Allow fewer arguments than parameters (for default parameters)
+  if (args.size() > callee->param_count) {
     throw std::runtime_error("Argument count mismatch calling function index " +
-                             std::to_string(function_index) + " (expected " +
+                             std::to_string(function_index) + " (expected at most " +
                              std::to_string(callee->param_count) + ", got " +
                              std::to_string(args.size()) + ")");
   }
@@ -1334,8 +1335,15 @@ void VM::doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
   }
   frame_count_++;
 
-  for (uint32_t i = 0; i < args.size(); i++) {
-    locals[base + i] = std::move(args[i]);
+  // Initialize parameter slots: provided args first, then defaults
+  for (uint32_t i = 0; i < callee->param_count; i++) {
+    if (i < args.size()) {
+      locals[base + i] = std::move(args[i]);
+    } else if (i < callee->default_values.size() && callee->default_values[i].has_value()) {
+      locals[base + i] = callee->default_values[i].value();
+    } else {
+      locals[base + i] = nullptr;  // No arg provided, no default
+    }
   }
 }
 
@@ -1374,9 +1382,10 @@ void VM::doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args)
                              std::to_string(function_index));
   }
 
-  if (args.size() != callee->param_count) {
+  // Allow fewer arguments than parameters (for default parameters)
+  if (args.size() > callee->param_count) {
     throw std::runtime_error("Argument count mismatch for tail call to function index " +
-                             std::to_string(function_index) + " (expected " +
+                             std::to_string(function_index) + " (expected at most " +
                              std::to_string(callee->param_count) + ", got " +
                              std::to_string(args.size()) + ")");
   }
@@ -1384,22 +1393,28 @@ void VM::doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args)
   // TCO: Reuse current frame - update function, reset IP, adjust locals
   auto& current_frame = currentFrame();
   size_t old_base = current_frame.locals_base;
-  
+
   // Update frame to point to new function
   current_frame.function = callee;
   current_frame.ip = 0;
   current_frame.closure_id = closure_id;
   // Keep same locals base
-  
+
   // Resize locals if needed (reuse existing space)
   size_t new_locals_needed = old_base + callee->local_count;
   if (locals.size() < new_locals_needed) {
     locals.resize(new_locals_needed, nullptr);
   }
-  
-  // Set up arguments in the reused frame (at old_base)
-  for (uint32_t i = 0; i < args.size(); i++) {
-    locals[old_base + i] = std::move(args[i]);
+
+  // Set up arguments in the reused frame (at old_base): provided args first, then defaults
+  for (uint32_t i = 0; i < callee->param_count; i++) {
+    if (i < args.size()) {
+      locals[old_base + i] = std::move(args[i]);
+    } else if (i < callee->default_values.size() && callee->default_values[i].has_value()) {
+      locals[old_base + i] = callee->default_values[i].value();
+    } else {
+      locals[old_base + i] = nullptr;
+    }
   }
   
   // Clear remaining locals from old function

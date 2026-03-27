@@ -1230,10 +1230,11 @@ struct ForStatement : public Statement {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Loop Statement (infinite loop or condition-driven)
+// Loop Statement (infinite loop, condition-driven, or count-based)
 struct LoopStatement : public Statement {
   std::unique_ptr<Statement> body;
   std::unique_ptr<Expression> condition;  // For "loop while condition {}"
+  std::unique_ptr<Expression> countExpr;  // For "loop 5 { ... }"
 
   LoopStatement(std::unique_ptr<Statement> bd, std::unique_ptr<Expression> cond = nullptr)
       : body(std::move(bd)), condition(std::move(cond)) {
@@ -1242,7 +1243,8 @@ struct LoopStatement : public Statement {
 
   std::string toString() const override {
     std::string condStr = condition ? " while " + condition->toString() : "";
-    return "LoopStatement{" + condStr + "body: " + (body ? body->toString() : "nullptr") + "}";
+    std::string countStr = countExpr ? " " + countExpr->toString() : "";
+    return "LoopStatement{" + countStr + condStr + "body: " + (body ? body->toString() : "nullptr") + "}";
   }
 
   void accept(ASTVisitor &visitor) const override;

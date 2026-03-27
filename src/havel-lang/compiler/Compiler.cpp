@@ -586,7 +586,10 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
     for (const auto &param : funcDecl.parameters) {
       // Default to double for now (you might want type inference)
       paramTypes.push_back(llvm::Type::getDoubleTy(context));
-      info("Parameter: " + param->paramName->symbol);
+      if (param->pattern && param->pattern->kind == ast::NodeType::Identifier) {
+        auto *ident = static_cast<const ast::Identifier *>(param->pattern.get());
+        info("Parameter: " + ident->symbol);
+      }
     }
 
     llvm::FunctionType *funcType =
@@ -603,7 +606,10 @@ llvm::Value *Compiler::GenerateStatement(const ast::Statement &stmt) {
     // Set parameter names
     auto paramIt = funcDecl.parameters.begin();
     for (auto &arg : function->args()) {
-      arg.setName((*paramIt)->paramName->symbol);
+      if ((*paramIt)->pattern && (*paramIt)->pattern->kind == ast::NodeType::Identifier) {
+        auto *ident = static_cast<const ast::Identifier *>((*paramIt)->pattern.get());
+        arg.setName(ident->symbol);
+      }
       ++paramIt;
     }
 

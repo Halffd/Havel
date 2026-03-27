@@ -15,8 +15,8 @@ try {
         assert(vImplicit == "top2", "vImplicit should be 'top2'")
         v = 1
         vImplicit = 2
-        def v = "below"
-        def vImplicit = "below2"
+        let v = "below"
+        let vImplicit = "below2"
         print("v in test: ", v)
     }
     print("v before test: ", v)

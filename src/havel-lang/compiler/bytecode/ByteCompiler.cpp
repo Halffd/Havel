@@ -2316,6 +2316,20 @@ void ByteCompiler::collectFunctionDeclarations(
     break;
   }
 
+  case ast::NodeType::TryExpression: {
+    const auto &try_expr = static_cast<const ast::TryExpression &>(statement);
+    if (try_expr.tryBody) {
+      collectFunctionDeclarations(*try_expr.tryBody, out);
+    }
+    if (try_expr.catchBody) {
+      collectFunctionDeclarations(*try_expr.catchBody, out);
+    }
+    if (try_expr.finallyBlock) {
+      collectFunctionDeclarations(*try_expr.finallyBlock, out);
+    }
+    break;
+  }
+
   default:
     break;
   }

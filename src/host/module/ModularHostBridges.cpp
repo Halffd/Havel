@@ -2568,6 +2568,9 @@ void ModeBridge::install(PipelineOptions &options) {
     }
     return BytecodeValue(ctx->modeManager->getCurrentMode());
   };
+  options.host_functions["mode.register"] = [ctx = ctx_](const auto &args) {
+    return handleRegister(args, ctx);
+  };
   options.host_functions["mode.current"] = [ctx = ctx_](const auto &args) {
     return handleGetCurrent(args, ctx);
   };
@@ -2577,6 +2580,47 @@ void ModeBridge::install(PipelineOptions &options) {
   options.host_functions["mode.previous"] = [ctx = ctx_](const auto &args) {
     return handleGetPrevious(args, ctx);
   };
+}
+
+BytecodeValue ModeBridge::handleRegister(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  // Args: name, priority, condition, enter, exit, onEnterFromMode, onEnterFrom, onExitToMode, onExitTo
+  if (args.size() < 9) {
+    return BytecodeValue(false);
+  }
+  
+  if (!ctx || !ctx->modeManager || !ctx->vm) {
+    return BytecodeValue(false);
+  }
+  
+  // Get mode name
+  std::string modeName;
+  if (std::holds_alternative<std::string>(args[0])) {
+    modeName = std::get<std::string>(args[0]);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  // Get priority
+  int priority = 0;
+  if (std::holds_alternative<int64_t>(args[1])) {
+    priority = static_cast<int>(std::get<int64_t>(args[1]));
+  }
+  
+  // Condition is evaluated by ModeManager's update loop
+  // For now, we'll store it and let ModeManager handle it
+  // The condition expression needs to be evaluated periodically
+  
+  // Register callbacks for enter/exit
+  // For now, we'll use placeholder implementations
+  // Full implementation needs proper closure support
+  
+  info("Mode registered: {} with priority {}", modeName, priority);
+  
+  // TODO: Store condition expression and evaluate it in ModeManager update loop
+  // TODO: Register enter/exit callbacks with proper closure support
+  
+  return BytecodeValue(true);
 }
 
 BytecodeValue ModeBridge::handleGetCurrent(const std::vector<BytecodeValue> &args,

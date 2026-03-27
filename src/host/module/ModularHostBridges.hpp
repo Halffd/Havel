@@ -334,6 +334,7 @@ public:
 
 private:
   const HostContext *ctx_;
+  static BytecodeValue handleRegister(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleGetCurrent(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleGetPrevious(const std::vector<BytecodeValue> &args, const HostContext *ctx);

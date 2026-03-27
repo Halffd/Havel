@@ -362,22 +362,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(call));
     }
 
-    // Check for config section FIRST: identifier [args...] { key = value }
-    // Look ahead to find OpenBrace (skipping potential args)
-    // This must come before hotkey checking to avoid parsing as function call
-    int lookahead = 1;
-    while (lookahead < 10 && notEOF()) {
-      auto tok = at(lookahead);
-      if (tok.type == havel::TokenType::OpenBrace) {
-        return parseConfigSection();
-      }
-      if (tok.type != havel::TokenType::Identifier &&
-          tok.type != havel::TokenType::String && tok.type != havel::TokenType::MultilineString &&
-          tok.type != havel::TokenType::Number) {
-        break;
-      }
-      lookahead++;
-    }
+    // TEMPORARILY DISABLED: Check for config section - causes issues with mode definitions
+    // Original code checked for identifier [args...] { key = value } pattern
+    // but incorrectly triggered inside mode enter/exit blocks
 
     // Check if this is a hotkey (identifier followed by =>)
     // or if it has prefix conditions like: a when mode == "gaming" => action
@@ -555,21 +542,42 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
   case havel::TokenType::Mode:
-    if (at(1).type == havel::TokenType::Identifier && at(2).type == havel::TokenType::OpenBrace) {
+    if (at(1).type == havel::TokenType::Identifier) {
       // Check if this is a simple mode block or full mode definition
-      // Full definition starts with: priority, condition, enter, exit, on
+      // Full definition: mode name [priority N] { condition/enter/exit/on ... }
+      // Simple block: mode name { statements }
       size_t savedPos = position;
-      advance(); advance(); advance();  // skip mode, name, {
-      while (at().type == havel::TokenType::NewLine) advance();
-      bool isFullDefinition = (at().type == havel::TokenType::Identifier && 
-                               (at().value == "priority" || at().value == "condition" || 
-                                at().value == "enter" || at().value == "exit" || at().value == "on"));
-      position = savedPos;  // restore position
+      advance(); advance();  // skip mode, name
       
-      if (isFullDefinition) {
-        return parseModeDefinition();
+      // Skip optional priority clause
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::Identifier && at().value == "priority") {
+        advance(); // skip priority
+        while (at().type == havel::TokenType::NewLine) advance();
+        if (at().type == havel::TokenType::Number) {
+          advance(); // skip number
+        }
+      }
+      
+      // Now check for opening brace
+      while (at().type == havel::TokenType::NewLine) advance();
+      if (at().type == havel::TokenType::OpenBrace) {
+        advance(); // skip {
+        while (at().type == havel::TokenType::NewLine) advance();
+        
+        // Check if this is a full definition (starts with condition/enter/exit/on)
+        bool isFullDefinition = (at().type == havel::TokenType::Identifier &&
+                                 (at().value == "condition" ||
+                                  at().value == "enter" || at().value == "exit" || at().value == "on"));
+        position = savedPos;  // restore position
+
+        if (isFullDefinition) {
+          return parseModeDefinition();
+        } else {
+          return parseModeBlock();
+        }
       } else {
-        return parseModeBlock();
+        position = savedPos;  // restore position
       }
     }
     {

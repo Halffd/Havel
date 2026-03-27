@@ -138,8 +138,8 @@ void LexicalResolver::resolveFunctionDeclaration(
   beginFunction(&function);
 
   for (const auto &param : function.parameters) {
-    if (param && param->paramName) {
-      declareLocal(param->paramName->symbol, param->paramName.get(), false);
+    if (param && param->pattern) {
+      collectPatternIdentifiers(*param->pattern);
     }
   }
 
@@ -159,8 +159,8 @@ void LexicalResolver::resolveLambdaExpression(
   beginFunction(&lambda);
 
   for (const auto &param : lambda.parameters) {
-    if (param && param->paramName) {
-      declareLocal(param->paramName->symbol, param->paramName.get(), false);
+    if (param && param->pattern) {
+      collectPatternIdentifiers(*param->pattern);
     }
   }
 
@@ -169,6 +169,35 @@ void LexicalResolver::resolveLambdaExpression(
   }
 
   endFunction();
+}
+
+// Collect all identifiers from a pattern and declare them as locals
+void LexicalResolver::collectPatternIdentifiers(const ast::Expression &pattern) {
+  switch (pattern.kind) {
+  case ast::NodeType::Identifier: {
+    const auto &ident = static_cast<const ast::Identifier &>(pattern);
+    declareLocal(ident.symbol, &ident, false);
+    break;
+  }
+  case ast::NodeType::ObjectPattern: {
+    const auto &objPat = static_cast<const ast::ObjectPattern &>(pattern);
+    for (const auto &prop : objPat.properties) {
+      collectPatternIdentifiers(*prop.second);
+    }
+    break;
+  }
+  case ast::NodeType::ArrayPattern: {
+    const auto &arrPat = static_cast<const ast::ArrayPattern &>(pattern);
+    for (const auto &elem : arrPat.elements) {
+      if (elem) {
+        collectPatternIdentifiers(*elem);
+      }
+    }
+    break;
+  }
+  default:
+    break;
+  }
 }
 
 void LexicalResolver::resolveStatement(const ast::Statement &statement) {

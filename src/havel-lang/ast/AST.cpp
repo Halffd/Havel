@@ -555,6 +555,35 @@ public:
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }
+
+  void visitObjectPattern(const ObjectPattern &node) override {
+    out << getIndent() << "ObjectPattern {" << std::endl;
+    indentLevel++;
+    for (const auto &prop : node.properties) {
+      out << getIndent() << prop.first << ": ";
+      if (prop.second) {
+        prop.second->accept(*this);
+      } else {
+        out << "nullptr" << std::endl;
+      }
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
+
+  void visitArrayPattern(const ArrayPattern &node) override {
+    out << getIndent() << "ArrayPattern {" << std::endl;
+    indentLevel++;
+    for (const auto &elem : node.elements) {
+      if (elem) {
+        elem->accept(*this);
+      } else {
+        out << getIndent() << "nullptr" << std::endl;
+      }
+    }
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
 };
 
 // BooleanLiteral accept method

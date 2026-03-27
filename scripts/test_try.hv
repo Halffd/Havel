@@ -1,6 +1,10 @@
 print("Testing function call...")
-try:
-    result = window.getTitle()
+try {
+    let result = sleep
+    throw "Error"
     print("Result: " + result)
-except:
-    print("Error calling window.getTitle")
+} catch {
+    print("Error!")
+} finally {
+    print("end")
+}

@@ -245,6 +245,7 @@ private:
     // Check if a module function exists
     bool isKnownModuleFunction(const std::string& module, const std::string& func) const;
     bool isKnownBuiltin(const std::string& name) const;
+    void registerParameterPattern(const ast::Expression& pattern);
 
     // Helpers
     void reportError(SemanticErrorKind kind, const std::string& message,

@@ -97,10 +97,12 @@ enum class NodeType {
   MapExpression,    // #{key1: val1, key2: val2}
   SetExpression,    // #{1, 2, 3}
 
-  // Destructuring
-  ListPattern,   // [head|tail], [a, b, c]
-  TuplePattern,  // (x, y)
-  RecordPattern, // {name, age}
+  // Destructuring patterns
+  ListPattern,     // [head|tail], [a, b, c]
+  TuplePattern,    // (x, y)
+  RecordPattern,   // {name, age}
+  ObjectPattern,   // { x, y: alias } for destructuring
+  ArrayPattern,    // [a, b] for destructuring
   // Literals
   StringLiteral,                // "Hello"
   InterpolatedStringExpression, // "Hello ${name}"
@@ -491,20 +493,21 @@ struct BlockStatement : public Statement {
 };
 
 // Function parameter with optional default value and type annotation
+// Supports destructuring patterns: { x, y }, [a, b], nested patterns
 struct FunctionParameter : public ASTNode {
-  std::unique_ptr<Identifier> paramName;
+  std::unique_ptr<Expression> pattern;  // Identifier or destructuring pattern
   std::optional<std::unique_ptr<Expression>> defaultValue;
   std::optional<std::unique_ptr<TypeAnnotation>> typeAnnotation;  // Optional type annotation
 
-  FunctionParameter(std::unique_ptr<Identifier> n,
+  FunctionParameter(std::unique_ptr<Expression> pat,
                     std::optional<std::unique_ptr<Expression>> defVal = std::nullopt,
                     std::optional<std::unique_ptr<TypeAnnotation>> typeAnn = std::nullopt)
-      : paramName(std::move(n)), defaultValue(std::move(defVal)), typeAnnotation(std::move(typeAnn)) {
+      : pattern(std::move(pat)), defaultValue(std::move(defVal)), typeAnnotation(std::move(typeAnn)) {
     kind = NodeType::FunctionParameter;
   }
 
   std::string toString() const override {
-    std::string result = paramName ? paramName->toString() : "nullptr";
+    std::string result = pattern ? pattern->toString() : "nullptr";
     if (typeAnnotation) {
       result += ": " + (*typeAnnotation)->toString();
     }
@@ -541,7 +544,11 @@ struct StructMethodDef : public ASTNode {
     std::string result = isConstructor ? "fn init(" : "fn " + name + "(";
     for (size_t i = 0; i < parameters.size(); ++i) {
       if (i > 0) result += ", ";
-      result += parameters[i]->paramName->symbol;
+      if (parameters[i]->pattern && parameters[i]->pattern->kind == NodeType::Identifier) {
+        result += static_cast<const Identifier &>(*parameters[i]->pattern).symbol;
+      } else {
+        result += "...";  // Pattern (destructuring)
+      }
     }
     result += ") {...}";
     return result;
@@ -1739,6 +1746,40 @@ struct ObjectLiteral : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// Object Pattern for destructuring ({ x, y: alias })
+struct ObjectPattern : public Expression {
+  // Each property: { key, pattern } where pattern can be Identifier or nested pattern
+  std::vector<std::pair<std::string, std::unique_ptr<Expression>>> properties;
+
+  ObjectPattern(
+      std::vector<std::pair<std::string, std::unique_ptr<Expression>>> props = {})
+      : properties(std::move(props)) {
+    kind = NodeType::ObjectPattern;
+  }
+
+  std::string toString() const override {
+    return "ObjectPattern{" + std::to_string(properties.size()) + " props}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// Array Pattern for destructuring ([a, b])
+struct ArrayPattern : public Expression {
+  std::vector<std::unique_ptr<Expression>> elements;
+
+  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {})
+      : elements(std::move(elems)) {
+    kind = NodeType::ArrayPattern;
+  }
+
+  std::string toString() const override {
+    return "ArrayPattern{" + std::to_string(elements.size()) + " elements}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Spread Expression (...array or ...object)
 struct SpreadExpression : public Expression {
   std::unique_ptr<Expression> target;
@@ -2109,42 +2150,6 @@ struct MatchExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
-// Array Pattern for destructuring [a, b, c]
-struct ArrayPattern : public Expression {
-  std::vector<std::unique_ptr<Expression>>
-      elements; // Can be Identifier or nested patterns
-
-  ArrayPattern(std::vector<std::unique_ptr<Expression>> elems = {})
-      : elements(std::move(elems)) {
-    kind = NodeType::ListPattern; // Reuse ListPattern for now
-  }
-
-  std::string toString() const override {
-    return "ArrayPattern{" + std::to_string(elements.size()) + " elements}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
-// Object Pattern for destructuring {x, y}
-struct ObjectPattern : public Expression {
-  std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
-      properties; // key: pattern
-
-  ObjectPattern(std::vector<std::pair<std::string, std::unique_ptr<Expression>>>
-                    props = {})
-      : properties(std::move(props)) {
-    kind = NodeType::RecordPattern; // Reuse RecordPattern for now
-  }
-
-  std::string toString() const override {
-    return "ObjectPattern{" + std::to_string(properties.size()) +
-           " properties}";
-  }
-
-  void accept(ASTVisitor &visitor) const override;
-};
-
 // Import Statement (import List from "std/collections")
 struct ImportStatement : public Statement {
   std::string modulePath;
@@ -2329,6 +2334,8 @@ public:
   virtual void visitArrayLiteral(const ArrayLiteral &node) = 0;
   virtual void visitTupleExpression(const TupleExpression &node) = 0;
   virtual void visitObjectLiteral(const ObjectLiteral &node) = 0;
+  virtual void visitObjectPattern(const ObjectPattern &node) = 0;
+  virtual void visitArrayPattern(const ArrayPattern &node) = 0;
   virtual void visitSpreadExpression(const SpreadExpression &node) = 0;
   virtual void visitSetExpression(const SetExpression &node) = 0;
   virtual void visitConfigBlock(const ConfigBlock &node) = 0;
@@ -2343,8 +2350,6 @@ public:
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
   virtual void visitCastExpression(const CastExpression &node) = 0;
   virtual void visitMatchExpression(const MatchExpression &node) = 0;
-  virtual void visitArrayPattern(const ArrayPattern &node) = 0;
-  virtual void visitObjectPattern(const ObjectPattern &node) = 0;
   virtual void visitThrowStatement(const ThrowStatement &node) = 0;
   virtual void visitForStatement(const ForStatement &node) = 0;
   virtual void visitLoopStatement(const LoopStatement &node) = 0;
@@ -2511,6 +2516,14 @@ inline void ObjectLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitObjectLiteral(*this);
 }
 
+inline void ObjectPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitObjectPattern(*this);
+}
+
+inline void ArrayPattern::accept(ASTVisitor &visitor) const {
+  visitor.visitArrayPattern(*this);
+}
+
 inline void SpreadExpression::accept(ASTVisitor &visitor) const {
   visitor.visitSpreadExpression(*this);
 }
@@ -2565,14 +2578,6 @@ inline void CastExpression::accept(ASTVisitor &visitor) const {
 
 inline void MatchExpression::accept(ASTVisitor &visitor) const {
   visitor.visitMatchExpression(*this);
-}
-
-inline void ArrayPattern::accept(ASTVisitor &visitor) const {
-  visitor.visitArrayPattern(*this);
-}
-
-inline void ObjectPattern::accept(ASTVisitor &visitor) const {
-  visitor.visitObjectPattern(*this);
 }
 
 inline void ForStatement::accept(ASTVisitor &visitor) const {

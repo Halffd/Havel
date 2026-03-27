@@ -3276,10 +3276,17 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
         break;
       }
 
-      if (at().type != havel::TokenType::Identifier) {
-        failAt(at(), "Expected identifier in function parameter list");
+      // Parse parameter pattern: identifier, { pattern }, or [ pattern ]
+      std::unique_ptr<havel::ast::Expression> pattern;
+      if (at().type == havel::TokenType::Identifier) {
+        pattern = makeIdentifier(advance());
+      } else if (at().type == havel::TokenType::OpenBrace) {
+        pattern = parseObjectPattern();
+      } else if (at().type == havel::TokenType::OpenBracket) {
+        pattern = parseArrayPattern();
+      } else {
+        failAt(at(), "Expected identifier, '{', or '[' in function parameter list");
       }
-      auto paramName = makeIdentifier(advance());
 
       // Check for default value
       std::optional<std::unique_ptr<havel::ast::Expression>> defaultValue;
@@ -3289,7 +3296,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       }
 
       params.push_back(std::make_unique<havel::ast::FunctionParameter>(
-          std::move(paramName), std::move(defaultValue)));
+          std::move(pattern), std::move(defaultValue)));
 
       while (at().type == havel::TokenType::NewLine) {
         advance();
@@ -3329,25 +3336,42 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     if (at().type == havel::TokenType::CloseParen) {
       // Empty parens () - might be lambda () =>
       mightBeLambda = true;
-    } else if (at().type == havel::TokenType::Identifier) {
-      // Might be (a) => or (a, b) => lambda
-      // Try to parse as comma-separated identifiers
+    } else if (at().type == havel::TokenType::Identifier ||
+               at().type == havel::TokenType::OpenBrace ||
+               at().type == havel::TokenType::OpenBracket) {
+      // Might be (a) => or ({a, b}) => or ([a, b]) => lambda
+      // Try to parse as comma-separated patterns
       // Save position before attempting to parse params so we can restore if it fails
       size_t paramSavePos = position;
       bool validParamList = true;
-      while (at().type == havel::TokenType::Identifier) {
-        auto paramName = makeIdentifier(advance());
-        params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(paramName)));
+      
+      while (at().type == havel::TokenType::Identifier ||
+             at().type == havel::TokenType::OpenBrace ||
+             at().type == havel::TokenType::OpenBracket) {
+        // Parse parameter pattern
+        std::unique_ptr<havel::ast::Expression> pattern;
+        if (at().type == havel::TokenType::Identifier) {
+          pattern = makeIdentifier(advance());
+        } else if (at().type == havel::TokenType::OpenBrace) {
+          pattern = parseObjectPattern();
+        } else if (at().type == havel::TokenType::OpenBracket) {
+          pattern = parseArrayPattern();
+        }
+        
+        params.push_back(std::make_unique<havel::ast::FunctionParameter>(std::move(pattern)));
+        
         if (at().type == havel::TokenType::Comma) {
           advance();
-          if (at().type != havel::TokenType::Identifier) {
+          if (at().type != havel::TokenType::Identifier &&
+              at().type != havel::TokenType::OpenBrace &&
+              at().type != havel::TokenType::OpenBracket) {
             validParamList = false;
             break;
           }
         } else if (at().type == havel::TokenType::CloseParen) {
           break;
         } else {
-          // Saw identifier but not followed by , or ) - not a valid param list
+          // Saw pattern start but not followed by , or ) - not a valid param list
           validParamList = false;
           break;
         }

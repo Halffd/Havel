@@ -71,18 +71,28 @@ public:
   std::string scriptFile = "";
   bool repl = false;
   bool gui = true;
+  havel::compiler::VM* getBytecodeVM() { 
 #ifdef ENABLE_HAVEL_LANG
-  havel::compiler::VM* getBytecodeVM() { return bytecodeVM.get(); }
-  havel::compiler::HostBridge* getHostBridge() { return hostBridge.get(); }
+    return bytecodeVM.get(); 
+#else
+    return nullptr;
+#endif
+  }
+  havel::compiler::HostBridge* getHostBridge() { 
+#ifdef ENABLE_HAVEL_LANG
+    return hostBridge.get(); 
+#else
+    return nullptr;
+#endif
+  }
   ClipboardManager *getClipboardManager() {
+#ifdef ENABLE_HAVEL_LANG
     auto *suite = AutomationSuite::Instance();
     return suite ? suite->getClipboardManager() : nullptr;
-  }
 #else
-  void* getBytecodeVM() { return nullptr; }
-  void* getHostBridge() { return nullptr; }
-  ClipboardManager *getClipboardManager() { return nullptr; }
+    return nullptr;
 #endif
+  }
   std::shared_ptr<IO> io;
   std::shared_ptr<WindowManager> windowManager;
   std::shared_ptr<MPVController> mpv;

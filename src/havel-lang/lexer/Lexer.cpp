@@ -581,6 +581,16 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle global scope operator ::
+    if (c == ':' && peek() == ':') {
+      advance(); // consume second ':'
+      tokens.push_back(makeToken("::", TokenType::GlobalScope));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
     // Handle ++ and --
     if (c == '+' && peek() == '+') {
       advance();

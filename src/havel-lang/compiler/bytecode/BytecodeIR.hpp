@@ -26,6 +26,7 @@ enum class OpCode : uint8_t {
   // Stack operations
   LOAD_CONST,
   LOAD_GLOBAL,
+  STORE_GLOBAL,  // Store to global variable by name
   LOAD_VAR,
   STORE_VAR,
   LOAD_UPVALUE,

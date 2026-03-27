@@ -401,6 +401,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   switch (expression.kind) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
+    
+    // Skip resolution for global scope identifiers (::x)
+    if (id.isGlobalScope) {
+      break;
+    }
+    
     auto binding = resolveIdentifier(id.symbol);
     if (!binding) {
       errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +

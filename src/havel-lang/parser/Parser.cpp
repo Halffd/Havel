@@ -2587,8 +2587,15 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
     // Right-associative: a = b = c means a = (b = c)
     auto value = parseAssignmentExpression();
 
+    // Check if target is global scope (::identifier)
+    bool isGlobalScope = false;
+    if (left && left->kind == havel::ast::NodeType::Identifier) {
+      auto &ident = static_cast<havel::ast::Identifier &>(*left);
+      isGlobalScope = ident.isGlobalScope;
+    }
+
     auto assign = std::make_unique<havel::ast::AssignmentExpression>(
-        std::move(left), std::move(value), opTok.value);
+        std::move(left), std::move(value), opTok.value, isGlobalScope);
     assign->line = opTok.line;
     assign->column = opTok.column;
     return assign;
@@ -3064,6 +3071,19 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
 }
 std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
   havel::Token tk = at();
+
+  // Handle global scope assignment: ::identifier = value
+  if (tk.type == havel::TokenType::GlobalScope) {
+    advance(); // consume '::'
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected identifier after '::'");
+    }
+    auto ident = makeIdentifier(advance());
+    // Return identifier marked for global scope assignment
+    // The actual assignment handling is in parseAssignmentExpression
+    ident->isGlobalScope = true;
+    return ident;
+  }
 
   switch (tk.type) {
   case havel::TokenType::Number: {

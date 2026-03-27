@@ -140,6 +140,7 @@ private:
   parseKeyValueBlock();
   ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
   std::unique_ptr<ast::Expression> parseLogicalOr();
+  std::unique_ptr<ast::Expression> parseNullishCoalescing();
   std::unique_ptr<ast::Expression> parseLogicalAnd();
   std::unique_ptr<ast::Expression> parseEquality();
   std::unique_ptr<ast::Expression> parseComparison();

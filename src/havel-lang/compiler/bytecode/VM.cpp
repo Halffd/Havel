@@ -1711,6 +1711,10 @@ void VM::executeInstruction(const Instruction &instruction) {
         }
         push(l % r);
         break;
+      case OpCode::POW:
+        // Integer power: use std::pow and convert back
+        push(static_cast<int64_t>(std::pow(static_cast<double>(l), static_cast<double>(r))));
+        break;
       case OpCode::EQ:
         push(l == r);
         break;

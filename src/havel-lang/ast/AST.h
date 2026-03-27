@@ -302,6 +302,7 @@ enum class BinaryOperator {
   Div,
   Mod,
   Pow,
+  IntDiv,     // \ integer division
   AddAssign,
   SubAssign,
   MulAssign,
@@ -319,6 +320,7 @@ enum class BinaryOperator {
   In,         // membership: x in [1,2,3]
   NotIn,      // negated membership: x not in [1,2,3]
   Matches,    // regex match: title matches ".*Steam.*"
+  Nullish,    // ?? nullish coalescing: x ?? default
   ConfigAppend  // >> config operator
 };
 

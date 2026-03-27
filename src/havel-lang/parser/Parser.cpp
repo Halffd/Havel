@@ -2773,7 +2773,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePipelineExpression() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseTernaryExpression() {
-  auto condition = parseCastExpression();
+  auto condition = parseNullishCoalescing();
 
   // Check for ternary operator ?
   if (at().type == havel::TokenType::Question) {
@@ -2810,6 +2810,23 @@ std::unique_ptr<havel::ast::Expression> Parser::parseLogicalOr() {
     auto right = parseLogicalAnd();
     auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left), op,
                                                           std::move(right));
+    bin->line = opTok.line;
+    bin->column = opTok.column;
+    left = std::move(bin);
+  }
+
+  return left;
+}
+
+std::unique_ptr<havel::ast::Expression> Parser::parseNullishCoalescing() {
+  auto left = parseLogicalOr();
+
+  while (at().type == havel::TokenType::Nullish) {
+    auto opTok = at();  // Save operator token location
+    advance();  // consume ??
+    auto right = parseLogicalOr();
+    auto bin = std::make_unique<havel::ast::BinaryExpression>(std::move(left),
+        havel::ast::BinaryOperator::Nullish, std::move(right));
     bin->line = opTok.line;
     bin->column = opTok.column;
     left = std::move(bin);
@@ -2975,7 +2992,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseMultiplicative() {
 
   while (at().type == havel::TokenType::Multiply ||
          at().type == havel::TokenType::Divide ||
-         at().type == havel::TokenType::Modulo) {
+         at().type == havel::TokenType::Modulo ||
+         at().type == havel::TokenType::Power ||
+         at().type == havel::TokenType::Backslash) {
     auto opTok = at();  // Save operator token location
     auto op = tokenToBinaryOperator(at().type);
     advance();
@@ -3081,6 +3100,10 @@ havel::ast::BinaryOperator Parser::tokenToBinaryOperator(TokenType tokenType) {
     return havel::ast::BinaryOperator::Div;
   case TokenType::Modulo:
     return havel::ast::BinaryOperator::Mod;
+  case TokenType::Power:
+    return havel::ast::BinaryOperator::Pow;
+  case TokenType::Backslash:
+    return havel::ast::BinaryOperator::IntDiv;
   case TokenType::Equals:
     return havel::ast::BinaryOperator::Equal;
   case TokenType::NotEquals:

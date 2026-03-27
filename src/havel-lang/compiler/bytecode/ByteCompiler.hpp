@@ -105,6 +105,8 @@ private:
     std::unique_ptr<BytecodeChunk> chunk;
     std::unique_ptr<BytecodeFunction> current_function;
     std::vector<std::unique_ptr<BytecodeFunction>> compiled_functions;
+    // Stack for saving function contexts during nested function compilation
+    std::vector<std::pair<std::unique_ptr<BytecodeFunction>, std::optional<uint32_t>>> saved_functions_;
     std::unordered_map<const ast::FunctionDeclaration *, uint32_t>
         function_indices_by_node_;
     std::unordered_map<const ast::LambdaExpression *, uint32_t>

@@ -36,6 +36,7 @@ enum class NodeType {
   MemberExpression,      // record.field
   LambdaExpression,      // fn(x) -> x * 2, |x| x + 1
   ApplicationExpression, // Curried function application
+  ThisExpression,        // this - current object reference
   InputStatement,        // > "text" or > {Enter} or > lmb
   SleepStatement,        // :1500 or :1h30m
   BacktickExpression,    // `command` for shell output
@@ -480,6 +481,17 @@ struct Identifier : public Expression {
 
   std::string toString() const override {
     return std::string(isGlobalScope ? "::" : "") + "Identifier{" + symbol + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
+// This Expression (this keyword - current object reference)
+struct ThisExpression : public Expression {
+  ThisExpression() { kind = NodeType::ThisExpression; }
+
+  std::string toString() const override {
+    return "this";
   }
 
   void accept(ASTVisitor &visitor) const override;
@@ -2323,6 +2335,7 @@ public:
   virtual void visitBooleanLiteral(const BooleanLiteral &node) = 0;
 
   virtual void visitIdentifier(const Identifier &node) = 0;
+  virtual void visitThisExpression(const ThisExpression &node) = 0;
 
   virtual void visitHotkeyLiteral(const HotkeyLiteral &node) = 0;
 
@@ -2419,6 +2432,10 @@ inline void Program::accept(ASTVisitor &visitor) const {
 
 inline void Identifier::accept(ASTVisitor &visitor) const {
   visitor.visitIdentifier(*this);
+}
+
+inline void ThisExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitThisExpression(*this);
 }
 
 inline void BlockStatement::accept(ASTVisitor &visitor) const {

@@ -40,6 +40,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"enum", TokenType::Enum},
     {"trait", TokenType::Trait},
     {"impl", TokenType::Impl},
+    {"this", TokenType::This},
     {"on", TokenType::On},
     {"off", TokenType::Off},
     {"when", TokenType::When},

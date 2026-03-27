@@ -26,20 +26,23 @@ Tracking implementation progress against docs/Havel.md specification.
 | Feature | Status | Notes |
 |---------|--------|-------|
 | `if/else` | ✅ | |
-| `do/while` | ❌ | Defined in docs |
+| `do/while` | ✅ | Implemented |
 | `switch` | ❌ | Pattern matching |
 | `when` blocks | ❌ | Conditional blocks |
 | `repeat` | ✅ | Basic implementation |
-| `for...in` | ⚠️ | Limited support |
-| `try/catch/finally` | ❌ | Exception handling |
+| `for...in` | ✅ | Iteration protocol |
+| `try/catch/finally` | ✅ | Exception handling |
+| `loop {}` | ✅ | Infinite loop |
+| `loop n {}` | ✅ | Count-based loop |
+| `loop while` | ✅ | Conditional loop |
 
 ### Functions
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Function definition (`fn`) | ✅ | |
 | Arrow functions | ✅ | |
-| Default parameters | ❌ | |
-| Variadic functions | ❌ | |
+| Default parameters | ✅ | Number, string, boolean literals |
+| Variadic functions | ✅ | `...args` syntax |
 | Closures | ✅ | |
 | Function overriding | ✅ | Can override built-ins |
 
@@ -361,6 +364,52 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
+## Operators
+
+### Arithmetic Operators
+| Operator | Status | Notes |
+|----------|--------|-------|
+| `+` | ✅ | Addition |
+| `-` | ✅ | Subtraction |
+| `*` | ✅ | Multiplication |
+| `/` | ✅ | Division |
+| `%` | ✅ | Modulo |
+| `**` | ✅ | Power/exponentiation |
+| `\` | ✅ | Integer division |
+
+### Assignment Operators
+| Operator | Status | Notes |
+|----------|--------|-------|
+| `=` | ✅ | Simple assignment |
+| `+=` | ✅ | Add and assign |
+| `-=` | ✅ | Subtract and assign |
+| `*=` | ✅ | Multiply and assign |
+| `/=` | ✅ | Divide and assign |
+| `%=` | ✅ | Modulo and assign |
+| `**=` | ✅ | Power and assign |
+
+### Increment/Decrement
+| Operator | Status | Notes |
+|----------|--------|-------|
+| `++x` | ✅ | Prefix increment |
+| `x++` | ✅ | Postfix increment |
+| `--x` | ✅ | Prefix decrement |
+| `x--` | ✅ | Postfix decrement |
+
+### Conditional Operators
+| Operator | Status | Notes |
+|----------|--------|-------|
+| `? :` | ✅ | Ternary conditional |
+| `??` | ⚠️ | Nullish coalescing (falls back to OR) |
+
+### String Operators
+| Operator | Status | Notes |
+|----------|--------|-------|
+| `"""` | ✅ | Multiline strings |
+| `${expr}` | ✅ | String interpolation |
+
+---
+
 ## Boolean Operators
 
 | Operator | Status | Notes |
@@ -489,7 +538,7 @@ Tracking implementation progress against docs/Havel.md specification.
 
 | Category | Implemented | Partial | Missing | Total | % Complete |
 |----------|-------------|---------|---------|-------|------------|
-| Core Language | 10 | 2 | 4 | 16 | 63% |
+| Core Language | 14 | 2 | 2 | 18 | 78% |
 | Type System | 2 | 4 | 4 | 10 | 20% |
 | Standard Library | 11 | 3 | 7 | 21 | 52% |
 | Hotkey System | 4 | 1 | 9 | 14 | 29% |
@@ -498,10 +547,24 @@ Tracking implementation progress against docs/Havel.md specification.
 | Concurrency | 3 | 0 | 2 | 5 | 60% |
 | Script Lifecycle | 0 | 0 | 5 | 5 | 0% |
 | Input System | 5 | 0 | 8 | 13 | 38% |
-| String/Array/Object | 15 | 1 | 7 | 23 | 65% |
-| Math | 13 | 0 | 7 | 20 | 65% |
+| String/Array/Object | 17 | 1 | 5 | 23 | 74% |
+| Math | 15 | 0 | 5 | 20 | 75% |
 | Configuration | 1 | 1 | 6 | 8 | 13% |
 | Advanced Features | 0 | 0 | 35+ | 35+ | 0% |
+
+### Recent Progress (2026-03-27)
+- ✅ **Default Parameters** - Function parameters with default values
+- ✅ **Variadic Functions** - `...args` syntax for variable arguments
+- ✅ **Power Operator** - `**` for exponentiation
+- ✅ **Integer Division** - `\` for integer division
+- ✅ **Ternary Operator** - `condition ? true : false`
+- ✅ **Increment/Decrement** - `++x`, `x++`, `--x`, `x--`
+- ✅ **Compound Assignment** - `+=`, `-=`, `*=`, `/=`, `%=`, `**=`
+- ✅ **Multiline Strings** - `"""..."""` triple-quoted strings
+- ✅ **Implicit Declaration** - Variables declared by first assignment
+- ✅ **Destructuring Params** - Lambda parameter destructuring
+- ✅ **Source Locations** - Error messages with line/column info
+- ✅ **Loop Fixes** - Count-based loop parsing fixed
 
 ### Recent Progress (2026-03-25 to 2026-03-26)
 - ✅ **HOF VM Opcodes** - ARRAY_MAP, ARRAY_FILTER, ARRAY_REDUCE, ARRAY_FOREACH
@@ -544,9 +607,152 @@ Tracking implementation progress against docs/Havel.md specification.
 
 ---
 
-Last updated: 2026-03-26
+Last updated: 2026-03-27
 
 ## Latest Changes
+
+### Default Parameters & Variadic Functions (2026-03-27)
+
+**Default Parameters:**
+- `fn greet(name = "World") { ... }` - Default value if not provided
+- Supports: number, string, boolean literals
+- VM initializes param slots at call time (no jumps needed)
+
+**Variadic Functions:**
+- `fn sum(...args) { ... }` - Variable number of arguments
+- `fn printAll(first, ...rest) { ... }` - Mixed regular and variadic
+- Extra args packed into array at call time
+
+**Test Results:**
+```havel
+fn greet(name = "World") {
+    print("Hello, " + name)
+}
+greet()        // "Hello, World" ✓
+greet("Havel") // "Hello, Havel" ✓
+
+fn sum(...args) {
+    let total = 0
+    for n in args { total += n }
+    print(total)
+}
+sum(1, 2, 3)        // 6 ✓
+sum(10, 20, 30, 40) // 100 ✓
+sum()               // 0 ✓
+```
+
+**Files Changed:**
+- `AST.h`: `isVariadic` flag in FunctionParameter
+- `Parser.cpp`: Parse `...identifier` syntax
+- `BytecodeIR.hpp`: `variadic_param_index` field
+- `ByteCompiler.cpp`: Track variadic param during compilation
+- `VM.cpp`: Pack extra args into array at call time
+
+### New Operators (2026-03-27)
+
+**Power Operator (`**`):**
+- `2 ** 3` → 8
+- `16 ** 0.5` → 4.0 (square root)
+
+**Integer Division (`\`):**
+- `7 \ 2` → 3 (integer result)
+
+**Ternary Operator (`? :`):**
+- `true ? 1 : 2` → 1
+- `false ? "yes" : "no"` → "no"
+
+**Increment/Decrement:**
+- `++x`, `x++`, `--x`, `x--` (prefix and postfix)
+
+**Compound Assignment:**
+- `+=`, `-=`, `*=`, `/=`, `%=`, `**=`
+
+**Multiline Strings:**
+- `"""..."""` triple-quoted strings
+- Supports interpolation: `"""Hello ${name}!"""`
+
+**Test Results:**
+```havel
+print(2 ** 3)      // 8 ✓
+print(7 \ 2)       // 3 ✓
+print(true ? 1 : 2) // 1 ✓
+
+let x = 5
+++x                // x = 6 ✓
+
+let msg = """
+Hello
+World
+"""
+print(msg)         // Multiline string ✓
+```
+
+### Implicit Variable Declaration (2026-03-27)
+
+**Feature:**
+- Variables declared by first assignment (no `let` required)
+- `x = 5` declares `x` in current scope
+- Reading before assignment still errors
+
+**Test Results:**
+```havel
+x = 5          // Implicit declaration ✓
+x = x + 1      // Reassignment ✓
+
+fn test() {
+    y = 10     // Function-local implicit ✓
+}
+```
+
+### Destructuring in Lambda Parameters (2026-03-27)
+
+**Feature:**
+- Object destructuring: `({x, y}) => { ... }`
+- Array destructuring: `([a, b]) => { ... }`
+- Nested destructuring: `({user: {name}}) => { ... }`
+
+**Test Results:**
+```havel
+let obj = {x: 1, y: 2}
+let fn = ({x, y}) => {
+    print(x + y)  // 3 ✓
+}
+fn(obj)
+```
+
+### AST Source Locations (2026-03-27)
+
+**Feature:**
+- Identifiers carry line/column from tokens
+- Error messages show precise location
+
+**Before:**
+```
+SemanticError: duplicate declaration 'nums'
+```
+
+**After:**
+```
+SemanticError: duplicate declaration 'nums'
+  --> file.hv:4:5
+   |
+4 | let nums = [1,2,3]
+   |     ^^^^ already defined in this scope
+```
+
+### Loop Fixes (2026-03-27)
+
+**Bug Fixed:**
+- `loop 3 { ... }` was failing with "body is null" error
+- Root cause: `parseExpression()` consumed `{ }` as call expression
+- Fix: Parse count value directly as NumberLiteral/Identifier
+
+**Test Results:**
+```havel
+loop 3 {
+    print("counting")  // Prints 3 times ✓
+}
+```
 
 ### Async Module & WindowMonitor Integration (2026-03-26)
 **Async Module Implementation:**

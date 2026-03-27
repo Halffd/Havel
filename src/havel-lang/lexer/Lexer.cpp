@@ -752,6 +752,28 @@ std::vector<Token> Lexer::tokenize() {
       }
       continue;
     }
+    if (c == '%' && peek() == '=') {
+      advance();
+      tokens.push_back(makeToken("%=", TokenType::ModuloAssign));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+    if (c == '*' && peek() == '*') {
+      // Check for **= (power assign)
+      size_t look = position + 1;
+      if (look < source.length() && source[look] == '=') {
+        advance();  // consume first *
+        advance();  // consume second *
+        advance();  // consume =
+        tokens.push_back(makeToken("**=", TokenType::PowerAssign));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+    }
 
     // Handle == and !=
     if (c == '=' && peek() == '=') {

@@ -119,6 +119,8 @@ enum class TokenType {
   MinusAssign,
   MultiplyAssign,
   DivideAssign,
+  ModuloAssign,  // %=
+  PowerAssign,   // **=
   Pipe,
   Comment,
   NewLine,

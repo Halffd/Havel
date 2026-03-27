@@ -2617,7 +2617,9 @@ std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {
       at().type == havel::TokenType::PlusAssign ||
       at().type == havel::TokenType::MinusAssign ||
       at().type == havel::TokenType::MultiplyAssign ||
-      at().type == havel::TokenType::DivideAssign) {
+      at().type == havel::TokenType::DivideAssign ||
+      at().type == havel::TokenType::ModuloAssign ||
+      at().type == havel::TokenType::PowerAssign) {
     auto opTok = advance(); // consume the operator
 
     // Right-associative: a = b = c means a = (b = c)
@@ -4168,6 +4170,14 @@ Parser::parsePostfixExpression(std::unique_ptr<ast::Expression> expr) {
       args.push_back(std::move(arg));
       expr = std::make_unique<havel::ast::CallExpression>(std::move(expr),
                                                           std::move(args));
+    } else if (at().type == havel::TokenType::PlusPlus ||
+               at().type == havel::TokenType::MinusMinus) {
+      // Postfix increment/decrement: x++ or x--
+      auto op = (at().type == havel::TokenType::PlusPlus)
+                    ? havel::ast::UpdateExpression::Operator::Increment
+                    : havel::ast::UpdateExpression::Operator::Decrement;
+      advance();
+      expr = std::make_unique<havel::ast::UpdateExpression>(std::move(expr), op, false);
     } else {
       break;
     }

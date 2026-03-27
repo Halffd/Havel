@@ -217,6 +217,22 @@ void registerStringModule(VMApi &api) {
   api.setField(strObj, "endswith", api.makeFunctionRef("string.endswith"));
   api.setField(strObj, "includes", api.makeFunctionRef("string.includes"));
   api.setGlobal("String", strObj);
+  
+  // Register any.matches for ~ operator
+  api.registerFunction(
+      "any.matches",
+      [toString](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2)
+          throw std::runtime_error(
+              "any.matches() requires 2 arguments: string and pattern");
+        std::string str = toString(args[0]);
+        std::string pattern = toString(args[1]);
+        
+        // Simple substring match for now
+        // Full regex support would need <regex> library
+        bool matches = str.find(pattern) != std::string::npos;
+        return BytecodeValue(matches);
+      });
 }
 
 } // namespace havel::stdlib

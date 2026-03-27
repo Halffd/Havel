@@ -6,6 +6,7 @@
 #include "havel-lang/lexer/Lexer.hpp"
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/StdLibModules.hpp"
+#include "havel-lang/runtime/HostAPI.hpp"
 #include "havel-lang/tools/REPL.hpp"
 #include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
@@ -83,6 +84,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     } else if (arg == "--error" || arg == "-e") {
       // Stop on first error/warning
       cfg.stopOnError = true;
+    } else if (arg == "--minimal" || arg == "-m") {
+      // Minimal mode - no IO/hotkeys/GUI
+      cfg.minimalMode = true;
     } else if (arg == "--repl" || arg == "-r") {
       repl = true;
     } else if (arg == "--gui") {
@@ -97,8 +101,9 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
         Configs::SetPath(argv[++i]);
       }
     } else if (arg == "--run" || arg == "run") {
-      // Pure script execution without IO/hotkeys
+      // Pure script execution - auto enables minimal mode
       cfg.mode = Mode::SCRIPT_ONLY;
+      cfg.minimalMode = true;
       // Next argument should be the script file
       if (i + 1 < argc) {
         cfg.scriptFile = argv[++i];
@@ -126,14 +131,17 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
 
   // Determine mode based on flags and script file
   if (repl && !cfg.scriptFile.empty()) {
-    // Script + REPL mode - full features
+    // Script + REPL mode - full features by default
     cfg.mode = Mode::SCRIPT_AND_REPL;
   } else if (repl && cfg.fullRepl) {
     // Full REPL mode - full features even without script
     cfg.mode = Mode::SCRIPT_AND_REPL;
-  } else if (repl) {
-    // REPL only mode
+  } else if (repl && cfg.minimalMode) {
+    // Minimal REPL mode
     cfg.mode = Mode::REPL;
+  } else if (repl) {
+    // REPL only mode - full features by default
+    cfg.mode = Mode::SCRIPT_AND_REPL;
   } else if (cfg.scriptFile.empty() && cfg.mode == Mode::DAEMON) {
     // No script, no REPL - daemon mode
     cfg.mode = Mode::DAEMON;
@@ -467,44 +475,125 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
 int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
                                                  char *[]) {
   try {
-    info("Running script and starting REPL...");
+    if (cfg.minimalMode) {
+      info("Running script and starting REPL in minimal mode...");
 
-    // Read script file
-    std::ifstream file(cfg.scriptFile);
-    if (!file) {
-      error("Cannot open script file: {}", cfg.scriptFile);
-      return 2;
+      // Read script file
+      std::ifstream file(cfg.scriptFile);
+      if (!file) {
+        error("Cannot open script file: {}", cfg.scriptFile);
+        return 2;
+      }
+
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      std::string code = buffer.str();
+
+      // Create minimal host API
+      auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
+      
+      // Initialize service registry
+      havel::initializeServiceRegistry(hostAPI);
+      
+      // Create REPL
+      havel::repl::REPLConfig replConfig;
+      replConfig.debugMode = cfg.debugMode;
+      replConfig.stopOnError = cfg.stopOnError;
+      
+      havel::repl::REPL repl(replConfig);
+      repl.initialize(hostAPI);
+      
+      // Execute script first
+      info("Executing script: {}", cfg.scriptFile);
+      if (!repl.execute(code)) {
+        error("Script execution failed");
+        return 1;
+      }
+      info("Script executed successfully");
+      
+      // Enter REPL
+      info("Entering REPL...");
+      return repl.run();
+    } else {
+      info("Running script and starting REPL with full features...");
+
+      // Read script file
+      std::ifstream file(cfg.scriptFile);
+      if (!file) {
+        error("Cannot open script file: {}", cfg.scriptFile);
+        return 2;
+      }
+
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      std::string code = buffer.str();
+
+      // Full mode - initialize Qt and HavelApp
+      int dummy_argc = 1;
+      char dummy_name[] = "havel-script-repl";
+      char *dummy_argv[] = {dummy_name, nullptr};
+      QApplication app(dummy_argc, dummy_argv);
+      app.setQuitOnLastWindowClosed(false);
+      
+      // Create HavelApp with full features
+      std::vector<std::string> args;
+      HavelApp havelApp(false, cfg.scriptFile, false, true, args);
+      
+      if (!havelApp.isInitialized()) {
+        error("Failed to initialize HavelApp");
+        return 1;
+      }
+      
+      // Execute script with full features
+      auto *bytecodeVM = havelApp.getBytecodeVM();
+      auto *hostBridge = havelApp.getHostBridge();
+      
+      if (!bytecodeVM || !hostBridge) {
+        error("Bytecode VM not available");
+        return 1;
+      }
+
+      try {
+        havel::compiler::PipelineOptions options = hostBridge->options();
+        options.compile_unit_name = cfg.scriptFile;
+        options.vm_override = bytecodeVM;
+
+        auto vmResult = havel::compiler::runBytecodePipeline(code, "__main__", options);
+        info("Script executed successfully with bytecode VM");
+      } catch (const std::exception &e) {
+        error("Script execution error: {}", e.what());
+        return 1;
+      }
+
+      // Print registered hotkeys
+      havelApp.hotkeyManager->printHotkeys();
+      havelApp.hotkeyManager->updateAllConditionalHotkeys();
+      info("Script loaded. Hotkeys registered. Enter REPL...");
+      
+      // Create REPL with full host API
+      havel::repl::REPLConfig replConfig;
+      replConfig.debugMode = cfg.debugMode;
+      replConfig.stopOnError = cfg.stopOnError;
+      
+      havel::repl::REPL repl(replConfig);
+      
+      // Create host API with full features
+      auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+          havelApp.io.get(),
+          havelApp.hotkeyManager.get(),
+          Configs::Get(),
+          havelApp.windowManager.get(),
+          nullptr, nullptr, nullptr, nullptr, nullptr,
+          nullptr, nullptr, nullptr, nullptr, nullptr,
+          havelApp.hotkeyManager->getModeManager().get(),
+          std::vector<std::string>{}));
+      
+      havel::initializeServiceRegistry(hostAPI);
+      repl.initialize(hostAPI);
+      
+      // Enter REPL
+      return app.exec();
     }
-
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string code = buffer.str();
-
-    // Create minimal host API
-    auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get(), nullptr);
-    
-    // Initialize service registry
-    havel::initializeServiceRegistry(hostAPI);
-    
-    // Create REPL
-    havel::repl::REPLConfig replConfig;
-    replConfig.debugMode = cfg.debugMode;
-    replConfig.stopOnError = cfg.stopOnError;
-    
-    havel::repl::REPL repl(replConfig);
-    repl.initialize(hostAPI);
-    
-    // Execute script first
-    info("Executing script: {}", cfg.scriptFile);
-    if (!repl.execute(code)) {
-      error("Script execution failed");
-      return 1;
-    }
-    info("Script executed successfully");
-    
-    // Enter REPL
-    info("Entering REPL...");
-    return repl.run();
   } catch (const std::exception &e) {
     error("Script+REPL error: {}", e.what());
     return 1;
@@ -516,23 +605,28 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --diff              Compare bytecode with previous run "
                "(implies -dbc)\n";
   std::cout << "  --error, -e         Stop on first error/warning\n";
-  std::cout << "  --repl, -r          Start interactive REPL (minimal mode)\n";
+  std::cout << "  --minimal, -m       Minimal mode (no IO/hotkeys/GUI)\n";
+  std::cout << "  --repl, -r          Start interactive REPL (full features)\n";
   std::cout << "  --full-repl, -fr    Start REPL with ALL features (hotkeys, "
                "GUI, etc.)\n";
   std::cout << "  --gui               GUI-only mode (no hotkeys)\n";
   std::cout
-      << "  --run               Run script without IO/hotkeys (pure mode)\n";
+      << "  --run               Run script in minimal mode (auto-enables -m)\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
   std::cout << "If no script is provided, the GUI tray application starts.\n";
   std::cout << "\nModes:\n";
-  std::cout << "  havel script.hv           - Run script with full features\n";
-  std::cout << "  havel --repl script.hv    - Run script then enter REPL (full "
-               "features)\n";
-  std::cout << "  havel --full-repl         - Start REPL with all features\n";
-  std::cout << "  havel --run script.hv     - Run script in minimal mode (no "
-               "hotkeys)\n";
-  std::cout << "\nPure mode (--run):\n";
+  std::cout << "  havel script.hv           - Run script with FULL features\n";
+  std::cout << "  havel --repl script.hv    - Run script then REPL (FULL features)\n";
+  std::cout << "  havel --repl              - Start REPL with FULL features\n";
+  std::cout << "  havel --full-repl         - Start REPL with ALL features\n";
+  std::cout << "  havel --run script.hv     - Run script in MINIMAL mode\n";
+  std::cout << "  havel --minimal script.hv - Run script in MINIMAL mode\n";
+  std::cout << "  havel --repl --minimal    - Start REPL in MINIMAL mode\n";
+  std::cout << "\nFull mode (default):\n";
+  std::cout << "  All features enabled: hotkeys, GUI, display, IO, etc.\n";
+  std::cout << "  Use for normal automation and hotkey scripts.\n";
+  std::cout << "\nMinimal mode (--minimal or --run):\n";
   std::cout << "  Executes scripts without IO, hotkeys, display, or GUI.\n";
   std::cout
       << "  Useful for testing scripts that auto-exit or don't need input.\n";
@@ -545,24 +639,77 @@ void havel::init::HavelLauncher::showHelp() {
 // REPL implementation using bytecode VM
 int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
   try {
-    info("Starting Havel REPL with bytecode VM...");
-
-    // Create minimal host API for REPL
-    auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get(), nullptr);
-    
-    // Initialize service registry
-    havel::initializeServiceRegistry(hostAPI);
-    
-    // Create REPL
-    havel::repl::REPLConfig replConfig;
-    replConfig.debugMode = cfg.debugMode;
-    replConfig.stopOnError = cfg.stopOnError;
-    
-    havel::repl::REPL repl(replConfig);
-    repl.initialize(hostAPI);
-    
-    // Run REPL
-    return repl.run();
+    if (cfg.minimalMode) {
+      info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
+      
+      // Create minimal host API for REPL (no IO, no hotkeys)
+      auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
+      
+      // Initialize service registry
+      havel::initializeServiceRegistry(hostAPI);
+      
+      // Create REPL
+      havel::repl::REPLConfig replConfig;
+      replConfig.debugMode = cfg.debugMode;
+      replConfig.stopOnError = cfg.stopOnError;
+      
+      havel::repl::REPL repl(replConfig);
+      repl.initialize(hostAPI);
+      
+      // Run REPL
+      return repl.run();
+    } else {
+      info("Starting Havel REPL with full features (hotkeys, GUI)...");
+      
+      // Full mode - initialize Qt and HavelApp
+      int dummy_argc = 1;
+      char dummy_name[] = "havel-repl";
+      char *dummy_argv[] = {dummy_name, nullptr};
+      QApplication app(dummy_argc, dummy_argv);
+      app.setQuitOnLastWindowClosed(false);
+      
+      // Create HavelApp with full features
+      std::vector<std::string> args;
+      HavelApp havelApp(false, "", false, true, args);
+      
+      if (!havelApp.isInitialized()) {
+        error("Failed to initialize HavelApp");
+        return 1;
+      }
+      
+      // Get VM and host bridge from HavelApp
+      auto *bytecodeVM = reinterpret_cast<havel::compiler::VM *>(havelApp.getBytecodeVM());
+      auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(havelApp.getHostBridge());
+      
+      if (!bytecodeVM || !hostBridge) {
+        error("Bytecode VM or HostBridge not available");
+        return 1;
+      }
+      
+      // Create REPL with full host API
+      havel::repl::REPLConfig replConfig;
+      replConfig.debugMode = cfg.debugMode;
+      replConfig.stopOnError = cfg.stopOnError;
+      
+      havel::repl::REPL repl(replConfig);
+      
+      // Create host API with full features
+      auto hostAPI = std::shared_ptr<HostAPI>(new HostAPI(
+          havelApp.io.get(),
+          havelApp.hotkeyManager.get(),
+          Configs::Get(),
+          havelApp.windowManager.get(),
+          nullptr, nullptr, nullptr, nullptr, nullptr,
+          nullptr, nullptr, nullptr, nullptr, nullptr,
+          havelApp.hotkeyManager->getModeManager().get(),
+          std::vector<std::string>{}));
+      
+      havel::initializeServiceRegistry(hostAPI);
+      repl.initialize(hostAPI);
+      
+      // Run REPL
+      return app.exec();
+    }
   } catch (const std::exception &e) {
     error("REPL error: {}", e.what());
     return 1;

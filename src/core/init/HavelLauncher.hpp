@@ -30,6 +30,7 @@ private:
     bool diffBytecode = false;  // Compare bytecode with previous run
     bool stopOnError = false; // Stop on first error/warning
     bool fullRepl = false; // Full REPL with all features (hotkeys, GUI, etc.)
+    bool minimalMode = false; // Minimal mode - no IO/hotkeys/GUI
   };
 
   LaunchConfig parseArgs(int argc, char *argv[]);

@@ -284,6 +284,34 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
+  case ast::NodeType::LoopStatement: {
+    const auto &loop_stmt = static_cast<const ast::LoopStatement &>(statement);
+    // Resolve count expression if present (loop 5 { ... })
+    if (loop_stmt.countExpr) {
+      resolveExpression(*loop_stmt.countExpr);
+    }
+    // Resolve condition if present (loop while condition { ... })
+    if (loop_stmt.condition) {
+      resolveExpression(*loop_stmt.condition);
+    }
+    // Resolve body - loop body creates a new scope
+    if (loop_stmt.body) {
+      resolveStatement(*loop_stmt.body);
+    }
+    break;
+  }
+
+  case ast::NodeType::DoWhileStatement: {
+    const auto &doWhile_stmt = static_cast<const ast::DoWhileStatement &>(statement);
+    if (doWhile_stmt.body) {
+      resolveStatement(*doWhile_stmt.body);
+    }
+    if (doWhile_stmt.condition) {
+      resolveExpression(*doWhile_stmt.condition);
+    }
+    break;
+  }
+
   case ast::NodeType::ForStatement: {
     const auto &for_stmt = static_cast<const ast::ForStatement &>(statement);
     // Resolve the iterable expression in the current scope

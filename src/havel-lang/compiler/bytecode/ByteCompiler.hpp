@@ -81,7 +81,9 @@ private:
     void compileCallExpressionTail(const ast::CallExpression& expression);  // TCO
     void compileIfStatement(const ast::IfStatement& statement);
     void compileWhileStatement(const ast::WhileStatement& statement);
+    void compileDoWhileStatement(const ast::DoWhileStatement& statement);
     void compileForStatement(const ast::ForStatement& statement);
+    void compileLoopStatement(const ast::LoopStatement& statement);
     void compileBlockStatement(const ast::BlockStatement& block);
     std::optional<std::string> getCalleeName(const ast::Expression& callee) const;
     const ResolvedBinding* bindingFor(const ast::Identifier& id) const;

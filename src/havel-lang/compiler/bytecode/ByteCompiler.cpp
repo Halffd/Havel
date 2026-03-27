@@ -613,8 +613,16 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileWhileStatement(static_cast<const ast::WhileStatement &>(statement));
     break;
 
+  case ast::NodeType::DoWhileStatement:
+    compileDoWhileStatement(static_cast<const ast::DoWhileStatement &>(statement));
+    break;
+
   case ast::NodeType::ForStatement:
     compileForStatement(static_cast<const ast::ForStatement &>(statement));
+    break;
+
+  case ast::NodeType::LoopStatement:
+    compileLoopStatement(static_cast<const ast::LoopStatement &>(statement));
     break;
 
   case ast::NodeType::BlockStatement:
@@ -627,6 +635,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
   case ast::NodeType::InputStatement:
     compileInputStatement(static_cast<const ast::InputStatement &>(statement));
+    break;
+
+  case ast::NodeType::BreakStatement:
+    emit(OpCode::JUMP, 0);  // Will be patched later
+    break;
+
+  case ast::NodeType::ContinueStatement:
+    emit(OpCode::JUMP, 0);  // Will be patched later
     break;
 
   case ast::NodeType::FunctionDeclaration:
@@ -2172,6 +2188,30 @@ void ByteCompiler::compileWhileStatement(const ast::WhileStatement &statement) {
   patchJump(end_jump, loop_end);
 }
 
+void ByteCompiler::compileDoWhileStatement(const ast::DoWhileStatement &statement) {
+  if (!statement.condition || !statement.body) {
+    throw std::runtime_error("Malformed do-while statement");
+  }
+
+  uint32_t loop_start =
+      static_cast<uint32_t>(current_function->instructions.size());
+
+  // Execute body first (do-while always executes at least once)
+  compileStatement(*statement.body);
+
+  // Then check condition
+  compileExpression(*statement.condition);
+  uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+  // Jump back to loop start
+  emit(OpCode::JUMP, loop_start);
+
+  // Patch end jump
+  uint32_t loop_end =
+      static_cast<uint32_t>(current_function->instructions.size());
+  patchJump(end_jump, loop_end);
+}
+
 void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   if (statement.iterators.empty() || !statement.iterable || !statement.body) {
     throw std::runtime_error("Malformed for statement");
@@ -2244,6 +2284,80 @@ void ByteCompiler::compileForStatement(const ast::ForStatement &statement) {
   uint32_t loop_end =
       static_cast<uint32_t>(current_function->instructions.size());
   patchJump(end_jump, loop_end);
+}
+
+void ByteCompiler::compileLoopStatement(const ast::LoopStatement &statement) {
+  if (!statement.body) {
+    throw std::runtime_error("Malformed loop statement");
+  }
+
+  // Check if this is a count-based loop: loop 5 { ... }
+  if (statement.countExpr) {
+    // Compile count expression
+    compileExpression(*statement.countExpr);
+    
+    // Store count in temp variable
+    uint32_t countSlot = next_local_index++;
+    reserveLocalSlot(countSlot);
+    emit(OpCode::STORE_VAR, countSlot);
+    
+    // Create counter variable starting at 0
+    uint32_t counterSlot = next_local_index++;
+    reserveLocalSlot(counterSlot);
+    emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(0)));
+    emit(OpCode::STORE_VAR, counterSlot);
+    
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
+    
+    // Check if counter < count
+    emit(OpCode::LOAD_VAR, counterSlot);
+    emit(OpCode::LOAD_VAR, countSlot);
+    emit(OpCode::LT);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+    
+    // Execute body
+    compileStatement(*statement.body);
+    
+    // Increment counter
+    emit(OpCode::LOAD_VAR, counterSlot);
+    emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(1)));
+    emit(OpCode::ADD);
+    emit(OpCode::STORE_VAR, counterSlot);
+    
+    // Jump back to loop start
+    emit(OpCode::JUMP, loop_start);
+    
+    // Patch end jump
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+    return;
+  }
+
+  // Check if this is a condition-based loop: loop while condition { ... }
+  if (statement.condition) {
+    uint32_t loop_start =
+        static_cast<uint32_t>(current_function->instructions.size());
+
+    compileExpression(*statement.condition);
+    uint32_t end_jump = emitJump(OpCode::JUMP_IF_FALSE);
+
+    compileStatement(*statement.body);
+    emit(OpCode::JUMP, loop_start);
+
+    uint32_t loop_end =
+        static_cast<uint32_t>(current_function->instructions.size());
+    patchJump(end_jump, loop_end);
+    return;
+  }
+
+  // Infinite loop: loop { ... }
+  uint32_t loop_start =
+      static_cast<uint32_t>(current_function->instructions.size());
+
+  compileStatement(*statement.body);
+  emit(OpCode::JUMP, loop_start);
 }
 
 void ByteCompiler::compileBlockStatement(const ast::BlockStatement &block) {
@@ -2394,6 +2508,31 @@ void ByteCompiler::collectLambdaExpressions(
     }
     if (while_statement.body) {
       collectLambdaExpressions(*while_statement.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::LoopStatement: {
+    const auto &loop_statement =
+        static_cast<const ast::LoopStatement &>(statement);
+    if (loop_statement.countExpr) {
+      collectLambdaExpressions(*loop_statement.countExpr, out);
+    }
+    if (loop_statement.condition) {
+      collectLambdaExpressions(*loop_statement.condition, out);
+    }
+    if (loop_statement.body) {
+      collectLambdaExpressions(*loop_statement.body, out);
+    }
+    break;
+  }
+  case ast::NodeType::DoWhileStatement: {
+    const auto &doWhile_statement =
+        static_cast<const ast::DoWhileStatement &>(statement);
+    if (doWhile_statement.body) {
+      collectLambdaExpressions(*doWhile_statement.body, out);
+    }
+    if (doWhile_statement.condition) {
+      collectLambdaExpressions(*doWhile_statement.condition, out);
     }
     break;
   }

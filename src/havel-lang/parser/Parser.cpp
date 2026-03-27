@@ -1749,7 +1749,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseForStatement() {
 std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
   advance(); // consume "loop"
 
-  // Check for optional "while condition"
+  // Check for optional count or "while condition"
+  std::unique_ptr<havel::ast::Expression> countExpr;
   std::unique_ptr<havel::ast::Expression> condition;
 
   // Skip newlines
@@ -1757,7 +1758,15 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     advance();
   }
 
-  if (at().type == havel::TokenType::While) {
+  // Check for loop count: loop 5 { ... }
+  if (at().type == havel::TokenType::Number) {
+    countExpr = parseExpression();
+    
+    // Skip newlines before body
+    while (at().type == havel::TokenType::NewLine) {
+      advance();
+    }
+  } else if (at().type == havel::TokenType::While) {
     advance(); // consume "while"
 
     // Parse condition expression
@@ -1773,7 +1782,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
   }
 
   std::unique_ptr<havel::ast::Statement> body;
-  
+
   // Block form or inline form
   if (at().type == havel::TokenType::OpenBrace) {
     body = parseBlockStatement();
@@ -1782,7 +1791,9 @@ std::unique_ptr<havel::ast::Statement> Parser::parseLoopStatement() {
     body = parseInlineStatement();
   }
 
-  return std::make_unique<havel::ast::LoopStatement>(std::move(body), std::move(condition));
+  auto loopStmt = std::make_unique<havel::ast::LoopStatement>(std::move(body), std::move(condition));
+  loopStmt->countExpr = std::move(countExpr);
+  return loopStmt;
 }
 
 std::unique_ptr<havel::ast::Statement> Parser::parseBreakStatement() {

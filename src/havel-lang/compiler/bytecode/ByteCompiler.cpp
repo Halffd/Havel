@@ -1330,10 +1330,10 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{fnName, static_cast<uint32_t>(2)});
     } else if (binary.operator_ == ast::BinaryOperator::Matches ||
                binary.operator_ == ast::BinaryOperator::Tilde) {
-      // Regex/string matching - compile as host function call
+      // Regex/string matching - compile as regex_search host function call
       compileExpression(*binary.left);   // string to match
       compileExpression(*binary.right);  // pattern
-      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"any.matches", static_cast<uint32_t>(2)});
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"regex_search", static_cast<uint32_t>(2)});
     } else if (binary.operator_ == ast::BinaryOperator::Nullish) {
       // TODO: Proper nullish coalescing needs JUMP_IF_NULL opcode
       // For now, treat as OR (falsy coalescing)

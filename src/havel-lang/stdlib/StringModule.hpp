@@ -22,9 +22,4 @@ void registerStringModule(Environment &env);
 // NEW: Register string module with VMApi (stable API layer)
 void registerStringModule(havel::compiler::VMApi &api);
 
-// Implementation in StringModule.cpp
-
-// Implementation of old registerStringModule (placeholder)
-inline void registerStringModule(Environment &env) { (void)env; }
-
 } // namespace havel::stdlib

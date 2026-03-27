@@ -243,6 +243,8 @@ struct BytecodeFunction {
   // Default parameter values (indexed by param index, empty if no default)
   // Stored as constant values for simple defaults
   std::vector<std::optional<BytecodeValue>> default_values;
+  // Index of variadic parameter (UINT32_MAX if none)
+  uint32_t variadic_param_index = UINT32_MAX;
 
   BytecodeFunction(std::string n, uint32_t params = 0, uint32_t locals = 0)
       : name(std::move(n)), param_count(params), local_count(locals) {}

@@ -700,10 +700,22 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
       break;
     }
 
-    if (at().type != havel::TokenType::Identifier) {
-      failAt(at(), "Expected identifier in parameter list");
+    // Check for variadic parameter: ...args
+    bool isVariadic = false;
+    std::unique_ptr<havel::ast::Expression> pattern;
+    
+    if (at().type == havel::TokenType::Spread) {
+      advance();  // consume '...'
+      if (at().type != havel::TokenType::Identifier) {
+        failAt(at(), "Expected identifier after '...' in variadic parameter");
+      }
+      pattern = makeIdentifier(advance());
+      isVariadic = true;
+    } else if (at().type == havel::TokenType::Identifier) {
+      pattern = makeIdentifier(advance());
+    } else {
+      failAt(at(), "Expected identifier or '...' in parameter list");
     }
-    auto paramName = makeIdentifier(advance());
 
     // Check for type annotation (paramName: Type)
     std::optional<std::unique_ptr<havel::ast::TypeAnnotation>> typeAnnotation;
@@ -720,7 +732,7 @@ std::unique_ptr<havel::ast::Statement> Parser::parseFunctionDeclaration() {
     }
 
     params.push_back(std::make_unique<havel::ast::FunctionParameter>(
-        std::move(paramName), std::move(defaultValue), std::move(typeAnnotation)));
+        std::move(pattern), std::move(defaultValue), std::move(typeAnnotation), isVariadic));
 
     while (at().type == havel::TokenType::NewLine) {
       advance();
@@ -3369,16 +3381,26 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
         break;
       }
 
-      // Parse parameter pattern: identifier, { pattern }, or [ pattern ]
+      // Parse parameter pattern: identifier, { pattern }, [ pattern ], or ...args
       std::unique_ptr<havel::ast::Expression> pattern;
-      if (at().type == havel::TokenType::Identifier) {
+      bool isVariadic = false;
+      
+      // Check for variadic parameter: ...args
+      if (at().type == havel::TokenType::Spread) {
+        advance();  // consume '...'
+        if (at().type != havel::TokenType::Identifier) {
+          failAt(at(), "Expected identifier after '...' in variadic parameter");
+        }
+        pattern = makeIdentifier(advance());
+        isVariadic = true;
+      } else if (at().type == havel::TokenType::Identifier) {
         pattern = makeIdentifier(advance());
       } else if (at().type == havel::TokenType::OpenBrace) {
         pattern = parseObjectPattern();
       } else if (at().type == havel::TokenType::OpenBracket) {
         pattern = parseArrayPattern();
       } else {
-        failAt(at(), "Expected identifier, '{', or '[' in function parameter list");
+        failAt(at(), "Expected identifier, '{', '[', or '...' in function parameter list");
       }
 
       // Check for default value
@@ -3389,7 +3411,7 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
       }
 
       params.push_back(std::make_unique<havel::ast::FunctionParameter>(
-          std::move(pattern), std::move(defaultValue)));
+          std::move(pattern), std::move(defaultValue), std::nullopt, isVariadic));
 
       while (at().type == havel::TokenType::NewLine) {
         advance();

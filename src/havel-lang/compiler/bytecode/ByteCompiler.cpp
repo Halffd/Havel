@@ -248,17 +248,21 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
     current_function->upvalues = upvalues_it->second;
   }
 
-  // Collect default parameter values (for simple constant defaults)
-  for (const auto &param : function.parameters) {
+  // Collect default parameter values and variadic info
+  for (size_t i = 0; i < function.parameters.size(); i++) {
+    const auto &param = function.parameters[i];
     if (!param || !param->pattern) {
       throw std::runtime_error("Function parameter missing pattern");
     }
     collectParameterPatternSlots(*param->pattern);
-    
+
+    // Track variadic parameter
+    if (param->isVariadic) {
+      current_function->variadic_param_index = static_cast<uint32_t>(i);
+    }
+
     // Store default value if present (only simple literals for now)
     if (param->defaultValue.has_value()) {
-      // For now, only handle simple literal defaults
-      // Expression defaults like b = a + 1 would need runtime evaluation
       const auto &defaultExpr = param->defaultValue.value();
       if (defaultExpr->kind == ast::NodeType::NumberLiteral) {
         const auto &num = static_cast<const ast::NumberLiteral &>(*defaultExpr);
@@ -275,7 +279,6 @@ void ByteCompiler::compileFunction(const ast::FunctionDeclaration &function) {
         const auto &boolean = static_cast<const ast::BooleanLiteral &>(*defaultExpr);
         current_function->default_values.push_back(boolean.value);
       } else {
-        // For complex defaults, store null - would need runtime evaluation
         current_function->default_values.push_back(std::nullopt);
       }
     } else {
@@ -358,14 +361,19 @@ void ByteCompiler::compileLambda(const ast::LambdaExpression &lambda) {
     current_function->upvalues = upvalues_it->second;
   }
 
-  // Collect default parameter values for lambda
+  // Collect default parameter values and variadic info for lambda
   for (size_t i = 0; i < lambda.parameters.size(); i++) {
     const auto &param = lambda.parameters[i];
     if (!param || !param->pattern) {
       throw std::runtime_error("Lambda parameter missing pattern");
     }
     compileParameterPattern(*param->pattern, static_cast<uint32_t>(i));
-    
+
+    // Track variadic parameter
+    if (param->isVariadic) {
+      current_function->variadic_param_index = static_cast<uint32_t>(i);
+    }
+
     // Store default value if present
     if (param->defaultValue.has_value()) {
       const auto &defaultExpr = param->defaultValue.value();

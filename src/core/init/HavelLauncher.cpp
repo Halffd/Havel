@@ -7,6 +7,7 @@
 #include "havel-lang/parser/Parser.h"
 #include "havel-lang/runtime/StdLibModules.hpp"
 #include "havel-lang/tools/REPL.hpp"
+#include "modules/HostModules.hpp"
 #include "utils/Logger.hpp"
 #include <QApplication>
 #include <QProcess>
@@ -173,8 +174,7 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
         buffer << file.rdbuf();
         std::string code = buffer.str();
 
-#ifdef ENABLE_HAVEL_LANG
-        // Try bytecode VM first, fall back to AST interpreter
+        // Execute with bytecode VM (only execution engine)
         auto *bytecodeVM =
             reinterpret_cast<havel::compiler::VM *>(havelApp.getBytecodeVM());
         auto *hostBridge = reinterpret_cast<havel::compiler::HostBridge *>(
@@ -246,9 +246,6 @@ int HavelLauncher::runDaemon(const LaunchConfig &cfg, int argc, char *argv[]) {
             error("Bytecode execution error: {}", e.what());
           }
         }
-        // Note: AST interpreter removed - bytecode VM is the only execution
-        // engine
-#endif
       } else {
         error("Cannot open startup script: {}", cfg.scriptFile);
       }
@@ -467,12 +464,51 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   return 1;
 }
 
-int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &, int,
+int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
                                                  char *[]) {
-  // Interpreter removed - REPL not available
-  error("REPL mode not available - interpreter removed");
-  error("Use --run mode for bytecode VM execution instead");
-  return 1;
+  try {
+    info("Running script and starting REPL...");
+
+    // Read script file
+    std::ifstream file(cfg.scriptFile);
+    if (!file) {
+      error("Cannot open script file: {}", cfg.scriptFile);
+      return 2;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string code = buffer.str();
+
+    // Create minimal host API
+    auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get(), nullptr);
+    
+    // Initialize service registry
+    havel::initializeServiceRegistry(hostAPI);
+    
+    // Create REPL
+    havel::repl::REPLConfig replConfig;
+    replConfig.debugMode = cfg.debugMode;
+    replConfig.stopOnError = cfg.stopOnError;
+    
+    havel::repl::REPL repl(replConfig);
+    repl.initialize(hostAPI);
+    
+    // Execute script first
+    info("Executing script: {}", cfg.scriptFile);
+    if (!repl.execute(code)) {
+      error("Script execution failed");
+      return 1;
+    }
+    info("Script executed successfully");
+    
+    // Enter REPL
+    info("Entering REPL...");
+    return repl.run();
+  } catch (const std::exception &e) {
+    error("Script+REPL error: {}", e.what());
+    return 1;
+  }
 }
 
 void havel::init::HavelLauncher::showHelp() {
@@ -506,10 +542,31 @@ void havel::init::HavelLauncher::showHelp() {
   std::cout << "  --diff                  Compare bytecode with previous run\n";
   std::cout << "  Snapshots saved to: /tmp/havel-bytecode/\n";
 } // namespace havel::init
-// STUBBED - interpreter removed
-int havel::init::HavelLauncher::runRepl(const LaunchConfig &) {
-  error("REPL not available - interpreter removed");
-  return 1;
+// REPL implementation using bytecode VM
+int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
+  try {
+    info("Starting Havel REPL with bytecode VM...");
+
+    // Create minimal host API for REPL
+    auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get(), nullptr);
+    
+    // Initialize service registry
+    havel::initializeServiceRegistry(hostAPI);
+    
+    // Create REPL
+    havel::repl::REPLConfig replConfig;
+    replConfig.debugMode = cfg.debugMode;
+    replConfig.stopOnError = cfg.stopOnError;
+    
+    havel::repl::REPL repl(replConfig);
+    repl.initialize(hostAPI);
+    
+    // Run REPL
+    return repl.run();
+  } catch (const std::exception &e) {
+    error("REPL error: {}", e.what());
+    return 1;
+  }
 }
 
 int havel::init::HavelLauncher::runCli(int, char *[]) {

@@ -8,7 +8,9 @@
  * - Default: FULL ACCESS (no friction for normal users)
  */
 #include "HostBridge.hpp"
+#include "VMApi.hpp"
 #include "../../../host/module/ModularHostBridges.hpp"
+#include "../../../modules/window/WindowMonitorModule.hpp"
 
 #include "../../../host/media/MediaService.hpp"
 #include "../../../host/network/NetworkService.hpp"
@@ -128,6 +130,14 @@ void HostBridge::install() {
   automationBridge_->install(options_);
   browserBridge_->install(options_);
   toolsBridge_->install(options_);
+  
+  // Setup dynamic window globals using existing WindowMonitor from HotkeyManager
+  // This integrates window monitoring with bytecode VM without creating duplicate instances
+  if (ctx_->windowMonitor && ctx_->vm) {
+    VM *vm = static_cast<VM*>(ctx_->vm);
+    VMApi api(*vm);
+    havel::modules::setupDynamicWindowGlobals(api, ctx_->windowMonitor);
+  }
 
   // Install extension loading functions
   auto self = shared_from_this();

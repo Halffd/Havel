@@ -138,7 +138,8 @@ void HavelApp::cleanup() noexcept {
 
 void HavelApp::initializeComponents(bool isStartup) {
   info("Initializing HvC components...");
-
+  info("isStartup: " + std::to_string(isStartup));
+  info("GUI: ", + gui);
   // Initialize in dependency order
   io = std::make_shared<IO>();
   if (!io) {
@@ -234,6 +235,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.fileManager = nullptr;
   ctx.processManager = nullptr;
   ctx.networkManager = networkManager.get();
+  ctx.windowMonitor = windowMonitor.get();
 
   // Initialize bytecode VM and HostBridge
   try {

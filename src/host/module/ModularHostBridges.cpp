@@ -488,6 +488,31 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.show"] = [ctx = ctx_](const auto &args) {
     return handleWindowShow(args, ctx);
   };
+  // Window object prototype methods (shared, not per-instance)
+  options.host_functions["window._close"] = [ctx = ctx_](const auto &args) {
+    return handleWindowCloseObj(args, ctx);
+  };
+  options.host_functions["window._hide"] = [ctx = ctx_](const auto &args) {
+    return handleWindowHideObj(args, ctx);
+  };
+  options.host_functions["window._show"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShowObj(args, ctx);
+  };
+  options.host_functions["window._focus"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFocusObj(args, ctx);
+  };
+  options.host_functions["window._min"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMinObj(args, ctx);
+  };
+  options.host_functions["window._max"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMaxObj(args, ctx);
+  };
+  options.host_functions["window._resize"] = [ctx = ctx_](const auto &args) {
+    return handleWindowResizeObj(args, ctx);
+  };
+  options.host_functions["window._move"] = [ctx = ctx_](const auto &args) {
+    return handleWindowMoveObj(args, ctx);
+  };
   options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
     return handleClipboardGet(args, ctx);
   };
@@ -505,7 +530,8 @@ void UIBridge::install(PipelineOptions &options) {
   };
 }
 
-// Helper: Create window object with data fields and methods
+// Helper: Create window object with data fields
+// Methods are shared static functions that take window ID as first argument
 static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t windowId,
                                         const std::string& title = "",
                                         const std::string& windowClass = "",
@@ -525,79 +551,16 @@ static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t
   api.setField(obj, "pid", BytecodeValue(static_cast<int64_t>(pid)));
   api.setField(obj, "cmd", BytecodeValue(cmdline));
   
-  // Generate unique function names for this window instance
-  std::string prefix = "_win_" + std::to_string(windowId) + "_";
-  
-  // Register methods for this specific window
-  api.registerFunction(prefix + "close", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.closeWindow(windowId));
-  });
-  
-  api.registerFunction(prefix + "hide", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    winService.hideWindow(windowId);
-    return BytecodeValue(true);
-  });
-  
-  api.registerFunction(prefix + "show", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    winService.showWindow(windowId);
-    return BytecodeValue(true);
-  });
-  
-  api.registerFunction(prefix + "focus", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.focusWindow(windowId));
-  });
-  
-  api.registerFunction(prefix + "min", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.minimizeWindow(windowId));
-  });
-  
-  api.registerFunction(prefix + "max", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    (void)args;
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.maximizeWindow(windowId));
-  });
-  
-  api.registerFunction(prefix + "resize", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    if (args.size() < 2) return BytecodeValue(false);
-    int w = 0, h = 0;
-    if (auto *v = std::get_if<int64_t>(&args[0])) w = static_cast<int>(*v);
-    else if (auto *v = std::get_if<double>(&args[0])) w = static_cast<int>(*v);
-    if (auto *v = std::get_if<int64_t>(&args[1])) h = static_cast<int>(*v);
-    else if (auto *v = std::get_if<double>(&args[1])) h = static_cast<int>(*v);
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.resizeWindow(windowId, w, h));
-  });
-  
-  api.registerFunction(prefix + "move", [ctx, windowId](const std::vector<BytecodeValue>& args) {
-    if (args.size() < 2) return BytecodeValue(false);
-    int x = 0, y = 0;
-    if (auto *v = std::get_if<int64_t>(&args[0])) x = static_cast<int>(*v);
-    else if (auto *v = std::get_if<double>(&args[0])) x = static_cast<int>(*v);
-    if (auto *v = std::get_if<int64_t>(&args[1])) y = static_cast<int>(*v);
-    else if (auto *v = std::get_if<double>(&args[1])) y = static_cast<int>(*v);
-    havel::host::WindowService winService(ctx->windowManager);
-    return BytecodeValue(winService.moveWindow(windowId, x, y));
-  });
-  
-  // Set method references on the object
-  api.setField(obj, "close", api.makeFunctionRef(prefix + "close"));
-  api.setField(obj, "hide", api.makeFunctionRef(prefix + "hide"));
-  api.setField(obj, "show", api.makeFunctionRef(prefix + "show"));
-  api.setField(obj, "focus", api.makeFunctionRef(prefix + "focus"));
-  api.setField(obj, "min", api.makeFunctionRef(prefix + "min"));
-  api.setField(obj, "max", api.makeFunctionRef(prefix + "max"));
-  api.setField(obj, "resize", api.makeFunctionRef(prefix + "resize"));
-  api.setField(obj, "move", api.makeFunctionRef(prefix + "move"));
+  // Methods are shared - they take the object's id field as receiver
+  // win.close() compiles to: window.close(win)
+  api.setField(obj, "close", api.makeFunctionRef("window._close"));
+  api.setField(obj, "hide", api.makeFunctionRef("window._hide"));
+  api.setField(obj, "show", api.makeFunctionRef("window._show"));
+  api.setField(obj, "focus", api.makeFunctionRef("window._focus"));
+  api.setField(obj, "min", api.makeFunctionRef("window._min"));
+  api.setField(obj, "max", api.makeFunctionRef("window._max"));
+  api.setField(obj, "resize", api.makeFunctionRef("window._resize"));
+  api.setField(obj, "move", api.makeFunctionRef("window._move"));
   
   return BytecodeValue(obj);
 }
@@ -634,6 +597,190 @@ BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
     return BytecodeValue("");
   }
   return BytecodeValue(info.cmdline);
+}
+
+// Shared window object methods - take object as first argument, extract id
+BytecodeValue UIBridge::handleWindowCloseObj(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  // Extract id from object
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.closeWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowHideObj(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  winService.hideWindow(wid);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleWindowShowObj(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  winService.showWindow(wid);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleWindowFocusObj(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.focusWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowMinObj(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.minimizeWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowMaxObj(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.maximizeWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowResizeObj(const std::vector<BytecodeValue> &args,
+                                              const HostContext *ctx) {
+  if (args.size() < 3 || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  int w = 0, h = 0;
+  if (auto *v = std::get_if<int64_t>(&args[1])) w = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[1])) w = static_cast<int>(*v);
+  if (auto *v = std::get_if<int64_t>(&args[2])) h = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[2])) h = static_cast<int>(*v);
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.resizeWindow(wid, w, h));
+}
+
+BytecodeValue UIBridge::handleWindowMoveObj(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  if (args.size() < 3 || !ctx->windowManager) return BytecodeValue(false);
+  
+  uint64_t wid = 0;
+  if (std::holds_alternative<ObjectRef>(args[0])) {
+    auto obj = std::get<ObjectRef>(args[0]);
+    auto *vm = static_cast<VM*>(ctx->vm);
+    auto idVal = vm->getHostObjectField(obj, "id");
+    if (auto *v = std::get_if<int64_t>(&idVal))
+      wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<int64_t>(&args[0])) {
+    wid = static_cast<uint64_t>(*v);
+  } else {
+    return BytecodeValue(false);
+  }
+  
+  int x = 0, y = 0;
+  if (auto *v = std::get_if<int64_t>(&args[1])) x = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[1])) x = static_cast<int>(*v);
+  if (auto *v = std::get_if<int64_t>(&args[2])) y = static_cast<int>(*v);
+  else if (auto *v = std::get_if<double>(&args[2])) y = static_cast<int>(*v);
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  return BytecodeValue(winService.moveWindow(wid, x, y));
 }
 
 BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,

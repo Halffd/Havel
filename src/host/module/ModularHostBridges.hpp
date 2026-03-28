@@ -103,6 +103,15 @@ private:
   static BytecodeValue handleWindowMaximize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowHide(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowShow(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // Window object methods (shared prototype methods)
+  static BytecodeValue handleWindowCloseObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowHideObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowShowObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowFocusObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMinObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMaxObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowResizeObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowMoveObj(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   // Clipboard operations
   static BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);

@@ -662,47 +662,34 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
   }
   case havel::TokenType::Greater:
     return parseInputStatement();
-  default: {
-    // In input context (hotkey blocks), bare expressions may be input commands
-    if (context.inInputContext) {
-      // Check if this looks like an input command:
-      // - String: "text"
-      // - Identifier: lmb, rmb, m, r, w
-      // - Number: :500 sleep
-      // - OpenBrace: {Key}
-      if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
-          at().type == havel::TokenType::Number ||
-          at().type == havel::TokenType::OpenBrace ||
-          (at().type == havel::TokenType::Identifier && 
-           (at().value == "lmb" || at().value == "rmb" ||
-            at().value == "m" || at().value == "r" || at().value == "w"))) {
-        // Parse as implicit input statement
-        return parseImplicitInputStatement();
+  default:
+    // Expression statement (function calls, assignments, etc.)
+    // This handles: config.set(...), print("hello"), x = 5, etc.
+    {
+      // In input context (hotkey blocks), check for implicit input commands first
+      if (context.inInputContext) {
+        if (at().type == havel::TokenType::String || at().type == havel::TokenType::MultilineString ||
+            at().type == havel::TokenType::Number ||
+            at().type == havel::TokenType::OpenBrace ||
+            (at().type == havel::TokenType::Identifier &&
+             (at().value == "lmb" || at().value == "rmb" ||
+              at().value == "m" || at().value == "r" || at().value == "w"))) {
+          return parseImplicitInputStatement();
+        }
       }
-    }
-    
-    auto expr = parseExpression();
 
-    // Require statement terminator: semicolon or newline
-    // This prevents "expr1 expr2" from being parsed as expr1(expr2)
-    havel::debug("DEBUG: After parseExpression, token is: {}", at().toString());
-    if (at().type != havel::TokenType::Semicolon &&
-        at().type != havel::TokenType::NewLine &&
-        at().type != havel::TokenType::EOF_TOKEN &&
-        at().type != havel::TokenType::CloseBrace) {
-      havel::debug("DEBUG: Failing at token: {}", at().toString());
-      failAt(at(), "Expected ';' or newline after expression (Havel requires statement terminators)");
+      auto expr = parseExpression();
+      
+      // Consume optional semicolon
+      if (at().type == havel::TokenType::Semicolon) {
+        advance();
+      }
+      
+      return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
     }
-
-    // Consume optional semicolon
-    if (at().type == havel::TokenType::Semicolon) {
-      advance();
-    }
-
-    return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));
-  }
   }
 
+  // Should never reach here
   return nullptr;
 }
 

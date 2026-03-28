@@ -59,7 +59,7 @@ public:
         }
         services_[key] = std::static_pointer_cast<void>(service);
     }
-    
+
     /**
      * Get a service by type
      * 

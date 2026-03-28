@@ -4,6 +4,7 @@
  * Bytecode VM-based REPL for Havel language.
  */
 #include "REPL.hpp"
+#include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../runtime/StdLibModules.hpp"
 #include "../../utils/Logger.hpp"
@@ -31,9 +32,12 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   if (!hostAPI) {
     throw std::runtime_error("REPL requires valid IHostAPI");
   }
-  
+
   info("Initializing REPL with bytecode VM...");
-  
+
+  // Clear service registry (for REPL restarts)
+  havel::host::ServiceRegistry::instance().clear();
+
   // Initialize service registry with all services
   havel::initializeServiceRegistry(hostAPI);
 

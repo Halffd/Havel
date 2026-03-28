@@ -560,10 +560,10 @@ std::unique_ptr<havel::ast::Statement> Parser::parseStatement() {
     if (at(1).type == havel::TokenType::OpenBrace) {
       return parseConfigBlock();
     }
-    break;
+    // Fall through to expression parsing for config.method() calls
+    [[fallthrough]];
   case havel::TokenType::Match:
-    // match is an expression, not a statement - fall through to expression parsing
-    break;
+    // match is an expression, not a statement
     {
       auto expr = parseExpression();
       return std::make_unique<havel::ast::ExpressionStatement>(std::move(expr));

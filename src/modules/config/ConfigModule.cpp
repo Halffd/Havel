@@ -88,13 +88,8 @@ BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
   std::string key = toString(args[0]);
   std::string value = toString(args[1]);
 
-  std::cerr << "[DEBUG] configSet called: key=" << key << " value=" << value << std::endl;
-
   auto &config = Configs::Get();
   config.Set(key, value, false);  // Don't save yet
-  
-  std::string stored = config.Get<std::string>(key, "NOT_STORED");
-  std::cerr << "[DEBUG] configSet: stored value=" << stored << std::endl;
 
   return BytecodeValue(true);
 }
@@ -137,17 +132,13 @@ BytecodeValue configLoad(const std::vector<BytecodeValue> &args) {
 
 // Register config module with VM
 void registerConfigModule(VMApi &api) {
-  std::cerr << "[DEBUG] registerConfigModule called" << std::endl;
-  
   // config.get(key, default?)
   api.registerFunction("config.get", [](const std::vector<BytecodeValue> &args) {
-    std::cerr << "[DEBUG] config.get lambda called" << std::endl;
     return configGet(args);
   });
 
   // config.set(key, value)
   api.registerFunction("config.set", [](const std::vector<BytecodeValue> &args) {
-    std::cerr << "[DEBUG] config.set lambda called" << std::endl;
     return configSet(args);
   });
   

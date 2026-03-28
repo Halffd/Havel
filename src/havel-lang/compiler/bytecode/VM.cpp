@@ -1074,10 +1074,10 @@ void VM::registerDefaultHostGlobals() {
   setGlobal("struct", struct_obj);
   
   // Register default window globals (will be updated by WindowMonitor)
-  setGlobal("title", "");
-  setGlobal("class", "");
-  setGlobal("exe", "");
-  setGlobal("pid", static_cast<int64_t>(0));
+  setGlobal("title", BytecodeValue(std::string("")));
+  setGlobal("class", BytecodeValue(std::string("")));
+  setGlobal("exe", BytecodeValue(std::string("")));
+  setGlobal("pid", BytecodeValue(static_cast<int64_t>(0)));
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,

@@ -475,6 +475,12 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.max"] = [ctx = ctx_](const auto &args) {
     return handleWindowMaximize(args, ctx);
   };
+  options.host_functions["window.hide"] = [ctx = ctx_](const auto &args) {
+    return handleWindowHide(args, ctx);
+  };
+  options.host_functions["window.show"] = [ctx = ctx_](const auto &args) {
+    return handleWindowShow(args, ctx);
+  };
   options.host_functions["clipboard.get"] = [ctx = ctx_](const auto &args) {
     return handleClipboardGet(args, ctx);
   };
@@ -637,6 +643,36 @@ BytecodeValue UIBridge::handleWindowMaximize(const std::vector<BytecodeValue> &a
     return BytecodeValue(false);
   havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.maximizeWindow(wid));
+}
+
+BytecodeValue UIBridge::handleWindowHide(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  winService.hideWindow(wid);
+  return BytecodeValue(true);
+}
+
+BytecodeValue UIBridge::handleWindowShow(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue(false);
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  winService.showWindow(wid);
+  return BytecodeValue(true);
 }
 
 BytecodeValue UIBridge::handleClipboardGet(const std::vector<BytecodeValue> &args,

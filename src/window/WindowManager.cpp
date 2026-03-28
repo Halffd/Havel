@@ -1900,6 +1900,16 @@ bool WindowManager::restoreWindow(uint64_t id) {
   return true;
 }
 
+bool WindowManager::hideWindow(uint64_t id) {
+  WinHide(static_cast<wID>(id));
+  return true;
+}
+
+bool WindowManager::showWindow(uint64_t id) {
+  WinShow(static_cast<wID>(id));
+  return true;
+}
+
 bool WindowManager::toggleFullscreen(uint64_t id) {
   ToggleFullscreen(static_cast<wID>(id));
   return true;
@@ -2062,6 +2072,22 @@ void WindowManager::WinRestore() {
 
   XSendEvent(contextOpt->display, contextOpt->root, false,
              SubstructureRedirectMask | SubstructureNotifyMask, &event);
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinHide(wID win) {
+  if (!win) return;
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt) return;
+  XUnmapWindow(contextOpt->display, win);
+  XFlush(contextOpt->display);
+}
+
+void WindowManager::WinShow(wID win) {
+  if (!win) return;
+  auto contextOpt = GetActiveWindowContext();
+  if (!contextOpt) return;
+  XMapWindow(contextOpt->display, win);
   XFlush(contextOpt->display);
 }
 

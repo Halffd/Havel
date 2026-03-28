@@ -122,6 +122,8 @@ public:
   static void WinMinimize();
   static void WinMaximize();
   static void WinRestore();
+  static void WinHide(wID win);
+  static void WinShow(wID win);
   static void WinTransparent();
   static void WinMoveResize();
   static void WinSetAlwaysOnTop(bool onTop);
@@ -158,6 +160,8 @@ public:
   static bool maximizeWindow(uint64_t id);
   static bool minimizeWindow(uint64_t id);
   static bool restoreWindow(uint64_t id);
+  static bool hideWindow(uint64_t id);
+  static bool showWindow(uint64_t id);
   static bool toggleFullscreen(uint64_t id);
   static bool setFloating(uint64_t id, bool floating);
   static bool centerWindow(uint64_t id);

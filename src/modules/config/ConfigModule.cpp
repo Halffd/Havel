@@ -40,21 +40,21 @@ static BytecodeValue fromString(const std::string &s) {
   // Try boolean
   if (s == "true") return BytecodeValue(true);
   if (s == "false") return BytecodeValue(false);
-  
+
   // Try integer
   try {
     size_t pos;
     int64_t i = std::stoll(s, &pos);
     if (pos == s.length()) return BytecodeValue(i);
   } catch (...) {}
-  
+
   // Try double
   try {
     size_t pos;
     double d = std::stod(s, &pos);
     if (pos == s.length()) return BytecodeValue(d);
   } catch (...) {}
-  
+
   // Default to string
   return BytecodeValue(s);
 }
@@ -64,18 +64,18 @@ BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
   if (args.empty()) {
     throw std::runtime_error("config.get() requires at least 1 argument: key");
   }
-  
+
   std::string key = toString(args[0]);
-  
+
   // Get default value if provided
   std::string defaultVal = "";
   if (args.size() > 1) {
     defaultVal = toString(args[1]);
   }
-  
+
   auto &config = Configs::Get();
   std::string value = config.Get<std::string>(key, defaultVal);
-  
+
   return fromString(value);
 }
 

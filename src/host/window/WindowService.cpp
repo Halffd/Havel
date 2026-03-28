@@ -60,6 +60,18 @@ bool WindowService::restoreWindow(uint64_t id) {
     return wm_ && wm_->restoreWindow(id);
 }
 
+bool WindowService::hideWindow(uint64_t id) {
+    if (!wm_) return false;
+    wm_->hideWindow(id);
+    return true;
+}
+
+bool WindowService::showWindow(uint64_t id) {
+    if (!wm_) return false;
+    wm_->showWindow(id);
+    return true;
+}
+
 bool WindowService::toggleFullscreen(uint64_t id) {
     return wm_ && wm_->toggleFullscreen(id);
 }

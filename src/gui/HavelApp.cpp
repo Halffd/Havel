@@ -186,8 +186,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   info("NetworkManager initialized successfully");
 
 #ifdef ENABLE_HAVEL_LANG
-  std::cerr << "[DEBUG] Creating interpreter (without HotkeyManager)..."
-            << std::endl;
+  // Debug: Show initialization mode and parameters
+  std::cerr << "[DEBUG] HavelApp initialization:" << std::endl;
+  std::cerr << "  - GUI: " << (gui ? "enabled" : "disabled") << std::endl;
+  std::cerr << "  - Script: " << (scriptFile.empty() ? "none" : scriptFile) << std::endl;
+  std::cerr << "  - REPL: " << (repl ? "yes" : "no") << std::endl;
+  std::cerr << "  - Startup: " << (isStartup ? "yes" : "no") << std::endl;
+  std::cerr << "  - Command line args: " << commandLineArgs.size() << std::endl;
+  
+  std::cerr << "[DEBUG] Creating bytecode VM and HostBridge..." << std::endl;
 
   // Get AutomationSuite components with null guards
   // Pass IO to ensure proper initialization
@@ -246,16 +253,16 @@ void HavelApp::initializeComponents(bool isStartup) {
 
     // Create VM with context
     bytecodeVM = std::make_unique<compiler::VM>(ctx);
-    
+
     // Set VM pointer in context (non-owning)
     ctx.vm = bytecodeVM.get();
 
     // Create HostBridge with context
     hostBridge = compiler::createHostBridge(ctx);
-    
+
     // Register stdlib modules with VM
     registerStdLibWithVM(*hostBridge);
-    
+
     hostBridge->install();
 
     info("Bytecode VM and HostBridge initialized successfully");
@@ -263,6 +270,20 @@ void HavelApp::initializeComponents(bool isStartup) {
     error("Failed to initialize bytecode VM: {}", e.what());
     // Continue anyway - VM is optional for now
   }
+  
+  // Debug: Show component initialization status
+  std::cerr << "[DEBUG] Component initialization status:" << std::endl;
+  std::cerr << "  - IO: " << (io ? "✓" : "✗") << std::endl;
+  std::cerr << "  - WindowManager: " << (windowManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - HotkeyManager: " << (hotkeyManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - BytecodeVM: " << (bytecodeVM ? "✓" : "✗") << std::endl;
+  std::cerr << "  - HostBridge: " << (hostBridge ? "✓" : "✗") << std::endl;
+  std::cerr << "  - AudioManager: " << (audioManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - BrightnessManager: " << (brightnessManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - MPVController: " << (mpv ? "✓" : "✗") << std::endl;
+  std::cerr << "  - NetworkManager: " << (networkManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - AutomationManager: " << (automationManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - WindowMonitor: " << (windowMonitor ? "✓" : "✗") << std::endl;
 #else
   std::cerr << "[DEBUG] Havel language disabled" << std::endl;
 #endif

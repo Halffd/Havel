@@ -1338,7 +1338,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
            addConstant(FunctionObject{.function_index = it->second}));
     } break;
     case ResolvedBindingKind::HostGlobal:
-      emit(OpCode::LOAD_GLOBAL, binding->name);
+      emit(OpCode::LOAD_GLOBAL, binding->slot);
       break;
     case ResolvedBindingKind::Builtin:
       emit(OpCode::LOAD_CONST, addConstant(binding->name));

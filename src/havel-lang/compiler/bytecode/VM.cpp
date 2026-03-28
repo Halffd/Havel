@@ -757,8 +757,6 @@ void VM::registerDefaultHostFunctions() {
     std::cout << end;
     return BytecodeValue(nullptr);
   });
-  // Also add to globals for closure access
-  setGlobal("print", BytecodeValue(HostFunctionRef{"print"}));
 
   // fmt(format_string, ...) - Python-style string formatting
   registerHostFunction("fmt", [this](const std::vector<BytecodeValue> &args) {

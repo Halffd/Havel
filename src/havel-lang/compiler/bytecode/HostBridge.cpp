@@ -140,25 +140,25 @@ void HostBridge::install() {
   }
 
   // Install extension loading functions
-  auto self = shared_from_this();
-  options_.host_functions["extension.load"] = [self](const std::vector<BytecodeValue>& args) {
+  // Use raw 'this' pointer to avoid circular reference (HostBridge outlives VM usage)
+  options_.host_functions["extension.load"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
       return BytecodeValue(false);
     }
     std::string name = std::get<std::string>(args[0]);
-    return BytecodeValue(self->extensionLoader_->loadExtensionByName(name));
+    return BytecodeValue(extensionLoader_->loadExtensionByName(name));
   };
-  options_.host_functions["extension.isLoaded"] = [self](const std::vector<BytecodeValue>& args) {
+  options_.host_functions["extension.isLoaded"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
       return BytecodeValue(false);
     }
     std::string name = std::get<std::string>(args[0]);
-    return BytecodeValue(self->extensionLoader_->isLoaded(name));
+    return BytecodeValue(extensionLoader_->isLoaded(name));
   };
-  options_.host_functions["extension.list"] = [self](const std::vector<BytecodeValue>& args) {
+  options_.host_functions["extension.list"] = [this](const std::vector<BytecodeValue>& args) {
     (void)args;
-    auto names = self->extensionLoader_->getLoadedExtensions();
-    auto *vm = static_cast<VM *>(self->ctx_->vm);
+    auto names = extensionLoader_->getLoadedExtensions();
+    auto *vm = static_cast<VM *>(ctx_->vm);
     if (!vm) {
       return BytecodeValue(nullptr);
     }
@@ -168,22 +168,23 @@ void HostBridge::install() {
     }
     return BytecodeValue(arr);
   };
-  options_.host_functions["extension.addSearchPath"] = [self](const std::vector<BytecodeValue>& args) {
+  options_.host_functions["extension.addSearchPath"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
       return BytecodeValue(false);
     }
     std::string path = std::get<std::string>(args[0]);
-    self->extensionLoader_->addSearchPath(path);
+    extensionLoader_->addSearchPath(path);
     return BytecodeValue(true);
   };
 
   // Register any.* dispatch methods for runtime type-based method calls
-  auto registerAnyMethod = [self, &options = options_](const std::string& methodName) {
-    options.host_functions["any." + methodName] = [self, methodName](const std::vector<BytecodeValue>& args) {
+  // Use raw 'this' pointer to avoid circular reference
+  auto registerAnyMethod = [this](const std::string& methodName) {
+    options_.host_functions["any." + methodName] = [this, methodName](const std::vector<BytecodeValue>& args) {
       if (args.empty()) {
         return BytecodeValue(nullptr);
       }
-      
+
       // Determine type and dispatch to appropriate module
       std::string type = getTypeName(args[0]);
       std::string modulePrefix;
@@ -191,12 +192,12 @@ void HostBridge::install() {
       else if (type == "array") modulePrefix = "array";
       else if (type == "object") modulePrefix = "object";
       else return BytecodeValue(nullptr);
-      
+
       std::string fullName = modulePrefix + "." + methodName;
-      
+
       // Look up and call the appropriate function
-      auto it = self->options_.host_functions.find(fullName);
-      if (it != self->options_.host_functions.end()) {
+      auto it = options_.host_functions.find(fullName);
+      if (it != options_.host_functions.end()) {
         return it->second(args);
       }
       return BytecodeValue(nullptr);

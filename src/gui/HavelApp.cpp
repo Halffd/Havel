@@ -90,18 +90,20 @@ void HavelApp::cleanup() noexcept {
     hotkeyManager.reset();
   }
 
-  // 3. Destroy VM and HostBridge
+  // 3. Destroy VM FIRST (so it stops using host functions)
+  if (bytecodeVM) {
+    debug("HavelApp::cleanup() - destroying VM");
+    bytecodeVM.reset();
+  }
+  
+  // 4. Destroy HostBridge (now safe to clear host_functions)
   if (hostBridge) {
     debug("HavelApp::cleanup() - destroying HostBridge");
     hostBridge->shutdown();
     hostBridge.reset();
   }
-  if (bytecodeVM) {
-    debug("HavelApp::cleanup() - destroying VM");
-    bytecodeVM.reset();
-  }
 
-  // 4. Destroy other components
+  // 5. Destroy other components
   if (automationManager) {
     debug("HavelApp::cleanup() - destroying AutomationManager");
     automationManager.reset();

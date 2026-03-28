@@ -265,13 +265,8 @@ inline void RestoreConfig(const std::string &path = "havel.cfg") {
 
 } // namespace havel
 
-// Global config instance
-namespace havel {
-extern Configs &g_Configs;
-} // namespace havel
-
-// Helper function to access config
-inline havel::Configs &Conf() { return havel::g_Configs; }
+// Helper function to access config (use Configs::Get() directly)
+inline havel::Configs &Conf() { return havel::Configs::Get(); }
 
 // Template specializations for Configs::Convert
 namespace havel {

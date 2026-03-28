@@ -1,5 +1,23 @@
 # Havel TODO
 
+## Recent Fixes (Completed ✅)
+
+### Parser & Compiler (March 2026)
+- [x] Fixed Parser returning nullptr for `config.method()` calls (keyword fallthrough bug)
+- [x] Fixed string member calls stack underflow (missing object push)
+- [x] Fixed config.load() use-after-free in destructor
+- [x] Fixed Config template bug (ostringstream adding quotes)
+- [x] Added error recovery to parser (synchronize on errors)
+- [x] Added forward progress guarantee in parser (prevent infinite loops)
+- [x] Fixed HostBridge memory leak (shared_from_this circular reference)
+- [x] Fixed WindowMonitor duplicate instance creation
+- [x] Fixed AutomationSuite null IO warnings
+- [x] Fixed GUI flag in runScript() mode
+- [x] Added help() function with module documentation
+- [x] Added detailed debug output for initialization
+
+---
+
 ## Type System Implementation (In Progress)
 
 ### Foundation (Completed ✅)
@@ -55,11 +73,11 @@
 ## Missing Features
 
 ### Core Features
+- [x] Window Show/Hide methods implementation
 - [ ] Complete Wayland support for Window/WindowManager (currently placeholders)
 - [ ] Implement multi-hotkey declaration support (e.g., `H => F5 => audio.mute()`)
 - [ ] Full mode system support for ConditionSystem
-- [ ] Help builtin supporting all modules/functions documentation/args
-- [ ] Window Show/Hide methods implementation
+- [x] Help builtin supporting all modules/functions documentation/args
 - [ ] Improve screenshot manager, with io hotkeys, screenshot view window and current monitor screenshot
 commit
 

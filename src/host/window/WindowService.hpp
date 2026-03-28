@@ -98,6 +98,16 @@ public:
     /// @return true on success
     bool restoreWindow(uint64_t id);
 
+    /// Hide window (remove from taskbar/desktop but don't close)
+    /// @param id Window ID
+    /// @return true on success
+    bool hideWindow(uint64_t id);
+
+    /// Show previously hidden window
+    /// @param id Window ID
+    /// @return true on success
+    bool showWindow(uint64_t id);
+
     /// Toggle fullscreen
     /// @param id Window ID
     /// @return true on success

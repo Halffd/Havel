@@ -99,6 +99,8 @@ private:
   static BytecodeValue handleWindowFocus(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowMinimize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowMaximize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowHide(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowShow(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   // Clipboard operations
   static BytecodeValue handleClipboardGet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleClipboardSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);

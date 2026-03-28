@@ -188,7 +188,8 @@ void HavelApp::initializeComponents(bool isStartup) {
             << std::endl;
 
   // Get AutomationSuite components with null guards
-  auto *suite = AutomationSuite::Instance();
+  // Pass IO to ensure proper initialization
+  auto *suite = AutomationSuite::Instance(io.get());
   auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
   auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
   auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
@@ -384,7 +385,8 @@ void HavelApp::initializeComponents(bool isStartup) {
       std::cerr << "[DEBUG] Creating interpreter..." << std::endl;
 
       // Get AutomationSuite components with null guards
-      auto *suite = AutomationSuite::Instance();
+      // Pass IO to ensure proper initialization
+      auto *suite = AutomationSuite::Instance(io.get());
       auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
       auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
       auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;

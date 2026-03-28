@@ -2,6 +2,7 @@
  * ModularHostBridges.cpp - Modular bridge component implementations
  */
 #include "ModularHostBridges.hpp"
+#include "havel-lang/compiler/bytecode/VMApi.hpp"
 
 #include "gui/ClipboardManager.hpp"
 #include "host/async/AsyncService.hpp"
@@ -504,10 +505,107 @@ void UIBridge::install(PipelineOptions &options) {
   };
 }
 
+// Helper: Create window object with data fields and methods
+static BytecodeValue createWindowObject(VM* vm, const HostContext* ctx, uint64_t windowId,
+                                        const std::string& title = "",
+                                        const std::string& windowClass = "",
+                                        const std::string& exe = "",
+                                        int pid = 0,
+                                        const std::string& cmdline = "") {
+  if (!vm || !ctx || !ctx->windowManager) {
+    return BytecodeValue(nullptr);
+  }
+  
+  VMApi api(*vm);
+  auto obj = api.makeObject();
+  api.setField(obj, "id", BytecodeValue(static_cast<int64_t>(windowId)));
+  api.setField(obj, "title", BytecodeValue(title));
+  api.setField(obj, "class", BytecodeValue(windowClass));
+  api.setField(obj, "exe", BytecodeValue(exe));
+  api.setField(obj, "pid", BytecodeValue(static_cast<int64_t>(pid)));
+  api.setField(obj, "cmd", BytecodeValue(cmdline));
+  
+  // Generate unique function names for this window instance
+  std::string prefix = "_win_" + std::to_string(windowId) + "_";
+  
+  // Register methods for this specific window
+  api.registerFunction(prefix + "close", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.closeWindow(windowId));
+  });
+  
+  api.registerFunction(prefix + "hide", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    winService.hideWindow(windowId);
+    return BytecodeValue(true);
+  });
+  
+  api.registerFunction(prefix + "show", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    winService.showWindow(windowId);
+    return BytecodeValue(true);
+  });
+  
+  api.registerFunction(prefix + "focus", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.focusWindow(windowId));
+  });
+  
+  api.registerFunction(prefix + "min", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.minimizeWindow(windowId));
+  });
+  
+  api.registerFunction(prefix + "max", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    (void)args;
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.maximizeWindow(windowId));
+  });
+  
+  api.registerFunction(prefix + "resize", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) return BytecodeValue(false);
+    int w = 0, h = 0;
+    if (auto *v = std::get_if<int64_t>(&args[0])) w = static_cast<int>(*v);
+    else if (auto *v = std::get_if<double>(&args[0])) w = static_cast<int>(*v);
+    if (auto *v = std::get_if<int64_t>(&args[1])) h = static_cast<int>(*v);
+    else if (auto *v = std::get_if<double>(&args[1])) h = static_cast<int>(*v);
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.resizeWindow(windowId, w, h));
+  });
+  
+  api.registerFunction(prefix + "move", [ctx, windowId](const std::vector<BytecodeValue>& args) {
+    if (args.size() < 2) return BytecodeValue(false);
+    int x = 0, y = 0;
+    if (auto *v = std::get_if<int64_t>(&args[0])) x = static_cast<int>(*v);
+    else if (auto *v = std::get_if<double>(&args[0])) x = static_cast<int>(*v);
+    if (auto *v = std::get_if<int64_t>(&args[1])) y = static_cast<int>(*v);
+    else if (auto *v = std::get_if<double>(&args[1])) y = static_cast<int>(*v);
+    havel::host::WindowService winService(ctx->windowManager);
+    return BytecodeValue(winService.moveWindow(windowId, x, y));
+  });
+  
+  // Set method references on the object
+  api.setField(obj, "close", api.makeFunctionRef(prefix + "close"));
+  api.setField(obj, "hide", api.makeFunctionRef(prefix + "hide"));
+  api.setField(obj, "show", api.makeFunctionRef(prefix + "show"));
+  api.setField(obj, "focus", api.makeFunctionRef(prefix + "focus"));
+  api.setField(obj, "min", api.makeFunctionRef(prefix + "min"));
+  api.setField(obj, "max", api.makeFunctionRef(prefix + "max"));
+  api.setField(obj, "resize", api.makeFunctionRef(prefix + "resize"));
+  api.setField(obj, "move", api.makeFunctionRef(prefix + "move"));
+  
+  return BytecodeValue(obj);
+}
+
 BytecodeValue UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &args,
                                               const HostContext *ctx) {
   (void)args;
-  if (!ctx->windowManager) {
+  if (!ctx->windowManager || !ctx->vm) {
     return BytecodeValue(nullptr);
   }
   havel::host::WindowService winService(ctx->windowManager);
@@ -515,15 +613,8 @@ BytecodeValue UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &
   if (!info.valid) {
     return BytecodeValue(nullptr);
   }
-  auto *vm = static_cast<VM *>(ctx->vm);
-  auto obj = vm->createHostObject();
-  vm->setHostObjectField(obj, "id", BytecodeValue(static_cast<int64_t>(info.id)));
-  vm->setHostObjectField(obj, "title", BytecodeValue(info.title));
-  vm->setHostObjectField(obj, "class", BytecodeValue(info.windowClass));
-  vm->setHostObjectField(obj, "exe", BytecodeValue(info.exe));
-  vm->setHostObjectField(obj, "pid", BytecodeValue(static_cast<int64_t>(info.pid)));
-  vm->setHostObjectField(obj, "cmd", BytecodeValue(info.cmdline));
-  return BytecodeValue(obj);
+  return createWindowObject(static_cast<VM*>(ctx->vm), ctx, info.id,
+                            info.title, info.windowClass, info.exe, info.pid, info.cmdline);
 }
 
 BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
@@ -586,18 +677,11 @@ BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,
     }
     
     if (match) {
-      auto *vm = static_cast<VM *>(ctx->vm);
-      auto obj = vm->createHostObject();
-      vm->setHostObjectField(obj, "id", BytecodeValue(static_cast<int64_t>(win.id)));
-      vm->setHostObjectField(obj, "title", BytecodeValue(win.title));
-      vm->setHostObjectField(obj, "class", BytecodeValue(win.windowClass));
-      vm->setHostObjectField(obj, "exe", BytecodeValue(win.exe));
-      vm->setHostObjectField(obj, "pid", BytecodeValue(static_cast<int64_t>(win.pid)));
-      vm->setHostObjectField(obj, "cmd", BytecodeValue(win.cmdline));
-      return BytecodeValue(obj);
+      return createWindowObject(static_cast<VM*>(ctx->vm), ctx, win.id,
+                                win.title, win.windowClass, win.exe, win.pid, win.cmdline);
     }
   }
-  
+
   return BytecodeValue(nullptr);
 }
 

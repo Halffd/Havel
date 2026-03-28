@@ -316,6 +316,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       error("Failed to initialize HavelApp");
       return 1;
     }
+    
+    std::cerr << "[DEBUG] HavelApp initialized, checking VM..." << std::endl;
 
     // Execute with bytecode VM through HavelApp
     auto *bytecodeVM = havelApp.getBytecodeVM();
@@ -325,12 +327,15 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       error("Bytecode VM not available");
       return 1;
     }
+    
+    std::cerr << "[DEBUG] VM and HostBridge available, executing script..." << std::endl;
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
       options.compile_unit_name = cfg.scriptFile;
       options.vm_override = bytecodeVM;
 
+      std::cerr << "[DEBUG] Running bytecode pipeline for: " << cfg.scriptFile << std::endl;
       auto vmResult =
           havel::compiler::runBytecodePipeline(code, "__main__", options);
       info("Startup script executed successfully with bytecode VM");

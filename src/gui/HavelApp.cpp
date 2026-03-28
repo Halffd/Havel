@@ -250,6 +250,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Initialize bytecode VM and HostBridge
   try {
     info("Initializing bytecode VM and HostBridge...");
+    std::cerr << "[DEBUG] Creating VM..." << std::endl;
 
     // Create VM with context
     bytecodeVM = std::make_unique<compiler::VM>(ctx);
@@ -257,17 +258,26 @@ void HavelApp::initializeComponents(bool isStartup) {
     // Set VM pointer in context (non-owning)
     ctx.vm = bytecodeVM.get();
 
+    std::cerr << "[DEBUG] Creating HostBridge..." << std::endl;
+
     // Create HostBridge with context
     hostBridge = compiler::createHostBridge(ctx);
+
+    std::cerr << "[DEBUG] Registering stdlib modules..." << std::endl;
 
     // Register stdlib modules with VM
     registerStdLibWithVM(*hostBridge);
 
+    std::cerr << "[DEBUG] Installing HostBridge (this may take a moment)..." << std::endl;
+
     hostBridge->install();
+
+    std::cerr << "[DEBUG] HostBridge installed successfully" << std::endl;
 
     info("Bytecode VM and HostBridge initialized successfully");
   } catch (const std::exception& e) {
     error("Failed to initialize bytecode VM: {}", e.what());
+    std::cerr << "[DEBUG] Exception during VM initialization: " << e.what() << std::endl;
     // Continue anyway - VM is optional for now
   }
   

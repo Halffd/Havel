@@ -60,7 +60,7 @@ static BytecodeValue fromString(const std::string &s) {
 }
 
 // config.get(key, default?) - Get config value
-static BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
+BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
   if (args.empty()) {
     throw std::runtime_error("config.get() requires at least 1 argument: key");
   }
@@ -80,7 +80,7 @@ static BytecodeValue configGet(const std::vector<BytecodeValue> &args) {
 }
 
 // config.set(key, value) - Set config value (in memory only)
-static BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
+BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
   if (args.size() < 2) {
     throw std::runtime_error("config.set() requires 2 arguments: key, value");
   }
@@ -88,14 +88,19 @@ static BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
   std::string key = toString(args[0]);
   std::string value = toString(args[1]);
 
+  std::cerr << "[DEBUG] configSet called: key=" << key << " value=" << value << std::endl;
+
   auto &config = Configs::Get();
   config.Set(key, value, false);  // Don't save yet
+  
+  std::string stored = config.Get<std::string>(key, "NOT_STORED");
+  std::cerr << "[DEBUG] configSet: stored value=" << stored << std::endl;
 
   return BytecodeValue(true);
 }
 
 // config.save() - Save config to file
-static BytecodeValue configSave(const std::vector<BytecodeValue> &args) {
+BytecodeValue configSave(const std::vector<BytecodeValue> &args) {
   (void)args;
   
   auto &config = Configs::Get();
@@ -105,7 +110,7 @@ static BytecodeValue configSave(const std::vector<BytecodeValue> &args) {
 }
 
 // config.getAll() - Get all config as object
-static BytecodeValue configGetAll(VMApi &api, const std::vector<BytecodeValue> &args) {
+BytecodeValue configGetAll(VMApi &api, const std::vector<BytecodeValue> &args) {
   (void)args;
   
   auto &config = Configs::Get();
@@ -121,7 +126,7 @@ static BytecodeValue configGetAll(VMApi &api, const std::vector<BytecodeValue> &
 }
 
 // config.load() - Reload config from file
-static BytecodeValue configLoad(const std::vector<BytecodeValue> &args) {
+BytecodeValue configLoad(const std::vector<BytecodeValue> &args) {
   (void)args;
   
   auto &config = Configs::Get();
@@ -132,13 +137,17 @@ static BytecodeValue configLoad(const std::vector<BytecodeValue> &args) {
 
 // Register config module with VM
 void registerConfigModule(VMApi &api) {
+  std::cerr << "[DEBUG] registerConfigModule called" << std::endl;
+  
   // config.get(key, default?)
   api.registerFunction("config.get", [](const std::vector<BytecodeValue> &args) {
+    std::cerr << "[DEBUG] config.get lambda called" << std::endl;
     return configGet(args);
   });
-  
+
   // config.set(key, value)
   api.registerFunction("config.set", [](const std::vector<BytecodeValue> &args) {
+    std::cerr << "[DEBUG] config.set lambda called" << std::endl;
     return configSet(args);
   });
   
@@ -156,16 +165,10 @@ void registerConfigModule(VMApi &api) {
   api.registerFunction("config.load", [](const std::vector<BytecodeValue> &args) {
     return configLoad(args);
   });
-  
-  // Register config global object with methods
-  auto configObj = api.makeObject();
-  api.setField(configObj, "get", api.makeFunctionRef("config.get"));
-  api.setField(configObj, "set", api.makeFunctionRef("config.set"));
-  api.setField(configObj, "save", api.makeFunctionRef("config.save"));
-  api.setField(configObj, "getAll", api.makeFunctionRef("config.getAll"));
-  api.setField(configObj, "load", api.makeFunctionRef("config.load"));
-  api.setGlobal("config", configObj);
-  
+
+  // Note: config.* functions are registered directly as host functions in StdLibModules.cpp
+  // We don't register a config object here to avoid conflicts with module.function call syntax
+
   info("Config module registered");
 }
 

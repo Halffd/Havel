@@ -96,10 +96,11 @@ havel::Configs &havel::Configs::Get() {
 
 havel::Configs::~Configs() {
   StopFileWatching();
-  // Only save if we have a valid config path (not in pure mode)
-  if (!path.empty()) {
-    ForceSave(); // Ensure pending saves are completed
-  }
+  // Don't save during destruction - static strings may already be destroyed
+  // causing use-after-free. Config should be saved explicitly via config.save()
+  // if (!path.empty()) {
+  //   ForceSave(); // Ensure pending saves are completed
+  // }
 }
 
 std::filesystem::file_time_type

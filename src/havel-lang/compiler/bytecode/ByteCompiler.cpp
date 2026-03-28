@@ -749,6 +749,36 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
     compileTryStatement(static_cast<const ast::TryExpression &>(statement));
     break;
 
+  case ast::NodeType::ConfigBlock: {
+    // Config block: config { key = value; ... }
+    // Compile to: conf.key = value; config.set("key", value);
+    const auto &configBlock = static_cast<const ast::ConfigBlock &>(statement);
+    
+    for (const auto &pair : configBlock.pairs) {
+      const std::string &key = pair.first;
+      const auto &valueExpr = pair.second;
+      
+      if (!valueExpr) {
+        throw std::runtime_error("Config block pair has null value for key: " + key);
+      }
+      
+      // Compile value expression
+      compileExpression(*valueExpr);
+      
+      // Set conf.key = value (conf object is global)
+      emit(OpCode::LOAD_GLOBAL, "conf");
+      emit(OpCode::LOAD_CONST, addConstant(key));
+      emit(OpCode::OBJECT_SET);
+      
+      // Call config.set(key, value) to save to file
+      emit(OpCode::LOAD_CONST, addConstant(key));
+      compileExpression(*valueExpr);  // Re-compile value for config.set
+      emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"config.set", static_cast<uint32_t>(2)});
+      emit(OpCode::POP);  // Discard result
+    }
+    break;
+  }
+
   case ast::NodeType::WhenBlockStatement:
     compileWhenBlock(static_cast<const ast::WhenBlock &>(statement));
     break;

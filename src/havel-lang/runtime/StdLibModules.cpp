@@ -7,6 +7,7 @@
 
 #include "../compiler/bytecode/HostBridge.hpp"
 #include "../compiler/bytecode/VMApi.hpp"
+#include "../../modules/config/ConfigModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -37,6 +38,13 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   stdlib::registerRegexModule(*api);   // RegexModule
   stdlib::registerPhysicsModule(*api); // PhysicsModule (constants)
   stdlib::registerTimeModule(*api);    // TimeModule (timestamps)
+  
+  // Register config module (has OS dependencies - config file access)
+  modules::registerConfigModule(*api);
+  
+  // Auto-load config from file to global conf object
+  // TEMPORARILY DISABLED - debugging hang issue
+  // modules::autoLoadConfig(*api);
 
   // Register host global names for pure stdlib only
   bridge.options().host_global_names.insert("PI");
@@ -54,6 +62,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("utility");
   bridge.options().host_global_names.insert("regex");
   bridge.options().host_global_names.insert("Regex");
+  bridge.options().host_global_names.insert("config");
+  bridge.options().host_global_names.insert("conf");
   bridge.options().host_global_names.insert("Physics");
   bridge.options().host_global_names.insert("physics");
   bridge.options().host_global_names.insert("E_CHARGE");

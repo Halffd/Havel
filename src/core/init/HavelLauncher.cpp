@@ -290,6 +290,13 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
 
     // Initialize Qt for script execution (GUI available by default)
     info("Hotkeys or GUI operations detected - initializing Qt");
+    
+    // Debug: Show mode information
+    std::cerr << "[DEBUG] Running in SCRIPT mode:" << std::endl;
+    std::cerr << "  - Script file: " << cfg.scriptFile << std::endl;
+    std::cerr << "  - GUI: enabled" << std::endl;
+    std::cerr << "  - REPL: disabled" << std::endl;
+    std::cerr << "  - Minimal mode: " << (cfg.minimalMode ? "yes" : "no") << std::endl;
 
     int dummy_argc = 1;
     char dummy_name[] = "havel-script";
@@ -357,6 +364,13 @@ int havel::init::HavelLauncher::runScriptOnly(const LaunchConfig &cfg, int argc,
   // Useful for testing scripts that auto-exit or don't need input
 
   info("Running Havel script (pure mode): {}", cfg.scriptFile);
+  
+  // Debug: Show mode information
+  std::cerr << "[DEBUG] Running in MINIMAL mode (--run):" << std::endl;
+  std::cerr << "  - Script file: " << cfg.scriptFile << std::endl;
+  std::cerr << "  - GUI: disabled" << std::endl;
+  std::cerr << "  - REPL: disabled" << std::endl;
+  std::cerr << "  - IO/Hotkeys: disabled" << std::endl;
 
   // Read script file
   std::ifstream file(cfg.scriptFile);
@@ -642,32 +656,42 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
     if (cfg.minimalMode) {
       info("Starting Havel REPL in minimal mode (no IO/hotkeys)...");
       
+      // Debug: Show mode information
+      std::cerr << "[DEBUG] Running in REPL mode (minimal):" << std::endl;
+      std::cerr << "  - GUI: disabled" << std::endl;
+      std::cerr << "  - IO/Hotkeys: disabled" << std::endl;
+
       // Create minimal host API for REPL (no IO, no hotkeys)
       auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
-      
+
       // Initialize service registry
       havel::initializeServiceRegistry(hostAPI);
-      
+
       // Create REPL
       havel::repl::REPLConfig replConfig;
       replConfig.debugMode = cfg.debugMode;
       replConfig.stopOnError = cfg.stopOnError;
-      
+
       havel::repl::REPL repl(replConfig);
       repl.initialize(hostAPI);
-      
+
       // Run REPL
       return repl.run();
     } else {
       info("Starting Havel REPL with full features (hotkeys, GUI)...");
       
+      // Debug: Show mode information
+      std::cerr << "[DEBUG] Running in REPL mode (full):" << std::endl;
+      std::cerr << "  - GUI: enabled" << std::endl;
+      std::cerr << "  - IO/Hotkeys: enabled" << std::endl;
+
       // Full mode - initialize Qt and HavelApp
       int dummy_argc = 1;
       char dummy_name[] = "havel-repl";
       char *dummy_argv[] = {dummy_name, nullptr};
       QApplication app(dummy_argc, dummy_argv);
       app.setQuitOnLastWindowClosed(false);
-      
+
       // Create HavelApp with full features
       std::vector<std::string> args;
       HavelApp havelApp(false, "", false, true, args);

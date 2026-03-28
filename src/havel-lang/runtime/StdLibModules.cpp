@@ -96,6 +96,31 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("toString");
   bridge.options().host_global_names.insert("toNumber");
   bridge.options().host_global_names.insert("help");
+  // Pipeline function aliases - add to both host_functions and host_global_names
+  bridge.options().host_functions.insert({"upper", [](const std::vector<compiler::BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    return compiler::BytecodeValue(s);
+  }});
+  bridge.options().host_functions.insert({"lower", [](const std::vector<compiler::BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return compiler::BytecodeValue(s);
+  }});
+  bridge.options().host_functions.insert({"trim", [](const std::vector<compiler::BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return compiler::BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) return compiler::BytecodeValue(std::string(""));
+    size_t end = s.find_last_not_of(" \t\n\r");
+    return compiler::BytecodeValue(s.substr(start, end - start + 1));
+  }});
+  bridge.options().host_global_names.insert("upper");
+  bridge.options().host_global_names.insert("lower");
+  bridge.options().host_global_names.insert("trim");
+  bridge.options().host_global_names.insert("replace");
 
   // HOST services are registered separately through HostBridge
   // File, Process, Timer, Hotkey, Window, Clipboard, IO -> host layer

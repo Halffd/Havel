@@ -685,8 +685,11 @@ struct HotkeyBinding : public Statement {
   std::unique_ptr<Statement> action;
   // Changed from Expression to Statement
 
-  // Conditional support
+  // Conditional support - legacy string conditions
   std::vector<std::string> conditions; // e.g., ["mode gaming", "title genshin"]
+  
+  // New: Complex condition expression (e.g., mode == "work" && system.cpu() < 80)
+  std::unique_ptr<Expression> conditionExpr;
 
   // Direct key mapping support (e.g., Left => A)
   bool isKeyMapping = false;

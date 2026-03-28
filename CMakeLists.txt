@@ -310,10 +310,13 @@ set(HAVEL_LANG_SOURCES "")
 if(ENABLE_HAVEL_LANG)
     file(GLOB_RECURSE HAVEL_LANG_SOURCES "src/havel-lang/*.cpp")
     # Exclude LSP sources (they have their own target)
+    # Exclude C API sources (not implemented)
     list(REMOVE_ITEM HAVEL_LANG_SOURCES
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/main.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/lsp/LanguageServer.cpp
         ${CMAKE_SOURCE_DIR}/src/havel-lang/tools/BytecodeSmokeMain.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/bytecode/HavelAPI.cpp
+        ${CMAKE_SOURCE_DIR}/src/havel-lang/compiler/bytecode/HavelValue.cpp
     )
 endif()
 

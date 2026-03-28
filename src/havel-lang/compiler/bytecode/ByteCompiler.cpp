@@ -2165,6 +2165,7 @@ void ByteCompiler::compileCallExpression(
         // Check for string.* VM intrinsics
         if (typeName == "string") {
           if (property->symbol == "len" || property->symbol == "length") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2172,6 +2173,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_LEN);
             return;
           } else if (property->symbol == "upper") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2179,6 +2181,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_UPPER);
             return;
           } else if (property->symbol == "lower") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2186,6 +2189,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_LOWER);
             return;
           } else if (property->symbol == "trim") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2193,6 +2197,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_TRIM);
             return;
           } else if (property->symbol == "includes" || property->symbol == "has") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2200,6 +2205,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_HAS);
             return;
           } else if (property->symbol == "startswith" || property->symbol == "starts") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);
@@ -2207,6 +2213,7 @@ void ByteCompiler::compileCallExpression(
             emit(OpCode::STRING_STARTS);
             return;
           } else if (property->symbol == "endswith" || property->symbol == "ends") {
+            compileExpression(*member.object);  // Push string first
             for (const auto &arg : expression.args) {
               if (!arg) throw std::runtime_error("Call expression contains null argument");
               compileExpression(*arg);

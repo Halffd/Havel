@@ -320,6 +320,9 @@ endif()
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 
+# Explicitly add WindowMonitorModule (GLOB might not catch new files)
+list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
+
 # Test sources (conditional)
 set(TEST_SOURCES "")
 if(ENABLE_TESTS)

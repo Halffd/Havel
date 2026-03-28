@@ -375,8 +375,6 @@ void havel::Configs::StopFileWatching() {
   }
 }
 
-} // namespace havel
-
 void havel::Configs::Watch(const std::string &key, WatchCallback callback) {
   watchers[key] = callback;
 }
@@ -389,6 +387,4 @@ void havel::Configs::Print() const {
   std::cout << "====================" << std::endl;
 }
 
-namespace havel {
-Configs &g_Configs = Configs::Get();
 } // namespace havel

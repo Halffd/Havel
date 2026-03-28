@@ -1,2 +1,12 @@
+/*
+ * HelpModule.hpp - Help system for bytecode VM
+ */
 #pragma once
-namespace havel { namespace modules { void registerModuleStub(); } }
+#include "havel-lang/compiler/bytecode/VMApi.hpp"
+
+namespace havel::modules {
+
+// Register help module with VM
+void registerHelpModule(compiler::VMApi &api);
+
+} // namespace havel::modules

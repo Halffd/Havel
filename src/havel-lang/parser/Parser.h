@@ -76,6 +76,9 @@ private:
 
   [[noreturn]] void fail(const std::string &message);
   [[noreturn]] void failAt(const Token &token, const std::string &message);
+  
+  // Error recovery
+  void errorAt(const Token &token, const std::string &message);
 
   // Helper methods - return const references to avoid copies
   const Token& at(size_t offset = 0) const;

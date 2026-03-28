@@ -2286,7 +2286,7 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
   binding->hotkeys.push_back(
       std::make_unique<havel::ast::HotkeyLiteral>(hotkeyToken.value));
 
-  // Check for conditional 'when' clause
+  // Check for conditional 'when' or 'if' clause
   if (at().type == havel::TokenType::When) {
     advance(); // consume 'when'
 
@@ -2317,6 +2317,10 @@ std::unique_ptr<havel::ast::HotkeyBinding> Parser::parseHotkeyBinding() {
 
       break;
     }
+  } else if (at().type == havel::TokenType::If) {
+    // New: Complex condition expression
+    advance(); // consume 'if'
+    binding->conditionExpr = parseExpression();
   }
 
   // Expect and consume the arrow operator '=>'

@@ -460,6 +460,29 @@ void HostBridge::install() {
     return BytecodeValue(s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0);
   };
 
+  // Standalone aliases for pipeline support (e.g., clipboard.get | upper | trim)
+  options_.host_functions["upper"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    return BytecodeValue(s);
+  };
+  options_.host_functions["lower"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+    return BytecodeValue(s);
+  };
+  options_.host_functions["trim"] = [this](const std::vector<BytecodeValue>& args) {
+    if (args.empty() || !std::holds_alternative<std::string>(args[0])) return BytecodeValue(nullptr);
+    std::string s = std::get<std::string>(args[0]);
+    size_t start = s.find_first_not_of(" \t\n\r");
+    if (start == std::string::npos) return BytecodeValue(std::string(""));
+    size_t end = s.find_last_not_of(" \t\n\r");
+    return BytecodeValue(s.substr(start, end - start + 1));
+  };
+  options_.host_functions["replace"] = options_.host_functions["any.replace"];
+
   // any.in(value, container) - membership test
   options_.host_functions["any.in"] = [this](const std::vector<BytecodeValue>& args) {
     if (args.size() < 2) {

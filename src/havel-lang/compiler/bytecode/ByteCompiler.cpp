@@ -611,9 +611,14 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
         emit(OpCode::LOAD_CONST, addConstant(nullptr));
       }
 
-      uint32_t slot = declarationSlot(*identifier);
-      reserveLocalSlot(slot);
-      emit(OpCode::STORE_VAR, slot);
+      // Check if this is a global variable (top-level let)
+      if (lexical_resolution_.global_variables.count(identifier->symbol) > 0) {
+        emit(OpCode::STORE_GLOBAL, identifier->symbol);
+      } else {
+        uint32_t slot = declarationSlot(*identifier);
+        reserveLocalSlot(slot);
+        emit(OpCode::STORE_VAR, slot);
+      }
       break;
     }
 
@@ -1338,7 +1343,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
            addConstant(FunctionObject{.function_index = it->second}));
     } break;
     case ResolvedBindingKind::HostGlobal:
-      emit(OpCode::LOAD_GLOBAL, binding->slot);
+      emit(OpCode::LOAD_GLOBAL, binding->name);
       break;
     case ResolvedBindingKind::Builtin:
       emit(OpCode::LOAD_CONST, addConstant(binding->name));

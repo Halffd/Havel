@@ -553,6 +553,17 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::PipelineExpression: {
+    const auto &pipeline = static_cast<const ast::PipelineExpression &>(expression);
+    // Resolve all stages in the pipeline
+    for (const auto &stage : pipeline.stages) {
+      if (stage) {
+        resolveExpression(*stage);
+      }
+    }
+    break;
+  }
+
   case ast::NodeType::ArrayLiteral: {
     const auto &array = static_cast<const ast::ArrayLiteral &>(expression);
     for (const auto &element : array.elements) {

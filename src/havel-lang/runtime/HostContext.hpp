@@ -49,6 +49,7 @@ class NetworkManager;
 namespace host {
 class AsyncService;
 }
+class WindowMonitor;  // Forward declaration for window monitoring
 
 /**
  * Capability - Base interface for pluggable host functionality
@@ -103,6 +104,7 @@ struct HostContext {
     class ProcessManager* processManager = nullptr;
     class net::NetworkManager* networkManager = nullptr;
     class host::AsyncService* asyncService = nullptr;
+    class WindowMonitor* windowMonitor = nullptr;  // Window monitoring for dynamic variables
     
     // Capability-based extensions (embedder-provided)
     std::unordered_map<std::string, std::shared_ptr<Capability>> caps;

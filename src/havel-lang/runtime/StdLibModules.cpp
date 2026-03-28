@@ -46,12 +46,8 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register window monitor module (dynamic window variables)
   modules::registerWindowMonitorModule(*api);
   
-  // Setup dynamic window globals (title, class, exe, pid)
-  modules::setupDynamicWindowGlobals(*api);
-  
-  // Auto-load config from file to global conf object
-  // TEMPORARILY DISABLED - debugging hang issue
-  // modules::autoLoadConfig(*api);
+  // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are initialized
+  // This ensures we use the existing WindowMonitor from HotkeyManager
 
   // Register host global names for pure stdlib only
   bridge.options().host_global_names.insert("PI");

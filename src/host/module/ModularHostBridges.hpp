@@ -44,7 +44,6 @@ public:
   explicit IOBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
 
-private:
   const HostContext *ctx_;
   static BytecodeValue handleSend(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args, const HostContext *ctx);
@@ -77,6 +76,12 @@ private:
   static BytecodeValue handleProcessExists(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessKill(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessNice(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleProcessRun(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleProcessRunDetached(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // Aliases from other bridges
+  static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMouseMove(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleMouseClick(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**
@@ -152,7 +157,6 @@ public:
   explicit MediaBridge(const HostContext *ctx) : ctx_(ctx) {}
   void install(PipelineOptions &options) override;
 
-private:
   const HostContext *ctx_;
   static BytecodeValue handleMediaPlayPause(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args, const HostContext *ctx);

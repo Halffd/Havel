@@ -71,7 +71,13 @@ private:
       "system.gc",  "system.gcStats",  "system_gc",
       "system_gcStats",
       // Pipeline functions (standalone aliases for string methods)
-      "upper", "lower", "trim", "replace"};
+      "upper", "lower", "trim", "replace",
+      // Process aliases
+      "run", "runDetached",
+      // Media aliases
+      "play",
+      // Mouse aliases
+      "mouse.move", "mouse.click"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "io", "system", "hotkey", "mode", "process", "async",

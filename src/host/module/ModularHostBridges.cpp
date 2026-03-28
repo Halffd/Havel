@@ -3,7 +3,7 @@
  */
 #include "ModularHostBridges.hpp"
 #include "havel-lang/compiler/bytecode/VMApi.hpp"
-
+#include "process/Launcher.hpp"
 #include "gui/ClipboardManager.hpp"
 #include "host/async/AsyncService.hpp"
 #include "host/audio/AudioService.hpp"
@@ -240,6 +240,28 @@ void SystemBridge::install(PipelineOptions &options) {
   options.host_functions["process.nice"] = [ctx = ctx_](const auto &args) {
     return handleProcessNice(args, ctx);
   };
+  options.host_functions["process.run"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRun(args, ctx);
+  };
+  options.host_functions["process.runDetached"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRunDetached(args, ctx);
+  };
+  // Global aliases for convenience
+  options.host_functions["run"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRun(args, ctx);
+  };
+  options.host_functions["runDetached"] = [ctx = ctx_](const auto &args) {
+    return handleProcessRunDetached(args, ctx);
+  };
+  options.host_functions["play"] = [ctx = ctx_](const auto &args) {
+    return handleMediaPlay(args, ctx);
+  };
+  options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
+    return handleMouseMove(args, ctx);
+  };
+  options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
+    return handleMouseClick(args, ctx);
+  };
 }
 
 BytecodeValue SystemBridge::handleFileRead(const std::vector<BytecodeValue> &args,
@@ -442,6 +464,58 @@ BytecodeValue SystemBridge::handleProcessNice(const std::vector<BytecodeValue> &
     throw std::runtime_error("process.nice() nice value must be between -20 and 19");
   }
   return BytecodeValue(havel::host::ProcessService::setNice(pid, static_cast<int>(nice)));
+}
+
+BytecodeValue SystemBridge::handleProcessRun(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    throw std::runtime_error("process.run() requires a command");
+  }
+  const std::string *cmd = std::get_if<std::string>(&args[0]);
+  if (!cmd) {
+    throw std::runtime_error("process.run() requires a string command");
+  }
+  auto result = havel::Launcher::run(*cmd, {}, {});
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "pid", BytecodeValue(result.pid));
+  vm->setHostObjectField(obj, "exitCode", BytecodeValue(result.exitCode));
+  vm->setHostObjectField(obj, "success", BytecodeValue(result.success));
+  vm->setHostObjectField(obj, "error", BytecodeValue(result.error));
+  vm->setHostObjectField(obj, "stdout", BytecodeValue(result.stdout));
+  vm->setHostObjectField(obj, "stderr", BytecodeValue(result.stderr));
+  return BytecodeValue(obj);
+}
+
+BytecodeValue SystemBridge::handleProcessRunDetached(const std::vector<BytecodeValue> &args,
+                                                     const HostContext *ctx) {
+  (void)ctx;
+  if (args.empty()) {
+    throw std::runtime_error("process.runDetached() requires a command");
+  }
+  const std::string *cmd = std::get_if<std::string>(&args[0]);
+  if (!cmd) {
+    throw std::runtime_error("process.runDetached() requires a string command");
+  }
+  auto result = havel::Launcher::runDetached(*cmd);
+  return BytecodeValue(result.pid);
+}
+
+// Alias implementations - forward to appropriate bridge handlers
+BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  return MediaBridge::handleMediaPlay(args, ctx);
+}
+
+BytecodeValue SystemBridge::handleMouseMove(const std::vector<BytecodeValue> &args,
+                                            const HostContext *ctx) {
+  return IOBridge::handleMouseMove(args, ctx);
+}
+
+BytecodeValue SystemBridge::handleMouseClick(const std::vector<BytecodeValue> &args,
+                                             const HostContext *ctx) {
+  return IOBridge::handleMouseClick(args, ctx);
 }
 
 // ============================================================================

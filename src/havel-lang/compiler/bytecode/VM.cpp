@@ -365,6 +365,9 @@ BytecodeValue VM::callFunctionSync(const BytecodeValue &fn, const std::vector<By
 void VM::registerHostFunction(const std::string &name,
                               BytecodeHostFunction function) {
   host_functions[name] = std::move(function);
+  // Also register as a global value so it can be loaded and called like a normal function
+  // This enables pipeline syntax: "hello" | upper
+  globals[name] = BytecodeValue(HostFunctionRef{name});
 }
 
 void VM::registerHostFunction(const std::string &name, size_t arity,

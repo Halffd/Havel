@@ -67,7 +67,9 @@ private:
   std::unordered_set<std::string> builtins_{
       "print",      "sleep_ms",        "clock_ms",
       "system.gc",  "system.gcStats",  "system_gc",
-      "system_gcStats"};
+      "system_gcStats",
+      // Pipeline functions (standalone aliases for string methods)
+      "upper", "lower", "trim", "replace"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "io", "system", "hotkey", "mode", "process", "async",

@@ -84,13 +84,13 @@ static BytecodeValue configSet(const std::vector<BytecodeValue> &args) {
   if (args.size() < 2) {
     throw std::runtime_error("config.set() requires 2 arguments: key, value");
   }
-  
+
   std::string key = toString(args[0]);
   std::string value = toString(args[1]);
-  
+
   auto &config = Configs::Get();
   config.Set(key, value, false);  // Don't save yet
-  
+
   return BytecodeValue(true);
 }
 

@@ -219,7 +219,7 @@ private:
 // Inline implementation for Set (needs to call Save which is in cpp)
 inline void Configs::Set(const std::string &key, const std::string &value,
                          bool save) {
-  config.set(key, value);
+  config.setString(key, value);  // Use setString directly to avoid template issues
   if (save) {
     RequestSave(); // Use debounced save
   }

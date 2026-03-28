@@ -143,8 +143,8 @@ HavelLauncher::LaunchConfig HavelLauncher::parseArgs(int argc, char *argv[]) {
     // REPL only mode - full features by default
     cfg.mode = Mode::SCRIPT_AND_REPL;
   } else if (cfg.scriptFile.empty() && cfg.mode == Mode::DAEMON) {
-    // No script, no REPL - daemon mode
-    cfg.mode = Mode::DAEMON;
+    // No script, no REPL, no GUI flag - default to REPL mode
+    cfg.mode = Mode::REPL;
   }
   // Otherwise use the mode already set (GUI_ONLY, SCRIPT_ONLY, SCRIPT, CLI)
 
@@ -661,9 +661,10 @@ void havel::init::HavelLauncher::showHelp() {
       << "  --run               Run script in minimal mode (auto-enables -m)\n";
   std::cout << "  --help, -h          Show this help\n";
   std::cout << "\nIf a .hv script file is provided, it will be executed.\n";
-  std::cout << "If no script is provided, the GUI tray application starts.\n";
+  std::cout << "If no arguments are provided, starts interactive REPL with full features.\n";
   std::cout << "\nModes:\n";
-  std::cout << "  havel script.hv           - Run script with FULL features\n";
+  std::cout << "  havel                   - Start interactive REPL (full features)\n";
+  std::cout << "  havel script.hv         - Run script with FULL features\n";
   std::cout << "  havel --repl script.hv    - Run script then REPL (FULL features)\n";
   std::cout << "  havel --repl              - Start REPL with FULL features\n";
   std::cout << "  havel --full-repl         - Start REPL with ALL features\n";

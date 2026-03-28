@@ -69,8 +69,13 @@ ByteCompiler::compile(const ast::Program &program) {
   LexicalResolver resolver(host_builtin_names_, host_global_names_);
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
-    throw std::runtime_error("Lexical resolution failed: " +
-                             resolver.errors().front());
+    // Collect all errors
+    std::ostringstream oss;
+    oss << "Lexical resolution failed with " << resolver.errors().size() << " error(s):\n";
+    for (const auto& err : resolver.errors()) {
+      oss << "  - " << err << "\n";
+    }
+    throw std::runtime_error(oss.str());
   }
 
   // Reserve function indices so forward references and recursion emit stable

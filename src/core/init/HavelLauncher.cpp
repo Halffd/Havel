@@ -329,6 +329,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
     }
     
     std::cerr << "[DEBUG] VM and HostBridge available, executing script..." << std::endl;
+    std::cerr << "[DEBUG] Script code length: " << code.size() << " bytes" << std::endl;
 
     try {
       havel::compiler::PipelineOptions options = hostBridge->options();
@@ -338,6 +339,7 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       std::cerr << "[DEBUG] Running bytecode pipeline for: " << cfg.scriptFile << std::endl;
       auto vmResult =
           havel::compiler::runBytecodePipeline(code, "__main__", options);
+      std::cerr << "[DEBUG] Bytecode pipeline completed" << std::endl;
       info("Startup script executed successfully with bytecode VM");
     } catch (const std::exception &e) {
       error("Startup script error: {}", e.what());

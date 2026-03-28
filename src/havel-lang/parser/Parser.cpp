@@ -71,6 +71,13 @@ void Parser::synchronizeTo(havel::TokenType type) {
 }
 
 const havel::Token& Parser::at(size_t offset) const {
+  // Sanity check - offset should never be huge (indicates memory corruption)
+  if (offset > 10000) {
+    std::cerr << "FATAL: Parser::at() called with invalid offset: " << offset 
+              << " (position=" << position << ", tokens.size()=" << tokens.size() << ")\n";
+    std::abort();
+  }
+  
   size_t pos = position + offset;
   static const havel::Token eofToken("EOF", havel::TokenType::EOF_TOKEN, "EOF", 0, 0);
   if (pos >= tokens.size()) {
@@ -87,7 +94,10 @@ const havel::Token& Parser::advance() {
   return tokens[position++];
 }
 
-bool Parser::notEOF() const { return at().type != havel::TokenType::EOF_TOKEN; }
+bool Parser::notEOF() const { 
+  // Don't call at() to avoid potential recursion - check directly
+  return position < tokens.size() && tokens[position].type != havel::TokenType::EOF_TOKEN; 
+}
 
 std::unique_ptr<havel::ast::Program>
 Parser::produceAST(const std::string &sourceCode) {

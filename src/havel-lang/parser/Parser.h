@@ -41,6 +41,13 @@ private:
   std::vector<Token> tokens;
   size_t position = 0;
 
+  // Prevent copying/moving - Parser must not be copied or moved
+  // to avoid memory corruption and invalid state
+  Parser(const Parser&) = delete;
+  Parser& operator=(const Parser&) = delete;
+  Parser(Parser&&) = delete;
+  Parser& operator=(Parser&&) = delete;
+
   // Controls whether `expr { ... }` is treated as call-sugar/lambda.
   // This must be disabled when parsing conditions for statements like
   // `if/while/when` to ensure the `{` starts the statement body.

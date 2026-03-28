@@ -33,45 +33,57 @@ std::string GetDefaultConfigDir() {
   return "./havel/";
 }
 
-std::string CONFIG_DIR = GetDefaultConfigDir();
-std::string MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
-std::string HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
-
-void SetConfigPath(const std::string &path, const std::string &basename) {
-  CONFIG_DIR = path;
-  MAIN_CONFIG = CONFIG_DIR + basename;
-  HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
+// Lazy initialization to avoid Qt calls during static initialization
+static std::string& GetConfigDirStatic() {
+  static std::string CONFIG_DIR = GetDefaultConfigDir();
+  return CONFIG_DIR;
 }
 
-std::string GetConfigPath() { return CONFIG_DIR; }
+static std::string& GetMainConfigStatic() {
+  static std::string MAIN_CONFIG = GetConfigDirStatic() + "havel.cfg";
+  return MAIN_CONFIG;
+}
+
+static std::string& GetHotkeysDirStatic() {
+  static std::string HOTKEYS_DIR = GetConfigDirStatic() + "hotkeys/";
+  return HOTKEYS_DIR;
+}
+
+void SetConfigPath(const std::string &path, const std::string &basename) {
+  GetConfigDirStatic() = path;
+  GetMainConfigStatic() = path + basename;
+  GetHotkeysDirStatic() = path + "hotkeys/";
+}
+
+std::string GetConfigPath() { return GetConfigDirStatic(); }
 
 std::string GetConfigPath(const std::string &filename) {
   if (filename.find('/') != std::string::npos) {
     return filename;
   }
-  return CONFIG_DIR + filename;
+  return GetConfigDirStatic() + filename;
 }
 
 void EnsureConfigDir() {
   namespace fs = std::filesystem;
   try {
-    if (CONFIG_DIR.empty()) {
+    if (GetConfigDirStatic().empty()) {
       std::cerr << "Config directory path is empty, using fallback\n";
-      CONFIG_DIR = "./havel/";
-      MAIN_CONFIG = CONFIG_DIR + "havel.cfg";
-      HOTKEYS_DIR = CONFIG_DIR + "hotkeys/";
+      GetConfigDirStatic() = "./havel/";
+      GetMainConfigStatic() = GetConfigDirStatic() + "havel.cfg";
+      GetHotkeysDirStatic() = GetConfigDirStatic() + "hotkeys/";
     }
 
-    if (!fs::exists(CONFIG_DIR)) {
-      fs::create_directories(CONFIG_DIR);
+    if (!fs::exists(GetConfigDirStatic())) {
+      fs::create_directories(GetConfigDirStatic());
     }
-    if (!fs::exists(HOTKEYS_DIR)) {
-      fs::create_directories(HOTKEYS_DIR);
+    if (!fs::exists(GetHotkeysDirStatic())) {
+      fs::create_directories(GetHotkeysDirStatic());
     }
   } catch (const fs::filesystem_error &e) {
     std::cerr << "Failed to create config directories: " << e.what()
-              << "\nDirectory: " << CONFIG_DIR << " " << HOTKEYS_DIR
-              << " Config: " << MAIN_CONFIG << "\n";
+              << "\nDirectory: " << GetConfigDirStatic() << " " << GetHotkeysDirStatic()
+              << " Config: " << GetMainConfigStatic() << "\n";
   }
 }
 } // namespace ConfigPaths

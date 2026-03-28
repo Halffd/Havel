@@ -637,9 +637,9 @@ int havel::init::HavelLauncher::runScriptAndRepl(const LaunchConfig &cfg, int,
       
       havel::initializeServiceRegistry(hostAPI);
       repl.initialize(hostAPI);
-      
+
       // Enter REPL
-      return app.exec();
+      return repl.run();
     }
   } catch (const std::exception &e) {
     error("Script+REPL error: {}", e.what());
@@ -764,9 +764,9 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       
       havel::initializeServiceRegistry(hostAPI);
       repl.initialize(hostAPI);
-      
+
       // Run REPL
-      return app.exec();
+      return repl.run();
     }
   } catch (const std::exception &e) {
     error("REPL error: {}", e.what());

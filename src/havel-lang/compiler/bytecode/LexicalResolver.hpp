@@ -34,6 +34,7 @@ struct LexicalResolutionResult {
       function_upvalues;
   std::unordered_map<const ast::LambdaExpression *, std::vector<UpvalueDescriptor>>
       lambda_upvalues;
+  std::unordered_set<std::string> global_variables;  // Top-level let declarations
 };
 
 class LexicalResolver {
@@ -63,6 +64,7 @@ private:
   std::vector<std::string> errors_;
   std::unordered_set<std::string> top_level_functions_;
   std::unordered_set<std::string> top_level_structs_;
+  std::unordered_set<std::string> global_variables_;  // Top-level let declarations
   std::vector<FunctionContext> function_stack_;
   std::unordered_set<std::string> builtins_{
       "print",      "sleep_ms",        "clock_ms",

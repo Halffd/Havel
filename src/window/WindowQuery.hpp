@@ -21,6 +21,7 @@ struct WindowInfo {
   std::string windowClass;
   std::string appId;
   std::string exe;
+  std::string cmdline;  // Full command line
   int pid = 0;
   int x = 0;
   int y = 0;

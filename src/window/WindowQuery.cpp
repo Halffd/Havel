@@ -24,6 +24,7 @@ WindowInfo WindowQuery::getActive() {
   info.windowClass = WindowManager::GetActiveWindowClass();
   info.pid = WindowManager::GetActiveWindowPID();
   info.exe = WindowManager::getProcessName(info.pid);
+  info.cmdline = WindowManager::getProcessCmdline(info.pid);
   info.valid = (info.id != 0);
 
   return info;

@@ -18,6 +18,11 @@ WindowInfo WindowService::getActiveWindowInfo() const {
     return wm_->getActiveWindowInfo();
 }
 
+WindowInfo WindowService::getWindowInfo(uint64_t id) const {
+    if (!wm_) return WindowInfo{};
+    return wm_->getWindowInfo(id);
+}
+
 std::vector<WindowInfo> WindowService::getAllWindows() const {
     if (!wm_) return {};
     return wm_->getAllWindows();

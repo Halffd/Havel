@@ -162,6 +162,84 @@ std::string WindowManager::GetActiveWindowProcess() {
 #endif
 }
 
+pID WindowManager::GetWindowPID(XWindow id) {
+#ifdef __linux__
+  if (id == 0) return 0;
+  
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return 0;
+
+  Atom pidAtom = XInternAtom(display, "_NET_WM_PID", x11::XTrue);
+  if (pidAtom == x11::XNone) return 0;
+
+  Atom actualType;
+  int actualFormat;
+  unsigned long nItems, bytesAfter;
+  unsigned char *propPID = nullptr;
+  pID pid = 0;
+
+  if (XGetWindowProperty(display, id, pidAtom, 0, 1, x11::XFalse,
+                         XA_CARDINAL, &actualType, &actualFormat, &nItems,
+                         &bytesAfter, &propPID) == x11::XSuccess) {
+    if (nItems > 0) {
+      pid = *reinterpret_cast<pID *>(propPID);
+    }
+    if (propPID) XFree(propPID);
+  }
+  return pid;
+#else
+  return 0;
+#endif
+}
+
+std::string WindowManager::GetWindowTitle(XWindow id) {
+#ifdef __linux__
+  if (id == 0) return "";
+  
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return "";
+  
+  char* windowName = nullptr;
+  if (XFetchName(display, id, &windowName) && windowName) {
+    std::string title(windowName);
+    XFree(windowName);
+    return title;
+  }
+  return "";
+#else
+  return "";
+#endif
+}
+
+std::string WindowManager::GetWindowClass(XWindow id) {
+#ifdef __linux__
+  if (id == 0) return "";
+  
+  Display *display = DisplayManager::GetDisplay();
+  if (!display) return "";
+  
+  XClassHint classHint;
+  if (XGetClassHint(display, id, &classHint) == 0) {
+    return "";
+  }
+  
+  std::string windowClass;
+  if (classHint.res_class) {
+    windowClass = classHint.res_class;
+    XFree(classHint.res_class);
+  }
+  if (classHint.res_name) {
+    if (!windowClass.empty()) windowClass += ":";
+    windowClass += classHint.res_name;
+    XFree(classHint.res_name);
+  }
+  
+  return windowClass;
+#else
+  return "";
+#endif
+}
+
 std::string WindowManager::GetActiveWindowTitle() {
 #ifdef __linux__
   // On Wayland, use CompositorBridge
@@ -747,6 +825,43 @@ std::string WindowManager::getProcessName(pid_t windowPID) {
     std::cerr << "Error: Could not read from file " << path << ": "
               << std::strerror(errno) << "\n";
     return ""; // Handle the error as needed
+  }
+#else
+  return "";
+#endif
+}
+
+std::string WindowManager::getProcessCmdline(pid_t windowPID) {
+#ifdef __linux__
+  std::ostringstream procPath;
+  procPath << "/proc/" << windowPID << "/cmdline";
+
+  std::string path = procPath.str();
+  FILE *procFile = fopen(path.c_str(), "r");
+
+  if (procFile) {
+    char cmdline[4096];
+    size_t len = fread(cmdline, 1, sizeof(cmdline) - 1, procFile);
+    cmdline[len] = '\0';
+
+    fclose(procFile);
+    
+    // Replace null bytes with spaces (cmdline uses null as separator)
+    for (size_t i = 0; i < len; i++) {
+      if (cmdline[i] == '\0') {
+        cmdline[i] = ' ';
+      }
+    }
+    
+    // Trim trailing space
+    std::string result(cmdline);
+    while (!result.empty() && result.back() == ' ') {
+      result.pop_back();
+    }
+    
+    return result;
+  } else {
+    return "";
   }
 #else
   return "";
@@ -1762,6 +1877,37 @@ WindowInfo WindowManager::getActiveWindowInfo() {
   if (display) {
     XWindowAttributes attrs;
     if (XGetWindowAttributes(display, activeWin, &attrs)) {
+      info.x = attrs.x;
+      info.y = attrs.y;
+      info.width = attrs.width;
+      info.height = attrs.height;
+    }
+  }
+#endif
+
+  return info;
+}
+
+WindowInfo WindowManager::getWindowInfo(wID id) {
+  WindowInfo info;
+  if (id == 0) {
+    return info;
+  }
+
+  info.id = id;
+  info.pid = GetWindowPID(id);
+  info.exe = getProcessName(info.pid);
+  info.cmdline = getProcessCmdline(info.pid);
+  info.title = GetWindowTitle(id);
+  info.windowClass = GetWindowClass(id);
+  info.valid = (id != 0);
+
+  // Get geometry
+#ifdef __linux__
+  auto *display = DisplayManager::GetDisplay();
+  if (display) {
+    XWindowAttributes attrs;
+    if (XGetWindowAttributes(display, id, &attrs)) {
       info.x = attrs.x;
       info.y = attrs.y;
       info.width = attrs.width;

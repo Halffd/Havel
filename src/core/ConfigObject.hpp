@@ -143,7 +143,10 @@ public:
     
     template <typename T>
     void set(const std::string &key, const T &value) {
-        // Specializations below
+        // Convert to string and store
+        std::ostringstream oss;
+        oss << value;
+        setString(key, oss.str());
     }
     
     // Check if key exists

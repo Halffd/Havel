@@ -70,6 +70,12 @@ void Parser::synchronizeTo(havel::TokenType type) {
                                   token.length == 0 ? 1 : token.length);
 }
 
+// Record error without throwing - for error recovery
+void Parser::errorAt(const havel::Token &token, const std::string &message) {
+  CompilerError err(ErrorSeverity::Error, token.line, token.column, message);
+  errors.push_back(err);
+}
+
 const havel::Token& Parser::at(size_t offset) const {
   // Sanity check - offset should never be huge (indicates memory corruption)
   if (offset > 10000) {
@@ -119,7 +125,7 @@ Parser::produceAST(const std::string &sourceCode) {
   // Create program AST node
   auto program = std::make_unique<havel::ast::Program>();
 
-  // Parse all statements until EOF
+  // Parse all statements until EOF with error recovery
   while (notEOF()) {
     // Skip empty lines or statement separators
     if (at().type == havel::TokenType::NewLine ||
@@ -128,14 +134,33 @@ Parser::produceAST(const std::string &sourceCode) {
       continue;
     }
 
+    // Error throttle - stop after too many errors
+    if (errors.size() > 100) {
+      throw std::runtime_error("Too many parse errors, aborting");
+    }
+
     if (debug.parser) {
       havel::debug("PARSE: Parsing statement at token {}", at().toString());
     }
 
-    // Fail fast on errors - no recovery at top level
-    auto stmt = parseStatement();
-    if (stmt) {
-      program->body.push_back(std::move(stmt));
+    // Track position for forward progress guarantee
+    size_t before = position;
+
+    try {
+      auto stmt = parseStatement();
+      if (stmt) {
+        program->body.push_back(std::move(stmt));
+      }
+    } catch (const ParseError& e) {
+      // Convert ParseError to CompilerError
+      CompilerError err(ErrorSeverity::Error, e.line, e.column, e.what());
+      errors.push_back(err);
+      synchronize();  // Recover to next safe point
+    }
+
+    // Forward progress guarantee - if we didn't advance, force advance
+    if (position == before && notEOF()) {
+      advance();
     }
   }
 

@@ -177,6 +177,8 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create AutomationManager");
   }
 
+  std::cerr << "[DEBUG] AutomationManager created, initializing NetworkManager..." << std::endl;
+
   // Initialize NetworkManager (singleton)
   networkManager = std::shared_ptr<net::NetworkManager>(
       &net::NetworkManager::getInstance(), [](net::NetworkManager *) {});
@@ -184,6 +186,7 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create NetworkManager");
   }
   info("NetworkManager initialized successfully");
+  std::cerr << "[DEBUG] NetworkManager initialized, entering ENABLE_HAVEL_LANG section..." << std::endl;
 
 #ifdef ENABLE_HAVEL_LANG
   // Debug: Show initialization mode and parameters
@@ -194,20 +197,23 @@ void HavelApp::initializeComponents(bool isStartup) {
   std::cerr << "  - Startup: " << (isStartup ? "yes" : "no") << std::endl;
   std::cerr << "  - Command line args: " << commandLineArgs.size() << std::endl;
   
-  std::cerr << "[DEBUG] Creating bytecode VM and HostBridge..." << std::endl;
+  std::cerr << "[DEBUG] Getting AutomationSuite components..." << std::endl;
 
   // Get AutomationSuite components with null guards
   // Pass IO to ensure proper initialization
   auto *suite = AutomationSuite::Instance(io.get());
+  std::cerr << "[DEBUG] AutomationSuite obtained, getting screenshot manager..." << std::endl;
   auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
+  std::cerr << "[DEBUG] Screenshot manager obtained, getting clipboard manager..." << std::endl;
   auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
+  std::cerr << "[DEBUG] Clipboard manager obtained, getting pixel automation..." << std::endl;
   auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
+  std::cerr << "[DEBUG] Pixel automation obtained, creating WindowMonitor..." << std::endl;
 
   // Create WindowMonitor for efficient window info caching
   auto windowMonitor =
       std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
-
-  std::cerr << "[DEBUG] Creating HotkeyManager..." << std::endl;
+  std::cerr << "[DEBUG] WindowMonitor created, creating HotkeyManager..." << std::endl;
 
   // Get screenshot manager with null guard (nullptr in REPL mode)
   auto *screenshotMgrForHotkey =
@@ -220,14 +226,17 @@ void HavelApp::initializeComponents(bool isStartup) {
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }
+  std::cerr << "[DEBUG] HotkeyManager created, starting window monitor..." << std::endl;
 
   // Start window monitor AFTER HotkeyManager is created
   windowMonitor->Start();
+  std::cerr << "[DEBUG] WindowMonitor started, setting up IO..." << std::endl;
   io->setHotkeyManager(hotkeyManager);
 
   // Initialize hotkey manager
   hotkeyManager->loadDebugSettings();
   hotkeyManager->applyDebugSettings();
+  std::cerr << "[DEBUG] HotkeyManager initialized, building HostContext..." << std::endl;
 
   // Build HostContext from managers (raw pointers - no ownership)
   HostContext ctx;
@@ -246,6 +255,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.processManager = nullptr;
   ctx.networkManager = networkManager.get();
   ctx.windowMonitor = windowMonitor.get();
+  std::cerr << "[DEBUG] HostContext built, initializing bytecode VM..." << std::endl;
 
   // Initialize bytecode VM and HostBridge
   try {

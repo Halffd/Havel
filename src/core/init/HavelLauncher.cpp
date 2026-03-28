@@ -302,8 +302,8 @@ int HavelLauncher::runScript(const LaunchConfig &cfg, int argc, char *argv[]) {
       args.emplace_back(argv[i]);
     }
 
-    HavelApp havelApp(false, cfg.scriptFile, false, false,
-                      args); // Don't show GUI
+    HavelApp havelApp(false, cfg.scriptFile, false, true,
+                      args); // Enable GUI for full mode
 
     if (!havelApp.isInitialized()) {
       error("Failed to initialize HavelApp");

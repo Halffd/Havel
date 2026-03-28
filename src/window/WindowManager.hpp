@@ -57,6 +57,9 @@ public:
   static std::string
   GetActiveWindowProcess(); // Get process name of active window
   static std::string GetActiveWindowTitle();
+  static pID GetWindowPID(XWindow id);
+  static std::string GetWindowTitle(XWindow id);
+  static std::string GetWindowClass(XWindow id);
   static XWindow GetwIDByPID(pID pid);
   static XWindow GetwIDByProcessName(cstr processName);
   static XWindow FindByClass(cstr className);
@@ -90,6 +93,7 @@ public:
   static str GetIdentifierType(cstr identifier);
   static str GetIdentifierValue(cstr identifier);
   static str getProcessName(pid_t windowPID);
+  static str getProcessCmdline(pid_t windowPID);
 
   // Add to WindowManager class
   static void MoveToCorners(int direction, int distance = 10);
@@ -150,6 +154,7 @@ public:
   // Window module interface methods
   static WindowInfo getActiveWindowInfo();
   static std::vector<WindowInfo> getAllWindows();
+  static WindowInfo getWindowInfo(wID id);
   static uint64_t getActiveWindow();
   static bool focusWindow(uint64_t id);
   static bool closeWindow(uint64_t id);

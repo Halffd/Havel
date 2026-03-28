@@ -451,6 +451,12 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["window.active"] = [ctx = ctx_](const auto &args) {
     return handleWindowGetActive(args, ctx);
   };
+  options.host_functions["window.cmd"] = [ctx = ctx_](const auto &args) {
+    return handleWindowCmd(args, ctx);
+  };
+  options.host_functions["window.find"] = [ctx = ctx_](const auto &args) {
+    return handleWindowFind(args, ctx);
+  };
   options.host_functions["window.close"] = [ctx = ctx_](const auto &args) {
     return handleWindowClose(args, ctx);
   };
@@ -514,7 +520,129 @@ BytecodeValue UIBridge::handleWindowGetActive(const std::vector<BytecodeValue> &
   vm->setHostObjectField(obj, "id", BytecodeValue(static_cast<int64_t>(info.id)));
   vm->setHostObjectField(obj, "title", BytecodeValue(info.title));
   vm->setHostObjectField(obj, "class", BytecodeValue(info.windowClass));
+  vm->setHostObjectField(obj, "exe", BytecodeValue(info.exe));
+  vm->setHostObjectField(obj, "pid", BytecodeValue(static_cast<int64_t>(info.pid)));
+  vm->setHostObjectField(obj, "cmd", BytecodeValue(info.cmdline));
   return BytecodeValue(obj);
+}
+
+BytecodeValue UIBridge::handleWindowCmd(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager) {
+    return BytecodeValue("");
+  }
+  uint64_t wid = 0;
+  if (auto *v = std::get_if<int64_t>(&args[0]))
+    wid = static_cast<uint64_t>(*v);
+  else
+    return BytecodeValue("");
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  auto info = winService.getWindowInfo(wid);
+  if (!info.valid) {
+    return BytecodeValue("");
+  }
+  return BytecodeValue(info.cmdline);
+}
+
+BytecodeValue UIBridge::handleWindowFind(const std::vector<BytecodeValue> &args,
+                                         const HostContext *ctx) {
+  if (args.empty() || !ctx->windowManager || !ctx->vm) {
+    return BytecodeValue(nullptr);
+  }
+  
+  std::string selector;
+  if (auto *v = std::get_if<std::string>(&args[0]))
+    selector = *v;
+  else
+    return BytecodeValue(nullptr);
+  
+  // Parse selector: "type value" where type is title/class/exe/pid/cmd
+  size_t spacePos = selector.find(' ');
+  if (spacePos == std::string::npos) {
+    return BytecodeValue(nullptr);
+  }
+  
+  std::string type = selector.substr(0, spacePos);
+  std::string value = selector.substr(spacePos + 1);
+  
+  havel::host::WindowService winService(ctx->windowManager);
+  auto windows = winService.getAllWindows();
+  
+  for (const auto& win : windows) {
+    bool match = false;
+    
+    if (type == "title") {
+      match = (win.title.find(value) != std::string::npos);
+    } else if (type == "class") {
+      match = (win.windowClass.find(value) != std::string::npos);
+    } else if (type == "exe") {
+      match = (win.exe.find(value) != std::string::npos);
+    } else if (type == "pid") {
+      int pid = std::stoi(value);
+      match = (win.pid == pid);
+    } else if (type == "cmd") {
+      match = (win.cmdline.find(value) != std::string::npos);
+    }
+    
+    if (match) {
+      auto *vm = static_cast<VM *>(ctx->vm);
+      auto obj = vm->createHostObject();
+      vm->setHostObjectField(obj, "id", BytecodeValue(static_cast<int64_t>(win.id)));
+      vm->setHostObjectField(obj, "title", BytecodeValue(win.title));
+      vm->setHostObjectField(obj, "class", BytecodeValue(win.windowClass));
+      vm->setHostObjectField(obj, "exe", BytecodeValue(win.exe));
+      vm->setHostObjectField(obj, "pid", BytecodeValue(static_cast<int64_t>(win.pid)));
+      vm->setHostObjectField(obj, "cmd", BytecodeValue(win.cmdline));
+      return BytecodeValue(obj);
+    }
+  }
+  
+  return BytecodeValue(nullptr);
+}
+
+// Helper: resolve window argument (ID or selector string) to window ID
+static uint64_t resolveWindowId(const BytecodeValue& arg, havel::host::WindowService& winService) {
+  uint64_t wid = 0;
+  
+  // Try as integer ID first
+  if (auto *v = std::get_if<int64_t>(&arg)) {
+    wid = static_cast<uint64_t>(*v);
+  } else if (auto *v = std::get_if<std::string>(&arg)) {
+    // Try as selector string "type value"
+    std::string selector = *v;
+    size_t spacePos = selector.find(' ');
+    if (spacePos != std::string::npos) {
+      std::string type = selector.substr(0, spacePos);
+      std::string value = selector.substr(spacePos + 1);
+      
+      auto windows = winService.getAllWindows();
+      for (const auto& win : windows) {
+        bool match = false;
+        
+        if (type == "title") {
+          match = (win.title.find(value) != std::string::npos);
+        } else if (type == "class") {
+          match = (win.windowClass.find(value) != std::string::npos);
+        } else if (type == "exe") {
+          match = (win.exe.find(value) != std::string::npos);
+        } else if (type == "pid") {
+          try {
+            int pid = std::stoi(value);
+            match = (win.pid == pid);
+          } catch (...) {}
+        } else if (type == "cmd") {
+          match = (win.cmdline.find(value) != std::string::npos);
+        }
+        
+        if (match) {
+          return win.id;
+        }
+      }
+    }
+  }
+  
+  return wid;
 }
 
 BytecodeValue UIBridge::handleWindowClose(const std::vector<BytecodeValue> &args,
@@ -522,12 +650,9 @@ BytecodeValue UIBridge::handleWindowClose(const std::vector<BytecodeValue> &args
   if (args.empty() || !ctx->windowManager) {
     return BytecodeValue(false);
   }
-  uint64_t wid = 0;
-  if (auto *v = std::get_if<int64_t>(&args[0]))
-    wid = static_cast<uint64_t>(*v);
-  else
-    return BytecodeValue(false);
   havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], winService);
+  if (wid == 0) return BytecodeValue(false);
   return BytecodeValue(winService.closeWindow(wid));
 }
 
@@ -536,11 +661,9 @@ BytecodeValue UIBridge::handleWindowResize(const std::vector<BytecodeValue> &arg
   if (args.size() < 3 || !ctx->windowManager) {
     return BytecodeValue(false);
   }
-  uint64_t wid = 0;
-  if (auto *v = std::get_if<int64_t>(&args[0]))
-    wid = static_cast<uint64_t>(*v);
-  else
-    return BytecodeValue(false);
+  havel::host::WindowService winService(ctx->windowManager);
+  uint64_t wid = resolveWindowId(args[0], winService);
+  if (wid == 0) return BytecodeValue(false);
   int w = 0, h = 0;
   if (auto *v = std::get_if<int64_t>(&args[1]))
     w = static_cast<int>(*v);
@@ -550,7 +673,6 @@ BytecodeValue UIBridge::handleWindowResize(const std::vector<BytecodeValue> &arg
     h = static_cast<int>(*v);
   else if (auto *v = std::get_if<double>(&args[2]))
     h = static_cast<int>(*v);
-  havel::host::WindowService winService(ctx->windowManager);
   return BytecodeValue(winService.resizeWindow(wid, w, h));
 }
 

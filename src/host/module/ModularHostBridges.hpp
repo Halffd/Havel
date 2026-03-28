@@ -91,6 +91,8 @@ private:
   const HostContext *ctx_;
   // Window operations
   static BytecodeValue handleWindowGetActive(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowCmd(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleWindowFind(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowClose(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowResize(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleWindowMove(const std::vector<BytecodeValue> &args, const HostContext *ctx);

@@ -38,6 +38,11 @@ public:
     /// @return WindowInfo (valid=false if no active window)
     WindowInfo getActiveWindowInfo() const;
 
+    /// Get window info by ID
+    /// @param id Window ID
+    /// @return WindowInfo (valid=false if not found)
+    WindowInfo getWindowInfo(uint64_t id) const;
+
     /// Get all windows
     /// @return vector of WindowInfo
     std::vector<WindowInfo> getAllWindows() const;

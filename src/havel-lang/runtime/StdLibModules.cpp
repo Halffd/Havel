@@ -8,6 +8,7 @@
 #include "../compiler/bytecode/HostBridge.hpp"
 #include "../compiler/bytecode/VMApi.hpp"
 #include "../../modules/config/ConfigModule.hpp"
+#include "../../modules/window/WindowMonitorModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -42,6 +43,12 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
   
+  // Register window monitor module (dynamic window variables)
+  modules::registerWindowMonitorModule(*api);
+  
+  // Setup dynamic window globals (title, class, exe, pid)
+  modules::setupDynamicWindowGlobals(*api);
+  
   // Auto-load config from file to global conf object
   // TEMPORARILY DISABLED - debugging hang issue
   // modules::autoLoadConfig(*api);
@@ -64,6 +71,11 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("Regex");
   bridge.options().host_global_names.insert("config");
   bridge.options().host_global_names.insert("conf");
+  bridge.options().host_global_names.insert("window");
+  bridge.options().host_global_names.insert("title");
+  bridge.options().host_global_names.insert("class");
+  bridge.options().host_global_names.insert("exe");
+  bridge.options().host_global_names.insert("pid");
   bridge.options().host_global_names.insert("Physics");
   bridge.options().host_global_names.insert("physics");
   bridge.options().host_global_names.insert("E_CHARGE");

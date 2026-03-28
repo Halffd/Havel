@@ -1072,6 +1072,12 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(struct_obj, "get", HostFunctionRef{.name = "struct.get"});
   setHostObjectField(struct_obj, "set", HostFunctionRef{.name = "struct.set"});
   setGlobal("struct", struct_obj);
+  
+  // Register default window globals (will be updated by WindowMonitor)
+  setGlobal("title", "");
+  setGlobal("class", "");
+  setGlobal("exe", "");
+  setGlobal("pid", static_cast<int64_t>(0));
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,

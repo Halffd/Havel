@@ -701,6 +701,12 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
     return std::nullopt;
   }
 
+  // FIRST: Check if this is a global variable - if so, return immediately
+  // Globals should NEVER become locals or upvalues
+  if (global_variables_.count(name) > 0) {
+    return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name, false};
+  }
+
   auto &ctx = function_stack_[function_index];
   for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
     const auto &scope = ctx.scopes[sc - 1];
@@ -716,20 +722,7 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
   }
 
   if (function_index == 0) {
-    // Check global variables first (top-level let declarations)
-    if (global_variables_.count(name) > 0) {
-      // In global scope, access as local
-      // Find the slot by looking in the global scope
-      for (size_t sc = ctx.scopes.size(); sc > 0; --sc) {
-        const auto &scope = ctx.scopes[sc - 1];
-        auto it = scope.find(name);
-        if (it != scope.end()) {
-          return ResolvedBinding{ResolvedBindingKind::Local, it->second.slot,
-                                 0, name, it->second.is_const};
-        }
-      }
-    }
-  
+    // In global scope, check builtins and host globals
     if (top_level_structs_.find(name) != top_level_structs_.end()) {
       return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
     }
@@ -771,13 +764,6 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
       enclosing->kind == ResolvedBindingKind::HostGlobal ||
       enclosing->kind == ResolvedBindingKind::Builtin) {
     return enclosing;
-  }
-
-  // Special case: if we're in a nested function (function_index > 0) and the
-  // enclosing binding is a Local from the global scope, access via LOAD_GLOBAL
-  if (function_index > 0 && enclosing->kind == ResolvedBindingKind::Local &&
-      enclosing->scope_distance == 0) {
-    return ResolvedBinding{ResolvedBindingKind::HostGlobal, enclosing->slot, 0, name, enclosing->is_const};
   }
 
   if (enclosing->kind == ResolvedBindingKind::Local) {

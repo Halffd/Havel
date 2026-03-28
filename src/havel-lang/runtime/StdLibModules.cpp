@@ -9,6 +9,7 @@
 #include "../compiler/bytecode/VMApi.hpp"
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
+#include "../../modules/help/HelpModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -42,10 +43,13 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   
   // Register config module (has OS dependencies - config file access)
   modules::registerConfigModule(*api);
-  
+
   // Register window monitor module (dynamic window variables)
   modules::registerWindowMonitorModule(*api);
-  
+
+  // Register help module (documentation system)
+  modules::registerHelpModule(*api);
+
   // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are initialized
   // This ensures we use the existing WindowMonitor from HotkeyManager
 
@@ -91,6 +95,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("isBoolean");
   bridge.options().host_global_names.insert("toString");
   bridge.options().host_global_names.insert("toNumber");
+  bridge.options().host_global_names.insert("help");
 
   // HOST services are registered separately through HostBridge
   // File, Process, Timer, Hotkey, Window, Clipboard, IO -> host layer

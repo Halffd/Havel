@@ -59,7 +59,7 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"and", TokenType::And},
     {"or", TokenType::Or},
     {"not", TokenType::Not},
-    {"matches", TokenType::Matches},  // regex match operator
+    {"matches", TokenType::Matches}, // regex match operator
     {"from", TokenType::From},
     {"as", TokenType::As},
     {"use", TokenType::Use},
@@ -75,9 +75,8 @@ const std::unordered_map<char, TokenType> Lexer::SINGLE_CHAR_TOKENS = {
     {'+', TokenType::Plus},        {'-', TokenType::Minus},
     {'*', TokenType::Multiply},    {'/', TokenType::Divide},
     {'%', TokenType::Modulo},      {'\\', TokenType::Backslash},
-    {'\n', TokenType::NewLine},
-    {'!', TokenType::Not},         {'_', TokenType::Underscore},
-    {'~', TokenType::Tilde}};
+    {'\n', TokenType::NewLine},    {'!', TokenType::Not},
+    {'_', TokenType::Underscore},  {'~', TokenType::Tilde}};
 
 Lexer::Lexer(const std::string &sourceCode, bool debug_lexer)
     : source(sourceCode), debug_lexer(debug_lexer) {}
@@ -85,18 +84,19 @@ Lexer::Lexer(const std::string &sourceCode, bool debug_lexer)
 std::string Lexer::getSourceLine(size_t lineNum) const {
   std::istringstream iss(source);
   std::string currentLine;
-  for (size_t i = 1; i < lineNum && std::getline(iss, currentLine); i++) {}
+  for (size_t i = 1; i < lineNum && std::getline(iss, currentLine); i++) {
+  }
   std::getline(iss, currentLine);
   return currentLine;
 }
 
-void Lexer::reportError(const std::string& message) {
+void Lexer::reportError(const std::string &message) {
   CompilerError err(ErrorSeverity::Error, line, column, message);
   err.sourceLine = getSourceLine(line);
   errors.push_back(err);
 }
 
-void Lexer::reportWarning(const std::string& message) {
+void Lexer::reportWarning(const std::string &message) {
   CompilerError err(ErrorSeverity::Warning, line, column, message);
   err.sourceLine = getSourceLine(line);
   errors.push_back(err);
@@ -222,7 +222,7 @@ Token Lexer::scanString() {
   // Skip opening quote
   char quote = source[position - 1];
   int braceDepth = 0; // Tracks depth inside ${ ... }
-  
+
   // Single quotes = literal string (no interpolation)
   // Double quotes = interpolated string
   bool allowInterpolation = (quote == '"');
@@ -312,7 +312,7 @@ Token Lexer::scanString() {
   if (isAtEnd()) {
     reportError("Unterminated string");
     // Create error token and try to recover
-    std::string value = raw.substr(1);  // Skip opening quote
+    std::string value = raw.substr(1); // Skip opening quote
     return makeToken(value, TokenType::String, raw);
   }
 
@@ -328,11 +328,11 @@ Token Lexer::scanMultilineString() {
   std::string value;
   std::string raw;
   bool hasInterpolation = false;
-  int braceDepth = 0;  // Tracks depth inside ${ ... }
+  int braceDepth = 0; // Tracks depth inside ${ ... }
 
   // Skip opening """ (already consumed by caller)
   // Multiline strings support interpolation like regular double-quoted strings
-  
+
   // Skip initial newline if present (for """\n... style)
   if (!isAtEnd() && peek() == '\n') {
     advance();
@@ -341,10 +341,8 @@ Token Lexer::scanMultilineString() {
 
   while (!isAtEnd()) {
     // Check for closing """
-    if (peek() == '"' && 
-        position + 2 < source.length() &&
-        source[position + 1] == '"' && 
-        source[position + 2] == '"') {
+    if (peek() == '"' && position + 2 < source.length() &&
+        source[position + 1] == '"' && source[position + 2] == '"') {
       break;
     }
 
@@ -353,7 +351,7 @@ Token Lexer::scanMultilineString() {
 
     if (braceDepth == 0 && c == '\\' && !isAtEnd()) {
       // Process escape sequences
-      advance();  // consume backslash
+      advance(); // consume backslash
       raw += peek();
 
       char escaped = advance();
@@ -384,10 +382,10 @@ Token Lexer::scanMultilineString() {
     } else if (c == '$' && braceDepth == 0) {
       // Interpolation in multiline strings
       hasInterpolation = true;
-      value += advance();  // $
+      value += advance(); // $
 
       if (peek() == '{') {
-        value += advance();  // {
+        value += advance(); // {
         braceDepth++;
       } else if (isAlpha(peek()) || peek() == '_') {
         value += '{';
@@ -424,7 +422,8 @@ Token Lexer::scanMultilineString() {
   advance();
   advance();
 
-  TokenType type = hasInterpolation ? TokenType::InterpolatedString : TokenType::MultilineString;
+  TokenType type = hasInterpolation ? TokenType::InterpolatedString
+                                    : TokenType::MultilineString;
   return makeToken(value, type, raw);
 }
 
@@ -474,8 +473,10 @@ Token Lexer::scanRegexLiteral() {
 Token Lexer::scanShellCommand(bool captureOutput) {
   // $ already consumed, just return the $ as a token
   // The parser will handle the expression that follows
-  TokenType type = captureOutput ? TokenType::ShellCommandCapture : TokenType::ShellCommand;
-  return makeToken(captureOutput ? "$!" : "$", type, captureOutput ? "$!" : "$");
+  TokenType type =
+      captureOutput ? TokenType::ShellCommandCapture : TokenType::ShellCommand;
+  return makeToken(captureOutput ? "$!" : "$", type,
+                   captureOutput ? "$!" : "$");
 }
 
 Token Lexer::scanIdentifier() {
@@ -488,7 +489,7 @@ Token Lexer::scanIdentifier() {
   while (!isAtEnd() && isAlphaNumeric(peek())) {
     identifier += advance();
   }
-  
+
   // Allow ? suffix for predicate functions (Ruby/Elixir style)
   // e.g., user.logged?, window.visible?, file.exists?
   if (!isAtEnd() && peek() == '?') {
@@ -634,12 +635,10 @@ std::vector<Token> Lexer::tokenize() {
     // Handle strings
     if (c == '"' || c == '\'') {
       // Check for multiline string """
-      if (c == '"' && 
-          position + 2 < source.length() &&
-          source[position] == '"' && 
-          source[position + 1] == '"') {
-        advance();  // consume first " (second one)
-        advance();  // consume second " (third one)
+      if (c == '"' && position + 2 < source.length() &&
+          source[position] == '"' && source[position + 1] == '"') {
+        advance(); // consume first " (second one)
+        advance(); // consume second " (third one)
         tokens.push_back(scanMultilineString());
       } else {
         tokens.push_back(scanString());
@@ -660,29 +659,30 @@ std::vector<Token> Lexer::tokenize() {
     }
 
     // Handle regex literals: /pattern/
-    // Only if not followed by '/' (which would be // comment) or '*' (/* comment)
-    // and not preceded by something that would make it division
+    // Only if not followed by '/' (which would be // comment) or '*' (/*
+    // comment) and not preceded by something that would make it division
     if (c == '/' && peek() != '/' && peek() != '*' && peek() != '=') {
       // Check if this looks like a regex (not division)
-      // Simple heuristic: if previous non-whitespace token suggests expression context
-      bool isRegexContext = tokens.empty() || 
-          tokens.back().type == TokenType::OpenParen ||
-          tokens.back().type == TokenType::OpenBracket ||
-          tokens.back().type == TokenType::Comma ||
-          tokens.back().type == TokenType::Assign ||
-          tokens.back().type == TokenType::Arrow ||
-          tokens.back().type == TokenType::And ||
-          tokens.back().type == TokenType::Or ||
-          tokens.back().type == TokenType::Not ||
-          tokens.back().type == TokenType::In ||
-          tokens.back().type == TokenType::Matches ||
-          tokens.back().type == TokenType::Tilde ||
-          tokens.back().type == TokenType::Colon ||
-          tokens.back().type == TokenType::Question ||
-          tokens.back().type == TokenType::Pipe ||
-          tokens.back().type == TokenType::NewLine ||
-          tokens.back().type == TokenType::Semicolon;
-      
+      // Simple heuristic: if previous non-whitespace token suggests expression
+      // context
+      bool isRegexContext = tokens.empty() ||
+                            tokens.back().type == TokenType::OpenParen ||
+                            tokens.back().type == TokenType::OpenBracket ||
+                            tokens.back().type == TokenType::Comma ||
+                            tokens.back().type == TokenType::Assign ||
+                            tokens.back().type == TokenType::Arrow ||
+                            tokens.back().type == TokenType::And ||
+                            tokens.back().type == TokenType::Or ||
+                            tokens.back().type == TokenType::Not ||
+                            tokens.back().type == TokenType::In ||
+                            tokens.back().type == TokenType::Matches ||
+                            tokens.back().type == TokenType::Tilde ||
+                            tokens.back().type == TokenType::Colon ||
+                            tokens.back().type == TokenType::Question ||
+                            tokens.back().type == TokenType::Pipe ||
+                            tokens.back().type == TokenType::NewLine ||
+                            tokens.back().type == TokenType::Semicolon;
+
       if (isRegexContext && !isDigit(peek())) {
         tokens.push_back(scanRegexLiteral());
         if (debug_lexer) {
@@ -782,17 +782,17 @@ std::vector<Token> Lexer::tokenize() {
       // Check for **= (power assign) or ** (power)
       size_t look = position + 1;
       if (look < source.length() && source[look] == '=') {
-        advance();  // consume first *
-        advance();  // consume second *
-        advance();  // consume =
+        advance(); // consume first *
+        advance(); // consume second *
+        advance(); // consume =
         tokens.push_back(makeToken("**=", TokenType::PowerAssign));
         if (debug_lexer) {
           std::cout << "LEX: " << tokens.back().toString() << std::endl;
         }
         continue;
       } else {
-        advance();  // consume first *
-        advance();  // consume second *
+        advance(); // consume first *
+        advance(); // consume second *
         tokens.push_back(makeToken("**", TokenType::Power));
         if (debug_lexer) {
           std::cout << "LEX: " << tokens.back().toString() << std::endl;
@@ -923,7 +923,7 @@ std::vector<Token> Lexer::tokenize() {
       // Check for capture mode: $!
       bool captureOutput = false;
       if (!isAtEnd() && peek() == '!') {
-        advance();  // consume '!'
+        advance(); // consume '!'
         captureOutput = true;
       }
 
@@ -937,31 +937,54 @@ std::vector<Token> Lexer::tokenize() {
       continue;
     }
 
+    // Handle @-> (super call operator) - must be before hotkey handling
+    if (c == '@' && peek() == '-' && peek(1) == '>') {
+      advance(); // consume '-'
+      advance(); // consume '>'
+      tokens.push_back(makeToken("@->", TokenType::SuperArrow));
+      if (debug_lexer) {
+        std::cout << "LEX: " << tokens.back().toString() << std::endl;
+      }
+      continue;
+    }
+
+    // Handle @ (at/this field access) - must be before hotkey handling
+    // Only treat as At token if followed by identifier or ->
+    // Otherwise it might be a hotkey modifier
+    if (c == '@') {
+      // Check if followed by identifier (field access like @field)
+      if (isAlpha(peek()) || peek() == '_') {
+        tokens.push_back(makeToken("@", TokenType::At));
+        if (debug_lexer) {
+          std::cout << "LEX: " << tokens.back().toString() << std::endl;
+        }
+        continue;
+      }
+      // Otherwise fall through to hotkey handling
+    }
+
     // Handle modifier-based hotkeys starting with special characters like ^ + !
     // @ ~ $ This must happen before SINGLE_CHAR_TOKENS so '+' isn't tokenized
     // as Plus. EXCEPTION: + after expression context should be Plus operator
     if (c == '^' || c == '!' || c == '+' || c == '@' || c == '~' || c == '$') {
-      // Special case for +, !, and ~: check context to distinguish operator from hotkey
-      // Note: CloseBrace is NOT in expression context - after } we're at statement level
+      // Special case for +, !, and ~: check context to distinguish operator
+      // from hotkey Note: CloseBrace is NOT in expression context - after }
+      // we're at statement level
       if ((c == '+' || c == '!' || c == '~') && !tokens.empty()) {
         TokenType prevType = tokens.back().type;
         // If previous token suggests expression context, treat as operator
-        // Exclude CloseBrace - after } we're at statement level (could be hotkey)
-        // Include statement starters that are followed by expressions (if, while, for, etc.)
+        // Exclude CloseBrace - after } we're at statement level (could be
+        // hotkey) Include statement starters that are followed by expressions
+        // (if, while, for, etc.)
         if (prevType == TokenType::Number ||
             prevType == TokenType::Identifier ||
             prevType == TokenType::String ||
             prevType == TokenType::CloseParen ||
-            prevType == TokenType::CloseBracket ||
-            prevType == TokenType::Not ||
-            prevType == TokenType::Or ||
-            prevType == TokenType::And ||
-            prevType == TokenType::Assign ||
-            prevType == TokenType::If ||
-            prevType == TokenType::While ||
-            prevType == TokenType::For ||
-            prevType == TokenType::In ||
-            prevType == TokenType::Matches ||
+            prevType == TokenType::CloseBracket || prevType == TokenType::Not ||
+            prevType == TokenType::Or || prevType == TokenType::And ||
+            prevType == TokenType::Assign || prevType == TokenType::If ||
+            prevType == TokenType::While || prevType == TokenType::For ||
+            prevType == TokenType::In || prevType == TokenType::Matches ||
             prevType == TokenType::Tilde) {
           // Fall through to SINGLE_CHAR_TOKENS to get Plus, Not, or Tilde
         } else {
@@ -1026,8 +1049,8 @@ std::vector<Token> Lexer::tokenize() {
       repr << "'\\x" << std::hex << std::setw(2) << std::setfill('0')
            << static_cast<int>(uc) << "'";
     }
-    throw havel::LexError(line, error_col,
-                          "Unexpected character " + repr.str(), 1);
+    throw havel::LexError(line, error_col, "Unexpected character " + repr.str(),
+                          1);
   }
 
   // Add EOF token

@@ -3594,6 +3594,65 @@ std::unique_ptr<havel::ast::Expression> Parser::parsePrimaryExpression() {
     return std::make_unique<havel::ast::ThisExpression>();
   }
 
+  case havel::TokenType::At: {
+    advance(); // consume '@'
+    // Parse field name after @
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected field name after '@'");
+    }
+    auto fieldName = makeIdentifier(advance());
+    return std::make_unique<havel::ast::AtExpression>(std::move(fieldName));
+  }
+
+  case havel::TokenType::SuperArrow: {
+    advance(); // consume '@->'
+    // Parse method name after @->
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected method name after '@->'");
+    }
+    auto methodName = makeIdentifier(advance());
+    // Create a special SuperCallExpression (reuse CallExpression with isSuper
+    // flag)
+    auto call = std::make_unique<havel::ast::CallExpression>(
+        std::make_unique<havel::ast::Identifier>("__super__"));
+    call->isSuperCall = true;
+    call->superMethodName = methodName->symbol;
+
+    // Parse arguments if present
+    if (at().type == havel::TokenType::OpenParen) {
+      advance(); // consume '('
+      while (at().type != havel::TokenType::CloseParen && notEOF()) {
+        // Skip newlines
+        while (at().type == havel::TokenType::NewLine) {
+          advance();
+        }
+        if (at().type == havel::TokenType::CloseParen) {
+          break;
+        }
+
+        auto arg = parseExpression();
+        call->args.push_back(std::move(arg));
+
+        while (at().type == havel::TokenType::NewLine) {
+          advance();
+        }
+
+        if (at().type == havel::TokenType::Comma) {
+          advance();
+        } else if (at().type != havel::TokenType::CloseParen) {
+          failAt(at(), "Expected ',' or ')' in super call arguments");
+        }
+      }
+
+      if (at().type != havel::TokenType::CloseParen) {
+        failAt(at(), "Expected ')' after super call arguments");
+      }
+      advance(); // consume ')'
+    }
+
+    return call;
+  }
+
   case havel::TokenType::InterpolatedString: {
     advance();
     // Parse the interpolated string: "text ${expr} more text"

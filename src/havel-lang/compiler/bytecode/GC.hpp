@@ -14,7 +14,7 @@ namespace havel::compiler {
 
 class GCHeap {
 public:
-  friend class VM;  // VM needs access to internal storage for struct/enum ops
+  friend class VM; // VM needs access to internal storage for struct/enum ops
   struct Stats {
     uint64_t heap_size = 0;
     uint64_t object_count = 0;
@@ -35,24 +35,31 @@ public:
 
   // Iterator for iteration protocol
   struct Iterator {
-    BytecodeValue iterable;  // The original iterable (array, string, object, range)
-    size_t index = 0;        // Current position
-    std::vector<std::string> keys;  // For object iteration
+    BytecodeValue
+        iterable;     // The original iterable (array, string, object, range)
+    size_t index = 0; // Current position
+    std::vector<std::string> keys; // For object iteration
   };
-  
+
   // Range for range-based iteration
   struct Range {
     int64_t start = 0;
     int64_t end = 0;
     int64_t step = 1;
   };
-  
+
   // Struct type info (shared among instances)
   struct StructType {
     std::string name;
     std::vector<std::string> fieldNames;
   };
-  
+
+  // Class type info (shared among instances)
+  struct ClassType {
+    std::string name;
+    std::vector<std::string> fieldNames;
+  };
+
   // Enum type info (shared among instances)
   struct EnumType {
     std::string name;
@@ -68,14 +75,26 @@ public:
   RangeRef allocateRange(int64_t start, int64_t end, int64_t step);
 
   // Struct operations
-  uint32_t registerStructType(const std::string& name, const std::vector<std::string>& fields);
+  uint32_t registerStructType(const std::string &name,
+                              const std::vector<std::string> &fields);
   StructRef allocateStruct(uint32_t typeId, size_t fieldCount);
-  std::optional<uint32_t> findStructTypeId(const std::string& name) const;
+  std::optional<uint32_t> findStructTypeId(const std::string &name) const;
   size_t structFieldCount(uint32_t typeId) const;
-  std::optional<size_t> structFieldIndex(uint32_t typeId, const std::string& field) const;
+  std::optional<size_t> structFieldIndex(uint32_t typeId,
+                                         const std::string &field) const;
+
+  // Class operations
+  uint32_t registerClassType(const std::string &name,
+                             const std::vector<std::string> &fields);
+  ClassRef allocateClass(uint32_t typeId, size_t fieldCount);
+  std::optional<uint32_t> findClassTypeId(const std::string &name) const;
+  size_t classFieldCount(uint32_t typeId) const;
+  std::optional<size_t> classFieldIndex(uint32_t typeId,
+                                        const std::string &field) const;
 
   // Enum operations
-  uint32_t registerEnumType(const std::string& name, const std::vector<std::string>& variants);
+  uint32_t registerEnumType(const std::string &name,
+                            const std::vector<std::string> &variants);
   EnumRef allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
 
   IteratorRef allocateIterator(const BytecodeValue &iterable);
@@ -107,24 +126,25 @@ public:
       const std::vector<BytecodeValue> &locals,
       const std::unordered_map<std::string, BytecodeValue> &globals,
       const std::vector<uint32_t> &active_closure_ids,
-      const std::function<std::optional<BytecodeValue>(uint32_t)> &
-          open_local_reader);
+      const std::function<std::optional<BytecodeValue>(uint32_t)>
+          &open_local_reader);
 
-  void collectGarbage(
-      const std::vector<BytecodeValue> &stack_values,
-      const std::vector<BytecodeValue> &locals,
-      const std::unordered_map<std::string, BytecodeValue> &globals,
-      const std::vector<uint32_t> &active_closure_ids,
-      const std::function<std::optional<BytecodeValue>(uint32_t)> &
-          open_local_reader);
+  void
+  collectGarbage(const std::vector<BytecodeValue> &stack_values,
+                 const std::vector<BytecodeValue> &locals,
+                 const std::unordered_map<std::string, BytecodeValue> &globals,
+                 const std::vector<uint32_t> &active_closure_ids,
+                 const std::function<std::optional<BytecodeValue>(uint32_t)>
+                     &open_local_reader);
 
 private:
-  void markValue(const BytecodeValue &value, std::unordered_set<uint32_t> &marked_arrays,
+  void markValue(const BytecodeValue &value,
+                 std::unordered_set<uint32_t> &marked_arrays,
                  std::unordered_set<uint32_t> &marked_objects,
                  std::unordered_set<uint32_t> &marked_sets,
                  std::unordered_set<uint32_t> &marked_closures,
-                 const std::function<std::optional<BytecodeValue>(uint32_t)> &
-                     open_local_reader) const;
+                 const std::function<std::optional<BytecodeValue>(uint32_t)>
+                     &open_local_reader) const;
 
   std::unordered_map<uint32_t, RuntimeClosure> closures_;
   std::unordered_map<uint32_t, std::vector<BytecodeValue>> arrays_;
@@ -133,14 +153,19 @@ private:
   std::unordered_map<uint32_t, std::unordered_map<std::string, BytecodeValue>>
       sets_;
   std::unordered_map<uint32_t, Range> ranges_;
-  std::unordered_map<uint32_t, std::vector<BytecodeValue>> structs_;  // Field arrays
-  std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<BytecodeValue>>> enums_;  // tag + payload
+  std::unordered_map<uint32_t, std::vector<BytecodeValue>>
+      structs_; // Field arrays (value type)
+  std::unordered_map<uint32_t, std::vector<BytecodeValue>>
+      classes_; // Field arrays (reference type)
+  std::unordered_map<uint32_t, std::pair<uint32_t, std::vector<BytecodeValue>>>
+      enums_; // tag + payload
   std::unordered_map<uint32_t, Iterator> iterators_;
-  
+
   // Type registries
   std::vector<StructType> structTypes_;
+  std::vector<ClassType> classTypes_;
   std::vector<EnumType> enumTypes_;
-  
+
   uint32_t next_closure_id_ = 1;
   uint32_t next_array_id_ = 1;
   uint32_t next_object_id_ = 1;

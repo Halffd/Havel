@@ -527,8 +527,12 @@ BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &ar
 BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> &args,
                                                const HostContext *ctx) {
   (void)args;
-  (void)ctx;
-  
+
+  if (!ctx || !ctx->vm) {
+    // Return a minimal object if VM is not available
+    return BytecodeValue(std::string(""));
+  }
+
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();
   
@@ -561,6 +565,10 @@ BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> 
 BytecodeValue SystemBridge::handleSystemHardware(const std::vector<BytecodeValue> &args,
                                                  const HostContext *ctx) {
   (void)args;
+
+  if (!ctx || !ctx->vm) {
+    return BytecodeValue(std::string(""));
+  }
 
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();

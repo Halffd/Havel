@@ -73,7 +73,7 @@ IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
   Iterator iter;
   iter.iterable = iterable;
   iter.index = 0;
-  
+
   // For objects, pre-compute keys
   if (std::holds_alternative<ObjectRef>(iterable)) {
     auto *obj = object(std::get<ObjectRef>(iterable).id);
@@ -93,7 +93,7 @@ IteratorRef GCHeap::allocateIterator(const BytecodeValue &iterable) {
       }
     }
   }
-  
+
   iterators_[id] = std::move(iter);
   return IteratorRef{.id = id};
 }
@@ -114,8 +114,10 @@ uint32_t GCHeap::createIterator(const BytecodeValue &iterable) {
 }
 
 // Struct type registration
-uint32_t GCHeap::registerStructType(const std::string& name, const std::vector<std::string>& fields) {
-  uint32_t id = static_cast<uint32_t>(structTypes_.size()) + 1;  // Start at 1 to avoid 0=nullptr issue
+uint32_t GCHeap::registerStructType(const std::string &name,
+                                    const std::vector<std::string> &fields) {
+  uint32_t id = static_cast<uint32_t>(structTypes_.size()) +
+                1; // Start at 1 to avoid 0=nullptr issue
   structTypes_.push_back(StructType{name, fields});
   return id;
 }
@@ -127,10 +129,11 @@ StructRef GCHeap::allocateStruct(uint32_t typeId, size_t fieldCount) {
   return StructRef{.id = id, .typeId = typeId};
 }
 
-std::optional<uint32_t> GCHeap::findStructTypeId(const std::string& name) const {
+std::optional<uint32_t>
+GCHeap::findStructTypeId(const std::string &name) const {
   for (uint32_t i = 0; i < structTypes_.size(); ++i) {
     if (structTypes_[i].name == name) {
-      return i + 1;  // Return ID with +1 offset
+      return i + 1; // Return ID with +1 offset
     }
   }
   return std::nullopt;
@@ -144,7 +147,7 @@ size_t GCHeap::structFieldCount(uint32_t typeId) const {
 }
 
 std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
-                                               const std::string& field) const {
+                                               const std::string &field) const {
   if (typeId == 0 || typeId > structTypes_.size()) {
     return std::nullopt;
   }
@@ -157,17 +160,66 @@ std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
   return std::nullopt;
 }
 
+// Class type registration
+uint32_t GCHeap::registerClassType(const std::string &name,
+                                   const std::vector<std::string> &fields) {
+  uint32_t id = static_cast<uint32_t>(classTypes_.size()) +
+                1; // Start at 1 to avoid 0=nullptr issue
+  classTypes_.push_back(ClassType{name, fields});
+  return id;
+}
+
+// Class allocation (reference type)
+ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount) {
+  const uint32_t id = next_array_id_++;
+  classes_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue(nullptr));
+  return ClassRef{.id = id, .typeId = typeId};
+}
+
+std::optional<uint32_t> GCHeap::findClassTypeId(const std::string &name) const {
+  for (uint32_t i = 0; i < classTypes_.size(); ++i) {
+    if (classTypes_[i].name == name) {
+      return i + 1; // Return ID with +1 offset
+    }
+  }
+  return std::nullopt;
+}
+
+size_t GCHeap::classFieldCount(uint32_t typeId) const {
+  if (typeId == 0 || typeId > classTypes_.size()) {
+    return 0;
+  }
+  return classTypes_[typeId - 1].fieldNames.size();
+}
+
+std::optional<size_t> GCHeap::classFieldIndex(uint32_t typeId,
+                                              const std::string &field) const {
+  if (typeId == 0 || typeId > classTypes_.size()) {
+    return std::nullopt;
+  }
+  const auto &fields = classTypes_[typeId - 1].fieldNames;
+  for (size_t i = 0; i < fields.size(); ++i) {
+    if (fields[i] == field) {
+      return i;
+    }
+  }
+  return std::nullopt;
+}
+
 // Enum type registration
-uint32_t GCHeap::registerEnumType(const std::string& name, const std::vector<std::string>& variants) {
+uint32_t GCHeap::registerEnumType(const std::string &name,
+                                  const std::vector<std::string> &variants) {
   uint32_t id = static_cast<uint32_t>(enumTypes_.size());
   enumTypes_.push_back(EnumType{name, variants});
   return id;
 }
 
 // Enum allocation
-EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag, size_t payloadCount) {
+EnumRef GCHeap::allocateEnum(uint32_t typeId, uint32_t tag,
+                             size_t payloadCount) {
   const uint32_t id = next_array_id_++;
-  enums_[id] = {tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue(nullptr))};
+  enums_[id] = {
+      tag, std::vector<BytecodeValue>(payloadCount, BytecodeValue(nullptr))};
   return EnumRef{.id = id, .tag = tag, .typeId = typeId};
 }
 
@@ -181,10 +233,10 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
     (*obj)["done"] = BytecodeValue(true);
     return BytecodeValue(resultObj);
   }
-  
+
   bool done = false;
   BytecodeValue value;
-  
+
   // Dispatch based on iterable type
   if (std::holds_alternative<ArrayRef>(iter->iterable)) {
     auto *arr = array(std::get<ArrayRef>(iter->iterable).id);
@@ -211,7 +263,7 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       // Use object.keys()/values()/entries() for explicit control
       auto *obj = object(std::get<ObjectRef>(iter->iterable).id);
       if (obj && iter->index < iter->keys.size()) {
-        const auto& key = iter->keys[iter->index++];
+        const auto &key = iter->keys[iter->index++];
         auto it = obj->find(key);
         if (it != obj->end()) {
           value = it->second;
@@ -236,7 +288,8 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
       value = nullptr;
     } else {
       int64_t current = r->start + (iter->index * r->step);
-      if ((r->step > 0 && current >= r->end) || (r->step < 0 && current <= r->end)) {
+      if ((r->step > 0 && current >= r->end) ||
+          (r->step < 0 && current <= r->end)) {
         done = true;
         value = nullptr;
       } else {
@@ -249,7 +302,7 @@ BytecodeValue GCHeap::iteratorNext(uint32_t id) {
     done = true;
     value = nullptr;
   }
-  
+
   // Return {value, done}
   auto resultObj = allocateObject();
   auto *obj = object(resultObj.id);
@@ -339,8 +392,8 @@ void GCHeap::maybeCollectGarbage(
     const std::vector<BytecodeValue> &locals,
     const std::unordered_map<std::string, BytecodeValue> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<BytecodeValue>(uint32_t)> &
-        open_local_reader) {
+    const std::function<std::optional<BytecodeValue>(uint32_t)>
+        &open_local_reader) {
   allocations_since_last_++;
   if (allocations_since_last_ < allocation_budget_) {
     return;
@@ -354,8 +407,8 @@ void GCHeap::markValue(
     std::unordered_set<uint32_t> &marked_objects,
     std::unordered_set<uint32_t> &marked_sets,
     std::unordered_set<uint32_t> &marked_closures,
-    const std::function<std::optional<BytecodeValue>(uint32_t)> &
-        open_local_reader) const {
+    const std::function<std::optional<BytecodeValue>(uint32_t)>
+        &open_local_reader) const {
   if (std::holds_alternative<ArrayRef>(value)) {
     uint32_t id = std::get<ArrayRef>(value).id;
     if (!marked_arrays.insert(id).second) {
@@ -404,6 +457,52 @@ void GCHeap::markValue(
     return;
   }
 
+  if (std::holds_alternative<StructRef>(value)) {
+    // Structs are value types, but we still need to mark their fields
+    uint32_t id = std::get<StructRef>(value).id;
+    auto it = structs_.find(id);
+    if (it == structs_.end()) {
+      return;
+    }
+    for (const auto &entry : it->second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets,
+                marked_closures, open_local_reader);
+    }
+    return;
+  }
+
+  if (std::holds_alternative<ClassRef>(value)) {
+    // Classes are reference types - need to mark as visited
+    uint32_t id = std::get<ClassRef>(value).id;
+    if (!marked_arrays.insert(id)
+             .second) { // Reuse marked_arrays for class tracking
+      return;
+    }
+    auto it = classes_.find(id);
+    if (it == classes_.end()) {
+      return;
+    }
+    for (const auto &entry : it->second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets,
+                marked_closures, open_local_reader);
+    }
+    return;
+  }
+
+  if (std::holds_alternative<EnumRef>(value)) {
+    // Enums have a payload array that needs marking
+    uint32_t id = std::get<EnumRef>(value).id;
+    auto it = enums_.find(id);
+    if (it == enums_.end()) {
+      return;
+    }
+    for (const auto &entry : it->second.second) {
+      markValue(entry, marked_arrays, marked_objects, marked_sets,
+                marked_closures, open_local_reader);
+    }
+    return;
+  }
+
   if (std::holds_alternative<ClosureRef>(value)) {
     uint32_t id = std::get<ClosureRef>(value).id;
     if (!marked_closures.insert(id).second) {
@@ -424,8 +523,8 @@ void GCHeap::markValue(
                     marked_closures, open_local_reader);
         }
       } else {
-        markValue(cell->closed_value, marked_arrays, marked_objects, marked_sets,
-                  marked_closures, open_local_reader);
+        markValue(cell->closed_value, marked_arrays, marked_objects,
+                  marked_sets, marked_closures, open_local_reader);
       }
     }
     return;
@@ -437,8 +536,8 @@ void GCHeap::collectGarbage(
     const std::vector<BytecodeValue> &locals,
     const std::unordered_map<std::string, BytecodeValue> &globals,
     const std::vector<uint32_t> &active_closure_ids,
-    const std::function<std::optional<BytecodeValue>(uint32_t)> &
-        open_local_reader) {
+    const std::function<std::optional<BytecodeValue>(uint32_t)>
+        &open_local_reader) {
   const auto pause_start = std::chrono::steady_clock::now();
 
   std::unordered_set<uint32_t> marked_arrays;
@@ -447,20 +546,20 @@ void GCHeap::collectGarbage(
   std::unordered_set<uint32_t> marked_closures;
 
   for (const auto &value : stack_values) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures,
-              open_local_reader);
+    markValue(value, marked_arrays, marked_objects, marked_sets,
+              marked_closures, open_local_reader);
   }
   for (const auto &value : locals) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures,
-              open_local_reader);
+    markValue(value, marked_arrays, marked_objects, marked_sets,
+              marked_closures, open_local_reader);
   }
   for (const auto &[_, value] : globals) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures,
-              open_local_reader);
+    markValue(value, marked_arrays, marked_objects, marked_sets,
+              marked_closures, open_local_reader);
   }
   for (const auto &[_, value] : external_roots_) {
-    markValue(value, marked_arrays, marked_objects, marked_sets, marked_closures,
-              open_local_reader);
+    markValue(value, marked_arrays, marked_objects, marked_sets,
+              marked_closures, open_local_reader);
   }
   for (uint32_t closure_id : active_closure_ids) {
     if (closure_id == 0) {

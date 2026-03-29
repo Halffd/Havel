@@ -380,7 +380,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
       if (top_level_functions_.count(fn.name->symbol) > 0) {
         // Top-level function - create GlobalFunction binding
         ResolvedBinding binding;
-        binding.kind = ResolvedBindingKind::GlobalFunction;
+        binding.kind = ResolvedBindingKind::Global;
         binding.name = fn.name->symbol;
         result_.identifier_bindings[fn.name.get()] = binding;
       } else {
@@ -546,7 +546,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           global_variables_.insert(ident.symbol);
           // Record as HostGlobal for proper LOAD_GLOBAL/STORE_GLOBAL
           ResolvedBinding newBinding;
-          newBinding.kind = ResolvedBindingKind::HostGlobal;
+          newBinding.kind = ResolvedBindingKind::Global;
           newBinding.slot = 0;  // Slot doesn't matter for HostGlobal
           newBinding.name = ident.symbol;
           newBinding.is_const = false;
@@ -580,7 +580,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
-              newBinding.kind = ResolvedBindingKind::HostGlobal;
+              newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
               newBinding.name = ident.symbol;
               newBinding.is_const = false;
@@ -620,7 +620,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
               uint32_t slot = declareLocal(ident.symbol, &ident, false);
               global_variables_.insert(ident.symbol);
               ResolvedBinding newBinding;
-              newBinding.kind = ResolvedBindingKind::HostGlobal;
+              newBinding.kind = ResolvedBindingKind::Global;
               newBinding.slot = 0;
               newBinding.name = ident.symbol;
               newBinding.is_const = false;
@@ -797,10 +797,9 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
     return std::nullopt;
   }
 
-  // FIRST: Check if this is a global variable - if so, return immediately
-  // Globals should NEVER become locals or upvalues
+  // FIRST: Check if this is a global variable (top-level let) - if so, return as Global
   if (global_variables_.count(name) > 0) {
-    return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name, false};
+    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
   auto &ctx = function_stack_[function_index];
@@ -817,52 +816,27 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
                            name, it->second.is_const};
   }
 
+  // Not found in local scopes
   if (function_index == 0) {
-    // In global scope, check builtins and host globals
-    if (top_level_structs_.find(name) != top_level_structs_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
-    }
-    if (top_level_functions_.find(name) != top_level_functions_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::GlobalFunction, 0, 0, name,
-                             false};
-    }
-
-    if (host_globals_.find(name) != host_globals_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::HostGlobal, 0, 0, name,
-                             false};
-    }
-
-    if (builtins_.find(name) != builtins_.end()) {
-      return ResolvedBinding{ResolvedBindingKind::Builtin, 0, 0, name, false};
-    }
-
-    // Check for implicitly declared global variables
-    if (!function_stack_.empty() && !function_stack_[0].scopes.empty()) {
-      for (size_t sc = function_stack_[0].scopes.size(); sc > 0; --sc) {
-        const auto &scope = function_stack_[0].scopes[sc - 1];
-        auto it = scope.find(name);
-        if (it != scope.end()) {
-          return ResolvedBinding{ResolvedBindingKind::Local, it->second.slot,
-                                 0, name, it->second.is_const};
-        }
-      }
-    }
-
-    return std::nullopt;
+    // In global scope - not found locally, treat as Global
+    // Runtime will decide if it exists or error
+    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
+  // In nested function - check enclosing scope
   auto enclosing = resolveIdentifierInFunction(name, function_index - 1);
   if (!enclosing) {
-    return std::nullopt;
+    // Not found anywhere - treat as Global
+    return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
 
-  if (enclosing->kind == ResolvedBindingKind::GlobalFunction ||
-      enclosing->kind == ResolvedBindingKind::HostGlobal ||
-      enclosing->kind == ResolvedBindingKind::Builtin) {
+  if (enclosing->kind == ResolvedBindingKind::Global) {
+    // Propagate Global binding
     return enclosing;
   }
 
   if (enclosing->kind == ResolvedBindingKind::Local) {
+    // Capture as upvalue
     uint32_t upvalue_slot = addUpvalue(function_index, name, enclosing->slot, true);
     return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
                            static_cast<uint32_t>(function_stack_.size() - 1 -
@@ -870,6 +844,7 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
                            name, enclosing->is_const};
   }
 
+  // Upvalue from enclosing function
   uint32_t upvalue_slot =
       addUpvalue(function_index, name, enclosing->slot, false);
   return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,

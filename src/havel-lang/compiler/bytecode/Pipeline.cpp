@@ -23,12 +23,8 @@ std::string bindingKindName(ResolvedBindingKind kind) {
     return "Local";
   case ResolvedBindingKind::Upvalue:
     return "Upvalue";
-  case ResolvedBindingKind::GlobalFunction:
-    return "GlobalFunction";
-  case ResolvedBindingKind::HostGlobal:
-    return "HostGlobal";
-  case ResolvedBindingKind::Builtin:
-    return "Builtin";
+  case ResolvedBindingKind::Global:
+    return "Global";
   }
   return "Unknown";
 }

@@ -77,6 +77,9 @@ private:
   static BytecodeValue handleProcessRunDetached(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   // Alias from MediaBridge
   static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  // System detection
+  static BytecodeValue handleSystemDetect(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSystemHardware(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**
@@ -319,6 +322,7 @@ private:
   static BytecodeValue handleGetMonitors(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleGetPrimary(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleGetCount(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleGetMonitorsArea(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

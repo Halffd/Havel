@@ -80,7 +80,11 @@ private:
       "mouse.click", "mouse.down", "mouse.up", "mouse.move", "mouse.moveRel",
       "mouse.scroll", "mouse.pos", "mouse.setSpeed", "mouse.setAccel", "mouse.setDPI",
       // Mouse global aliases
-      "click", "move", "moveRel", "scroll"};
+      "click", "move", "moveRel", "scroll",
+      // System detection
+      "system.detect", "system.hardware",
+      // Display functions
+      "display.getMonitors", "display.getPrimary", "display.getCount", "display.getMonitorsArea"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "mouse", "io", "system", "hotkey", "mode", "process", "async",

@@ -1337,8 +1337,12 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_CONST,
            addConstant(FunctionObject{.function_index = top_level_function_indices_by_name_[binding->name]}));
       break;
+    case ResolvedBindingKind::HostFunction:
+      // Host function - load as HostFunctionRef
+      emit(OpCode::LOAD_CONST, addConstant(HostFunctionRef{binding->name}));
+      break;
     case ResolvedBindingKind::Global:
-      // Global variable or host function - runtime will decide
+      // Global variable - runtime will decide
       emit(OpCode::LOAD_GLOBAL, binding->name);
       break;
     }
@@ -1424,8 +1428,20 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       throw std::runtime_error("Pipeline expression has no stages");
     }
 
-    // Compile first stage
-    compileExpression(*pipeline.stages[0]);
+    // Compile first stage - if it's a CallExpression, compile it as a call
+    if (pipeline.stages[0]->kind == ast::NodeType::CallExpression) {
+      const auto &call = static_cast<const ast::CallExpression &>(*pipeline.stages[0]);
+      if (call.callee) {
+        compileExpression(*call.callee);
+      }
+      for (const auto &arg : call.args) {
+        if (arg)
+          compileExpression(*arg);
+      }
+      emit(OpCode::CALL, static_cast<uint32_t>(call.args.size()));
+    } else {
+      compileExpression(*pipeline.stages[0]);
+    }
 
     // For each subsequent stage, compile it as a function call with previous
     // result as argument
@@ -1961,6 +1977,28 @@ void ByteCompiler::compileCallExpression(
            std::vector<BytecodeValue>{"struct.new", totalArgs});
       return;
     }
+    // Check if calling a host function
+    if (binding && binding->kind == ResolvedBindingKind::HostFunction) {
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+      }
+      uint32_t totalArgs = arg_count;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        totalArgs++;
+      }
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{binding->name, totalArgs});
+      return;
+    }
   }
 
   // Check for method call on primitive (prototype method)
@@ -1973,17 +2011,37 @@ void ByteCompiler::compileCallExpression(
       throw std::runtime_error("Unsupported member call expression");
     }
 
-    // Array higher-order methods should work for both simple receivers
+    // Array/Struct higher-order methods should work for both simple receivers
     // (nums.map(...)) and chained receivers (nums.sort().map(...)).
     bool is_array_module_call = false;
+    bool is_struct_module_call = false;
     if (member.object->kind == ast::NodeType::Identifier) {
       const auto &receiver_id =
           static_cast<const ast::Identifier &>(*member.object);
       if (const auto *receiver_binding = bindingFor(receiver_id)) {
+        std::cerr << "[DEBUG] Member call on " << receiver_binding->name << " kind=" << static_cast<int>(receiver_binding->kind) << "\n";
         if (receiver_binding->kind == ResolvedBindingKind::Global &&
             receiver_binding->name == "array") {
           is_array_module_call = true;
+        } else if (receiver_binding->kind == ResolvedBindingKind::Global &&
+                   receiver_binding->name == "struct") {
+          is_struct_module_call = true;
+          std::cerr << "[DEBUG] is_struct_module_call = true\n";
         }
+      }
+    }
+
+    // Handle struct.* module calls
+    if (is_struct_module_call) {
+      if (property->symbol == "define" || property->symbol == "new" ||
+          property->symbol == "get" || property->symbol == "set") {
+        for (const auto &arg : expression.args) {
+          if (!arg) throw std::runtime_error("Call expression contains null argument");
+          compileExpression(*arg);
+        }
+        emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{"struct." + property->symbol,
+                                                           static_cast<uint32_t>(expression.args.size())});
+        return;
       }
     }
 

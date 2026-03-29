@@ -822,6 +822,16 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
     if (top_level_functions_.count(name) > 0) {
       return ResolvedBinding{ResolvedBindingKind::Function, 0, 0, name, false};
     }
+    // Check if it's a known host function
+    static const std::unordered_set<std::string> host_functions = {
+      "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
+      "type", "str", "int", "num", "bool", "len", "join",
+      "system.gc", "system.gcStats", "system_gc", "system_gcStats",
+      "struct.define", "struct.new", "struct.get", "struct.set"
+    };
+    if (host_functions.count(name) > 0) {
+      return ResolvedBinding{ResolvedBindingKind::HostFunction, 0, 0, name, false};
+    }
     // Not found locally, treat as Global
     // Runtime will decide if it exists or error
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};

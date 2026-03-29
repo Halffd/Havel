@@ -911,6 +911,7 @@ void VM::registerDefaultHostFunctions() {
   registerHostFunction("type", 1, [](const std::vector<BytecodeValue> &args) {
     const auto &value = args[0];
     std::string typeName;
+    std::cerr << "[DEBUG] type() called with variant index: " << value.index() << "\n";
     if (std::holds_alternative<std::nullptr_t>(value)) {
       typeName = "null";
     } else if (std::holds_alternative<bool>(value)) {
@@ -934,6 +935,7 @@ void VM::registerDefaultHostFunctions() {
     } else {
       typeName = "unknown";
     }
+    std::cerr << "[DEBUG] type() returning: " << typeName << "\n";
     return BytecodeValue(typeName);
   });
 
@@ -966,20 +968,25 @@ void VM::registerDefaultHostFunctions() {
 
   registerHostFunction(
       "struct.define", [this](const std::vector<BytecodeValue> &args) {
+        std::cerr << "[DEBUG] struct.define called with " << args.size() << " args\n";
         if (args.size() != 2 || !std::holds_alternative<std::string>(args[0]) ||
             !std::holds_alternative<ArrayRef>(args[1])) {
+          std::cerr << "[DEBUG] struct.define: argument type check failed\n";
           throw std::runtime_error(
               "struct.define(name, fields) expects (string, array)");
         }
         const auto &name = std::get<std::string>(args[0]);
         auto *field_array = heap_.array(std::get<ArrayRef>(args[1]).id);
         if (!field_array) {
+          std::cerr << "[DEBUG] struct.define: field_array is null\n";
           throw std::runtime_error("struct.define received invalid fields array");
         }
+        std::cerr << "[DEBUG] struct.define: field_array size = " << field_array->size() << "\n";
         std::vector<std::string> fields;
         fields.reserve(field_array->size());
         for (const auto &value : *field_array) {
           if (!std::holds_alternative<std::string>(value)) {
+            std::cerr << "[DEBUG] struct.define: field value is not a string\n";
             throw std::runtime_error(
                 "struct.define fields must contain only strings");
           }
@@ -987,7 +994,8 @@ void VM::registerDefaultHostFunctions() {
         }
         uint32_t type_id = registerStructType(name, fields);
         struct_type_ids_by_name_[name] = type_id;
-        return BytecodeValue(std::in_place_type<int64_t>, static_cast<int64_t>(type_id));
+        std::cerr << "[DEBUG] struct.define: returning type_id = " << type_id << "\n";
+        return BytecodeValue(static_cast<int64_t>(type_id));
       });
 
   registerHostFunction(
@@ -1065,6 +1073,7 @@ void VM::registerDefaultHostFunctions() {
 }
 
 void VM::registerDefaultHostGlobals() {
+  std::cerr << "[DEBUG] registerDefaultHostGlobals called\n";
   auto system_obj = heap_.allocateObject();
   setHostObjectField(system_obj, "gc", HostFunctionRef{.name = "system.gc"});
   setHostObjectField(system_obj, "gcStats",
@@ -1076,7 +1085,9 @@ void VM::registerDefaultHostGlobals() {
   setHostObjectField(struct_obj, "new", HostFunctionRef{.name = "struct.new"});
   setHostObjectField(struct_obj, "get", HostFunctionRef{.name = "struct.get"});
   setHostObjectField(struct_obj, "set", HostFunctionRef{.name = "struct.set"});
+  std::cerr << "[DEBUG] struct object created, setting global\n";
   setGlobal("struct", struct_obj);
+  std::cerr << "[DEBUG] struct global set\n";
   
   // Register default window globals (will be updated by WindowMonitor)
   setGlobal("title", BytecodeValue(std::string("")));

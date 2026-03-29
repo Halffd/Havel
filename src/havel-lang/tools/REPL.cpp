@@ -219,31 +219,24 @@ bool REPL::execute(const std::string& code) {
   }
 
   try {
-    // Accumulate all input for recompilation (so variables persist)
-    if (!inputHistory.empty()) {
-      inputHistory += "\n";
-    }
-    inputHistory += code;
-    
-    // Compile all accumulated input (includes lexical resolution)
+    // Compile and execute only the new code
+    // executePersistent preserves globals/state between calls
     compiler::ByteCompiler byteCompiler;
     parser::Parser parser;
-    
-    auto program = parser.produceAST(inputHistory);
+
+    auto program = parser.produceAST(code);
     if (!program || parser.hasErrors()) {
       for (const auto& err : parser.getErrors()) {
         printError(err.message, err.line);
       }
-      // Remove the failed input from history
-      inputHistory = inputHistory.substr(0, inputHistory.size() - code.size() - 1);
       return false;
     }
-    
+
     auto chunk = byteCompiler.compile(*program);
-    
+
     // Execute persistently (preserves globals between REPL lines)
     auto result = vm_->executePersistent(*chunk, "__main__");
-    
+
     // Print result if not null (use simple type-based conversion)
     if (!std::holds_alternative<std::nullptr_t>(result)) {
       if (std::holds_alternative<std::string>(result)) {
@@ -254,6 +247,30 @@ bool REPL::execute(const std::string& code) {
         printValue(std::to_string(std::get<double>(result)));
       } else if (std::holds_alternative<bool>(result)) {
         printValue(std::get<bool>(result) ? "true" : "false");
+      } else if (std::holds_alternative<compiler::ArrayRef>(result)) {
+        // Print array as [elem1, elem2, ...]
+        auto arrRef = std::get<compiler::ArrayRef>(result);
+        std::string arrStr = "[";
+        size_t len = vm_->getHostArrayLength(arrRef);
+        for (size_t i = 0; i < len; i++) {
+          if (i > 0) arrStr += ", ";
+          const auto& elem = vm_->getHostArrayValue(arrRef, i);
+          if (std::holds_alternative<std::string>(elem)) {
+            arrStr += std::get<std::string>(elem);
+          } else if (std::holds_alternative<int64_t>(elem)) {
+            arrStr += std::to_string(std::get<int64_t>(elem));
+          } else if (std::holds_alternative<double>(elem)) {
+            arrStr += std::to_string(std::get<double>(elem));
+          } else if (std::holds_alternative<bool>(elem)) {
+            arrStr += std::get<bool>(elem) ? "true" : "false";
+          } else if (std::holds_alternative<std::nullptr_t>(elem)) {
+            arrStr += "null";
+          } else {
+            arrStr += "?";
+          }
+        }
+        arrStr += "]";
+        printValue(arrStr);
       }
     }
     return true;

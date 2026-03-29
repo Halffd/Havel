@@ -13,16 +13,57 @@ void registerObjectModule(VMApi& api) {
     api.registerFunction("object.keys", [&api](const std::vector<BytecodeValue>& args) {
         if (args.empty()) throw std::runtime_error("Object.keys() requires object");
         if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.keys() arg must be object");
-        
+
         auto obj = std::get<ObjectRef>(args[0]);
         auto keys = api.getObjectKeys(obj);
-        
+
         // Sort keys alphabetically
         std::sort(keys.begin(), keys.end());
-        
+
         auto arr = api.makeArray();
         for (const auto& key : keys) {
             api.push(arr, BytecodeValue(key));
+        }
+        return BytecodeValue(arr);
+    });
+
+    // Object.values(obj) - Get array of values
+    api.registerFunction("object.values", [&api](const std::vector<BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("Object.values() requires object");
+        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.values() arg must be object");
+
+        auto obj = std::get<ObjectRef>(args[0]);
+        auto keys = api.getObjectKeys(obj);
+
+        auto arr = api.makeArray();
+        for (const auto& key : keys) {
+            if (api.hasField(obj, key)) {
+                api.push(arr, api.getField(obj, key));
+            } else {
+                api.push(arr, BytecodeValue(nullptr));
+            }
+        }
+        return BytecodeValue(arr);
+    });
+
+    // Object.entries(obj) - Get array of [key, value] pairs
+    api.registerFunction("object.entries", [&api](const std::vector<BytecodeValue>& args) {
+        if (args.empty()) throw std::runtime_error("Object.entries() requires object");
+        if (!std::holds_alternative<ObjectRef>(args[0])) throw std::runtime_error("Object.entries() arg must be object");
+
+        auto obj = std::get<ObjectRef>(args[0]);
+        auto keys = api.getObjectKeys(obj);
+
+        auto arr = api.makeArray();
+        for (const auto& key : keys) {
+            auto pair = api.makeArray();
+            api.push(pair, BytecodeValue(key));
+            if (api.hasField(obj, key)) {
+                api.push(pair, api.getField(obj, key));
+            } else {
+                api.push(pair, BytecodeValue(nullptr));
+            }
+            api.push(arr, BytecodeValue(pair));
         }
         return BytecodeValue(arr);
     });
@@ -76,6 +117,8 @@ void registerObjectModule(VMApi& api) {
     // Register object object
     auto obj = api.makeObject();
     api.setField(obj, "keys", api.makeFunctionRef("object.keys"));
+    api.setField(obj, "values", api.makeFunctionRef("object.values"));
+    api.setField(obj, "entries", api.makeFunctionRef("object.entries"));
     api.setField(obj, "has", api.makeFunctionRef("object.has"));
     api.setField(obj, "set", api.makeFunctionRef("object.set"));
     api.setField(obj, "isEmpty", api.makeFunctionRef("object.isEmpty"));

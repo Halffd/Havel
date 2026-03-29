@@ -1497,6 +1497,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::STORE_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding.slot);
+      } else if (binding.kind == ResolvedBindingKind::HostGlobal) {
+        emit(OpCode::STORE_GLOBAL, binding.name);
       } else {
         throw std::runtime_error("Assignment target is not mutable");
       }
@@ -1511,6 +1513,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
+      } else if (binding.kind == ResolvedBindingKind::HostGlobal) {
+        emit(OpCode::LOAD_GLOBAL, binding.name);
       } else {
         throw std::runtime_error("Assignment target is not mutable");
       }

@@ -1399,6 +1399,24 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::AtExpression: {
+    // @field - compile as loading 'this' and getting the field
+    const auto &atExpr = static_cast<const ast::AtExpression &>(expression);
+    if (!atExpr.field) {
+      throw std::runtime_error("@ expression missing field");
+    }
+    auto *fieldId = dynamic_cast<const ast::Identifier *>(atExpr.field.get());
+    if (!fieldId) {
+      throw std::runtime_error("@ expression field must be an identifier");
+    }
+    // Load 'this' (current object)
+    emit(OpCode::LOAD_GLOBAL, "this");
+    // Get the field from this
+    emit(OpCode::LOAD_CONST, addConstant(fieldId->symbol));
+    emit(OpCode::OBJECT_GET);
+    break;
+  }
+
   case ast::NodeType::BinaryExpression: {
     const auto &binary = static_cast<const ast::BinaryExpression &>(expression);
     if (!binary.left || !binary.right) {
@@ -2018,6 +2036,21 @@ void ByteCompiler::compileCallExpression(
   uint32_t arg_count = static_cast<uint32_t>(expression.args.size());
   bool hasKwargs = !expression.kwargs.empty();
 
+  // Handle super calls for prototype inheritance (@->method())
+  if (expression.isSuperCall) {
+    // Compile arguments for the super call
+    for (const auto &arg : expression.args) {
+      if (!arg) {
+        throw std::runtime_error("Super call contains null argument");
+      }
+      compileExpression(*arg);
+    }
+    // Emit CALL_SUPER opcode with method name and arg count
+    emit(OpCode::CALL_SUPER,
+         std::vector<BytecodeValue>{expression.superMethodName, arg_count});
+    return;
+  }
+
   if (expression.callee->kind == ast::NodeType::Identifier) {
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);
@@ -2469,14 +2502,14 @@ void ByteCompiler::compileCallExpression(
         }
 
         // Dynamic language: treat all module.function calls as host functions
-        // The runtime will resolve whether it's a direct host function or prototype method
+        // The runtime will resolve whether it's a direct host function or
+        // prototype method
         std::string fullMethodName = typeName + "." + property->symbol;
 
         // Compile arguments
         for (const auto &arg : expression.args) {
           if (!arg) {
-            throw std::runtime_error(
-                "Call expression contains null argument");
+            throw std::runtime_error("Call expression contains null argument");
           }
           compileExpression(*arg);
         }
@@ -2528,7 +2561,7 @@ void ByteCompiler::compileCallExpression(
           }
 
           // Compile kwargs as object if present
-          uint32_t totalArgs = arg_count + 1;  // +1 for the object (self/this)
+          uint32_t totalArgs = arg_count + 1; // +1 for the object (self/this)
           if (hasKwargs) {
             emit(OpCode::OBJECT_NEW);
             for (const auto &kwarg : expression.kwargs) {

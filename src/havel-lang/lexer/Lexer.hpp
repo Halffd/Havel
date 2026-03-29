@@ -1,19 +1,15 @@
 #pragma once
 
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <memory>
 
 namespace havel {
 
 // Error severity levels
-enum class ErrorSeverity {
-  Error,
-  Warning,
-  Info
-};
+enum class ErrorSeverity { Error, Warning, Info };
 
 // Compiler error with location and severity
 struct CompilerError {
@@ -21,17 +17,18 @@ struct CompilerError {
   size_t line;
   size_t column;
   std::string message;
-  std::string sourceLine;  // The source line where error occurred
-  
-  CompilerError(ErrorSeverity sev, size_t l, size_t c, const std::string& msg)
-    : severity(sev), line(l), column(c), message(msg) {}
+  std::string sourceLine; // The source line where error occurred
+
+  CompilerError(ErrorSeverity sev, size_t l, size_t c, const std::string &msg)
+      : severity(sev), line(l), column(c), message(msg) {}
 };
 
 class LexError : public std::runtime_error {
 public:
   LexError(size_t line, size_t column, const std::string &message,
            size_t length = 1)
-      : std::runtime_error(message), line(line), column(column), length(length) {}
+      : std::runtime_error(message), line(line), column(column),
+        length(length) {}
 
   size_t line;
   size_t column;
@@ -40,7 +37,7 @@ public:
 
 enum class TokenType {
   Let,
-  Const,      // const - immutable binding
+  Const, // const - immutable binding
   If,
   Else,
   While,
@@ -55,7 +52,7 @@ enum class TokenType {
   Case,
   Default,
   Fn,
-  Op,         // op (operator overload)
+  Op, // op (operator overload)
   Return,
   Ret,
   Config,
@@ -63,30 +60,30 @@ enum class TokenType {
   Modes,
   Signal,
   Group,
-  Struct,     // struct
+  Struct, // struct
   Class,  // class
-  Enum,       // enum
-  Trait,      // trait
-  Impl,       // impl
-  This,       // this - current object reference
+  Enum,   // enum
+  Trait,  // trait
+  Impl,   // impl
+  This,   // this - current object reference
   On,
   Off,
   When,
   Mode,
-  Repeat,     // repeat
+  Repeat, // repeat
   Identifier,
   Number,
   String,
-  MultilineString,  // """...""" multiline strings
+  MultilineString, // """...""" multiline strings
   InterpolatedString,
-  Backtick,      // `command` for shell output
-  RegexLiteral,  // /pattern/ for regex
-  ShellCommand,  // $ command for shell execution
-  ShellCommandCapture,  // $! command (capture output)
+  Backtick,            // `command` for shell output
+  RegexLiteral,        // /pattern/ for regex
+  ShellCommand,        // $ command for shell execution
+  ShellCommandCapture, // $! command (capture output)
   Hotkey,
-  Arrow,         // => (fat arrow for lambdas)
-  ReturnType,    // -> (thin arrow for return types)
-  GlobalScope,   // :: (global scope assignment)
+  Arrow,       // => (fat arrow for lambdas)
+  ReturnType,  // -> (thin arrow for return types)
+  GlobalScope, // :: (global scope assignment)
   BinaryOp,
   OpenParen,
   CloseParen,
@@ -101,8 +98,8 @@ enum class TokenType {
   Multiply,
   Divide,
   Modulo,
-  Power,        // ** power operator
-  Backslash,    // \ integer division
+  Power,     // ** power operator
+  Backslash, // \ integer division
   PlusPlus,
   MinusMinus, // Increment/Decrement
   Equals,
@@ -114,19 +111,19 @@ enum class TokenType {
   And,
   Or,
   Not,
-  Matches,    // regex match operator
-  Tilde,      // ~ regex match shorthand
-  True,        // boolean literal true
-  False,       // boolean literal false
-  Null,        // null literal
+  Matches, // regex match operator
+  Tilde,   // ~ regex match shorthand
+  True,    // boolean literal true
+  False,   // boolean literal false
+  Null,    // null literal
   Assign,
   PlusAssign,
   MinusAssign,
   MultiplyAssign,
   DivideAssign,
-  ModuloAssign,  // %=
-  PowerAssign,   // **=
-  Nullish,       // ?? nullish coalescing
+  ModuloAssign, // %=
+  PowerAssign,  // **=
+  Nullish,      // ?? nullish coalescing
   Pipe,
   Comment,
   NewLine,
@@ -143,6 +140,8 @@ enum class TokenType {
   ShiftRight,   // >> (config append/get)
   Spread,       // ... for spread operator
   Hash,         // # for set literals
+  At,           // @ for field access (this.field)
+  SuperArrow,   // @-> for super method calls
   Underscore,   // _ for default match case
   Try,          // try
   Catch,        // catch
@@ -179,11 +178,11 @@ public:
   Lexer(const std::string &sourceCode, bool debug_lexer = false);
   std::vector<Token> tokenize();
   void printTokens(const std::vector<Token> &tokens) const;
-  
+
   // Error handling
-  const std::vector<CompilerError>& getErrors() const { return errors; }
+  const std::vector<CompilerError> &getErrors() const { return errors; }
   bool hasErrors() const { return !errors.empty(); }
-  
+
   static const std::unordered_map<std::string, TokenType> KEYWORDS;
 
 private:
@@ -191,8 +190,8 @@ private:
   size_t position = 0;
   size_t line = 1;
   size_t column = 1;
-  
-  std::vector<CompilerError> errors;  // Collected errors
+
+  std::vector<CompilerError> errors; // Collected errors
 
   bool debug_lexer = false;
 
@@ -222,10 +221,10 @@ private:
   Token scanShellCommand(bool captureOutput = false);
   Token scanIdentifier();
   Token scanHotkey();
-  
+
   // Error reporting
-  void reportError(const std::string& message);
-  void reportWarning(const std::string& message);
+  void reportError(const std::string &message);
+  void reportWarning(const std::string &message);
   std::string getSourceLine(size_t lineNum) const;
 };
 

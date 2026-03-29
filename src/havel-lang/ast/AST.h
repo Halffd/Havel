@@ -945,14 +945,23 @@ struct CallExpression : public Expression {
   std::vector<std::unique_ptr<Expression>> args;
   std::vector<KeywordArg> kwargs; // Keyword arguments
 
+  // Super call support for prototype inheritance
+  bool isSuperCall = false;
+  std::string superMethodName;
+
   CallExpression(std::unique_ptr<Expression> cal,
                  std::vector<std::unique_ptr<Expression>> ags = {},
                  std::vector<KeywordArg> kws = {})
-      : callee(std::move(cal)), args(std::move(ags)), kwargs(std::move(kws)) {
+      : callee(std::move(cal)), args(std::move(ags)), kwargs(std::move(kws)),
+        isSuperCall(false) {
     kind = NodeType::CallExpression;
   }
 
   std::string toString() const override {
+    if (isSuperCall) {
+      return "SuperCall{@->" + superMethodName + "(" +
+             std::to_string(args.size()) + " args)}";
+    }
     return "CallExpr{" + (callee ? callee->toString() : "nullptr") + "(" +
            std::to_string(args.size()) + " args, " +
            std::to_string(kwargs.size()) + " kwargs)}";

@@ -16,6 +16,29 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   // Enter global scope
   beginFunction(nullptr);
 
+  // Pre-scan: collect all top-level assignment targets as implicit globals
+  // This ensures lambdas can reference variables that are assigned at top level
+  for (const auto &statement : program.body) {
+    if (!statement || statement->kind != ast::NodeType::ExpressionStatement) {
+      continue;
+    }
+    const auto &exprStmt =
+        static_cast<const ast::ExpressionStatement &>(*statement);
+    if (!exprStmt.expression ||
+        exprStmt.expression->kind != ast::NodeType::AssignmentExpression) {
+      continue;
+    }
+    const auto &assignment =
+        static_cast<const ast::AssignmentExpression &>(*exprStmt.expression);
+    if (assignment.target &&
+        assignment.target->kind == ast::NodeType::Identifier) {
+      const auto &ident =
+          static_cast<const ast::Identifier &>(*assignment.target);
+      // Pre-declare as global variable
+      global_variables_.insert(ident.symbol);
+    }
+  }
+
   // First pass: declare ALL top-level bindings (let and fn names)
   // This ensures function bodies can see global variables
   for (const auto &statement : program.body) {

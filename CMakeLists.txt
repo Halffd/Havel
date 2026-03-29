@@ -327,6 +327,7 @@ file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 # Explicitly add new modules (GLOB might not catch new files)
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
 list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
+list(APPEND HOST_MODULES_SOURCES "src/modules/automation/AutomationModule.cpp")
 
 # Test sources (conditional)
 set(TEST_SOURCES "")

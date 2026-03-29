@@ -11,6 +11,7 @@
 #include "../../modules/window/WindowMonitorModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
 #include "../../modules/mouse/MouseModule.hpp"
+#include "../../modules/automation/AutomationModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -53,6 +54,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
 
   // Register mouse module (mouse control)
   modules::registerMouseModule(*api);
+
+  // Register automation module (auto clicker, runner, key presser)
+  modules::registerAutomationModule(*api);
 
   // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are initialized
   // This ensures we use the existing WindowMonitor from HotkeyManager

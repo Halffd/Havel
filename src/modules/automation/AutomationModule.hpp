@@ -1,19 +1,18 @@
-#include "../../havel-lang/runtime/HostAPI.hpp"
 /*
- * AutomationModule.hpp
+ * AutomationModule.hpp - Automation module for Havel scripting
  * 
- * Automation module for Havel language.
+ * Exposes automation functionality to scripts:
+ * - autoClicker(button, interval) - Auto clicker
+ * - autoRunner(direction, interval) - Auto key runner (up/down/left/right)
+ * - autoKeyPress(key, interval) - Auto key presser
+ * - chainedTask(name, actions, loop) - Chained timed actions
  */
 #pragma once
 
+#include "havel-lang/compiler/bytecode/VMApi.hpp"
 
-namespace havel {
+namespace havel::modules {
 
-class Environment;
+void registerAutomationModule(compiler::VMApi &api);
 
-namespace modules {
-
-void registerModuleStub();
-
-} // namespace modules
-} // namespace havel
+} // namespace havel::modules

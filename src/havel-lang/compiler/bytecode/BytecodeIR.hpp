@@ -27,7 +27,7 @@ enum class OpCode : uint8_t {
   // Stack operations
   LOAD_CONST,
   LOAD_GLOBAL,
-  STORE_GLOBAL,  // Store to global variable by name
+  STORE_GLOBAL, // Store to global variable by name
   LOAD_VAR,
   STORE_VAR,
   LOAD_UPVALUE,
@@ -57,16 +57,16 @@ enum class OpCode : uint8_t {
   AND,
   OR,
   NOT,
-  NEGATE,       // Unary minus (negate number)
-  IS_NULL,      // Check if value is null or undefined
+  NEGATE,  // Unary minus (negate number)
+  IS_NULL, // Check if value is null or undefined
 
   // Control flow
   JUMP,
   JUMP_IF_FALSE,
   JUMP_IF_TRUE,
-  JUMP_IF_NULL,  // Jump only if null or undefined (for ?? operator)
+  JUMP_IF_NULL, // Jump only if null or undefined (for ?? operator)
   CALL,
-  TAIL_CALL,  // Tail call optimization - reuse current frame
+  TAIL_CALL, // Tail call optimization - reuse current frame
   CALL_HOST,
   RETURN,
   TRY_ENTER,      // Install exception handler (catch ip)
@@ -84,37 +84,37 @@ enum class OpCode : uint8_t {
   ARRAY_SET,
   ARRAY_PUSH,
   ARRAY_LEN,
-  
+
   // Range operations
   RANGE_NEW,      // Create range: start..end or start..step..end
   RANGE_STEP_NEW, // Create range with step
-  
+
   // Struct operations (compact storage, field access by index)
-  STRUCT_NEW,     // Create struct with field count
-  STRUCT_GET,     // Get field by index
-  STRUCT_SET,     // Set field by index
-  
+  STRUCT_NEW, // Create struct with field count
+  STRUCT_GET, // Get field by index
+  STRUCT_SET, // Set field by index
+
   // Enum operations (tagged union)
-  ENUM_NEW,       // Create enum variant (tag + payload count)
-  ENUM_TAG,       // Get enum tag
-  ENUM_PAYLOAD,   // Get payload by index
-  ENUM_MATCH,     // Pattern match on enum
-  
+  ENUM_NEW,     // Create enum variant (tag + payload count)
+  ENUM_TAG,     // Get enum tag
+  ENUM_PAYLOAD, // Get payload by index
+  ENUM_MATCH,   // Pattern match on enum
+
   // Object operations (VM intrinsics)
   OBJECT_KEYS,    // Get array of keys
   OBJECT_VALUES,  // Get array of values
   OBJECT_ENTRIES, // Get array of [key, value] pairs
   OBJECT_HAS,     // Check if key exists
   OBJECT_DELETE,  // Delete key from object
-  
+
   // Array operations (additional VM intrinsics)
-  ARRAY_POP,      // Pop element from array
-  ARRAY_HAS,      // Check if array has value
-  ARRAY_FIND,     // Find index of value
-  ARRAY_MAP,      // Map function over array
-  ARRAY_FILTER,   // Filter array by predicate
-  ARRAY_REDUCE,   // Reduce array to single value
-  ARRAY_FOREACH,  // Execute function for each element
+  ARRAY_POP,     // Pop element from array
+  ARRAY_HAS,     // Check if array has value
+  ARRAY_FIND,    // Find index of value
+  ARRAY_MAP,     // Map function over array
+  ARRAY_FILTER,  // Filter array by predicate
+  ARRAY_REDUCE,  // Reduce array to single value
+  ARRAY_FOREACH, // Execute function for each element
 
   // String operations (VM intrinsics)
   STRING_LEN,     // Get string length
@@ -128,10 +128,10 @@ enum class OpCode : uint8_t {
   STRING_ENDS,    // Check if ends with
   STRING_SPLIT,   // Split by delimiter
   STRING_REPLACE, // Replace substring
-  
+
   // Iteration protocol
-  ITER_NEW,     // Create iterator from iterable
-  ITER_NEXT,    // Get next {value, done} from iterator
+  ITER_NEW,  // Create iterator from iterable
+  ITER_NEXT, // Get next {value, done} from iterator
   SET_NEW,
 
   // Object operations
@@ -187,15 +187,21 @@ struct RangeRef {
 
 // Struct: compact field storage (fields stored as array, type info separate)
 struct StructRef {
-  uint32_t id = 0;      // GC object id for the field array
-  uint32_t typeId = 0;  // Type registry index
+  uint32_t id = 0;     // GC object id for the field array
+  uint32_t typeId = 0; // Type registry index
+};
+
+// Class: reference type with methods (shared identity)
+struct ClassRef {
+  uint32_t id = 0;     // GC object id for the field array
+  uint32_t typeId = 0; // Type registry index
 };
 
 // Enum: tagged union (tag + payload array)
 struct EnumRef {
-  uint32_t id = 0;      // GC object id for the payload array
-  uint32_t tag = 0;     // Variant tag
-  uint32_t typeId = 0;  // Type registry index
+  uint32_t id = 0;     // GC object id for the payload array
+  uint32_t tag = 0;    // Variant tag
+  uint32_t typeId = 0; // Type registry index
 };
 
 struct IteratorRef {
@@ -210,7 +216,8 @@ using BytecodeValue =
     std::variant<std::nullptr_t, bool, int64_t, double, std::string,
                  uint32_t, // Index into constant pool
                  FunctionObject, ClosureRef, ArrayRef, ObjectRef, SetRef,
-                 RangeRef, StructRef, EnumRef, IteratorRef, HostFunctionRef>;
+                 RangeRef, StructRef, ClassRef, EnumRef, IteratorRef,
+                 HostFunctionRef>;
 
 using BytecodeHostFunction =
     std::function<BytecodeValue(const std::vector<BytecodeValue> &)>;

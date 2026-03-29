@@ -102,6 +102,7 @@ private:
   std::unordered_map<std::string, BytecodeValue> globals;
   std::unordered_map<std::string, BytecodeHostFunction> host_functions;
   std::unordered_map<std::string, uint32_t> struct_type_ids_by_name_;
+  std::unordered_map<std::string, uint32_t> class_type_ids_by_name_;
   bool has_current_exception_ = false;
   BytecodeValue current_exception_ = nullptr;
 
@@ -222,7 +223,17 @@ public:
   BytecodeValue getStructField(StructRef struct_ref, size_t index);
   void setStructField(StructRef struct_ref, size_t index, const BytecodeValue& value);
   uint32_t getStructTypeId(StructRef struct_ref);
-  
+
+  // Class helpers
+  uint32_t registerClassType(const std::string& name, const std::vector<std::string>& fields);
+  ClassRef createClass(uint32_t typeId, size_t fieldCount);
+  BytecodeValue getClassField(ClassRef class_ref, size_t index);
+  void setClassField(ClassRef class_ref, size_t index, const BytecodeValue& value);
+  uint32_t getClassTypeId(ClassRef class_ref);
+
+  // Copy a struct (value type semantics)
+  StructRef copyStruct(StructRef struct_ref);
+
   // Enum helpers
   uint32_t registerEnumType(const std::string& name, const std::vector<std::string>& variants);
   EnumRef createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);

@@ -1,0 +1,29 @@
+print("-------- System Info --------")
+print("system.detect: " + type(system.detect))
+sys = system.detect()
+print("system.detect: " + type(sys))
+print("sys: " + sys)
+[windows, mac, bsd, linux, unknownOS] = [sys.os == "Windows", sys.os == "MacOS", sys.os == "BSD", sys.os == "Linux", sys.os == "Unknown"]
+wl = false
+displayName = ""
+shell = sys.shell
+user = sys.user
+home = sys.home
+
+if linux {
+  wl = sys.displayProtocol == "Wayland"
+  displayName = sys.display
+  print("wl: " + wl)
+  print("displayName: " + displayName)
+}
+wm = lower(sys.windowManager)
+print("wm: " + wm)
+
+if wm == "unknown" {
+  print("wm is unknown, checking for compiz")
+  if len(process.find("compiz")) > 0 {
+    wm = "compiz"
+    print("wm is now: " + wm)
+  }
+}
+print("wm after check: " + wm)

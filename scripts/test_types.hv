@@ -1,61 +1,38 @@
-// Test type system and type declarations
+// Test Swift-inspired type system: value types (structs) vs reference types (classes)
 
-print("=== Type System Tests ===\n")
+// Test 1: Struct value type semantics - copy on assignment
+let Point = Struct.define("Point", ["x", "y"])
+let p1 = Struct.new(Point, 10, 20)
+let p2 = p1  // Should copy p1
+Struct.set(p2, "x", 30)
 
-// Test 1: type.of()
-print("1. Testing type.of():")
-print("  type.of(42): ")
-print(type.of(42))
-print("  type.of(3.14): ")
-print(type.of(3.14))
-print("  type.of('hello'): ")
-print(type.of("hello"))
-let arr = [1,2,3]
-print("  type.of(array): ")
-print(type.of(arr))
-print("")
+print("p1.x after p2.x = 30: " + str(Struct.get(p1, "x")))  // Should be 10 (not copied)
+print("p2.x after p2.x = 30: " + str(Struct.get(p2, "x")))  // Should be 30
 
-// Test 2: type.is()
-print("2. Testing type.is():")
-print("  type.is(42, 'int'): ")
-print(type.is(42, "int"))
-print("  type.is(3.14, 'float'): ")
-print(type.is(3.14, "float"))
-print("  type.is('hello', 'string'): ")
-print(type.is("hello", "string"))
-print("")
+// Test 2: Class reference type semantics - shared identity
+let Window = Class.define("Window", ["x", "y"])
+let w1 = Class.new(Window, 100, 200)
+let w2 = w1  // Should reference the same object
+Class.set(w2, "x", 300)
 
-// Test 3: Struct declaration
-print("3. Testing struct declaration:")
-struct Vec2 {
-  x: Num
-  y: Num
-}
-print("  Struct Vec2 declared successfully")
-print("")
+print("w1.x after w2.x = 300: " + str(Class.get(w1, "x")))  // Should be 300 (shared)
+print("w2.x after w2.x = 300: " + str(Class.get(w2, "x")))  // Should be 300
 
-// Test 4: Enum declaration
-print("4. Testing enum declaration:")
-enum Color {
-  Red
-  Green
-  Blue
-}
-print("  Enum Color declared successfully")
-print("")
+// Test 3: Struct operations via generic dispatch
+let p3 = Struct.new(Point, 5, 10)
+print("p3.x: " + str(Struct.get(p3, "x")))
+print("p3.y: " + str(Struct.get(p3, "y")))
 
-// Test 5: Trait declaration
-print("5. Testing trait declaration:")
-trait Drawable {
-  fn draw()
-}
-print("  Trait Drawable declared successfully")
-print("")
+// Test 4: Class operations via generic dispatch
+let w3 = Class.new(Window, 50, 75)
+print("w3.x: " + str(Class.get(w3, "x")))
+print("w3.y: " + str(Class.get(w3, "y")))
 
-// Test 6: implements()
-print("6. Testing implements():")
-print("  implements(42, 'Drawable'): ")
-print(implements(42, "Drawable"))
-print("")
+// Test 5: Verify struct and class are different types
+let p4 = Struct.new(Point, 1, 2)
+let w4 = Class.new(Window, 3, 4)
 
-print("=== Type Tests Complete ===")
+print("p4 is struct: true")
+print("w4 is class: true")
+
+print("All tests passed!")

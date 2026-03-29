@@ -157,10 +157,15 @@ enum class OpCode : uint8_t {
   // Special operations
   PRINT,
   DEBUG,
+  // Class operations (with prototype chain support)
+  CLASS_NEW,       // Create class with parent: typeId, parentTypeId, fieldCount
+  CLASS_GET_FIELD, // Get field with prototype chain lookup
+  CLASS_SET_FIELD, // Set field with prototype chain lookup
+  LOAD_CLASS_PROTO, // Load parent class reference
+  CALL_SUPER,       // Call method from parent class
   NOP
 };
 
-// Bytecode value type
 struct FunctionObject {
   uint32_t function_index = 0;
 };
@@ -193,8 +198,9 @@ struct StructRef {
 
 // Class: reference type with methods (shared identity)
 struct ClassRef {
-  uint32_t id = 0;     // GC object id for the field array
-  uint32_t typeId = 0; // Type registry index
+  uint32_t id = 0;       // GC object id for the field array
+  uint32_t typeId = 0;   // Type registry index
+  uint32_t parentId = 0; // Parent class instance id (0 for none)
 };
 
 // Enum: tagged union (tag + payload array)

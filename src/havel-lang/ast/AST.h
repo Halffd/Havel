@@ -1862,16 +1862,22 @@ struct StructDeclaration : public Statement {
  */
 struct ClassDeclaration : public Statement {
   std::string name;
+  std::string parentName; // Parent class name for inheritance (empty if none)
   ClassDefinition definition;
 
-  ClassDeclaration(const std::string &className, ClassDefinition def)
-      : name(className), definition(std::move(def)) {
+  ClassDeclaration(const std::string &className, ClassDefinition def,
+                   const std::string &parent = "")
+      : name(className), parentName(parent), definition(std::move(def)) {
     kind = NodeType::ClassDeclaration;
   }
 
   std::string toString() const override {
-    return "ClassDeclaration{name: " + name +
-           ", definition: " + definition.toString() + "}";
+    std::string result = "ClassDeclaration{name: " + name;
+    if (!parentName.empty()) {
+      result += ", parent: " + parentName;
+    }
+    result += ", definition: " + definition.toString() + "}";
+    return result;
   }
 
   void accept(ASTVisitor &visitor) const override;

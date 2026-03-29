@@ -58,6 +58,9 @@ public:
   struct ClassType {
     std::string name;
     std::vector<std::string> fieldNames;
+    uint32_t parentTypeId = 0; // Parent class type ID (0 for none)
+    std::unordered_map<std::string, uint32_t>
+        methodIndices; // Method name -> function index
   };
 
   // Enum type info (shared among instances)
@@ -85,12 +88,19 @@ public:
 
   // Class operations
   uint32_t registerClassType(const std::string &name,
-                             const std::vector<std::string> &fields);
-  ClassRef allocateClass(uint32_t typeId, size_t fieldCount);
+                             const std::vector<std::string> &fields,
+                             uint32_t parentTypeId = 0);
+  ClassRef allocateClass(uint32_t typeId, size_t fieldCount,
+                         uint32_t parentInstanceId = 0);
   std::optional<uint32_t> findClassTypeId(const std::string &name) const;
   size_t classFieldCount(uint32_t typeId) const;
   std::optional<size_t> classFieldIndex(uint32_t typeId,
                                         const std::string &field) const;
+  uint32_t getClassParentTypeId(uint32_t typeId) const;
+  void registerClassMethod(uint32_t typeId, const std::string &methodName,
+                           uint32_t functionIndex);
+  std::optional<uint32_t> findClassMethod(uint32_t typeId,
+                                          const std::string &methodName) const;
 
   // Enum operations
   uint32_t registerEnumType(const std::string &name,

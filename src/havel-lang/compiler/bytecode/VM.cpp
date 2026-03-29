@@ -528,12 +528,28 @@ uint32_t VM::getStructTypeId(StructRef struct_ref) { return struct_ref.typeId; }
 
 // Class helpers
 uint32_t VM::registerClassType(const std::string &name,
-                               const std::vector<std::string> &fields) {
-  return heap_.registerClassType(name, fields);
+                               const std::vector<std::string> &fields,
+                               uint32_t parentTypeId) {
+  return heap_.registerClassType(name, fields, parentTypeId);
 }
 
-ClassRef VM::createClass(uint32_t typeId, size_t fieldCount) {
-  return heap_.allocateClass(typeId, fieldCount);
+ClassRef VM::createClass(uint32_t typeId, size_t fieldCount,
+                         uint32_t parentInstanceId) {
+  return heap_.allocateClass(typeId, fieldCount, parentInstanceId);
+}
+
+uint32_t VM::getClassParentTypeId(uint32_t typeId) const {
+  return heap_.getClassParentTypeId(typeId);
+}
+
+void VM::registerClassMethod(uint32_t typeId, const std::string &methodName,
+                             uint32_t functionIndex) {
+  heap_.registerClassMethod(typeId, methodName, functionIndex);
+}
+
+std::optional<uint32_t>
+VM::findClassMethod(uint32_t typeId, const std::string &methodName) const {
+  return heap_.findClassMethod(typeId, methodName);
 }
 
 BytecodeValue VM::getClassField(ClassRef class_ref, size_t index) {

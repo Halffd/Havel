@@ -2712,7 +2712,17 @@ void VM::executeInstruction(const Instruction &instruction) {
       throw std::runtime_error("OBJECT_GET unknown object id");
     }
     auto kv = obj->find(*key);
-    push(kv == obj->end() ? BytecodeValue(nullptr) : kv->second);
+    if (kv != obj->end()) {
+      push(kv->second);
+    } else {
+      // Property not found - check prototype methods
+      auto method = getPrototypeMethod(object, *key);
+      if (method) {
+        push(BytecodeValue(*method));
+      } else {
+        push(BytecodeValue(nullptr));
+      }
+    }
     break;
   }
 

@@ -124,6 +124,15 @@ void registerObjectModule(VMApi& api) {
     api.setField(obj, "isEmpty", api.makeFunctionRef("object.isEmpty"));
     api.setField(obj, "size", api.makeFunctionRef("object.size"));
     api.setGlobal("Object", obj);
+    
+    // Register prototype methods so obj.values() works
+    api.registerPrototypeMethod("Object", "keys", "object.keys");
+    api.registerPrototypeMethod("Object", "values", "object.values");
+    api.registerPrototypeMethod("Object", "entries", "object.entries");
+    api.registerPrototypeMethod("Object", "has", "object.has");
+    api.registerPrototypeMethod("Object", "set", "object.set");
+    api.registerPrototypeMethod("Object", "isEmpty", "object.isEmpty");
+    api.registerPrototypeMethod("Object", "size", "object.size");
 }
 
 } // namespace havel::stdlib

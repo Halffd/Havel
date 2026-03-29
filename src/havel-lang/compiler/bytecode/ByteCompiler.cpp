@@ -2208,12 +2208,18 @@ void ByteCompiler::compileCallExpression(
             static_cast<const ast::Identifier *>(member.object.get());
         auto binding = bindingFor(*ident);
         if (binding && binding->kind == ResolvedBindingKind::Global) {
-          // Use the host global name as the type (lowercase for
-          // case-insensitive matching)
-          typeName = binding->name;
-          // Convert to lowercase for case-insensitive module access
-          std::transform(typeName.begin(), typeName.end(), typeName.begin(),
-                         ::tolower);
+          // Only treat known module globals as modules
+          if (host_global_names_.count(binding->name) > 0) {
+            // Use the host global name as the type (lowercase for
+            // case-insensitive matching)
+            typeName = binding->name;
+            // Convert to lowercase for case-insensitive module access
+            std::transform(typeName.begin(), typeName.end(), typeName.begin(),
+                           ::tolower);
+          } else {
+            // For variables, use runtime type check
+            typeName = "any";
+          }
         } else {
           // For variables, we'll use a runtime type check
           // The method name will be resolved at runtime based on the value's
@@ -2497,17 +2503,20 @@ void ByteCompiler::compileCallExpression(
         const auto *ident =
             static_cast<const ast::Identifier *>(member.object.get());
         if (ident) {
-          // Compile as generic member call:
-          // 1. Load the object (module)
-          // 2. Get the property (function)
-          // 3. Call it
-          // This works for all objects including global modules like struct,
-          // system, etc.
+          // Compile as generic member call with prototype method support:
+          // 1. Load the object
+          // 2. Get the property (function) from the object
+          // 3. Load the object again (as first argument - self/this)
+          // 4. Compile remaining arguments
+          // 5. Call
           compileExpression(*member.object);
 
           // Get the property (function) from the object
           emit(OpCode::LOAD_CONST, addConstant(property->symbol));
           emit(OpCode::OBJECT_GET);
+
+          // Load the object again as first argument (self/this)
+          compileExpression(*member.object);
 
           // Compile positional arguments
           for (const auto &arg : expression.args) {
@@ -2519,7 +2528,7 @@ void ByteCompiler::compileCallExpression(
           }
 
           // Compile kwargs as object if present
-          uint32_t totalArgs = arg_count;
+          uint32_t totalArgs = arg_count + 1;  // +1 for the object (self/this)
           if (hasKwargs) {
             emit(OpCode::OBJECT_NEW);
             for (const auto &kwarg : expression.kwargs) {
@@ -2530,7 +2539,7 @@ void ByteCompiler::compileCallExpression(
             totalArgs++;
           }
 
-          // Call the function (HostFunctionRef is handled by VM's doCall)
+          // Call the function - object is first arg
           emit(OpCode::CALL, totalArgs);
           return;
         }

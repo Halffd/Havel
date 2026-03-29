@@ -10,7 +10,7 @@
 #include <fstream>
 #include <sstream>
 #include <pwd.h>
-
+#include <limits.h>
 #ifdef __linux__
 #include <sys/sysinfo.h>
 #endif

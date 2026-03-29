@@ -57,6 +57,7 @@ enum class OpCode : uint8_t {
   AND,
   OR,
   NOT,
+  NEGATE,       // Unary minus (negate number)
   IS_NULL,      // Check if value is null or undefined
 
   // Control flow

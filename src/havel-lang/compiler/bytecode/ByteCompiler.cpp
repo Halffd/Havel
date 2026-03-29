@@ -1869,6 +1869,32 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     break;
   }
 
+  case ast::NodeType::UnaryExpression: {
+    const auto &unary = static_cast<const ast::UnaryExpression &>(expression);
+    if (!unary.operand) {
+      throw std::runtime_error("Unary expression missing operand");
+    }
+
+    // Compile operand first
+    compileExpression(*unary.operand);
+
+    // Apply unary operator
+    switch (unary.operator_) {
+    case ast::UnaryExpression::UnaryOperator::Not:
+      emit(OpCode::NOT);
+      break;
+    case ast::UnaryExpression::UnaryOperator::Minus:
+      emit(OpCode::NEGATE);
+      break;
+    case ast::UnaryExpression::UnaryOperator::Plus:
+      // No-op for unary plus
+      break;
+    default:
+      throw std::runtime_error("Unsupported unary operator");
+    }
+    break;
+  }
+
   case ast::NodeType::TernaryExpression: {
     const auto &ternary =
         static_cast<const ast::TernaryExpression &>(expression);

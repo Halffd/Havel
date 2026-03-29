@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <algorithm>
 #include <cctype>
+#include <array>
 
 #ifdef __linux__
 #include <unistd.h>
@@ -16,6 +17,27 @@
 #endif
 
 namespace havel {
+
+// Helper to run shell command safely
+static std::string runCommand(const char* cmd) {
+    FILE* pipe = popen(cmd, "r");
+    if (!pipe) return "Unknown";
+
+    char buffer[256];
+    std::string result;
+
+    if (fgets(buffer, sizeof(buffer), pipe)) {
+        result = buffer;
+    }
+
+    pclose(pipe);
+
+    // Trim whitespace
+    result.erase(result.find_last_not_of(" \n\r\t") + 1);
+    result.erase(0, result.find_first_not_of(" \n\r\t"));
+
+    return result.empty() ? "Unknown" : result;
+}
 
 // Helper to trim whitespace
 static std::string trim(const std::string& str) {
@@ -158,38 +180,19 @@ HardwareDetector::HardwareInfo HardwareDetector::detectHardware() noexcept {
     info.cpuCores = coreCount > 0 ? coreCount : 1;
     info.cpuThreads = threadCount > 0 ? threadCount : info.cpuCores;
     
-    // GPU info
-    FILE* pipe = popen("lspci 2>/dev/null | grep -i vga | head -1 | cut -d':' -f3-", "r");
-    if (pipe) {
-        char buffer[512];
-        if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            info.gpu = trim(buffer);
-        }
-        pclose(pipe);
-    }
-    if (info.gpu.empty()) {
-        // Try render nodes
-        pipe = popen("lspci 2>/dev/null | grep -i '3d\\|display' | head -1 | cut -d':' -f3-", "r");
-        if (pipe) {
-            char buffer[512];
-            if (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-                info.gpu = trim(buffer);
-            }
-            pclose(pipe);
-        }
-    }
-    if (info.gpu.empty()) info.gpu = "Unknown";
+    // GPU info using helper
+    info.gpu = runCommand("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display' | head -1 | cut -d':' -f3-");
     
-    // RAM info
+    // RAM info in bytes
     std::ifstream meminfo("/proc/meminfo");
     while (std::getline(meminfo, line)) {
         if (line.find("MemTotal") != std::string::npos) {
             size_t pos = line.find(":");
             if (pos != std::string::npos) {
                 std::string value = trim(line.substr(pos + 1));
-                // Value is in KB, convert to MB
+                // Value is in KB, convert to bytes
                 try {
-                    info.ram = std::stoll(value) / 1024;
+                    info.ram = std::stoll(value) * 1024;  // KB -> bytes
                 } catch (...) {}
             }
             break;
@@ -197,8 +200,8 @@ HardwareDetector::HardwareInfo HardwareDetector::detectHardware() noexcept {
     }
     meminfo.close();
     
-    // Storage info
-    pipe = popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT -b 2>/dev/null", "r");
+    // Storage info in bytes
+    FILE* pipe = popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT -b 2>/dev/null", "r");
     if (pipe) {
         char buffer[1024];
         while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {

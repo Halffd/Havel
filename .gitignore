@@ -51,3 +51,4 @@ havel-wm
 havel.cfgvscode-extension/node_modules/
 vscode-extension/out/
 *.vsix
+.crush

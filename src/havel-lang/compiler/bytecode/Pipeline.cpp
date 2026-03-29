@@ -595,6 +595,10 @@ BytecodeSmokeResult runBytecodePipeline(
   if (options.vm_setup) {
     options.vm_setup(*vm);
   }
+  // Initialize system object if provided (proper namespacing)
+  if (options.system_object_initializer) {
+    options.system_object_initializer(vm);
+  }
   try {
     result.return_value = vm->execute(*chunk, entry_function);
   } catch (const std::exception &e) {

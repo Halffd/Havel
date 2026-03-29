@@ -162,6 +162,32 @@ ByteCompiler::compile(const ast::Program &program) {
     }
 
     if (statement->kind == ast::NodeType::FunctionDeclaration) {
+      // For top-level fn declarations, store function object in globals
+      const auto &functionDecl =
+          static_cast<const ast::FunctionDeclaration &>(*statement);
+      if (!functionDecl.name) {
+        continue;
+      }
+
+      auto index_it = function_indices_by_node_.find(&functionDecl);
+      if (index_it == function_indices_by_node_.end()) {
+        continue;
+      }
+
+      // Load function object onto stack
+      auto upvalues_it =
+          lexical_resolution_.function_upvalues.find(&functionDecl);
+      if (upvalues_it != lexical_resolution_.function_upvalues.end() &&
+          !upvalues_it->second.empty()) {
+        emit(OpCode::CLOSURE, index_it->second);
+      } else {
+        emit(OpCode::LOAD_CONST,
+             addConstant(FunctionObject{.function_index = index_it->second}));
+      }
+
+      // Store in global scope so it's callable
+      emit(OpCode::STORE_GLOBAL,
+           std::vector<BytecodeValue>{functionDecl.name->symbol});
       continue;
     }
 

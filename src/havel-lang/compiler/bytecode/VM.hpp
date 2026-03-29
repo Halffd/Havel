@@ -121,6 +121,10 @@ private:
   bool profiling_enabled_ = false;
   std::array<uint64_t, 256> opcode_counts_{};
   uint64_t executed_instructions_ = 0;
+  
+  // System object initializer - called after registerDefaultHostGlobals()
+  using SystemObjectInitializer = std::function<void(VM*)>;
+  SystemObjectInitializer system_object_initializer_;
 
   template <typename T> T getValue(const BytecodeValue &value);
   const CallFrame &currentFrame() const;
@@ -182,6 +186,11 @@ public:
   void registerHostFunction(const std::string &name, size_t arity,
                             BytecodeHostFunction function);
   bool hasHostFunction(const std::string &name) const override;
+
+  // System object initializer - called after registerDefaultHostGlobals()
+  void setSystemObjectInitializer(SystemObjectInitializer init) {
+    system_object_initializer_ = std::move(init);
+  }
 
   void setMaxCallDepth(size_t value);
   void setProfilingEnabled(bool enabled) { profiling_enabled_ = enabled; }

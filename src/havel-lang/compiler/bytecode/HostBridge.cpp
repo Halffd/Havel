@@ -266,12 +266,18 @@ void HostBridge::install() {
   registerAnyMethod("running");
 
   // Chain method aliases (LINQ-style naming)
-  registerAnyMethod("where");  // alias for filter
-  registerAnyMethod("select"); // alias for map
-  registerAnyMethod("count");  // alias for len
-  registerAnyMethod("list");   // terminal - alias to list()
-
-  // Generic iterable HOFs (array/string/object/set/range/tuple-as-array)
+  registerAnyMethod("where");   // alias for filter
+  registerAnyMethod("select");  // alias for map
+  registerAnyMethod("count");   // alias for len
+  registerAnyMethod("list");    // terminal
+  registerAnyMethod("sum");     // aggregation
+  registerAnyMethod("max");     // aggregation
+  registerAnyMethod("min");     // aggregation
+  registerAnyMethod("orderby"); // sorting
+  registerAnyMethod("groupby"); // grouping
+  registerAnyMethod("concat");  // concatenation
+  registerAnyMethod("merge");   // merging
+  registerAnyMethod("join");    // joining
   auto truthy = [](const BytecodeValue &value) -> bool {
     if (std::holds_alternative<std::nullptr_t>(value))
       return false;
@@ -841,6 +847,336 @@ void HostBridge::install() {
           }
         }
         return hasValue ? BytecodeValue(minVal) : BytecodeValue(nullptr);
+      };
+
+  // Advanced LINQ methods - orderby (sort with key selector)
+  options_.host_functions["orderby"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        // Collect all elements first
+        std::vector<BytecodeValue> elements;
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+            elements.push_back(valueVal);
+          }
+        }
+
+        // Sort elements
+        std::sort(elements.begin(), elements.end(),
+                  [](const BytecodeValue &a, const BytecodeValue &b) {
+                    // Numeric comparison
+                    if (std::holds_alternative<int64_t>(a) &&
+                        std::holds_alternative<int64_t>(b)) {
+                      return std::get<int64_t>(a) < std::get<int64_t>(b);
+                    }
+                    if (std::holds_alternative<double>(a) &&
+                        std::holds_alternative<double>(b)) {
+                      return std::get<double>(a) < std::get<double>(b);
+                    }
+                    if (std::holds_alternative<int64_t>(a) &&
+                        std::holds_alternative<double>(b)) {
+                      return std::get<int64_t>(a) < std::get<double>(b);
+                    }
+                    if (std::holds_alternative<double>(a) &&
+                        std::holds_alternative<int64_t>(b)) {
+                      return std::get<double>(a) < std::get<int64_t>(b);
+                    }
+                    // String comparison
+                    if (std::holds_alternative<std::string>(a) &&
+                        std::holds_alternative<std::string>(b)) {
+                      return std::get<std::string>(a) <
+                             std::get<std::string>(b);
+                    }
+                    return false;
+                  });
+
+        // Create result array
+        ArrayRef result = ctx_->vm->createHostArray();
+        for (const auto &elem : elements) {
+          ctx_->vm->pushToHostArray(result, elem);
+        }
+        return BytecodeValue(result);
+      };
+
+  // groupby - group elements by key selector
+  options_.host_functions["groupby"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+        const auto &keySelector = args[1];
+
+        // Group elements by key
+        std::unordered_map<std::string, std::vector<BytecodeValue>> groups;
+
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (std::holds_alternative<std::nullptr_t>(valueVal))
+            continue;
+
+          // Get key from selector
+          std::vector<BytecodeValue> selectorArgs{valueVal};
+          auto keyVal = ctx_->vm->callFunction(keySelector, selectorArgs);
+
+          std::string keyStr;
+          if (std::holds_alternative<std::string>(keyVal)) {
+            keyStr = std::get<std::string>(keyVal);
+          } else if (std::holds_alternative<int64_t>(keyVal)) {
+            keyStr = std::to_string(std::get<int64_t>(keyVal));
+          } else if (std::holds_alternative<double>(keyVal)) {
+            keyStr = std::to_string(std::get<double>(keyVal));
+          } else {
+            keyStr = "null";
+          }
+
+          groups[keyStr].push_back(valueVal);
+        }
+
+        // Create result object with groups
+        ObjectRef result = ctx_->vm->createHostObject();
+        for (const auto &pair : groups) {
+          ArrayRef groupArray = ctx_->vm->createHostArray();
+          for (const auto &elem : pair.second) {
+            ctx_->vm->pushToHostArray(groupArray, elem);
+          }
+          ctx_->vm->setHostObjectField(result, pair.first,
+                                       BytecodeValue(groupArray));
+        }
+        return BytecodeValue(result);
+      };
+
+  // concat - concatenate two iterables
+  options_.host_functions["concat"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2) {
+          return BytecodeValue(nullptr);
+        }
+
+        ArrayRef result = ctx_->vm->createHostArray();
+
+        // Add elements from first iterable
+        IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef1);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+            ctx_->vm->pushToHostArray(result, valueVal);
+          }
+        }
+
+        // Add elements from second iterable
+        IteratorRef iterRef2 = ctx_->vm->createIterator(args[1]);
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef2);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+            ctx_->vm->pushToHostArray(result, valueVal);
+          }
+        }
+
+        return BytecodeValue(result);
+      };
+
+  // merge - merge two objects
+  options_.host_functions["merge"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2) {
+          return BytecodeValue(nullptr);
+        }
+
+        ObjectRef result = ctx_->vm->createHostObject();
+
+        // Copy properties from first object
+        IteratorRef iterRef1 = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef1);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(keyVal) &&
+              !std::holds_alternative<std::nullptr_t>(valueVal)) {
+            ctx_->vm->setHostObjectField(result, std::get<std::string>(keyVal),
+                                         valueVal);
+          }
+        }
+
+        // Copy properties from second object
+        IteratorRef iterRef2 = ctx_->vm->createIterator(args[1]);
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef2);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto keyVal = ctx_->vm->getHostObjectField(resultObjRef, "key");
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(keyVal) &&
+              !std::holds_alternative<std::nullptr_t>(valueVal)) {
+            ctx_->vm->setHostObjectField(result, std::get<std::string>(keyVal),
+                                         valueVal);
+          }
+        }
+
+        return BytecodeValue(result);
+      };
+
+  // join - join two iterables on matching keys
+  options_.host_functions["join"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 4) {
+          return BytecodeValue(nullptr);
+        }
+        // args: inner, outerKeySelector, innerKeySelector, resultSelector
+        const auto &inner = args[0];
+        const auto &outerKeySelector = args[1];
+        const auto &innerKeySelector = args[2];
+        const auto &resultSelector = args[3];
+
+        // For now, return a simplified join (inner join)
+        // This is a placeholder - full join requires more context
+        ArrayRef result = ctx_->vm->createHostArray();
+
+        // Create map of inner elements by key
+        std::unordered_map<std::string, std::vector<BytecodeValue>> innerMap;
+        IteratorRef innerIterRef = ctx_->vm->createIterator(inner);
+        while (true) {
+          auto innerIterResult = ctx_->vm->iteratorNext(innerIterRef);
+          if (!std::holds_alternative<ObjectRef>(innerIterResult))
+            break;
+          auto innerResultObjRef = std::get<ObjectRef>(innerIterResult);
+
+          auto innerDoneVal =
+              ctx_->vm->getHostObjectField(innerResultObjRef, "done");
+          if (std::holds_alternative<bool>(innerDoneVal) &&
+              std::get<bool>(innerDoneVal))
+            break;
+
+          auto innerValueVal =
+              ctx_->vm->getHostObjectField(innerResultObjRef, "value");
+          if (std::holds_alternative<std::nullptr_t>(innerValueVal))
+            continue;
+
+          // Get key from selector
+          std::vector<BytecodeValue> innerSelectorArgs{innerValueVal};
+          auto innerKeyVal =
+              ctx_->vm->callFunction(innerKeySelector, innerSelectorArgs);
+
+          std::string innerKeyStr;
+          if (std::holds_alternative<std::string>(innerKeyVal)) {
+            innerKeyStr = std::get<std::string>(innerKeyVal);
+          } else if (std::holds_alternative<int64_t>(innerKeyVal)) {
+            innerKeyStr = std::to_string(std::get<int64_t>(innerKeyVal));
+          } else if (std::holds_alternative<double>(innerKeyVal)) {
+            innerKeyStr = std::to_string(std::get<double>(innerKeyVal));
+          } else {
+            innerKeyStr = "null";
+          }
+
+          innerMap[innerKeyStr].push_back(innerValueVal);
+        }
+
+        // Iterate over outer elements and join
+        IteratorRef outerIterRef = ctx_->vm->createIterator(args[0]);
+        while (true) {
+          auto outerIterResult = ctx_->vm->iteratorNext(outerIterRef);
+          if (!std::holds_alternative<ObjectRef>(outerIterResult))
+            break;
+          auto outerResultObjRef = std::get<ObjectRef>(outerIterResult);
+
+          auto outerDoneVal =
+              ctx_->vm->getHostObjectField(outerResultObjRef, "done");
+          if (std::holds_alternative<bool>(outerDoneVal) &&
+              std::get<bool>(outerDoneVal))
+            break;
+
+          auto outerValueVal =
+              ctx_->vm->getHostObjectField(outerResultObjRef, "value");
+          if (std::holds_alternative<std::nullptr_t>(outerValueVal))
+            continue;
+
+          // Get key from selector
+          std::vector<BytecodeValue> outerSelectorArgs{outerValueVal};
+          auto outerKeyVal =
+              ctx_->vm->callFunction(outerKeySelector, outerSelectorArgs);
+
+          std::string outerKeyStr;
+          if (std::holds_alternative<std::string>(outerKeyVal)) {
+            outerKeyStr = std::get<std::string>(outerKeyVal);
+          } else if (std::holds_alternative<int64_t>(outerKeyVal)) {
+            outerKeyStr = std::to_string(std::get<int64_t>(outerKeyVal));
+          } else if (std::holds_alternative<double>(outerKeyVal)) {
+            outerKeyStr = std::to_string(std::get<double>(outerKeyVal));
+          } else {
+            outerKeyStr = "null";
+          }
+
+          // Join with inner elements
+          if (innerMap.find(outerKeyStr) != innerMap.end()) {
+            for (const auto &innerValue : innerMap[outerKeyStr]) {
+              // Call result selector
+              std::vector<BytecodeValue> resultArgs{outerValueVal, innerValue};
+              auto resultVal =
+                  ctx_->vm->callFunction(resultSelector, resultArgs);
+              ctx_->vm->pushToHostArray(result, resultVal);
+            }
+          }
+        }
+
+        return BytecodeValue(result);
       };
 
   // Standalone aliases for pipeline support (e.g., clipboard.get | upper |

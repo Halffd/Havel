@@ -14,8 +14,9 @@ namespace havel::compiler {
 enum class ResolvedBindingKind {
   Local,
   Upvalue,
-  Global,      // Global variable - loaded with LOAD_GLOBAL
-  Function     // User-defined function - loaded with LOAD_CONST + FunctionObject
+  Global,       // Global variable
+  Function,     // User-defined function
+  HostFunction  // Built-in host function (print, type, etc.)
 };
 
 struct ResolvedBinding {

@@ -3004,6 +3004,9 @@ void MPVBridge::install(PipelineOptions &options) {
   options.host_functions["mpv.screenshot"] = [ctx = ctx_](const auto &args) {
     return handleScreenshot(args, ctx);
   };
+  options.host_functions["mpv.cmd"] = [ctx = ctx_](const auto &args) {
+    return handleCmd(args, ctx);
+  };
 }
 
 BytecodeValue MPVBridge::handleVolumeUp(const std::vector<BytecodeValue> &args,
@@ -3197,6 +3200,35 @@ BytecodeValue MPVBridge::handleScreenshot(const std::vector<BytecodeValue> &args
     return BytecodeValue(false);
   }
   ctx->mpvController->SendCommand({"screenshot"});
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleCmd(const std::vector<BytecodeValue> &args,
+                                   const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty()) {
+    throw std::runtime_error("mpv.cmd() requires at least a command name");
+  }
+  
+  // Build command list from arguments
+  std::vector<std::string> cmd;
+  for (const auto &arg : args) {
+    if (std::holds_alternative<std::string>(arg)) {
+      cmd.push_back(std::get<std::string>(arg));
+    } else if (std::holds_alternative<int64_t>(arg)) {
+      cmd.push_back(std::to_string(std::get<int64_t>(arg)));
+    } else if (std::holds_alternative<double>(arg)) {
+      cmd.push_back(std::to_string(std::get<double>(arg)));
+    } else if (std::holds_alternative<bool>(arg)) {
+      cmd.push_back(std::get<bool>(arg) ? "yes" : "no");
+    } else {
+      cmd.push_back("null");
+    }
+  }
+  
+  ctx->mpvController->SendCommand(cmd);
   return BytecodeValue(true);
 }
 

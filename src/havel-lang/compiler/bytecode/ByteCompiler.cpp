@@ -2540,45 +2540,59 @@ void ByteCompiler::compileCallExpression(
         const auto *ident =
             static_cast<const ast::Identifier *>(member.object.get());
         if (ident) {
-          // Compile as generic member call with prototype method support:
-          // 1. Load the object
-          // 2. Get the property (function) from the object
-          // 3. Load the object again (as first argument - self/this)
-          // 4. Compile remaining arguments
-          // 5. Call
-          compileExpression(*member.object);
+          // Check if this is a known module - only then use OBJECT_GET
+          // For regular variables, use any.* dispatch
+          auto objBinding = bindingFor(*ident);
+          bool isModule =
+              objBinding &&
+              (objBinding->kind == ResolvedBindingKind::HostFunction ||
+               objBinding->name == "http" || objBinding->name == "io" ||
+               objBinding->name == "json" || objBinding->name == "fs" ||
+               objBinding->name == "sys" || objBinding->name == "math" ||
+               objBinding->name == "str" || objBinding->name == "array");
 
-          // Get the property (function) from the object
-          emit(OpCode::LOAD_CONST, addConstant(property->symbol));
-          emit(OpCode::OBJECT_GET);
+          if (isModule) {
+            // Compile as generic member call with prototype method support:
+            // 1. Load the object
+            // 2. Get the property (function) from the object
+            // 3. Load the object again (as first argument - self/this)
+            // 4. Compile remaining arguments
+            // 5. Call
+            compileExpression(*member.object);
 
-          // Load the object again as first argument (self/this)
-          compileExpression(*member.object);
+            // Get the property (function) from the object
+            emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+            emit(OpCode::OBJECT_GET);
 
-          // Compile positional arguments
-          for (const auto &arg : expression.args) {
-            if (!arg) {
-              throw std::runtime_error(
-                  "Call expression contains null argument");
+            // Load the object again as first argument (self/this)
+            compileExpression(*member.object);
+
+            // Compile positional arguments
+            for (const auto &arg : expression.args) {
+              if (!arg) {
+                throw std::runtime_error(
+                    "Call expression contains null argument");
+              }
+              compileExpression(*arg);
             }
-            compileExpression(*arg);
-          }
 
-          // Compile kwargs as object if present
-          uint32_t totalArgs = arg_count + 1; // +1 for the object (self/this)
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
+            // Compile kwargs as object if present
+            uint32_t totalArgs = arg_count + 1; // +1 for the object (self/this)
+            if (hasKwargs) {
+              emit(OpCode::OBJECT_NEW);
+              for (const auto &kwarg : expression.kwargs) {
+                emit(OpCode::DUP);
+                compileExpression(*kwarg.value);
+                emit(OpCode::OBJECT_SET, kwarg.name);
+              }
+              totalArgs++;
             }
-            totalArgs++;
-          }
 
-          // Call the function - object is first arg
-          emit(OpCode::CALL, totalArgs);
-          return;
+            // Call the function - object is first arg
+            emit(OpCode::CALL, totalArgs);
+            return;
+          }
+          // Fall through to any.* dispatch for non-module variables
         }
 
         // For variables, emit runtime method dispatch via any.*

@@ -66,7 +66,7 @@ ByteCompiler::compile(const ast::Program &program) {
   top_level_function_indices_by_name_.clear();
   top_level_struct_names_.clear();
 
-  LexicalResolver resolver(host_builtin_names_, host_global_names_);
+  LexicalResolver resolver;
   lexical_resolution_ = resolver.resolve(program);
   if (!resolver.errors().empty()) {
     // Collect all errors
@@ -1330,23 +1330,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       emit(OpCode::LOAD_VAR, binding->slot);
       break;
     case ResolvedBindingKind::Upvalue:
-      // Resolver is now upvalue-aware; runtime support is still pending.
       emit(OpCode::LOAD_UPVALUE, binding->slot);
       break;
-    case ResolvedBindingKind::GlobalFunction: {
-      auto it = top_level_function_indices_by_name_.find(binding->name);
-      if (it == top_level_function_indices_by_name_.end()) {
-        throw std::runtime_error("Missing function index for: " +
-                                 binding->name);
-      }
-      emit(OpCode::LOAD_CONST,
-           addConstant(FunctionObject{.function_index = it->second}));
-    } break;
-    case ResolvedBindingKind::HostGlobal:
+    case ResolvedBindingKind::Global:
+      // Global - runtime will decide if it exists or error
       emit(OpCode::LOAD_GLOBAL, binding->name);
-      break;
-    case ResolvedBindingKind::Builtin:
-      emit(OpCode::LOAD_CONST, addConstant(binding->name));
       break;
     }
     break;
@@ -1505,7 +1493,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::STORE_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding.slot);
-      } else if (binding.kind == ResolvedBindingKind::HostGlobal) {
+      } else if (binding.kind == ResolvedBindingKind::Global) {
         emit(OpCode::STORE_GLOBAL, binding.name);
       } else {
         throw std::runtime_error("Assignment target is not mutable");
@@ -1521,7 +1509,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
-      } else if (binding.kind == ResolvedBindingKind::HostGlobal) {
+      } else if (binding.kind == ResolvedBindingKind::Global) {
         emit(OpCode::LOAD_GLOBAL, binding.name);
       } else {
         throw std::runtime_error("Assignment target is not mutable");
@@ -1615,7 +1603,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
               emit(OpCode::STORE_VAR, binding->slot);
-            } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
+            } else if (binding->kind == ResolvedBindingKind::Global) {
               emit(OpCode::STORE_GLOBAL, binding->name);
             } else {
               throw std::runtime_error("Unsupported binding kind for destructuring");
@@ -1651,7 +1639,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             // Store in the binding
             if (binding->kind == ResolvedBindingKind::Local) {
               emit(OpCode::STORE_VAR, binding->slot);
-            } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
+            } else if (binding->kind == ResolvedBindingKind::Global) {
               emit(OpCode::STORE_GLOBAL, binding->name);
             } else {
               throw std::runtime_error("Unsupported binding kind for destructuring");
@@ -1843,15 +1831,11 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         emit(OpCode::LOAD_VAR, binding->slot);
       } else if (binding->kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding->slot);
-      } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
-        // Can't update host globals
-        throw std::runtime_error("Cannot update host global: " + target_id->symbol);
-      } else if (binding->kind == ResolvedBindingKind::GlobalFunction) {
-        throw std::runtime_error("Cannot update function: " + target_id->symbol);
-      } else if (binding->kind == ResolvedBindingKind::Builtin) {
-        throw std::runtime_error("Cannot update builtin: " + target_id->symbol);
+      } else if (binding->kind == ResolvedBindingKind::Global) {
+        // Can't update globals with ++/--
+        throw std::runtime_error("Cannot update global: " + target_id->symbol);
       } else {
-        throw std::runtime_error("Cannot update variable with binding kind: " + 
+        throw std::runtime_error("Cannot update variable with binding kind: " +
                                 std::to_string(static_cast<int>(binding->kind)));
       }
       emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(1)));
@@ -1930,7 +1914,7 @@ void ByteCompiler::compileCallExpression(
     const auto &callee_id =
         static_cast<const ast::Identifier &>(*expression.callee);
     const auto *binding = bindingFor(callee_id);
-    if (binding && binding->kind == ResolvedBindingKind::Builtin &&
+    if (binding && binding->kind == ResolvedBindingKind::Global &&
         top_level_struct_names_.find(callee_id.symbol) !=
             top_level_struct_names_.end()) {
       emit(OpCode::LOAD_CONST, addConstant(callee_id.symbol));
@@ -1965,7 +1949,7 @@ void ByteCompiler::compileCallExpression(
       const auto &receiver_id =
           static_cast<const ast::Identifier &>(*member.object);
       if (const auto *receiver_binding = bindingFor(receiver_id)) {
-        if (receiver_binding->kind == ResolvedBindingKind::HostGlobal &&
+        if (receiver_binding->kind == ResolvedBindingKind::Global &&
             receiver_binding->name == "array") {
           is_array_module_call = true;
         }
@@ -2087,7 +2071,7 @@ void ByteCompiler::compileCallExpression(
         const auto *ident =
             static_cast<const ast::Identifier *>(member.object.get());
         auto binding = bindingFor(*ident);
-        if (binding && binding->kind == ResolvedBindingKind::HostGlobal) {
+        if (binding && binding->kind == ResolvedBindingKind::Global) {
           // Use the host global name as the type (lowercase for
           // case-insensitive matching)
           typeName = binding->name;
@@ -2462,7 +2446,7 @@ void ByteCompiler::compileCallExpression(
                                callee_id.symbol);
     }
 
-    if (binding->kind == ResolvedBindingKind::Builtin) {
+    if (binding->kind == ResolvedBindingKind::Global) {
       for (const auto &arg : expression.args) {
         if (!arg) {
           throw std::runtime_error("Call expression contains null argument");
@@ -2564,7 +2548,7 @@ void ByteCompiler::compileCallExpression(
     const auto *binding = bindingFor(callee_id);
     if (binding && (binding->kind == ResolvedBindingKind::Local ||
                     binding->kind == ResolvedBindingKind::Upvalue ||
-                    binding->kind == ResolvedBindingKind::GlobalFunction)) {
+                    binding->kind == ResolvedBindingKind::Global)) {
       emit(OpCode::TAIL_CALL, actualArgCount);
       emitted_tail_call_ = true;
       return;

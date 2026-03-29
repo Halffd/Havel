@@ -122,6 +122,7 @@ private:
   // Screenshot operations
   static BytecodeValue handleScreenshotFull(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleScreenshotMonitor(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleGUINotify(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

@@ -95,7 +95,9 @@ private:
       // MPV methods
       "mpv.volumeUp", "mpv.volumeDown", "mpv.toggleMute", "mpv.stop", "mpv.next", "mpv.previous",
       "mpv.seek", "mpv.subSeek", "mpv.addSpeed", "mpv.addSubScale", "mpv.addSubDelay",
-      "mpv.cycle", "mpv.copySubtitle", "mpv.ipcSet", "mpv.ipcReset", "mpv.screenshot"};
+      "mpv.cycle", "mpv.copySubtitle", "mpv.ipcSet", "mpv.ipcReset", "mpv.screenshot",
+      // Utility functions
+      "tap"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "mouse", "io", "system", "hotkey", "mode", "process", "async",

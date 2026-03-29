@@ -127,6 +127,22 @@ void registerUtilityModule(VMApi &api) {
     throw std::runtime_error("len() requires a string or array");
   });
 
+  // tap(value, fn) - Call function with value, return value (for pipeline debugging)
+  api.registerFunction("tap", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("tap() requires value and function");
+
+    const auto &value = args[0];
+    const auto &fnArg = args[1];
+
+    // Call the function with the value
+    std::vector<BytecodeValue> callArgs = {value};
+    api.callFunction(fnArg, callArgs);
+
+    // Return the original value
+    return value;
+  });
+
   // Register utility object
   auto utilObj = api.makeObject();
   api.setField(utilObj, "keys", api.makeFunctionRef("keys"));

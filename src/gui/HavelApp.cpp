@@ -1,4 +1,5 @@
 #include "HavelApp.hpp"
+#include "../havel-lang/runtime/StdLibModules.hpp"
 #include "AutomationSuite.hpp"
 #include "core/BrightnessManager.hpp"
 #include "core/ConfigManager.hpp"
@@ -8,7 +9,6 @@
 #include "core/io/KeyTap.hpp"
 #include "gui/GUIManager.hpp"
 #include "modules/HostModules.hpp"
-#include "../havel-lang/runtime/StdLibModules.hpp"
 #include "utils/Logger.hpp"
 #include "window/CompositorBridge.hpp"
 #include "window/WindowMonitor.hpp"
@@ -95,7 +95,7 @@ void HavelApp::cleanup() noexcept {
     debug("HavelApp::cleanup() - destroying VM");
     bytecodeVM.reset();
   }
-  
+
   // 4. Destroy HostBridge (now safe to clear host_functions)
   if (hostBridge) {
     debug("HavelApp::cleanup() - destroying HostBridge");
@@ -141,7 +141,7 @@ void HavelApp::cleanup() noexcept {
 void HavelApp::initializeComponents(bool isStartup) {
   info("Initializing HvC components...");
   info("isStartup: " + std::to_string(isStartup));
-  info("GUI: ", + gui);
+  info("GUI: ", +gui);
   // Initialize in dependency order
   io = std::make_shared<IO>();
   if (!io) {
@@ -177,7 +177,9 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create AutomationManager");
   }
 
-  std::cerr << "[DEBUG] AutomationManager created, initializing NetworkManager..." << std::endl;
+  std::cerr
+      << "[DEBUG] AutomationManager created, initializing NetworkManager..."
+      << std::endl;
 
   // Initialize NetworkManager (singleton)
   networkManager = std::shared_ptr<net::NetworkManager>(
@@ -186,34 +188,43 @@ void HavelApp::initializeComponents(bool isStartup) {
     throw std::runtime_error("Failed to create NetworkManager");
   }
   info("NetworkManager initialized successfully");
-  std::cerr << "[DEBUG] NetworkManager initialized, entering ENABLE_HAVEL_LANG section..." << std::endl;
+  std::cerr << "[DEBUG] NetworkManager initialized, entering ENABLE_HAVEL_LANG "
+               "section..."
+            << std::endl;
 
 #ifdef ENABLE_HAVEL_LANG
   // Debug: Show initialization mode and parameters
   std::cerr << "[DEBUG] HavelApp initialization:" << std::endl;
   std::cerr << "  - GUI: " << (gui ? "enabled" : "disabled") << std::endl;
-  std::cerr << "  - Script: " << (scriptFile.empty() ? "none" : scriptFile) << std::endl;
+  std::cerr << "  - Script: " << (scriptFile.empty() ? "none" : scriptFile)
+            << std::endl;
   std::cerr << "  - REPL: " << (repl ? "yes" : "no") << std::endl;
   std::cerr << "  - Startup: " << (isStartup ? "yes" : "no") << std::endl;
   std::cerr << "  - Command line args: " << commandLineArgs.size() << std::endl;
-  
+
   std::cerr << "[DEBUG] Getting AutomationSuite components..." << std::endl;
 
   // Get AutomationSuite components with null guards
   // Pass IO to ensure proper initialization
   auto *suite = AutomationSuite::Instance(io.get());
-  std::cerr << "[DEBUG] AutomationSuite obtained, getting screenshot manager..." << std::endl;
+  std::cerr << "[DEBUG] AutomationSuite obtained, getting screenshot manager..."
+            << std::endl;
   auto *screenshotMgr = suite ? suite->getScreenshotManager() : nullptr;
-  std::cerr << "[DEBUG] Screenshot manager obtained, getting clipboard manager..." << std::endl;
+  std::cerr
+      << "[DEBUG] Screenshot manager obtained, getting clipboard manager..."
+      << std::endl;
   auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
-  std::cerr << "[DEBUG] Clipboard manager obtained, getting pixel automation..." << std::endl;
+  std::cerr << "[DEBUG] Clipboard manager obtained, getting pixel automation..."
+            << std::endl;
   auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
-  std::cerr << "[DEBUG] Pixel automation obtained, creating WindowMonitor..." << std::endl;
+  std::cerr << "[DEBUG] Pixel automation obtained, creating WindowMonitor..."
+            << std::endl;
 
   // Create WindowMonitor for efficient window info caching
   auto windowMonitor =
       std::make_shared<WindowMonitor>(std::chrono::milliseconds(100));
-  std::cerr << "[DEBUG] WindowMonitor created, creating HotkeyManager..." << std::endl;
+  std::cerr << "[DEBUG] WindowMonitor created, creating HotkeyManager..."
+            << std::endl;
 
   // Get screenshot manager with null guard (nullptr in REPL mode)
   auto *screenshotMgrForHotkey =
@@ -221,12 +232,13 @@ void HavelApp::initializeComponents(bool isStartup) {
 
   // Create HotkeyManager (without interpreter - conditions stubbed)
   hotkeyManager = std::make_shared<HotkeyManager>(
-      io, *windowManager, *mpv, *audioManager,
-      screenshotMgrForHotkey, *brightnessManager, networkManager);
+      io, *windowManager, *mpv, *audioManager, screenshotMgrForHotkey,
+      *brightnessManager, networkManager);
   if (!hotkeyManager) {
     throw std::runtime_error("Failed to create HotkeyManager");
   }
-  std::cerr << "[DEBUG] HotkeyManager created, starting window monitor..." << std::endl;
+  std::cerr << "[DEBUG] HotkeyManager created, starting window monitor..."
+            << std::endl;
 
   // Start window monitor AFTER HotkeyManager is created
   windowMonitor->Start();
@@ -236,7 +248,8 @@ void HavelApp::initializeComponents(bool isStartup) {
   // Initialize hotkey manager
   hotkeyManager->loadDebugSettings();
   hotkeyManager->applyDebugSettings();
-  std::cerr << "[DEBUG] HotkeyManager initialized, building HostContext..." << std::endl;
+  std::cerr << "[DEBUG] HotkeyManager initialized, building HostContext..."
+            << std::endl;
 
   // Build HostContext from managers (raw pointers - no ownership)
   // Use member variable to ensure it persists for lifetime of VM/HostBridge
@@ -250,13 +263,15 @@ void HavelApp::initializeComponents(bool isStartup) {
   hostContext.screenshotManager = screenshotMgr;
   hostContext.clipboardManager = clipboardMgr;
   hostContext.pixelAutomation = pixelAuto;
-  hostContext.automationManager = reinterpret_cast<havel::AutomationManager*>(automationManager.get());
+  hostContext.automationManager =
+      reinterpret_cast<havel::AutomationManager *>(automationManager.get());
   hostContext.fileManager = nullptr;
   hostContext.processManager = nullptr;
   hostContext.networkManager = networkManager.get();
   hostContext.windowMonitor = windowMonitor.get();
   hostContext.mpvController = mpv.get();
-  std::cerr << "[DEBUG] HostContext built, initializing bytecode VM..." << std::endl;
+  std::cerr << "[DEBUG] HostContext built, initializing bytecode VM..."
+            << std::endl;
 
   // Initialize bytecode VM and HostBridge
   try {
@@ -279,32 +294,40 @@ void HavelApp::initializeComponents(bool isStartup) {
     // Register stdlib modules with VM
     registerStdLibWithVM(*hostBridge);
 
-    std::cerr << "[DEBUG] Installing HostBridge (this may take a moment)..." << std::endl;
+    std::cerr << "[DEBUG] Installing HostBridge (this may take a moment)..."
+              << std::endl;
 
     hostBridge->install();
 
     std::cerr << "[DEBUG] HostBridge installed successfully" << std::endl;
 
     info("Bytecode VM and HostBridge initialized successfully");
-  } catch (const std::exception& e) {
+  } catch (const std::exception &e) {
     error("Failed to initialize bytecode VM: {}", e.what());
-    std::cerr << "[DEBUG] Exception during VM initialization: " << e.what() << std::endl;
+    std::cerr << "[DEBUG] Exception during VM initialization: " << e.what()
+              << std::endl;
     // Continue anyway - VM is optional for now
   }
-  
+
   // Debug: Show component initialization status
   std::cerr << "[DEBUG] Component initialization status:" << std::endl;
   std::cerr << "  - IO: " << (io ? "✓" : "✗") << std::endl;
-  std::cerr << "  - WindowManager: " << (windowManager ? "✓" : "✗") << std::endl;
-  std::cerr << "  - HotkeyManager: " << (hotkeyManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - WindowManager: " << (windowManager ? "✓" : "✗")
+            << std::endl;
+  std::cerr << "  - HotkeyManager: " << (hotkeyManager ? "✓" : "✗")
+            << std::endl;
   std::cerr << "  - BytecodeVM: " << (bytecodeVM ? "✓" : "✗") << std::endl;
   std::cerr << "  - HostBridge: " << (hostBridge ? "✓" : "✗") << std::endl;
   std::cerr << "  - AudioManager: " << (audioManager ? "✓" : "✗") << std::endl;
-  std::cerr << "  - BrightnessManager: " << (brightnessManager ? "✓" : "✗") << std::endl;
+  std::cerr << "  - BrightnessManager: " << (brightnessManager ? "✓" : "✗")
+            << std::endl;
   std::cerr << "  - MPVController: " << (mpv ? "✓" : "✗") << std::endl;
-  std::cerr << "  - NetworkManager: " << (networkManager ? "✓" : "✗") << std::endl;
-  std::cerr << "  - AutomationManager: " << (automationManager ? "✓" : "✗") << std::endl;
-  std::cerr << "  - WindowMonitor: " << (windowMonitor ? "✓" : "✗") << std::endl;
+  std::cerr << "  - NetworkManager: " << (networkManager ? "✓" : "✗")
+            << std::endl;
+  std::cerr << "  - AutomationManager: " << (automationManager ? "✓" : "✗")
+            << std::endl;
+  std::cerr << "  - WindowMonitor: " << (windowMonitor ? "✓" : "✗")
+            << std::endl;
 #else
   std::cerr << "[DEBUG] Havel language disabled" << std::endl;
 #endif
@@ -435,9 +458,10 @@ void HavelApp::initializeComponents(bool isStartup) {
       auto *clipboardMgr = suite ? suite->getClipboardManager() : nullptr;
       auto *pixelAuto = suite ? suite->getPixelAutomation() : nullptr;
 
-      // Build HostContext from managers (wrap raw pointers in shared_ptr without ownership)
+      // Build HostContext from managers (wrap raw pointers in shared_ptr
+      // without ownership)
       HostContext ctx;
-      ctx.io = io.get();  // Already shared_ptr
+      ctx.io = io.get(); // Already shared_ptr
       ctx.windowManager = windowManager.get();
       ctx.hotkeyManager = hotkeyManager.get();
       ctx.brightnessManager = brightnessManager.get();
@@ -448,8 +472,9 @@ void HavelApp::initializeComponents(bool isStartup) {
       ctx.pixelAutomation = pixelAuto;
       ctx.mpvController = mpv.get();
 
-      // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
-      // Register interpreter for hotkey callbacks (must be after construction)
+      // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED -
+      // interpreter deleted Register interpreter for hotkey callbacks (must be
+      // after construction)
       std::cerr << "[DEBUG] Interpreter created successfully" << std::endl;
     } else {
       std::cerr << "[DEBUG] Reusing existing interpreter..." << std::endl;
@@ -472,6 +497,19 @@ void HavelApp::initializeComponents(bool isStartup) {
     if (!display) {
       throw std::runtime_error("Failed to open X11 display");
     }
+  }
+  bool autoExit = Conf().Get<bool>("Debug.AutoExit", false);
+  if (autoExit) {
+      std::thread([this]() {
+          std::this_thread::sleep_for(std::chrono::seconds(20));
+          
+          // Test normal exit
+          std::exit(0);
+          
+          // Test segfault crash
+          int *p = nullptr;
+          *p = 42;
+      }).detach();
   }
 }
 

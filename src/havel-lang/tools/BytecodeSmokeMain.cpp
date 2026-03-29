@@ -176,9 +176,9 @@ compileChunk(const std::string &source,
   }
 
   havel::compiler::ByteCompiler compiler;
-  for (const auto &name : extra_host_builtins) {
-    compiler.addHostBuiltin(name);
-  }
+  //for (const auto &name : extra_host_builtins) {
+  //  compiler.addHostBuiltin(name);
+  //}
   return compiler.compile(*program);
 }
 

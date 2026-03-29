@@ -206,6 +206,122 @@ void registerArrayModule(VMApi &api) {
                          return BytecodeValue(result);
                        });
 
+  // array.flat() - Flatten one level
+  api.registerFunction("array.flat",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         if (args.empty())
+                           throw std::runtime_error("array.flat() requires an array");
+                         if (!std::holds_alternative<ArrayRef>(args[0]))
+                           throw std::runtime_error("array.flat() first argument must be array");
+
+                         auto arrRef = std::get<ArrayRef>(args[0]);
+                         size_t len = api.getArrayLength(args[0]);
+                         auto result = api.makeArray();
+
+                         for (size_t i = 0; i < len; ++i) {
+                           auto val = api.getArrayValue(arrRef, i);
+                           if (std::holds_alternative<ArrayRef>(val)) {
+                             auto innerRef = std::get<ArrayRef>(val);
+                             size_t innerLen = api.getArrayLength(val);
+                             for (size_t j = 0; j < innerLen; ++j) {
+                               api.push(result, api.getArrayValue(innerRef, j));
+                             }
+                           } else {
+                             api.push(result, val);
+                           }
+                         }
+                         return BytecodeValue(result);
+                       });
+
+  // array.smooth() - Recursively flatten all levels
+  api.registerFunction("array.smooth",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         if (args.empty())
+                           throw std::runtime_error("array.smooth() requires an array");
+                         if (!std::holds_alternative<ArrayRef>(args[0]))
+                           throw std::runtime_error("array.smooth() first argument must be array");
+
+                         auto arrRef = std::get<ArrayRef>(args[0]);
+                         size_t len = api.getArrayLength(args[0]);
+                         auto result = api.makeArray();
+
+                         std::function<void(const BytecodeValue&)> flatten = [&](const BytecodeValue& val) {
+                           if (std::holds_alternative<ArrayRef>(val)) {
+                             auto innerRef = std::get<ArrayRef>(val);
+                             size_t innerLen = api.getArrayLength(val);
+                             for (size_t j = 0; j < innerLen; ++j) {
+                               flatten(api.getArrayValue(innerRef, j));
+                             }
+                           } else {
+                             api.push(result, val);
+                           }
+                         };
+
+                         for (size_t i = 0; i < len; ++i) {
+                           flatten(api.getArrayValue(arrRef, i));
+                         }
+                         return BytecodeValue(result);
+                       });
+
+  // array.squeeze() - Remove null/undefined/empty values
+  api.registerFunction("array.squeeze",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         if (args.empty())
+                           throw std::runtime_error("array.squeeze() requires an array");
+                         if (!std::holds_alternative<ArrayRef>(args[0]))
+                           throw std::runtime_error("array.squeeze() first argument must be array");
+
+                         auto arrRef = std::get<ArrayRef>(args[0]);
+                         size_t len = api.getArrayLength(args[0]);
+                         auto result = api.makeArray();
+
+                         for (size_t i = 0; i < len; ++i) {
+                           auto val = api.getArrayValue(arrRef, i);
+                           // Keep non-null, non-undefined, non-empty values
+                           bool keep = true;
+                           if (std::holds_alternative<std::nullptr_t>(val)) {
+                             keep = false;
+                           } else if (std::holds_alternative<std::string>(val)) {
+                             keep = !std::get<std::string>(val).empty();
+                           } else if (std::holds_alternative<ArrayRef>(val)) {
+                             keep = api.getArrayLength(val) > 0;
+                           }
+                           if (keep) {
+                             api.push(result, val);
+                           }
+                         }
+                         return BytecodeValue(result);
+                       });
+
+  // array.flatMap() - Map then flatten one level
+  api.registerFunction("array.flatMap",
+                       [&api](const std::vector<BytecodeValue> &args) {
+                         if (args.size() < 2)
+                           throw std::runtime_error("array.flatMap() requires array and function");
+                         if (!std::holds_alternative<ArrayRef>(args[0]))
+                           throw std::runtime_error("array.flatMap() first argument must be array");
+
+                         auto arrRef = std::get<ArrayRef>(args[0]);
+                         const auto &fn = args[1];
+                         size_t len = api.getArrayLength(args[0]);
+                         auto result = api.makeArray();
+
+                         for (size_t i = 0; i < len; ++i) {
+                           auto val = api.getArrayValue(arrRef, i);
+                           auto mapped = api.callFunction(fn, {val});
+                           if (std::holds_alternative<ArrayRef>(mapped)) {
+                             auto innerRef = std::get<ArrayRef>(mapped);
+                             size_t innerLen = api.getArrayLength(mapped);
+                             for (size_t j = 0; j < innerLen; ++j) {
+                               api.push(result, api.getArrayValue(innerRef, j));
+                             }
+                           } else {
+                             api.push(result, mapped);
+                           }
+                         }
+                         return BytecodeValue(result);
+                       });
+
   // Register array object
   auto arrObj = api.makeObject();
   api.setField(arrObj, "len", api.makeFunctionRef("array.len"));
@@ -218,9 +334,13 @@ void registerArrayModule(VMApi &api) {
   api.setField(arrObj, "reverse", api.makeFunctionRef("array.reverse"));
   api.setField(arrObj, "map", api.makeFunctionRef("array.map"));
   api.setField(arrObj, "filter", api.makeFunctionRef("array.filter"));
+  api.setField(arrObj, "flat", api.makeFunctionRef("array.flat"));
+  api.setField(arrObj, "smooth", api.makeFunctionRef("array.smooth"));
+  api.setField(arrObj, "squeeze", api.makeFunctionRef("array.squeeze"));
+  api.setField(arrObj, "flatMap", api.makeFunctionRef("array.flatMap"));
   api.setGlobal("Array", arrObj);
-  
-  // Register global join alias
+
+  // Register global aliases
   api.registerFunction("join", [&api](const std::vector<BytecodeValue> &args) {
     if (args.size() < 1) {
       throw std::runtime_error("join() requires at least 1 argument");
@@ -247,6 +367,42 @@ void registerArrayModule(VMApi &api) {
       }
     }
     return BytecodeValue(result);
+  });
+
+  // Global flat alias
+  api.registerFunction("flat", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.empty())
+      throw std::runtime_error("flat() requires an array");
+    if (!std::holds_alternative<ArrayRef>(args[0]))
+      throw std::runtime_error("flat() first argument must be array");
+    return api.callFunction(api.makeFunctionRef("array.flat"), args);
+  });
+
+  // Global smooth alias
+  api.registerFunction("smooth", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.empty())
+      throw std::runtime_error("smooth() requires an array");
+    if (!std::holds_alternative<ArrayRef>(args[0]))
+      throw std::runtime_error("smooth() first argument must be array");
+    return api.callFunction(api.makeFunctionRef("array.smooth"), args);
+  });
+
+  // Global squeeze alias
+  api.registerFunction("squeeze", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.empty())
+      throw std::runtime_error("squeeze() requires an array");
+    if (!std::holds_alternative<ArrayRef>(args[0]))
+      throw std::runtime_error("squeeze() first argument must be array");
+    return api.callFunction(api.makeFunctionRef("array.squeeze"), args);
+  });
+
+  // Global flatMap alias
+  api.registerFunction("flatMap", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2)
+      throw std::runtime_error("flatMap() requires array and function");
+    if (!std::holds_alternative<ArrayRef>(args[0]))
+      throw std::runtime_error("flatMap() first argument must be array");
+    return api.callFunction(api.makeFunctionRef("array.flatMap"), args);
   });
 }
 

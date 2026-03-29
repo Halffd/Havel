@@ -336,6 +336,7 @@ private:
   static BytecodeValue handleIPCSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleIPCRestart(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleScreenshot(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleCmd(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

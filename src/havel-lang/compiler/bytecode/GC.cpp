@@ -160,20 +160,26 @@ std::optional<size_t> GCHeap::structFieldIndex(uint32_t typeId,
   return std::nullopt;
 }
 
-// Class type registration
+// Class type registration with parent
 uint32_t GCHeap::registerClassType(const std::string &name,
-                                   const std::vector<std::string> &fields) {
+                                   const std::vector<std::string> &fields,
+                                   uint32_t parentTypeId) {
   uint32_t id = static_cast<uint32_t>(classTypes_.size()) +
                 1; // Start at 1 to avoid 0=nullptr issue
-  classTypes_.push_back(ClassType{name, fields});
+  ClassType ct;
+  ct.name = name;
+  ct.fieldNames = fields;
+  ct.parentTypeId = parentTypeId;
+  classTypes_.push_back(std::move(ct));
   return id;
 }
 
-// Class allocation (reference type)
-ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount) {
+// Class allocation (reference type) with parent instance
+ClassRef GCHeap::allocateClass(uint32_t typeId, size_t fieldCount,
+                               uint32_t parentInstanceId) {
   const uint32_t id = next_array_id_++;
   classes_[id] = std::vector<BytecodeValue>(fieldCount, BytecodeValue(nullptr));
-  return ClassRef{.id = id, .typeId = typeId};
+  return ClassRef{.id = id, .typeId = typeId, .parentId = parentInstanceId};
 }
 
 std::optional<uint32_t> GCHeap::findClassTypeId(const std::string &name) const {
@@ -206,7 +212,37 @@ std::optional<size_t> GCHeap::classFieldIndex(uint32_t typeId,
   return std::nullopt;
 }
 
-// Enum type registration
+uint32_t GCHeap::getClassParentTypeId(uint32_t typeId) const {
+  if (typeId == 0 || typeId > classTypes_.size()) {
+    return 0;
+  }
+  return classTypes_[typeId - 1].parentTypeId;
+}
+
+void GCHeap::registerClassMethod(uint32_t typeId, const std::string &methodName,
+                                 uint32_t functionIndex) {
+  if (typeId == 0 || typeId > classTypes_.size()) {
+    return;
+  }
+  classTypes_[typeId - 1].methodIndices[methodName] = functionIndex;
+}
+
+std::optional<uint32_t>
+GCHeap::findClassMethod(uint32_t typeId, const std::string &methodName) const {
+  if (typeId == 0 || typeId > classTypes_.size()) {
+    return std::nullopt;
+  }
+  const auto &ct = classTypes_[typeId - 1];
+  auto it = ct.methodIndices.find(methodName);
+  if (it != ct.methodIndices.end()) {
+    return it->second;
+  }
+  // Check parent class
+  if (ct.parentTypeId > 0) {
+    return findClassMethod(ct.parentTypeId, methodName);
+  }
+  return std::nullopt;
+}
 uint32_t GCHeap::registerEnumType(const std::string &name,
                                   const std::vector<std::string> &variants) {
   uint32_t id = static_cast<uint32_t>(enumTypes_.size());

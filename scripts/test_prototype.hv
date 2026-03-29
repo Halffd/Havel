@@ -1,0 +1,46 @@
+// Test prototype-based inheritance
+// Simple class hierarchy test
+
+class AutoBase {
+  running: bool = false
+  delay: int = 100
+  
+  fn init() {
+    @running = false
+  }
+  
+  fn run?() {
+    return false
+  }
+  
+  fn start() {
+    @running = true
+  }
+  
+  fn stop() {
+    @running = false
+  }
+}
+
+class AutoF : AutoBase {
+  fn run?() {
+    return @running
+  }
+  
+  fn sendKey() {
+    print("sending f key")
+  }
+}
+
+// Create instances and test
+let base = AutoBase()
+base.init()
+print("Base running:", base.run?())
+
+let auto = AutoF()
+auto.init()
+auto.start()
+print("AutoF running:", auto.run?())
+auto.sendKey()
+auto.stop()
+print("AutoF running after stop:", auto.run?())

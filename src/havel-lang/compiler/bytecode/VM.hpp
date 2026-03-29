@@ -79,8 +79,9 @@ private:
 
   struct TryHandler {
     uint32_t catch_ip = 0;
-    uint32_t finally_ip = 0;  // 0 if no finally block
-    uint32_t finally_return_ip = 0;  // Where to go after finally (catch_ip or re-throw)
+    uint32_t finally_ip = 0; // 0 if no finally block
+    uint32_t finally_return_ip =
+        0; // Where to go after finally (catch_ip or re-throw)
     size_t stack_depth = 0;
   };
 
@@ -121,9 +122,9 @@ private:
   bool profiling_enabled_ = false;
   std::array<uint64_t, 256> opcode_counts_{};
   uint64_t executed_instructions_ = 0;
-  
+
   // System object initializer - called after registerDefaultHostGlobals()
-  using SystemObjectInitializer = std::function<void(VM*)>;
+  using SystemObjectInitializer = std::function<void(VM *)>;
   SystemObjectInitializer system_object_initializer_;
 
   template <typename T> T getValue(const BytecodeValue &value);
@@ -140,22 +141,26 @@ private:
   };
   ExecutionState saveState() const;
   void restoreState(const ExecutionState &state);
-  
+
   // Callback queue for non-reentrant execution
   struct PendingCall {
     BytecodeValue fn;
     std::vector<BytecodeValue> args;
-    BytecodeValue *result;  // Pointer to store result
-    bool *completed;        // Flag to signal completion
+    BytecodeValue *result; // Pointer to store result
+    bool *completed;       // Flag to signal completion
   };
   std::vector<PendingCall> pending_calls;
-  void scheduleCall(const BytecodeValue &fn, const std::vector<BytecodeValue> &args, BytecodeValue &result, bool &completed);
+  void scheduleCall(const BytecodeValue &fn,
+                    const std::vector<BytecodeValue> &args,
+                    BytecodeValue &result, bool &completed);
   void processPendingCalls();
-  BytecodeValue callFunctionSync(const BytecodeValue &fn, const std::vector<BytecodeValue> &args);
+  BytecodeValue callFunctionSync(const BytecodeValue &fn,
+                                 const std::vector<BytecodeValue> &args);
   void executeInstruction(const Instruction &instruction);
   void doCall(BytecodeValue callee_value, std::vector<BytecodeValue> args,
               bool advance_caller_ip = true);
-  void doTailCall(BytecodeValue callee_value, std::vector<BytecodeValue> args);  // TCO
+  void doTailCall(BytecodeValue callee_value,
+                  std::vector<BytecodeValue> args); // TCO
   void runDispatchLoop(size_t stop_frame_depth);
   bool handleScriptThrow(const BytecodeValue &value);
   void closeFrameUpvalues(uint32_t locals_base, uint32_t locals_end);
@@ -176,8 +181,8 @@ public:
                         const std::vector<BytecodeValue> &args = {}) override;
   // Execute persistently (preserves globals and heap - for REPL)
   BytecodeValue executePersistent(const BytecodeChunk &chunk,
-                                   const std::string &function_name,
-                                   const std::vector<BytecodeValue> &args = {});
+                                  const std::string &function_name,
+                                  const std::vector<BytecodeValue> &args = {});
   BytecodeValue call(const BytecodeValue &callee_value,
                      const std::vector<BytecodeValue> &args = {});
   void setDebugMode(bool enabled) override;
@@ -227,35 +232,48 @@ public:
   bool isInRange(RangeRef range_ref, int64_t value);
 
   // Struct helpers
-  uint32_t registerStructType(const std::string& name, const std::vector<std::string>& fields);
+  uint32_t registerStructType(const std::string &name,
+                              const std::vector<std::string> &fields);
   StructRef createStruct(uint32_t typeId, size_t fieldCount);
   BytecodeValue getStructField(StructRef struct_ref, size_t index);
-  void setStructField(StructRef struct_ref, size_t index, const BytecodeValue& value);
+  void setStructField(StructRef struct_ref, size_t index,
+                      const BytecodeValue &value);
   uint32_t getStructTypeId(StructRef struct_ref);
 
   // Class helpers
-  uint32_t registerClassType(const std::string& name, const std::vector<std::string>& fields);
-  ClassRef createClass(uint32_t typeId, size_t fieldCount);
+  uint32_t registerClassType(const std::string &name,
+                             const std::vector<std::string> &fields,
+                             uint32_t parentTypeId = 0);
+  ClassRef createClass(uint32_t typeId, size_t fieldCount,
+                       uint32_t parentInstanceId = 0);
+  uint32_t getClassParentTypeId(uint32_t typeId) const;
+  void registerClassMethod(uint32_t typeId, const std::string &methodName,
+                           uint32_t functionIndex);
+  std::optional<uint32_t> findClassMethod(uint32_t typeId,
+                                          const std::string &methodName) const;
   BytecodeValue getClassField(ClassRef class_ref, size_t index);
-  void setClassField(ClassRef class_ref, size_t index, const BytecodeValue& value);
+  void setClassField(ClassRef class_ref, size_t index,
+                     const BytecodeValue &value);
   uint32_t getClassTypeId(ClassRef class_ref);
 
   // Copy a struct (value type semantics)
   StructRef copyStruct(StructRef struct_ref);
 
   // Enum helpers
-  uint32_t registerEnumType(const std::string& name, const std::vector<std::string>& variants);
+  uint32_t registerEnumType(const std::string &name,
+                            const std::vector<std::string> &variants);
   EnumRef createEnum(uint32_t typeId, uint32_t tag, size_t payloadCount);
   uint32_t getEnumTag(EnumRef enum_ref);
   BytecodeValue getEnumPayload(EnumRef enum_ref, size_t index);
-  void setEnumPayload(EnumRef enum_ref, size_t index, const BytecodeValue& value);
+  void setEnumPayload(EnumRef enum_ref, size_t index,
+                      const BytecodeValue &value);
 
   // Membership helpers
-  bool arrayContains(ArrayRef array_ref, const BytecodeValue& value);
-  bool objectHasKey(ObjectRef object_ref, const std::string& key);
-  
+  bool arrayContains(ArrayRef array_ref, const BytecodeValue &value);
+  bool objectHasKey(ObjectRef object_ref, const std::string &key);
+
   // Iterator helpers
-  IteratorRef createIterator(const BytecodeValue& iterable);
+  IteratorRef createIterator(const BytecodeValue &iterable);
   BytecodeValue iteratorNext(IteratorRef iterRef);
 
   // Object helpers
@@ -263,7 +281,8 @@ public:
   std::vector<std::pair<std::string, BytecodeValue>>
   getHostObjectEntries(ObjectRef object_ref);
   bool hasHostObjectField(ObjectRef object_ref, const std::string &key);
-  BytecodeValue getHostObjectField(ObjectRef object_ref, const std::string &key);
+  BytecodeValue getHostObjectField(ObjectRef object_ref,
+                                   const std::string &key);
   bool deleteHostObjectField(ObjectRef object_ref, const std::string &key);
   void setHostObjectFrozen(ObjectRef object_ref, bool frozen);
   void setHostObjectSealed(ObjectRef object_ref, bool sealed);

@@ -1210,6 +1210,16 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   }
   std::string className = advance().value;
 
+  // Check for inheritance syntax: class X : ParentClass
+  std::string parentName;
+  if (at().type == havel::TokenType::Colon) {
+    advance(); // consume ':'
+    if (at().type != havel::TokenType::Identifier) {
+      failAt(at(), "Expected parent class name after ':'");
+    }
+    parentName = advance().value;
+  }
+
   // Parse opening brace
   if (at().type != havel::TokenType::OpenBrace) {
     failAt(at(), "Expected '{' after class name");
@@ -1228,7 +1238,8 @@ std::unique_ptr<havel::ast::Statement> Parser::parseClassDeclaration() {
   // Create class definition with fields and methods
   ast::ClassDefinition def(std::move(fields), std::move(methods));
 
-  return std::make_unique<ast::ClassDeclaration>(className, std::move(def));
+  return std::make_unique<ast::ClassDeclaration>(className, std::move(def),
+                                                 parentName);
 }
 
 // Parse struct members (fields and methods)

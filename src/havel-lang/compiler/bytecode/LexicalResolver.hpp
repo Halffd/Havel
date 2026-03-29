@@ -81,6 +81,8 @@ private:
       "mouse.scroll", "mouse.pos", "mouse.setSpeed", "mouse.setAccel", "mouse.setDPI",
       // Mouse global aliases
       "click", "move", "moveRel", "scroll",
+      // Mouse button constants
+      "lmb", "rmb", "mmb", "mb4", "mb5",
       // System detection
       "system.detect", "system.hardware",
       // Display functions
@@ -99,7 +101,9 @@ private:
       // Utility functions
       "tap",
       // Array functions
-      "flat", "smooth", "squeeze", "flatMap"};
+      "flat", "smooth", "squeeze", "flatMap",
+      // Desktop environment / WM detection flags (set by user scripts)
+      "xfce", "kde", "gnome", "hypr", "compiz", "wm", "wl"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "mouse", "io", "system", "hotkey", "mode", "process", "async",

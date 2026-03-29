@@ -407,9 +407,9 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     if (fn.name) {
       // Check if this is a top-level function (in program body, not nested)
       if (top_level_functions_.count(fn.name->symbol) > 0) {
-        // Top-level function - create GlobalFunction binding
+        // Top-level function - create Function binding
         ResolvedBinding binding;
-        binding.kind = ResolvedBindingKind::Global;
+        binding.kind = ResolvedBindingKind::Function;
         binding.name = fn.name->symbol;
         result_.identifier_bindings[fn.name.get()] = binding;
       } else {

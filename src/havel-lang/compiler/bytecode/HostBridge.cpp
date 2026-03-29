@@ -98,6 +98,7 @@ void HostBridge::initBridges() {
   mediaBridge_ = std::make_unique<MediaBridge>(ctx_);
   networkBridge_ = std::make_unique<NetworkBridge>(ctx_);
   audioBridge_ = std::make_unique<AudioBridge>(ctx_);
+  mpvBridge_ = std::make_unique<MPVBridge>(ctx_);
   displayBridge_ = std::make_unique<DisplayBridge>(ctx_);
   configBridge_ = std::make_unique<ConfigBridge>(ctx_);
   modeBridge_ = std::make_unique<ModeBridge>(ctx_);
@@ -121,6 +122,7 @@ void HostBridge::install() {
   mediaBridge_->install(options_);
   networkBridge_->install(options_);
   audioBridge_->install(options_);
+  mpvBridge_->install(options_);
   displayBridge_->install(options_);
   configBridge_->install(options_);
   modeBridge_->install(options_);

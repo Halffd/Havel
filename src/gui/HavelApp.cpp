@@ -255,6 +255,7 @@ void HavelApp::initializeComponents(bool isStartup) {
   ctx.processManager = nullptr;
   ctx.networkManager = networkManager.get();
   ctx.windowMonitor = windowMonitor.get();
+  ctx.mpvController = mpv.get();
   std::cerr << "[DEBUG] HostContext built, initializing bytecode VM..." << std::endl;
 
   // Initialize bytecode VM and HostBridge
@@ -445,6 +446,7 @@ void HavelApp::initializeComponents(bool isStartup) {
       ctx.screenshotManager = screenshotMgr;
       ctx.clipboardManager = clipboardMgr;
       ctx.pixelAutomation = pixelAuto;
+      ctx.mpvController = mpv.get();
 
       // interpreter = std::make_shared<Interpreter>(ctx); // REMOVED - interpreter deleted
       // Register interpreter for hotkey callbacks (must be after construction)

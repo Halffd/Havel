@@ -42,6 +42,7 @@ class PixelAutomation;
 class AutomationManager;
 class FileManager;
 class ProcessManager;
+class MPVController;
 
 namespace net {
 class NetworkManager;
@@ -105,6 +106,7 @@ struct HostContext {
     class net::NetworkManager* networkManager = nullptr;
     class host::AsyncService* asyncService = nullptr;
     class WindowMonitor* windowMonitor = nullptr;  // Window monitoring for dynamic variables
+    class MPVController* mpvController = nullptr;  // MPV media player controller
     
     // Capability-based extensions (embedder-provided)
     std::unordered_map<std::string, std::shared_ptr<Capability>> caps;

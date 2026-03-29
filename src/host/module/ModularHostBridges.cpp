@@ -32,6 +32,7 @@
 #include "core/IO.hpp"
 #include "media/AudioManager.hpp"
 #include "media/MPVController.hpp"
+#include "gui/GUIManager.hpp"
 
 #include <QClipboard>
 #include <fstream>
@@ -654,6 +655,10 @@ void UIBridge::install(PipelineOptions &options) {
   options.host_functions["screenshot.monitor"] = [ctx = ctx_](const auto &args) {
     return handleScreenshotMonitor(args, ctx);
   };
+  // GUI notifications
+  options.host_functions["gui.notify"] = [ctx = ctx_](const auto &args) {
+    return handleGUINotify(args, ctx);
+  };
 }
 
 // Helper: Create window object with data fields
@@ -1219,6 +1224,36 @@ BytecodeValue UIBridge::handleScreenshotMonitor(const std::vector<BytecodeValue>
   auto data = service.captureMonitor(monitor);
   (void)data;
   return BytecodeValue(nullptr);
+}
+
+BytecodeValue UIBridge::handleGUINotify(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  if (!ctx || !ctx->guiManager) {
+    return BytecodeValue(false);
+  }
+  if (args.size() < 2) {
+    throw std::runtime_error("gui.notify() requires title and message");
+  }
+  
+  const std::string *title = std::get_if<std::string>(&args[0]);
+  const std::string *message = std::get_if<std::string>(&args[1]);
+  
+  if (!title || !message) {
+    throw std::runtime_error("gui.notify() requires string arguments");
+  }
+  
+  std::string icon = "info";
+  int durationMs = 0;
+  
+  if (args.size() > 2 && std::holds_alternative<std::string>(args[2])) {
+    icon = std::get<std::string>(args[2]);
+  }
+  if (args.size() > 3 && std::holds_alternative<int64_t>(args[3])) {
+    durationMs = static_cast<int>(std::get<int64_t>(args[3]));
+  }
+  
+  ctx->guiManager->showNotification(*title, *message, icon, durationMs);
+  return BytecodeValue(true);
 }
 
 // ============================================================================

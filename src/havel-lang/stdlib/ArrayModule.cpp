@@ -219,6 +219,35 @@ void registerArrayModule(VMApi &api) {
   api.setField(arrObj, "map", api.makeFunctionRef("array.map"));
   api.setField(arrObj, "filter", api.makeFunctionRef("array.filter"));
   api.setGlobal("Array", arrObj);
+  
+  // Register global join alias
+  api.registerFunction("join", [&api](const std::vector<BytecodeValue> &args) {
+    if (args.size() < 1) {
+      throw std::runtime_error("join() requires at least 1 argument");
+    }
+    if (!std::holds_alternative<havel::compiler::ArrayRef>(args[0])) {
+      throw std::runtime_error("join() first argument must be array");
+    }
+    auto arrRef = std::get<havel::compiler::ArrayRef>(args[0]);
+    
+    std::string sep = (args.size() > 1 && std::holds_alternative<std::string>(args[1]))
+      ? std::get<std::string>(args[1]) : "";
+    
+    size_t len = api.getArrayLength(args[0]);
+    std::string result;
+    for (size_t i = 0; i < len; ++i) {
+      if (i > 0) result += sep;
+      auto val = api.getArrayValue(arrRef, i);
+      if (std::holds_alternative<std::string>(val)) {
+        result += std::get<std::string>(val);
+      } else if (std::holds_alternative<int64_t>(val)) {
+        result += std::to_string(std::get<int64_t>(val));
+      } else if (std::holds_alternative<double>(val)) {
+        result += std::to_string(std::get<double>(val));
+      }
+    }
+    return BytecodeValue(result);
+  });
 }
 
 } // namespace havel::stdlib

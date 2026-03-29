@@ -626,7 +626,8 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
 
       // Check if this is a global variable (top-level let)
       if (lexical_resolution_.global_variables.count(identifier->symbol) > 0) {
-        emit(OpCode::STORE_GLOBAL, identifier->symbol);
+        emit(OpCode::STORE_GLOBAL,
+             std::vector<BytecodeValue>{identifier->symbol});
       } else {
         uint32_t slot = declarationSlot(*identifier);
         reserveLocalSlot(slot);
@@ -793,7 +794,7 @@ void ByteCompiler::compileStatement(const ast::Statement &statement) {
       compileExpression(*valueExpr);
 
       // Set conf.key = value (conf object is global)
-      emit(OpCode::LOAD_GLOBAL, "conf");
+      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{"conf"});
       emit(OpCode::LOAD_CONST, addConstant(key));
       emit(OpCode::OBJECT_SET);
 
@@ -1355,7 +1356,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
 
     // Global scope access (::identifier)
     if (id.isGlobalScope) {
-      emit(OpCode::LOAD_GLOBAL, id.symbol);
+      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{id.symbol});
       break;
     }
 
@@ -1385,7 +1386,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       break;
     case ResolvedBindingKind::Global:
       // Global variable - runtime will decide
-      emit(OpCode::LOAD_GLOBAL, binding->name);
+      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{binding->name});
       break;
     }
     break;
@@ -1410,7 +1411,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       throw std::runtime_error("@ expression field must be an identifier");
     }
     // Load 'this' (current object)
-    emit(OpCode::LOAD_GLOBAL, "this");
+    emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{"this"});
     // Get the field from this
     emit(OpCode::LOAD_CONST, addConstant(fieldId->symbol));
     emit(OpCode::OBJECT_GET);
@@ -1584,7 +1585,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::STORE_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
-        emit(OpCode::STORE_GLOBAL, binding.name);
+        emit(OpCode::STORE_GLOBAL, std::vector<BytecodeValue>{binding.name});
       } else {
         throw std::runtime_error("Assignment target is not mutable");
       }
@@ -1600,7 +1601,7 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       } else if (binding.kind == ResolvedBindingKind::Upvalue) {
         emit(OpCode::LOAD_UPVALUE, binding.slot);
       } else if (binding.kind == ResolvedBindingKind::Global) {
-        emit(OpCode::LOAD_GLOBAL, binding.name);
+        emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{binding.name});
       } else {
         throw std::runtime_error("Assignment target is not mutable");
       }
@@ -1644,7 +1645,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         // Check for global scope assignment (::x = value)
         if (assignment.isGlobalScope) {
           emit(OpCode::DUP);
-          emit(OpCode::STORE_GLOBAL, target_id->symbol);
+          emit(OpCode::STORE_GLOBAL,
+               std::vector<BytecodeValue>{target_id->symbol});
           break;
         }
 
@@ -1695,7 +1697,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             if (binding->kind == ResolvedBindingKind::Local) {
               emit(OpCode::STORE_VAR, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {
-              emit(OpCode::STORE_GLOBAL, binding->name);
+              emit(OpCode::STORE_GLOBAL,
+                   std::vector<BytecodeValue>{binding->name});
             } else {
               throw std::runtime_error(
                   "Unsupported binding kind for destructuring");
@@ -1734,7 +1737,8 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
             if (binding->kind == ResolvedBindingKind::Local) {
               emit(OpCode::STORE_VAR, binding->slot);
             } else if (binding->kind == ResolvedBindingKind::Global) {
-              emit(OpCode::STORE_GLOBAL, binding->name);
+              emit(OpCode::STORE_GLOBAL,
+                   std::vector<BytecodeValue>{binding->name});
             } else {
               throw std::runtime_error(
                   "Unsupported binding kind for destructuring");
@@ -2649,7 +2653,7 @@ void ByteCompiler::compileCallExpression(
 
     if (binding->kind == ResolvedBindingKind::Global) {
       // Global variable that might contain a function - load and call
-      emit(OpCode::LOAD_GLOBAL, binding->name);
+      emit(OpCode::LOAD_GLOBAL, std::vector<BytecodeValue>{binding->name});
 
       for (const auto &arg : expression.args) {
         if (!arg) {

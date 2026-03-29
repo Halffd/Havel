@@ -584,11 +584,24 @@ public:
     indentLevel--;
     out << getIndent() << "}" << std::endl;
   }
+
+  void visitAtExpression(const AtExpression &node) override {
+    out << getIndent() << "AtExpression {@" << std::endl;
+    indentLevel++;
+    printChildNode("field: ", node.field);
+    indentLevel--;
+    out << getIndent() << "}" << std::endl;
+  }
 };
 
 // BooleanLiteral accept method
 void BooleanLiteral::accept(ASTVisitor &visitor) const {
   visitor.visitBooleanLiteral(*this);
+}
+
+// AtExpression accept method
+void AtExpression::accept(ASTVisitor &visitor) const {
+  visitor.visitAtExpression(*this);
 }
 
 } // namespace havel::ast

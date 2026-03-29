@@ -1,12 +1,12 @@
 #pragma once
-#include "HotkeyExecutor.hpp"         // Include HotkeyExecutor
+#include "HotkeyExecutor.hpp" // Include HotkeyExecutor
 #include "MouseGestureEngine.hpp"
-#include "UinputDevice.hpp"          // Include UinputDevice
+#include "UinputDevice.hpp"           // Include UinputDevice
 #include "core/CallbackTypes.hpp"     // Include callback types
 #include "core/MouseGestureTypes.hpp" // Include mouse gesture types
 #include <atomic>
-#include <csignal>
 #include <chrono>
+#include <csignal>
 #include <functional>
 #include <linux/input.h>
 #include <map>
@@ -52,7 +52,8 @@ public:
 
   // Stop listening
   void Stop();
-
+  // Drain all pending events from a device
+  void DrainDeviceEvents(int fd);
   // Enable/disable device grabbing
   void SetGrabDevices(bool grab) { grabDevices = grab; }
 
@@ -161,7 +162,7 @@ public:
   void SetKeyDownCallback(KeyCallback callback) {
     keyDownCallback = std::move(callback);
   }
-  
+
   // Callback for raw key up events
   void SetKeyUpCallback(KeyCallback callback) {
     keyUpCallback = std::move(callback);
@@ -251,12 +252,14 @@ private:
   // Mouse gesture helpers (legacy; kept for compatibility)
   void ProcessMouseGesture(int dx, int dy);
   MouseGestureDirection GetGestureDirection(int dx, int dy) const;
-  bool MatchGesturePattern(const std::vector<MouseGestureDirection> &expected,
-                           const std::vector<MouseGestureDirection> &actual) const;
+  bool
+  MatchGesturePattern(const std::vector<MouseGestureDirection> &expected,
+                      const std::vector<MouseGestureDirection> &actual) const;
   void ResetMouseGesture();
   void ResetInputState();
-  void RegisterGestureHotkey(int id,
-                             const std::vector<MouseGestureDirection> &directions);
+  void
+  RegisterGestureHotkey(int id,
+                        const std::vector<MouseGestureDirection> &directions);
   bool IsGestureValid(const std::vector<MouseGestureDirection> &pattern,
                       int minDistance) const;
   std::vector<MouseGestureDirection>
@@ -340,7 +343,7 @@ private:
 
   // Event batching for reduced syscall overhead
   std::vector<input_event> uinputBatchBuffer;
-  std::mutex uinputBatchMutex;  // Protects batch buffer
+  std::mutex uinputBatchMutex; // Protects batch buffer
   std::atomic<bool> uinputBatching{false};
   static constexpr size_t MAX_BATCH_SIZE = 16;  // Flush after 16 events
   static constexpr int BATCH_TIMEOUT_US = 5000; // Or after 5ms

@@ -35,6 +35,7 @@
 #include "gui/GUIManager.hpp"
 
 #include <QClipboard>
+#include <QString>
 #include <fstream>
 #include <sstream>
 #include <chrono>
@@ -127,6 +128,9 @@ void IOBridge::install(PipelineOptions &options) {
   options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
     return handleSendKey(args, ctx);
   };
+  options.host_functions["io.sendText"] = [ctx = ctx_](const auto &args) {
+    return handleSendText(args, ctx);
+  };
 }
 
 BytecodeValue IOBridge::handleSend(const std::vector<BytecodeValue> &args,
@@ -149,6 +153,30 @@ BytecodeValue IOBridge::handleSendKey(const std::vector<BytecodeValue> &args,
   havel::host::IOService ioService(ctx->io);
   if (auto *key = std::get_if<std::string>(&args[0])) {
     return BytecodeValue(ioService.sendKey(*key));
+  }
+  return BytecodeValue(false);
+}
+
+BytecodeValue IOBridge::handleSendText(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
+  if (args.empty() || !ctx->io) {
+    return BytecodeValue(false);
+  }
+  if (auto *text = std::get_if<std::string>(&args[0])) {
+    // Use clipboard for reliable text input (handles all characters, spaces, newlines)
+    if (ctx->clipboardManager) {
+      ctx->clipboardManager->getClipboard()->setText(QString::fromStdString(*text));
+      // Small delay to ensure clipboard is set
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      // Send Ctrl+V to paste
+      ctx->io->Send("{LCtrl down}");
+      ctx->io->Send("v");
+      ctx->io->Send("{LCtrl up}");
+    } else {
+      // Fallback: send character by character (less reliable)
+      ctx->io->Send(text->c_str());
+    }
+    return BytecodeValue(true);
   }
   return BytecodeValue(false);
 }

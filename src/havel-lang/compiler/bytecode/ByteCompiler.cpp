@@ -1562,9 +1562,21 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
         }
         // Call with (previous_result + explicit_args) count
         emit(OpCode::CALL, static_cast<uint32_t>(1 + call.args.size()));
+      } else if (stage->kind == ast::NodeType::Identifier) {
+        // Stage is an identifier - check if it's a host function
+        const auto &ident = static_cast<const ast::Identifier &>(*stage);
+        const auto *binding = bindingFor(ident);
+        if (binding && binding->kind == ResolvedBindingKind::HostFunction) {
+          // Host function - use CALL_HOST with the value on stack as first arg
+          emit(OpCode::CALL_HOST, std::vector<BytecodeValue>{
+                                      binding->name, static_cast<uint32_t>(1)});
+        } else {
+          // User function - call it with previous result as first argument
+          compileExpression(*stage);
+          emit(OpCode::CALL, 1);
+        }
       } else {
-        // Stage is just an identifier or member expression - call it with
-        // previous result
+        // Stage is a member expression or other - call it with previous result
         compileExpression(*stage);
         emit(OpCode::CALL, 1);
       }

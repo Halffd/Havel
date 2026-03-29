@@ -269,6 +269,7 @@ void HostBridge::install() {
   registerAnyMethod("where");  // alias for filter
   registerAnyMethod("select"); // alias for map
   registerAnyMethod("count");  // alias for len
+  registerAnyMethod("list");   // terminal - alias to list()
 
   // Generic iterable HOFs (array/string/object/set/range/tuple-as-array)
   auto truthy = [](const BytecodeValue &value) -> bool {
@@ -662,6 +663,185 @@ void HostBridge::install() {
     }
     return BytecodeValue(result);
   };
+
+  // Terminal operation - convert to set
+  options_.host_functions["set"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        // Create set and add unique elements
+        SetRef result = ctx_->vm->createSet();
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (!std::holds_alternative<std::nullptr_t>(valueVal)) {
+            ctx_->vm->addToSet(result, valueVal);
+          }
+        }
+        return BytecodeValue(result);
+      };
+
+  // Terminal operation - convert to object with key-value pairs
+  options_.host_functions["object"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        ObjectRef result = ctx_->vm->createHostObject();
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto pairVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          // Expect pairs like [key, value] or {key: ..., value: ...}
+          if (std::holds_alternative<ArrayRef>(pairVal)) {
+            auto arr = std::get<ArrayRef>(pairVal);
+            auto key = ctx_->vm->getHostArrayElement(arr, 0);
+            auto val = ctx_->vm->getHostArrayElement(arr, 1);
+            if (std::holds_alternative<std::string>(key)) {
+              ctx_->vm->setHostObjectField(result, std::get<std::string>(key),
+                                           val);
+            }
+          }
+        }
+        return BytecodeValue(result);
+      };
+
+  // Aggregation - sum all values
+  options_.host_functions["sum"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        double total = 0;
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (std::holds_alternative<int64_t>(valueVal)) {
+            total += std::get<int64_t>(valueVal);
+          } else if (std::holds_alternative<double>(valueVal)) {
+            total += std::get<double>(valueVal);
+          }
+        }
+        return BytecodeValue(total);
+      };
+
+  // Aggregation - find max value
+  options_.host_functions["max"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        double maxVal = std::numeric_limits<double>::lowest();
+        bool hasValue = false;
+
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          double num = 0;
+          if (std::holds_alternative<int64_t>(valueVal)) {
+            num = std::get<int64_t>(valueVal);
+          } else if (std::holds_alternative<double>(valueVal)) {
+            num = std::get<double>(valueVal);
+          } else {
+            continue;
+          }
+
+          if (!hasValue || num > maxVal) {
+            maxVal = num;
+            hasValue = true;
+          }
+        }
+        return hasValue ? BytecodeValue(maxVal) : BytecodeValue(nullptr);
+      };
+
+  // Aggregation - find min value
+  options_.host_functions["min"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.empty()) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+
+        double minVal = std::numeric_limits<double>::max();
+        bool hasValue = false;
+
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          double num = 0;
+          if (std::holds_alternative<int64_t>(valueVal)) {
+            num = std::get<int64_t>(valueVal);
+          } else if (std::holds_alternative<double>(valueVal)) {
+            num = std::get<double>(valueVal);
+          } else {
+            continue;
+          }
+
+          if (!hasValue || num < minVal) {
+            minVal = num;
+            hasValue = true;
+          }
+        }
+        return hasValue ? BytecodeValue(minVal) : BytecodeValue(nullptr);
+      };
 
   // Standalone aliases for pipeline support (e.g., clipboard.get | upper |
   // trim)

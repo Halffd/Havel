@@ -76,11 +76,14 @@ private:
       "run", "runDetached",
       // Media aliases
       "play",
-      // Mouse aliases
-      "mouse.move", "mouse.click"};
+      // Mouse module functions
+      "mouse.click", "mouse.down", "mouse.up", "mouse.move", "mouse.moveRel",
+      "mouse.scroll", "mouse.pos", "mouse.setSpeed", "mouse.setAccel", "mouse.setDPI",
+      // Mouse global aliases
+      "click", "move", "moveRel", "scroll"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
-      "window", "io", "system", "hotkey", "mode", "process", "async",
+      "window", "mouse", "io", "system", "hotkey", "mode", "process", "async",
       "thread", "interval", "timeout", "struct"};
 
   void collectTopLevelFunctions(const ast::Program &program);

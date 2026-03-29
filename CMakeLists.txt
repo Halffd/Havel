@@ -286,6 +286,7 @@ file(GLOB_RECURSE CORE_SOURCES
     "src/host/io/*.cpp"
     "src/host/media/*.cpp"
     "src/host/module/*.cpp"
+    "src/host/mouse/*.cpp"
     "src/host/mode/*.cpp"
     "src/host/network/*.cpp"
     "src/host/process/*.cpp"
@@ -323,8 +324,9 @@ endif()
 # Host modules (language bindings to system managers)
 file(GLOB_RECURSE HOST_MODULES_SOURCES "src/modules/*.cpp")
 
-# Explicitly add WindowMonitorModule (GLOB might not catch new files)
+# Explicitly add new modules (GLOB might not catch new files)
 list(APPEND HOST_MODULES_SOURCES "src/modules/window/WindowMonitorModule.cpp")
+list(APPEND HOST_MODULES_SOURCES "src/modules/mouse/MouseModule.cpp")
 
 # Test sources (conditional)
 set(TEST_SOURCES "")

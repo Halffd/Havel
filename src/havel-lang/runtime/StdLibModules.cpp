@@ -10,6 +10,7 @@
 #include "../../modules/config/ConfigModule.hpp"
 #include "../../modules/window/WindowMonitorModule.hpp"
 #include "../../modules/help/HelpModule.hpp"
+#include "../../modules/mouse/MouseModule.hpp"
 
 namespace havel::stdlib {
 // PURE stdlib modules only - no OS dependencies
@@ -50,6 +51,9 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   // Register help module (documentation system)
   modules::registerHelpModule(*api);
 
+  // Register mouse module (mouse control)
+  modules::registerMouseModule(*api);
+
   // Note: setupDynamicWindowGlobals() is called by HostBridge after bridges are initialized
   // This ensures we use the existing WindowMonitor from HotkeyManager
 
@@ -72,6 +76,7 @@ void registerStdLibWithVM(compiler::HostBridge &bridge) {
   bridge.options().host_global_names.insert("config");
   bridge.options().host_global_names.insert("conf");
   bridge.options().host_global_names.insert("window");
+  bridge.options().host_global_names.insert("mouse");
   bridge.options().host_global_names.insert("title");
   bridge.options().host_global_names.insert("class");
   bridge.options().host_global_names.insert("exe");

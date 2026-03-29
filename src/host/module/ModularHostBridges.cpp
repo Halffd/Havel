@@ -122,15 +122,6 @@ void IOBridge::install(PipelineOptions &options) {
   options.host_functions["io.sendKey"] = [ctx = ctx_](const auto &args) {
     return handleSendKey(args, ctx);
   };
-  options.host_functions["io.mouseMove"] = [ctx = ctx_](const auto &args) {
-    return handleMouseMove(args, ctx);
-  };
-  options.host_functions["io.mouseClick"] = [ctx = ctx_](const auto &args) {
-    return handleMouseClick(args, ctx);
-  };
-  options.host_functions["io.getMousePosition"] = [ctx = ctx_](const auto &args) {
-    return handleGetMousePosition(args, ctx);
-  };
 }
 
 BytecodeValue IOBridge::handleSend(const std::vector<BytecodeValue> &args,
@@ -155,48 +146,6 @@ BytecodeValue IOBridge::handleSendKey(const std::vector<BytecodeValue> &args,
     return BytecodeValue(ioService.sendKey(*key));
   }
   return BytecodeValue(false);
-}
-
-BytecodeValue IOBridge::handleMouseMove(const std::vector<BytecodeValue> &args,
-                                        const HostContext *ctx) {
-  if (args.size() < 2 || !ctx->io) {
-    return BytecodeValue(false);
-  }
-  havel::host::IOService ioService(ctx->io);
-  int64_t dx = 0, dy = 0;
-  if (auto *v = std::get_if<int64_t>(&args[0]))
-    dx = *v;
-  else if (auto *v = std::get_if<double>(&args[0]))
-    dx = static_cast<int64_t>(*v);
-  if (auto *v = std::get_if<int64_t>(&args[1]))
-    dy = *v;
-  else if (auto *v = std::get_if<double>(&args[1]))
-    dy = static_cast<int64_t>(*v);
-  return BytecodeValue(ioService.mouseMove(static_cast<int>(dx), static_cast<int>(dy)));
-}
-
-BytecodeValue IOBridge::handleMouseClick(const std::vector<BytecodeValue> &args,
-                                         const HostContext *ctx) {
-  if (args.empty() || !ctx->io) {
-    return BytecodeValue(false);
-  }
-  havel::host::IOService ioService(ctx->io);
-  int64_t button = 1;
-  if (auto *v = std::get_if<int64_t>(&args[0]))
-    button = *v;
-  else if (auto *v = std::get_if<double>(&args[0]))
-    button = static_cast<int64_t>(*v);
-  return BytecodeValue(ioService.mouseClick(static_cast<int>(button)));
-}
-
-BytecodeValue IOBridge::handleGetMousePosition(const std::vector<BytecodeValue> &args,
-                                               const HostContext *ctx) {
-  (void)args;
-  if (!ctx->io) {
-    return BytecodeValue(nullptr);
-  }
-  // TODO: Implement getMousePosition in IOService
-  return BytecodeValue(nullptr);
 }
 
 // ============================================================================
@@ -255,12 +204,6 @@ void SystemBridge::install(PipelineOptions &options) {
   };
   options.host_functions["play"] = [ctx = ctx_](const auto &args) {
     return handleMediaPlay(args, ctx);
-  };
-  options.host_functions["mouse.move"] = [ctx = ctx_](const auto &args) {
-    return handleMouseMove(args, ctx);
-  };
-  options.host_functions["mouse.click"] = [ctx = ctx_](const auto &args) {
-    return handleMouseClick(args, ctx);
   };
 }
 
@@ -506,16 +449,6 @@ BytecodeValue SystemBridge::handleProcessRunDetached(const std::vector<BytecodeV
 BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
                                             const HostContext *ctx) {
   return MediaBridge::handleMediaPlay(args, ctx);
-}
-
-BytecodeValue SystemBridge::handleMouseMove(const std::vector<BytecodeValue> &args,
-                                            const HostContext *ctx) {
-  return IOBridge::handleMouseMove(args, ctx);
-}
-
-BytecodeValue SystemBridge::handleMouseClick(const std::vector<BytecodeValue> &args,
-                                             const HostContext *ctx) {
-  return IOBridge::handleMouseClick(args, ctx);
 }
 
 // ============================================================================

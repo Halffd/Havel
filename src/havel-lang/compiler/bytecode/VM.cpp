@@ -1161,6 +1161,63 @@ BytecodeValue VM::execute(const BytecodeChunk &chunk,
   return result;
 }
 
+BytecodeValue VM::executePersistent(const BytecodeChunk &chunk,
+                                     const std::string &function_name,
+                                     const std::vector<BytecodeValue> &args) {
+  current_chunk = &chunk;
+
+  const auto *entry = chunk.getFunction(function_name);
+  if (!entry) {
+    throw std::runtime_error("Function not found: " + function_name);
+  }
+
+  // Clear stack and locals for this execution, but PRESERVE:
+  // - globals (user-defined variables persist)
+  // - heap (objects allocated by user persist)
+  // - struct_type_ids (type information persists)
+  while (!stack.empty()) {
+    stack.pop();
+  }
+  locals.clear();
+  frame_count_ = 0;
+  // DON'T reset heap - preserves user globals
+  // DON'T call registerDefaultHostGlobals - already registered
+  open_upvalues.clear();
+  has_current_exception_ = false;
+  current_exception_ = nullptr;
+
+  if (frame_arena_.size() <= frame_count_) {
+    frame_arena_.push_back(CallFrame{entry, 0, 0, 0});
+  } else {
+    frame_arena_[frame_count_] = CallFrame{entry, 0, 0, 0};
+  }
+  frame_count_++;
+  locals.resize(entry->local_count);
+
+  if (!args.empty()) {
+    if (args.size() != entry->param_count) {
+      throw std::runtime_error("Argument count mismatch for entry function '" +
+                               function_name + "' (expected " +
+                               std::to_string(entry->param_count) + ", got " +
+                               std::to_string(args.size()) + ")");
+    }
+
+    for (uint32_t i = 0; i < entry->param_count; ++i) {
+      locals[i] = args[i];
+    }
+  }
+
+  runDispatchLoop(0);
+
+  if (stack.empty()) {
+    return nullptr;
+  }
+
+  BytecodeValue result = stack.top();
+  stack.pop();
+  return result;
+}
+
 void VM::runDispatchLoop(size_t stop_frame_depth) {
   while (frame_count_ > stop_frame_depth) {
     // CRITICAL: Capture ALL frame data by value BEFORE any mutation!

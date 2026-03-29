@@ -140,6 +140,7 @@ private:
   
   // Execution context
   std::string accumulatedInput;
+  std::string inputHistory;  // All previous input for recompilation
   int currentLine = 0;
 };
 

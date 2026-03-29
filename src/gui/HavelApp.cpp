@@ -239,23 +239,23 @@ void HavelApp::initializeComponents(bool isStartup) {
   std::cerr << "[DEBUG] HotkeyManager initialized, building HostContext..." << std::endl;
 
   // Build HostContext from managers (raw pointers - no ownership)
-  HostContext ctx;
-  ctx.io = io.get();
-  ctx.windowManager = windowManager.get();
-  ctx.hotkeyManager = hotkeyManager.get();
-  ctx.modeManager = hotkeyManager->getModeManager().get();
-  ctx.brightnessManager = brightnessManager.get();
-  ctx.audioManager = audioManager.get();
-  ctx.guiManager = guiManager.get();
-  ctx.screenshotManager = screenshotMgr;
-  ctx.clipboardManager = clipboardMgr;
-  ctx.pixelAutomation = pixelAuto;
-  ctx.automationManager = reinterpret_cast<havel::AutomationManager*>(automationManager.get());
-  ctx.fileManager = nullptr;
-  ctx.processManager = nullptr;
-  ctx.networkManager = networkManager.get();
-  ctx.windowMonitor = windowMonitor.get();
-  ctx.mpvController = mpv.get();
+  // Use member variable to ensure it persists for lifetime of VM/HostBridge
+  hostContext.io = io.get();
+  hostContext.windowManager = windowManager.get();
+  hostContext.hotkeyManager = hotkeyManager.get();
+  hostContext.modeManager = hotkeyManager->getModeManager().get();
+  hostContext.brightnessManager = brightnessManager.get();
+  hostContext.audioManager = audioManager.get();
+  hostContext.guiManager = guiManager.get();
+  hostContext.screenshotManager = screenshotMgr;
+  hostContext.clipboardManager = clipboardMgr;
+  hostContext.pixelAutomation = pixelAuto;
+  hostContext.automationManager = reinterpret_cast<havel::AutomationManager*>(automationManager.get());
+  hostContext.fileManager = nullptr;
+  hostContext.processManager = nullptr;
+  hostContext.networkManager = networkManager.get();
+  hostContext.windowMonitor = windowMonitor.get();
+  hostContext.mpvController = mpv.get();
   std::cerr << "[DEBUG] HostContext built, initializing bytecode VM..." << std::endl;
 
   // Initialize bytecode VM and HostBridge
@@ -264,15 +264,15 @@ void HavelApp::initializeComponents(bool isStartup) {
     std::cerr << "[DEBUG] Creating VM..." << std::endl;
 
     // Create VM with context
-    bytecodeVM = std::make_unique<compiler::VM>(ctx);
+    bytecodeVM = std::make_unique<compiler::VM>(hostContext);
 
     // Set VM pointer in context (non-owning)
-    ctx.vm = bytecodeVM.get();
+    hostContext.vm = bytecodeVM.get();
 
     std::cerr << "[DEBUG] Creating HostBridge..." << std::endl;
 
     // Create HostBridge with context
-    hostBridge = compiler::createHostBridge(ctx);
+    hostBridge = compiler::createHostBridge(hostContext);
 
     std::cerr << "[DEBUG] Registering stdlib modules..." << std::endl;
 

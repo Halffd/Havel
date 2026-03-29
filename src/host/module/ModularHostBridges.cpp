@@ -527,23 +527,30 @@ BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &ar
 BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> &args,
                                                const HostContext *ctx) {
   (void)args;
+  std::cerr << "[DEBUG] handleSystemDetect: ctx=" << ctx << " ctx->vm=" << (ctx ? ctx->vm : nullptr) << "\n";
 
   if (!ctx || !ctx->vm) {
     // Return a minimal object if VM is not available
+    std::cerr << "[DEBUG] handleSystemDetect: ctx or vm is null, returning empty string\n";
     return BytecodeValue(std::string(""));
   }
 
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  std::cerr << "[DEBUG] handleSystemDetect: vm=" << vm << ", creating object\n";
   auto obj = vm->createHostObject();
+  std::cerr << "[DEBUG] handleSystemDetect: object created, setting fields\n";
   
   // Use HardwareDetector for system detection
   auto sysInfo = havel::HardwareDetector::detectSystem();
-  
+  std::cerr << "[DEBUG] handleSystemDetect: detected OS=" << sysInfo.os << "\n";
+
   vm->setHostObjectField(obj, "os", BytecodeValue(sysInfo.os));
+  std::cerr << "[DEBUG] handleSystemDetect: set os field\n";
   vm->setHostObjectField(obj, "shell", BytecodeValue(sysInfo.shell));
   vm->setHostObjectField(obj, "user", BytecodeValue(sysInfo.user));
   vm->setHostObjectField(obj, "home", BytecodeValue(sysInfo.home));
   vm->setHostObjectField(obj, "hostname", BytecodeValue(sysInfo.hostname));
+  std::cerr << "[DEBUG] handleSystemDetect: all fields set, returning\n";
   
   // Linux-specific fields
   if (!sysInfo.displayProtocol.empty()) {

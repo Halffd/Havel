@@ -105,6 +105,7 @@ public:
   std::unique_ptr<GUIManager> guiManager;
 
   // Bytecode VM and HostBridge
+  havel::HostContext hostContext;  // Must persist for lifetime of VM/HostBridge
   std::unique_ptr<havel::compiler::VM> bytecodeVM;
   std::shared_ptr<havel::compiler::HostBridge> hostBridge;
 #endif

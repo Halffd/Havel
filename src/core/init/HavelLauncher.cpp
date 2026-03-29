@@ -698,9 +698,6 @@ int havel::init::HavelLauncher::runRepl(const LaunchConfig &cfg) {
       // Create minimal host API for REPL (no IO, no hotkeys)
       auto hostAPI = std::make_shared<HostAPI>(nullptr, nullptr, Configs::Get());
 
-      // Initialize service registry
-      havel::initializeServiceRegistry(hostAPI);
-
       // Create REPL
       havel::repl::REPLConfig replConfig;
       replConfig.debugMode = cfg.debugMode;

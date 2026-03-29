@@ -7,6 +7,7 @@
 #include "../../host/ServiceRegistry.hpp"
 #include "../../modules/HostModules.hpp"
 #include "../runtime/StdLibModules.hpp"
+#include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
 #include <iostream>
 #include <sstream>
@@ -38,15 +39,17 @@ void REPL::initialize(std::shared_ptr<IHostAPI> hostAPI) {
   // Clear service registry (for REPL restarts)
   havel::host::ServiceRegistry::instance().clear();
 
-  // Initialize service registry with all services
-  havel::initializeServiceRegistry(hostAPI);
+  // Initialize service registry with all services (if IO is available)
+  if (hostAPI->GetIO()) {
+    havel::initializeServiceRegistry(hostAPI);
+  }
 
   // Create VM
   vm_ = std::make_unique<compiler::VM>();
 
   // Create HostContext with injected dependencies
   auto ctx = havel::createHostContext(hostAPI);
-  
+
   // Create HostBridge with injected context
   hostBridge_ = compiler::createHostBridge(ctx);
   hostBridge_->install();
@@ -215,7 +218,8 @@ bool REPL::execute(const std::string& code) {
   
   try {
     // Execute with bytecode VM, using HostBridge options
-    auto result = compiler::runBytecodePipeline(code, "__repl__", hostBridge_->options());
+    // Use __main__ as the entry function (where top-level statements are compiled)
+    auto result = compiler::runBytecodePipeline(code, "__main__", hostBridge_->options());
     (void)result;  // For now, just check it doesn't throw
     return true;
   } catch (const std::exception& e) {

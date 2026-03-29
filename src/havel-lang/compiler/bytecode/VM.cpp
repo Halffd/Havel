@@ -1275,9 +1275,10 @@ void VM::registerDefaultHostGlobals() {
   setGlobal("title", BytecodeValue(std::string("")));
   setGlobal("exe", BytecodeValue(std::string("")));
   setGlobal("pid", BytecodeValue(static_cast<int64_t>(0)));
-  
+
   // Call system object initializer if provided (adds module-specific fields)
-  std::cerr << "[DEBUG] system_object_initializer_ check: " << (system_object_initializer_ ? "set" : "not set") << "\n";
+  std::cerr << "[DEBUG] system_object_initializer_ check: "
+            << (system_object_initializer_ ? "set" : "not set") << "\n";
   if (system_object_initializer_) {
     std::cerr << "[DEBUG] Calling system_object_initializer_\n";
     system_object_initializer_(this);
@@ -2178,6 +2179,20 @@ void VM::executeInstruction(const Instruction &instruction) {
         throw std::runtime_error("Invalid string operation");
       }
       break;
+    }
+
+    // String coercion for ADD: string + any or any + string
+    if (instruction.opcode == OpCode::ADD) {
+      if (std::holds_alternative<std::string>(left)) {
+        // string + any - convert right to string
+        push(std::get<std::string>(left) + toString(right, &heap_));
+        break;
+      }
+      if (std::holds_alternative<std::string>(right)) {
+        // any + string - convert left to string
+        push(toString(left, &heap_) + std::get<std::string>(right));
+        break;
+      }
     }
 
     throw std::runtime_error("Type mismatch in binary operation");

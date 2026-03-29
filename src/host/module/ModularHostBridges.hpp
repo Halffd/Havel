@@ -310,6 +310,34 @@ private:
 };
 
 /**
+ * MPVBridge - MPV media player control
+ */
+class MPVBridge : public BridgeModule {
+public:
+  explicit MPVBridge(const HostContext *ctx) : ctx_(ctx) {}
+  void install(PipelineOptions &options) override;
+
+private:
+  const HostContext *ctx_;
+  static BytecodeValue handleVolumeUp(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleVolumeDown(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleToggleMute(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleStop(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleNext(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handlePrevious(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSeek(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSubSeek(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAddSpeed(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAddSubScale(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleAddSubDelay(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleCycle(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleCopySubtitle(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIPCSet(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleIPCRestart(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleScreenshot(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+};
+
+/**
  * DisplayBridge - Display/monitor info
  */
 class DisplayBridge : public BridgeModule {

@@ -87,13 +87,19 @@ private:
       "display.getMonitors", "display.getPrimary", "display.getCount", "display.getMonitorsArea",
       // Extension modules (loaded via extension.load())
       "image", "ocr", "pixel", "join", "gui", "audio",
+      // MPV media player control
+      "mpv",
       // Extension module methods (common patterns)
       "image.load", "ocr.read", "pixel.region", "pixel.get", "pixel.match",
-      "audio.increaseActiveAppVolume", "audio.decreaseActiveAppVolume", "audio.getActiveAppVolume"};
+      "audio.increaseActiveAppVolume", "audio.decreaseActiveAppVolume", "audio.getActiveAppVolume",
+      // MPV methods
+      "mpv.volumeUp", "mpv.volumeDown", "mpv.toggleMute", "mpv.stop", "mpv.next", "mpv.previous",
+      "mpv.seek", "mpv.subSeek", "mpv.addSpeed", "mpv.addSubScale", "mpv.addSubDelay",
+      "mpv.cycle", "mpv.copySubtitle", "mpv.ipcSet", "mpv.ipcReset", "mpv.screenshot"};
   std::unordered_set<std::string> host_globals_{
       "print", "sleep", "sleep_ms", "clock_ms", "time.now", "fmt",
       "window", "mouse", "io", "system", "hotkey", "mode", "process", "async",
-      "thread", "interval", "timeout", "struct", "extension", "image", "ocr", "pixel", "gui", "audio"};
+      "thread", "interval", "timeout", "struct", "extension", "image", "ocr", "pixel", "gui", "audio", "mpv"};
 
   void collectTopLevelFunctions(const ast::Program &program);
   void collectTopLevelStructs(const ast::Program &program);

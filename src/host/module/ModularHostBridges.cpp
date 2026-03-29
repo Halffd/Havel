@@ -31,6 +31,7 @@
 #include "core/HotkeyManager.hpp"
 #include "core/IO.hpp"
 #include "media/AudioManager.hpp"
+#include "media/MPVController.hpp"
 
 #include <QClipboard>
 #include <fstream>
@@ -2913,6 +2914,255 @@ BytecodeValue AudioBridge::handleToggleMute(const std::vector<BytecodeValue> &ar
     return BytecodeValue(false);
   }
   return BytecodeValue(ctx->audioManager->toggleMute());
+}
+
+// ============================================================================
+// MPVBridge Implementation
+// ============================================================================
+
+void MPVBridge::install(PipelineOptions &options) {
+  options.host_functions["mpv.volumeUp"] = [ctx = ctx_](const auto &args) {
+    return handleVolumeUp(args, ctx);
+  };
+  options.host_functions["mpv.volumeDown"] = [ctx = ctx_](const auto &args) {
+    return handleVolumeDown(args, ctx);
+  };
+  options.host_functions["mpv.toggleMute"] = [ctx = ctx_](const auto &args) {
+    return handleToggleMute(args, ctx);
+  };
+  options.host_functions["mpv.stop"] = [ctx = ctx_](const auto &args) {
+    return handleStop(args, ctx);
+  };
+  options.host_functions["mpv.next"] = [ctx = ctx_](const auto &args) {
+    return handleNext(args, ctx);
+  };
+  options.host_functions["mpv.previous"] = [ctx = ctx_](const auto &args) {
+    return handlePrevious(args, ctx);
+  };
+  options.host_functions["mpv.seek"] = [ctx = ctx_](const auto &args) {
+    return handleSeek(args, ctx);
+  };
+  options.host_functions["mpv.subSeek"] = [ctx = ctx_](const auto &args) {
+    return handleSubSeek(args, ctx);
+  };
+  options.host_functions["mpv.addSpeed"] = [ctx = ctx_](const auto &args) {
+    return handleAddSpeed(args, ctx);
+  };
+  options.host_functions["mpv.addSubScale"] = [ctx = ctx_](const auto &args) {
+    return handleAddSubScale(args, ctx);
+  };
+  options.host_functions["mpv.addSubDelay"] = [ctx = ctx_](const auto &args) {
+    return handleAddSubDelay(args, ctx);
+  };
+  options.host_functions["mpv.cycle"] = [ctx = ctx_](const auto &args) {
+    return handleCycle(args, ctx);
+  };
+  options.host_functions["mpv.copySubtitle"] = [ctx = ctx_](const auto &args) {
+    return handleCopySubtitle(args, ctx);
+  };
+  options.host_functions["mpv.ipcSet"] = [ctx = ctx_](const auto &args) {
+    return handleIPCSet(args, ctx);
+  };
+  options.host_functions["mpv.ipcReset"] = [ctx = ctx_](const auto &args) {
+    return handleIPCRestart(args, ctx);
+  };
+  options.host_functions["mpv.screenshot"] = [ctx = ctx_](const auto &args) {
+    return handleScreenshot(args, ctx);
+  };
+}
+
+BytecodeValue MPVBridge::handleVolumeUp(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->VolumeUp();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleVolumeDown(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->VolumeDown();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleToggleMute(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->ToggleMute();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleStop(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->Stop();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleNext(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->Next();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handlePrevious(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->Previous();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleSeek(const std::vector<BytecodeValue> &args,
+                                    const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty()) {
+    throw std::runtime_error("mpv.seek() requires a seconds argument");
+  }
+  if (std::holds_alternative<std::string>(args[0])) {
+    std::string seconds = std::get<std::string>(args[0]);
+    ctx->mpvController->SendCommand({"seek", seconds});
+  } else if (std::holds_alternative<int64_t>(args[0])) {
+    int seconds = static_cast<int>(std::get<int64_t>(args[0]));
+    ctx->mpvController->Seek(seconds);
+  } else {
+    throw std::runtime_error("mpv.seek() requires a string or number");
+  }
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleSubSeek(const std::vector<BytecodeValue> &args,
+                                       const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty()) {
+    throw std::runtime_error("mpv.subSeek() requires an index argument");
+  }
+  if (std::holds_alternative<std::string>(args[0])) {
+    std::string index = std::get<std::string>(args[0]);
+    ctx->mpvController->SendCommand({"sub-seek", index});
+  } else if (std::holds_alternative<int64_t>(args[0])) {
+    int index = static_cast<int>(std::get<int64_t>(args[0]));
+    ctx->mpvController->SubSeek(index);
+  } else {
+    throw std::runtime_error("mpv.subSeek() requires a string or number");
+  }
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleAddSpeed(const std::vector<BytecodeValue> &args,
+                                        const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<double>(args[0])) {
+    throw std::runtime_error("mpv.addSpeed() requires a number");
+  }
+  double delta = std::get<double>(args[0]);
+  ctx->mpvController->AddSpeed(delta);
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleAddSubScale(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<double>(args[0])) {
+    throw std::runtime_error("mpv.addSubScale() requires a number");
+  }
+  double delta = std::get<double>(args[0]);
+  ctx->mpvController->AddSubScale(delta);
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleAddSubDelay(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<double>(args[0])) {
+    throw std::runtime_error("mpv.addSubDelay() requires a number");
+  }
+  double delta = std::get<double>(args[0]);
+  ctx->mpvController->AddSubDelay(delta);
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleCycle(const std::vector<BytecodeValue> &args,
+                                     const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("mpv.cycle() requires a property name");
+  }
+  std::string property = std::get<std::string>(args[0]);
+  ctx->mpvController->Cycle(property);
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleCopySubtitle(const std::vector<BytecodeValue> &args,
+                                           const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue("");
+  }
+  return BytecodeValue(ctx->mpvController->CopyCurrentSubtitle());
+}
+
+BytecodeValue MPVBridge::handleIPCSet(const std::vector<BytecodeValue> &args,
+                                      const HostContext *ctx) {
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  if (args.empty() || !std::holds_alternative<std::string>(args[0])) {
+    throw std::runtime_error("mpv.ipcSet() requires a socket path");
+  }
+  std::string path = std::get<std::string>(args[0]);
+  ctx->mpvController->SetIPC(path);
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleIPCRestart(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->IPCRestart();
+  return BytecodeValue(true);
+}
+
+BytecodeValue MPVBridge::handleScreenshot(const std::vector<BytecodeValue> &args,
+                                          const HostContext *ctx) {
+  (void)args;
+  if (!ctx || !ctx->mpvController) {
+    return BytecodeValue(false);
+  }
+  ctx->mpvController->SendCommand({"screenshot"});
+  return BytecodeValue(true);
 }
 
 // ============================================================================

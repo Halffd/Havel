@@ -529,7 +529,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   case ast::NodeType::AssignmentExpression: {
     const auto &assignment =
         static_cast<const ast::AssignmentExpression &>(expression);
-    
+
     // Handle assignment target - may be implicit declaration
     if (assignment.target && assignment.target->kind == ast::NodeType::Identifier) {
       const auto &ident = static_cast<const ast::Identifier &>(*assignment.target);
@@ -539,7 +539,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         // Implicit declaration on first assignment (Option C)
         // Check if we're in global scope (function_index == 0)
         bool isGlobalScope = (function_stack_.size() == 1);
-        
+
         if (isGlobalScope) {
           // Declare as global variable
           uint32_t slot = declareLocal(ident.symbol, &ident, false);
@@ -565,10 +565,90 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         // Variable exists, just note the binding
         noteIdentifierBinding(ident, *binding);
       }
+    } else if (assignment.target && assignment.target->kind == ast::NodeType::ArrayLiteral) {
+      // Destructuring assignment: [a, b, c] = [...]
+      // Resolve each element as potential implicit declaration
+      const auto &arrayLit = static_cast<const ast::ArrayLiteral &>(*assignment.target);
+      for (const auto &element : arrayLit.elements) {
+        if (element && element->kind == ast::NodeType::Identifier) {
+          const auto &ident = static_cast<const ast::Identifier &>(*element);
+          auto binding = resolveIdentifier(ident.symbol);
+          if (!binding) {
+            // Implicit declaration
+            bool isGlobalScope = (function_stack_.size() == 1);
+            if (isGlobalScope) {
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              global_variables_.insert(ident.symbol);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::HostGlobal;
+              newBinding.slot = 0;
+              newBinding.name = ident.symbol;
+              newBinding.is_const = false;
+              noteIdentifierBinding(ident, newBinding);
+            } else {
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::Local;
+              newBinding.slot = slot;
+              newBinding.name = ident.symbol;
+              noteIdentifierBinding(ident, newBinding);
+            }
+          } else {
+            noteIdentifierBinding(ident, *binding);
+          }
+        } else if (element) {
+          resolveExpression(*element);
+        }
+      }
+      // Resolve the right side
+      if (assignment.value) {
+        resolveExpression(*assignment.value);
+      }
+      break;
+    } else if (assignment.target && assignment.target->kind == ast::NodeType::ObjectLiteral) {
+      // Object destructuring: {cpu, gpu, ram} = hardware
+      const auto &objLit = static_cast<const ast::ObjectLiteral &>(*assignment.target);
+      for (const auto &pair : objLit.pairs) {
+        // pair.first is the key (string), pair.second is the value (Expression)
+        // For destructuring like {cpu, gpu}, value is an Identifier
+        if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
+          const auto &ident = static_cast<const ast::Identifier &>(*pair.second);
+          auto binding = resolveIdentifier(ident.symbol);
+          if (!binding) {
+            bool isGlobalScope = (function_stack_.size() == 1);
+            if (isGlobalScope) {
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              global_variables_.insert(ident.symbol);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::HostGlobal;
+              newBinding.slot = 0;
+              newBinding.name = ident.symbol;
+              newBinding.is_const = false;
+              noteIdentifierBinding(ident, newBinding);
+            } else {
+              uint32_t slot = declareLocal(ident.symbol, &ident, false);
+              ResolvedBinding newBinding;
+              newBinding.kind = ResolvedBindingKind::Local;
+              newBinding.slot = slot;
+              newBinding.name = ident.symbol;
+              noteIdentifierBinding(ident, newBinding);
+            }
+          } else {
+            noteIdentifierBinding(ident, *binding);
+          }
+        } else if (pair.second) {
+          resolveExpression(*pair.second);
+        }
+      }
+      // Resolve the right side
+      if (assignment.value) {
+        resolveExpression(*assignment.value);
+      }
+      break;
     } else if (assignment.target) {
       resolveExpression(*assignment.target);
     }
-    
+
     // Resolve right side
     if (assignment.value) {
       resolveExpression(*assignment.value);

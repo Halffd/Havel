@@ -1486,6 +1486,14 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
                                    ? dynamic_cast<const ast::IndexExpression *>(
                                          assignment.target.get())
                                    : nullptr;
+    const auto *target_array = assignment.target
+                                   ? dynamic_cast<const ast::ArrayLiteral *>(
+                                         assignment.target.get())
+                                   : nullptr;
+    const auto *target_object = assignment.target
+                                   ? dynamic_cast<const ast::ObjectLiteral *>(
+                                         assignment.target.get())
+                                   : nullptr;
 
     auto emitStoreIdentifierWithResult = [&](const ResolvedBinding &binding) {
       if (binding.is_const) {
@@ -1577,6 +1585,79 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
       }
       if (target_index) {
         emitStoreIndexWithResult(*target_index);
+        break;
+      }
+      if (target_array) {
+        // Array destructuring assignment: [a, b, c] = value
+        const auto &arrayLit = static_cast<const ast::ArrayLiteral &>(*target_array);
+        
+        // Compile the value first
+        compileExpression(*assignment.value);
+        uint32_t temp_slot = next_local_index;
+        reserveLocalSlot(temp_slot);
+        emit(OpCode::STORE_VAR, temp_slot);
+        
+        // Extract each element
+        for (size_t i = 0; i < arrayLit.elements.size(); ++i) {
+          const auto &element = arrayLit.elements[i];
+          if (element && element->kind == ast::NodeType::Identifier) {
+            const auto &ident = static_cast<const ast::Identifier &>(*element);
+            const auto *binding = bindingFor(ident);
+            if (!binding) {
+              throw std::runtime_error(
+                  "Missing lexical binding for destructuring element: " +
+                  ident.symbol);
+            }
+            // Load array, get element at index i
+            emit(OpCode::LOAD_VAR, temp_slot);
+            emit(OpCode::LOAD_CONST, addConstant(static_cast<int64_t>(i)));
+            emit(OpCode::ARRAY_GET);
+            // Store in the binding
+            if (binding->kind == ResolvedBindingKind::Local) {
+              emit(OpCode::STORE_VAR, binding->slot);
+            } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
+              emit(OpCode::STORE_GLOBAL, binding->name);
+            } else {
+              throw std::runtime_error("Unsupported binding kind for destructuring");
+            }
+          }
+        }
+        break;
+      }
+      if (target_object) {
+        // Object destructuring assignment: {key: val} = obj
+        const auto &objLit = static_cast<const ast::ObjectLiteral &>(*target_object);
+        
+        // Compile the value first
+        compileExpression(*assignment.value);
+        uint32_t temp_slot = next_local_index;
+        reserveLocalSlot(temp_slot);
+        emit(OpCode::STORE_VAR, temp_slot);
+        
+        // Extract each property
+        for (const auto &pair : objLit.pairs) {
+          if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
+            const auto &ident = static_cast<const ast::Identifier &>(*pair.second);
+            const auto *binding = bindingFor(ident);
+            if (!binding) {
+              throw std::runtime_error(
+                  "Missing lexical binding for destructuring property: " +
+                  ident.symbol);
+            }
+            // Load object, get property by key
+            emit(OpCode::LOAD_VAR, temp_slot);
+            emit(OpCode::LOAD_CONST, addConstant(pair.first));
+            emit(OpCode::OBJECT_GET);
+            // Store in the binding
+            if (binding->kind == ResolvedBindingKind::Local) {
+              emit(OpCode::STORE_VAR, binding->slot);
+            } else if (binding->kind == ResolvedBindingKind::HostGlobal) {
+              emit(OpCode::STORE_GLOBAL, binding->name);
+            } else {
+              throw std::runtime_error("Unsupported binding kind for destructuring");
+            }
+          }
+        }
         break;
       }
       throw std::runtime_error("Unsupported assignment target");

@@ -282,6 +282,10 @@ Token Lexer::scanString() {
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
+        // Allow ? suffix for predicate variables (e.g., $logged?)
+        if (!isAtEnd() && peek() == '?') {
+          value += advance();
+        }
         value += '}';
         // No change to braceDepth since we synthetically closed it immediately
       } else {
@@ -389,6 +393,10 @@ Token Lexer::scanMultilineString() {
         while (!isAtEnd() && (isAlphaNumeric(peek()) || peek() == '_')) {
           value += advance();
         }
+        // Allow ? suffix for predicate variables
+        if (!isAtEnd() && peek() == '?') {
+          value += advance();
+        }
         value += '}';
       }
     } else {
@@ -477,6 +485,12 @@ Token Lexer::scanIdentifier() {
 
   // Subsequent characters
   while (!isAtEnd() && isAlphaNumeric(peek())) {
+    identifier += advance();
+  }
+  
+  // Allow ? suffix for predicate functions (Ruby/Elixir style)
+  // e.g., user.logged?, window.visible?, file.exists?
+  if (!isAtEnd() && peek() == '?') {
     identifier += advance();
   }
 

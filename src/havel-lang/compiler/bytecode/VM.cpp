@@ -1275,6 +1275,14 @@ void VM::registerDefaultHostGlobals() {
   setGlobal("title", BytecodeValue(std::string("")));
   setGlobal("exe", BytecodeValue(std::string("")));
   setGlobal("pid", BytecodeValue(static_cast<int64_t>(0)));
+  
+  // Call system object initializer if provided (adds module-specific fields)
+  std::cerr << "[DEBUG] system_object_initializer_ check: " << (system_object_initializer_ ? "set" : "not set") << "\n";
+  if (system_object_initializer_) {
+    std::cerr << "[DEBUG] Calling system_object_initializer_\n";
+    system_object_initializer_(this);
+    std::cerr << "[DEBUG] system_object_initializer_ completed\n";
+  }
 }
 
 BytecodeValue VM::invokeHostFunction(const std::string &name,

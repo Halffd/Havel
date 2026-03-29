@@ -591,9 +591,9 @@ BytecodeSmokeResult runBytecodePipeline(
   if (options.vm_setup) {
     options.vm_setup(*vm);
   }
-  // Initialize system object if provided (proper namespacing)
+  // Set up system object initializer to run after execute() initializes state
   if (options.system_object_initializer) {
-    options.system_object_initializer(vm);
+    vm->setSystemObjectInitializer(options.system_object_initializer);
   }
   try {
     result.return_value = vm->execute(*chunk, entry_function);

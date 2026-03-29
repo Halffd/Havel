@@ -534,17 +534,33 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
     if (assignment.target && assignment.target->kind == ast::NodeType::Identifier) {
       const auto &ident = static_cast<const ast::Identifier &>(*assignment.target);
       auto binding = resolveIdentifier(ident.symbol);
-      
+
       if (!binding) {
         // Implicit declaration on first assignment (Option C)
-        // Declare as local variable in current scope
-        uint32_t slot = declareLocal(ident.symbol, &ident, false);
-        // Record the binding so ByteCompiler can find it
-        ResolvedBinding newBinding;
-        newBinding.kind = ResolvedBindingKind::Local;
-        newBinding.slot = slot;
-        newBinding.name = ident.symbol;
-        noteIdentifierBinding(ident, newBinding);
+        // Check if we're in global scope (function_index == 0)
+        bool isGlobalScope = (function_stack_.size() == 1);
+        
+        if (isGlobalScope) {
+          // Declare as global variable
+          uint32_t slot = declareLocal(ident.symbol, &ident, false);
+          global_variables_.insert(ident.symbol);
+          // Record as HostGlobal for proper LOAD_GLOBAL/STORE_GLOBAL
+          ResolvedBinding newBinding;
+          newBinding.kind = ResolvedBindingKind::HostGlobal;
+          newBinding.slot = 0;  // Slot doesn't matter for HostGlobal
+          newBinding.name = ident.symbol;
+          newBinding.is_const = false;
+          noteIdentifierBinding(ident, newBinding);
+        } else {
+          // Declare as local variable in current scope
+          uint32_t slot = declareLocal(ident.symbol, &ident, false);
+          // Record the binding so ByteCompiler can find it
+          ResolvedBinding newBinding;
+          newBinding.kind = ResolvedBindingKind::Local;
+          newBinding.slot = slot;
+          newBinding.name = ident.symbol;
+          noteIdentifierBinding(ident, newBinding);
+        }
       } else {
         // Variable exists, just note the binding
         noteIdentifierBinding(ident, *binding);

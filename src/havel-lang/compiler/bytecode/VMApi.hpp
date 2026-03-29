@@ -69,6 +69,12 @@ struct VMApi {
     return vm.hasHostObjectField(std::get<ObjectRef>(obj), key);
   }
 
+  BytecodeValue getField(BytecodeValue obj, const std::string &key) {
+    if (!std::holds_alternative<ObjectRef>(obj))
+      return BytecodeValue(nullptr);
+    return vm.getHostObjectField(std::get<ObjectRef>(obj), key);
+  }
+
   bool deleteField(BytecodeValue obj, const std::string &key) {
     if (!std::holds_alternative<ObjectRef>(obj))
       return false;

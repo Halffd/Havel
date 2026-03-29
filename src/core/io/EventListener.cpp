@@ -165,7 +165,7 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
       }
     }
 
-    // DrainDeviceEvents(fd);  // TODO: Implement or remove
+    DrainDeviceEvents(fd);
 
     DeviceInfo device;
     device.path = path;
@@ -210,6 +210,9 @@ void EventListener::Stop() {
 
   // Release all pressed virtual keys before ungrabbing devices
   ReleaseAllVirtualKeys();
+  for (auto &device : devices) {
+    DrainDeviceEvents(device.fd);
+  }
 
   // Ungrab and close all devices
   for (auto &device : devices) {
@@ -224,6 +227,28 @@ void EventListener::Stop() {
 
   if (signalHandler) {
     signalHandler->Shutdown();
+  }
+}
+
+void EventListener::DrainDeviceEvents(int fd) {
+  debug("Draining events from device fd={}", fd);
+  struct input_event ev;
+  ssize_t n;
+  
+  // Read and discard all pending events
+  while (true) {
+    n = read(fd, &ev, sizeof(ev));
+    if (n < 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        break;  // No more events
+      }
+      // Real error
+      debug("DrainDeviceEvents: read error: {}", strerror(errno));
+      break;
+    }
+    if (n == sizeof(ev)) {
+      debug("Drained event: type={}, code={}, value={}", ev.type, ev.code, ev.value);
+    }
   }
 }
 

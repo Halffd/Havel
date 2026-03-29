@@ -2335,6 +2335,48 @@ void VM::executeInstruction(const Instruction &instruction) {
     break;
   }
 
+  case OpCode::CALL_SUPER: {
+    // CALL_SUPER: operands are [method_name, arg_count]
+    // Pops args from stack, looks up parent class method, calls it
+    if (instruction.operands.size() != 2 ||
+        !std::holds_alternative<std::string>(instruction.operands[0]) ||
+        !std::holds_alternative<uint32_t>(instruction.operands[1])) {
+      throw std::runtime_error("CALL_SUPER expects operands: <string "
+                               "method_name, uint32 arg_count>");
+    }
+
+    const std::string &method_name =
+        std::get<std::string>(instruction.operands[0]);
+    uint32_t arg_count = std::get<uint32_t>(instruction.operands[1]);
+
+    if (stack.size() < static_cast<size_t>(arg_count)) {
+      throw std::runtime_error("Stack underflow during CALL_SUPER");
+    }
+
+    // Pop arguments from stack
+    std::vector<BytecodeValue> args(arg_count);
+    for (uint32_t i = 0; i < arg_count; ++i) {
+      args[arg_count - 1 - i] = pop();
+    }
+
+    // Get current 'this' from local scope (slot 0 typically)
+    size_t base = currentFrame().locals_base;
+    BytecodeValue this_value = locals[base + 0];
+
+    // Find the parent class method using the prototype chain
+    // For now, emit as a host function call with special prefix
+    // Full implementation needs parent method lookup via heap_.findClassMethod
+    std::string super_method_name = "super." + method_name;
+
+    // Prepend 'this' to args
+    args.insert(args.begin(), this_value);
+
+    // Call as host function - runtime will need to resolve via parent class
+    push(invokeHostFunction(super_method_name,
+                            static_cast<uint32_t>(args.size())));
+    break;
+  }
+
   case OpCode::RETURN: {
     doReturn();
     break;

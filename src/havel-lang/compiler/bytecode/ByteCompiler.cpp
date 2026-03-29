@@ -2349,160 +2349,91 @@ void ByteCompiler::compileCallExpression(
         }
       } // if (typeName != "any")
 
-      // Check for array.* VM intrinsics (for variables too - VM checks type at
-      // runtime)
+      // Check for array.* methods - emit CALL_HOST for consistent behavior
       if (typeName == "array" || typeName == "any") {
-        if (property->symbol == "len" || property->symbol == "length") {
-          compileExpression(*member.object);
-          emit(OpCode::ARRAY_LEN);
-          return;
-        } else if (property->symbol == "push") {
-          compileExpression(*member.object);
-          for (const auto &arg : expression.args) {
-            if (!arg)
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            compileExpression(*arg);
+        std::string arrayMethodName = "array." + property->symbol;
+
+        // Compile arguments (array is first arg for module-style calls)
+        for (const auto &arg : expression.args) {
+          if (!arg)
+            throw std::runtime_error("Call expression contains null argument");
+          compileExpression(*arg);
+        }
+
+        // For methods that need the object as first arg (variable.method()
+        // style), we need to also compile the object. But for module.function()
+        // style, the object IS the first argument. Check if this is a variable
+        // call or module call
+        const auto *ident =
+            static_cast<const ast::Identifier *>(member.object.get());
+        if (ident && ident->symbol == "array") {
+          // Module-style: array.len([1,2,3]) - args already compiled above
+          uint32_t totalArgs = arg_count;
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            for (const auto &kwarg : expression.kwargs) {
+              emit(OpCode::DUP);
+              compileExpression(*kwarg.value);
+              emit(OpCode::OBJECT_SET, kwarg.name);
+            }
+            totalArgs++;
           }
-          emit(OpCode::ARRAY_PUSH);
+          emit(OpCode::CALL_HOST,
+               std::vector<BytecodeValue>{arrayMethodName, totalArgs});
           return;
-        } else if (property->symbol == "pop") {
+        } else {
+          // Variable-style: arr.len() - need to compile object as first arg
           compileExpression(*member.object);
-          emit(OpCode::ARRAY_POP);
-          return;
-        } else if (property->symbol == "has") {
-          compileExpression(*member.object);
-          for (const auto &arg : expression.args) {
-            if (!arg)
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            compileExpression(*arg);
+          // Reorder stack: move object to be first arg
+          // Stack currently: [args...] [object]
+          // Need: [object] [args...]
+          // For now, just compile object first then recompile args
+          // Actually simpler: emit CALL_HOST with object + args
+          uint32_t totalArgs = arg_count + 1; // +1 for object
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            for (const auto &kwarg : expression.kwargs) {
+              emit(OpCode::DUP);
+              compileExpression(*kwarg.value);
+              emit(OpCode::OBJECT_SET, kwarg.name);
+            }
+            totalArgs++;
           }
-          emit(OpCode::ARRAY_HAS);
-          return;
-        } else if (property->symbol == "find") {
-          compileExpression(*member.object);
-          for (const auto &arg : expression.args) {
-            if (!arg)
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            compileExpression(*arg);
-          }
-          emit(OpCode::ARRAY_FIND);
-          return;
-        } else if (property->symbol == "map") {
-          compileExpression(*member.object);
-          compileExpression(*expression.args[0]);
-          emit(OpCode::ARRAY_MAP);
-          return;
-        } else if (property->symbol == "filter") {
-          compileExpression(*member.object);
-          compileExpression(*expression.args[0]);
-          emit(OpCode::ARRAY_FILTER);
-          return;
-        } else if (property->symbol == "reduce") {
-          compileExpression(*member.object);
-          compileExpression(*expression.args[0]);
-          compileExpression(*expression.args[1]);
-          emit(OpCode::ARRAY_REDUCE);
-          return;
-        } else if (property->symbol == "foreach") {
-          compileExpression(*member.object);
-          compileExpression(*expression.args[0]);
-          emit(OpCode::ARRAY_FOREACH);
-          return;
-        } else if (property->symbol == "sort") {
-          for (const auto &arg : expression.args) {
-            if (!arg)
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            compileExpression(*arg);
-          }
-          emit(
-              OpCode::CALL_HOST,
-              std::vector<BytecodeValue>{
-                  "array.sort", static_cast<uint32_t>(expression.args.size())});
+          // Method name is any.* for variable dispatch
+          methodName = "any." + property->symbol;
+          emit(OpCode::CALL_HOST,
+               std::vector<BytecodeValue>{methodName, totalArgs});
           return;
         }
       }
 
       if (typeName != "any") {
-        // Check for string.* VM intrinsics
+        // Check for string.* methods - emit CALL_HOST for consistent behavior
         if (typeName == "string") {
-          if (property->symbol == "len" || property->symbol == "length") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_LEN);
-            return;
-          } else if (property->symbol == "upper") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_UPPER);
-            return;
-          } else if (property->symbol == "lower") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_LOWER);
-            return;
-          } else if (property->symbol == "trim") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_TRIM);
-            return;
-          } else if (property->symbol == "includes" ||
-                     property->symbol == "has") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_HAS);
-            return;
-          } else if (property->symbol == "startswith" ||
-                     property->symbol == "starts") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_STARTS);
-            return;
-          } else if (property->symbol == "endswith" ||
-                     property->symbol == "ends") {
-            compileExpression(*member.object); // Push string first
-            for (const auto &arg : expression.args) {
-              if (!arg)
-                throw std::runtime_error(
-                    "Call expression contains null argument");
-              compileExpression(*arg);
-            }
-            emit(OpCode::STRING_ENDS);
-            return;
+          std::string stringMethodName = "string." + property->symbol;
+
+          // Compile arguments
+          for (const auto &arg : expression.args) {
+            if (!arg)
+              throw std::runtime_error(
+                  "Call expression contains null argument");
+            compileExpression(*arg);
           }
+
+          uint32_t totalArgs = arg_count;
+          if (hasKwargs) {
+            emit(OpCode::OBJECT_NEW);
+            for (const auto &kwarg : expression.kwargs) {
+              emit(OpCode::DUP);
+              compileExpression(*kwarg.value);
+              emit(OpCode::OBJECT_SET, kwarg.name);
+            }
+            totalArgs++;
+          }
+
+          emit(OpCode::CALL_HOST,
+               std::vector<BytecodeValue>{stringMethodName, totalArgs});
+          return;
         }
 
         // Dynamic language: treat all module.function calls as host functions

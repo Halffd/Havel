@@ -532,9 +532,6 @@ BytecodeSmokeResult runBytecodePipeline(
   }
 
   ByteCompiler compiler;
-  for (const auto &[name, _] : options.host_functions) {
-    compiler.addHostBuiltin(name);
-  }
   for (const auto &name : options.host_global_names) {
     compiler.addHostGlobal(name);
   }

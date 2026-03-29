@@ -2462,76 +2462,35 @@ void ByteCompiler::compileCallExpression(
           }
         }
 
-        // Check if this is a module.function call (like http.get, network.post)
-        // In this case, the module name is just a namespace prefix, not an
-        // object to pass
+        // Dynamic language: treat all module.function calls as host functions
+        // The runtime will resolve whether it's a direct host function or prototype method
         std::string fullMethodName = typeName + "." + property->symbol;
 
-        // Check if this is a registered host function with the full name
-        if (host_builtin_names_.find(fullMethodName) !=
-            host_builtin_names_.end()) {
-          // This is a module.function call - don't pass the module as an
-          // argument Just compile the arguments and call the function directly
-          for (const auto &arg : expression.args) {
-            if (!arg) {
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            }
-            compileExpression(*arg);
+        // Compile arguments
+        for (const auto &arg : expression.args) {
+          if (!arg) {
+            throw std::runtime_error(
+                "Call expression contains null argument");
           }
-
-          // Compile kwargs as object if present
-          uint32_t totalArgs = arg_count;
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
-            }
-            totalArgs++;
-          }
-
-          // Call the host function directly
-          emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{fullMethodName, totalArgs});
-          return;
+          compileExpression(*arg);
         }
 
-        // Otherwise, treat as prototype method (pass object as first arg)
-        methodName = typeName + "." + property->symbol;
-
-        // Check if this is a registered prototype method
-        if (host_builtin_names_.find(methodName) != host_builtin_names_.end()) {
-          // Compile the object (push as first argument)
-          compileExpression(*member.object);
-
-          // Compile positional arguments
-          for (const auto &arg : expression.args) {
-            if (!arg) {
-              throw std::runtime_error(
-                  "Call expression contains null argument");
-            }
-            compileExpression(*arg);
+        // Compile kwargs as object if present
+        uint32_t totalArgs = arg_count;
+        if (hasKwargs) {
+          emit(OpCode::OBJECT_NEW);
+          for (const auto &kwarg : expression.kwargs) {
+            emit(OpCode::DUP);
+            compileExpression(*kwarg.value);
+            emit(OpCode::OBJECT_SET, kwarg.name);
           }
-
-          // Compile kwargs as object if present
-          uint32_t totalArgs = arg_count + 1; // +1 for object (self/this)
-          if (hasKwargs) {
-            emit(OpCode::OBJECT_NEW);
-            for (const auto &kwarg : expression.kwargs) {
-              emit(OpCode::DUP);
-              compileExpression(*kwarg.value);
-              emit(OpCode::OBJECT_SET, kwarg.name);
-            }
-            totalArgs++;
-          }
-
-          // Call the prototype method (object is already first arg)
-          emit(OpCode::CALL_HOST,
-               std::vector<BytecodeValue>{methodName, totalArgs});
-          return;
+          totalArgs++;
         }
+
+        // Call the host function - runtime will resolve
+        emit(OpCode::CALL_HOST,
+             std::vector<BytecodeValue>{fullMethodName, totalArgs});
+        return;
       } else {
         // For variables, check if this is a module.function call (like
         // http.get) In this case, don't pass the module as an argument
@@ -2646,35 +2605,7 @@ void ByteCompiler::compileCallExpression(
     }
   }
 
-  if (expression.callee->kind == ast::NodeType::Identifier) {
-    auto callee_name = getCalleeName(*expression.callee);
-    if (callee_name &&
-        host_builtin_names_.find(*callee_name) != host_builtin_names_.end()) {
-      for (const auto &arg : expression.args) {
-        if (!arg) {
-          throw std::runtime_error("Call expression contains null argument");
-        }
-        compileExpression(*arg);
-      }
-
-      // Compile kwargs as object if present
-      uint32_t totalArgs = arg_count;
-      if (hasKwargs) {
-        emit(OpCode::OBJECT_NEW);
-        for (const auto &kwarg : expression.kwargs) {
-          emit(OpCode::DUP);
-          compileExpression(*kwarg.value);
-          emit(OpCode::OBJECT_SET, kwarg.name);
-        }
-        totalArgs++;
-      }
-
-      emit(OpCode::CALL_HOST,
-           std::vector<BytecodeValue>{*callee_name, totalArgs});
-      return;
-    }
-  }
-
+  // Dynamic language: compile callee expression and let runtime resolve
   compileExpression(*expression.callee);
 
   // Compile arguments, handling spread expressions

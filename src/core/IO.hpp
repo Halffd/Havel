@@ -311,12 +311,6 @@ public:
   bool InitializeXInput2();
   bool SetHardwareMouseSensitivity(double sensitivity);
 
-  // Mouse event handling
-  bool StartEvdevMouseListener(const std::string &mouseDevicePath);
-  void StopEvdevMouseListener();
-  bool handleMouseButton(const input_event &ev);
-  bool handleMouseRelative(const input_event &ev);
-  bool handleMouseAbsolute(const input_event &ev);
   void setGlobalAltState(bool pressed);
   bool getGlobalAltState();
   void executeComboAction(const std::string &action);
@@ -563,11 +557,6 @@ public:
   void listInputDevices();
 
   std::string getGamepadDevice();
-  void StartEvdevGamepadListener(const std::string &devicePath);
-  void StopEvdevGamepadListener();
-  // Combo evaluation
-  bool EvaluateCombo(const HotKey &combo);
-
   // Device detection helpers
   std::string detectEvdevDevice(
       const std::vector<std::string> &patterns,

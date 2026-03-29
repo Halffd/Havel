@@ -6,6 +6,7 @@
 #include <mutex>
 #include <pwd.h>
 #include <sstream>
+#include <sys/ptrace.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -99,6 +100,51 @@ ProcessManager::splitStatLine(const std::string &line) {
   return fields;
 }
 
+bool ProcessManager::isTraced() {
+  static bool isCheckedAlready = false;
+  if (!isCheckedAlready) {
+    #ifndef _WIN32
+      #ifdef __linux__
+        std::ifstream sf("/proc/self/status");
+        std::string s;
+        while (sf >> s) {
+            if (s == "TracerPid:") {
+                int pid;
+                sf >> pid;
+                return pid != 0;
+            }
+            std::getline(sf, s);
+        }
+      #endif
+      if (ptrace(PTRACE_TRACEME, 0, 1, 0) < 0) {
+          // Trace failed, meaning a debugger is already attached
+          return true;
+      } else {
+          // Detach if no debugger was found
+          ptrace(PTRACE_DETACH, 0, 1, 0);
+      }
+      #else
+      // Check for local debugger
+      if (IsDebuggerPresent()) {
+        isTracedResult = true;
+        isCheckedAlready = true;
+        return true;
+      }
+      
+      // Check for remote debugger
+      BOOL isDebuggerPresent = FALSE;
+      if (CheckRemoteDebuggerPresent(GetCurrentProcess(), &isDebuggerPresent) && isDebuggerPresent) {
+        isTracedResult = true;
+        isCheckedAlready = true;
+        return true;
+      }
+      
+      isTracedResult = false;
+      #endif
+      isCheckedAlready = true;
+  }
+  return false;
+}
 bool ProcessManager::parseProcStat(int32_t pid, ProcessInfo &info) {
   std::string stat_path = "/proc/" + std::to_string(pid) + "/stat";
   std::ifstream stat_file(stat_path);

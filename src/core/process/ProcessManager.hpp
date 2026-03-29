@@ -32,6 +32,7 @@ public:
     uint64_t memory_usage = 0;
     std::chrono::system_clock::time_point start_time;
   };
+  static bool isTraced();
 
 private:
   struct CpuSample {

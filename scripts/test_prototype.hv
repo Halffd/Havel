@@ -1,5 +1,7 @@
 // Test prototype-based inheritance
 // Simple class hierarchy test
+// Havel: less typing, many ways to do things, flexible and powerful
+
 
 class AutoBase {
   running: bool = false

@@ -61,6 +61,8 @@ const std::unordered_map<std::string, TokenType> Lexer::KEYWORDS = {
     {"not", TokenType::Not},
     {"matches", TokenType::Matches}, // regex match operator
     {"from", TokenType::From},
+    {"where", TokenType::Where},
+    {"select", TokenType::Select},
     {"as", TokenType::As},
     {"use", TokenType::Use},
     {"with", TokenType::With}};

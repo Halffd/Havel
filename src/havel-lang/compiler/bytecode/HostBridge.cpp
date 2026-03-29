@@ -577,6 +577,87 @@ void HostBridge::install() {
         return args[2];
       };
 
+  // LINQ-style filter and map functions for query expressions
+  options_.host_functions["filter"] =
+      [this](const std::vector<BytecodeValue> &args) {
+        if (args.size() < 2 ||
+            !std::holds_alternative<HostFunctionRef>(args[1])) {
+          return BytecodeValue(nullptr);
+        }
+        const auto &iterable = args[0];
+        const auto &predicate = args[1];
+        const std::string &fnName = std::get<HostFunctionRef>(predicate).name;
+
+        ArrayRef result = ctx_->vm->createHostArray();
+
+        // Create iterator
+        IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+        while (true) {
+          auto iterResult = ctx_->vm->iteratorNext(iterRef);
+          if (!std::holds_alternative<ObjectRef>(iterResult))
+            break;
+          auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+          auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+          if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+            break;
+
+          auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+          if (std::holds_alternative<std::nullptr_t>(valueVal))
+            continue;
+
+          // Call predicate
+          std::vector<BytecodeValue> predArgs{valueVal};
+          auto predResult = ctx_->vm->callFunction(
+              BytecodeValue(HostFunctionRef{fnName}), predArgs);
+
+          if (std::holds_alternative<bool>(predResult) &&
+              std::get<bool>(predResult)) {
+            ctx_->vm->pushToHostArray(result, valueVal);
+          }
+        }
+        return BytecodeValue(result);
+      };
+
+  options_.host_functions["map"] = [this](
+                                       const std::vector<BytecodeValue> &args) {
+    if (args.size() < 2 || !std::holds_alternative<HostFunctionRef>(args[1])) {
+      return BytecodeValue(nullptr);
+    }
+    const auto &iterable = args[0];
+    const auto &transform = args[1];
+    const std::string &fnName = std::get<HostFunctionRef>(transform).name;
+
+    ArrayRef result = ctx_->vm->createHostArray();
+
+    // Create iterator
+    IteratorRef iterRef = ctx_->vm->createIterator(iterable);
+
+    while (true) {
+      auto iterResult = ctx_->vm->iteratorNext(iterRef);
+      if (!std::holds_alternative<ObjectRef>(iterResult))
+        break;
+      auto resultObjRef = std::get<ObjectRef>(iterResult);
+
+      auto doneVal = ctx_->vm->getHostObjectField(resultObjRef, "done");
+      if (std::holds_alternative<bool>(doneVal) && std::get<bool>(doneVal))
+        break;
+
+      auto valueVal = ctx_->vm->getHostObjectField(resultObjRef, "value");
+      if (std::holds_alternative<std::nullptr_t>(valueVal))
+        continue;
+
+      // Call transform
+      std::vector<BytecodeValue> transArgs{valueVal};
+      auto transResult = ctx_->vm->callFunction(
+          BytecodeValue(HostFunctionRef{fnName}), transArgs);
+
+      ctx_->vm->pushToHostArray(result, transResult);
+    }
+    return BytecodeValue(result);
+  };
+
   // Standalone aliases for pipeline support (e.g., clipboard.get | upper |
   // trim)
   options_.host_functions["upper"] =

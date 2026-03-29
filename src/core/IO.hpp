@@ -257,6 +257,10 @@ public:
   void SendUInput(int keycode, bool down);
   void SendSpecific(const std::string &keys);
 
+  // Text input - uses clipboard + paste (more reliable than key events)
+  // BACKS UP AND RESTORES clipboard to avoid destroying user data
+  void SendText(const std::string &text);
+
   void ControlSend(const std::string &control, const std::string &keys);
 
   void ProcessKeyCombination(const std::string &keys);

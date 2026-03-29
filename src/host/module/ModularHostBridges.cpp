@@ -165,16 +165,26 @@ BytecodeValue IOBridge::handleSendText(const std::vector<BytecodeValue> &args,
   if (auto *text = std::get_if<std::string>(&args[0])) {
     // Use clipboard for reliable text input (handles all characters, spaces, newlines)
     if (ctx->clipboardManager) {
+      // Backup old clipboard text
+      QString oldText = ctx->clipboardManager->getClipboard()->text();
+      
+      // Set new text
       ctx->clipboardManager->getClipboard()->setText(QString::fromStdString(*text));
-      // Small delay to ensure clipboard is set
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+      
+      // Minimal delay - just enough for clipboard to sync
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      
       // Send Ctrl+V to paste
       ctx->io->Send("{LCtrl down}");
       ctx->io->Send("v");
       ctx->io->Send("{LCtrl up}");
+      
+      // Restore old clipboard
+      ctx->clipboardManager->getClipboard()->setText(oldText);
     } else {
-      // Fallback: send character by character (less reliable)
-      ctx->io->Send(text->c_str());
+      // Fallback: use IO::SendText (handles clipboard backup/restore on Windows)
+      // or key events on Linux
+      ctx->io->SendText(*text);
     }
     return BytecodeValue(true);
   }

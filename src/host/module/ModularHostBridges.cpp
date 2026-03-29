@@ -521,34 +521,51 @@ BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> 
 BytecodeValue SystemBridge::handleSystemHardware(const std::vector<BytecodeValue> &args,
                                                  const HostContext *ctx) {
   (void)args;
-  
+
   auto *vm = static_cast<compiler::VM *>(ctx->vm);
   auto obj = vm->createHostObject();
-  
+
   // Use HardwareDetector for hardware detection
   auto hwInfo = havel::HardwareDetector::detectHardware();
-  
+
   vm->setHostObjectField(obj, "cpu", BytecodeValue(hwInfo.cpu));
   vm->setHostObjectField(obj, "cpuCores", BytecodeValue(static_cast<int64_t>(hwInfo.cpuCores)));
   vm->setHostObjectField(obj, "cpuThreads", BytecodeValue(static_cast<int64_t>(hwInfo.cpuThreads)));
+  vm->setHostObjectField(obj, "cpuFrequency", BytecodeValue(hwInfo.cpuFrequency));
+  vm->setHostObjectField(obj, "cpuUsage", BytecodeValue(hwInfo.cpuUsage));
   vm->setHostObjectField(obj, "gpu", BytecodeValue(hwInfo.gpu));
-  vm->setHostObjectField(obj, "ram", BytecodeValue(hwInfo.ram));
+  vm->setHostObjectField(obj, "gpuTemperature", BytecodeValue(hwInfo.gpuTemperature));
+  
+  // Memory info (all in bytes)
+  vm->setHostObjectField(obj, "ramTotal", BytecodeValue(static_cast<int64_t>(hwInfo.ramTotal)));
+  vm->setHostObjectField(obj, "ramUsed", BytecodeValue(static_cast<int64_t>(hwInfo.ramUsed)));
+  vm->setHostObjectField(obj, "ramFree", BytecodeValue(static_cast<int64_t>(hwInfo.ramFree)));
+  
+  // Swap info (in bytes)
+  vm->setHostObjectField(obj, "swapTotal", BytecodeValue(static_cast<int64_t>(hwInfo.swapTotal)));
+  vm->setHostObjectField(obj, "swapUsed", BytecodeValue(static_cast<int64_t>(hwInfo.swapUsed)));
+  vm->setHostObjectField(obj, "swapFree", BytecodeValue(static_cast<int64_t>(hwInfo.swapFree)));
+  
   vm->setHostObjectField(obj, "motherboard", BytecodeValue(hwInfo.motherboard));
   vm->setHostObjectField(obj, "bios", BytecodeValue(hwInfo.bios));
-  
+  vm->setHostObjectField(obj, "cpuTemperature", BytecodeValue(hwInfo.cpuTemperature));
+
   // Storage array
   auto storageArr = vm->createHostArray();
   for (const auto& device : hwInfo.storage) {
     auto storageObj = vm->createHostObject();
     vm->setHostObjectField(storageObj, "name", BytecodeValue(device.name));
     vm->setHostObjectField(storageObj, "model", BytecodeValue(device.model));
-    vm->setHostObjectField(storageObj, "size", BytecodeValue(device.size));
+    vm->setHostObjectField(storageObj, "size", BytecodeValue(static_cast<int64_t>(device.size)));
+    vm->setHostObjectField(storageObj, "used", BytecodeValue(static_cast<int64_t>(device.used)));
+    vm->setHostObjectField(storageObj, "free", BytecodeValue(static_cast<int64_t>(device.free)));
     vm->setHostObjectField(storageObj, "type", BytecodeValue(device.type));
     vm->setHostObjectField(storageObj, "mountPoint", BytecodeValue(device.mountPoint));
+    vm->setHostObjectField(storageObj, "filesystem", BytecodeValue(device.filesystem));
     vm->pushHostArrayValue(storageArr, BytecodeValue(storageObj));
   }
   vm->setHostObjectField(obj, "storage", BytecodeValue(storageArr));
-  
+
   return BytecodeValue(obj);
 }
 

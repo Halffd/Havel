@@ -1,5 +1,8 @@
 /*
  * HardwareDetector.cpp - System and hardware detection
+ * 
+ * Uses existing system info classes (CpuInfo, MemoryInfo, OSInfo, Temperature)
+ * and adds additional detection (GPU, storage, window manager, display server).
  */
 #include "HardwareDetector.hpp"
 #include "DisplayManager.hpp"
@@ -58,18 +61,13 @@ static std::string toLower(const std::string& str) {
 HardwareDetector::SystemInfo HardwareDetector::detectSystem() noexcept {
     SystemInfo info;
     
-    // Detect OS
-#ifdef _WIN32
-    info.os = "Windows";
-#elif defined(__APPLE__)
-    info.os = "MacOS";
-#elif defined(__linux__)
-    info.os = "Linux";
-#elif defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__)
-    info.os = "BSD";
-#else
-    info.os = "Unknown";
-#endif
+    // Use OSInfo class for basic OS information
+    info.os = OSInfo::name();
+    info.kernel = OSInfo::kernel();
+    info.hostname = OSInfo::hostname();
+    info.arch = OSInfo::arch();
+    info.osVersion = OSInfo::distro();
+    info.uptime = OSInfo::uptime();
     
     // Get environment variables
     const char* shell = std::getenv("SHELL");
@@ -82,17 +80,7 @@ HardwareDetector::SystemInfo HardwareDetector::detectSystem() noexcept {
     const char* home = std::getenv("HOME");
     if (home) info.home = home;
     
-    const char* hostname = std::getenv("HOSTNAME");
-    if (hostname) info.hostname = hostname;
-    
 #ifdef __linux__
-    // Get kernel version
-    struct utsname uts;
-    if (uname(&uts) == 0) {
-        info.kernel = uts.release;
-        info.osVersion = uts.version;
-    }
-    
     // Detect display server
     const char* xdgSession = std::getenv("XDG_SESSION_TYPE");
     if (xdgSession) {
@@ -134,6 +122,8 @@ HardwareDetector::SystemInfo HardwareDetector::detectSystem() noexcept {
     if (sessionName) {
         info.osVersion = sessionName;
     }
+#else
+    info.displayProtocol = "Unknown";
 #endif
     
     return info;
@@ -142,106 +132,31 @@ HardwareDetector::SystemInfo HardwareDetector::detectSystem() noexcept {
 HardwareDetector::HardwareInfo HardwareDetector::detectHardware() noexcept {
     HardwareInfo info;
     
-#ifdef __linux__
-    // CPU info
-    std::ifstream cpuinfo("/proc/cpuinfo");
-    std::string line;
-    int coreCount = 0;
-    int threadCount = 0;
+    // Use CpuInfo class for CPU information
+    info.cpu = CpuInfo::name();
+    info.cpuCores = CpuInfo::cores();
+    info.cpuThreads = CpuInfo::threads();
+    info.cpuFrequency = CpuInfo::frequency();
+    info.cpuUsage = CpuInfo::usage();
     
-    while (std::getline(cpuinfo, line)) {
-        if (line.find("model name") != std::string::npos) {
-            size_t pos = line.find(":");
-            if (pos != std::string::npos && info.cpu.empty()) {
-                info.cpu = trim(line.substr(pos + 1));
-            }
-            coreCount++;
-        }
-        if (line.find("siblings") != std::string::npos) {
-            size_t pos = line.find(":");
-            if (pos != std::string::npos) {
-                try {
-                    threadCount = std::stoi(trim(line.substr(pos + 1)));
-                } catch (...) {}
-            }
-        }
-        if (line.find("cpu cores") != std::string::npos) {
-            size_t pos = line.find(":");
-            if (pos != std::string::npos) {
-                try {
-                    coreCount = std::stoi(trim(line.substr(pos + 1)));
-                } catch (...) {}
-            }
-        }
-    }
-    cpuinfo.close();
+    // Use MemoryInfo class for memory information (already in bytes)
+    info.ramTotal = MemoryInfo::total();
+    info.ramUsed = MemoryInfo::used();
+    info.ramFree = MemoryInfo::free();
     
-    if (info.cpu.empty()) info.cpu = "Unknown";
-    info.cpuCores = coreCount > 0 ? coreCount : 1;
-    info.cpuThreads = threadCount > 0 ? threadCount : info.cpuCores;
+    // Swap information (already in bytes)
+    info.swapTotal = MemoryInfo::swapTotal();
+    info.swapUsed = MemoryInfo::swapUsed();
+    info.swapFree = MemoryInfo::swapFree();
+    
+    // Use Temperature class for temperature readings
+    info.cpuTemperature = Temperature::cpu();
     
     // GPU info using helper
     info.gpu = runCommand("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display' | head -1 | cut -d':' -f3-");
+    info.gpuTemperature = Temperature::gpu();
     
-    // RAM info in bytes
-    std::ifstream meminfo("/proc/meminfo");
-    while (std::getline(meminfo, line)) {
-        if (line.find("MemTotal") != std::string::npos) {
-            size_t pos = line.find(":");
-            if (pos != std::string::npos) {
-                std::string value = trim(line.substr(pos + 1));
-                // Value is in KB, convert to bytes
-                try {
-                    info.ram = std::stoll(value) * 1024;  // KB -> bytes
-                } catch (...) {}
-            }
-            break;
-        }
-    }
-    meminfo.close();
-    
-    // Storage info in bytes
-    FILE* pipe = popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT -b 2>/dev/null", "r");
-    if (pipe) {
-        char buffer[1024];
-        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
-            std::string line = trim(buffer);
-            if (line.empty()) continue;
-            
-            std::istringstream iss(line);
-            std::string name, model, size, type, mount;
-            iss >> name >> model >> size >> type >> mount;
-            
-            // Only include disk types
-            if (type == "disk") {
-                HardwareInfo::StorageDevice device;
-                device.name = name;
-                device.model = model;
-                
-                // Parse size (in bytes from lsblk -b)
-                try {
-                    int64_t bytes = std::stoll(size);
-                    device.size = bytes / (1024 * 1024 * 1024);  // Convert to GB
-                } catch (...) {
-                    device.size = 0;
-                }
-                
-                // Determine type
-                if (name.find("nvme") != std::string::npos) {
-                    device.type = "NVMe";
-                } else if (name.find("sd") != std::string::npos) {
-                    device.type = "SSD";  // Could be HDD too
-                } else {
-                    device.type = "Unknown";
-                }
-                
-                device.mountPoint = mount;
-                info.storage.push_back(device);
-            }
-        }
-        pclose(pipe);
-    }
-    
+#ifdef __linux__
     // Motherboard info
     std::ifstream boardVendor("/sys/class/dmi/id/board_vendor");
     std::ifstream boardName("/sys/class/dmi/id/board_name");
@@ -262,23 +177,19 @@ HardwareDetector::HardwareInfo HardwareDetector::detectHardware() noexcept {
         info.bios = trim(info.bios);
     }
     if (info.bios.empty()) info.bios = "Unknown";
-    
 #else
-    // Non-Linux fallbacks
-    info.cpu = "Unknown";
-    info.cpuCores = 1;
-    info.cpuThreads = 1;
-    info.gpu = "Unknown";
-    info.ram = 0;
     info.motherboard = "Unknown";
     info.bios = "Unknown";
 #endif
+    
+    // Storage info
+    info.storage = getStorage();
     
     return info;
 }
 
 std::string HardwareDetector::getOS() noexcept {
-    return detectSystem().os;
+    return OSInfo::name();
 }
 
 bool HardwareDetector::isLinux() noexcept {
@@ -336,24 +247,84 @@ std::string HardwareDetector::getWindowManager() noexcept {
 #endif
 }
 
-int64_t HardwareDetector::getTotalRAM() noexcept {
-    return detectHardware().ram;
+uint64_t HardwareDetector::getTotalRAM() noexcept {
+    return MemoryInfo::total();
 }
 
 std::string HardwareDetector::getCPU() noexcept {
-    return detectHardware().cpu;
+    return CpuInfo::name();
 }
 
 std::string HardwareDetector::getGPU() noexcept {
-    return detectHardware().gpu;
+    return runCommand("lspci 2>/dev/null | grep -i 'vga\\|3d\\|display' | head -1 | cut -d':' -f3-");
 }
 
 int HardwareDetector::getCPUCores() noexcept {
-    return detectHardware().cpuCores;
+    return CpuInfo::cores();
 }
 
 std::vector<HardwareDetector::HardwareInfo::StorageDevice> HardwareDetector::getStorage() noexcept {
-    return detectHardware().storage;
+    std::vector<HardwareInfo::StorageDevice> storage;
+    
+#ifdef __linux__
+    // Use lsblk for storage information
+    FILE* pipe = popen("lsblk -nd -o NAME,MODEL,SIZE,TYPE,MOUNTPOINT,FSTYPE,AVAIL -b 2>/dev/null", "r");
+    if (pipe) {
+        char buffer[1024];
+        while (fgets(buffer, sizeof(buffer), pipe) != nullptr) {
+            std::string line = trim(buffer);
+            if (line.empty()) continue;
+            
+            std::istringstream iss(line);
+            std::string name, model, size, type, mount, fstype, avail;
+            iss >> name >> model >> size >> type >> mount >> fstype >> avail;
+            
+            // Only include disk types
+            if (type == "disk") {
+                HardwareInfo::StorageDevice device;
+                device.name = name;
+                device.model = model.empty() ? "Unknown" : model;
+                
+                // Parse size (in bytes from lsblk -b)
+                try {
+                    device.size = std::stoull(size);
+                } catch (...) {
+                    device.size = 0;
+                }
+                
+                // Get used/free from df for the mount point
+                device.used = 0;
+                device.free = 0;
+                if (!mount.empty() && mount != "none" && mount != "[SWAP]") {
+                    // Parse available space and calculate used
+                    try {
+                        uint64_t availBytes = std::stoull(avail);
+                        device.free = availBytes;
+                        device.used = device.size - device.free;
+                    } catch (...) {
+                        // Keep used/free as 0
+                    }
+                }
+                
+                // Determine type
+                if (name.find("nvme") != std::string::npos) {
+                    device.type = "NVMe";
+                } else if (name.find("sd") != std::string::npos) {
+                    device.type = "SSD";  // Could be HDD too
+                } else {
+                    device.type = "Unknown";
+                }
+                
+                device.mountPoint = mount == "none" ? "" : mount;
+                device.filesystem = fstype;
+                storage.push_back(device);
+            }
+        }
+        pclose(pipe);
+    }
+#endif
+    
+    return storage;
 }
 
 } // namespace havel

@@ -1,14 +1,15 @@
 /*
  * HardwareDetector.hpp - System and hardware detection
  * 
- * Provides system information:
- * - OS detection (Windows, macOS, Linux, BSD)
- * - Window manager / desktop environment detection
- * - Display server (X11/Wayland)
- * - Hardware info (CPU, GPU, RAM, storage)
+ * Uses existing system info classes (CpuInfo, MemoryInfo, OSInfo, Temperature)
+ * and adds additional detection (GPU, storage, window manager, display server).
  */
 #pragma once
 
+#include "system/CpuInfo.hpp"
+#include "system/MemoryInfo.hpp"
+#include "system/OSInfo.hpp"
+#include "system/Temperature.hpp"
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -20,9 +21,10 @@ public:
     // System information structure
     struct SystemInfo {
         std::string os;                  // Windows, MacOS, Linux, BSD, Unknown
-        std::string osVersion;           // OS version string
+        std::string osVersion;           // OS version string (e.g., "Ubuntu 22.04")
         std::string kernel;              // Kernel version
         std::string hostname;            // System hostname
+        std::string arch;                // Architecture (e.g., "x86_64")
         std::string shell;               // User's shell
         std::string user;                // Username
         std::string home;                // Home directory
@@ -32,25 +34,50 @@ public:
         std::string display;             // DISPLAY env var
         std::string windowManager;       // Window manager name
         std::string desktopEnv;          // Desktop environment
+        
+        double uptime;                   // System uptime in seconds
     };
     
     // Hardware information structure
     struct HardwareInfo {
+        // CPU info (from CpuInfo class)
         std::string cpu;                 // CPU model name
         int cpuCores;                    // Number of CPU cores
         int cpuThreads;                  // Number of CPU threads
+        double cpuFrequency;             // CPU frequency in MHz
+        double cpuUsage;                 // CPU usage percentage (0-100)
+        
+        // GPU info
         std::string gpu;                 // GPU model name
-        int64_t ram;                     // RAM in bytes
+        double gpuTemperature;           // GPU temperature in Celsius
+        
+        // Memory info (from MemoryInfo class, all in bytes)
+        uint64_t ramTotal;               // Total RAM in bytes
+        uint64_t ramUsed;                // Used RAM in bytes
+        uint64_t ramFree;                // Free RAM in bytes
+        
+        // Swap info (in bytes)
+        uint64_t swapTotal;              // Total swap in bytes
+        uint64_t swapUsed;               // Used swap in bytes
+        uint64_t swapFree;               // Free swap in bytes
+        
+        // System info
         std::string motherboard;         // Motherboard info
         std::string bios;                // BIOS version
+        
+        // Temperature (from Temperature class)
+        double cpuTemperature;           // CPU temperature in Celsius
         
         // Storage devices
         struct StorageDevice {
             std::string name;            // Device name
             std::string model;           // Model identifier
-            int64_t size;                // Size in bytes
+            uint64_t size;               // Size in bytes
+            uint64_t used;               // Used space in bytes
+            uint64_t free;               // Free space in bytes
             std::string type;            // HDD, SSD, NVMe
             std::string mountPoint;      // Mount point
+            std::string filesystem;      // Filesystem type
         };
         std::vector<StorageDevice> storage;
     };
@@ -68,7 +95,7 @@ public:
     static HardwareInfo detectHardware() noexcept;
     
     /**
-     * Get OS name
+     * Get OS name (convenience wrapper)
      * @return OS name string
      */
     static std::string getOS() noexcept;
@@ -116,13 +143,13 @@ public:
     static std::string getWindowManager() noexcept;
     
     /**
-     * Get total RAM in MB
-     * @return RAM size in MB
+     * Get total RAM in bytes (convenience wrapper)
+     * @return RAM size in bytes
      */
-    static int64_t getTotalRAM() noexcept;
+    static uint64_t getTotalRAM() noexcept;
     
     /**
-     * Get CPU model name
+     * Get CPU model name (convenience wrapper)
      * @return CPU model string
      */
     static std::string getCPU() noexcept;
@@ -134,7 +161,7 @@ public:
     static std::string getGPU() noexcept;
     
     /**
-     * Get number of CPU cores
+     * Get number of CPU cores (convenience wrapper)
      * @return Number of physical cores
      */
     static int getCPUCores() noexcept;

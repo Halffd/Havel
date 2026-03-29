@@ -2431,6 +2431,69 @@ void IO::ControlSend(const std::string &control, const std::string &keys) {
   // Implementation to send keys to the window
 }
 
+// Send text using clipboard + paste (more reliable than key events for complex text)
+// BACKS UP AND RESTORES clipboard to avoid destroying user data
+void IO::SendText(const std::string &text) {
+  if (text.empty()) {
+    return;
+  }
+
+#ifdef WINDOWS
+  // Windows: Backup clipboard, set text, paste, restore
+  if (OpenClipboard(nullptr)) {
+    // Backup old clipboard
+    HANDLE hOldClip = GetClipboardData(CF_TEXT);
+    std::string oldText;
+    if (hOldClip) {
+      char* pOld = static_cast<char*>(GlobalLock(hOldClip));
+      if (pOld) {
+        oldText = pOld;
+        GlobalUnlock(hOldClip);
+      }
+    }
+    
+    // Set new text
+    EmptyClipboard();
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    if (hGlobal) {
+      char* pBuffer = static_cast<char*>(GlobalLock(hGlobal));
+      if (pBuffer) {
+        strcpy(pBuffer, text.c_str());
+        GlobalUnlock(hGlobal);
+        SetClipboardData(CF_TEXT, hGlobal);
+      }
+    }
+    
+    // Send Ctrl+V
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event('V', 0, 0, 0);
+    keybd_event('V', 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
+    
+    // Restore old clipboard
+    if (!oldText.empty()) {
+      EmptyClipboard();
+      hGlobal = GlobalAlloc(GMEM_MOVEABLE, oldText.size() + 1);
+      if (hGlobal) {
+        char* pBuffer = static_cast<char*>(GlobalLock(hGlobal));
+        if (pBuffer) {
+          strcpy(pBuffer, oldText.c_str());
+          GlobalUnlock(hGlobal);
+          SetClipboardData(CF_TEXT, hGlobal);
+        }
+      }
+    }
+    
+    CloseClipboard();
+  }
+#else
+  // Linux: Use ClipboardManager if available (backup/restore)
+  // Note: This is called from bridge layer with clipboardManager context
+  // Fallback to key events for now
+  Send(text.c_str());
+#endif
+}
+
 // Method to get mouse position
 int IO::GetMouse() {
   // No need to get root window here

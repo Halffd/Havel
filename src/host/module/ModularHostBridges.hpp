@@ -47,6 +47,7 @@ public:
   const HostContext *ctx_;
   static BytecodeValue handleSend(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args, const HostContext *ctx);
+  static BytecodeValue handleSendText(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

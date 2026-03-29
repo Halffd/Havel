@@ -2983,7 +2983,88 @@ std::unique_ptr<havel::ast::Statement> Parser::parseWithStatement() {
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseExpression() {
+  // Check for LINQ-style query expression: from x in expr where cond select
+  // transform
+  if (at().type == havel::TokenType::From) {
+    return parseQueryExpression();
+  }
   return parsePipelineExpression();
+}
+
+// Parse LINQ-style query expression and desugar to pipeline
+// from x in numbers where x > 2 select x * 2
+// desugars to: numbers | filter(x => x > 2) | map(x => x * 2)
+std::unique_ptr<havel::ast::Expression> Parser::parseQueryExpression() {
+  advance(); // consume 'from'
+
+  // Parse variable name
+  if (at().type != havel::TokenType::Identifier) {
+    failAt(at(), "Expected variable name after 'from'");
+  }
+  std::string varName = advance().value;
+
+  // Expect 'in'
+  if (at().type != havel::TokenType::In) {
+    failAt(at(), "Expected 'in' after variable name in query expression");
+  }
+  advance(); // consume 'in'
+
+  // Parse the source expression
+  auto source = parseAssignmentExpression();
+
+  // Build pipeline stages
+  std::vector<std::unique_ptr<havel::ast::Expression>> stages;
+  stages.push_back(std::move(source));
+
+  // Parse optional where clause(s)
+  while (at().type == havel::TokenType::Where) {
+    advance(); // consume 'where'
+    auto condition = parseAssignmentExpression();
+
+    // Create filter call: filter(varName => condition)
+    auto filterCall = std::make_unique<havel::ast::CallExpression>(
+        std::make_unique<havel::ast::Identifier>("filter"));
+
+    // Build lambda: varName => condition
+    auto param = std::make_unique<havel::ast::FunctionParameter>(
+        std::make_unique<havel::ast::Identifier>(varName));
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    params.push_back(std::move(param));
+
+    auto lambda = std::make_unique<havel::ast::LambdaExpression>(
+        std::move(params), std::move(condition));
+
+    filterCall->args.push_back(std::move(lambda));
+    stages.push_back(std::move(filterCall));
+  }
+
+  // Parse optional select clause
+  if (at().type == havel::TokenType::Select) {
+    advance(); // consume 'select'
+    auto transform = parseAssignmentExpression();
+
+    // Create map call: map(varName => transform)
+    auto mapCall = std::make_unique<havel::ast::CallExpression>(
+        std::make_unique<havel::ast::Identifier>("map"));
+
+    // Build lambda: varName => transform
+    auto param = std::make_unique<havel::ast::FunctionParameter>(
+        std::make_unique<havel::ast::Identifier>(varName));
+    std::vector<std::unique_ptr<havel::ast::FunctionParameter>> params;
+    params.push_back(std::move(param));
+
+    auto lambda = std::make_unique<havel::ast::LambdaExpression>(
+        std::move(params), std::move(transform));
+
+    mapCall->args.push_back(std::move(lambda));
+    stages.push_back(std::move(mapCall));
+  }
+
+  // Create pipeline expression
+  auto pipeline = std::make_unique<havel::ast::PipelineExpression>();
+  pipeline->stages = std::move(stages);
+
+  return std::move(pipeline);
 }
 
 std::unique_ptr<havel::ast::Expression> Parser::parseAssignmentExpression() {

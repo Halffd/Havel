@@ -132,6 +132,8 @@ enum class TokenType {
   As,           // as
   Use,          // use
   With,         // with
+  Where,        // where - LINQ filter
+  Select,       // select - LINQ transform
   Colon,        // :
   Question,     // ?
   OpenBracket,  // [

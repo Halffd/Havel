@@ -14,7 +14,8 @@ class ParseError : public std::runtime_error {
 public:
   ParseError(size_t line, size_t column, const std::string &message,
              size_t length = 1)
-      : std::runtime_error(message), line(line), column(column), length(length) {}
+      : std::runtime_error(message), line(line), column(column),
+        length(length) {}
 
   size_t line;
   size_t column;
@@ -43,10 +44,10 @@ private:
 
   // Prevent copying/moving - Parser must not be copied or moved
   // to avoid memory corruption and invalid state
-  Parser(const Parser&) = delete;
-  Parser& operator=(const Parser&) = delete;
-  Parser(Parser&&) = delete;
-  Parser& operator=(Parser&&) = delete;
+  Parser(const Parser &) = delete;
+  Parser &operator=(const Parser &) = delete;
+  Parser(Parser &&) = delete;
+  Parser &operator=(Parser &&) = delete;
 
   // Controls whether `expr { ... }` is treated as call-sugar/lambda.
   // This must be disabled when parsing conditions for statements like
@@ -54,8 +55,9 @@ private:
 
   // Parser context - replaces individual bool flags
   struct ParserContext {
-    bool inInputContext = false;      // Inside hotkey block (bare expressions are input)
-    bool allowBraceSugar = true;       // Allow expr { ... } as call sugar
+    bool inInputContext =
+        false; // Inside hotkey block (bare expressions are input)
+    bool allowBraceSugar = true; // Allow expr { ... } as call sugar
   };
 
   ParserContext context;
@@ -67,33 +69,35 @@ private:
   std::vector<CompilerError> errors;
   RecoveryMode recoveryMode = RecoveryMode::None;
 
-  void reportError(const std::string& message);
-  void reportErrorAt(const Token& token, const std::string& message);
-  void synchronize();  // Panic mode recovery
-  void synchronizeTo(TokenType type);  // Recover to specific token
+  void reportError(const std::string &message);
+  void reportErrorAt(const Token &token, const std::string &message);
+  void synchronize();                 // Panic mode recovery
+  void synchronizeTo(TokenType type); // Recover to specific token
   bool atStatementStart();
   bool isAtEndOfBlock();
 
   [[noreturn]] void fail(const std::string &message);
   [[noreturn]] void failAt(const Token &token, const std::string &message);
-  
+
   // Error recovery
   void errorAt(const Token &token, const std::string &message);
 
   // Helper methods - return const references to avoid copies
-  const Token& at(size_t offset = 0) const;
-  const Token& advance();
+  const Token &at(size_t offset = 0) const;
+  const Token &advance();
   bool notEOF() const;
 
   // Parser methods (following Tyler's structure)
   std::unique_ptr<ast::Statement> parseStatement();
-  std::unique_ptr<ast::Statement> parseInlineStatement();  // For inline forms (doesn't skip newlines)
+  std::unique_ptr<ast::Statement>
+  parseInlineStatement(); // For inline forms (doesn't skip newlines)
   std::unique_ptr<ast::Expression> parseExpression();
   std::unique_ptr<ast::Expression> parseConfigAppend();
   std::unique_ptr<ast::Expression> parseAssignmentExpression();
   std::unique_ptr<ast::Expression> parseCastExpression();
   std::unique_ptr<ast::Expression> parseMatchExpression();
   std::unique_ptr<ast::Expression> parsePipelineExpression();
+  std::unique_ptr<ast::Expression> parseQueryExpression();
   std::unique_ptr<ast::Expression> parseTernaryExpression();
   std::unique_ptr<ast::Expression> parseBinaryExpression();
   std::unique_ptr<ast::Expression> parsePrimaryExpression();
@@ -123,18 +127,22 @@ private:
   std::unique_ptr<ast::HotkeyBinding> parseHotkeyBinding();
   std::unique_ptr<ast::Statement> parseOnTapOrComboStatement();
   std::unique_ptr<ast::Statement> parseOnKeyDownOrKeyUpStatement();
-  std::unique_ptr<ast::BlockStatement> parseBlockStatement(bool inputContext = false);
+  std::unique_ptr<ast::BlockStatement>
+  parseBlockStatement(bool inputContext = false);
   std::unique_ptr<ast::Statement> parseWhenBlock();
   std::unique_ptr<ast::Statement> parseImportStatement();
   std::unique_ptr<ast::Statement> parseUseStatement();
   std::unique_ptr<ast::Statement> parseWithStatement();
   std::unique_ptr<ast::Statement> parseConfigBlock();
   std::unique_ptr<ast::Statement> parseDevicesBlock();
-  std::unique_ptr<ast::Statement> parseModeDefinition();  // mode name { ... }
-  std::unique_ptr<ast::Statement> parseModeBlock();       // mode name { statements } (shorthand)
-  std::unique_ptr<ast::Statement> parseModesBlock();      // modes { ... }
-  std::unique_ptr<ast::Statement> parseSignalDefinition(); // signal name = expression
-  std::unique_ptr<ast::Statement> parseGroupDefinition();  // group name { modes: [...] }
+  std::unique_ptr<ast::Statement> parseModeDefinition(); // mode name { ... }
+  std::unique_ptr<ast::Statement>
+  parseModeBlock(); // mode name { statements } (shorthand)
+  std::unique_ptr<ast::Statement> parseModesBlock(); // modes { ... }
+  std::unique_ptr<ast::Statement>
+  parseSignalDefinition(); // signal name = expression
+  std::unique_ptr<ast::Statement>
+  parseGroupDefinition(); // group name { modes: [...] }
   std::unique_ptr<ast::Statement> parseConfigSection();
 
   // Type system parsers
@@ -145,12 +153,14 @@ private:
   std::unique_ptr<ast::Statement> parseImplDeclaration();
   std::unique_ptr<ast::TypeDefinition> parseTypeDefinition();
   std::unique_ptr<ast::TypeAnnotation> parseTypeAnnotation();
-  std::pair<std::vector<ast::StructFieldDef>, std::vector<std::unique_ptr<ast::StructMethodDef>>> parseStructMembers();
+  std::pair<std::vector<ast::StructFieldDef>,
+            std::vector<std::unique_ptr<ast::StructMethodDef>>>
+  parseStructMembers();
   std::pair<std::vector<ast::ClassFieldDef>,
             std::vector<std::unique_ptr<ast::ClassMethodDef>>>
   parseClassMembers();
   std::vector<ast::EnumVariantDef> parseEnumVariants();
-  
+
   std::vector<std::pair<std::string, std::unique_ptr<ast::Expression>>>
   parseKeyValueBlock();
   ast::BinaryOperator tokenToBinaryOperator(TokenType tokenType);
@@ -177,8 +187,8 @@ private:
   std::unique_ptr<ast::Expression> parseObjectPattern();
   std::unique_ptr<ast::Statement> parseTryStatement();
   std::unique_ptr<ast::Statement> parseThrowStatement();
-  std::unique_ptr<ast::Expression>
-  parseLambdaFromParams(std::vector<std::unique_ptr<ast::FunctionParameter>> params);
+  std::unique_ptr<ast::Expression> parseLambdaFromParams(
+      std::vector<std::unique_ptr<ast::FunctionParameter>> params);
   std::unique_ptr<ast::Expression>
   parsePostfixExpression(std::unique_ptr<ast::Expression> expr);
   TokenType getBinaryOperatorToken(ast::BinaryOperator op);
@@ -200,9 +210,9 @@ public:
   std::unique_ptr<ast::Program> parseStrict(const std::string &sourceCode);
 
   void printAST(const ast::ASTNode &node, int indent = 0) const;
-  
+
   // Error access
-  const std::vector<CompilerError>& getErrors() const { return errors; }
+  const std::vector<CompilerError> &getErrors() const { return errors; }
   bool hasErrors() const { return !errors.empty(); }
 };
 

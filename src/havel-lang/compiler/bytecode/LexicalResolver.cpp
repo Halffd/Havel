@@ -19,7 +19,8 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
   // First pass: declare ALL top-level bindings (let and fn names)
   // This ensures function bodies can see global variables
   for (const auto &statement : program.body) {
-    if (!statement) continue;
+    if (!statement)
+      continue;
 
     if (statement->kind == ast::NodeType::LetDeclaration) {
       // Declare the variable and track as global
@@ -27,13 +28,15 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
       if (let.value) {
         resolveExpression(*let.value);
       }
-      if (auto *identifier = dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
+      if (auto *identifier =
+              dynamic_cast<const ast::Identifier *>(let.pattern.get())) {
         declareLocal(identifier->symbol, identifier, let.isConst);
         global_variables_.insert(identifier->symbol);
       }
     } else if (statement->kind == ast::NodeType::FunctionDeclaration) {
       // Just add to top_level_functions_ - don't declare as local
-      const auto &fn = static_cast<const ast::FunctionDeclaration &>(*statement);
+      const auto &fn =
+          static_cast<const ast::FunctionDeclaration &>(*statement);
       if (fn.name) {
         top_level_functions_.insert(fn.name->symbol);
       }
@@ -51,8 +54,7 @@ LexicalResolutionResult LexicalResolver::resolve(const ast::Program &program) {
 
   // Third pass: resolve top-level non-function, non-let statements
   for (const auto &statement : program.body) {
-    if (!statement ||
-        statement->kind == ast::NodeType::FunctionDeclaration ||
+    if (!statement || statement->kind == ast::NodeType::FunctionDeclaration ||
         statement->kind == ast::NodeType::LetDeclaration) {
       continue;
     }
@@ -141,9 +143,10 @@ uint32_t LexicalResolver::declareLocal(const std::string &name,
   auto it = scope.find(name);
   if (it != scope.end()) {
     // Duplicate declaration in same scope - report error with source location
-    std::string msg = "Duplicate declaration: '" + name + "' already defined in this scope";
+    std::string msg =
+        "Duplicate declaration: '" + name + "' already defined in this scope";
     if (declaration) {
-      msg += " at " + std::to_string(declaration->line) + ":" + 
+      msg += " at " + std::to_string(declaration->line) + ":" +
              std::to_string(declaration->column);
     }
     errors_.push_back(msg);
@@ -192,7 +195,8 @@ void LexicalResolver::resolveLambdaExpression(
     if (param && param->pattern) {
       if (param->pattern->kind == ast::NodeType::Identifier) {
         // Simple identifier - allocate one slot for this param
-        const auto &ident = static_cast<const ast::Identifier &>(*param->pattern);
+        const auto &ident =
+            static_cast<const ast::Identifier &>(*param->pattern);
         declareLocal(ident.symbol, &ident, false);
       } else {
         // Pattern - allocate slot for parameter value (using temp name)
@@ -212,7 +216,8 @@ void LexicalResolver::resolveLambdaExpression(
 }
 
 // Collect all identifiers from a pattern and declare them as locals
-void LexicalResolver::collectPatternIdentifiers(const ast::Expression &pattern) {
+void LexicalResolver::collectPatternIdentifiers(
+    const ast::Expression &pattern) {
   switch (pattern.kind) {
   case ast::NodeType::Identifier: {
     const auto &ident = static_cast<const ast::Identifier &>(pattern);
@@ -300,7 +305,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   }
 
   case ast::NodeType::WhileStatement: {
-    const auto &while_stmt = static_cast<const ast::WhileStatement &>(statement);
+    const auto &while_stmt =
+        static_cast<const ast::WhileStatement &>(statement);
     if (while_stmt.condition) {
       resolveExpression(*while_stmt.condition);
     }
@@ -328,7 +334,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   }
 
   case ast::NodeType::DoWhileStatement: {
-    const auto &doWhile_stmt = static_cast<const ast::DoWhileStatement &>(statement);
+    const auto &doWhile_stmt =
+        static_cast<const ast::DoWhileStatement &>(statement);
     if (doWhile_stmt.body) {
       resolveStatement(*doWhile_stmt.body);
     }
@@ -372,8 +379,7 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     break;
   }
 
-  case ast::NodeType::FunctionDeclaration:
-  {
+  case ast::NodeType::FunctionDeclaration: {
     const auto &fn = static_cast<const ast::FunctionDeclaration &>(statement);
     if (fn.name) {
       // Check if this is a top-level function (in program body, not nested)
@@ -400,8 +406,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
     if (try_stmt.catchBody) {
       beginScope();
       if (try_stmt.catchVariable) {
-        declareLocal(try_stmt.catchVariable->symbol, try_stmt.catchVariable.get(),
-                     false);
+        declareLocal(try_stmt.catchVariable->symbol,
+                     try_stmt.catchVariable.get(), false);
       }
       resolveStatement(*try_stmt.catchBody);
       endScope();
@@ -443,7 +449,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   }
 
   case ast::NodeType::ThrowStatement: {
-    const auto &throw_stmt = static_cast<const ast::ThrowStatement &>(statement);
+    const auto &throw_stmt =
+        static_cast<const ast::ThrowStatement &>(statement);
     if (throw_stmt.value) {
       resolveExpression(*throw_stmt.value);
     }
@@ -451,8 +458,43 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   }
 
   // Type system declarations - register type names in scope
+  case ast::NodeType::ClassDeclaration: {
+    const auto &classDecl =
+        static_cast<const ast::ClassDeclaration &>(statement);
+    // Create a scope for class fields so they're isolated per-class
+    beginScope();
+    // Declare class fields in this scope
+    for (const auto &field : classDecl.definition.fields) {
+      declareLocal(field.name, nullptr, false);
+    }
+    // Resolve class methods in the class scope so they can access fields
+    for (const auto &method : classDecl.definition.methods) {
+      if (method) {
+        beginFunction(method.get());
+        // Declare method parameters
+        for (const auto &param : method->parameters) {
+          if (param && param->pattern) {
+            collectPatternIdentifiers(*param->pattern);
+          }
+        }
+        // Resolve method body
+        if (method->body) {
+          for (const auto &stmt : method->body->body) {
+            if (stmt) {
+              resolveStatement(*stmt);
+            }
+          }
+        }
+        endFunction();
+      }
+    }
+    endScope();
+    break;
+  }
+
   case ast::NodeType::StructDeclaration: {
-    const auto &structDecl = static_cast<const ast::StructDeclaration &>(statement);
+    const auto &structDecl =
+        static_cast<const ast::StructDeclaration &>(statement);
     // Register struct type name in current scope
     // For now, just skip - full type system requires semantic analysis pass
     break;
@@ -465,7 +507,8 @@ void LexicalResolver::resolveStatement(const ast::Statement &statement) {
   }
 
   case ast::NodeType::TraitDeclaration: {
-    const auto &traitDecl = static_cast<const ast::TraitDeclaration &>(statement);
+    const auto &traitDecl =
+        static_cast<const ast::TraitDeclaration &>(statement);
     // Register trait name in current scope
     break;
   }
@@ -485,12 +528,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   switch (expression.kind) {
   case ast::NodeType::Identifier: {
     const auto &id = static_cast<const ast::Identifier &>(expression);
-    
+
     // Skip resolution for global scope identifiers (::x)
     if (id.isGlobalScope) {
       break;
     }
-    
+
     auto binding = resolveIdentifier(id.symbol);
     if (!binding) {
       errors_.push_back("Unresolved identifier '" + id.symbol + "' at " +
@@ -531,8 +574,10 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         static_cast<const ast::AssignmentExpression &>(expression);
 
     // Handle assignment target - may be implicit declaration
-    if (assignment.target && assignment.target->kind == ast::NodeType::Identifier) {
-      const auto &ident = static_cast<const ast::Identifier &>(*assignment.target);
+    if (assignment.target &&
+        assignment.target->kind == ast::NodeType::Identifier) {
+      const auto &ident =
+          static_cast<const ast::Identifier &>(*assignment.target);
       auto binding = resolveIdentifier(ident.symbol);
 
       if (!binding) {
@@ -547,7 +592,7 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
           // Record as HostGlobal for proper LOAD_GLOBAL/STORE_GLOBAL
           ResolvedBinding newBinding;
           newBinding.kind = ResolvedBindingKind::Global;
-          newBinding.slot = 0;  // Slot doesn't matter for HostGlobal
+          newBinding.slot = 0; // Slot doesn't matter for HostGlobal
           newBinding.name = ident.symbol;
           newBinding.is_const = false;
           noteIdentifierBinding(ident, newBinding);
@@ -565,10 +610,12 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         // Variable exists, just note the binding
         noteIdentifierBinding(ident, *binding);
       }
-    } else if (assignment.target && assignment.target->kind == ast::NodeType::ArrayLiteral) {
+    } else if (assignment.target &&
+               assignment.target->kind == ast::NodeType::ArrayLiteral) {
       // Destructuring assignment: [a, b, c] = [...]
       // Resolve each element as potential implicit declaration
-      const auto &arrayLit = static_cast<const ast::ArrayLiteral &>(*assignment.target);
+      const auto &arrayLit =
+          static_cast<const ast::ArrayLiteral &>(*assignment.target);
       for (const auto &element : arrayLit.elements) {
         if (element && element->kind == ast::NodeType::Identifier) {
           const auto &ident = static_cast<const ast::Identifier &>(*element);
@@ -605,14 +652,17 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
         resolveExpression(*assignment.value);
       }
       break;
-    } else if (assignment.target && assignment.target->kind == ast::NodeType::ObjectLiteral) {
+    } else if (assignment.target &&
+               assignment.target->kind == ast::NodeType::ObjectLiteral) {
       // Object destructuring: {cpu, gpu, ram} = hardware
-      const auto &objLit = static_cast<const ast::ObjectLiteral &>(*assignment.target);
+      const auto &objLit =
+          static_cast<const ast::ObjectLiteral &>(*assignment.target);
       for (const auto &pair : objLit.pairs) {
         // pair.first is the key (string), pair.second is the value (Expression)
         // For destructuring like {cpu, gpu}, value is an Identifier
         if (pair.second && pair.second->kind == ast::NodeType::Identifier) {
-          const auto &ident = static_cast<const ast::Identifier &>(*pair.second);
+          const auto &ident =
+              static_cast<const ast::Identifier &>(*pair.second);
           auto binding = resolveIdentifier(ident.symbol);
           if (!binding) {
             bool isGlobalScope = (function_stack_.size() == 1);
@@ -676,7 +726,8 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   }
 
   case ast::NodeType::PipelineExpression: {
-    const auto &pipeline = static_cast<const ast::PipelineExpression &>(expression);
+    const auto &pipeline =
+        static_cast<const ast::PipelineExpression &>(expression);
     // Resolve all stages in the pipeline
     for (const auto &stage : pipeline.stages) {
       if (stage) {
@@ -735,7 +786,8 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   }
 
   case ast::NodeType::InterpolatedStringExpression: {
-    const auto &interp = static_cast<const ast::InterpolatedStringExpression &>(expression);
+    const auto &interp =
+        static_cast<const ast::InterpolatedStringExpression &>(expression);
     // Resolve each expression segment in the current scope
     for (const auto &segment : interp.segments) {
       if (!segment.isString && segment.expression) {
@@ -783,21 +835,23 @@ void LexicalResolver::resolveExpression(const ast::Expression &expression) {
   }
 }
 
-std::optional<ResolvedBinding> LexicalResolver::resolveIdentifier(
-    const std::string &name) {
+std::optional<ResolvedBinding>
+LexicalResolver::resolveIdentifier(const std::string &name) {
   if (function_stack_.empty()) {
     return std::nullopt;
   }
   return resolveIdentifierInFunction(name, function_stack_.size() - 1);
 }
 
-std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
-    const std::string &name, size_t function_index) {
+std::optional<ResolvedBinding>
+LexicalResolver::resolveIdentifierInFunction(const std::string &name,
+                                             size_t function_index) {
   if (function_index >= function_stack_.size()) {
     return std::nullopt;
   }
 
-  // FIRST: Check if this is a global variable (top-level let) - if so, return as Global
+  // FIRST: Check if this is a global variable (top-level let) - if so, return
+  // as Global
   if (global_variables_.count(name) > 0) {
     return ResolvedBinding{ResolvedBindingKind::Global, 0, 0, name, false};
   }
@@ -810,10 +864,10 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
       continue;
     }
 
-    return ResolvedBinding{ResolvedBindingKind::Local, it->second.slot,
-                           static_cast<uint32_t>(function_stack_.size() - 1 -
-                                                 function_index),
-                           name, it->second.is_const};
+    return ResolvedBinding{
+        ResolvedBindingKind::Local, it->second.slot,
+        static_cast<uint32_t>(function_stack_.size() - 1 - function_index),
+        name, it->second.is_const};
   }
 
   // Not found in local scopes
@@ -841,20 +895,21 @@ std::optional<ResolvedBinding> LexicalResolver::resolveIdentifierInFunction(
 
   if (enclosing->kind == ResolvedBindingKind::Local) {
     // Capture as upvalue
-    uint32_t upvalue_slot = addUpvalue(function_index, name, enclosing->slot, true);
-    return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
-                           static_cast<uint32_t>(function_stack_.size() - 1 -
-                                                 function_index),
-                           name, enclosing->is_const};
+    uint32_t upvalue_slot =
+        addUpvalue(function_index, name, enclosing->slot, true);
+    return ResolvedBinding{
+        ResolvedBindingKind::Upvalue, upvalue_slot,
+        static_cast<uint32_t>(function_stack_.size() - 1 - function_index),
+        name, enclosing->is_const};
   }
 
   // Upvalue from enclosing function
   uint32_t upvalue_slot =
       addUpvalue(function_index, name, enclosing->slot, false);
-  return ResolvedBinding{ResolvedBindingKind::Upvalue, upvalue_slot,
-                         static_cast<uint32_t>(function_stack_.size() - 1 -
-                                               function_index),
-                         name, enclosing->is_const};
+  return ResolvedBinding{
+      ResolvedBindingKind::Upvalue, upvalue_slot,
+      static_cast<uint32_t>(function_stack_.size() - 1 - function_index), name,
+      enclosing->is_const};
 }
 
 uint32_t LexicalResolver::addUpvalue(size_t function_index,
@@ -868,8 +923,8 @@ uint32_t LexicalResolver::addUpvalue(size_t function_index,
   }
 
   uint32_t slot = static_cast<uint32_t>(ctx.upvalues.size());
-  ctx.upvalues.push_back(
-      UpvalueDescriptor{.index = source_index, .captures_local = captures_local});
+  ctx.upvalues.push_back(UpvalueDescriptor{.index = source_index,
+                                           .captures_local = captures_local});
   ctx.upvalue_slots[name] = slot;
   return slot;
 }

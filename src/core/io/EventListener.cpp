@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <fmt/format.h>
 #include <linux/uinput.h>
+#include <linux/input.h>
 #include <shared_mutex>
 #include <signal.h>
 #include <sys/ioctl.h>
@@ -130,6 +131,38 @@ bool EventListener::Start(const std::vector<std::string> &devicePaths,
         continue;
       }
       debug("Successfully grabbed device: {} ({})", name, path);
+      
+      // Query and release any keys that were pressed before we grabbed
+      // This prevents stuck modifiers and ghost keys
+      uint8_t key_bits[(KEY_MAX + 7) / 8] = {};
+      if (ioctl(fd, EVIOCGKEY(sizeof(key_bits)), key_bits) >= 0) {
+        int released_count = 0;
+        for (int key = 0; key < KEY_MAX; ++key) {
+          if (key_bits[key / 8] & (1 << (key % 8))) {
+            // Key is pressed - synthesize key-up event
+            struct input_event ev = {};
+            ev.type = EV_KEY;
+            ev.code = key;
+            ev.value = 0;  // key up
+            if (write(fd, &ev, sizeof(ev)) < 0) {
+              debug("Failed to release key {}", key);
+            }
+            released_count++;
+          }
+        }
+        // Flush the events
+        struct input_event sync_ev = {};
+        sync_ev.type = EV_SYN;
+        sync_ev.code = SYN_REPORT;
+        sync_ev.value = 0;
+        write(fd, &sync_ev, sizeof(sync_ev));
+        
+        if (released_count > 0) {
+          debug("Released {} pre-existing pressed keys on {}", released_count, name);
+        }
+      } else {
+        debug("Could not query key state for {} - continuing anyway", name);
+      }
     }
 
     // DrainDeviceEvents(fd);  // TODO: Implement or remove

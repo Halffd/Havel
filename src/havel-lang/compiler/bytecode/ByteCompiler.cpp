@@ -2621,7 +2621,8 @@ void ByteCompiler::compileCallExpression(
                                callee_id.symbol);
     }
 
-    if (binding->kind == ResolvedBindingKind::Global) {
+    if (binding->kind == ResolvedBindingKind::HostFunction) {
+      // Host function - call via CALL_HOST
       for (const auto &arg : expression.args) {
         if (!arg) {
           throw std::runtime_error("Call expression contains null argument");
@@ -2643,6 +2644,33 @@ void ByteCompiler::compileCallExpression(
 
       emit(OpCode::CALL_HOST,
            std::vector<BytecodeValue>{binding->name, totalArgs});
+      return;
+    }
+
+    if (binding->kind == ResolvedBindingKind::Global) {
+      // Global variable that might contain a function - load and call
+      emit(OpCode::LOAD_GLOBAL, binding->name);
+
+      for (const auto &arg : expression.args) {
+        if (!arg) {
+          throw std::runtime_error("Call expression contains null argument");
+        }
+        compileExpression(*arg);
+      }
+
+      // Compile kwargs as object if present
+      uint32_t totalArgs = arg_count;
+      if (hasKwargs) {
+        emit(OpCode::OBJECT_NEW);
+        for (const auto &kwarg : expression.kwargs) {
+          emit(OpCode::DUP);
+          compileExpression(*kwarg.value);
+          emit(OpCode::OBJECT_SET, kwarg.name);
+        }
+        totalArgs++;
+      }
+
+      emit(OpCode::CALL, totalArgs);
       return;
     }
   }

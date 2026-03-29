@@ -24,6 +24,7 @@ struct PipelineOptions {
   std::unordered_set<std::string> host_global_names;  // For case-insensitive module access
   VM *vm_override = nullptr;
   std::function<void(VM &)> vm_setup;
+  std::function<void(VM *)> system_object_initializer;  // Create system object with proper namespacing
 };
 
 struct BytecodeSmokeResult {

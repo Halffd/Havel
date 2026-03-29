@@ -40,7 +40,7 @@ public:
         int cpuCores;                    // Number of CPU cores
         int cpuThreads;                  // Number of CPU threads
         std::string gpu;                 // GPU model name
-        int64_t ram;                     // RAM in MB
+        int64_t ram;                     // RAM in bytes
         std::string motherboard;         // Motherboard info
         std::string bios;                // BIOS version
         
@@ -48,7 +48,7 @@ public:
         struct StorageDevice {
             std::string name;            // Device name
             std::string model;           // Model identifier
-            int64_t size;                // Size in GB
+            int64_t size;                // Size in bytes
             std::string type;            // HDD, SSD, NVMe
             std::string mountPoint;      // Mount point
         };

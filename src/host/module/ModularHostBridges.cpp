@@ -156,6 +156,25 @@ BytecodeValue IOBridge::handleSendKey(const std::vector<BytecodeValue> &args,
 // ============================================================================
 
 void SystemBridge::install(PipelineOptions &options) {
+  // Register internal function handlers
+  options.host_functions["system.detect"] = [ctx = ctx_](const auto &args) {
+    return handleSystemDetect(args, ctx);
+  };
+  options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
+    return handleSystemHardware(args, ctx);
+  };
+  
+  // Create system object with proper namespacing
+  // This will be set globally by HostBridge after VM is available
+  options.system_object_initializer = [](compiler::VM *vm) {
+    auto systemObj = vm->createHostObject();
+    vm->setHostObjectField(systemObj, "detect",
+        BytecodeValue(havel::compiler::HostFunctionRef{"system.detect"}));
+    vm->setHostObjectField(systemObj, "hardware",
+        BytecodeValue(havel::compiler::HostFunctionRef{"system.hardware"}));
+    vm->setGlobal("system", BytecodeValue(systemObj));
+  };
+  
   options.host_functions["readFile"] = [ctx = ctx_](const auto &args) {
     return handleFileRead(args, ctx);
   };

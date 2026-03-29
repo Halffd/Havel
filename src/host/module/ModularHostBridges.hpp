@@ -47,9 +47,6 @@ public:
   const HostContext *ctx_;
   static BytecodeValue handleSend(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleSendKey(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleMouseMove(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleMouseClick(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleGetMousePosition(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**
@@ -78,10 +75,8 @@ private:
   static BytecodeValue handleProcessNice(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessRun(const std::vector<BytecodeValue> &args, const HostContext *ctx);
   static BytecodeValue handleProcessRunDetached(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  // Aliases from other bridges
+  // Alias from MediaBridge
   static BytecodeValue handleMediaPlay(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleMouseMove(const std::vector<BytecodeValue> &args, const HostContext *ctx);
-  static BytecodeValue handleMouseClick(const std::vector<BytecodeValue> &args, const HostContext *ctx);
 };
 
 /**

@@ -3,6 +3,7 @@
 #include "core/DisplayManager.hpp"
 #include "core/HotkeyManager.hpp"
 #include "core/io/KeyTap.hpp"
+#include "core/process/ProcessManager.hpp"
 
 // Global storage for KeyTap instances
 static std::mutex g_keyTapMutex;
@@ -509,7 +510,10 @@ IO::IO() {
             Configs::Get().Get<double>("Mouse.ScrollSpeed", 1.0));
 
         globalEvdev = true;
-        bool grab = ProcessManager::isTraced() ? false : Configs::Get().Get<bool>("Device.GrabDevices", true);
+        bool grab = Configs::Get().Get<bool>("Device.GrabDevices", true);
+        if (ProcessManager::isTraced()) {
+          grab = false;
+        }
         debug("Starting EventListener with {} devices (grab={})", devices.size(),
               grab);
         eventListener->Start(devices, grab);

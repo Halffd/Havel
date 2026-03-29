@@ -23,7 +23,9 @@
 #include "host/network/NetworkService.hpp"
 #include "host/app/AppService.hpp"
 #include "window/WindowManager.hpp"
+#include "window/WindowManagerDetector.hpp"
 #include "core/DisplayManager.hpp"
+#include "core/HardwareDetector.hpp"
 #include "core/ConfigManager.hpp"
 #include "core/ModeManager.hpp"
 #include "core/HotkeyManager.hpp"
@@ -38,6 +40,7 @@
 #include <deque>
 #include <mutex>
 #include <unordered_map>
+#include <climits>
 
 namespace havel::compiler {
 
@@ -204,6 +207,13 @@ void SystemBridge::install(PipelineOptions &options) {
   };
   options.host_functions["play"] = [ctx = ctx_](const auto &args) {
     return handleMediaPlay(args, ctx);
+  };
+  // System detection
+  options.host_functions["system.detect"] = [ctx = ctx_](const auto &args) {
+    return handleSystemDetect(args, ctx);
+  };
+  options.host_functions["system.hardware"] = [ctx = ctx_](const auto &args) {
+    return handleSystemHardware(args, ctx);
   };
 }
 
@@ -449,6 +459,78 @@ BytecodeValue SystemBridge::handleProcessRunDetached(const std::vector<BytecodeV
 BytecodeValue SystemBridge::handleMediaPlay(const std::vector<BytecodeValue> &args,
                                             const HostContext *ctx) {
   return MediaBridge::handleMediaPlay(args, ctx);
+}
+
+// ============================================================================
+// System Detection Implementation
+// ============================================================================
+
+BytecodeValue SystemBridge::handleSystemDetect(const std::vector<BytecodeValue> &args,
+                                               const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  
+  // Use HardwareDetector for system detection
+  auto sysInfo = havel::HardwareDetector::detectSystem();
+  
+  vm->setHostObjectField(obj, "os", BytecodeValue(sysInfo.os));
+  vm->setHostObjectField(obj, "shell", BytecodeValue(sysInfo.shell));
+  vm->setHostObjectField(obj, "user", BytecodeValue(sysInfo.user));
+  vm->setHostObjectField(obj, "home", BytecodeValue(sysInfo.home));
+  vm->setHostObjectField(obj, "hostname", BytecodeValue(sysInfo.hostname));
+  
+  // Linux-specific fields
+  if (!sysInfo.displayProtocol.empty()) {
+    vm->setHostObjectField(obj, "displayProtocol", BytecodeValue(sysInfo.displayProtocol));
+  }
+  if (!sysInfo.display.empty()) {
+    vm->setHostObjectField(obj, "display", BytecodeValue(sysInfo.display));
+  }
+  if (!sysInfo.windowManager.empty()) {
+    vm->setHostObjectField(obj, "windowManager", BytecodeValue(sysInfo.windowManager));
+  }
+  if (!sysInfo.desktopEnv.empty()) {
+    vm->setHostObjectField(obj, "desktopEnv", BytecodeValue(sysInfo.desktopEnv));
+  }
+  
+  return BytecodeValue(obj);
+}
+
+BytecodeValue SystemBridge::handleSystemHardware(const std::vector<BytecodeValue> &args,
+                                                 const HostContext *ctx) {
+  (void)args;
+  
+  auto *vm = static_cast<compiler::VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  
+  // Use HardwareDetector for hardware detection
+  auto hwInfo = havel::HardwareDetector::detectHardware();
+  
+  vm->setHostObjectField(obj, "cpu", BytecodeValue(hwInfo.cpu));
+  vm->setHostObjectField(obj, "cpuCores", BytecodeValue(static_cast<int64_t>(hwInfo.cpuCores)));
+  vm->setHostObjectField(obj, "cpuThreads", BytecodeValue(static_cast<int64_t>(hwInfo.cpuThreads)));
+  vm->setHostObjectField(obj, "gpu", BytecodeValue(hwInfo.gpu));
+  vm->setHostObjectField(obj, "ram", BytecodeValue(hwInfo.ram));
+  vm->setHostObjectField(obj, "motherboard", BytecodeValue(hwInfo.motherboard));
+  vm->setHostObjectField(obj, "bios", BytecodeValue(hwInfo.bios));
+  
+  // Storage array
+  auto storageArr = vm->createHostArray();
+  for (const auto& device : hwInfo.storage) {
+    auto storageObj = vm->createHostObject();
+    vm->setHostObjectField(storageObj, "name", BytecodeValue(device.name));
+    vm->setHostObjectField(storageObj, "model", BytecodeValue(device.model));
+    vm->setHostObjectField(storageObj, "size", BytecodeValue(device.size));
+    vm->setHostObjectField(storageObj, "type", BytecodeValue(device.type));
+    vm->setHostObjectField(storageObj, "mountPoint", BytecodeValue(device.mountPoint));
+    vm->pushHostArrayValue(storageArr, BytecodeValue(storageObj));
+  }
+  vm->setHostObjectField(obj, "storage", BytecodeValue(storageArr));
+  
+  return BytecodeValue(obj);
 }
 
 // ============================================================================
@@ -2811,6 +2893,9 @@ void DisplayBridge::install(PipelineOptions &options) {
   options.host_functions["display.getCount"] = [ctx = ctx_](const auto &args) {
     return handleGetCount(args, ctx);
   };
+  options.host_functions["display.getMonitorsArea"] = [ctx = ctx_](const auto &args) {
+    return handleGetMonitorsArea(args, ctx);
+  };
 }
 
 BytecodeValue DisplayBridge::handleGetMonitors(const std::vector<BytecodeValue> &args,
@@ -2863,6 +2948,45 @@ BytecodeValue DisplayBridge::handleGetCount(const std::vector<BytecodeValue> &ar
   (void)ctx;
   auto monitors = havel::DisplayManager::GetMonitors();
   return BytecodeValue(static_cast<int64_t>(monitors.size()));
+}
+
+BytecodeValue DisplayBridge::handleGetMonitorsArea(const std::vector<BytecodeValue> &args,
+                                                   const HostContext *ctx) {
+  (void)args;
+  (void)ctx;
+  auto monitors = havel::DisplayManager::GetMonitors();
+  
+  // Calculate total area
+  int64_t totalWidth = 0;
+  int64_t totalHeight = 0;
+  int64_t minX = INT64_MAX;
+  int64_t minY = INT64_MAX;
+  int64_t maxX = INT64_MIN;
+  int64_t maxY = INT64_MIN;
+  
+  for (const auto& mon : monitors) {
+    if (static_cast<int64_t>(mon.x) < minX) minX = mon.x;
+    if (static_cast<int64_t>(mon.y) < minY) minY = mon.y;
+    if (static_cast<int64_t>(mon.x) + static_cast<int64_t>(mon.width) > maxX) {
+      maxX = mon.x + mon.width;
+    }
+    if (static_cast<int64_t>(mon.y) + static_cast<int64_t>(mon.height) > maxY) {
+      maxY = mon.y + mon.height;
+    }
+  }
+  
+  if (minX != INT64_MAX) totalWidth = maxX - minX;
+  if (minY != INT64_MIN) totalHeight = maxY - minY;
+  
+  auto *vm = static_cast<VM *>(ctx->vm);
+  auto obj = vm->createHostObject();
+  vm->setHostObjectField(obj, "width", BytecodeValue(totalWidth));
+  vm->setHostObjectField(obj, "height", BytecodeValue(totalHeight));
+  vm->setHostObjectField(obj, "totalArea", BytecodeValue(totalWidth * totalHeight));
+  vm->setHostObjectField(obj, "x", BytecodeValue(minX == INT64_MAX ? 0 : minX));
+  vm->setHostObjectField(obj, "y", BytecodeValue(minY == INT64_MAX ? 0 : minY));
+  
+  return BytecodeValue(obj);
 }
 
 // ============================================================================

@@ -1899,9 +1899,19 @@ void ByteCompiler::compileExpression(const ast::Expression &expression) {
     if (!member.object || !property) {
       throw std::runtime_error("Unsupported member expression");
     }
-    compileExpression(*member.object);
-    emit(OpCode::LOAD_CONST, addConstant(property->symbol));
-    emit(OpCode::OBJECT_GET);
+
+    // Check if object is an identifier (variable) - use runtime dispatch
+    if (member.object->kind == ast::NodeType::Identifier) {
+      compileExpression(*member.object);
+      emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+      emit(OpCode::CALL_HOST,
+           std::vector<BytecodeValue>{"any.get", static_cast<uint32_t>(2)});
+    } else {
+      // For literals, use OBJECT_GET directly
+      compileExpression(*member.object);
+      emit(OpCode::LOAD_CONST, addConstant(property->symbol));
+      emit(OpCode::OBJECT_GET);
+    }
     break;
   }
 

@@ -64,6 +64,7 @@ enum class TokenType {
   Signal,
   Group,
   Struct,     // struct
+  Class,  // class
   Enum,       // enum
   Trait,      // trait
   Impl,       // impl

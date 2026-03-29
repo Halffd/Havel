@@ -9,6 +9,8 @@
 #include "../runtime/StdLibModules.hpp"
 #include "../runtime/HostAPI.hpp"
 #include "../../utils/Logger.hpp"
+#include "../parser/Parser.h"
+#include "../compiler/bytecode/ByteCompiler.hpp"
 #include <iostream>
 #include <sstream>
 #include <fstream>
@@ -215,12 +217,45 @@ bool REPL::execute(const std::string& code) {
     printError("REPL not initialized. Call initialize() first.");
     return false;
   }
-  
+
   try {
-    // Execute with bytecode VM, using HostBridge options
-    // Use __main__ as the entry function (where top-level statements are compiled)
-    auto result = compiler::runBytecodePipeline(code, "__main__", hostBridge_->options());
-    (void)result;  // For now, just check it doesn't throw
+    // Accumulate all input for recompilation (so variables persist)
+    if (!inputHistory.empty()) {
+      inputHistory += "\n";
+    }
+    inputHistory += code;
+    
+    // Compile all accumulated input (includes lexical resolution)
+    compiler::ByteCompiler byteCompiler;
+    parser::Parser parser;
+    
+    auto program = parser.produceAST(inputHistory);
+    if (!program || parser.hasErrors()) {
+      for (const auto& err : parser.getErrors()) {
+        printError(err.message, err.line);
+      }
+      // Remove the failed input from history
+      inputHistory = inputHistory.substr(0, inputHistory.size() - code.size() - 1);
+      return false;
+    }
+    
+    auto chunk = byteCompiler.compile(*program);
+    
+    // Execute persistently (preserves globals between REPL lines)
+    auto result = vm_->executePersistent(*chunk, "__main__");
+    
+    // Print result if not null (use simple type-based conversion)
+    if (!std::holds_alternative<std::nullptr_t>(result)) {
+      if (std::holds_alternative<std::string>(result)) {
+        printValue(std::get<std::string>(result));
+      } else if (std::holds_alternative<int64_t>(result)) {
+        printValue(std::to_string(std::get<int64_t>(result)));
+      } else if (std::holds_alternative<double>(result)) {
+        printValue(std::to_string(std::get<double>(result)));
+      } else if (std::holds_alternative<bool>(result)) {
+        printValue(std::get<bool>(result) ? "true" : "false");
+      }
+    }
     return true;
   } catch (const std::exception& e) {
     printError(e.what(), currentLine);

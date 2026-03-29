@@ -169,6 +169,10 @@ public:
   BytecodeValue execute(const BytecodeChunk &chunk,
                         const std::string &function_name,
                         const std::vector<BytecodeValue> &args = {}) override;
+  // Execute persistently (preserves globals and heap - for REPL)
+  BytecodeValue executePersistent(const BytecodeChunk &chunk,
+                                   const std::string &function_name,
+                                   const std::vector<BytecodeValue> &args = {});
   BytecodeValue call(const BytecodeValue &callee_value,
                      const std::vector<BytecodeValue> &args = {});
   void setDebugMode(bool enabled) override;

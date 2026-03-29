@@ -1,6 +1,7 @@
 #pragma once
 #include "../lexer/Lexer.hpp"
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -95,6 +96,7 @@ enum class NodeType {
   GroupDefinition,  // group name { modes: [...] }
   ConfigSection,    // any_identifier { ... }
   IndexExpression,  // arr[0] or obj["key"]
+  AtExpression,     // @field for self-assignment in methods
   TupleExpression,  // (1, "hello", true)
   RecordExpression, // {name: "John", age: 30}
   MapExpression,    // #{key1: val1, key2: val2}
@@ -232,11 +234,14 @@ struct TypeAnnotation : public ASTNode {
 struct StructFieldDef : public ASTNode {
   std::string name;
   std::optional<std::unique_ptr<TypeDefinition>> type;
+  std::optional<std::unique_ptr<Expression>> defaultValue;
 
   StructFieldDef(
       const std::string &fieldName,
-      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt)
-      : name(fieldName), type(std::move(fieldType)) {
+      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
+      : name(fieldName), type(std::move(fieldType)),
+        defaultValue(std::move(defaultVal)) {
     kind = NodeType::StructFieldDef;
   }
 
@@ -244,6 +249,9 @@ struct StructFieldDef : public ASTNode {
     std::string result = name;
     if (type) {
       result += ": " + (*type)->toString();
+    }
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
     }
     return result;
   }
@@ -640,11 +648,14 @@ struct StructDefinition : public TypeDefinition {
 struct ClassFieldDef : public ASTNode {
   std::string name;
   std::optional<std::unique_ptr<TypeDefinition>> type;
+  std::optional<std::unique_ptr<Expression>> defaultValue;
 
   ClassFieldDef(
       const std::string &fieldName,
-      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt)
-      : name(fieldName), type(std::move(fieldType)) {
+      std::optional<std::unique_ptr<TypeDefinition>> fieldType = std::nullopt,
+      std::optional<std::unique_ptr<Expression>> defaultVal = std::nullopt)
+      : name(fieldName), type(std::move(fieldType)),
+        defaultValue(std::move(defaultVal)) {
     kind = NodeType::ClassFieldDef;
   }
 
@@ -652,6 +663,9 @@ struct ClassFieldDef : public ASTNode {
     std::string result = name;
     if (type) {
       result += ": " + (*type)->toString();
+    }
+    if (defaultValue) {
+      result += " = " + (*defaultValue)->toString();
     }
     return result;
   }
@@ -2286,6 +2300,21 @@ struct IndexExpression : public Expression {
   void accept(ASTVisitor &visitor) const override;
 };
 
+// At Expression (@field for self-assignment in methods)
+struct AtExpression : public Expression {
+  std::unique_ptr<Expression> field; // Field name (Identifier)
+
+  AtExpression(std::unique_ptr<Expression> f) : field(std::move(f)) {
+    kind = NodeType::AtExpression;
+  }
+
+  std::string toString() const override {
+    return "AtExpression{@" + (field ? field->toString() : "nullptr") + "}";
+  }
+
+  void accept(ASTVisitor &visitor) const override;
+};
+
 // Ternary Expression (condition ? trueValue : falseValue)
 struct TernaryExpression : public Expression {
   std::unique_ptr<Expression> condition;
@@ -2602,6 +2631,7 @@ public:
   virtual void visitGroupDefinition(const GroupDefinition &node) = 0;
   virtual void visitConfigSection(const ConfigSection &node) = 0;
   virtual void visitIndexExpression(const IndexExpression &node) = 0;
+  virtual void visitAtExpression(const AtExpression &node) = 0;
   virtual void visitTernaryExpression(const TernaryExpression &node) = 0;
   virtual void visitRangeExpression(const RangeExpression &node) = 0;
   virtual void visitAssignmentExpression(const AssignmentExpression &node) = 0;
@@ -2623,11 +2653,15 @@ public:
   virtual void visitConditionalHotkey(const ConditionalHotkey &node) = 0;
   virtual void visitWhenBlock(const WhenBlock &node) = 0;
 
-  // Type system - struct/enum support
+  // Type system - struct/enum/class support
   virtual void visitStructFieldDef(const StructFieldDef &node) = 0;
   virtual void visitStructMethodDef(const StructMethodDef &node) = 0;
   virtual void visitStructDefinition(const StructDefinition &node) = 0;
   virtual void visitStructDeclaration(const StructDeclaration &node) = 0;
+  virtual void visitClassFieldDef(const ClassFieldDef &node) = 0;
+  virtual void visitClassMethodDef(const ClassMethodDef &node) = 0;
+  virtual void visitClassDefinition(const ClassDefinition &node) = 0;
+  virtual void visitClassDeclaration(const ClassDeclaration &node) = 0;
   virtual void visitEnumVariantDef(const EnumVariantDef &node) = 0;
   virtual void visitEnumDefinition(const EnumDefinition &node) = 0;
   virtual void visitEnumDeclaration(const EnumDeclaration &node) = 0;
@@ -2976,6 +3010,23 @@ inline void StructDefinition::accept(ASTVisitor &visitor) const {
 
 inline void StructDeclaration::accept(ASTVisitor &visitor) const {
   visitor.visitStructDeclaration(*this);
+}
+
+// Type system - class accept methods
+inline void ClassFieldDef::accept(ASTVisitor &visitor) const {
+  visitor.visitClassFieldDef(*this);
+}
+
+inline void ClassMethodDef::accept(ASTVisitor &visitor) const {
+  visitor.visitClassMethodDef(*this);
+}
+
+inline void ClassDefinition::accept(ASTVisitor &visitor) const {
+  visitor.visitClassDefinition(*this);
+}
+
+inline void ClassDeclaration::accept(ASTVisitor &visitor) const {
+  visitor.visitClassDeclaration(*this);
 }
 
 inline void EnumVariantDef::accept(ASTVisitor &visitor) const {

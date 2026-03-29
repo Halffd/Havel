@@ -3665,6 +3665,14 @@ void AppBridge::install(PipelineOptions &options) {
   options.host_functions["app.openUrl"] = [ctx = ctx_](const auto &args) {
     return handleAppOpenUrl(args, ctx);
   };
+  options.host_functions["app.exit"] = [ctx = ctx_](const auto &args) {
+    std::exit(0);
+    return BytecodeValue();
+  };
+  options.host_functions["app.restart"] = [ctx = ctx_](const auto &args) {
+    std::exit(42);
+    return BytecodeValue();
+  };
 }
 
 BytecodeValue AppBridge::handleAppGetName(const std::vector<BytecodeValue> &args,
